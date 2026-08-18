@@ -339,7 +339,7 @@ def test_former_admin_entrypoint_modules_do_not_own_root_injection_seams() -> No
     )
 
     for module in former_root_modules:
-        module_source = Path(module.__file__).read_text(encoding="utf-8")
+        module_source = Path(module.__file__ or "").read_text(encoding="utf-8")
 
         assert not hasattr(module, "root")
         assert "root: Any" not in module_source

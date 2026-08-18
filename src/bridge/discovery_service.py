@@ -66,7 +66,7 @@ class DiscoveryDeps:
     pid_is_running: Callable[[int], bool]
     bridge_log: BridgeLogFunc
     load_json_object: Callable[[Any, Any], Any]
-    save_json_atomic: Callable[[Any, Any], None]
+    save_json_atomic: Callable[[Any, Any], Any]
     run_background_script: Callable[..., int]
     append_run_history: Callable[[dict[str, Any]], dict[str, Any]]
     upsert_run_history: Callable[..., dict[str, Any]]

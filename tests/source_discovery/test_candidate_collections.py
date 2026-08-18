@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.source_discovery import candidate_collections
 
 
@@ -53,7 +55,7 @@ def test_split_provider_static_rows_routes_static_and_provider_adapters() -> Non
 
 
 def test_append_provider_static_rows_preserves_keys_and_dedupes() -> None:
-    artifact = {
+    artifact: dict[str, Any] = {
         "providerCandidates": [{"adapter": "greenhouse", "slug": "same"}],
         "staticCandidates": [{"adapter": "static", "pages": ["https://studio.example/jobs"]}],
         "summary": {"unchanged": True},

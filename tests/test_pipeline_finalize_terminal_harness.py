@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -437,7 +437,7 @@ def test_failed_finalization_writes_terminal_report_and_bounded_identity_counts(
         },
         recent_events=[],
     )
-    task_runtime.finalization_timings = {
+    cast(Any, task_runtime).finalization_timings = {
         "deduplicatingMs": 100,
         "reconciling_identitiesMs": 20,
     }

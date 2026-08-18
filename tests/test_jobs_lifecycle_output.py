@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from src import jobs_fetcher as jf
 from src.jobs.state_lifecycle import (
@@ -37,7 +38,7 @@ def _lifecycle_entry(
     availability_id: str,
     url: str,
     extra_aliases: list[str] | None = None,
-) -> tuple[str, dict[str, object]]:
+) -> tuple[str, dict[str, Any]]:
     entry = {
         "status": "active",
         "title": f"Role {key}",

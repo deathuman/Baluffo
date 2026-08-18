@@ -8,7 +8,7 @@ def _load_run_history(root: Path) -> list[dict[str, object]]:
     history_path = root / "admin-run-history.json"
     if not history_path.exists():
         return []
-    return json.loads(history_path.read_text(encoding="utf-8"))
+    return list(json.loads(history_path.read_text(encoding="utf-8")))
 
 
 def test_sync_status_reports_disabled_when_explicitly_disabled(admin_bridge_entrypoint_root):

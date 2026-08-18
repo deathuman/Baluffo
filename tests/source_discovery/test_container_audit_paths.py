@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import src.source_discovery.web_search_candidates as web_candidates
@@ -21,7 +22,7 @@ def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
     return sd.game_studios_sheet_candidate_urls(sheet_id, gid)[0]
 
 
-def _fetch_from(payloads: dict[str, str]):
+def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
     def fake_fetch(url: str, _: int) -> str:
         if url not in payloads:
             raise RuntimeError(f"unexpected URL: {url}")

@@ -1,9 +1,11 @@
 """Tests for jobs fetcher pipeline incremental behavior."""
 
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 from src import jobs_fetcher as jf
+from src.jobs.interfaces import SourceLoader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -264,9 +266,9 @@ def test_apply_incremental_cache_exclusions_keeps_provider_family_loader_for_boa
 
     now = jf.datetime.now(jf.timezone.utc)
     future = (now + jf.timedelta(minutes=10)).isoformat()
-    selected = [
-        ("greenhouse_boards", lambda **_: []),
-        ("incremental_source", lambda **_: []),
+    selected: list[tuple[str, SourceLoader]] = [
+        ("greenhouse_boards", cast(SourceLoader, lambda **_: [])),
+        ("incremental_source", cast(SourceLoader, lambda **_: [])),
     ]
     source_state_rows = {
         "greenhouse_boards": {

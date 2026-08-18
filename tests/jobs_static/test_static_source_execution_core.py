@@ -4,6 +4,7 @@
 import json
 import subprocess
 import time
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -141,7 +142,7 @@ def test_run_static_studio_pages_source_emits_incremental_detail_batch_progress(
     listing = _fixture("littlechicken_jobs_page.html")
     detail = _fixture("littlechicken_job_detail.html")
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
-    progress_events: list[dict[str, object]] = []
+    progress_events: list[dict[str, Any]] = []
     jf.STUDIO_SOURCE_REGISTRY = [
         {
             "name": "Fallback Progress Studio",
@@ -219,7 +220,7 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
             return detail_html
         raise RuntimeError(f"Unexpected URL: {url}")
 
-    def run_once(source_state_rows: dict[str, dict[str, object]]) -> tuple[int, int]:
+    def run_once(source_state_rows: dict[str, dict[str, Any]]) -> tuple[int, int]:
         jf.SOURCE_DIAGNOSTICS.clear()
         rows = jf.run_static_studio_pages_source(
             fetch_text=fake_fetch,
@@ -293,7 +294,7 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
             return "<html><body><h1>Software Engineer</h1></body></html>"
         raise RuntimeError(f"Unexpected URL: {url}")
 
-    def fake_process_detail_html(**kwargs: object) -> dict[str, object]:
+    def fake_process_detail_html(**kwargs: Any) -> dict[str, Any]:
         detail_calls["count"] += 1
         return {
             "rows": [
@@ -547,7 +548,7 @@ def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided()
     async_calls: list[tuple[str, int]] = []
 
     async def fake_listing_async_fetch(
-        _client: object, _job: dict[str, object], url: str, timeout_s: int
+        _client: object, _job: dict[str, Any], url: str, timeout_s: int
     ) -> str:
         async_calls.append((url, timeout_s))
         return """

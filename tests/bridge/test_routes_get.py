@@ -9,6 +9,7 @@ import pytest
 
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
+from tests.helpers.mutation import append_and_return
 
 
 def _assert_log_response(
@@ -175,8 +176,8 @@ def test_registry_endpoints(tmp_path: Path, path: str, expected_key: str) -> Non
 def test_registry_summary_uses_lightweight_payload_without_sources(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]
-    api.get_registry_summary_payload = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))
+    api.get_registry_summary_payload = lambda: {
         "activeCount": 3,
         "pendingCount": 2,
         "rejectedCount": 1,
@@ -219,8 +220,8 @@ def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path
             "rejected": [{"id": "rejected_1", "name": "Rejected"}],
         }
 
-    api.load_state = load_state  # type: ignore[assignment]
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.load_state = load_state
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
     api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
 
     handler = FakeHandler()
@@ -246,7 +247,7 @@ def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path
 def test_registry_sources_can_include_hidden_pending_rows(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [],
         "pending": [
             {"id": "visible", "name": "Visible", "jobsFound": 1},
@@ -254,7 +255,7 @@ def test_registry_sources_can_include_hidden_pending_rows(tmp_path: Path) -> Non
         ],
         "rejected": [],
     }
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
     api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
 
     handler = FakeHandler()
@@ -274,7 +275,7 @@ def test_registry_sources_can_include_hidden_pending_rows(tmp_path: Path) -> Non
 def test_registry_sources_rejects_unknown_bucket(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))
 
     handler = FakeHandler()
     result = handle_get(
@@ -421,9 +422,10 @@ def test_ops_history_default_limit(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
     calls: list[str] = []
-    api.get_lifecycle_run_history_rows = lambda: (
-        calls.append("lifecycle")
-        or [{"runId": "run_1", "type": "fetch", "finishedAt": "2026-05-07T00:00:00Z"}]
+    api.get_lifecycle_run_history_rows = lambda: append_and_return(
+        calls,
+        "lifecycle",
+        [{"runId": "run_1", "type": "fetch", "finishedAt": "2026-05-07T00:00:00Z"}],
     )
     api.sync_history_from_reports = lambda: (_ for _ in ()).throw(
         AssertionError("legacy history fallback must not be used")

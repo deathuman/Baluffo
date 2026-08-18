@@ -2,6 +2,7 @@
 import json
 import subprocess
 import threading
+from typing import Any
 from unittest import mock
 
 from tests.helpers.concurrency import BlockingActiveCounter
@@ -230,7 +231,7 @@ def test_run_scrapy_static_source_processes_queue_with_bounded_parallelism() -> 
     ]
     jf.STUDIO_SOURCE_REGISTRY = sources
     runners = BlockingActiveCounter(auto_release_at=2)
-    progress_events: list[dict[str, object]] = []
+    progress_events: list[dict[str, Any]] = []
     try:
         jf.SOURCE_DIAGNOSTICS.clear()
 

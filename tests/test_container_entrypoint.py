@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ def test_ensure_data_dir_permissions_chowns_allowed_tree(tmp_path: Path, monkeyp
     payload.write_text("{}", encoding="utf-8")
     calls: list[tuple[Path, int, int]] = []
 
-    def record_chown(path: object, uid: int, gid: int) -> None:
+    def record_chown(path: Any, uid: int, gid: int) -> None:
         calls.append((Path(path), uid, gid))
 
     monkeypatch.setattr(os, "chown", record_chown, raising=False)
@@ -40,7 +41,7 @@ def test_ensure_data_dir_permissions_refuses_outside_allowed_root(
     data_dir = tmp_path / "data"
     calls: list[Path] = []
 
-    def record_chown(path: object, uid: int, gid: int) -> None:
+    def record_chown(path: Any, uid: int, gid: int) -> None:
         calls.append(Path(path))
 
     monkeypatch.setattr(os, "chown", record_chown, raising=False)

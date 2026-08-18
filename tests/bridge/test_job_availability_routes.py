@@ -2,6 +2,7 @@ import json
 import threading
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -85,7 +86,7 @@ def test_job_availability_public_routes(tmp_path: Path) -> None:
     api.start_job_availability_check = lambda payload: {
         "started": True,
         "runId": "availability_run_1",
-        "availabilityId": payload["availabilityId"],
+        "availabilityId": cast(dict[str, Any], payload)["availabilityId"],
     }
     api.get_job_availability_check_status = lambda run_id: {
         "ok": True,
@@ -153,7 +154,7 @@ def test_background_check_removes_closed_row_and_projects_saved_transition(tmp_p
 
     class Store:
         def __init__(self) -> None:
-            self.entries = []
+            self.entries: list[dict[str, Any]] = []
 
         def project_availability_transition(self, entry):
             self.entries.append(dict(entry))
@@ -533,7 +534,7 @@ def test_post_pipeline_publication_projects_transitions_before_sweep(tmp_path: P
 
     class Store:
         def __init__(self) -> None:
-            self.entries = []
+            self.entries: list[dict[str, Any]] = []
 
         def project_availability_transitions(self, entries):
             self.entries = list(entries)
@@ -657,7 +658,7 @@ def test_custom_saved_check_uses_private_ledger_and_never_changes_public_artifac
 
     class Store:
         def __init__(self) -> None:
-            self.entries = []
+            self.entries: list[dict[str, Any]] = []
 
         def project_availability_transition(self, entry):
             self.entries.append(dict(entry))

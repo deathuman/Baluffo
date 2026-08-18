@@ -1,6 +1,7 @@
 import builtins
 import sys
 import types
+from typing import Any, cast
 
 import pytest
 
@@ -63,8 +64,8 @@ def _install_fake_playwright(
         def __exit__(self, *_args: object) -> None:
             return None
 
-    sync_api_mod.Error = _FakePlaywrightError
-    sync_api_mod.sync_playwright = lambda: _SyncPlaywright()
+    cast(Any, sync_api_mod).Error = _FakePlaywrightError
+    cast(Any, sync_api_mod).sync_playwright = lambda: _SyncPlaywright()
     monkeypatch.setitem(sys.modules, "playwright", playwright_pkg)
     monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_mod)
 

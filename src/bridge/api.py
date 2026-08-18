@@ -325,8 +325,8 @@ class BridgeApi:
     are compatibility behavior and must not be deleted from grep evidence alone.
     """
 
-    # Runtime/config
-    runtime_config: RuntimeConfigLike
+    # Runtime/config (None is tolerated: all uses go through getattr with defaults)
+    runtime_config: RuntimeConfigLike | None
 
     # Frequently used paths (routes access these directly today).
     DISCOVERY_REPORT_PATH: Path
@@ -354,7 +354,7 @@ class BridgeApi:
     normalize_fetch_report_contract: NormalizeReportContractFunc = _identity_report_contract
 
     # Minimal state shared with routes/handler.
-    DESKTOP_SESSION_ACTIVITY_AT: str = ""
+    DESKTOP_SESSION_ACTIVITY_AT: str | None = ""
 
     # Core capabilities used by routes.
     bridge_log: BridgeLogFunc = _noop

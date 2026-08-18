@@ -10,13 +10,13 @@ from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, mak
 
 
 def _install_empty_discovery_candidates(api, tmp_path: Path) -> None:
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
     api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
 
 
 def test_registry_sources_default_view_preserves_full_rows(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [
             {
                 "id": "active_1",
@@ -61,7 +61,7 @@ def test_registry_sources_table_view_detail_summary_skips_pending_annotation(
     so Admin's startup lane doesn't pay that cost just to populate badges.
     """
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [
             {
                 "id": "static:listing_url:https://existing.example/jobs",
@@ -114,7 +114,7 @@ def test_registry_sources_table_view_default_detail_still_annotates(
 ) -> None:
     """Default (no detail param) preserves legacy full-annotation behavior."""
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [],
         "pending": [
             {
@@ -144,7 +144,7 @@ def test_registry_sources_table_view_default_detail_still_annotates(
 
 def test_registry_sources_table_view_rejects_unknown_detail(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
+    api.load_state = lambda: {"active": [], "pending": [], "rejected": []}
     _install_empty_discovery_candidates(api, tmp_path)
 
     handler = FakeHandler()
@@ -166,7 +166,7 @@ def test_registry_sources_table_view_rejects_unknown_detail(tmp_path: Path) -> N
 def test_registry_sources_table_view_returns_compact_rows(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     large_detail = "x" * 10_000
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [
             {
                 "id": "active_1",
@@ -247,8 +247,8 @@ def test_registry_sources_table_view_returns_compact_rows(tmp_path: Path) -> Non
 
 def test_registry_sources_active_compact_view_does_not_load_full_state(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state must not run"))  # type: ignore[assignment]
-    api.get_registry_compact_table_payload = lambda **kwargs: {  # type: ignore[attr-defined]
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state must not run"))
+    api.get_registry_compact_table_payload = lambda **kwargs: {
         "ok": True,
         "activeCompact": True,
         "sources": {
@@ -284,7 +284,7 @@ def test_registry_sources_table_view_explains_pending_auto_approval_blockers(
     tmp_path: Path,
 ) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [
             {
                 "id": "static:listing_url:https://existing.example/jobs",
@@ -374,7 +374,7 @@ def test_registry_sources_table_view_explains_pending_auto_approval_blockers(
 
 def test_registry_sources_table_view_preserves_hidden_pending_filter(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [],
         "pending": [
             {"id": "visible", "name": "Visible", "jobsFound": 1},
@@ -412,12 +412,12 @@ def test_registry_sources_table_view_ignores_invalid_discovery_report(
     tmp_path: Path,
 ) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [],
         "pending": [{"id": "pending", "name": "Pending", "jobsFound": 1}],
         "rejected": [],
     }
-    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(  # type: ignore[assignment]
+    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(
         ValueError("malformed discovery report")
     )
     _install_empty_discovery_candidates(api, tmp_path)
@@ -438,12 +438,12 @@ def test_registry_sources_table_view_propagates_unexpected_discovery_report_fail
     tmp_path: Path,
 ) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [],
         "pending": [{"id": "pending", "name": "Pending", "jobsFound": 1}],
         "rejected": [],
     }
-    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(  # type: ignore[assignment]
+    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(
         RuntimeError("unexpected discovery loader failure")
     )
     _install_empty_discovery_candidates(api, tmp_path)
@@ -460,7 +460,7 @@ def test_registry_sources_table_view_propagates_unexpected_discovery_report_fail
 def test_registry_sources_table_view_keeps_large_payload_bounded(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     heavy_text = "x" * 20_000
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [
             {
                 "id": f"active_{index}",
@@ -500,7 +500,7 @@ def test_registry_sources_table_view_keeps_large_payload_bounded(tmp_path: Path)
 
 def test_registry_sources_table_view_limits_rows_per_bucket(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [{"id": f"active_{index}", "name": f"Active {index}"} for index in range(4)],
         "pending": [{"id": f"pending_{index}", "name": f"Pending {index}"} for index in range(3)],
         "rejected": [],
@@ -527,7 +527,7 @@ def test_registry_sources_table_view_limits_rows_per_bucket(tmp_path: Path) -> N
 
 def test_registry_sources_rejects_unknown_view(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))
 
     handler = FakeHandler()
     result = handle_get(

@@ -38,9 +38,8 @@ def install_fake_wait_clock(
 ) -> tuple[dict[str, datetime], list[float]]:
     clock = {"now": datetime.fromisoformat(start_at.replace("Z", "+00:00"))}
     waits: list[float] = []
-    real_datetime = datetime_module.datetime
 
-    class FakeDateTime(real_datetime):
+    class FakeDateTime(datetime_module.datetime):
         @classmethod
         def now(cls, tz=None):
             current = clock["now"]

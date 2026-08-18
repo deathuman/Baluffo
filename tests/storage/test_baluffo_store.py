@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -182,7 +183,7 @@ def test_required_checkpoint_failure_marks_store_unhealthy() -> None:
             busy_retry_base_ms=1,
             busy_retry_max_ms=1,
         ) as store:
-            store._execute_checkpoint = lambda mode: (1, 2, 0)  # type: ignore[method-assign]
+            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, 2, 0))  # type: ignore[method-assign]
 
             with pytest.raises(BaluffoStoreError, match="checkpoint failed"):
                 store.checkpoint_required()
@@ -219,7 +220,7 @@ def test_write_busy_retry_exhaustion_marks_store_unhealthy() -> None:
             busy_retry_base_ms=1,
             busy_retry_max_ms=1,
         ) as store:
-            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+            store._sleep_for_retry = lambda attempt: None  # type: ignore[method-assign]
 
             with pytest.raises(BaluffoStoreError, match="busy retry attempts"):
                 store.write(
@@ -240,7 +241,7 @@ def test_checkpoint_validation_and_non_busy_error_paths() -> None:
             with pytest.raises(ValueError, match="Unsupported SQLite checkpoint mode"):
                 store.checkpoint_required(mode="invalid")
 
-            store._execute_checkpoint = lambda _mode: (_ for _ in ()).throw(  # type: ignore[method-assign]
+            store._execute_checkpoint = lambda mode: (_ for _ in ()).throw(  # type: ignore[method-assign]
                 sqlite3.OperationalError("checkpoint syntax exploded")
             )
 
@@ -254,7 +255,11 @@ def test_checkpoint_validation_and_non_busy_error_paths() -> None:
 def test_backup_and_restore_validation_errors() -> None:
     with workspace_tmpdir("baluffo-store-backup-errors") as data_dir:
         with BaluffoStore(data_dir / "source") as store:
-            store.quick_check = lambda: "corrupt"  # type: ignore[method-assign]
+
+            def _fake_quick_check(*, limit: int | None = None) -> str:
+                return "corrupt"
+
+            store.quick_check = _fake_quick_check  # type: ignore[method-assign]
 
             with pytest.raises(BaluffoStoreError, match="quick_check failed before backup"):
                 store.backup_to(data_dir / "backup.db")
@@ -292,7 +297,7 @@ def test_execute_read_retries_transient_busy_error() -> None:
             busy_retry_base_ms=1,
             busy_retry_max_ms=1,
         ) as store:
-            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+            store._sleep_for_retry = lambda attempt: None  # type: ignore[method-assign]
             real_fetchall = store._execute_read_fetchall
             attempts = 0
 
@@ -320,7 +325,7 @@ def test_execute_read_busy_retry_exhaustion_marks_store_unhealthy() -> None:
             busy_retry_base_ms=1,
             busy_retry_max_ms=1,
         ) as store:
-            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+            store._sleep_for_retry = lambda attempt: None  # type: ignore[method-assign]
             real_fetchall = store._execute_read_fetchall
 
             def locked_fetchall(_conn, _sql, _parameters):  # noqa: ANN001

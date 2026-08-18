@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import json
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -57,8 +58,8 @@ def _row(index: int, *, extra_chunks: int = 8) -> dict[str, str]:
     }
 
 
-def _payload(shard) -> dict:
-    return json.loads(gzip.decompress(shard.payload_bytes).decode("utf-8"))
+def _payload(shard) -> dict[str, Any]:
+    return dict(json.loads(gzip.decompress(shard.payload_bytes).decode("utf-8")))
 
 
 def _config():
@@ -121,7 +122,7 @@ def test_uncommitted_manifest_is_not_trusted_or_pushed() -> None:
 
     assert trusted_committed_manifest(proposed) is None
     with pytest.raises(SourceSyncShardError, match="uncommitted"):
-        push_manifest(_FakeSyncModule([]), _config(), proposed, opener=object())
+        push_manifest(_FakeSyncModule([]), _config(), proposed, opener=lambda *_a, **_kw: None)
 
 
 def test_read_manifest_ignores_proposed_manifest_without_v2_side_effect() -> None:
@@ -131,7 +132,7 @@ def test_read_manifest_ignores_proposed_manifest_without_v2_side_effect() -> Non
         [(200, {"sha": "oldsha", "content": _encoded_json({**manifest, "phase": "proposed"})})]
     )
 
-    result = read_manifest(module, _config(), opener=object())
+    result = read_manifest(module, _config(), opener=lambda *_a, **_kw: None)
 
     assert result is None
     assert module.calls[0]["method"] == "GET"
@@ -151,13 +152,14 @@ def test_read_and_push_manifest_use_committed_manifest_path() -> None:
         ]
     )
 
-    read_result = read_manifest(module, _config(), opener=object())
+    read_result = read_manifest(module, _config(), opener=lambda *_a, **_kw: None)
+    assert read_result is not None
     push_result = push_manifest(
         module,
         _config(),
         read_result["manifest"],
         sha=read_result["sha"],
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert read_result["sha"] == "oldsha"
@@ -212,7 +214,7 @@ def test_push_shard_writes_payload_to_immutable_shard_path() -> None:
     )[0]
     module = _FakeSyncModule([(201, {"content": {"sha": "blobsha"}})])
 
-    result = push_shard(module, _config(), shard, opener=object())
+    result = push_shard(module, _config(), shard, opener=lambda *_a, **_kw: None)
 
     assert result == {
         "ok": True,
@@ -245,7 +247,7 @@ def test_push_shard_treats_existing_content_addressed_path_as_idempotent() -> No
         ]
     )
 
-    result = push_shard(module, _config(), shard, opener=object())
+    result = push_shard(module, _config(), shard, opener=lambda *_a, **_kw: None)
 
     assert result["ok"] is True
     assert result["alreadyExisted"] is True
@@ -265,7 +267,7 @@ def test_push_shard_rejects_payload_sha_mismatch() -> None:
     )
 
     with pytest.raises(SourceSyncShardError, match="sha256"):
-        push_shard(_FakeSyncModule([]), _config(), tampered, opener=object())
+        push_shard(_FakeSyncModule([]), _config(), tampered, opener=lambda *_a, **_kw: None)
 
 
 def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
@@ -294,7 +296,9 @@ def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
         ]
     )
 
-    result = push_changed_shards(module, _config(), new_shards, committed, opener=object())
+    result = push_changed_shards(
+        module, _config(), new_shards, committed, opener=lambda *_a, **_kw: None
+    )
 
     assert result["shardCount"] == len(new_shards)
     assert result["changedShardCount"] == len(expected_changed)

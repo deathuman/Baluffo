@@ -6,6 +6,7 @@ import threading
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.request import Request, urlopen
 
 import pytest
@@ -108,10 +109,10 @@ def _serve_gateway_with_internal(
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
-def _get_json(base_url: str, path: str) -> dict:
+def _get_json(base_url: str, path: str) -> dict[str, Any]:
     with urlopen(f"{base_url}{path}", timeout=2) as response:
         assert response.status == 200
-        return json.loads(response.read().decode("utf-8"))
+        return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
 
 
 def test_terminate_bridge_suppresses_expected_process_os_errors() -> None:

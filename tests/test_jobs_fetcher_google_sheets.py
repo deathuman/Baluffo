@@ -168,7 +168,7 @@ def test_canonicalize_google_sheets_rows_uses_redirect_cache_once_for_duplicates
 
     class _FakeResolver:
         def __init__(self) -> None:
-            self.cache = {}
+            self.cache: dict[str, str] = {}
             self.calls = 0
             self.cache_hits = 0
 

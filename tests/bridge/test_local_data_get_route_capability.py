@@ -26,6 +26,12 @@ class MinimalLocalDataStore:
     def get_saved_job_keys(self, uid: str) -> list[str]:
         return [f"{uid}:job-1"]
 
+    def get_availability_attention(self, uid: str) -> dict[str, Any]:
+        return {"uid": uid, "attention": "none"}
+
+    def get_availability_overlay(self, uid: str) -> dict[str, Any]:
+        return {"uid": uid, "overlay": "none"}
+
     def list_activity_for_user(self, uid: str, limit: int) -> list[dict[str, Any]]:
         return [{"uid": uid, "limit": limit, "event": "opened"}]
 
@@ -41,7 +47,7 @@ class MinimalLocalDataStore:
 
 
 class MinimalLocalDataGetRouteApi:
-    DESKTOP_SESSION_ACTIVITY_AT = "2026-06-19T10:00:00+00:00"
+    DESKTOP_SESSION_ACTIVITY_AT: str | None = "2026-06-19T10:00:00+00:00"
 
     def __init__(self) -> None:
         self.store = MinimalLocalDataStore()

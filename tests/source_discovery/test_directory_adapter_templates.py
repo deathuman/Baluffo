@@ -12,6 +12,7 @@ from src.source_discovery.directory_adapter_templates import (
     run_directory_entry_selection_scan,
     run_directory_website_scan,
 )
+from tests.helpers.mutation import append_and_return
 
 
 def test_build_directory_static_candidate_preserves_careers_url_shape() -> None:
@@ -414,7 +415,7 @@ def test_run_directory_entry_selection_scan_returns_empty_payload_without_select
             "summary": {"parsedRows": 0},
             "batchTiming": {"parseMs": 1},
         },
-        select_entries=lambda entries: selection_calls.append(entries) or {},
+        select_entries=lambda entries: append_and_return(selection_calls, entries, {}),
         emit_selection_log=lambda _selected: None,
         url_field="url",
         adapter="gameprog",

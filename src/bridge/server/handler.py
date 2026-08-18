@@ -34,44 +34,6 @@ class ServerHandlerApi(Protocol):
     def mark_desktop_session_activity(self, path: str) -> None: ...
 
 
-class _JsonHandler(Protocol):
-    """Request-handler surface used by the module-level bridge helpers.
-
-    Satisfied structurally by the Handler class produced in ``make_handler``
-    (BaseHTTPRequestHandler plus the JSON helpers it adds).
-    """
-
-    path: str
-    command: str
-    headers: Any
-    rfile: Any
-    wfile: Any
-    close_connection: bool
-    _baluffo_last_response_status: int
-
-    def send_response(self, code: int, message: str | None = None) -> None: ...
-
-    def send_header(self, keyword: str, value: str) -> None: ...
-
-    def end_headers(self) -> None: ...
-
-    def log_message(self, format: str, *args: Any) -> None: ...
-
-    def send_json(self, payload: Any, status: int = 200) -> None: ...
-
-    def send_bytes(
-        self,
-        body: bytes,
-        *,
-        content_type: str,
-        filename: str = "",
-        disposition: str = "inline",
-        status: int = 200,
-        cache_control: str = "no-store",
-        content_encoding: str = "",
-    ) -> None: ...
-
-
 _EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS = (AttributeError, TypeError, ValueError)
 _EXPECTED_HANDLER_STATUS_EXCEPTIONS = AttributeError
 _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS = (
@@ -97,7 +59,7 @@ def _is_expected_client_disconnect(exc: BaseException) -> bool:
     return False
 
 
-def _request_timing_category(handler: _JsonHandler, method: str, path: str = "") -> str:
+def _request_timing_category(handler: Any, method: str, path: str = "") -> str:
     route_path = path or ""
     if not route_path:
         try:
@@ -109,7 +71,7 @@ def _request_timing_category(handler: _JsonHandler, method: str, path: str = "")
 
 
 def _handle_response_write_exception(
-    handler: _JsonHandler,
+    handler: Any,
     api: ServerHandlerApi,
     exc: BaseException,
     *,
@@ -137,17 +99,17 @@ def _handle_response_write_exception(
     return False
 
 
-def _route_path(handler: _JsonHandler) -> str:
+def _route_path(handler: Any) -> str:
     # Defensive normalization: some clients/environments can introduce
     # whitespace/control characters that otherwise cause routes to miss.
     return str(urlparse(handler.path).path or "").strip()
 
 
-def _route_query(handler: _JsonHandler) -> dict[str, list[str]]:
+def _route_query(handler: Any) -> dict[str, list[str]]:
     return parse_qs(urlparse(handler.path).query)
 
 
-def _send_cors_headers(handler: _JsonHandler, api: ServerHandlerApi) -> None:
+def _send_cors_headers(handler: Any, api: ServerHandlerApi) -> None:
     if is_container_runtime(api):
         return
     handler.send_header("Access-Control-Allow-Origin", "*")
@@ -156,7 +118,7 @@ def _send_cors_headers(handler: _JsonHandler, api: ServerHandlerApi) -> None:
 
 
 def _send_json_response(
-    handler: _JsonHandler,
+    handler: Any,
     api: ServerHandlerApi,
     payload: Any,
     *,
@@ -187,7 +149,7 @@ def _send_json_response(
 
 
 def _send_bytes_response(
-    handler: _JsonHandler,
+    handler: Any,
     api: ServerHandlerApi,
     body: bytes,
     *,
@@ -228,7 +190,7 @@ def _send_bytes_response(
 
 
 def _log_request_message(
-    handler: _JsonHandler, api: ServerHandlerApi, format: str, args: tuple[Any, ...]
+    handler: Any, api: ServerHandlerApi, format: str, args: tuple[Any, ...]
 ) -> None:
     runtime_config = getattr(api, "runtime_config", None)
     if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
@@ -247,7 +209,7 @@ def _log_request_message(
 
 
 def _handle_get_request(
-    handler: _JsonHandler,
+    handler: Any,
     api: ServerHandlerApi,
     static_service: StaticGetService | None,
 ) -> None:
@@ -321,7 +283,7 @@ def _handle_get_request(
             )
 
 
-def _handle_post_request(handler: _JsonHandler, api: ServerHandlerApi) -> None:
+def _handle_post_request(handler: Any, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False
@@ -389,7 +351,7 @@ def _handle_post_request(handler: _JsonHandler, api: ServerHandlerApi) -> None:
             )
 
 
-def _handle_options_request(handler: _JsonHandler, api: ServerHandlerApi) -> None:
+def _handle_options_request(handler: Any, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False

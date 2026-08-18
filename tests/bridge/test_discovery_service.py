@@ -4,9 +4,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from src.bridge.admin_entrypoint_services import _matching_live_report_progress
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso_utc(value: str | None) -> datetime | None:
@@ -44,7 +46,9 @@ def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: P
             pid_is_running=lambda pid: False,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=lambda path, default: default,
-            save_json_atomic=lambda path, payload: Path(path).write_text("{}", encoding="utf-8"),
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text("{}", encoding="utf-8") or None
+            ),
             run_background_script=run_background_script,
             append_run_history=lambda payload: payload,
             upsert_run_history=lambda payload, **_kwargs: payload,
@@ -139,9 +143,9 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
 
 
 def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: Path) -> None:
-    bridge_events: list[tuple[str, dict[str, object]]] = []
+    bridge_events: list[tuple[str, dict[str, Any]]] = []
     spawn_calls: list[tuple[str, list[str] | None]] = []
-    history_rows: list[dict[str, object]] = []
+    history_rows: list[dict[str, Any]] = []
 
     def bridge_log(level: str, message: str, **fields: object) -> None:
         bridge_events.append((message, {"level": level, **fields}))
@@ -174,11 +178,11 @@ def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: 
                 if Path(path).exists()
                 else default
             ),
-            save_json_atomic=lambda path, payload: Path(path).write_text(
-                json.dumps(payload), encoding="utf-8"
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text(json.dumps(payload), encoding="utf-8") or None
             ),
             run_background_script=run_background_script,
-            append_run_history=lambda payload: history_rows.append(payload) or payload,
+            append_run_history=lambda payload: append_and_return(history_rows, payload, payload),
             upsert_run_history=lambda payload, **_kwargs: payload,
             prune_started_rows_for_type=lambda *_args, **_kwargs: None,
             clear_task_state=lambda _task_type: None,
@@ -258,7 +262,7 @@ def test_trigger_discovery_task_ignores_legacy_terminal_state_before_duplicate_c
     )
     cleared_tasks: list[str] = []
     finished_lifecycle: list[tuple[str, str, str]] = []
-    upserted_runs: list[dict[str, object]] = []
+    upserted_runs: list[dict[str, Any]] = []
 
     def clear_task_state(task_type: str) -> None:
         cleared_tasks.append(task_type)
@@ -266,11 +270,11 @@ def test_trigger_discovery_task_ignores_legacy_terminal_state_before_duplicate_c
         state.pop(task_type, None)
         task_state_path.write_text(json.dumps(state), encoding="utf-8")
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if path == report_path:
-            return json.loads(report_path.read_text(encoding="utf-8"))
+            return dict(json.loads(report_path.read_text(encoding="utf-8")))
         if path == task_state_path:
-            return json.loads(task_state_path.read_text(encoding="utf-8"))
+            return dict(json.loads(task_state_path.read_text(encoding="utf-8")))
         return dict(default)
 
     service = DiscoveryService(
@@ -291,13 +295,13 @@ def test_trigger_discovery_task_ignores_legacy_terminal_state_before_duplicate_c
             pid_is_running=lambda pid: int(pid) == 321,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
-            save_json_atomic=lambda path, payload: Path(path).write_text(
-                json.dumps(payload), encoding="utf-8"
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text(json.dumps(payload), encoding="utf-8") or None
             ),
             run_background_script=lambda script_name, args=None, **kwargs: 987,
             append_run_history=lambda payload: payload,
-            upsert_run_history=lambda payload, **_kwargs: (
-                upserted_runs.append(dict(payload)) or payload
+            upsert_run_history=lambda payload, **_kwargs: append_and_return(
+                upserted_runs, dict(payload), payload
             ),
             prune_started_rows_for_type=lambda *_args, **_kwargs: None,
             clear_task_state=clear_task_state,
@@ -307,9 +311,10 @@ def test_trigger_discovery_task_ignores_legacy_terminal_state_before_duplicate_c
             load_sync_runtime_state=lambda: {},
             maybe_trigger_auto_sync_push=lambda reason: False,
             mark_discovery_sync_finished=lambda finished_at: None,
-            finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                finished_lifecycle.append((run_id, task_type, str(kwargs.get("finished_at") or "")))
-                or {}
+            finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                finished_lifecycle,
+                (run_id, task_type, str(kwargs.get("finished_at") or "")),
+                {},
             ),
         ),
     )
@@ -370,11 +375,11 @@ def test_discovery_heartbeat_mirrors_live_report_progress_to_lifecycle(tmp_path:
         ),
         encoding="utf-8",
     )
-    lifecycle_heartbeats: list[dict[str, object]] = []
+    lifecycle_heartbeats: list[dict[str, Any]] = []
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if Path(path).exists():
-            return json.loads(Path(path).read_text(encoding="utf-8"))
+            return dict(json.loads(Path(path).read_text(encoding="utf-8")))
         return dict(default)
 
     service = DiscoveryService(
@@ -395,8 +400,8 @@ def test_discovery_heartbeat_mirrors_live_report_progress_to_lifecycle(tmp_path:
             pid_is_running=lambda pid: int(pid) == 321,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
-            save_json_atomic=lambda path, payload: Path(path).write_text(
-                json.dumps(payload), encoding="utf-8"
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text(json.dumps(payload), encoding="utf-8") or None
             ),
             run_background_script=lambda script_name, args=None, **kwargs: 987,
             append_run_history=lambda payload: payload,
@@ -409,11 +414,10 @@ def test_discovery_heartbeat_mirrors_live_report_progress_to_lifecycle(tmp_path:
             load_sync_runtime_state=lambda: {},
             maybe_trigger_auto_sync_push=lambda reason: False,
             mark_discovery_sync_finished=lambda finished_at: None,
-            heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                lifecycle_heartbeats.append(
-                    {"runId": run_id, "taskType": task_type, **dict(kwargs)}
-                )
-                or {}
+            heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                lifecycle_heartbeats,
+                {"runId": run_id, "taskType": task_type, **dict(kwargs)},
+                {},
             ),
         ),
     )
@@ -570,9 +574,9 @@ def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> N
 def test_update_discovery_settings_persists_normalized_bool(tmp_path: Path) -> None:
     settings_path = tmp_path / "source-discovery-config.json"
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if path == settings_path and path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
+            return dict(json.loads(path.read_text(encoding="utf-8")))
         return dict(default)
 
     def save_json_atomic(path: Path, payload: object) -> None:
@@ -652,14 +656,14 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
         json.dumps({"autoApproveHealthyPendingOnComplete": True}), encoding="utf-8"
     )
 
-    persisted_states: list[dict[str, object]] = []
+    persisted_states: list[dict[str, Any]] = []
     bridge_events: list[str] = []
     marked: list[str] = []
     cleared_tasks: list[str] = []
-    pruned_runs: list[dict[str, object]] = []
-    upserted_runs: list[dict[str, object]] = []
+    pruned_runs: list[dict[str, Any]] = []
+    upserted_runs: list[dict[str, Any]] = []
     sync_calls: list[str] = []
-    state = {
+    state: dict[str, Any] = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Already Active"}],
         "pending": [
             {
@@ -700,14 +704,14 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
         "rejected": [],
     }
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if path == report_path:
-            return json.loads(report_path.read_text(encoding="utf-8"))
+            return dict(json.loads(report_path.read_text(encoding="utf-8")))
         if path == settings_path:
-            return json.loads(settings_path.read_text(encoding="utf-8"))
+            return dict(json.loads(settings_path.read_text(encoding="utf-8")))
         if path == approval_state_path:
             if path.exists():
-                return json.loads(path.read_text(encoding="utf-8"))
+                return dict(json.loads(path.read_text(encoding="utf-8")))
             return dict(default)
         return dict(default)
 
@@ -715,8 +719,8 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
         Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
     def persist_state_and_auto_sync(
-        next_state: dict[str, list[dict[str, object]]], **_kwargs: object
-    ) -> dict[str, list[dict[str, object]]]:
+        next_state: dict[str, list[dict[str, Any]]], **_kwargs: object
+    ) -> dict[str, list[dict[str, Any]]]:
         state["active"] = list(next_state.get("active") or [])
         state["pending"] = list(next_state.get("pending") or [])
         state["rejected"] = list(next_state.get("rejected") or [])
@@ -738,13 +742,13 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
             now_utc=lambda: None,
             parse_iso=_parse_iso_utc,
             pid_is_running=lambda pid: False,
-            bridge_log=lambda _level, message, **_fields: bridge_events.append(message),
+            bridge_log=lambda level, message, **fields: bridge_events.append(message),
             load_json_object=load_json_object,
             save_json_atomic=save_json_atomic,
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
-            upsert_run_history=lambda payload, **_kwargs: (
-                upserted_runs.append(dict(payload)) or payload
+            upsert_run_history=lambda payload, **_kwargs: append_and_return(
+                upserted_runs, dict(payload), payload
             ),
             prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
                 {"runType": run_type, **kwargs}
@@ -758,7 +762,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
             },
             persist_state_and_auto_sync=persist_state_and_auto_sync,
             load_sync_runtime_state=lambda: {},
-            maybe_trigger_auto_sync_push=lambda reason: (sync_calls.append(reason), True)[1],
+            maybe_trigger_auto_sync_push=lambda reason: append_and_return(sync_calls, reason, True),
             mark_discovery_sync_finished=lambda finished_at: marked.append(finished_at),
         ),
     )
@@ -814,14 +818,14 @@ def test_watch_discovery_run_finalizes_when_report_is_terminal_even_if_pid_linge
     )
 
     cleared_tasks: list[str] = []
-    pruned_runs: list[dict[str, object]] = []
-    upserted_runs: list[dict[str, object]] = []
+    pruned_runs: list[dict[str, Any]] = []
+    upserted_runs: list[dict[str, Any]] = []
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if path == report_path:
-            return json.loads(report_path.read_text(encoding="utf-8"))
+            return dict(json.loads(report_path.read_text(encoding="utf-8")))
         if path == settings_path:
-            return json.loads(settings_path.read_text(encoding="utf-8"))
+            return dict(json.loads(settings_path.read_text(encoding="utf-8")))
         return dict(default)
 
     service = DiscoveryService(
@@ -841,13 +845,13 @@ def test_watch_discovery_run_finalizes_when_report_is_terminal_even_if_pid_linge
             pid_is_running=lambda pid: True,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
-            save_json_atomic=lambda path, payload: Path(path).write_text(
-                json.dumps(payload), encoding="utf-8"
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text(json.dumps(payload), encoding="utf-8") or None
             ),
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
-            upsert_run_history=lambda payload, **_kwargs: (
-                upserted_runs.append(dict(payload)) or payload
+            upsert_run_history=lambda payload, **_kwargs: append_and_return(
+                upserted_runs, dict(payload), payload
             ),
             prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
                 {"runType": run_type, **kwargs}
@@ -888,12 +892,12 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    persisted_states: list[dict[str, object]] = []
+    persisted_states: list[dict[str, Any]] = []
     cleared_tasks: list[str] = []
-    pruned_runs: list[dict[str, object]] = []
-    upserted_runs: list[dict[str, object]] = []
+    pruned_runs: list[dict[str, Any]] = []
+    upserted_runs: list[dict[str, Any]] = []
     sync_calls: list[str] = []
-    state = {
+    state: dict[str, Any] = {
         "active": [],
         "pending": [
             {
@@ -907,11 +911,11 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
         "rejected": [],
     }
 
-    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+    def load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if path == report_path:
-            return json.loads(report_path.read_text(encoding="utf-8"))
+            return dict(json.loads(report_path.read_text(encoding="utf-8")))
         if path == settings_path:
-            return json.loads(settings_path.read_text(encoding="utf-8"))
+            return dict(json.loads(settings_path.read_text(encoding="utf-8")))
         return dict(default)
 
     service = DiscoveryService(
@@ -931,13 +935,13 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
             pid_is_running=lambda pid: False,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
-            save_json_atomic=lambda path, payload: Path(path).write_text(
-                json.dumps(payload), encoding="utf-8"
+            save_json_atomic=lambda path, payload: (
+                Path(path).write_text(json.dumps(payload), encoding="utf-8") or None
             ),
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
-            upsert_run_history=lambda payload, **_kwargs: (
-                upserted_runs.append(dict(payload)) or payload
+            upsert_run_history=lambda payload, **_kwargs: append_and_return(
+                upserted_runs, dict(payload), payload
             ),
             prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
                 {"runType": run_type, **kwargs}
@@ -949,11 +953,13 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
                 "pending": list(state["pending"]),
                 "rejected": list(state["rejected"]),
             },
-            persist_state_and_auto_sync=lambda next_state, **_kwargs: (
-                persisted_states.append(json.loads(json.dumps(next_state))) or next_state
+            persist_state_and_auto_sync=lambda next_state, **_kwargs: append_and_return(
+                persisted_states, json.loads(json.dumps(next_state)), next_state
             ),
             load_sync_runtime_state=lambda: {},
-            maybe_trigger_auto_sync_push=lambda reason: sync_calls.append(reason) or False,
+            maybe_trigger_auto_sync_push=lambda reason: append_and_return(
+                sync_calls, reason, False
+            ),
             mark_discovery_sync_finished=lambda finished_at: None,
         ),
     )

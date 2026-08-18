@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from src import source_registry as sr
 
@@ -8,12 +9,14 @@ DEFAULTS_DIR = REPO_ROOT / "data" / "defaults"
 TOMBSTONES_FIXTURE_PATH = REPO_ROOT / "tests/fixtures/source-registry-tombstones.json"
 
 
-def _load_seed_registry(name: str) -> list[dict]:
-    return json.loads((DEFAULTS_DIR / f"source-registry-{name}.seed.json").read_text())
+def _load_seed_registry(name: str) -> list[dict[str, Any]]:
+    loaded = json.loads((DEFAULTS_DIR / f"source-registry-{name}.seed.json").read_text())
+    return loaded if isinstance(loaded, list) else []
 
 
-def _load_tombstones_fixture() -> dict:
-    return json.loads(TOMBSTONES_FIXTURE_PATH.read_text())
+def _load_tombstones_fixture() -> dict[str, Any]:
+    loaded = json.loads(TOMBSTONES_FIXTURE_PATH.read_text())
+    return loaded if isinstance(loaded, dict) else {}
 
 
 UNSUPPORTED_STATIC_IDS = {

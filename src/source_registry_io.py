@@ -480,7 +480,7 @@ def summarize_json_array_storage(
     }
 
 
-def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
+def load_json_object(path: Path, default: Any = None) -> dict[str, Any]:
     fallback = dict(default or {})
     try:
         source_path = Path(path)

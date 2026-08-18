@@ -11,9 +11,11 @@ def test_startup_metrics_batch_accepts_bounded_metric_rows(tmp_path: Path) -> No
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
     captured: list[dict[str, Any]] = []
-    api.append_startup_metric = lambda event, payload=None: captured.append(
-        {"event": event, "payload": dict(payload or {})}
-    )
+
+    def _append_startup_metric(event: str, payload: dict[str, Any] | None) -> None:
+        captured.append({"event": event, "payload": dict(payload or {})})
+
+    api.append_startup_metric = _append_startup_metric
 
     handler = FakeHandler()
     result = handle_post(

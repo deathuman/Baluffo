@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import pytest
 
@@ -51,7 +52,7 @@ def test_bamboohr_provider_uses_careers_list_when_html_listing_has_no_jobs(
         def read(self) -> bytes:
             return json.dumps(payload).encode("utf-8")
 
-    def fake_urlopen(request: object, timeout: int) -> _JsonResponse:
+    def fake_urlopen(request: Any, timeout: int) -> _JsonResponse:
         assert timeout == 5
         assert request.full_url == "https://streamlinestudios.bamboohr.com/careers/list"
         return _JsonResponse()
@@ -126,7 +127,7 @@ def test_workday_provider_uses_cxs_api_when_html_listing_has_no_jobs(
         def read(self) -> bytes:
             return self._payload
 
-    def fake_urlopen(request: object, timeout: int) -> _Response:
+    def fake_urlopen(request: Any, timeout: int) -> _Response:
         _ = timeout
         requests.append((request.full_url, json.loads(request.data.decode("utf-8"))))
         return _Response(

@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from src import source_discovery as sd
@@ -41,7 +42,7 @@ def _fixture_text(name: str) -> str:
     return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
-def _gamesmap_next_payload_html(companies: list[dict[str, object]]) -> str:
+def _gamesmap_next_payload_html(companies: list[dict[str, Any]]) -> str:
     payload = f'payload-start "companies":{json.dumps(companies, ensure_ascii=False)},"regions":[] payload-end'
     return (
         '<!DOCTYPE html><html lang="en"><body><script>'
@@ -50,7 +51,7 @@ def _gamesmap_next_payload_html(companies: list[dict[str, object]]) -> str:
     )
 
 
-def discovery_config_without_generator_stages(**overrides: object) -> dict[str, object]:
+def discovery_config_without_generator_stages(**overrides: Any) -> dict[str, Any]:
     config = dict(GENERATOR_DISABLED_DISCOVERY_CONFIG)
     config.update(overrides)
     return config

@@ -4,6 +4,7 @@
 import json
 import subprocess
 import time
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -357,7 +358,7 @@ def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress
             </script></head><body></body></html>
         """,
     }
-    progress_events: list[dict[str, object]] = []
+    progress_events: list[dict[str, Any]] = []
 
     rows = jf.run_static_studio_pages_source(
         fetch_text=lambda url, _timeout: page_html[url],

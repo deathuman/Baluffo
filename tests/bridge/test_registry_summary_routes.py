@@ -8,7 +8,7 @@ from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, mak
 
 def test_registry_summary_default_view_reports_storage_basis(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.get_registry_summary_payload = lambda: {  # type: ignore[assignment]
+    api.get_registry_summary_payload = lambda: {
         "activeCount": 3,
         "summaryExact": False,
         "countBasis": "storage",
@@ -31,10 +31,10 @@ def test_registry_summary_exact_view_uses_normalized_summary_payload(
     tmp_path: Path,
 ) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.get_registry_summary_payload = lambda: (_ for _ in ()).throw(  # type: ignore[assignment]
+    api.get_registry_summary_payload = lambda: (_ for _ in ()).throw(
         AssertionError("cheap summary not expected")
     )
-    api.get_registry_exact_summary_payload = lambda: {  # type: ignore[assignment]
+    api.get_registry_exact_summary_payload = lambda: {
         "activeCount": 4,
         "pendingCount": 1,
         "rejectedCount": 0,
@@ -60,12 +60,12 @@ def test_registry_summary_exact_view_uses_normalized_summary_payload(
 
 def test_registry_sources_summary_reports_normalized_basis(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {  # type: ignore[assignment]
+    api.load_state = lambda: {
         "active": [{"id": "active-1", "name": "Active"}],
         "pending": [],
         "rejected": [],
     }
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
     api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
 
     handler = FakeHandler()
@@ -80,10 +80,10 @@ def test_registry_sources_summary_reports_normalized_basis(tmp_path: Path) -> No
 
 def test_registry_summary_rejects_unknown_view(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.get_registry_summary_payload = lambda: (_ for _ in ()).throw(  # type: ignore[assignment]
+    api.get_registry_summary_payload = lambda: (_ for _ in ()).throw(
         AssertionError("summary not expected")
     )
-    api.get_registry_exact_summary_payload = lambda: (_ for _ in ()).throw(  # type: ignore[assignment]
+    api.get_registry_exact_summary_payload = lambda: (_ for _ in ()).throw(
         AssertionError("exact summary not expected")
     )
 

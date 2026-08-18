@@ -1,7 +1,10 @@
 """Tests for source discovery probe persistence behavior."""
 
 # ruff: noqa: F401
+from typing import Any
+
 from src.url_hosts import url_host
+from tests.helpers.mutation import append_and_return
 
 from ._helpers import (
     FIXTURES_DIR,
@@ -157,14 +160,14 @@ def test_run_discovery_suppresses_blocked_static_domains_before_probe() -> None:
                 }
             ],
         ):
-            calls = []
+            calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
             report = sd.run_discovery(
                 timeout_s=5,
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
                 discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
-                fetcher=lambda *args, **kwargs: calls.append((args, kwargs)) or "",
+                fetcher=lambda *args, **kwargs: append_and_return(calls, (args, kwargs), ""),
             )
             assert not any(
                 args and args[0] == "https://www.linkedin.com/company/example/jobs/"

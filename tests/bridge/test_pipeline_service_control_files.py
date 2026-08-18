@@ -11,6 +11,7 @@ from src.bridge.pipeline_control_files import (
 )
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime, PipelineService
 from src.source_registry_io import load_runtime_evidence
+from tests.helpers.mutation import append_and_return
 
 
 def _make_pipeline_service(**overrides: Any) -> PipelineService:
@@ -103,8 +104,8 @@ def test_pipeline_control_abort_requests_child_and_waits_for_live_child(
         runtime=runtime,
         control_data_dir=tmp_path,
         child_run_is_live=lambda _task_type, run_id: bool(live_children.get(run_id)),
-        abort_child_run=lambda task_type, run_id, reason: (
-            child_abort_requests.append((task_type, run_id, reason)) or {"ok": True}
+        abort_child_run=lambda task_type, run_id, reason: append_and_return(
+            child_abort_requests, (task_type, run_id, reason), {"ok": True}
         ),
     )
     service._attach_lifecycle_child_row(  # noqa: SLF001
@@ -160,9 +161,10 @@ def test_pipeline_control_retries_child_abort_while_child_remains_live(
         runtime=runtime,
         control_data_dir=tmp_path,
         child_run_is_live=lambda _task_type, run_id: run_id == "fetch_1",
-        abort_child_run=lambda task_type, run_id, reason: (
-            child_abort_requests.append((task_type, run_id, reason))
-            or {"ok": True, "warnings": ["process_not_registered"]}
+        abort_child_run=lambda task_type, run_id, reason: append_and_return(
+            child_abort_requests,
+            (task_type, run_id, reason),
+            {"ok": True, "warnings": ["process_not_registered"]},
         ),
     )
     service._attach_lifecycle_child_row(  # noqa: SLF001

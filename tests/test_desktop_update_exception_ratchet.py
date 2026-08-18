@@ -1,5 +1,6 @@
 from hashlib import sha256
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -174,7 +175,7 @@ def _ready_install_service(
         "portable_artifact": {"sha256": expected_sha},
         "key_id": "desktop-ed25519-test",
     }
-    service._load_cached_manifest_parts = mock.Mock(return_value=({}, manifest, {}, []))
+    cast(Any, service)._load_cached_manifest_parts = mock.Mock(return_value=({}, manifest, {}, []))
     return paths, service
 
 

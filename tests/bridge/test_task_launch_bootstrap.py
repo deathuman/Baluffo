@@ -17,6 +17,7 @@ from src.jobs.state_source_records import read_source_state, write_source_state
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import existing_json_candidate, read_json
 from src.storage import BaluffoStore, JobRuntimeStore, SourceRuntimeStore
+from tests.helpers.mutation import append_and_return
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -181,7 +182,9 @@ def test_packaged_smoke_bootstrap_mode_starts_controlled_running_report(
             run_background_script=run_background_script,
             save_json_atomic=_save_json_atomic,
             schema_version=1,
-            start_lifecycle_run=lambda **kwargs: lifecycle_rows.append(dict(kwargs)) or {},
+            start_lifecycle_run=lambda **kwargs: append_and_return(
+                lifecycle_rows, dict(kwargs), {}
+            ),
             get_lifecycle_current_runs=lambda: [],
             get_lifecycle_run_history_rows=lambda: [],
         )
@@ -573,7 +576,7 @@ def test_jobs_bootstrap_restores_existing_feed_when_state_merge_fails() -> None:
             {"non_sheet": {"name": "non_sheet", "consecutiveFailures": 2}},
         )
 
-        def fail_merge(_staging_dir: Path) -> None:
+        def fail_merge(staging_dir: Path) -> None:
             raise OSError("state locked")
 
         api._merge_bootstrap_state_artifacts = fail_merge  # type: ignore[method-assign]  # noqa: SLF001
@@ -590,8 +593,8 @@ def test_jobs_bootstrap_restores_existing_feed_when_state_merge_fails() -> None:
             normalize_fetch_report_contract=lambda payload: payload,
             save_json_atomic=_save_json_atomic,
             finish_lifecycle_run=lambda *_args, **_kwargs: {},
-            fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                failed.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+            fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                failed, {"runId": run_id, "taskType": task_type, **kwargs}, {}
             ),
         )
 
@@ -620,7 +623,11 @@ def test_jobs_bootstrap_restores_existing_feed_when_report_write_fails() -> None
 
         def fail_promoted_report(path: Path, payload: Any) -> None:
             summary = payload.get("summary") if isinstance(payload, dict) else {}
-            if path.name == "jobs-fetch-report.json" and summary.get("status") != "error":
+            if (
+                path.name == "jobs-fetch-report.json"
+                and isinstance(summary, dict)
+                and summary.get("status") != "error"
+            ):
                 raise OSError("report locked")
             _save_json_atomic(path, payload)
 
@@ -653,7 +660,7 @@ def test_jobs_bootstrap_restores_existing_feed_when_lifecycle_finish_fails() -> 
         staging_dir.mkdir(parents=True)
         _write_bootstrap_artifacts(staging_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"old-job"}]')
-        api._mirror_bootstrap_runtime_state = lambda _report: None  # type: ignore[method-assign]  # noqa: SLF001
+        api._mirror_bootstrap_runtime_state = lambda promoted_report: None  # type: ignore[method-assign]  # noqa: SLF001
         failed: list[dict[str, Any]] = []
 
         def fail_finish(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -670,8 +677,8 @@ def test_jobs_bootstrap_restores_existing_feed_when_lifecycle_finish_fails() -> 
             normalize_fetch_report_contract=lambda payload: payload,
             save_json_atomic=_save_json_atomic,
             finish_lifecycle_run=fail_finish,
-            fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                failed.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+            fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                failed, {"runId": run_id, "taskType": task_type, **kwargs}, {}
             ),
         )
 

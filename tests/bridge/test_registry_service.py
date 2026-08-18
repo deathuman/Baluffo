@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src import source_registry as sr
 from src.bridge import registry_service as registry_service_module
@@ -347,7 +347,7 @@ def test_registry_service_shadow_projection_mismatch_rolls_back_to_json(tmp_path
         ),
         default_active=[],
         normalize_manual_static=lambda row: row,
-        runtime_store_factory=lambda: fake_runtime,  # type: ignore[arg-type]
+        runtime_store_factory=lambda: cast(SourceRegistryRuntimeStore, fake_runtime),
         record_storage_diagnostic=_record_diagnostic,
     )
 

@@ -9,6 +9,7 @@ import pytest
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 from src.jobs.pipeline_runtime_summary import build_fetch_task_progress_payload
+from tests.helpers.mutation import append_and_return
 
 
 class FakeLock:
@@ -127,8 +128,8 @@ def test_run_worker_skips_registry_adjudication_before_sync_by_default(
         start_sync_task=start_sync_task,
         get_app_version=lambda: "1.0.0",
         get_projected_run_history=lambda: SimpleNamespace(child_tasks={}),
-        run_registry_conflict_adjudication=lambda payload: (
-            registry_calls.append(payload) or {"checkedFamilyCount": 0, "demoted": 0}
+        run_registry_conflict_adjudication=lambda payload: append_and_return(
+            registry_calls, payload, {"checkedFamilyCount": 0, "demoted": 0}
         ),
     )
 

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts import source_policy_soak_report as soak
 from src.jobs.adapters.static_sources import static_source_name_for_registry_row
@@ -10,14 +11,14 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _gate_ids(report: dict[str, object]) -> set[str]:
-    return {str(gate.get("id")) for gate in report["qualityGates"]}  # type: ignore[index, union-attr]
+def _gate_ids(report: dict[str, Any]) -> set[str]:
+    return {str(gate.get("id")) for gate in report["qualityGates"]}
 
 
 def _write_suppression_eligibility_runtime(
     data_dir: Path,
     *,
-    source_rows: list[dict[str, object]] | None = None,
+    source_rows: list[dict[str, Any]] | None = None,
     include_static_registry: bool = True,
     static_bucket: str = "active",
     static_id: str | None = "static:studio",
@@ -57,7 +58,7 @@ def _write_suppression_eligibility_runtime(
             }
         },
     )
-    active_rows = [
+    active_rows: list[dict[str, Any]] = [
         {
             "id": "provider:studio",
             "name": "Studio Greenhouse",

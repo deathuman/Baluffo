@@ -23,7 +23,7 @@ def test_local_data_tracking_normalizes_shared_parity_fixtures() -> None:
             {},
             saved_at=str(item["input"].get("savedAt") or ""),
             now_iso=lambda: "2026-04-01T00:00:00.000Z",
-            normalize_iso=lambda value, fallback="": str(value or fallback),
+            normalize_iso=lambda value, fallback: str(value or fallback),
         )
         assert normalized["pipelinePhase"] == item["expected"]["pipelinePhase"], item["name"]
         assert normalized["outcomeStatus"] == item["expected"]["outcomeStatus"], item["name"]
@@ -54,7 +54,7 @@ def test_local_data_tracking_applies_legacy_source_status_before_base_split() ->
         },
         saved_at="2026-03-08T09:00:00.000Z",
         now_iso=lambda: "2026-04-01T00:00:00.000Z",
-        normalize_iso=lambda value, fallback="": str(value or fallback),
+        normalize_iso=lambda value, fallback: str(value or fallback),
     )
 
     assert normalized["pipelinePhase"] == "interview_2"

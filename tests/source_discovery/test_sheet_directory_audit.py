@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.source_discovery import directory_audit
 
@@ -175,7 +176,7 @@ def test_sheet_directory_csv_fetch_falls_back_to_next_candidate_url() -> None:
 
 
 def test_sheet_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature_mismatch() -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {"schemaVersion": 0},
         {"schemaVersion": 1, "progress": {"complete": False}},
         {"schemaVersion": 1, "runtime": {"configSignature": {"sheetId": "other"}}},
@@ -188,7 +189,7 @@ def test_sheet_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature
     for index, existing in enumerate(cases):
         with workspace_tmpdir(f"sheet-directory-audit-rerun-{index}") as root:
             audit_path = root / "sheet-audit.json"
-            payload = {
+            payload: dict[str, Any] = {
                 "schemaVersion": 1,
                 "updatedAt": datetime.now(UTC).isoformat(),
                 "progress": {"complete": True},

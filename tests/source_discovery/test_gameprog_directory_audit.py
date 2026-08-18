@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,7 @@ def _gameprog_payloads() -> dict[str, str]:
     }
 
 
-def _fetch_from(payloads: dict[str, str]):
+def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
     def fake_fetch(url: str, _: int) -> str:
         if url not in payloads:
             raise RuntimeError(f"unexpected URL: {url}")

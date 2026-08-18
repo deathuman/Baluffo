@@ -14,7 +14,7 @@ def test_install_git_hooks_fails_fast_when_mypy_is_missing(monkeypatch, capsys) 
         check=False,
         capture_output=False,
         text=False,
-    ):  # type: ignore[no-untyped-def]
+    ):
         calls.append(command)
 
         class Result:
@@ -43,7 +43,7 @@ def test_install_git_hooks_sets_core_hooks_path_after_mypy_check(monkeypatch, ca
         check=False,
         capture_output=False,
         text=False,
-    ):  # type: ignore[no-untyped-def]
+    ):
         calls.append(command)
 
         class Result:
@@ -76,7 +76,7 @@ def test_install_git_hooks_skips_mypy_check_in_ci(monkeypatch, capsys) -> None:
         check=False,
         capture_output=False,
         text=False,
-    ):  # type: ignore[no-untyped-def]
+    ):
         calls.append(command)
 
         class Result:

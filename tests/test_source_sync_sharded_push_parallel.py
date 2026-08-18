@@ -79,7 +79,7 @@ def test_push_sharded_snapshot_serializes_branch_mutating_shard_writes() -> None
         snapshot,
         max_shard_size=1_000,
         bundle=bundle,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     changed_count = int(result["metrics"]["changedShardCount"])
@@ -111,7 +111,7 @@ def test_push_sharded_snapshot_commits_manifest_after_shard_verification() -> No
         snapshot,
         max_shard_size=1_000,
         bundle=bundle,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     manifest_index = next(

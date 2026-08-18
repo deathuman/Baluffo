@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 from src.bridge.api import BridgeApi
@@ -26,14 +26,21 @@ class _RuntimeConfig:
     owner_idle_timeout_s: float = 0.0
     root: Any = None
     data_dir: Any = None
+    container_mode: bool = False
 
 
 class _FakeHandler:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
+        self.bytes_sent: list[dict[str, Any]] = []
 
     def send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": int(status), "payload": payload})
+
+    def send_bytes(
+        self, body: bytes, *, content_type: str, status: int = 200, **_headers: Any
+    ) -> None:
+        self.bytes_sent.append({"status": int(status), "body": body, "content_type": content_type})
 
 
 class _FakeDesktopLocalDataStore:
@@ -79,21 +86,21 @@ def _make_api(tmp_path: Path) -> BridgeApi:
         FETCHER_LOG_PATH=tmp_path / "fetcher.log",
         STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
     )
-    api.desktop_local_data_store = lambda: store  # type: ignore[assignment]
-    api.get_desktop_session_payload = lambda: {  # type: ignore[assignment]
+    api.desktop_local_data_store = lambda: store
+    api.get_desktop_session_payload = lambda: {
         "sessionId": "desktop-session-1",
         "ownerToken": "desktop-owner-1",
         "lastActivityAt": "2024-01-01T00:00:00Z",
     }
-    api.load_state = load_state  # type: ignore[assignment]
-    api.summarize_state = summarize_state  # type: ignore[assignment]
-    api.get_registry_summary_payload = lambda: {  # type: ignore[assignment]
+    api.load_state = load_state
+    api.summarize_state = summarize_state
+    api.get_registry_summary_payload = lambda: {
         **summarize_state(load_state()),
         "hiddenPendingCount": 0,
         "authorityMode": "json",
         "updatedAt": "2026-06-03T00:00:00+00:00",
     }
-    api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}  # type: ignore[assignment]
+    api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}
     return api
 
 
@@ -103,10 +110,10 @@ def _make_disconnecting_get_handler(api: BridgeApi, path: str):
     handler.path = path
     handler.command = "GET"
     handler.close_connection = False
-    handler.wfile = _DisconnectingWriter()
-    handler.send_response = lambda *_args, **_kwargs: None
-    handler.send_header = lambda *_args, **_kwargs: None
-    handler.end_headers = lambda: None
+    handler.wfile = cast(Any, _DisconnectingWriter())
+    cast(Any, handler).send_response = lambda *_args, **_kwargs: None
+    cast(Any, handler).send_header = lambda *_args, **_kwargs: None
+    cast(Any, handler).end_headers = lambda: None
     return handler
 
 
@@ -153,9 +160,9 @@ def test_get_routes_discovery_report_success_and_json_serializable(tmp_path: Pat
     )
 
     assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
-    assert handler.sent[-1]["status"] == 200
+    assert handler.bytes_sent[-1]["status"] == 200
     # Ensure we can JSON-encode whatever the route returned.
-    json.dumps(handler.sent[-1]["payload"])
+    json.dumps(json.loads(handler.bytes_sent[-1]["body"].decode("utf-8")))
 
 
 def test_get_routes_discovery_candidates_returns_persisted_rows(tmp_path: Path) -> None:
@@ -191,8 +198,9 @@ def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: P
 
     with patch("src.source_registry_io.load_runtime_evidence", side_effect=_broken_loader):
         assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
-    assert handler.sent[-1]["status"] == 500
-    assert handler.sent[-1]["payload"]["error"] == "failed_to_load_discovery_report"
+    body = json.loads(handler.bytes_sent[-1]["body"].decode("utf-8"))
+    assert handler.bytes_sent[-1]["status"] == 500
+    assert body["error"] == "failed_to_load_discovery_report"
 
 
 def test_handler_swallows_client_disconnect_for_json_get_response(tmp_path: Path) -> None:
@@ -202,7 +210,7 @@ def test_handler_swallows_client_disconnect_for_json_get_response(tmp_path: Path
     def bridge_log(level: str, message: str, **fields: Any) -> None:
         log_calls.append((message, {"level": level, **fields}))
 
-    api.bridge_log = bridge_log  # type: ignore[assignment]
+    api.bridge_log = bridge_log
     handler = _make_disconnecting_get_handler(api, "/registry/summary")
 
     handler.do_GET()
@@ -219,7 +227,7 @@ def test_handler_swallows_client_disconnect_for_bytes_get_response(tmp_path: Pat
     def bridge_log(level: str, message: str, **fields: Any) -> None:
         log_calls.append((message, {"level": level, **fields}))
 
-    api.bridge_log = bridge_log  # type: ignore[assignment]
+    api.bridge_log = bridge_log
     (api.DISCOVERY_REPORT_PATH).write_text(
         json.dumps(
             {
@@ -281,7 +289,7 @@ def test_post_routes_run_discovery_passes_payload_by_keyword(tmp_path: Path) -> 
             "preset": str((payload or {}).get("preset") or ""),
         }
 
-    api.trigger_discovery_task = _trigger_discovery_task  # type: ignore[assignment]
+    api.trigger_discovery_task = _trigger_discovery_task
 
     assert (
         handle_post(handler, api=api, path="/tasks/run-discovery", payload={"preset": "uncapped"})

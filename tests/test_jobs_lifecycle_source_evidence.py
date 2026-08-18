@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from src import jobs_fetcher as jf
 from src.jobs.models import CanonicalJob
@@ -12,7 +13,7 @@ from tests.helpers.temp_paths import workspace_tmpdir
 FINISHED_AT = "2026-04-30T12:00:00+00:00"
 
 
-def _previous_job(source: str, *, status: str = "active") -> dict[str, str]:
+def _previous_job(source: str, *, status: str = "active") -> dict[str, Any]:
     row = {
         "status": status,
         "firstSeenAt": "2026-04-01T09:00:00+00:00",

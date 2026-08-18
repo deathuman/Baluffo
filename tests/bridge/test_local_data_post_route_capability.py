@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
-from src.bridge.routes.post_routes_local_data import handle_post
+from src.bridge.routes.post_routes_local_data import _LocalDataPostRouteApi, handle_post
 from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.mutation import append_and_return
 
 
 class MinimalLocalDataPostStore:
@@ -127,10 +128,10 @@ def _post(
     assert (
         handle_post(
             handler,
-            api=api,
+            api=cast(_LocalDataPostRouteApi, api),
             path=path,
             payload=payload,
-            open_url=lambda url: opened.append(url) is None,
+            open_url=lambda url: append_and_return(opened, url, True),
         )
         is True
     )

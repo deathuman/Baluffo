@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts import source_policy_soak_report as soak
 from src import source_registry
@@ -11,7 +12,7 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _base_fetch_report() -> dict[str, object]:
+def _base_fetch_report() -> dict[str, Any]:
     return {
         "providerCoverage": {
             "totalProviderCandidates": 1,
@@ -109,7 +110,7 @@ def _write_clean_runtime(
     _write_json(data_dir / "source-registry-pending.json", [])
     _write_json(data_dir / "source-registry-rejected.json", [])
     _write_json(data_dir / "source-sync.json", {"schemaVersion": 2, "active": [], "pending": []})
-    recommendations = {
+    recommendations: dict[str, Any] = {
         "pairs": [
             {
                 "staticSourceId": "static:studio",
@@ -128,14 +129,14 @@ def _write_clean_runtime(
     _write_json(data_dir / "source-policy-review-state.json", {"pairs": {}})
 
 
-def _gate_ids(report: dict[str, object]) -> set[str]:
+def _gate_ids(report: dict[str, Any]) -> set[str]:
     return {str(row.get("id")) for row in report.get("qualityGates", []) if isinstance(row, dict)}
 
 
 def _write_scope_conflict_runtime(
     data_dir: Path,
-    active_rows: list[dict[str, object]],
-    jobs: list[dict[str, object]] | None = None,
+    active_rows: list[dict[str, Any]],
+    jobs: list[dict[str, Any]] | None = None,
 ) -> None:
     _write_clean_runtime(data_dir)
     _write_json(data_dir / "source-registry-active.json", active_rows)

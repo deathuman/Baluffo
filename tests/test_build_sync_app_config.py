@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from scripts.build_sync_app_config import (
@@ -10,7 +12,7 @@ from src import source_sync, source_sync_crypto
 _PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"
 
 
-def _payload_kwargs() -> dict[str, str]:
+def _payload_kwargs() -> dict[str, Any]:
     return {
         "app_id": "123456",
         "installation_id": "999999",

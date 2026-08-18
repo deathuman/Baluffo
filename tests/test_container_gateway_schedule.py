@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import src.container_gateway as container_gateway
 from src.bridge.pipeline_control_files import write_pipeline_status
@@ -32,7 +33,7 @@ def _state(tmp_path: Path) -> _GatewayState:
 
 
 def _write_schedule(data_dir: Path, *, interval_hours: int = 12, configured_at: str = "") -> None:
-    payload = {"enabled": True, "intervalHours": interval_hours}
+    payload: dict[str, Any] = {"enabled": True, "intervalHours": interval_hours}
     if configured_at:
         payload["configuredAt"] = configured_at
     (data_dir / "jobs-pipeline-schedule-config.json").write_text(
@@ -299,7 +300,7 @@ def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
 
 def test_gateway_direct_schedule_route_uses_schedule_timeout(tmp_path: Path) -> None:
     state = _state(tmp_path)
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class _DummyHandler:
         def _state(self) -> _GatewayState:
@@ -309,7 +310,7 @@ def test_gateway_direct_schedule_route_uses_schedule_timeout(tmp_path: Path) -> 
             captured["payload"] = payload
 
     handled = container_gateway._GatewayHandler._handle_gateway_control_get(
-        _DummyHandler(),
+        cast(container_gateway._GatewayHandler, _DummyHandler()),
         "/tasks/jobs-pipeline-schedule",
         "",
     )

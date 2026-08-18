@@ -12,6 +12,7 @@ from src.bridge.task_launch_api import (
     TaskLaunchRuntime,
 )
 from src.shared.json_io import read_json
+from tests.helpers.mutation import append_and_return
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -77,7 +78,9 @@ def test_packaged_smoke_heartbeat_bootstrap_mode_starts_controlled_running_repor
             run_background_script=run_background_script,
             save_json_atomic=_save_json_atomic,
             schema_version=1,
-            start_lifecycle_run=lambda **kwargs: lifecycle_rows.append(dict(kwargs)) or {},
+            start_lifecycle_run=lambda **kwargs: append_and_return(
+                lifecycle_rows, dict(kwargs), {}
+            ),
             get_lifecycle_current_runs=lambda: [],
             get_lifecycle_run_history_rows=lambda: [],
         )

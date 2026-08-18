@@ -1,5 +1,6 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -23,12 +24,12 @@ pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 class _CurrentTaskStateCase:
     name: str
     setup: Callable[[], Callable[[], None] | None]
-    assert_payload: Callable[[dict[str, object]], None]
+    assert_payload: Callable[[dict[str, Any]], None]
     pid_is_running: bool | None = None
 
 
 def assert_live_task_event_envelope(
-    event: dict[str, object],
+    event: dict[str, Any],
     *,
     task_type: str,
     run_id: str,
@@ -51,8 +52,8 @@ def start_lifecycle_for_task(
     *,
     run_id: str,
     started_at: str,
-    progress: dict[str, object] | None = None,
-    summary: dict[str, object] | None = None,
+    progress: Mapping[str, object] | None = None,
+    summary: Mapping[str, object] | None = None,
 ) -> None:
     admin_bridge.start_lifecycle_run(
         run_id=run_id,
@@ -203,7 +204,7 @@ def _setup_active_tasks_projection() -> Callable[[], None]:
     return cleanup
 
 
-def _assert_active_tasks_projection(payload: dict[str, object]) -> None:
+def _assert_active_tasks_projection(payload: dict[str, Any]) -> None:
     tasks = payload.get("tasks") or []
     task_types = {str(row.get("taskType") or "") for row in tasks}
     assert payload.get("count") == 4
@@ -253,7 +254,7 @@ def _setup_finished_reports_clear_stale_state() -> None:
     )
 
 
-def _assert_finished_reports_clear_stale_state(payload: dict[str, object]) -> None:
+def _assert_finished_reports_clear_stale_state(payload: dict[str, Any]) -> None:
     assert payload.get("count") == 0
     assert payload.get("tasks") == []
 
@@ -298,7 +299,7 @@ def _setup_heartbeat_gap_fetch() -> None:
     )
 
 
-def _assert_heartbeat_gap_fetch(payload: dict[str, object]) -> None:
+def _assert_heartbeat_gap_fetch(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert payload.get("count") == 1
     assert fetch_row.get("active") is True
@@ -369,7 +370,7 @@ def _setup_active_owner_over_finished_history() -> None:
     )
 
 
-def _assert_active_owner_over_finished_history(payload: dict[str, object]) -> None:
+def _assert_active_owner_over_finished_history(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == "fetch_live_1"
@@ -441,7 +442,7 @@ def _setup_report_finished_while_owner_active() -> None:
     )
 
 
-def _assert_report_finished_while_owner_active(payload: dict[str, object]) -> None:
+def _assert_report_finished_while_owner_active(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == "fetch_report_finished_1"
@@ -504,7 +505,7 @@ def _setup_stale_finished_report_with_live_fetch_owner() -> None:
     )
 
 
-def _assert_stale_finished_report_with_live_fetch_owner(payload: dict[str, object]) -> None:
+def _assert_stale_finished_report_with_live_fetch_owner(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert payload.get("count") == 1
     assert fetch_row.get("active") is True
@@ -573,7 +574,7 @@ def _setup_sparse_fetch_task_artifact_keeps_owner_active() -> None:
     )
 
 
-def _assert_sparse_fetch_task_artifact_keeps_owner_active(payload: dict[str, object]) -> None:
+def _assert_sparse_fetch_task_artifact_keeps_owner_active(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row.get("active") is True
     assert str(fetch_row.get("status") or "") == "running"

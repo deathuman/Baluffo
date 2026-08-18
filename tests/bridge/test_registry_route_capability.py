@@ -12,10 +12,10 @@ from tests.helpers.bridge_api import FakeHandler
 class MinimalRegistryRouteApi:
     def __init__(self, root: Path) -> None:
         self.runtime_config = SimpleNamespace(data_dir=root)
-        self.DISCOVERY_CANDIDATES_PATH = root / "source-discovery-candidates.json"
+        self.DISCOVERY_CANDIDATES_PATH: Path | None = root / "source-discovery-candidates.json"
         self.DISCOVERY_REPORT_PATH = root / "source-discovery-report.json"
         self.JOBS_FETCH_REPORT_PATH = root / "jobs-fetch-report.json"
-        self.state = {
+        self.state: dict[str, Any] = {
             "active": [{"id": "active-1", "name": "Active", "adapter": "greenhouse"}],
             "pending": [
                 {
@@ -44,6 +44,9 @@ class MinimalRegistryRouteApi:
             "updatedAt": "2026-06-19T09:00:00+00:00",
         }
 
+    def get_registry_compact_table_payload(self, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]:
         try:
             payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -70,7 +73,7 @@ def _write_json(path: Path, payload: Any) -> None:
 def test_registry_get_routes_accept_minimal_capability_object(tmp_path: Path) -> None:
     api = MinimalRegistryRouteApi(tmp_path)
     _write_json(
-        api.DISCOVERY_CANDIDATES_PATH,
+        api.DISCOVERY_CANDIDATES_PATH or tmp_path / "source-discovery-candidates.json",
         [{"id": "pending-1", "jobsFound": 4, "sampleCount": 4}],
     )
     _write_json(api.DISCOVERY_REPORT_PATH, {"candidates": []})

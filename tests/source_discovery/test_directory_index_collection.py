@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from src.source_discovery.directory_index_collection import collect_directory_index_entries
@@ -105,7 +107,7 @@ def test_collect_directory_index_entries_dedupes_and_caps_across_indexes() -> No
     def fake_fetch(url: str, _: int) -> str:
         return url.rsplit("/", 1)[-1]
 
-    def parse_index_entries(html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
+    def parse_index_entries(html: str, _base_url: str) -> tuple[list[dict[str, Any]], dict]:
         return (entries_by_index[html], {})
 
     collected = collect_directory_index_entries(

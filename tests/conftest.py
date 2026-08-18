@@ -8,7 +8,7 @@ poison the entire test process.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 
 _BALUFFO_RUNTIME_ISOLATION_KEYS = (
     "BALUFFO_DATA_DIR",
@@ -48,7 +48,7 @@ cleanup_stale_workspace_tmpdirs(
 
 
 @pytest.fixture(autouse=True)
-def _clear_baluffo_runtime_env_each_test() -> None:
+def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
     """Prevent one test (or host) from leaving desktop spawn env around for the next test."""
     for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
         os.environ.pop(key, None)

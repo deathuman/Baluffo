@@ -12,6 +12,7 @@ from src.source_discovery.active_audit_runtime import (
     run_active_audit_batch,
     run_active_audit_loop,
 )
+from tests.helpers.mutation import append_and_return
 
 
 def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
@@ -50,15 +51,16 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
                 browser_recovery_candidates=[{"url": "https://shell.example"}],
                 homepages_fetched=2,
             ),
-            fetch_recovery=lambda jobs, label: (
-                fetch_labels.append(label)
-                or ActiveAuditRecoveryFetchResult(
+            fetch_recovery=lambda jobs, label: append_and_return(
+                fetch_labels,
+                label,
+                ActiveAuditRecoveryFetchResult(
                     results=[
                         {"url": job["url"], "payload": job.get("payload", {})} for job in jobs
                     ],
                     unique_jobs=len(jobs),
                     network_jobs=len(jobs),
-                )
+                ),
             ),
             apply_recovery=lambda results, grouped, finalize: ActiveAuditRecoveryApplicationResult(
                 provider_candidates=[] if finalize else [{"adapter": "ashby", "url": "wave1"}],
@@ -94,8 +96,8 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
                 )
             ),
             update_summary=summary_updates.append,
-            probe_candidates=lambda candidates: (
-                probed_candidates.append(candidates) or [{"candidate": candidates[0]}]
+            probe_candidates=lambda candidates: append_and_return(
+                probed_candidates, candidates, [{"candidate": candidates[0]}]
             ),
             apply_probe_results=applied_probe_results.append,
             row_identity=lambda row: str(row.get("url") or ""),
@@ -317,38 +319,42 @@ def test_active_audit_batch_strategy_builder_wires_callbacks() -> None:
     events: list[str] = []
 
     strategy = active_audit_runtime.build_active_audit_batch_strategy(
-        prepare_rows=lambda rows: (
-            events.append("prepare") or ActiveAuditPreparedRows(homepage_rows=rows)
+        prepare_rows=lambda rows: append_and_return(
+            events, "prepare", ActiveAuditPreparedRows(homepage_rows=rows)
         ),
-        fetch_homepages=lambda rows: (
-            events.append("fetch")
-            or [{"ok": True, "url": row["url"], "payload": row, "text": ""} for row in rows]
+        fetch_homepages=lambda rows: append_and_return(
+            events,
+            "fetch",
+            [{"ok": True, "url": row["url"], "payload": row, "text": ""} for row in rows],
         ),
-        analyze_homepages=lambda _results: (
-            events.append("analyze") or ActiveHomepageBatchResult(homepages_fetched=1)
+        analyze_homepages=lambda _results: append_and_return(
+            events, "analyze", ActiveHomepageBatchResult(homepages_fetched=1)
         ),
-        fetch_recovery=lambda _jobs, label: (
-            events.append(f"recover:{label[-6:]}") or ActiveAuditRecoveryFetchResult()
+        fetch_recovery=lambda _jobs, label: append_and_return(
+            events, f"recover:{label[-6:]}", ActiveAuditRecoveryFetchResult()
         ),
-        apply_recovery=lambda _results, _grouped, finalize: (
-            events.append(f"apply:{finalize}") or ActiveAuditRecoveryApplicationResult()
+        apply_recovery=lambda _results, _grouped, finalize: append_and_return(
+            events, f"apply:{finalize}", ActiveAuditRecoveryApplicationResult()
         ),
         recovery_homepage_key=lambda _job: "",
         merge_candidates=lambda direct, provider, static, recovery_provider, recovery_static: (
-            events.append("merge")
-            or ActiveAuditCandidateMergeResult(
-                candidates=[
-                    *direct,
-                    *provider,
-                    *static,
-                    *recovery_provider,
-                    *recovery_static,
-                ]
+            append_and_return(
+                events,
+                "merge",
+                ActiveAuditCandidateMergeResult(
+                    candidates=[
+                        *direct,
+                        *provider,
+                        *static,
+                        *recovery_provider,
+                        *recovery_static,
+                    ]
+                ),
             )
         ),
         merge_artifact_updates=lambda *_args: events.append("artifact"),
         update_summary=lambda _counts: events.append("summary"),
-        probe_candidates=lambda _candidates: events.append("probe") or [],
+        probe_candidates=lambda _candidates: append_and_return(events, "probe", []),
         apply_probe_results=lambda _results: events.append("probe_apply"),
         row_identity=lambda row: str(row.get("url") or ""),
         append_timing=lambda _timing: events.append("timing"),

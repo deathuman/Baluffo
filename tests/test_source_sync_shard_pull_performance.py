@@ -1,4 +1,5 @@
 import threading
+from typing import Any
 
 import pytest
 
@@ -20,7 +21,7 @@ from tests.test_source_sync_shard_io import (
 
 
 class _MappedFakeSyncModule(_FakeSyncModule):
-    def __init__(self, responses_by_suffix: dict[str, tuple[int, dict] | tuple[int, dict, dict]]):
+    def __init__(self, responses_by_suffix: dict[str, Any]):
         super().__init__([])
         self.responses_by_suffix = dict(responses_by_suffix)
         self._lock = threading.Lock()
@@ -47,7 +48,7 @@ def test_read_shard_validates_payload_and_returns_rows() -> None:
     )[0]
     module = _FakeSyncModule([(200, {"content": _encoded_bytes(shard.payload_bytes)})])
 
-    result = read_shard(module, _config(), shard.manifest_entry(), opener=object())
+    result = read_shard(module, _config(), shard.manifest_entry(), opener=lambda *_a, **_kw: None)
 
     assert result["entry"] == shard.manifest_entry()
     assert result["rows"] == _payload(shard)["rows"]
@@ -64,13 +65,13 @@ def test_read_shard_rejects_payload_hash_mismatch() -> None:
     module = _FakeSyncModule([(200, {"content": _encoded_bytes(bytes(payload))})])
 
     with pytest.raises(SourceSyncShardError, match="sha256 mismatch"):
-        read_shard(module, _config(), shard.manifest_entry(), opener=object())
+        read_shard(module, _config(), shard.manifest_entry(), opener=lambda *_a, **_kw: None)
 
 
 def test_read_sharded_snapshot_returns_none_when_manifest_absent_for_v2_fallback() -> None:
     module = _FakeSyncModule([(404, {"message": "Not Found"})])
 
-    assert read_sharded_snapshot(module, _config(), opener=object()) is None
+    assert read_sharded_snapshot(module, _config(), opener=lambda *_a, **_kw: None) is None
     assert len(module.calls) == 1
     assert module.calls[0]["url"].endswith("baluffo/source-sync/manifest.json?ref=main")
 
@@ -93,7 +94,7 @@ def test_read_sharded_snapshot_skips_when_manifest_sha_is_unchanged() -> None:
     snapshot = read_sharded_snapshot(
         module,
         _config(),
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
         known_manifest_sha="manifestsha",
         progress_callback=lambda **payload: progress.append(payload),
     )
@@ -139,7 +140,7 @@ def test_read_sharded_snapshot_reads_shards_in_parallel_and_reports_progress() -
     snapshot = read_sharded_snapshot(
         module,
         _config(),
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
         progress_callback=lambda **payload: progress.append(payload),
         max_workers=2,
     )
@@ -183,4 +184,4 @@ def test_read_sharded_snapshot_fails_without_partial_snapshot_on_shard_error() -
     module = _MappedFakeSyncModule(responses)
 
     with pytest.raises(RuntimeError, match="boom"):
-        read_sharded_snapshot(module, _config(), opener=object(), max_workers=2)
+        read_sharded_snapshot(module, _config(), opener=lambda *_a, **_kw: None, max_workers=2)

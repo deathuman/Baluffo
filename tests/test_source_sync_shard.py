@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import json
+from typing import Any, cast
 
 import pytest
 
@@ -26,8 +27,8 @@ def _row(index: int, *, extra_chunks: int = 8) -> dict[str, str]:
     }
 
 
-def _payload(shard) -> dict:
-    return json.loads(gzip.decompress(shard.payload_bytes).decode("utf-8"))
+def _payload(shard) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(gzip.decompress(shard.payload_bytes).decode("utf-8")))
 
 
 def _rows_with_same_prefix(prefix: str, count: int) -> list[dict[str, str]]:

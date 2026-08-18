@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -87,13 +87,16 @@ def _run_plugin(
             return html_or_fetch(url, timeout_s)
         return html_or_fetch
 
-    return plugin.run(
-        fetch_text=fetch_text,
-        timeout_s=10,
-        retries=0,
-        backoff_s=0.0,
-        pages=[page_url],
-        source_row=source_row,
+    return cast(
+        list[dict[str, Any]],
+        plugin.run(
+            fetch_text=fetch_text,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=[page_url],
+            source_row=source_row,
+        ),
     )
 
 

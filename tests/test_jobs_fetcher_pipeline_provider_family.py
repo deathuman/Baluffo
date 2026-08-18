@@ -1,6 +1,7 @@
 """Tests for jobs fetcher pipeline provider-family behavior."""
 
 import json
+from typing import Any
 from unittest import mock
 
 from src import jobs_fetcher as jf
@@ -10,8 +11,8 @@ from tests.helpers.concurrency import BlockingActiveCounter
 def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
     from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_module
 
-    calls = []
-    captured = {}
+    calls: list[str] = []
+    captured: dict[str, Any] = {}
 
     def _registry_entries(adapter: str):
         assert adapter == "greenhouse"
@@ -113,8 +114,8 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
 def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> None:
     from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_module
 
-    calls = []
-    captured = {}
+    calls: list[str] = []
+    captured: dict[str, Any] = {}
 
     def _registry_entries(adapter: str):
         assert adapter == "lever"
@@ -194,8 +195,8 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
 def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
     from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
 
-    calls = []
-    captured = {}
+    calls: list[str] = []
+    captured: dict[str, Any] = {}
 
     def _registry_entries(adapter: str):
         assert adapter == "teamtailor"
@@ -260,8 +261,8 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
 def test_teamtailor_sources_fetch_detail_pages_with_bounded_concurrency() -> None:
     from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
 
-    captured = {}
-    max_workers_seen = []
+    captured: dict[str, Any] = {}
+    max_workers_seen: list[int] = []
 
     class FakeExecutor:
         def __init__(self, max_workers: int) -> None:
@@ -356,7 +357,7 @@ def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
     from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
 
     fetches = BlockingActiveCounter(auto_release_at=2)
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def _registry_entries(adapter: str) -> list[dict[str, object]]:
         assert adapter == "teamtailor"

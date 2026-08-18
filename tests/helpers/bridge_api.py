@@ -21,6 +21,7 @@ class BridgeRuntimeConfigStub:
     desktop_session_id: str = ""
     started_by: str = ""
     owner_idle_timeout_s: float = 0.0
+    container_mode: bool = False
     root: Any = None
     data_dir: Any = None
 
@@ -50,10 +51,10 @@ class FakeDesktopLocalDataStore:
     """Mock for desktop local data operations."""
 
     def __init__(self) -> None:
-        self.users: dict[str, Any] = {}
+        self.users: dict[str, dict[str, Any]] = {}
         self.saved_jobs: dict[str, list[dict]] = {}
         self.attachments: dict[str, Any] = {}
-        self._current_user: dict | None = None
+        self._current_user: dict[str, Any] | None = None
 
     def sign_in(self, name: str) -> dict[str, Any]:
         if not name.strip():
@@ -149,7 +150,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
         return state
 
     def persist_state_and_auto_sync(
-        new_state: dict[str, Any], reason: str = None
+        new_state: dict[str, Any], reason: str | None = None
     ) -> dict[str, Any]:
         persisted = {
             bucket: [dict(row) for row in (rows or [])]
@@ -166,11 +167,11 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
             "rejectedCount": len(state_data.get("rejected") or []),
         }
 
-    def source_identity(row: dict) -> str:
-        return row.get("id", "")
+    def source_identity(row: dict[str, Any]) -> str:
+        return str(row.get("id") or "")
 
-    def source_url_fingerprint(row: dict) -> str:
-        return row.get("listing_url", "")
+    def source_url_fingerprint(row: dict[str, Any]) -> str:
+        return str(row.get("listing_url") or "")
 
     def move_entries(
         rows: list[dict[str, Any]], selected_ids: list[str]
@@ -252,7 +253,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.start_jobs_pipeline_task = lambda payload: {"started": True}
     api.start_sync_task = lambda action, reason, automatic: {"started": True}
     api.start_fetcher_task = lambda payload: {"started": True}
-    api.update_saved_sync_settings = lambda p: None
+    api.update_saved_sync_settings = lambda payload: payload
     api.update_saved_discovery_settings = lambda payload: {
         "autoApproveHealthyPendingOnComplete": bool(
             (payload or {}).get("autoApproveHealthyPendingOnComplete", True)
@@ -272,7 +273,6 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.bridge_log = lambda *a, **kw: None
     api.set_sync_status = lambda **kw: None
     api.add_manual_source = lambda url: {"id": "new-src", "url": url}
-    api.update_pending_source = lambda src_id, updates: None
     api.get_update_status_payload = lambda: {
         "schemaVersion": 1,
         "currentVersion": "0.1.0",

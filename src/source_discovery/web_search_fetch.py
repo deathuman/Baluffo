@@ -4,6 +4,7 @@ import asyncio
 import random
 import re
 import time
+from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -52,7 +53,7 @@ def fetch_text(url: str, timeout_s: int) -> str:
         return str(resp.read().decode(charset, errors="replace"))
 
 
-async def async_fetch_text_httpx(client: httpx.AsyncClient, url: str, timeout_s: int) -> str:
+async def async_fetch_text_httpx(client: Any, url: str, timeout_s: int) -> str:
     resp = await client.get(url, headers=discovery_request_headers(), follow_redirects=True)
     resp.raise_for_status()
     resp.encoding = resp.encoding or "utf-8"

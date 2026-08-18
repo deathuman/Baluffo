@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from src.url_hosts import url_host, url_host_matches_domain
 
@@ -10,8 +11,8 @@ from ._helpers import discovery_orchestrator, mock, override_discovery_runtime, 
 def _stage_config(
     *,
     audit_path: str | None = None,
-) -> dict[str, object]:
-    config: dict[str, object] = {
+) -> dict[str, Any]:
+    config: dict[str, Any] = {
         "stageToggles": {
             "curatedSeed": False,
             "sheetDirectory": False,
@@ -27,7 +28,7 @@ def _stage_config(
         "gamedevmap": {"enabled": False},
     }
     if audit_path is not None:
-        web_search_config: dict[str, object] = {
+        web_search_config: dict[str, Any] = {
             "activeAuditPath": audit_path,
             "activeAuditTtlMinutes": 60,
         }
@@ -206,7 +207,7 @@ def test_run_discovery_web_search_browser_recovery_cli_updates_only_artifact() -
         ):
             audit_path = root / "web-audit.json"
             config = _stage_config(audit_path=str(audit_path))
-            called: dict[str, object] = {}
+            called: dict[str, Any] = {}
 
             def fake_recovery(timeout_s: int, **kwargs):
                 called["timeout"] = timeout_s

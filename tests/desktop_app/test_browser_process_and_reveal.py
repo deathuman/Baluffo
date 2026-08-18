@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -101,7 +102,7 @@ def test_is_process_alive_returns_false_for_signaled_windows_process_handle() ->
 @pytest.mark.windows
 def test_is_process_alive_returns_true_for_running_windows_process_handle() -> None:
     def _get_exit_code(_handle: int, exit_code_ptr: object) -> int:
-        exit_code_ptr._obj.value = 259
+        cast(Any, exit_code_ptr)._obj.value = 259
         return 1
 
     kernel32 = SimpleNamespace(

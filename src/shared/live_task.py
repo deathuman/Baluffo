@@ -65,6 +65,7 @@ class LiveTaskEvent(TypedDict, total=False):
 
 
 class LiveTaskPayload(TypedDict, total=False):
+    source: str
     taskType: str
     status: str
     active: bool
@@ -75,6 +76,7 @@ class LiveTaskPayload(TypedDict, total=False):
     taskProgress: LiveTaskProgress
     summary: dict[str, Any]
     workItems: list[LiveTaskWorkItem]
+    workItemCount: int
     recentEvents: list[LiveTaskEvent]
     outputs: dict[str, Any]
 
@@ -89,7 +91,6 @@ class TaskStateRow(LiveTaskPayload, total=False):
     ownerKind: str
     ownerPid: int
     progress: LiveTaskProgress
-    workItemCount: int
     workItemsTruncated: bool
     recentEventCount: int
     recentEventsTruncated: bool
@@ -98,6 +99,7 @@ class TaskStateRow(LiveTaskPayload, total=False):
 
 
 class TaskStatePayload(TypedDict, total=False):
+    source: str
     tasks: list[TaskStateRow]
     count: int
     diagnostics: list[dict[str, Any]]

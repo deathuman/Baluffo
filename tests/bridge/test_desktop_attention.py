@@ -1,28 +1,29 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 from src.bridge import desktop_attention as attention
 
 
 class FakeUser32:
-    def __init__(self, windows: dict[int, dict[str, object]], foreground: int = 0) -> None:
+    def __init__(self, windows: dict[int, dict[str, Any]], foreground: int = 0) -> None:
         self.windows = windows
         self.foreground = foreground
         self.flash_calls: list[dict[str, int]] = []
 
     @staticmethod
-    def _value(value: object) -> int:
+    def _value(value: Any) -> int:
         raw = getattr(value, "value", value)
         return int(raw or 0)
 
-    def IsWindow(self, hwnd: object) -> bool:
+    def IsWindow(self, hwnd: Any) -> bool:
         return bool(self.windows.get(self._value(hwnd), {}).get("is_window", True))
 
-    def IsWindowVisible(self, hwnd: object) -> bool:
+    def IsWindowVisible(self, hwnd: Any) -> bool:
         return bool(self.windows.get(self._value(hwnd), {}).get("visible", True))
 
-    def GetWindowThreadProcessId(self, hwnd: object, pid_pointer: object) -> int:
+    def GetWindowThreadProcessId(self, hwnd: Any, pid_pointer: Any) -> int:
         pid = int(self.windows.get(self._value(hwnd), {}).get("pid", 0) or 0)
         pid_pointer._obj.value = pid
         return 1
@@ -30,7 +31,7 @@ class FakeUser32:
     def GetForegroundWindow(self) -> int:
         return int(self.foreground)
 
-    def FlashWindowEx(self, info_pointer: object) -> int:
+    def FlashWindowEx(self, info_pointer: Any) -> int:
         info = info_pointer._obj
         self.flash_calls.append(
             {
@@ -41,7 +42,7 @@ class FakeUser32:
         )
         return 0
 
-    def EnumWindows(self, callback: object, _lparam: int) -> bool:
+    def EnumWindows(self, callback: Any, _lparam: int) -> bool:
         for hwnd in self.windows:
             callback(hwnd, 0)
         return True

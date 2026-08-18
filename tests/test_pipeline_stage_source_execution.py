@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import pytest
 
@@ -14,6 +15,7 @@ from src.jobs.pipeline_stage_source_execution import (
     run_source_execution_stage,
 )
 from tests.helpers.concurrency import BlockingActiveCounter
+from tests.helpers.mutation import append_and_return
 
 
 class _ThreadLocal:
@@ -33,7 +35,7 @@ def test_stage_progress_logging_is_windows_console_safe(monkeypatch) -> None:
     stdout = io.TextIOWrapper(raw_buffer, encoding="cp1252", errors="strict")
     monkeypatch.setattr("sys.stdout", stdout)
 
-    task_rows = {
+    task_rows: dict[str, Any] = {
         "emoji_source": {
             "status": "pending",
             "startedAt": "",
@@ -106,7 +108,7 @@ def test_stage_enables_browser_for_static_sources_and_not_non_static_sources(mon
     monkeypatch.setattr(
         stage_mod,
         "resolve_fetch_browser_fallback_helper",
-        lambda: lambda url, timeout: browser_calls.append((url, timeout)) or ("", ""),
+        lambda: lambda url, timeout: append_and_return(browser_calls, (url, timeout), ("", "")),
     )
 
     config = SourceExecutionStageConfig(
@@ -297,14 +299,14 @@ def test_stage_persists_browser_fallback_circuit_breaker_state(monkeypatch) -> N
         kwargs["try_playwright"]("https://example.com/browser", 1)
         return []
 
-    source_state_rows = {
+    source_state_rows: dict[str, Any] = {
         "eligible_source": {
             "browserEscalationEligible": True,
             "lastFingerprint": "fp",
             "lastListingFingerprint": "listing",
         }
     }
-    task_rows = {
+    task_rows: dict[str, Any] = {
         "eligible_source": {
             "status": "pending",
             "startedAt": "",

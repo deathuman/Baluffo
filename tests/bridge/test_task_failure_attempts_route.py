@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
@@ -21,7 +22,7 @@ def _call_route(tmp_path: Path) -> dict:
         query={},
     )
     assert handler.sent[-1]["status"] == 200
-    return handler.sent[-1]["payload"]
+    return cast(dict[str, Any], handler.sent[-1]["payload"])
 
 
 def test_task_failure_attempts_route_handles_missing_reports(tmp_path: Path) -> None:

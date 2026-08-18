@@ -220,7 +220,7 @@ MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
 parse_iso: Callable[[Any], datetime | None]
-pid_is_running: Callable[[int], bool]
+pid_is_running: Callable[[int | None], bool]
 _TASK_HISTORY = AdminTaskHistory(
     history_path=lambda: OPS_HISTORY_PATH,
     task_state_path=lambda: TASK_STATE_PATH,
@@ -276,6 +276,7 @@ _get_desktop_update_service: Callable[[], _DesktopUpdateServiceLike] = _bind_adm
 )
 
 RuntimeConfig = bridge_config.RuntimeConfig
+ContainerConfigLike = bridge_config.ContainerConfigLike
 
 
 RUNTIME_CONFIG: Any = RuntimeConfig(
@@ -322,7 +323,7 @@ configure_runtime_paths = _bind_admin_root(admin_entrypoint_runtime_mod.configur
 startup_banner = _bind_admin_root(admin_entrypoint_runtime_mod.startup_banner)
 
 
-def build_bridge_api(config: RuntimeConfig) -> Any:
+def build_bridge_api(config: RuntimeConfig | ContainerConfigLike) -> Any:
     return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)
 
 

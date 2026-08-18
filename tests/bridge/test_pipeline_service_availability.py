@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -45,7 +46,7 @@ def test_post_publish_callback_runs_once_for_short_success() -> None:
     calls: list[dict[str, Any]] = []
     service = _make_service(
         now_iso=lambda: "2026-05-06T19:00:01Z",
-        pipeline_post_publish_callback=lambda payload: calls.append(payload) or {},
+        pipeline_post_publish_callback=lambda payload: append_and_return(calls, payload, {}),
     )
     service._status.update(
         {
@@ -68,7 +69,7 @@ def test_post_publish_callback_skips_failed_and_canceled_runs() -> None:
     calls: list[dict[str, Any]] = []
     for run_id, status in (("pipeline_failed", "error"), ("pipeline_canceled", "canceled")):
         service = _make_service(
-            pipeline_post_publish_callback=lambda payload: calls.append(payload) or {},
+            pipeline_post_publish_callback=lambda payload: append_and_return(calls, payload, {}),
         )
         service._status.update(
             {

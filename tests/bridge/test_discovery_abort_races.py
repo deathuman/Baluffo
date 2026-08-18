@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso_utc(value: str | None) -> datetime | None:
@@ -66,11 +67,11 @@ def test_discovery_watch_abort_intent_repairs_finished_report_and_skips_sync(
             clear_task_state=lambda _task_type: None,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
-            persist_state_and_auto_sync=lambda state, **_kwargs: (
-                sync_calls.append("persist") or state
+            persist_state_and_auto_sync=lambda state, **_kwargs: append_and_return(
+                sync_calls, "persist", state
             ),
             load_sync_runtime_state=lambda: {},
-            maybe_trigger_auto_sync_push=lambda reason: sync_calls.append(reason) or True,
+            maybe_trigger_auto_sync_push=lambda reason: append_and_return(sync_calls, reason, True),
             mark_discovery_sync_finished=lambda finished_at: sync_calls.append(finished_at),
             get_lifecycle_row=lambda _run_id, _task_type: {
                 "runId": "discovery_1",

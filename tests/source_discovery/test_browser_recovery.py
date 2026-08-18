@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import time
+from typing import Any
 
 from src.source_discovery import browser_recovery
 from tests.helpers.concurrency import BlockingActiveCounter
@@ -73,7 +74,7 @@ def test_browser_recovery_candidate_row_reproduces_gamedevmap_shape() -> None:
 
 
 def test_append_browser_recovery_candidate_row_validates_and_preserves_shape() -> None:
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
 
     assert (
         browser_recovery.append_browser_recovery_candidate_row(
@@ -148,14 +149,17 @@ def test_browser_recovery_summary_counts_reason_breakdown() -> None:
 
 
 def test_analyze_browser_recovery_fetch_results_routes_common_analysis_flow() -> None:
-    browser_state: dict[str, object] = {}
+    browser_state: dict[str, Any] = {}
     processed: set[str] = set()
-    rendered_static = {"adapter": "static", "listing_url": "https://one.example/jobs"}
-    provider = {"adapter": "greenhouse", "slug": "one"}
+    rendered_static: dict[str, Any] = {
+        "adapter": "static",
+        "listing_url": "https://one.example/jobs",
+    }
+    provider: dict[str, Any] = {"adapter": "greenhouse", "slug": "one"}
     probe_result = (rendered_static, True, 2, "", 0)
 
     def analyze_success(
-        row: dict[str, object],
+        row: dict[str, Any],
         source_url: str,
         html: str,
     ) -> browser_recovery.BrowserRecoveryPageAnalysis:
@@ -170,11 +174,11 @@ def test_analyze_browser_recovery_fetch_results_routes_common_analysis_flow() ->
         )
 
     def handle_failure(
-        _row: dict[str, object],
+        _row: dict[str, Any],
         source_url: str,
         error: str,
-        current_browser_state: dict[str, object],
-    ) -> list[dict[str, object]]:
+        current_browser_state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         browser_recovery.append_failure_sample(
             current_browser_state,
             {"url": source_url, "error": error},
@@ -276,7 +280,7 @@ def test_browser_fetch_pages_async_honors_concurrency_and_durations() -> None:
 
 
 def test_browser_recovery_samples_are_capped_and_state_updates_counts() -> None:
-    state: dict[str, object] = {}
+    state: dict[str, Any] = {}
     for index in range(3):
         browser_recovery.append_fetch_sample(
             state,
@@ -325,7 +329,7 @@ def test_run_browser_recovery_batch_calls_fetch_and_analysis_once(monkeypatch) -
 
     def fake_analysis(
         fetch_results: list[browser_recovery.BrowserFetchResult],
-        _browser_recovery: dict[str, object],
+        _browser_recovery: dict[str, Any],
         processed: set[str],
     ) -> browser_recovery.BrowserRecoveryAnalysis:
         processed.add("url:https://studio.example/jobs")
@@ -371,7 +375,7 @@ def test_browser_recovery_merge_helpers_filter_count_and_update_state() -> None:
         ({"adapter": "static", "name": "Failed"}, False, 0, "timeout", 4),
     ]
     combined = browser_recovery.combine_probe_results(rendered, probed)
-    state: dict[str, object] = {}
+    state: dict[str, Any] = {}
     started = time.perf_counter()
 
     positives = browser_recovery.positive_probe_candidates(
@@ -417,10 +421,10 @@ def test_browser_recovery_merge_helpers_filter_count_and_update_state() -> None:
 def test_merge_browser_recovery_results_applies_callbacks_and_updates_state() -> None:
     rendered = [({"adapter": "static", "name": "Rendered"}, True, 2, "", 1)]
     probed = [({"adapter": "greenhouse", "name": "Provider"}, True, 3, "", 2)]
-    state: dict[str, object] = {}
-    merged_results: list[object] = []
-    marked: list[tuple[list[object], int]] = []
-    active_rows: list[dict[str, object]] = []
+    state: dict[str, Any] = {}
+    merged_results: list[Any] = []
+    marked: list[tuple[list[Any], int]] = []
+    active_rows: list[dict[str, Any]] = []
     started = time.perf_counter()
 
     def merge_probe_results(combined):
@@ -465,7 +469,7 @@ def test_merge_browser_recovery_results_applies_callbacks_and_updates_state() ->
 def test_run_browser_recovery_batch_skips_probe_for_rendered_validated_candidate(
     monkeypatch,
 ) -> None:
-    probe_calls: list[object] = []
+    probe_calls: list[Any] = []
     rendered_result = ({"adapter": "static", "name": "Studio Jobs"}, True, 3, "", 0)
 
     async def fake_fetch(
@@ -605,9 +609,9 @@ def test_run_browser_recovery_assembly_selects_fetches_merges_and_updates_state(
         {"url": "https://done.example/jobs"},
         {"url": "https://studio.example/jobs"},
     ]
-    state: dict[str, object] = {"processedKeys": ["url:https://done.example/jobs"]}
-    active_rows: list[dict[str, object]] = []
-    merge_calls: list[tuple[list[dict[str, object]], list[object]]] = []
+    state: dict[str, Any] = {"processedKeys": ["url:https://done.example/jobs"]}
+    active_rows: list[dict[str, Any]] = []
+    merge_calls: list[tuple[list[dict[str, Any]], list[Any]]] = []
     probe_result = ({"adapter": "greenhouse", "name": "Studio"}, True, 3, "", 2)
 
     async def fake_fetch(
@@ -634,7 +638,7 @@ def test_run_browser_recovery_assembly_selects_fetches_merges_and_updates_state(
 
     def analyze(
         fetch_results: list[browser_recovery.BrowserFetchResult],
-        _browser_recovery: dict[str, object],
+        _browser_recovery: dict[str, Any],
         processed: set[str],
     ) -> browser_recovery.BrowserRecoveryAnalysis:
         processed.add(browser_recovery.browser_recovery_processed_key(fetch_results[0][0]))
@@ -646,7 +650,7 @@ def test_run_browser_recovery_assembly_selects_fetches_merges_and_updates_state(
 
     def merge_artifact_updates(
         batch: browser_recovery.BrowserRecoveryBatch,
-        combined_probe_results: list[object],
+        combined_probe_results: list[Any],
     ) -> None:
         merge_calls.append((batch.analysis.all_candidates, combined_probe_results))
         active_rows.extend(

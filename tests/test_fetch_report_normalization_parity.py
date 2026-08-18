@@ -1,3 +1,5 @@
+from typing import Any
+
 from src.bridge.report_normalizer import normalize_fetch_report_contract
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_source_reports import normalize_source_report_row
@@ -178,7 +180,7 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_source_row_base_overlap(
 
 
 def test_bridge_and_jobs_source_row_defaults_remain_compatible_but_distinct() -> None:
-    payload = {"sources": [{}]}
+    payload: dict[str, Any] = {"sources": [{}]}
 
     bridge_row = normalize_fetch_report_contract(payload)["sources"][0]
     jobs_row = normalize_fetch_report_payload(payload)["sources"][0]

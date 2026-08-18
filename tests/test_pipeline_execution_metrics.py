@@ -9,6 +9,7 @@ from tests._pipeline_execution_shared import (
     load_json_object_stub,
     make_parse_iso,
 )
+from tests.helpers.mutation import append_and_return
 
 
 class TestPipelineMetricsTimestamps:
@@ -60,7 +61,9 @@ class TestPipelineMetricsTimestamps:
                 "runId": "sync-123",
             },
             get_app_version=lambda: "1.0.0",
-            start_lifecycle_run=lambda **kwargs: lifecycle_starts.append(dict(kwargs)) or {},
+            start_lifecycle_run=lambda **kwargs: append_and_return(
+                lifecycle_starts, dict(kwargs), {}
+            ),
         )
 
         service.start_task({})

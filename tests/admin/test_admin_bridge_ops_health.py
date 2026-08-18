@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 from src import admin_bridge
@@ -186,7 +187,7 @@ def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
 
 
 def test_evaluate_alerts_keeps_pipeline_never_run_after_bootstrap_fetch() -> None:
-    saved_states: list[dict[str, object]] = []
+    saved_states: list[dict[str, Any]] = []
 
     result = ops_health.evaluate_alerts(
         history=[

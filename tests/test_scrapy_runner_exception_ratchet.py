@@ -4,7 +4,7 @@ import sys
 import types
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -47,8 +47,8 @@ def _fake_scrapy(error: BaseException | None) -> Iterator[None]:
     crawler_mod = types.ModuleType("scrapy.crawler")
     settings_mod = types.ModuleType("scrapy.settings")
     crawler_cls = type("CrawlerProcess", (_CrawlerProcess,), {"error": error})
-    crawler_mod.CrawlerProcess = crawler_cls
-    settings_mod.Settings = _Settings
+    cast(Any, crawler_mod).CrawlerProcess = crawler_cls
+    cast(Any, settings_mod).Settings = _Settings
     previous = {
         name: sys.modules.get(name) for name in ("scrapy", "scrapy.crawler", "scrapy.settings")
     }

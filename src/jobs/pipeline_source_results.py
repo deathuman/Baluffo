@@ -129,6 +129,16 @@ class _PipelineSourceResultsRoot(Protocol):
     ) -> FailureBucket: ...
 
 
+class _ZeroKeptFailureBucketResolver(Protocol):
+    """Only the zero-kept failure-bucket hook ``_classify_report_outcome`` needs."""
+
+    def _failure_bucket_from_zero_extract_context(
+        self,
+        context: ClassificationContext,
+        zero_kept_classification: str,
+    ) -> FailureBucket: ...
+
+
 root: _PipelineSourceResultsRoot | None = None
 
 
@@ -650,7 +660,7 @@ def _apply_source_specific_loss(
 def _classify_report_outcome(
     *,
     report: dict[str, Any],
-    root_module: _PipelineSourceResultsRoot,
+    root_module: _ZeroKeptFailureBucketResolver,
 ) -> None:
     cls_context = classification_context_from_source_detail(report)
     zero_kept_classification = classify_zero_kept(cls_context)

@@ -191,3 +191,85 @@ def test_run_proc_uses_replace_decode_for_streamed_output() -> None:
     assert kwargs["text"] is True
     assert kwargs["errors"] == "replace"
     assert kwargs["encoding"] == (locale.getpreferredencoding(False) or "utf-8")
+
+
+def _char_streaming_process(text: str) -> _CharStreamingProcess:
+    return _CharStreamingProcess(text)
+
+
+class _CharStreamingProcess:
+    """Fake subprocess returning one character per read, like run_proc consumes."""
+
+    def __init__(self, text: str) -> None:
+        self.stdout = _CharStreamingStdout(text)
+        self.returncode = 0
+
+    def poll(self) -> int | None:
+        return 0 if self.stdout.finished else None
+
+    def wait(self) -> int:
+        return self.returncode
+
+
+class _CharStreamingStdout:
+    def __init__(self, text: str) -> None:
+        self._chars = iter(text)
+        self.finished = False
+
+    def read(self, _size: int) -> str:
+        try:
+            return next(self._chars)
+        except StopIteration:
+            self.finished = True
+            return ""
+
+
+def test_run_proc_streams_only_progress_line_chars(capsys) -> None:
+    """Letters in prose (warnings, tracebacks, summaries) are not echoed."""
+    stream = (
+        "...... [ 92%]\n"
+        '  File "C:\\python\\proactor_events.py", line 116, in __del__\n'
+        '      _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)\n'
+        '  File "C:\\python\\base_subprocess.py", line 135, in __del__\n'
+        '      _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)\n'
+        "ValueError: I/O operation on closed pipe\n"
+        "4342 passed, 2 skipped, 6 warnings in 323.83s (0:05:23)\n"
+    )
+    with mock.patch.object(
+        orchestrator.subprocess, "Popen", return_value=_char_streaming_process(stream)
+    ):
+        ok, output = orchestrator.run_proc(
+            ["npm", "run", "test:py:extended"], "PyTests", allow_stream=True
+        )
+
+    assert ok is True
+    assert output == stream
+    out = capsys.readouterr().out
+    assert "Running: npm run test:py:extended\n......\nOK" in out
+    assert not any(c in out for c in "FE!")
+
+
+def test_run_proc_streams_rewritten_progress_after_carriage_return(capsys) -> None:
+    """A \r rewrite restarts the progress run so the new dots still stream."""
+    stream = "....\r......\n"
+    with mock.patch.object(
+        orchestrator.subprocess, "Popen", return_value=_char_streaming_process(stream)
+    ):
+        ok, _output = orchestrator.run_proc(
+            ["npm", "run", "test:py:extended"], "PyTests", allow_stream=True
+        )
+
+    assert ok is True
+    out = capsys.readouterr().out
+    assert "Running: npm run test:py:extended\n..........\nOK" in out
+
+
+def test_run_proc_does_not_stream_when_allow_stream_disabled(capsys) -> None:
+    stream = "....\n"
+    with mock.patch.object(
+        orchestrator.subprocess, "Popen", return_value=_char_streaming_process(stream)
+    ):
+        ok, _output = orchestrator.run_proc(["npm", "run", "test:py:extended"], "PyTests")
+
+    assert ok is True
+    assert "." not in capsys.readouterr().out

@@ -8,6 +8,7 @@ from src.jobs import pipeline_runtime_summary
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime, build_fetch_task_progress_payload
 from src.jobs.pipeline_runtime_writers import make_task_state_writer, write_progress_report
+from tests.helpers.mutation import append_and_return
 
 
 def _task_row() -> dict[str, object]:
@@ -91,7 +92,9 @@ def test_write_progress_report_skips_full_report_during_same_source_execution_ph
         lifecycle_counts=lambda *_args, **_kwargs: {},
         build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 0},
         normalize_fetch_report_payload=lambda payload: payload,
-        write_text_if_changed=lambda path, _text: write_paths.append(Path(path).name) or True,
+        write_text_if_changed=lambda path, _text: append_and_return(
+            write_paths, Path(path).name, True
+        ),
         phase_key="executing_sources",
         phase_label="Executing sources",
         run_id="run-sparse-report",
@@ -141,7 +144,9 @@ def test_write_progress_report_writes_finalizing_sources_once_per_phase(tmp_path
             lifecycle_counts=lambda *_args, **_kwargs: {},
             build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 0},
             normalize_fetch_report_payload=lambda payload: payload,
-            write_text_if_changed=lambda path, _text: write_paths.append(Path(path).name) or True,
+            write_text_if_changed=lambda path, _text: append_and_return(
+                write_paths, Path(path).name, True
+            ),
             phase_key="finalizing_sources",
             phase_label="Finalizing source results",
             run_id="run-finalizing-sources",

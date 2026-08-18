@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src.source_discovery.active_audit_runtime import (
     ActiveAuditRecoveryApplicationResult,
@@ -31,13 +32,14 @@ from src.source_discovery.active_audit_runtime import (
     select_rerun_rows,
     validated_active_candidates_from_artifact,
 )
+from tests.helpers.mutation import append_and_return
 
 
-def _row_url(row: dict[str, object]) -> str:
+def _row_url(row: dict[str, Any]) -> str:
     return str(row.get("url") or "").strip()
 
 
-def _load_json_object(path: Path, default: dict[str, object]) -> object:
+def _load_json_object(path: Path, default: dict[str, Any]) -> object:
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
@@ -175,9 +177,9 @@ def test_active_homepage_batch_no_candidate_can_reject_when_recovery_not_queued(
 
 
 def test_merge_unique_candidate_rows_uses_caller_dedupe() -> None:
-    def unique_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    def unique_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen: set[str] = set()
-        output: list[dict[str, object]] = []
+        output: list[dict[str, Any]] = []
         for row in rows:
             key = str(row.get("url") or "")
             if key in seen:
@@ -214,7 +216,7 @@ def test_merge_rows_by_identity_replaces_duplicate_identity() -> None:
 
 
 def test_append_rows_and_record_failures_preserve_artifact_state() -> None:
-    artifact: dict[str, object] = {"rejectedForActivation": [{"reason": "old"}]}
+    artifact: dict[str, Any] = {"rejectedForActivation": [{"reason": "old"}]}
 
     append_artifact_rows(artifact, "rejectedForActivation", [{"reason": "new"}])
     record_failure_rows(
@@ -232,14 +234,14 @@ def test_append_rows_and_record_failures_preserve_artifact_state() -> None:
 
 
 def test_merge_active_audit_batch_artifact_updates_uses_configured_buckets() -> None:
-    artifact: dict[str, object] = {
+    artifact: dict[str, Any] = {
         "allRows": [{"url": "https://old.example"}],
         "browserRows": [{"url": "https://shell.example"}],
         "rejections": [{"reason": "old"}],
     }
 
-    def unique_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-        output: dict[str, dict[str, object]] = {}
+    def unique_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: dict[str, dict[str, Any]] = {}
         for row in rows:
             output[str(row.get("url") or row.get("reason") or len(output))] = row
         return list(output.values())
@@ -279,7 +281,7 @@ def test_merge_active_audit_batch_artifact_updates_uses_configured_buckets() -> 
 def test_increment_active_audit_summary_accumulates_repeated_batches() -> None:
     from src.source_discovery.active_audit_runtime import increment_active_audit_summary
 
-    artifact: dict[str, object] = {"summary": {"homepageFetchAttempts": 2}}
+    artifact: dict[str, Any] = {"summary": {"homepageFetchAttempts": 2}}
 
     increment_active_audit_summary(
         artifact,
@@ -302,8 +304,8 @@ def test_apply_active_audit_probe_results_uses_configured_buckets() -> None:
         zero_job_candidates = [{"sourceId": "zero", "jobsFound": 0}]
         rejected_rows = [{"reason": "zero_jobs"}]
 
-    calls: list[object] = []
-    artifact: dict[str, object] = {
+    calls: list[Any] = []
+    artifact: dict[str, Any] = {
         "activeRows": [{"sourceId": "active", "old": True}],
         "zeroRows": [],
         "rejections": [],
@@ -312,8 +314,8 @@ def test_apply_active_audit_probe_results_uses_configured_buckets() -> None:
     apply_active_audit_probe_results(
         artifact,
         [("probe",)],
-        classify_probe_results=lambda probe_results, **kwargs: (
-            calls.append((probe_results, kwargs)) or Classification()
+        classify_probe_results=lambda probe_results, **kwargs: append_and_return(
+            calls, (probe_results, kwargs), Classification()
         ),
         probe_failed_rejection=lambda *_args: {"reason": "probe_failed"},
         zero_jobs_rejection=lambda *_args: {"reason": "zero_jobs"},
@@ -342,11 +344,11 @@ def test_apply_active_audit_recovery_fetch_results_preserves_group_state() -> No
     }
 
     def apply_payload(
-        payload: dict[str, object],
-        result: dict[str, object],
-        grouped_rows: dict[str, dict[str, object]],
-        provider_candidates: list[dict[str, object]],
-        static_candidates: list[dict[str, object]],
+        payload: dict[str, Any],
+        result: dict[str, Any],
+        grouped_rows: dict[str, dict[str, Any]],
+        provider_candidates: list[dict[str, Any]],
+        static_candidates: list[dict[str, Any]],
     ) -> str:
         homepage = str(payload.get("homepageUrl") or "")
         group = grouped_rows.setdefault(homepage, {"attempts": 0, "candidates": 0})
@@ -357,7 +359,7 @@ def test_apply_active_audit_recovery_fetch_results_preserves_group_state() -> No
             return homepage
         return ""
 
-    def finalize_group(group: dict[str, object]) -> list[dict[str, object]]:
+    def finalize_group(group: dict[str, Any]) -> list[dict[str, Any]]:
         if int(group.get("candidates") or 0) > 0:
             return []
         return [{"reason": "no_careers_evidence", "studio": group.get("row", {}).get("studio")}]
@@ -566,8 +568,8 @@ def test_finalize_active_audit_artifact_stamps_progress_and_saves(tmp_path: Path
         completed_cursor_position=3,
         completed_key="completedItems",
         summarize=lambda current, identities: (
-            summary_calls.append(set(identities)),
-            current["summary"].update({"count": len(identities)}),
+            append_and_return(summary_calls, set(identities), None)
+            or current["summary"].update({"count": len(identities)})
         ),
     )
 
@@ -728,7 +730,7 @@ def test_recovered_active_mapping_and_compare_preserves_ordered_lost_rows() -> N
         current=current,
         current_rejections={"a": [{"reason": "probe_failed"}]},
         classify_lost=lambda candidate, rejections: (
-            classifier_calls.append(str(candidate.get("sourceId") or "")),
+            append_and_return(classifier_calls, str(candidate.get("sourceId") or ""), None),
             ("probe_failure", rejections.get(str(candidate.get("sourceId") or ""), [{}])[0]),
         )[1],
         lost_row_builder=lambda row_id, cause, candidate, rejection: {
@@ -766,7 +768,7 @@ def test_run_active_audit_cache_reuses_fresh_matching_artifact() -> None:
         load_artifact=lambda: artifact,
         signature_matches=lambda row: True,
         is_fresh=lambda row: True,
-        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"refreshed": True},
+        refresh=lambda reset: append_and_return(calls, f"refresh:{reset}", {"refreshed": True}),
         cache_hit_log=lambda row: "cache hit",
         emit_log_fn=calls.append,
     )
@@ -782,20 +784,20 @@ def test_run_active_audit_cache_reset_and_rerun_bypass_cache() -> None:
     reset_result, reset_cache_hit = run_active_audit_cache(
         reset=True,
         has_rerun_reasons=False,
-        load_artifact=lambda: calls.append("load") or {"fresh": True},
+        load_artifact=lambda: append_and_return(calls, "load", {"fresh": True}),
         signature_matches=lambda row: True,
         is_fresh=lambda row: True,
-        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        refresh=lambda reset: append_and_return(calls, f"refresh:{reset}", {"reset": reset}),
         cache_hit_log=lambda row: "cache hit",
         emit_log_fn=calls.append,
     )
     rerun_result, rerun_cache_hit = run_active_audit_cache(
         reset=False,
         has_rerun_reasons=True,
-        load_artifact=lambda: calls.append("load") or {"fresh": True},
+        load_artifact=lambda: append_and_return(calls, "load", {"fresh": True}),
         signature_matches=lambda row: True,
         is_fresh=lambda row: True,
-        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        refresh=lambda reset: append_and_return(calls, f"refresh:{reset}", {"reset": reset}),
         cache_hit_log=lambda row: "cache hit",
         emit_log_fn=calls.append,
     )
@@ -816,7 +818,7 @@ def test_run_active_audit_cache_signature_mismatch_refreshes_with_reset() -> Non
         load_artifact=lambda: {"schemaVersion": 1},
         signature_matches=lambda row: False,
         is_fresh=lambda row: False,
-        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        refresh=lambda reset: append_and_return(calls, f"refresh:{reset}", {"reset": reset}),
         cache_hit_log=lambda row: "cache hit",
         emit_log_fn=calls.append,
         signature_mismatch_log=lambda row: "signature mismatch",
@@ -836,7 +838,7 @@ def test_run_active_audit_cache_stale_artifact_refreshes_without_hit() -> None:
         load_artifact=lambda: {"schemaVersion": 1},
         signature_matches=lambda row: True,
         is_fresh=lambda row: False,
-        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        refresh=lambda reset: append_and_return(calls, f"refresh:{reset}", {"reset": reset}),
         cache_hit_log=lambda row: "cache hit",
         emit_log_fn=calls.append,
     )

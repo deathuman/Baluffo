@@ -1,6 +1,7 @@
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,8 +23,8 @@ def test_safe_parse_iso_does_not_swallow_unexpected_failures() -> None:
         _safe_parse_iso(parse_iso, "2026-06-18T00:00:00+00:00")
 
 
-def _minimal_sync_history_deps(**overrides: object) -> SyncHistoryDeps:
-    values = {
+def _minimal_sync_history_deps(**overrides: Any) -> SyncHistoryDeps:
+    values: dict[str, Any] = {
         "ops_state_lock": threading.RLock(),
         "load_run_history": lambda: [],
         "save_run_history": lambda _rows: None,

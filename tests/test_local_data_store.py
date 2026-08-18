@@ -25,7 +25,9 @@ def test_sign_in_and_saved_jobs_persist_to_disk() -> None:
         store.update_job_notes(uid, job_key, "Interesting role.")
 
         reloaded = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
-        assert reloaded.get_current_user()["uid"] == uid
+        current_user = reloaded.get_current_user()
+        assert current_user is not None
+        assert current_user["uid"] == uid
         rows = reloaded.list_saved_jobs(uid)
         assert len(rows) == 1
         assert rows[0]["jobKey"] == job_key

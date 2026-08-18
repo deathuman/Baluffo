@@ -1,9 +1,11 @@
 """Tests for jobs fetcher pipeline social incremental behavior."""
 
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 from src import jobs_fetcher as jf
+from src.jobs.interfaces import SourceLoader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -15,10 +17,10 @@ def test_apply_incremental_cache_exclusions_keeps_social_multi_feed_loaders_for_
 
     now = jf.datetime.now(jf.timezone.utc)
     future = (now + jf.timedelta(minutes=10)).isoformat()
-    selected = [
-        ("social_x", lambda **_: []),
-        ("social_mastodon", lambda **_: []),
-        ("social_reddit", lambda **_: []),
+    selected: list[tuple[str, SourceLoader]] = [
+        ("social_x", cast(SourceLoader, lambda **_: [])),
+        ("social_mastodon", cast(SourceLoader, lambda **_: [])),
+        ("social_reddit", cast(SourceLoader, lambda **_: [])),
     ]
     source_state_rows = {
         "social_x": {

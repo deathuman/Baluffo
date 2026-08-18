@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -208,7 +209,7 @@ def test_resolve_desktop_session_root_falls_back_to_runtime_temp_when_standard_l
         monkeypatch.setattr(desktop_app_config.tempfile, "gettempdir", lambda: str(temp_root))
         monkeypatch.setattr(desktop_app_config, "_RUNTIME_SESSION_ROOT", None)
 
-        def blocked_write_text(self: Path, *args: object, **kwargs: object) -> int:
+        def blocked_write_text(self: Path, *args: Any, **kwargs: Any) -> int:
             if self.name == ".baluffo-write-probe" and self.parent in blocked_parents:
                 raise OSError("blocked for test")
             return original_write_text(self, *args, **kwargs)

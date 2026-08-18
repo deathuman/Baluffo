@@ -1,6 +1,7 @@
 """Tests for jobs fetcher providers Ashby and Personio runtime behavior."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -30,7 +31,12 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
             return source_rows
 
         def fetch_with_retries(
-            self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+            self,
+            url: str,
+            fetch_text: Callable[[str, int], str],
+            timeout_s: int,
+            retries: int,
+            backoff_s: float,
         ) -> str:
             return fetch_text(url, timeout_s)
 
@@ -55,7 +61,7 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
                       Senior 3D Environment Artist
                     </a>
                     """
-                raise AssertionError(f"unexpected url {url}")
+            raise AssertionError(f"unexpected url {url}")
 
         rows = jf.run_ashby_sources_source(
             fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
@@ -83,7 +89,12 @@ def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> N
             return source_rows
 
         def fetch_with_retries(
-            self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+            self,
+            url: str,
+            fetch_text: Callable[[str, int], str],
+            timeout_s: int,
+            retries: int,
+            backoff_s: float,
         ) -> str:
             return fetch_text(url, timeout_s)
 

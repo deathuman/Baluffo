@@ -74,7 +74,10 @@ class DedupReviewQueueRow(TypedDict, total=False):
     identityQualityEvidence: list[str]
     nonProviderIdentityProvenance: str
     nonProviderIdentityProvenanceEvidence: list[str]
+    nonProviderIdentityEvidence: list[str]
+    titleCompanyPollutionSignals: list[str]
     googleSheetsBundleShape: str
+    googleSheetsBundleEvidence: list[str]
     googleSheetsRoleBucketAudit: str
     googleSheetsRoleBucketAuditEvidence: list[str]
     googleSheetsBucketIntent: str
@@ -99,6 +102,7 @@ class ProviderStaticDisagreementRow(TypedDict, total=False):
     recommendedReviewAction: str
     suspectedCause: str
     operatorReviewReason: str
+    operatorReviewRecommendation: str
     providerSources: list[str]
     staticSources: list[str]
     providerSourceJobIds: list[str]
@@ -224,6 +228,8 @@ class DedupEvidencePayload(TypedDict, total=False):
     googleSheetsBundleShapeCounts: IntCountMap
     googleSheetsRoleBucketAuditCounts: IntCountMap
     googleSheetsRoleBucketAudit: GoogleSheetsRoleBucketAuditPayload
+    sheetRoleBucketGuardBlockedCount: int
+    sheetRoleBucketGuardBlockedSamples: list[JsonObject]
     googleSheetsBucketIntentCounts: IntCountMap
     googleSheetsWeakGroupingAuditCounts: IntCountMap
     reviewQueueCounts: IntCountMap
@@ -252,4 +258,5 @@ class DedupEvidencePayload(TypedDict, total=False):
     topSourceBundleOutliers: list[JsonObject]
     locationDivergenceExamples: list[JsonObject]
     riskyMergeExamples: list[JsonObject]
+    riskyMergeExampleCount: int
     dedupAuditGate: DedupAuditGatePayload

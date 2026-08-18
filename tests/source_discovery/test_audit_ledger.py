@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.source_discovery import audit_ledger
 
 
 def test_audit_ledger_batch_timings_accumulate_ms_fields_only() -> None:
-    artifact: dict[str, object] = {}
+    artifact: dict[str, Any] = {}
 
     audit_ledger.append_batch_timing(
         artifact,
@@ -23,7 +24,7 @@ def test_audit_ledger_batch_timings_accumulate_ms_fields_only() -> None:
 
 
 def test_audit_ledger_failure_aggregation_counts_and_bounds_samples() -> None:
-    artifact: dict[str, object] = {}
+    artifact: dict[str, Any] = {}
     failures = [
         {"stage": "fetch", "error": "timeout", "name": "a"},
         {"stage": "fetch", "error": "timeout", "name": "b"},
@@ -94,7 +95,7 @@ def test_audit_ledger_freshness_checks_schema_completion_signature_and_ttl() -> 
 
 
 def test_audit_ledger_stamp_artifact_size_updates_runtime_and_summary() -> None:
-    artifact = {
+    artifact: dict[str, Any] = {
         "runtime": {"configSignature": {"source": "test"}},
         "summary": {"activeCandidates": 2},
         "activeCandidates": [{"id": "one"}, {"id": "two"}],

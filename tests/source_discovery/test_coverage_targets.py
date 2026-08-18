@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -73,7 +74,7 @@ def test_stage_control_only_gamedevmap_replaces_stage_toggles() -> None:
 
 
 def test_probe_validation_and_fallback_urls_cover_provider_branches() -> None:
-    validation_cases = [
+    validation_cases: list[tuple[dict[str, Any], bool, str]] = [
         ({"adapter": "smartrecruiters", "company_id": "123"}, False, "invalid company"),
         ({"adapter": "smartrecruiters", "company_id": "studio123"}, True, ""),
         (

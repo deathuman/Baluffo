@@ -1,5 +1,6 @@
 """Tests for jobs fetcher providers plugin traversal behavior."""
 
+from typing import Any
 from unittest import mock
 
 
@@ -223,7 +224,7 @@ def test_choose_detail_traversal_mode_static_detail_policy_cases() -> None:
                 runtime = build_static_source_runtime_config(4)
         else:
             runtime = build_static_source_runtime_config(4)
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "runtime_config": runtime,
             "profile": profile,
             "plugin_meta": plugin_meta,

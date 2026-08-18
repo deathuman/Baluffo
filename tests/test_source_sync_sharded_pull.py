@@ -10,7 +10,7 @@ class _FakeResponse:
     def __init__(self, status: int, payload: dict):
         self._status = int(status)
         self._payload = dict(payload)
-        self.headers = {}
+        self.headers: dict[str, str] = {}
 
     def getcode(self):
         return self._status
@@ -66,7 +66,7 @@ def test_pull_and_merge_sources_merges_distinct_sources_by_identity_after_v2_fal
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.pull_and_merge_sources(
             cfg,
             {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
@@ -75,7 +75,7 @@ def test_pull_and_merge_sources_merges_distinct_sources_by_identity_after_v2_fal
             max_shard_read_workers=1,
         )
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["changed"]
     assert len(result["mergedState"]["active"]) == 2
@@ -130,7 +130,7 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.pull_and_merge_sources(
             cfg,
             {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
@@ -139,7 +139,7 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
             max_shard_read_workers=1,
         )
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["remoteSha"] == "manifest-sha"
     assert result["remoteGeneratedAt"] == remote_snapshot["generatedAt"]
@@ -181,7 +181,7 @@ def test_pull_and_merge_sources_skips_shards_when_manifest_sha_is_unchanged(
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.pull_and_merge_sources(
             cfg,
             {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
@@ -189,7 +189,7 @@ def test_pull_and_merge_sources_skips_shards_when_manifest_sha_is_unchanged(
             known_remote_sha="manifest-sha",
         )
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["remoteSha"] == "manifest-sha"
     assert result["remoteGeneratedAt"] == remote_snapshot["generatedAt"]

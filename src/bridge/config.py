@@ -9,11 +9,18 @@ import argparse
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from src.baluffo_config import resolve_path as _resolve_path
 
 LOG_LEVEL_ORDER: dict[str, int] = {"debug": 10, "info": 20, "warn": 30, "error": 40}
+
+
+class ContainerConfigLike(Protocol):
+    """Minimal runtime config surface the container entrypoint actually reads."""
+
+    root: Path
+    data_dir: Path
 
 
 @dataclass

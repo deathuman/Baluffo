@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge.routes.get_discovery import handle_discovery_routes
 from tests.helpers.bridge_api import FakeHandler
@@ -10,7 +10,7 @@ from tests.helpers.bridge_api import FakeHandler
 
 class MinimalDiscoveryRouteApi:
     def __init__(self, root: Path) -> None:
-        self.DISCOVERY_CANDIDATES_PATH = root / "source-discovery-candidates.json"
+        self.DISCOVERY_CANDIDATES_PATH: Path | None = root / "source-discovery-candidates.json"
         self.DISCOVERY_LOG_PATH = root / "source-discovery.log"
         self.DISCOVERY_REPORT_PATH = root / "source-discovery-report.json"
         self.logged: list[tuple[str, str, dict[str, Any]]] = []
@@ -42,7 +42,7 @@ def test_discovery_get_routes_accept_minimal_capability_object(tmp_path: Path) -
             "failures": [],
         },
     )
-    _write_json(api.DISCOVERY_CANDIDATES_PATH, [{"id": "candidate-1"}])
+    _write_json(cast(Path, api.DISCOVERY_CANDIDATES_PATH), [{"id": "candidate-1"}])
     api.DISCOVERY_LOG_PATH.write_text("line one\nline two\n", encoding="utf-8")
 
     report_handler = FakeHandler()

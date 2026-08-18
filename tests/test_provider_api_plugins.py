@@ -15,6 +15,7 @@ from src.jobs.adapters.plugins.provider_api import oracle_hcm as oracle_hcm_runn
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
 from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture
+from tests.helpers.mutation import call_and_return
 
 
 class _FakeDeps:
@@ -127,7 +128,7 @@ def fake_deps(monkeypatch: pytest.MonkeyPatch) -> _FakeDeps:
 @dataclass(frozen=True)
 class _DispatchCase:
     name: str
-    setup: Callable[[_FakeDeps], None]
+    setup: Callable[[_FakeDeps], Any]
     run: Callable[[], list[dict[str, Any]]]
     expected_len: int
     expected_adapter: str
@@ -152,11 +153,14 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="greenhouse",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "greenhouse",
                     [{"slug": "studio-a", "studio": "Studio A", "name": "Studio A"}],
+                    value=None,
                 ),
-                deps.set_response(
+                call_and_return(
+                    deps.set_response,
                     GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a"),
                     {
                         "jobs": [
@@ -169,6 +173,7 @@ DISPATCH_CASES = [
                             }
                         ]
                     },
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_greenhouse_boards_source(
@@ -188,13 +193,21 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="teamtailor",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "teamtailor",
                     [{"name": "TT", "listing_url": "https://tt/listing", "base_url": "https://tt"}],
+                    value=None,
                 ),
-                deps.set_response("https://tt/listing", "<html>listing</html>"),
-                deps.set_response("https://tt/jobs/1", "<html>detail 1</html>"),
-                deps.set_response("https://tt/jobs/2", "<html>detail 2</html>"),
+                call_and_return(
+                    deps.set_response, "https://tt/listing", "<html>listing</html>", value=None
+                ),
+                call_and_return(
+                    deps.set_response, "https://tt/jobs/1", "<html>detail 1</html>", value=None
+                ),
+                call_and_return(
+                    deps.set_response, "https://tt/jobs/2", "<html>detail 2</html>", value=None
+                ),
             ),
             run=lambda: provider_api.run_teamtailor_sources_source(
                 fetch_text=lambda _url, _timeout: "",
@@ -212,7 +225,8 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="breezy",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "breezy",
                     [
                         {
@@ -221,9 +235,13 @@ DISPATCH_CASES = [
                             "board_url": "https://yallaplay.breezy.hr/",
                         }
                     ],
+                    value=None,
                 ),
-                deps.set_text_response(
-                    "https://yallaplay.breezy.hr/", _fixture("breezy_jobs.html")
+                call_and_return(
+                    deps.set_text_response,
+                    "https://yallaplay.breezy.hr/",
+                    _fixture("breezy_jobs.html"),
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_breezy_sources_source(
@@ -243,7 +261,8 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="jazzhr",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "jazzhr",
                     [
                         {
@@ -252,10 +271,13 @@ DISPATCH_CASES = [
                             "board_url": "https://lostboysinteractive.applytojob.com/apply",
                         }
                     ],
+                    value=None,
                 ),
-                deps.set_text_response(
+                call_and_return(
+                    deps.set_text_response,
                     "https://lostboysinteractive.applytojob.com/apply",
                     _fixture("jazzhr_jobs.html"),
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_jazzhr_sources_source(
@@ -275,7 +297,8 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="oracle_hcm",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "oracle_hcm",
                     [
                         {
@@ -286,10 +309,13 @@ DISPATCH_CASES = [
                             "site_path": "/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
                         }
                     ],
+                    value=None,
                 ),
-                deps.set_response(
+                call_and_return(
+                    deps.set_response,
                     "https://edix.fa.us2.oraclecloud.com/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions?expand=requisitionList&onlyData=true&limit=200",
                     json.loads(_fixture("oracle_hcm_requisitions.json")),
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_oracle_hcm_sources_source(
@@ -308,7 +334,8 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="recruitee",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "recruitee",
                     [
                         {
@@ -318,10 +345,13 @@ DISPATCH_CASES = [
                             "api_url": "https://jobs.crazygames.com/api/offers/",
                         }
                     ],
+                    value=None,
                 ),
-                deps.set_response(
+                call_and_return(
+                    deps.set_response,
                     "https://jobs.crazygames.com/api/offers/",
                     json.loads(_fixture("recruitee_jobs.json")),
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_recruitee_sources_source(
@@ -341,7 +371,8 @@ DISPATCH_CASES = [
         _DispatchCase(
             name="pinpoint",
             setup=lambda deps: (
-                deps.set_registry_entries(
+                call_and_return(
+                    deps.set_registry_entries,
                     "pinpoint",
                     [
                         {
@@ -351,10 +382,13 @@ DISPATCH_CASES = [
                             "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json",
                         }
                     ],
+                    value=None,
                 ),
-                deps.set_response(
+                call_and_return(
+                    deps.set_response,
                     "https://gameplaygalaxy.pinpointhq.com/postings.json",
                     json.loads(_fixture("pinpoint_jobs.json")),
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_pinpoint_sources_source(

@@ -8,6 +8,7 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from tools.repo_health import bridge_route_inventory
 
@@ -317,7 +318,7 @@ def _ai_read_hints(*, module_count: int, bridge_route_count: int) -> dict[str, o
     }
 
 
-def build_payload() -> dict[str, object]:
+def build_payload() -> dict[str, Any]:
     frontend_modules = _find_modules("frontend", "*.js")
     src_modules = _find_modules("src", "*.py")
     all_modules = sorted(frontend_modules + src_modules)
@@ -338,7 +339,7 @@ def build_payload() -> dict[str, object]:
     }
 
 
-def generate(output_path: str | Path = OUTPUT_PATH) -> dict[str, object]:
+def generate(output_path: str | Path = OUTPUT_PATH) -> dict[str, Any]:
     payload = build_payload()
     resolved_output = Path(output_path).expanduser()
     resolved_output.parent.mkdir(parents=True, exist_ok=True)

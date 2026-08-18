@@ -27,8 +27,8 @@ class _FakeExecutor:
     def __enter__(self) -> _FakeExecutor:
         return self
 
-    def __exit__(self, *_args: object) -> bool:
-        return False
+    def __exit__(self, *_args: object) -> None:
+        return None
 
     def submit(self, *_args: object, **_kwargs: object) -> _FakeFuture:
         future = _FakeFuture()
@@ -75,7 +75,7 @@ def test_read_sharded_snapshot_cancels_futures_on_base_exception(
             SimpleNamespace(),
             SimpleNamespace(),
             max_workers=1,
-            opener=object(),
+            opener=lambda *_a, **_kw: None,
         )
 
     assert len(_FakeExecutor.instances) == 1

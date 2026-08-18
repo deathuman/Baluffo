@@ -1,6 +1,7 @@
 import copy
 import json
 from pathlib import Path
+from typing import Any
 
 from src import jobs_fetcher as jf
 from src.bridge.report_normalizer import normalize_fetch_report_contract
@@ -95,7 +96,7 @@ def _excluded_report(name: str, reason: str) -> dict[str, object]:
 
 
 def test_review_actions_update_only_review_state_and_bound_notes() -> None:
-    artifact: dict[str, object] = {}
+    artifact: dict[str, Any] = {}
     artifact, pair = apply_source_policy_review_action(
         prior_artifact=artifact,
         action_payload={

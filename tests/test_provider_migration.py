@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -23,22 +24,22 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 class _FakeDeps:
-    def __init__(self, registry_rows: dict[str, list[dict[str, object]]]) -> None:
+    def __init__(self, registry_rows: dict[str, list[dict[str, Any]]]) -> None:
         self._registry_rows = {
             key: [dict(row) for row in rows] for key, rows in registry_rows.items()
         }
-        self.SOURCE_DIAGNOSTICS: dict[str, dict[str, object]] = {}
+        self.SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
 
-    def registry_entries(self, key: str) -> list[dict[str, object]]:
+    def registry_entries(self, key: str) -> list[dict[str, Any]]:
         return [dict(row) for row in self._registry_rows.get(key, [])]
 
-    def set_registry_entries(self, key: str, rows: list[dict[str, object]]) -> None:
+    def set_registry_entries(self, key: str, rows: list[dict[str, Any]]) -> None:
         self._registry_rows[key] = [dict(row) for row in rows]
 
     def fetch_with_retries(
         self,
         url: str,
-        fetch_text,
+        fetch_text: Callable[[str, int], str],
         timeout_s: int,
         retries: int,
         backoff_s: float,
@@ -53,7 +54,7 @@ class _FakeDeps:
         adapter: str,
         studio: str,
         provider_url: str = "",
-        details: list[dict[str, object]],
+        details: list[dict[str, Any]],
         partial_errors: list[str],
     ) -> None:
         self.SOURCE_DIAGNOSTICS[name] = {
@@ -69,11 +70,11 @@ class _FakeDeps:
 class _DispatchCase:
     name: str
     setup: Callable[[_FakeDeps], None]
-    run: Callable[[], list[dict[str, object]]]
+    run: Callable[[], list[dict[str, Any]]]
     expected_len: int
     expected_adapter: str
     expected_studio: str
-    extra_check: Callable[[list[dict[str, object]], _FakeDeps], None] = lambda rows, deps: None
+    extra_check: Callable[[list[dict[str, Any]], _FakeDeps], None] = lambda rows, deps: None
 
 
 def _setup_bamboohr(deps: _FakeDeps) -> None:

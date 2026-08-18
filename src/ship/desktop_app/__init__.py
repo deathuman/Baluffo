@@ -97,7 +97,10 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> object:
+def __getattr__(name: str) -> Any:
+    # Any (not object): re-exported names are real runtime attributes, and
+    # typing them as ``object`` made every call-site attribute access an
+    # error ("object" not callable / indexable / iterable).
     for module in _COMPAT_MODULES:
         if hasattr(module, name):
             value = getattr(module, name)

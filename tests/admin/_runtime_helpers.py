@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from src import admin_bridge
 
 
@@ -12,9 +15,9 @@ def history_row(
     started_at: str,
     finished_at: str = "",
     duration_ms: int = 0,
-    summary: dict[str, object] | None = None,
-) -> dict[str, object]:
-    row: dict[str, object] = {
+    summary: Mapping[str, object] | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "type": "fetch",
         "status": status,
         "startedAt": started_at,
@@ -39,11 +42,11 @@ def fetch_report(
     started_at: str,
     run_id: str | None = None,
     finished_at: str = "",
-    summary: dict[str, object] | None = None,
-    runtime: dict[str, object] | None = None,
-    task_progress: dict[str, object] | None = None,
-) -> dict[str, object]:
-    report: dict[str, object] = {
+    summary: Mapping[str, object] | None = None,
+    runtime: Mapping[str, object] | None = None,
+    task_progress: Mapping[str, object] | None = None,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
         "startedAt": started_at,
         "finishedAt": finished_at,
         "summary": summary or {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
@@ -63,10 +66,10 @@ def discovery_report(
     started_at: str,
     run_id: str | None = None,
     finished_at: str = "",
-    summary: dict[str, object] | None = None,
-    task_progress: dict[str, object] | None = None,
-) -> dict[str, object]:
-    report: dict[str, object] = {
+    summary: Mapping[str, object] | None = None,
+    task_progress: Mapping[str, object] | None = None,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
         "startedAt": started_at,
         "finishedAt": finished_at,
         "summary": summary
@@ -93,7 +96,7 @@ def task_state_entry(
     started_at: str,
     pid: int = 111,
     script: str | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "runId": run_id,
         "taskType": task_type,
@@ -106,8 +109,8 @@ def task_state_entry(
 
 
 def active_progress(
-    phase_key: str, phase_label: str, counts: dict[str, object]
-) -> dict[str, object]:
+    phase_key: str, phase_label: str, counts: Mapping[str, object]
+) -> dict[str, Any]:
     return {
         "active": True,
         "phaseKey": phase_key,
@@ -118,7 +121,7 @@ def active_progress(
     }
 
 
-def completed_progress(phase_label: str) -> dict[str, object]:
+def completed_progress(phase_label: str) -> dict[str, Any]:
     return {
         "active": False,
         "phaseKey": "completed",
@@ -130,12 +133,12 @@ def completed_progress(phase_label: str) -> dict[str, object]:
 
 
 def matching_history_rows(
-    rows: list[dict[str, object]],
+    rows: list[dict[str, Any]],
     *,
     started_at: str | None = None,
     finished_at: str | None = None,
     run_id: str | None = None,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     return [
         row
         for row in rows
@@ -146,20 +149,22 @@ def matching_history_rows(
     ]
 
 
-def task_row(payload: dict[str, object], task_type: str) -> dict[str, object]:
+def task_row(payload: dict[str, Any], task_type: str) -> dict[str, Any]:
     return next(
         row for row in (payload.get("tasks") or []) if str(row.get("taskType") or "") == task_type
     )
 
 
-def current_task_payload() -> dict[str, object]:
-    return admin_bridge.build_bridge_api(
-        admin_bridge.RUNTIME_CONFIG
-    ).get_current_task_state_payload()
+def current_task_payload() -> dict[str, Any]:
+    return dict(
+        admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_current_task_state_payload()
+    )
 
 
-def task_live_payload(task_type: str, *, summary: bool = False) -> dict[str, object]:
-    return admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_task_live_payload(
-        task_type,
-        summary=summary,
+def task_live_payload(task_type: str, *, summary: bool = False) -> dict[str, Any]:
+    return dict(
+        admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_task_live_payload(
+            task_type,
+            summary=summary,
+        )
     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -234,12 +234,13 @@ def _make_async_fetcher_for_close(
     loop_error: BaseException | None = None,
 ) -> tuple[transport.AsyncHttpTextFetcher, _FakeLoop, _FakeThread]:
     fetcher = object.__new__(transport.AsyncHttpTextFetcher)
+    fetcher_obj = cast(Any, fetcher)
     loop = _FakeLoop(loop_error)
     thread = _FakeThread()
-    fetcher._closed = False
-    fetcher._loop = loop
-    fetcher._thread = thread
-    fetcher._client = _FakeAsyncClient()
+    fetcher_obj._closed = False
+    fetcher_obj._loop = loop
+    fetcher_obj._thread = thread
+    fetcher_obj._client = _FakeAsyncClient()
     return fetcher, loop, thread
 
 

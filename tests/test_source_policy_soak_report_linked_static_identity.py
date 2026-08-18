@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts import source_policy_soak_report as soak
 
@@ -37,7 +38,7 @@ def _write_runtime(data_dir: Path, *, include_static_registry: bool) -> str:
             }
         },
     )
-    active_rows: list[dict[str, object]] = [
+    active_rows: list[dict[str, Any]] = [
         {
             "id": "provider:studio",
             "name": "Studio Greenhouse",
@@ -67,7 +68,7 @@ def _write_runtime(data_dir: Path, *, include_static_registry: bool) -> str:
 def test_linked_static_lookup_uses_static_registry_row_not_provider_metadata(
     tmp_path: Path,
 ) -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "case_id": "missing-static-registry-row",
             "include_static_registry": False,

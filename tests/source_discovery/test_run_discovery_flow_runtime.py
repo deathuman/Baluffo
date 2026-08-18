@@ -1,6 +1,8 @@
 """Tests for source discovery runtime and generator behavior."""
 
 # ruff: noqa: F401
+from typing import Any
+
 from src.url_hosts import url_host
 
 from ._helpers import (
@@ -146,7 +148,7 @@ def test_run_discovery_default_and_uncapped_report_runtime_cap_bypass_flags() ->
 
 
 def test_run_discovery_deduplicates_duplicate_endpoints_and_stale_pending_rows() -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "name": "duplicate endpoint fingerprints",
             "kind": "run_discovery",

@@ -124,7 +124,7 @@ def test_static_serving_cold_start_helper_does_not_parse_feed_artifacts(
             read_paths.append(Path(path).name)
             if Path(path).name != "jobs-fetch-report.json":
                 raise AssertionError("static-serving helper must not parse feed artifacts")
-            return read_json(path, default)
+            return read_json(Path(path), default)
 
         monkeypatch.setattr(first_run_state, "read_json", read_json_spy)
 

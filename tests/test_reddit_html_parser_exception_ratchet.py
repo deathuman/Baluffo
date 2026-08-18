@@ -1,3 +1,4 @@
+from typing import cast
 from unittest import mock
 
 import pytest
@@ -7,7 +8,7 @@ from src.jobs.adapters.social_parser import reddit_parser
 
 def test_reddit_html_parser_returns_empty_for_non_string_input() -> None:
     rows, dropped = reddit_parser.parse_reddit_html_payload(
-        object(),
+        cast(str, object()),
         subreddit="gamedev",
         min_confidence=20,
         reject_for_hire_posts=True,

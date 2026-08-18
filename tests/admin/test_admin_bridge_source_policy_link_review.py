@@ -53,7 +53,7 @@ def _get_recommendations_payload() -> dict:
     )
     assert handled is True
     assert handler.sent[-1]["status"] == 200
-    return handler.sent[-1]["payload"]
+    return dict(handler.sent[-1]["payload"])
 
 
 def test_source_policy_recommendations_includes_link_review_candidates(

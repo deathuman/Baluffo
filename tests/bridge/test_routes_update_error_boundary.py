@@ -94,7 +94,7 @@ def test_check_for_update_exception_returns_structured_error(tmp_path: Path) -> 
     def fail_check_for_update(**_: Any) -> dict[str, Any]:
         raise RuntimeError("check failed")
 
-    api.check_for_update = fail_check_for_update  # type: ignore[assignment]
+    api.check_for_update = fail_check_for_update
 
     handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/check-for-update", payload={"force": True})
@@ -111,7 +111,7 @@ def test_download_update_exception_returns_structured_error(tmp_path: Path) -> N
     def fail_download_update() -> dict[str, Any]:
         raise RuntimeError("download failed")
 
-    api.download_update = fail_download_update  # type: ignore[assignment]
+    api.download_update = fail_download_update
 
     handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/download-update", payload={})
@@ -128,7 +128,7 @@ def test_install_update_exception_returns_structured_error(tmp_path: Path) -> No
     def fail_install_update() -> dict[str, Any]:
         raise RuntimeError("install failed")
 
-    api.install_update = fail_install_update  # type: ignore[assignment]
+    api.install_update = fail_install_update
 
     handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/install-update", payload={})

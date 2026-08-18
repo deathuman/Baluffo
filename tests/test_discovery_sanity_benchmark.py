@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src import discovery_sanity_benchmark as benchmark
 
 
@@ -24,7 +26,7 @@ def test_parse_args_accepts_split_capped_presets() -> None:
 
 
 def test_quick_discovery_config_disables_expensive_stages() -> None:
-    base_config = {
+    base_config: dict[str, Any] = {
         "stageToggles": {
             "gamedevmap": True,
             "gameprog": True,

@@ -5,6 +5,7 @@ from typing import Any
 
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime
 from tests.bridge.test_pipeline_service import _make_pipeline_service
+from tests.helpers.mutation import append_and_return
 
 
 def test_pipeline_abort_during_discovery_wait_finishes_canceled() -> None:
@@ -40,8 +41,8 @@ def test_pipeline_abort_during_discovery_wait_finishes_canceled() -> None:
             {"started": True, "runId": "discovery_1", "startedAt": "2026-05-06T18:00:05Z"},
         ),
         refresh_child_task_heartbeat=refresh_child,
-        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            canceled_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -99,8 +100,8 @@ def test_pipeline_abort_during_fetch_wait_finishes_canceled() -> None:
             "startedAt": "2026-05-06T18:00:07Z",
         },
         refresh_child_task_heartbeat=refresh_child,
-        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            canceled_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 

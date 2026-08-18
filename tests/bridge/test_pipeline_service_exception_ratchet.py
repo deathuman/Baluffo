@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -119,9 +119,9 @@ def test_pipeline_worker_records_expected_operational_failure() -> None:
         pipeline_status=status,
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
     )
-    service._run_discovery_stage = lambda _run_id: (_ for _ in ()).throw(
+    cast(Any, service)._run_discovery_stage = lambda _run_id: (_ for _ in ()).throw(
         RuntimeError("discovery failed")
-    )  # type: ignore[method-assign]
+    )
 
     service._run_worker("pipeline_1")
 
@@ -133,9 +133,9 @@ def test_pipeline_worker_records_expected_operational_failure() -> None:
 
 def test_pipeline_worker_does_not_hide_unexpected_bug() -> None:
     service = _make_pipeline_service(pipeline_status=_active_status())
-    service._run_discovery_stage = lambda _run_id: (_ for _ in ()).throw(
+    cast(Any, service)._run_discovery_stage = lambda _run_id: (_ for _ in ()).throw(
         AssertionError("unexpected pipeline bug")
-    )  # type: ignore[method-assign]
+    )
 
     with pytest.raises(AssertionError, match="unexpected pipeline bug"):
         service._run_worker("pipeline_1")

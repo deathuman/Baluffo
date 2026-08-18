@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.source_discovery.directory_index_scan import run_directory_index_scan
 
 
-def _run_scan(source_text: str = "rows") -> dict[str, object]:
+def _run_scan(source_text: str = "rows") -> dict[str, Any]:
     def append_entry(entry, provider_rows, static_rows, failures):
         if entry.get("invalid"):
             failures.append({"stage": "detail", "name": entry["url"]})

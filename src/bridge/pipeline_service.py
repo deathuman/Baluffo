@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from src.bridge.active_task_snapshot import (
     pipeline_status_to_task_row,
@@ -66,11 +66,19 @@ class PipelineAbortRequested(Exception):
     """Raised for cooperative pipeline cancellation."""
 
 
+class _LockLike(Protocol):
+    """Minimal context-manager lock interface used for pipeline state serialization."""
+
+    def __enter__(self) -> Any: ...
+
+    def __exit__(self, *exc: Any) -> Any: ...
+
+
 class PipelineService:
     def __init__(
         self,
         *,
-        pipeline_state_lock: threading.RLock,
+        pipeline_state_lock: _LockLike,
         pipeline_status: dict[str, Any],
         runtime: PipelineRuntime,
         bridge_log: Callable[..., None],

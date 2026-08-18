@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src.bridge.routes.get_routes import handle_get
 from tests.bridge.test_routes_get import (
@@ -11,7 +12,7 @@ from tests.bridge.test_routes_get import (
 )
 
 
-def _write_fetch_report(api: object, payload: dict[str, object]) -> None:
+def _write_fetch_report(api: Any, payload: Any) -> None:
     path = api.JOBS_FETCH_REPORT_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")

@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -706,7 +707,7 @@ def test_startup_profile_summary_does_not_report_inferred_reveal_after_page_boot
 
 def test_startup_profile_summary_prefers_browser_created_timestamps_for_page_events() -> None:
     launch_ts_ms = int(datetime.fromisoformat("2026-03-10T12:00:00+00:00").timestamp() * 1000)
-    rows = [
+    rows: list[dict[str, Any]] = [
         {
             "ts": "2026-03-10T12:00:00+00:00",
             "event": "desktop_launch_start",

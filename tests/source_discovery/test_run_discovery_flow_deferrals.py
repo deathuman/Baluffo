@@ -1,6 +1,8 @@
 """Tests for source discovery deferral and ranking behavior."""
 
 # ruff: noqa: F401
+from typing import Any
+
 from src.url_hosts import url_host
 
 from ._helpers import (
@@ -77,11 +79,11 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
                 discovery_orchestrator.run_web_search_directory_audit = lambda *_a, **_k: (
                     _directory_audit_result()
                 )
-                discovery_orchestrator.async_probe_candidate = lambda *args, **kwargs: (
-                    False,
-                    0,
-                    "",
-                )
+
+                async def _fake_probe_candidate(*args: Any, **kwargs: Any) -> tuple[bool, int, str]:
+                    return False, 0, ""
+
+                discovery_orchestrator.async_probe_candidate = _fake_probe_candidate
 
                 report = discovery_orchestrator.run_discovery(
                     timeout_s=1,

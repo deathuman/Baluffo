@@ -7,6 +7,7 @@ from typing import Any
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.registry_service import RegistryPaths, RegistryService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso_utc(value: str | None) -> datetime | None:
@@ -17,7 +18,8 @@ def _parse_iso_utc(value: str | None) -> datetime | None:
 
 def _load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     if Path(path).exists():
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        loaded = json.loads(Path(path).read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else dict(default)
     return dict(default)
 
 
@@ -129,8 +131,8 @@ def test_watch_discovery_run_repairs_report_when_child_pid_dead(tmp_path: Path) 
     service = _make_service(
         tmp_path,
         report_path=report_path,
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failed_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -253,7 +255,7 @@ def test_reconcile_terminal_discovery_registry_uses_report_auto_approval_when_co
         ),
         encoding="utf-8",
     )
-    state = {
+    state: dict[str, list[dict[str, Any]]] = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Existing"}],
         "pending": [
             {
@@ -271,7 +273,7 @@ def test_reconcile_terminal_discovery_registry_uses_report_auto_approval_when_co
     def persist_state_and_auto_sync(
         next_state: dict[str, list[dict[str, Any]]], **_kwargs: Any
     ) -> dict[str, list[dict[str, Any]]]:
-        persisted = json.loads(json.dumps(next_state))
+        persisted = {bucket: [dict(row) for row in rows] for bucket, rows in next_state.items()}
         persisted_states.append(persisted)
         state["active"] = persisted["active"]
         state["pending"] = persisted["pending"]
@@ -282,7 +284,7 @@ def test_reconcile_terminal_discovery_registry_uses_report_auto_approval_when_co
         tmp_path,
         report_path=report_path,
         now_iso="2026-03-20T12:06:00Z",
-        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        bridge_log=lambda level, message, **fields: events.append(str(message)),
         load_state=lambda: json.loads(json.dumps(state)),
         persist_state_and_auto_sync=persist_state_and_auto_sync,
     )
@@ -344,7 +346,7 @@ def test_reconcile_terminal_discovery_registry_replays_report_declared_promotion
         ),
         encoding="utf-8",
     )
-    state = {
+    state: dict[str, list[dict[str, Any]]] = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Existing"}],
         "pending": [
             {
@@ -363,7 +365,7 @@ def test_reconcile_terminal_discovery_registry_replays_report_declared_promotion
     def persist_state_and_auto_sync(
         next_state: dict[str, list[dict[str, Any]]], **_kwargs: Any
     ) -> dict[str, list[dict[str, Any]]]:
-        persisted = json.loads(json.dumps(next_state))
+        persisted = {bucket: [dict(row) for row in rows] for bucket, rows in next_state.items()}
         persisted_states.append(persisted)
         state["active"] = persisted["active"]
         state["pending"] = persisted["pending"]
@@ -373,7 +375,7 @@ def test_reconcile_terminal_discovery_registry_replays_report_declared_promotion
     service = _make_service(
         tmp_path,
         report_path=report_path,
-        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        bridge_log=lambda level, message, **fields: events.append(str(message)),
         load_state=lambda: json.loads(json.dumps(state)),
         persist_state_and_auto_sync=persist_state_and_auto_sync,
     )
@@ -499,7 +501,7 @@ def test_reconciled_discovery_auto_approval_survives_registry_load_safe_demotion
     service = _make_service(
         tmp_path,
         report_path=report_path,
-        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        bridge_log=lambda level, message, **fields: events.append(str(message)),
         load_state=registry_service.load_state,
         persist_state_and_auto_sync=lambda state, **_kwargs: registry_service.persist_state(state),
     )
@@ -549,7 +551,7 @@ def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatc
         ),
         encoding="utf-8",
     )
-    state = {
+    state: dict[str, list[dict[str, Any]]] = {
         "active": [{"id": "active-1", "adapter": "static"}],
         "pending": [{"id": "pending-ok", "adapter": "static", "jobsFound": 3}],
         "rejected": [],
@@ -559,10 +561,10 @@ def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatc
     service = _make_service(
         tmp_path,
         report_path=report_path,
-        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        bridge_log=lambda level, message, **fields: events.append(str(message)),
         load_state=lambda: json.loads(json.dumps(state)),
-        persist_state_and_auto_sync=lambda next_state, **_kwargs: (
-            persisted_states.append(json.loads(json.dumps(next_state))) or next_state
+        persist_state_and_auto_sync=lambda next_state, **_kwargs: append_and_return(
+            persisted_states, json.loads(json.dumps(next_state)), next_state
         ),
     )
 

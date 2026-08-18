@@ -1,3 +1,5 @@
+from typing import Any
+
 from src.jobs.common.contracts_source_reports import normalize_source_report_row
 from src.jobs.common.taxonomy import (
     FailureBucket,
@@ -26,7 +28,7 @@ from src.shared.fetch_report_normalization import (
 
 
 def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
-    row = {
+    row: dict[str, Any] = {
         "name": "Source A",
         "adapter": "static",
         "status": "OK",
@@ -217,7 +219,7 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
 
 
 def test_jobs_source_report_row_uses_shared_zero_kept_classification() -> None:
-    row = {
+    row: dict[str, Any] = {
         "name": "Zero Source",
         "adapter": "static",
         "status": "OK",

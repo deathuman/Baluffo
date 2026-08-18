@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.bridge.report_normalizer import normalize_discovery_report_contract
 
 
@@ -60,7 +62,7 @@ def test_normalize_discovery_report_finished_omitted_active_is_inactive() -> Non
 
 def test_normalize_discovery_ship_seed_stub_is_not_active() -> None:
     """Packaged default source-discovery-report.json must not look like a live run."""
-    payload = {"summary": {}, "candidates": [], "failures": []}
+    payload: dict[str, Any] = {"summary": {}, "candidates": [], "failures": []}
     out = normalize_discovery_report_contract(payload)
     assert out["taskProgress"]["active"] is False
     assert out["taskProgress"]["phaseLabel"] == ""

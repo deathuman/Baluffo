@@ -1,3 +1,5 @@
+from typing import Any
+
 from ._helpers import elevato
 
 
@@ -46,7 +48,7 @@ def test_elevato_static_plugin_treats_expired_detail_as_empty() -> None:
     bądź została usunięta z naszego systemu.</p>
     """
 
-    source_row = {
+    source_row: dict[str, Any] = {
         "id": "static:listing_url:https://qloc.elevato.net/en/",
         "name": "QLOC (Sheet)",
         "company": "QLOC",

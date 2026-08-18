@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src.bridge.routes.get_registry_conflicts import handle_registry_conflict_routes
 from tests.helpers.bridge_api import FakeHandler
@@ -36,26 +37,26 @@ class MinimalRegistryConflictsRouteApi:
             "rejected": [],
         }
 
-    def get_registry_auto_heal_report(self) -> dict[str, object]:
+    def get_registry_auto_heal_report(self) -> dict[str, Any]:
         return {"ok": True, "applied": []}
 
-    def get_registry_summary_payload(self) -> dict[str, object]:
+    def get_registry_summary_payload(self) -> dict[str, Any]:
         return {"activeCount": 1, "pendingCount": 1, "rejectedCount": 0}
 
-    def load_json_object(self, path: Path, default: object = None) -> dict[str, object]:
+    def load_json_object(self, path: Path, default: object = None) -> dict[str, Any]:
         target = Path(path)
         if not target.exists():
             return dict(default) if isinstance(default, dict) else {}
         payload = json.loads(target.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else {}
 
-    def load_registry_conflict_adjudication(self) -> dict[str, object]:
+    def load_registry_conflict_adjudication(self) -> dict[str, Any]:
         return {}
 
-    def load_state(self) -> dict[str, object]:
+    def load_state(self) -> dict[str, Any]:
         return self._state
 
-    def summarize_state(self, state: dict[str, object]) -> dict[str, object]:
+    def summarize_state(self, state: dict[str, Any]) -> dict[str, Any]:
         return {
             "activeCount": len(state.get("active", [])),
             "pendingCount": len(state.get("pending", [])),

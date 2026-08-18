@@ -143,6 +143,13 @@ def run_proc(command: list[str], name: str, allow_stream: bool = False) -> tuple
         # Actually, let's try reading character by character from the raw stream if possible.
 
         progress_chars = {".", "F", "E", "s", "x", "X", "!"}
+        # Echo only progress chars that form an actual progress line (e.g.
+        # pytest's "....s..x [ 92%]"), not letters that merely appear inside
+        # prose such as warnings summaries or tracebacks ("File", "ValueError",
+        # "{self!r}"). A progress run must begin at a line boundary (line
+        # start, or right after a \r rewrite) to be echoed.
+        line_start = True
+        run_active = False
 
         while True:
             if process.stdout is None:
@@ -152,8 +159,16 @@ def run_proc(command: list[str], name: str, allow_stream: bool = False) -> tuple
                 break
             if char:
                 full_output.append(char)
-                if allow_stream and char in progress_chars:
+                if allow_stream and char in progress_chars and (line_start or run_active):
+                    run_active = True
                     print(char, end="", flush=True)
+                if char in ("\n", "\r"):
+                    line_start = True
+                    run_active = False
+                else:
+                    line_start = False
+                    if char not in progress_chars:
+                        run_active = False
 
         process.wait()
         output_str = "".join(full_output)

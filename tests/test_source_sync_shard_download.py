@@ -36,7 +36,7 @@ def test_read_shard_downloads_raw_bytes_when_github_omits_large_content() -> Non
     )
     config = SimpleNamespace(repo="owner/repo", branch="main", timeout_s=30)
 
-    result = read_shard(module, config, shard.manifest_entry(), opener=object())
+    result = read_shard(module, config, shard.manifest_entry(), opener=lambda *_a, **_kw: None)
 
     assert result["rows"] == [row]
     assert [call["method"] for call in module.calls] == ["GET", "GET_RAW"]

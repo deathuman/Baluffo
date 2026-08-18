@@ -1,6 +1,7 @@
 import contextlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 from src.app_version import APP_VERSION
@@ -9,7 +10,7 @@ from src.ship.desktop_app import _windows as windows_desktop_app
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
-def desktop_runtime_config(**overrides: object) -> desktop_app.DesktopRuntimeConfig:
+def desktop_runtime_config(**overrides: Any) -> desktop_app.DesktopRuntimeConfig:
     ship_root = Path(overrides.pop("ship_root", "C:/tmp/baluffo-ship"))
     values = {
         "ship_root": ship_root,

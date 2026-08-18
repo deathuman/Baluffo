@@ -16,6 +16,7 @@ from src.bridge.task_launch_fetch_lifecycle import (
     close_fetch_lifecycle_from_report,
 )
 from src.bridge.task_lifecycle import TaskLifecycleService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -235,8 +236,8 @@ def test_fetch_closeout_with_abort_intent_repairs_finished_report(tmp_path: Path
         save_json_atomic=_save_json_atomic,
         finish_lifecycle_run=lambda *_args, **_kwargs: {},
         fail_lifecycle_run=lambda *_args, **_kwargs: {},
-        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            canceled.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            canceled, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
         heartbeat_lifecycle_run=lambda *_args, **_kwargs: None,
         get_lifecycle_row=lambda _run_id, _task_type: {
@@ -248,8 +249,8 @@ def test_fetch_closeout_with_abort_intent_repairs_finished_report(tmp_path: Path
                 "abortReason": "test_abort",
             },
         },
-        mirror_fetch_source_runs=lambda _report: mirrored.append("sources") or True,
-        mirror_jobs_feed_rows=lambda _report: mirrored.append("jobs") or True,
+        mirror_fetch_source_runs=lambda _report: append_and_return(mirrored, "sources", True),
+        mirror_jobs_feed_rows=lambda _report: append_and_return(mirrored, "jobs", True),
     )
 
     closed = close_fetch_lifecycle_from_report(ctx, run_id="fetch_1")

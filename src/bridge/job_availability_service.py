@@ -35,7 +35,7 @@ class JobAvailabilityService:
         *,
         data_dir: Path,
         local_store_factory: Callable[[], Any],
-        validator: DirectLinkValidator | None = None,
+        validator: Any | None = None,
         enforce_direct: bool = False,
     ) -> None:
         self.data_dir = Path(data_dir)

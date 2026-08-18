@@ -64,10 +64,10 @@ def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
     }
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, dry_run=True, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is False
     assert result["dryRun"] is True
     assert result["wouldChange"] is True
@@ -90,10 +90,10 @@ def test_dry_run_unchanged_sharded_remote_preserves_dry_run_contract(
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, dry_run=True, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["pushed"] is False
     assert result["dryRun"] is True
@@ -116,10 +116,10 @@ def test_push_unchanged_sharded_remote_skips_writes(source_sync_test_root, monke
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["pushed"] is False
     assert result["skipped"] is True
@@ -207,10 +207,10 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     cfg.max_snapshot_size_bytes = snapshot_size_bytes + 1
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
     assert result["sizeWarning"] is True
     assert result["sizeBytes"] == snapshot_size_bytes
@@ -242,11 +242,11 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     cfg.max_snapshot_size_bytes = snapshot_size_bytes - 1
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         with pytest.raises(sync.SyncOperationError) as ctx:
             sync.push_sources_snapshot(cfg, local, opener=rejection_opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert ctx.value.code == "snapshot_too_large"
     assert ctx.value.fields["sizeBytes"] == snapshot_size_bytes
     assert ctx.value.fields["maxSnapshotSizeBytes"] == snapshot_size_bytes - 1
@@ -302,10 +302,10 @@ def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_r
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["pushed"] is True
     assert result["sizeBytes"] == snapshot_size_bytes

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
 from typing import Any
 
 from src.bridge.sync_service import SyncService
 from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
 from src.storage import BaluffoStore, TaskRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
+
+_EMPTY_REGISTRY_STATE: dict[str, list[dict[str, Any]]] = {
+    "active": [],
+    "pending": [],
+    "rejected": [],
+}
 
 
 class _FakeSourceSync:
@@ -36,7 +43,7 @@ class _FakeSourceSync:
         return {"enabled": bool(self._enabled), "ready": bool(self._ready)}
 
     def resolve_sync_config(
-        self, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
+        self, settings: dict[str, Any] | None = None, env: Mapping[str, str] | None = None
     ) -> Any:
         # Return a simple token object; SyncService treats it as opaque.
         return {"settings": dict(settings or {}), "env": bool(env)}
@@ -143,8 +150,8 @@ def test_sync_service_status_exposes_rate_limit_payload() -> None:
         svc = SyncService(
             data_dir=data_dir,
             source_sync=source_sync,
-            bridge_log=lambda _level, _message, **_fields: None,
-            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
             persist_state=lambda state: state,
             summarize_state=lambda _state: {
                 "activeCount": 0,
@@ -207,7 +214,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
                 "rejectedCount": len(state["rejected"]),
             }
 
-        def bridge_log(_level: str, _message: str, **_fields: Any) -> None:
+        def bridge_log(level: str, message: str, **fields: Any) -> None:
             return
 
         def get_security_defaults() -> dict[str, Any]:
@@ -388,8 +395,8 @@ def test_sync_service_push_noop_returns_size_fields() -> None:
         svc = SyncService(
             data_dir=data_dir,
             source_sync=source_sync,
-            bridge_log=lambda _level, _message, **_fields: None,
-            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
             persist_state=lambda state: state,
             summarize_state=lambda state: {
                 "activeCount": len(state["active"]),
@@ -436,8 +443,8 @@ def test_sync_service_push_forwards_remote_progress_callback() -> None:
         svc = SyncService(
             data_dir=data_dir,
             source_sync=source_sync,
-            bridge_log=lambda _level, _message, **_fields: None,
-            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
             persist_state=lambda state: state,
             summarize_state=lambda state: {
                 "activeCount": len(state["active"]),
@@ -486,7 +493,7 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
             return {"activeCount": 0, "pendingCount": 0, "rejectedCount": 0}
 
-        def bridge_log(_level: str, _message: str, **_fields: Any) -> None:
+        def bridge_log(level: str, message: str, **fields: Any) -> None:
             return
 
         def get_security_defaults() -> dict[str, Any]:
@@ -537,8 +544,8 @@ def test_sync_service_push_task_summary_includes_shard_fields() -> None:
         svc = SyncService(
             data_dir=data_dir,
             source_sync=source_sync,
-            bridge_log=lambda _level, _message, **_fields: None,
-            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
             persist_state=lambda state: state,
             summarize_state=lambda _state: {
                 "activeCount": 0,
@@ -587,8 +594,8 @@ def test_sync_service_shadow_writes_sync_events_and_runs() -> None:
             svc = SyncService(
                 data_dir=data_dir,
                 source_sync=source_sync,
-                bridge_log=lambda _level, _message, **_fields: None,
-                load_state=lambda: {"active": [], "pending": [], "rejected": []},
+                bridge_log=lambda level, message, **fields: None,
+                load_state=lambda: _EMPTY_REGISTRY_STATE,
                 persist_state=lambda state: state,
                 summarize_state=lambda _state: {
                     "activeCount": 0,

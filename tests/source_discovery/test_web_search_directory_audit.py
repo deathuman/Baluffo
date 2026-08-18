@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -18,8 +19,8 @@ def _audit_config(
     max_queries: int | None = None,
     max_links_per_query: int | None = None,
     recovery_enabled: bool | None = None,
-) -> dict[str, object]:
-    web_search: dict[str, object] = {
+) -> dict[str, Any]:
+    web_search: dict[str, Any] = {
         "activeAuditPath": audit_path,
         "activeAuditTtlMinutes": 60,
     }
@@ -36,7 +37,7 @@ def _audit_config(
     }
 
 
-def _seeds() -> list[dict[str, object]]:
+def _seeds() -> list[dict[str, Any]]:
     return [
         {
             "studio": "Seed Studio",
@@ -234,7 +235,7 @@ def test_web_search_directory_audit_records_link_diagnostics_and_caps_samples() 
 def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature_mismatch() -> (
     None
 ):
-    cases = [
+    cases: list[dict[str, Any]] = [
         {"schemaVersion": 0},
         {
             "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
@@ -253,7 +254,7 @@ def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_sign
     for index, existing in enumerate(cases):
         with workspace_tmpdir(f"web-search-audit-rerun-{index}") as root:
             audit_path = root / "web-audit.json"
-            payload = {
+            payload: dict[str, Any] = {
                 "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
                 "updatedAt": datetime.now(UTC).isoformat(),
                 "progress": {"complete": True},
@@ -409,7 +410,7 @@ def test_web_search_directory_audit_records_browser_recovery_candidates() -> Non
 def test_web_search_directory_audit_default_recovery_finds_static_candidate(
     mode: str,
     workspace_name: str,
-    studio_seeds: list[dict[str, object]],
+    studio_seeds: list[dict[str, Any]],
     include_seed_careers: bool,
     include_web_search: bool,
     expected_summary_key: str,
@@ -441,7 +442,7 @@ def test_web_search_directory_audit_default_recovery_finds_static_candidate(
             raise RuntimeError(f"unexpected URL: {url}")
 
         config = _audit_config(str(audit_path))
-        run_kwargs = {
+        run_kwargs: dict[str, Any] = {
             "studio_seeds": studio_seeds,
             "include_seed_careers": include_seed_careers,
             "include_web_search": include_web_search,
@@ -530,7 +531,7 @@ def test_web_search_directory_audit_default_recovery_finds_static_candidate(
 def test_web_search_directory_audit_preserves_no_http_recovery_output(
     scenario: str,
     workspace_name: str,
-    studio_seeds: list[dict[str, object]],
+    studio_seeds: list[dict[str, Any]],
     include_seed_careers: bool,
     include_web_search: bool,
     recovery_enabled: bool,
@@ -554,7 +555,7 @@ def test_web_search_directory_audit_preserves_no_http_recovery_output(
                 raise RuntimeError("429 web page")
             raise RuntimeError(f"unexpected URL: {url}")
 
-        run_kwargs = {
+        run_kwargs: dict[str, Any] = {
             "studio_seeds": studio_seeds,
             "include_seed_careers": include_seed_careers,
             "include_web_search": include_web_search,

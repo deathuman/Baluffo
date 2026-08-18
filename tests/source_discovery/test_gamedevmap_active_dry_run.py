@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src.source_discovery import active_audit_runtime, recovery_url_planner
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
@@ -320,9 +321,9 @@ def test_gamedevmap_no_careers_recovery_uses_shared_wave_planning() -> None:
         "sourceDirectoryEntryUrl": "https://www.gamedevmap.com/shell-studio",
     }
     provider_candidates: list[dict[str, object]] = []
-    primary_jobs: list[dict[str, object]] = []
-    secondary_jobs: list[dict[str, object]] = []
-    browser_rows: list[dict[str, object]] = []
+    primary_jobs: list[dict[str, Any]] = []
+    secondary_jobs: list[dict[str, Any]] = []
+    browser_rows: list[dict[str, Any]] = []
 
     queued = dry_run._queue_no_careers_recovery(
         row=row,
@@ -376,7 +377,7 @@ def test_gamedevmap_no_careers_recovery_uses_shared_wave_planning() -> None:
 
 
 def test_gamedevmap_failure_aggregation_bounds_samples() -> None:
-    artifact: dict[str, object] = {}
+    artifact: dict[str, Any] = {}
     failures = [
         {"name": f"failure-{index}", "adapter": "gamedevmap", "stage": "x", "error": "boom"}
         for index in range(dry_run.FAILURE_SAMPLE_LIMIT + 5)
@@ -655,7 +656,7 @@ def test_gamedevmap_source_audit_cache_hit_tolerates_legacy_batch_size_signature
 
 def test_gamedevmap_active_audit_reports_subtask_progress() -> None:
     with workspace_tmpdir("gamedevmap-subtask-progress") as root:
-        progress_events: list[dict[str, object]] = []
+        progress_events: list[dict[str, Any]] = []
 
         sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,

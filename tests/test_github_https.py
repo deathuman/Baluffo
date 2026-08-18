@@ -1,4 +1,5 @@
 import ssl
+from typing import Any
 from urllib.error import URLError
 
 import pytest
@@ -11,7 +12,7 @@ def test_build_github_ssl_context_loads_default_certs_and_custom_bundle(
 ) -> None:
     cafile = tmp_path / "custom-ca.pem"
     cafile.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
-    seen = {"default_certs": False, "cafiles": []}
+    seen: dict[str, Any] = {"default_certs": False, "cafiles": []}
 
     class FakeContext:
         def load_default_certs(self) -> None:
@@ -32,7 +33,7 @@ def test_build_github_ssl_context_loads_default_certs_and_custom_bundle(
 
 
 def test_build_github_ssl_context_loads_certifi_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen = {"cafiles": []}
+    seen: dict[str, Any] = {"cafiles": []}
 
     class FakeContext:
         def load_default_certs(self) -> None:
@@ -58,7 +59,7 @@ def test_build_github_ssl_context_loads_certifi_bundle(monkeypatch: pytest.Monke
 def test_build_github_ssl_context_ignores_missing_certifi_where(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen = {"cafiles": []}
+    seen: dict[str, Any] = {"cafiles": []}
 
     class FakeContext:
         def load_default_certs(self) -> None:
@@ -82,7 +83,7 @@ def test_build_github_ssl_context_ignores_missing_certifi_where(
 def test_build_github_ssl_context_ignores_certifi_os_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen = {"cafiles": []}
+    seen: dict[str, Any] = {"cafiles": []}
 
     class FakeContext:
         def load_default_certs(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -14,25 +15,26 @@ from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
 from src.jobs.adapters.plugins.provider_api import oracle_hcm as oracle_hcm_runner
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from tests.helpers.job_fixtures import _fixture
+from tests.helpers.mutation import call_and_return
 
 
 class _FakeDeps:
-    def __init__(self, registry_rows: dict[str, list[dict[str, object]]]) -> None:
+    def __init__(self, registry_rows: dict[str, list[dict[str, Any]]]) -> None:
         self._registry_rows = {
             key: [dict(row) for row in rows] for key, rows in registry_rows.items()
         }
-        self.SOURCE_DIAGNOSTICS: dict[str, dict[str, object]] = {}
+        self.SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
 
-    def registry_entries(self, key: str) -> list[dict[str, object]]:
+    def registry_entries(self, key: str) -> list[dict[str, Any]]:
         return [dict(row) for row in self._registry_rows.get(key, [])]
 
-    def set_registry_entries(self, key: str, rows: list[dict[str, object]]) -> None:
+    def set_registry_entries(self, key: str, rows: list[dict[str, Any]]) -> None:
         self._registry_rows[key] = [dict(row) for row in rows]
 
     def fetch_with_retries(
         self,
         url: str,
-        fetch_text,
+        fetch_text: Callable[[str, int], str],
         timeout_s: int,
         retries: int,
         backoff_s: float,
@@ -47,7 +49,7 @@ class _FakeDeps:
         adapter: str,
         studio: str,
         provider_url: str = "",
-        details: list[dict[str, object]],
+        details: list[dict[str, Any]],
         partial_errors: list[str],
     ) -> None:
         self.SOURCE_DIAGNOSTICS[name] = {
@@ -62,14 +64,14 @@ class _FakeDeps:
 @dataclass(frozen=True)
 class _FixtureCase:
     name: str
-    setup: Callable[[_FakeDeps], None]
-    run: Callable[[], list[dict[str, object]]]
+    setup: Callable[[_FakeDeps], Any]
+    run: Callable[[], list[dict[str, Any]]]
     expected_adapter: str
     expected_studio: str
-    extra_check: Callable[[list[dict[str, object]]], None] = lambda rows: None
+    extra_check: Callable[[list[dict[str, Any]]], None] = lambda rows: None
 
 
-def _assert_basic_job_fields(rows: list[dict[str, object]]) -> None:
+def _assert_basic_job_fields(rows: list[dict[str, Any]]) -> None:
     assert rows[0]["title"]
     assert rows[0]["company"]
     assert rows[0]["jobLink"]
@@ -138,7 +140,7 @@ def _setup_oracle_hcm(deps: _FakeDeps) -> None:
     )
 
 
-def _assert_oracle_hcm_job_fields(rows: list[dict[str, object]]) -> None:
+def _assert_oracle_hcm_job_fields(rows: list[dict[str, Any]]) -> None:
     _assert_basic_job_fields(rows)
     assert rows[0]["sourceJobId"] == "oracle_hcm:CX_1:REQ-100"
     assert rows[0]["company"] == "Corsair"
@@ -151,13 +153,15 @@ FIXTURE_CASES = [
         _FixtureCase(
             name="workable",
             setup=lambda deps: (
-                _setup_workable(deps),
-                deps.set_source_diagnostics(
+                call_and_return(_setup_workable, deps, value=None),
+                call_and_return(
+                    deps.set_source_diagnostics,
                     "workable_sources",
                     adapter="workable",
                     studio="Hutch",
                     details=[],
                     partial_errors=[],
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_workable_sources_source(
@@ -178,13 +182,15 @@ FIXTURE_CASES = [
         _FixtureCase(
             name="breezy",
             setup=lambda deps: (
-                _setup_breezy(deps),
-                deps.set_source_diagnostics(
+                call_and_return(_setup_breezy, deps, value=None),
+                call_and_return(
+                    deps.set_source_diagnostics,
                     "breezy_sources",
                     adapter="breezy",
                     studio="YallaPlay",
                     details=[],
                     partial_errors=[],
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_breezy_sources_source(
@@ -205,13 +211,15 @@ FIXTURE_CASES = [
         _FixtureCase(
             name="jazzhr",
             setup=lambda deps: (
-                _setup_jazzhr(deps),
-                deps.set_source_diagnostics(
+                call_and_return(_setup_jazzhr, deps, value=None),
+                call_and_return(
+                    deps.set_source_diagnostics,
                     "jazzhr_sources",
                     adapter="jazzhr",
                     studio="Lost Boys Interactive",
                     details=[],
                     partial_errors=[],
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_jazzhr_sources_source(
@@ -234,13 +242,15 @@ FIXTURE_CASES = [
         _FixtureCase(
             name="oracle_hcm",
             setup=lambda deps: (
-                _setup_oracle_hcm(deps),
-                deps.set_source_diagnostics(
+                call_and_return(_setup_oracle_hcm, deps, value=None),
+                call_and_return(
+                    deps.set_source_diagnostics,
                     "oracle_hcm_sources",
                     adapter="oracle_hcm",
                     studio="Corsair",
                     details=[],
                     partial_errors=[],
+                    value=None,
                 ),
             ),
             run=lambda: provider_api.run_oracle_hcm_sources_source(

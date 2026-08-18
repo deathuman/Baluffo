@@ -23,7 +23,7 @@ from src.source_registry_io import load_runtime_evidence_array
 
 
 class _RegistryRouteApi(Protocol):
-    DISCOVERY_CANDIDATES_PATH: Path
+    DISCOVERY_CANDIDATES_PATH: Path | None
     DISCOVERY_REPORT_PATH: Path
     JOBS_FETCH_REPORT_PATH: Path
     runtime_config: Any
@@ -33,7 +33,7 @@ class _RegistryRouteApi(Protocol):
     def get_registry_summary_payload(self) -> dict[str, Any]: ...
     def get_registry_compact_table_payload(self, **kwargs: Any) -> dict[str, Any]: ...
 
-    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+    def load_json_object(self, path: Path, default: Any) -> dict[str, Any]: ...
 
     def load_state(self) -> dict[str, list[dict[str, Any]]]: ...
 

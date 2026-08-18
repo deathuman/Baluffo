@@ -1,6 +1,7 @@
 """Tests for pipeline execution admin display payloads."""
 
 from tests._pipeline_execution_shared import (
+    Any,
     Path,
     make_parse_iso,
 )
@@ -62,7 +63,7 @@ class TestAdminPanelTaskDisplay:
 
     def test_ops_history_includes_pipeline_runs(self, tmp_path: Path) -> None:
         """Test /ops/history endpoint returns pipeline runs for Admin display."""
-        from src.bridge.routes import get_routes
+        from src.bridge.routes.get_ops_status import handle_ops_status_routes
 
         history = [
             {
@@ -97,14 +98,43 @@ class TestAdminPanelTaskDisplay:
             def send_json(self, payload, status=200):
                 self.sent.append({"status": status, "payload": payload})
 
+            def send_bytes(self, body: bytes, *, content_type: str, status: int = 200, **_headers):
+                self.sent.append({"status": status, "body": body, "content_type": content_type})
+
         class FakeApi:
-            def get_lifecycle_run_history_rows(self):
+            def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
+                return {}
+
+            def compute_ops_health(self) -> dict[str, Any]:
+                return {}
+
+            def compute_ops_health_ready(self) -> dict[str, Any]:
+                return {}
+
+            def compute_ops_dashboard_health(self) -> dict[str, Any]:
+                return {}
+
+            def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
+                return {}
+
+            def get_current_task_state_payload(self) -> dict[str, Any]:
+                return {}
+
+            def get_current_task_state_summary_payload(self) -> dict[str, Any]:
+                return {}
+
+            def get_lifecycle_run_history_rows(self) -> list[Any]:
                 return history
+
+            def get_task_live_payload(
+                self, task_type: str, *, summary: bool = False
+            ) -> dict[str, Any]:
+                return {}
 
         handler = FakeHandler()
         api = FakeApi()
 
-        result = get_routes.handle_get(handler, api=api, path="/ops/history", query={})
+        result = handle_ops_status_routes(handler, api=api, path="/ops/history", query={})
 
         assert result is True
         payload = handler.sent[-1]["payload"]

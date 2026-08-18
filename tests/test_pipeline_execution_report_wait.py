@@ -13,6 +13,7 @@ from tests._pipeline_execution_shared import (
     pytest,
     threading,
 )
+from tests.helpers.mutation import append_and_return
 
 
 def test_wait_for_report_completion_returns_terminal_report_even_while_projected_child_is_active(
@@ -292,8 +293,8 @@ def test_wait_for_report_completion_does_not_trust_active_snapshot_when_child_de
         get_projected_run_history=lambda: _projection_snapshot(
             task_type="fetch", run_id="fetch_1", active=True
         ),
-        fail_lifecycle_run=lambda *args, **kwargs: (
-            failures.append({"args": args, **kwargs}) or {"args": args, **kwargs}
+        fail_lifecycle_run=lambda *args, **kwargs: append_and_return(
+            failures, {"args": args, **kwargs}, {"args": args, **kwargs}
         ),
     )
 

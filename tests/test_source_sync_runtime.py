@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import quote
 
 import pytest
 
 import src.source_sync_runtime as runtime
+from tests.helpers.mutation import append_and_return
 
 
 class _SyncOperationError(RuntimeError):
@@ -120,7 +123,7 @@ def test_local_wrapped_key_cache_handles_invalid_mismatch_and_dpapi_round_trip(
     monkeypatch.setattr(
         runtime,
         "dpapi_protect",
-        lambda _root, raw: wrapped_calls.append(raw) or "wrapped-private-key",
+        lambda _root, raw: append_and_return(wrapped_calls, raw, "wrapped-private-key"),
     )
     monkeypatch.setattr(
         runtime,
@@ -282,7 +285,7 @@ def test_github_app_auth_refresh_reports_http_and_malformed_token_errors() -> No
             private_key_pem="pem",
         )
     )
-    responses = iter(
+    responses: Iterator[tuple[int, dict[str, Any], dict[str, Any]]] = iter(
         [
             (500, {"message": "denied"}, {}),
             (201, {"token": "", "expires_at": "2099-01-01T00:00:00Z"}, {}),
@@ -297,9 +300,13 @@ def test_github_app_auth_refresh_reports_http_and_malformed_token_errors() -> No
     root._request_raw_json = fake_request
 
     with pytest.raises(RuntimeError, match="denied"):
-        runtime.github_app_auth_refresh_installation_token(root, auth, opener=object())
+        runtime.github_app_auth_refresh_installation_token(
+            root, auth, opener=lambda *_a, **_kw: None
+        )
     with pytest.raises(RuntimeError, match="missing token or expires_at"):
-        runtime.github_app_auth_refresh_installation_token(root, auth, opener=object())
+        runtime.github_app_auth_refresh_installation_token(
+            root, auth, opener=lambda *_a, **_kw: None
+        )
     assert calls[0]["method"] == "POST"
     assert calls[0]["url"] == "https://api.github.test/app/installations/456/access_tokens"
 
@@ -354,7 +361,7 @@ def test_request_json_does_not_retry_401_when_retry_disabled(monkeypatch) -> Non
     root = _root()
     manager_calls: list[dict[str, object]] = []
     raw_calls: list[dict[str, object]] = []
-    opener = object()
+    opener = lambda *_a, **_kw: None
 
     class _Manager:
         def get_installation_token(self, **kwargs):

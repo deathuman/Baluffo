@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -44,7 +45,9 @@ def test_pipeline_fetch_child_uses_bounded_container_profile(monkeypatch) -> Non
     payloads: list[dict[str, Any]] = []
     service = _make_pipeline_service(
         container_mode=True,
-        start_fetcher_task=lambda payload: payloads.append(dict(payload)) or {"runId": "fetch_1"},
+        start_fetcher_task=lambda payload: append_and_return(
+            payloads, dict(payload), {"runId": "fetch_1"}
+        ),
     )
 
     monkeypatch.delenv("BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS", raising=False)
@@ -64,7 +67,9 @@ def test_pipeline_fetch_child_clamps_container_profile_env(monkeypatch) -> None:
     payloads: list[dict[str, Any]] = []
     service = _make_pipeline_service(
         container_mode=True,
-        start_fetcher_task=lambda payload: payloads.append(dict(payload)) or {"runId": "fetch_1"},
+        start_fetcher_task=lambda payload: append_and_return(
+            payloads, dict(payload), {"runId": "fetch_1"}
+        ),
     )
 
     monkeypatch.setenv("BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS", "99")
@@ -86,7 +91,9 @@ def test_pipeline_fetch_child_keeps_desktop_fetch_defaults_unmodified() -> None:
     payloads: list[dict[str, Any]] = []
     service = _make_pipeline_service(
         container_mode=False,
-        start_fetcher_task=lambda payload: payloads.append(dict(payload)) or {"runId": "fetch_1"},
+        start_fetcher_task=lambda payload: append_and_return(
+            payloads, dict(payload), {"runId": "fetch_1"}
+        ),
     )
 
     service._start_fetch_child()

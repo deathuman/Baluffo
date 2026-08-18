@@ -8,6 +8,7 @@ from src.bridge.task_launch_fetch_lifecycle import (
     FetchLifecycleContext,
     heartbeat_fetch_lifecycle_from_tasks,
 )
+from tests.helpers.mutation import append_and_return
 
 
 def _load_json_object(path: Path, default: Any) -> Any:
@@ -37,8 +38,8 @@ def _ctx(tmp_path: Path, heartbeats: list[dict[str, Any]]) -> FetchLifecycleCont
         finish_lifecycle_run=lambda *_args, **_kwargs: {},
         fail_lifecycle_run=lambda *_args, **_kwargs: {},
         cancel_lifecycle_run=lambda *_args, **_kwargs: {},
-        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            heartbeats.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            heartbeats, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
         get_lifecycle_row=lambda _run_id, _task_type: None,
         mirror_fetch_source_runs=lambda _report: True,

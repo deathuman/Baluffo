@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from typing import Any
+
 import pytest
 
 from src.source_discovery import gamesmap_parsing
@@ -647,7 +649,7 @@ def test_parse_gamesmap_index_entries_extracts_company_rows_from_next_payload() 
 
 def test_parse_gamesmap_index_entries_resolves_category_references_and_drops_bad_ones() -> None:
     category_ref = "$1b:props:children:props:children:props:children:props:companies:{company}:categories:{category}"
-    companies = [
+    companies: list[dict[str, Any]] = [
         {
             "id": "1",
             "name": "Anchor Developer",
@@ -703,7 +705,7 @@ def test_parse_gamesmap_index_entries_resolves_category_references_and_drops_bad
 
 def test_parse_gamesmap_live_style_reference_payload_preserves_many_eligible_rows() -> None:
     category_ref = "$1b:props:children:props:children:props:children:props:companies:{company}:categories:{category}"
-    companies = [
+    companies: list[dict[str, Any]] = [
         {
             "id": "1",
             "name": "Direct Developer",

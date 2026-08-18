@@ -245,29 +245,47 @@ class BrowserFallbackPool:
         thread = self._thread
         self._loop = None
         self._thread = None
-        self._playwright = None
-        self._browser = None
         self._available = True
         if loop is None:
             return
+        # Grab the live handles BEFORE dropping our references: _shutdown
+        # runs on the pool loop thread, and nulling these first would leave
+        # playwright's node-driver subprocess and its pipe transports
+        # abandoned mid-read, so their __del__ later emits "unclosed
+        # transport" ResourceWarnings (PytestUnraisableExceptionWarning on
+        # Windows proactor, where the pipe handle is already gone by GC
+        # time and repr() in the warning raises ValueError).
+        browser = self._browser
+        playwright = self._playwright
+        self._browser = None
+        self._playwright = None
         try:
-            future = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+            future = asyncio.run_coroutine_threadsafe(self._shutdown(browser, playwright), loop)
             future.result(timeout=10)
         except BaseException:
             pass
         loop.call_soon_threadsafe(loop.stop)
         if thread is not None:
             thread.join(timeout=_POOL_THREAD_JOIN_TIMEOUT_S)
+        try:
+            loop.close()
+        except BaseException:
+            pass
 
-    async def _shutdown(self) -> None:
-        if self._browser is not None:
+    async def _shutdown(self, browser: Any, playwright: Any) -> None:
+        # Closing the browser and stopping playwright drives the driver
+        # process to exit and its stdin/stdout pipe transports to close via
+        # asyncio's own shutdown path (SubprocessStreamProtocol
+        # ._maybe_close_transport). Skipping this is what left unclosed
+        # transports behind at GC time.
+        if browser is not None:
             try:
-                await self._browser.close()
+                await asyncio.wait_for(browser.close(), timeout=5)
             except BaseException:
                 pass
-        if self._playwright is not None:
+        if playwright is not None:
             try:
-                await self._playwright.stop()
+                await asyncio.wait_for(playwright.stop(), timeout=5)
             except BaseException:
                 pass
         proc = self._obscura_proc

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from unittest import mock
 
 import pytest
@@ -14,8 +15,8 @@ def _start_fetch_lifecycle(
     *,
     run_id: str,
     started_at: str,
-    progress: dict[str, object],
-    summary: dict[str, object],
+    progress: Mapping[str, object],
+    summary: Mapping[str, object],
 ) -> None:
     admin_bridge.start_lifecycle_run(
         run_id=run_id,

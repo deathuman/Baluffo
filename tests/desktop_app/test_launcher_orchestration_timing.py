@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -13,6 +14,7 @@ from tests.desktop_app._helpers import (
     desktop_runtime_config,
     isolate_desktop_startup_side_effects,
 )
+from tests.helpers.mutation import append_and_return
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
@@ -30,7 +32,7 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
     call_log: list[str] = []
     site_env: dict[str, str] = {}
 
-    def _start_child_process(*args: object, **kwargs: object) -> SimpleNamespace:
+    def _start_child_process(*args: Any, **kwargs: Any) -> SimpleNamespace:
         command = args[0]
         child_mode = str(command[2]) if isinstance(command, list) and len(command) > 2 else ""
         if child_mode == "__child_site__":
@@ -48,7 +50,7 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
             return SimpleNamespace(pid=202)
         raise AssertionError(f"unexpected child command: {command!r}")
 
-    def _wait_for_url(*args: object, **kwargs: object) -> None:
+    def _wait_for_url(*args: Any, **kwargs: Any) -> None:
         call_log.append("wait_for_url")
 
     with (
@@ -245,22 +247,23 @@ def test_launch_desktop_app_waits_for_bridge_ready_before_browser_launch() -> No
         mock.patch.object(
             desktop_app,
             "wait_for_desktop_startup_ready",
-            side_effect=lambda *args, **kwargs: (
-                call_log.append("bridge_ready") or {"appVersion": APP_VERSION, "startupReady": True}
+            side_effect=lambda *args, **kwargs: append_and_return(
+                call_log, "bridge_ready", {"appVersion": APP_VERSION, "startupReady": True}
             ),
         ),
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
-            side_effect=lambda *args, **kwargs: (
-                call_log.append("launch_browser")
-                or {
+            side_effect=lambda *args, **kwargs: append_and_return(
+                call_log,
+                "launch_browser",
+                {
                     "mode": "chromium-app",
                     "browserName": "chrome",
                     "browserPath": "C:/Chrome/chrome.exe",
                     "process": None,
                     "windowShownAtMonotonic": 101.0,
-                }
+                },
             ),
         ) as launch_browser_mock,
         mock.patch.object(desktop_app, "save_session_state"),

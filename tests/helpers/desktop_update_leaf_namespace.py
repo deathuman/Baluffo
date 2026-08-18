@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
+from typing import Any
 
 from src.ship import desktop_update_constants as du_constants
 from src.ship import desktop_update_manifest as du_manifest
@@ -9,7 +10,7 @@ from src.ship import desktop_update_service as du_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 
-du = SimpleNamespace(
+du: Any = SimpleNamespace(
     DESKTOP_UPDATE_CHANNEL=du_manifest.DESKTOP_UPDATE_CHANNEL,
     DESKTOP_UPDATE_HELPER_NAME=du_constants.DESKTOP_UPDATE_HELPER_NAME,
     DesktopUpdatePaths=du_shared.DesktopUpdatePaths,

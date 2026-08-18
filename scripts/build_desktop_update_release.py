@@ -9,6 +9,7 @@ import binascii
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -38,7 +39,7 @@ def _default_release_tag(version: str) -> str:
     return normalized if normalized.startswith("v") else f"v{normalized}"
 
 
-def _artifact_payload(path: Path, url: str) -> dict[str, object]:
+def _artifact_payload(path: Path, url: str) -> dict[str, Any]:
     resolved = Path(path).expanduser().resolve()
     return {
         "url": str(url),
@@ -88,7 +89,7 @@ def load_private_key_bytes(args: argparse.Namespace) -> bytes:
         ) from exc
 
 
-def build_manifest(args: argparse.Namespace) -> dict[str, object]:
+def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     version = str(args.version or APP_VERSION).strip() or APP_VERSION
     release_tag = str(args.release_tag or _default_release_tag(version)).strip()
     repo = str(args.github_repo or "").strip()
@@ -125,7 +126,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, object]:
     if ship_zip is not None and not ship_url:
         raise RuntimeError("Ship recovery ZIP URL is required when --ship-zip is provided.")
 
-    manifest: dict[str, object] = {
+    manifest: dict[str, Any] = {
         "schema_version": DESKTOP_UPDATE_SCHEMA_VERSION,
         "key_id": key_id,
         "channel": "stable",

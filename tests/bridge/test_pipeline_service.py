@@ -11,6 +11,7 @@ from src.bridge.run_history_api import (
     SyncHistoryDeps,
     project_run_history,
 )
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -57,11 +58,11 @@ def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path:
             "stage": "discovery",
             "progress": {"currentStep": 1, "totalSteps": 3, "label": "Running discovery..."},
         },
-        refresh_child_task_heartbeat=lambda task_type, run_id, started_at: (
-            refreshed.append((task_type, run_id, started_at)) or True
+        refresh_child_task_heartbeat=lambda task_type, run_id, started_at: append_and_return(
+            refreshed, (task_type, run_id, started_at), True
         ),
-        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            parent_heartbeats, (run_id, task_type, str(kwargs.get("stage") or "")), {}
         ),
     )
 
@@ -100,8 +101,8 @@ def test_wait_for_report_completion_finalizes_terminal_child_before_parent_abort
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
         runtime=runtime,
         load_json_object=lambda _path, _default: dict(report),
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_children, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -146,8 +147,8 @@ def test_wait_for_report_completion_does_not_finalize_abort_requested_child() ->
             child_tasks={},
             diagnostics=[],
         ),
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_children, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -180,8 +181,8 @@ def test_pipeline_stage_heartbeat_uses_normalized_lifecycle_progress() -> None:
     }
     service = _make_pipeline_service(
         pipeline_status=status,
-        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: (
-            parent_heartbeats.append(dict(kwargs)) or {}
+        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: append_and_return(
+            parent_heartbeats, dict(kwargs), {}
         ),
     )
 
@@ -217,8 +218,8 @@ def test_pipeline_completion_uses_normalized_lifecycle_progress() -> None:
     }
     service = _make_pipeline_service(
         pipeline_status=status,
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -258,8 +259,8 @@ def test_pipeline_abort_marks_canceled_lifecycle() -> None:
     service = _make_pipeline_service(
         pipeline_status=status,
         runtime=runtime,
-        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            canceled_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -299,8 +300,8 @@ def test_pipeline_abort_during_sync_is_deferred_until_sync_finishes() -> None:
         pipeline_status=status,
         start_sync_task=lambda _action, **_kwargs: {"started": True, "runId": "sync_1"},
         wait_for_sync_completion=lambda _run_id, _timeout_s: {"status": "ok", "summary": {}},
-        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            canceled_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -336,8 +337,8 @@ def test_pipeline_abort_pending_sync_is_idempotent() -> None:
     }
     service = _make_pipeline_service(
         pipeline_status=status,
-        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: (
-            heartbeats.append(dict(kwargs)) or {}
+        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: append_and_return(
+            heartbeats, dict(kwargs), {}
         ),
     )
 
@@ -361,8 +362,8 @@ def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report(
         load_json_object=lambda _path, _default: {
             "runtime": {"autoApproval": {"enabled": True, "status": "completed"}}
         },
-        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            parent_heartbeats, (run_id, task_type, str(kwargs.get("stage") or "")), {}
         ),
     )
 
@@ -386,8 +387,8 @@ def test_pipeline_waits_for_discovery_registry_finalization_before_fetch() -> No
                 "registryFinalization": {"status": "completed"},
             }
         },
-        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            parent_heartbeats, (run_id, task_type, str(kwargs.get("stage") or "")), {}
         ),
     )
 
@@ -461,11 +462,11 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
             },
             diagnostics=[],
         ),
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_children, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failed_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
         clear_task_state=lambda task_type: cleared.append(task_type),
     )
@@ -541,8 +542,8 @@ def test_status_payload_warns_after_inactive_pipeline_worker_terminal_sync_failu
             },
             diagnostics=[],
         ),
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -712,8 +713,8 @@ def test_pipeline_completion_notifier_fires_once_for_long_terminal_run() -> None
     service = _make_pipeline_service(
         now_iso=lambda: "2026-05-06T19:02:00Z",
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
-        pipeline_completion_notifier=lambda payload: (
-            calls.append(payload) or {"notified": True, "reason": "notified", "hwnd": 101}
+        pipeline_completion_notifier=lambda payload: append_and_return(
+            calls, payload, {"notified": True, "reason": "notified", "hwnd": 101}
         ),
     )
     service._status.update(

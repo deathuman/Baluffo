@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from scripts import precommit_gate
 
 
@@ -137,9 +139,9 @@ def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
 
 
 def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
-    def fake_run(command: list[str], cwd=None, env=None):  # type: ignore[no-untyped-def]
+    def fake_run(command: list[str], cwd=None, env=None):
         captured["command"] = command
         captured["cwd"] = cwd
         captured["env"] = env

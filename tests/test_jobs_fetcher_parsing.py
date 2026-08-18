@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -11,6 +12,7 @@ from src import jobs_fetcher as jf
 from src.jobs.adapters.html_parsers import parse_jobposting_location_details
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.job_fixtures import _fixture
+from tests.helpers.mutation import append_and_return
 
 
 def test_scrapy_runner_emit_envelope_tolerates_non_json_safe_values(
@@ -97,7 +99,7 @@ def test_social_parsers_drop_discussion_and_not_hiring_posts() -> None:
 
 
 def test_social_parsers_reject_reddit_article_links_with_author_fallback_company() -> None:
-    reject_reasons = {}
+    reject_reasons: dict[str, Any] = {}
     reddit_payload = {
         "data": {
             "children": [
@@ -129,7 +131,7 @@ def test_social_parsers_reject_reddit_article_links_with_author_fallback_company
 
 
 def test_social_parsers_reject_reddit_rss_article_links() -> None:
-    reject_reasons = {}
+    reject_reasons: dict[str, Any] = {}
     rss = """<?xml version="1.0" encoding="UTF-8"?>
 <rss><channel>
   <item>
@@ -271,7 +273,7 @@ def test_normalize_url_strips_language_query_param() -> None:
 def test_deduplicate_jobs_covers_redirect_and_identity_rules() -> None:
     now_iso = jf.now_iso()
     redirect_target = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "name": "unknown company enrichment",
             "rows": [
@@ -578,9 +580,10 @@ def test_canonicalize_job_skips_redirect_resolution_for_gracklehq_source() -> No
         },
         source="gracklehq",
         fetched_at=jf.now_iso(),
-        resolve_redirect_url=lambda url: (
-            calls.append(str(url))
-            or "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"
+        resolve_redirect_url=lambda url: append_and_return(
+            calls,
+            str(url),
+            "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role",
         ),
     )
 

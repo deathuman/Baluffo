@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from tests.helpers.mutation import append_and_return
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -56,7 +57,7 @@ def test_mark_stage_appends_ledger_entries_with_monotonic_entered_at() -> None:
     heartbeats: list[dict[str, Any]] = []
     svc = _make_service(
         now_iso=_now_iso_factory(ticks),
-        heartbeat_lifecycle_run=lambda *a, **kw: heartbeats.append(kw) or {},
+        heartbeat_lifecycle_run=lambda *a, **kw: append_and_return(heartbeats, kw, {}),
     )
     svc._status.update({"runId": "pipeline_t1", "active": True, "_stageLedger": []})
 
@@ -115,7 +116,7 @@ def test_set_completed_flushes_ledger_into_lifecycle_summary() -> None:
     finished: list[dict[str, Any]] = []
     svc = _make_service(
         now_iso=_now_iso_factory(ticks),
-        finish_lifecycle_run=lambda run_id, task_type, **kw: finished.append(kw) or {},
+        finish_lifecycle_run=lambda run_id, task_type, **kw: append_and_return(finished, kw, {}),
     )
     svc._status.update(
         {
@@ -144,7 +145,7 @@ def test_set_completed_with_canceled_still_flushes_ledger() -> None:
     canceled: list[dict[str, Any]] = []
     svc = _make_service(
         now_iso=_now_iso_factory(ticks),
-        cancel_lifecycle_run=lambda run_id, task_type, **kw: canceled.append(kw) or {},
+        cancel_lifecycle_run=lambda run_id, task_type, **kw: append_and_return(canceled, kw, {}),
     )
     svc._status.update(
         {
@@ -169,7 +170,7 @@ def test_set_completed_with_error_still_flushes_ledger() -> None:
     failed: list[dict[str, Any]] = []
     svc = _make_service(
         now_iso=_now_iso_factory(ticks),
-        fail_lifecycle_run=lambda run_id, task_type, **kw: failed.append(kw) or {},
+        fail_lifecycle_run=lambda run_id, task_type, **kw: append_and_return(failed, kw, {}),
     )
     svc._status.update(
         {
@@ -194,7 +195,7 @@ def test_set_completed_with_empty_ledger_still_marks_terminal_entry() -> None:
     finished: list[dict[str, Any]] = []
     svc = _make_service(
         now_iso=_now_iso_factory(ticks),
-        finish_lifecycle_run=lambda run_id, task_type, **kw: finished.append(kw) or {},
+        finish_lifecycle_run=lambda run_id, task_type, **kw: append_and_return(finished, kw, {}),
     )
     svc._status.update(
         {

@@ -1,6 +1,7 @@
 """Tests for pipeline execution status route contract."""
 
 from tests._pipeline_execution_shared import (
+    Any,
     Path,
     _pipeline_status_payload,
     pytest,
@@ -52,7 +53,7 @@ from tests._pipeline_execution_shared import (
 )
 def test_status_endpoint_returns_current_state(payload, expected, tmp_path: Path) -> None:
     """Test /tasks/run-jobs-pipeline-status returns accurate state."""
-    from src.bridge.routes import get_routes
+    from src.bridge.routes.get_pipeline_tasks import handle_pipeline_task_routes
 
     class FakeHandler:
         def __init__(self):
@@ -61,14 +62,23 @@ def test_status_endpoint_returns_current_state(payload, expected, tmp_path: Path
         def send_json(self, payload, status=200):
             self.sent.append({"status": status, "payload": payload})
 
+        def send_bytes(self, body: bytes, *, content_type: str, status: int = 200, **_headers):
+            self.sent.append({"status": status, "body": body, "content_type": content_type})
+
     class FakeApi:
         def get_jobs_pipeline_status_payload(self):
             return payload
 
+        def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]:
+            return {}
+
+        def get_job_availability_check_status(self, run_id: str) -> dict[str, Any]:
+            return {}
+
     handler = FakeHandler()
     api = FakeApi()
 
-    result = get_routes.handle_get(
+    result = handle_pipeline_task_routes(
         handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
     )
 

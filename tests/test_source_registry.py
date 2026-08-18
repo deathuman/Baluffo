@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from src import source_registry as sr
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -111,7 +112,7 @@ def test_canonicalize_registry_row_backfills_pending_transition_metadata() -> No
 def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {
+        state: dict[str, list[dict[str, Any]]] = {
             "active": [
                 {
                     "id": "active-1",
@@ -160,7 +161,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             ],
             "rejected": [],
         }
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 1,
                 "approvedCandidateCount": 0,
@@ -245,7 +246,7 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
 ):
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {
+        state: dict[str, list[dict[str, Any]]] = {
             "active": [],
             "pending": [
                 {
@@ -261,7 +262,7 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
             ],
             "rejected": [],
         }
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 1,
                 "approvedCandidateCount": 0,
@@ -310,8 +311,8 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
 def test_apply_discovery_auto_approval_approves_cap_deferred_job_positive_candidate() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {"active": [], "pending": [], "rejected": []}
-        report = {
+        state: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 1,
                 "approvedCandidateCount": 0,
@@ -361,7 +362,7 @@ def test_apply_discovery_auto_approval_approves_cap_deferred_job_positive_candid
 def test_apply_discovery_auto_approval_blocks_unsafe_cap_deferred_candidates() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {"active": [], "pending": [], "rejected": []}
+        state: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
 
         def candidate(candidate_id: str, **overrides: object) -> dict[str, object]:
             row: dict[str, object] = {
@@ -379,7 +380,7 @@ def test_apply_discovery_auto_approval_blocks_unsafe_cap_deferred_candidates() -
             row.update(overrides)
             return row
 
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 6,
                 "approvedCandidateCount": 0,
@@ -422,7 +423,7 @@ def test_apply_discovery_auto_approval_blocks_unsafe_cap_deferred_candidates() -
 def test_apply_discovery_auto_approval_live_shaped_cap_deferred_fixture() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {"active": [], "pending": [], "rejected": []}
+        state: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
         candidates = []
         for index in range(18):
             rank_reasons = ["medium_confidence", "jobs_found_bonus", "evidence_rank_bonus"]
@@ -444,7 +445,7 @@ def test_apply_discovery_auto_approval_live_shaped_cap_deferred_fixture() -> Non
                     "promotionLane": "manual_review",
                 }
             )
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 113,
                 "approvedCandidateCount": 0,
@@ -473,7 +474,7 @@ def test_apply_discovery_auto_approval_live_shaped_cap_deferred_fixture() -> Non
 def test_apply_discovery_auto_approval_keeps_failed_or_deferred_candidates_pending() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
-        state = {
+        state: dict[str, list[dict[str, Any]]] = {
             "active": [],
             "pending": [
                 {
@@ -522,7 +523,7 @@ def test_apply_discovery_auto_approval_keeps_failed_or_deferred_candidates_pendi
             ],
             "rejected": [],
         }
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 2,
                 "approvedCandidateCount": 0,

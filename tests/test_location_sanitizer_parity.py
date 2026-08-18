@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from src.jobs.text_utils import (
     get_city_filter_option_values,
@@ -14,12 +15,12 @@ from src.jobs.text_utils import (
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "location_sanitizer_parity.json"
 
 
-def _load_cases() -> list[dict[str, object]]:
+def _load_cases() -> list[dict[str, Any]]:
     payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     return list(payload["cases"])
 
 
-def _frontend_probe(repo_root: Path, cases: list[dict[str, object]]) -> dict[str, object]:
+def _frontend_probe(repo_root: Path, cases: list[dict[str, Any]]) -> dict[str, Any]:
     domain_uri = (repo_root / "frontend" / "jobs" / "domain.js").resolve().as_uri()
     city_noise_uri = (
         (repo_root / "frontend" / "shared" / "data" / "city-noise.js").resolve().as_uri()
@@ -68,7 +69,8 @@ process.stdout.write(JSON.stringify({{
         text=True,
         check=True,
     )
-    return json.loads(completed.stdout)
+    loaded = json.loads(completed.stdout)
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def test_location_contract_normalization_stays_in_sync_with_frontend(repo_root: Path) -> None:

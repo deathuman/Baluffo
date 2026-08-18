@@ -2,6 +2,7 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 from src.jobs import adapters, canonicalize, dedup, registry, transport
@@ -37,7 +38,7 @@ def test_registry_social_config_merges_defaults() -> None:
     subreddits = reddit_config.get("subreddits") or []
     assert reddit_config.get("enabled") is False
     assert len(subreddits) == 0
-    expected_subreddits = []
+    expected_subreddits: list[str] = []
     assert subreddits == expected_subreddits
 
 
@@ -127,8 +128,8 @@ def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
         )
         for row in rows
     ]
-    typed_rows = [row for row in typed_rows if row is not None]
-    merged, stats = dedup.deduplicate_jobs(typed_rows)
+    kept_rows = cast(list[CanonicalJob], [row for row in typed_rows if row is not None])
+    merged, stats = dedup.deduplicate_jobs(kept_rows)
     assert len(merged) == 1
     assert int(stats["outputCount"]) == 1
     assert isinstance(merged[0], CanonicalJob)

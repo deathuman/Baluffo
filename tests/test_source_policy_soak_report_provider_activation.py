@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts import source_policy_soak_report as soak
 
@@ -10,7 +11,10 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def _gate_ids(report: dict[str, object]) -> set[str]:
-    return {str(row.get("id")) for row in report.get("qualityGates", []) if isinstance(row, dict)}
+    gates = report.get("qualityGates", [])
+    if not isinstance(gates, list):
+        return set()
+    return {str(row.get("id")) for row in gates if isinstance(row, dict)}
 
 
 def test_provider_migration_activation_counts_advisory_actions(tmp_path: Path) -> None:
@@ -450,7 +454,7 @@ def test_provider_coverage_next_action_fetches_unfetched_pending_candidates(
 def test_provider_coverage_next_action_debugs_unvalidated_provider_cases(
     tmp_path: Path,
 ) -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "case_id": "fetched-provider-missing-detail-evidence",
             "fetch_report": {
@@ -560,7 +564,7 @@ def test_provider_coverage_next_action_debugs_unvalidated_provider_cases(
 def test_provider_coverage_next_action_stops_debugging_exhausted_validation_cases(
     tmp_path: Path,
 ) -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "case_id": "zero-kept-and-fetch-error-advance-to-unsupported-provider",
             "fetch_report": {

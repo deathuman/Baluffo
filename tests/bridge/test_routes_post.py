@@ -69,14 +69,18 @@ def test_sign_out_success(tmp_path: Path) -> None:
 def test_run_jobs_bootstrap_route(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.start_jobs_bootstrap_task = lambda payload=None: {
-        "started": True,
-        "runId": "jobs_bootstrap_test",
-        "task": "jobs_bootstrap",
-        "taskType": "fetch",
-        "preset": "bootstrap_sheets",
-        "coverageScope": "bootstrap_sheets",
-    }
+
+    def _start_bootstrap(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "started": True,
+            "runId": "jobs_bootstrap_test",
+            "task": "jobs_bootstrap",
+            "taskType": "fetch",
+            "preset": "bootstrap_sheets",
+            "coverageScope": "bootstrap_sheets",
+        }
+
+    api.start_jobs_bootstrap_task = _start_bootstrap
 
     handler = FakeHandler()
     result = handle_post(
@@ -697,7 +701,7 @@ def test_ack_alert_success(tmp_path: Path) -> None:
     """Test acknowledging an alert."""
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    alert_state = {"acked": {}}
+    alert_state: dict[str, Any] = {"acked": {}}
     api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
     api.save_alert_state = lambda payload: alert_state.update(
         {"acked": dict((payload or {}).get("acked") or {})}
@@ -720,7 +724,7 @@ def test_ack_alert_success(tmp_path: Path) -> None:
 def test_ack_alert_ignores_non_dismissible_alert(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    alert_state = {"acked": {}}
+    alert_state: dict[str, Any] = {"acked": {}}
     saved_payloads: list[dict[str, Any]] = []
     api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
     api.save_alert_state = lambda payload: saved_payloads.append(dict(payload or {}))

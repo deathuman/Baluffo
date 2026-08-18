@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 
 from src.source_discovery import directory_audit
 from src.source_discovery.gamesmap_candidates import run_gamesmap_directory_audit
@@ -8,7 +10,7 @@ from src.source_discovery.gamesmap_candidates import run_gamesmap_directory_audi
 from ._helpers import _gamesmap_next_payload_html, sd, workspace_tmpdir
 
 
-def _gamesmap_companies() -> list[dict[str, object]]:
+def _gamesmap_companies() -> list[dict[str, Any]]:
     return [
         {
             "id": "1",
@@ -41,7 +43,7 @@ def _gamesmap_payloads() -> dict[str, str]:
     }
 
 
-def _fetch_from(payloads: dict[str, str]):
+def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
     def fake_fetch(url: str, _: int) -> str:
         if url not in payloads:
             raise RuntimeError(f"unexpected URL: {url}")
@@ -50,8 +52,8 @@ def _fetch_from(payloads: dict[str, str]):
     return fake_fetch
 
 
-def _gamesmap_config(audit_path: str | None = None) -> dict[str, object]:
-    cfg: dict[str, object] = {
+def _gamesmap_config(audit_path: str | None = None) -> dict[str, Any]:
+    cfg: dict[str, Any] = {
         "enabled": True,
         "baseUrl": "https://www.gamesmap.de",
         "indexUrls": ["https://www.gamesmap.de/en"],

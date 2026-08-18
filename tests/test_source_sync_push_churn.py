@@ -93,10 +93,10 @@ def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, mo
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
     assert result["skipped"] is False
     assert result["skipReason"] == ""
@@ -145,11 +145,11 @@ def test_identity_collision_across_buckets_rejected(
     }
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         with pytest.raises(sync.SyncOperationError) as ctx:
             sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert ctx.value.code == "duplicate_source_identity"
     assert "local active/pending snapshot" in str(ctx.value)
     assert len(opener.calls) == 3
@@ -197,10 +197,10 @@ def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, mo
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
     assert result["remoteSha"] == "s2"
     assert result["skipReason"] == ""
@@ -244,10 +244,10 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
     local = {"active": [], "pending": [], "rejected": []}
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
     assert result["remoteSha"] == "s2"
     assert result["snapshotFormat"] == "sharded-v3"
@@ -305,10 +305,10 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
     }
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
     assert result["remoteSha"] == "s4"
 
@@ -329,10 +329,10 @@ def test_transient_get_error_retries_with_backoff(source_sync_test_root, monkeyp
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["exists"] is False
     assert result["sha"] == "s1"
     assert sleep_calls == [1.0]

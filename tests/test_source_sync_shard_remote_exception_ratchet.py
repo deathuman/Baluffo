@@ -67,7 +67,7 @@ def test_push_shard_existing_path_maps_expected_verify_failure() -> None:
     )
 
     with pytest.raises(RuntimeError, match="sha was not supplied") as ctx:
-        shard_mod.push_shard(module, _config(), shard, opener=object())
+        shard_mod.push_shard(module, _config(), shard, opener=lambda *_a, **_kw: None)
 
     assert isinstance(ctx.value.__cause__, RuntimeError)
     assert str(ctx.value.__cause__) == "verify unavailable"
@@ -78,7 +78,7 @@ def test_push_shard_existing_path_does_not_mask_unexpected_verify_bug() -> None:
     module = _FakeSyncModule([(422, {"message": "existing immutable path"})])
 
     with pytest.raises(AssertionError, match="No fake responses left"):
-        shard_mod.push_shard(module, _config(), shard, opener=object())
+        shard_mod.push_shard(module, _config(), shard, opener=lambda *_a, **_kw: None)
 
 
 def test_push_changed_shard_records_expected_push_failure() -> None:
@@ -89,7 +89,7 @@ def test_push_changed_shard_records_expected_push_failure() -> None:
         module,
         _config(),
         shard,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["ok"] is False
@@ -107,7 +107,7 @@ def test_push_changed_shard_does_not_mask_unexpected_push_bug() -> None:
             module,
             _config(),
             shard,
-            opener=object(),
+            opener=lambda *_a, **_kw: None,
         )
 
 
@@ -124,7 +124,7 @@ def test_push_changed_shard_records_expected_verify_failure() -> None:
         module,
         _config(),
         shard,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["ok"] is False
@@ -169,7 +169,7 @@ def test_push_sharded_snapshot_records_expected_manifest_failure(
                 "pending": [],
             },
             max_shard_size=10_000,
-            opener=object(),
+            opener=lambda *_a, **_kw: None,
         )
 
     assert timing_rows[-1]["operation"] == "pushManifest"

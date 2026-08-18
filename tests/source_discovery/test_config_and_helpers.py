@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from typing import Any
+
 from tests.helpers.concurrency import BlockingActiveCounter
 
 from ._helpers import (
@@ -59,7 +61,7 @@ def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
 
 
 def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass() -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "name": "provider bias in bounded runs",
             "candidates": [

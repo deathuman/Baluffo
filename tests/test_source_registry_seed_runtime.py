@@ -1,6 +1,7 @@
 import gzip
 import json
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import pytest
@@ -318,7 +319,7 @@ def test_required_json_snapshot_replace_retries_and_succeeds(
         monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 3)
         monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
 
-        def flaky_replace(src: object, dst: object) -> None:
+        def flaky_replace(src: Any, dst: Any) -> None:
             nonlocal calls
             calls += 1
             if calls < 3:
@@ -372,7 +373,7 @@ def test_required_journal_compaction_failure_raises_after_latest_payload_written
 
         sr.save_json_atomic(path, payload_one)
 
-        def fail_journal_compaction_replace(src: object, dst: object) -> None:
+        def fail_journal_compaction_replace(src: Any, dst: Any) -> None:
             if Path(dst).suffix == ".jsonl":
                 raise PermissionError("journal locked")
             real_replace(src, dst)
@@ -405,7 +406,7 @@ def test_required_journal_append_retries_and_succeeds(
         monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 2)
         monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
 
-        def flaky_open(self: Path, *args: object, **kwargs: object):
+        def flaky_open(self: Path, *args: Any, **kwargs: Any):
             nonlocal calls
             if self == journal_path:
                 calls += 1
@@ -435,7 +436,7 @@ def test_required_journal_append_persistent_failure_raises(
         monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
         monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
 
-        def locked_journal_open(self: Path, *args: object, **kwargs: object):
+        def locked_journal_open(self: Path, *args: Any, **kwargs: Any):
             if self == journal_path:
                 raise PermissionError("journal locked")
             return real_open(self, *args, **kwargs)

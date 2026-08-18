@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts import source_policy_soak_report as soak
 
@@ -9,7 +10,7 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _gate_ids(report: dict[str, object]) -> set[str]:
+def _gate_ids(report: dict[str, Any]) -> set[str]:
     return {str(row.get("id")) for row in report.get("qualityGates", []) if isinstance(row, dict)}
 
 

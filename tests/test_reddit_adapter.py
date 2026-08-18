@@ -45,7 +45,7 @@ def configure_reddit(monkeypatch: pytest.MonkeyPatch) -> Callable[..., dict[str,
 def passthrough_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fetch_with_retries(
         url: str,
-        fetch_text,
+        fetch_text: Callable[[str, int], str],
         timeout_s: int,
         retries: int,
         backoff_s: float,
@@ -157,7 +157,7 @@ def test_reddit_adapter_rate_limiting(
 
     def mock_fetch_with_retries(
         url: str,
-        fetch_text,
+        fetch_text: Callable[[str, int], str],
         timeout_s: int,
         retries: int,
         backoff_s: float,
@@ -196,7 +196,7 @@ def test_reddit_adapter_heartbeats_during_fetch_attempts(
 
     def mock_fetch_with_retries(
         url: str,
-        fetch_text,
+        fetch_text: Callable[[str, int], str],
         timeout_s: int,
         retries: int,
         backoff_s: float,

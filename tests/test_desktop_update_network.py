@@ -3,6 +3,7 @@
 import json
 import ssl
 from pathlib import Path
+from typing import Any
 from unittest import mock
 from urllib.error import URLError
 
@@ -63,7 +64,7 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
         target = Path(tmp) / "portable" / "ship" / "data" / "updater" / "downloads" / "app.zip"
         content = b"portable-zip"
         calls = {"count": 0}
-        seen = {}
+        seen: dict[str, Any] = {}
         original_replace = du_shared.os.replace
 
         def flaky_replace(src, dst):  # noqa: ANN001
@@ -92,10 +93,10 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
 
 
 def test_fetch_json_uses_ssl_context_for_default_https_urlopen() -> None:
-    seen = {}
+    seen: dict[str, Any] = {}
 
     class FakeResponse:
-        headers = {}
+        headers: dict[str, str] = {}
 
         def __enter__(self) -> "FakeResponse":
             return self

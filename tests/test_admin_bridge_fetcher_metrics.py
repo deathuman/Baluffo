@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from src import admin_bridge
 from src.app_version import APP_VERSION
 
@@ -21,7 +23,7 @@ def test_compute_fetcher_metrics_uses_history_window() -> None:
                     },
                 }
 
-        admin_bridge._get_ops_api = lambda: _FakeOpsApi()
+        cast(Any, admin_bridge)._get_ops_api = lambda: _FakeOpsApi()
         metrics = admin_bridge.compute_fetcher_metrics(window_runs=2)
         assert int((metrics.get("history") or {}).get("windowRuns") or 0) == 2
         assert int((metrics.get("history") or {}).get("medianDurationMs") or 0) == 2500

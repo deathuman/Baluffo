@@ -342,8 +342,8 @@ def _posix_pid_is_zombie(pid: int) -> bool:
     return False
 
 
-def pid_is_running(pid: int, *, root_mod: Any) -> bool:
-    if int(pid or 0) <= 0:
+def pid_is_running(pid: int | None, *, root_mod: Any) -> bool:
+    if int(pid if pid is not None else 0) <= 0:
         return False
     if sys.platform == "win32":
         try:
@@ -355,7 +355,7 @@ def pid_is_running(pid: int, *, root_mod: Any) -> bool:
             handle = ctypes.windll.kernel32.OpenProcess(
                 process_query_limited_information,
                 False,
-                int(pid),
+                int(pid if pid is not None else 0),
             )
             if not handle:
                 return False

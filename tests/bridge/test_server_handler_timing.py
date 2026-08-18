@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from tests.helpers.bridge_api import FakeDesktopLocalDataStore, make_stub_bridge
 
 class HandlerHarness:
     def __init__(self, handler_cls: type, *, method: str, path: str, body: bytes = b"") -> None:
+        self.handler: Any
         self.handler = object.__new__(handler_cls)
         self.handler.command = method
         self.handler.path = path
@@ -140,7 +142,7 @@ def test_send_json_response_propagates_unexpected_status_bookkeeping_failure(
 def test_send_json_response_logs_and_reraises_non_disconnect_oserror(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     logs: list[tuple[str, str, dict[str, Any]]] = []
-    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))
     handler = _WriteRaisesOSError()
 
     with pytest.raises(OSError, match="socket write failed"):
@@ -164,7 +166,7 @@ def test_send_json_response_does_not_route_unexpected_writer_bug_through_oserror
 def test_send_bytes_response_logs_and_reraises_non_disconnect_oserror(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     logs: list[tuple[str, str, dict[str, Any]]] = []
-    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))
     handler = _WriteRaisesOSError()
 
     with pytest.raises(OSError, match="socket write failed"):
@@ -264,7 +266,7 @@ def test_handler_converts_post_route_failure_to_500(
 
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     logs: list[tuple[str, str, dict[str, object]]] = []
-    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))
     handler_cls = make_handler(api=api)
     harness = HandlerHarness(handler_cls, method="POST", path="/tasks/run", body=b"{}")
 
@@ -330,7 +332,7 @@ def test_handler_performance_profile_redacts_query_params(tmp_path: Path) -> Non
 
 
 def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) -> None:
-    created_servers: list[object] = []
+    created_servers: list[Any] = []
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -363,7 +365,7 @@ def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) ->
             api=api,
             host="127.0.0.1",
             port=0,
-            handler_cls=object,
+            handler_cls=BaseHTTPRequestHandler,
         )
         == 0
     )
@@ -376,7 +378,7 @@ def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) ->
 
 
 def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
-    created_servers: list[object] = []
+    created_servers: list[Any] = []
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -411,7 +413,7 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
             api=api,
             host="127.0.0.1",
             port=0,
-            handler_cls=object,
+            handler_cls=BaseHTTPRequestHandler,
             on_started=fail_on_started,
         )
         == 0
@@ -427,7 +429,7 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
 
 
 def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -> None:
-    created_servers: list[object] = []
+    created_servers: list[Any] = []
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -458,7 +460,7 @@ def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -
             api=api,
             host="127.0.0.1",
             port=0,
-            handler_cls=object,
+            handler_cls=BaseHTTPRequestHandler,
             on_started=fail_on_started,
         )
 
@@ -467,7 +469,7 @@ def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -
 
 
 def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) -> None:
-    created_servers: list[object] = []
+    created_servers: list[Any] = []
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -498,7 +500,7 @@ def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) 
             api=api,
             host="127.0.0.1",
             port=0,
-            handler_cls=object,
+            handler_cls=BaseHTTPRequestHandler,
             on_started=interrupt_on_started,
         )
 

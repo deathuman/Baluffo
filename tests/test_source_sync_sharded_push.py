@@ -1,5 +1,6 @@
 import base64
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -11,7 +12,7 @@ from src.source_sync_shard import (
 
 
 class _FakeSyncModule:
-    def __init__(self, responses: list[tuple[int, dict]]):
+    def __init__(self, responses: list[tuple[int, Any]]):
         self.responses = list(responses)
         self.calls: list[dict] = []
 
@@ -88,7 +89,7 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
         _config(),
         _snapshot(),
         max_shard_size=10_000,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -130,7 +131,7 @@ def test_push_sharded_snapshot_emits_remote_write_progress() -> None:
         _snapshot(),
         max_shard_size=10_000,
         progress_callback=lambda **kwargs: progress.append(kwargs),
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -172,7 +173,7 @@ def test_push_sharded_snapshot_ignores_progress_callback_failure() -> None:
         _snapshot(),
         max_shard_size=10_000,
         progress_callback=fail_progress,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -207,7 +208,7 @@ def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
         max_shard_size=10_000,
         committed_manifest=committed["manifest"],
         committed_manifest_sha="old-manifest-sha",
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["remoteSha"] == "manifest-sha"
@@ -241,7 +242,7 @@ def test_push_sharded_snapshot_prunes_unreferenced_shards_after_manifest() -> No
         _config(),
         _snapshot(),
         max_shard_size=10_000,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -279,7 +280,7 @@ def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None
         _config(),
         _snapshot(),
         max_shard_size=10_000,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -307,7 +308,7 @@ def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
         _config(),
         _snapshot(),
         max_shard_size=10_000,
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is True
@@ -325,7 +326,7 @@ def test_push_manifest_maps_conflict_to_sync_operation_error() -> None:
             _config(),
             build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)["manifest"],
             sha="oldsha",
-            opener=object(),
+            opener=lambda *_a, **_kw: None,
         )
 
     assert ctx.value.code == "remote_conflict"
@@ -345,7 +346,7 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
         max_shard_size=10_000,
         committed_manifest=bundle["manifest"],
         progress_callback=lambda **kwargs: progress.append(kwargs),
-        opener=object(),
+        opener=lambda *_a, **_kw: None,
     )
 
     assert result["pushed"] is False

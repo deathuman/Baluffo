@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from src import source_registry as sr
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -32,7 +33,7 @@ def test_discovery_auto_approval_does_not_reactivate_conflict_demoted_pending_ro
             ],
             "rejected": [],
         }
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 2,
                 "approvedCandidateCount": 0,
@@ -108,7 +109,7 @@ def test_discovery_auto_approval_does_not_activate_static_url_alias_duplicate() 
             ],
             "rejected": [],
         }
-        report = {
+        report: dict[str, Any] = {
             "summary": {
                 "queuedCandidateCount": 1,
                 "approvedCandidateCount": 0,

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from tests.bridge.test_discovery_service_hardening import _make_service
+from tests.helpers.mutation import append_and_return
 
 
 def _write_terminal_report(report_path: Path) -> None:
@@ -76,8 +77,8 @@ def test_trigger_discovery_task_records_expected_launch_failure(tmp_path: Path) 
         run_background_script=lambda *_args, **_kwargs: (_ for _ in ()).throw(
             RuntimeError("launch unavailable")
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failed_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 

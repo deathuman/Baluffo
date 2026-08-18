@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from src.bridge.routes.post_routes_admin import handle_post
+from src.bridge.routes.post_routes_admin import _AdminPostRouteApi, handle_post
 from tests.helpers.bridge_api import FakeHandler
 
 
@@ -160,7 +160,9 @@ class MinimalAdminPostRouteApi:
 
 def _post(api: MinimalAdminPostRouteApi, path: str, payload: dict[str, Any]) -> FakeHandler:
     handler = FakeHandler()
-    assert handle_post(handler, api=api, path=path, payload=payload) is True
+    assert (
+        handle_post(handler, api=cast(_AdminPostRouteApi, api), path=path, payload=payload) is True
+    )
     return handler
 
 

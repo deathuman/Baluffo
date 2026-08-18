@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.source_discovery import probe
 
 
 def test_static_probe_counts_positive_static_job_signals() -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "case_id": "generic-application-filtering",
             "candidate": {
@@ -131,7 +133,7 @@ def test_static_probe_counts_positive_static_job_signals() -> None:
 
 
 def test_static_probe_suppresses_non_job_static_signals() -> None:
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             "case_id": "no-openings-jsonld-override",
             "candidate": {

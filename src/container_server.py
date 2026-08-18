@@ -12,7 +12,12 @@ from typing import Any
 
 from src import admin_bridge
 from src.app_version import get_app_version
-from src.bridge.config import RuntimeConfig, _normalize_log_format, _normalize_log_level
+from src.bridge.config import (
+    ContainerConfigLike,
+    RuntimeConfig,
+    _normalize_log_format,
+    _normalize_log_level,
+)
 from src.bridge.pipeline_control_files import inactive_pipeline_status, write_pipeline_status
 from src.bridge.server.handler import make_handler
 from src.bridge.server.httpd import run_http_server
@@ -90,7 +95,7 @@ def parse_args(
     )
 
 
-def build_container_handler(config: RuntimeConfig):
+def build_container_handler(config: ContainerConfigLike):
     admin_bridge.configure_runtime_paths(config)
     admin_bridge.refresh_sync_config()
     api = admin_bridge.build_bridge_api(config)

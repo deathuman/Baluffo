@@ -16,7 +16,7 @@ def gamedevmap_config(
     *,
     allowed_categories: list[str] | None = None,
     **overrides: Any,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     gamedevmap = {
         "enabled": True,
         "csvUrl": CSV_URL,
@@ -151,9 +151,9 @@ def validated_provider_candidate() -> dict[str, object]:
 def write_gamedevmap_audit_artifact(
     path: Path,
     *,
-    config: dict[str, object],
-    active_candidates: list[dict[str, object]] | None = None,
-    browser_candidates: list[dict[str, object]] | None = None,
+    config: dict[str, Any],
+    active_candidates: list[dict[str, Any]] | None = None,
+    browser_candidates: list[dict[str, Any]] | None = None,
     updated_at: str = "",
     include_default_rejections: bool = True,
 ) -> None:

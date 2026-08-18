@@ -9,7 +9,7 @@ class _FakeResponse:
     def __init__(self, status: int, payload: dict):
         self._status = int(status)
         self._payload = dict(payload)
-        self.headers = {}
+        self.headers: dict[str, str] = {}
 
     def getcode(self):
         return self._status
@@ -140,10 +140,10 @@ def test_push_sources_snapshot_excludes_source_policy_payload(source_sync_test_r
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, _local_with_source_policy(), opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
 
     assert result["pushed"]
     decoded = result["snapshot"]

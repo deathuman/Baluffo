@@ -2,6 +2,7 @@
 
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from src.ship import desktop_update_service as du_service
@@ -188,11 +189,11 @@ def test_run_download_worker_does_not_abort_when_progress_status_write_fails(mon
         original_save_status = du.save_status
 
         def flaky_save_status(
-            update_paths: du.DesktopUpdatePaths, payload: dict[str, object]
-        ) -> dict[str, object]:
+            update_paths: du.DesktopUpdatePaths, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             if payload.get("downloadState") == "downloading":
                 raise OSError("status file busy")
-            return original_save_status(update_paths, payload)
+            return dict(original_save_status(update_paths, payload))
 
         def fake_download(
             url: str,

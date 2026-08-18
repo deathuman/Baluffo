@@ -12,6 +12,7 @@ from src.bridge.task_launch_api import (
 )
 from src.shared.json_io import read_json
 from src.storage import BaluffoStore, JobRuntimeStore, SourceRuntimeStore
+from tests.helpers.mutation import append_and_return
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -90,8 +91,8 @@ def test_fetch_lifecycle_close_mirrors_source_runs() -> None:
                 run_id="fetch_1",
                 normalize_fetch_report_contract=lambda payload: payload,
                 load_json_object=lambda _path, _default: report,
-                finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                    finished.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+                finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                    finished, {"runId": run_id, "taskType": task_type, **kwargs}, {}
                 ),
                 fail_lifecycle_run=lambda *_args, **_kwargs: {},
             )
@@ -238,8 +239,8 @@ def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: An
                 schema_version=1,
                 load_json_object=lambda _path, default: dict(default or {}),
                 start_lifecycle_run=lambda **kwargs: kwargs,
-                finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-                    finished.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+                finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+                    finished, {"runId": run_id, "taskType": task_type, **kwargs}, {}
                 ),
                 fail_lifecycle_run=lambda *_args, **_kwargs: {},
             )

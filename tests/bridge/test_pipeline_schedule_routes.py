@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from src.bridge.routes.get_pipeline_tasks import handle_pipeline_task_routes
+from src.bridge.routes.get_pipeline_tasks import _PipelineTaskRouteApi, handle_pipeline_task_routes
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
@@ -39,7 +39,7 @@ def test_pipeline_task_get_routes_accept_minimal_capability_object() -> None:
     assert (
         handle_pipeline_task_routes(
             schedule_handler,
-            api=api,
+            api=cast(_PipelineTaskRouteApi, api),
             path="/tasks/jobs-pipeline-schedule",
             query={},
         )
@@ -51,7 +51,7 @@ def test_pipeline_task_get_routes_accept_minimal_capability_object() -> None:
     assert (
         handle_pipeline_task_routes(
             status_handler,
-            api=api,
+            api=cast(_PipelineTaskRouteApi, api),
             path="/tasks/run-jobs-pipeline-status",
             query={},
         )

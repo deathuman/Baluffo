@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from src import pipeline_audit as audit
 
@@ -181,7 +182,12 @@ def test_render_markdown_includes_key_sections() -> None:
 
 
 def test_build_report_includes_productive_expensive_sources() -> None:
-    discovery_report = {"summary": {}, "runtime": {}, "failures": [], "topFailures": []}
+    discovery_report: dict[str, Any] = {
+        "summary": {},
+        "runtime": {},
+        "failures": [],
+        "topFailures": [],
+    }
     fetch_report = {
         "summary": {"successfulSources": 1, "failedSources": 0, "outputCount": 50},
         "runtime": {

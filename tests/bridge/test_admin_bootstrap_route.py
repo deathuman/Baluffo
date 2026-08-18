@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
@@ -185,7 +185,7 @@ def test_admin_bootstrap_uses_bounded_control_plane_inputs(tmp_path: Path) -> No
     ]
     api.get_jobs_pipeline_status_payload = lambda: {"active": False}
 
-    def forbidden(*_args: object, **_kwargs: object) -> dict[str, object]:
+    def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
         raise AssertionError("admin bootstrap must not call heavy diagnostic helpers")
 
     api.get_registry_summary_payload = forbidden

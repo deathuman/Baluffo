@@ -351,8 +351,8 @@ def test_config_status_covers_supported_states(source_sync_test_root):
             if expected["state"] == "ready":
                 assert status["ready"], case["name"]
     finally:
-        sync._SECURITY_DEFAULTS = original_security  # type: ignore[assignment] # noqa: SLF001
-        sync._SYNC_DEFAULTS = original_sync  # type: ignore[assignment] # noqa: SLF001
+        sync._SECURITY_DEFAULTS = original_security  # noqa: SLF001
+        sync._SYNC_DEFAULTS = original_sync  # noqa: SLF001
 
 
 def test_config_status_reports_machine_bound_packaged_key_error(source_sync_test_root, monkeypatch):
@@ -382,10 +382,10 @@ def test_config_status_reports_machine_bound_packaged_key_error(source_sync_test
 def test_build_app_jwt_has_rs256_shape(source_sync_test_root):
     original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
     try:
-        sync._rsa_pkcs1_sign_sha256 = lambda _msg, _pem: b"sig-bytes"  # type: ignore[assignment]
+        sync._rsa_pkcs1_sign_sha256 = lambda _msg, _pem: b"sig-bytes"
         token = sync.build_app_jwt("123456", "pem", issued_at=sync.now_utc())
     finally:
-        sync._rsa_pkcs1_sign_sha256 = original_sign  # type: ignore[assignment]
+        sync._rsa_pkcs1_sign_sha256 = original_sign
     parts = token.split(".")
     assert len(parts) == 3
     header = json.loads(base64.urlsafe_b64decode(parts[0] + "==").decode("utf-8"))
@@ -416,11 +416,11 @@ def test_github_app_auth_reuses_cached_installation_token(source_sync_test_root)
 
     original_refresh = auth._refresh_installation_token
     try:
-        auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
+        auth._refresh_installation_token = fake_refresh
         assert auth.get_installation_token() == "inst_token"
         assert auth.get_installation_token() == "inst_token"
     finally:
-        auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
+        auth._refresh_installation_token = original_refresh
     assert calls["count"] == 1
 
 
@@ -447,7 +447,7 @@ def test_github_app_auth_concurrent_access_refreshes_once(source_sync_test_root)
 
     original_refresh = auth._refresh_installation_token
     try:
-        auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
+        auth._refresh_installation_token = fake_refresh
         results = []
 
         def worker():  # noqa: ANN202
@@ -462,7 +462,7 @@ def test_github_app_auth_concurrent_access_refreshes_once(source_sync_test_root)
         for thread in threads:
             thread.join()
     finally:
-        auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
+        auth._refresh_installation_token = original_refresh
     assert calls["count"] == 1
     assert all(item == "shared_token" for item in results)
 
@@ -495,11 +495,11 @@ def test_read_remote_snapshot_normalizes_legacy_rows_and_warns_on_extra_keys(
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         with caplog.at_level("WARNING"):
             result = sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["exists"]
     assert result["sha"] == "abc123"
     active = result["snapshot"]["active"][0]
@@ -535,12 +535,12 @@ def test_read_remote_snapshot_rejects_non_object_rows(source_sync_test_root, cap
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         with caplog.at_level("ERROR"):
             with pytest.raises(RuntimeError, match=r"pending\[0\] must be an object"):
                 sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert any("Invalid remote sync snapshot payload" in message for message in caplog.messages)
 
 
@@ -565,10 +565,10 @@ def test_read_remote_snapshot_uses_github_api_base_override(source_sync_test_roo
     monkeypatch.setenv(sync.GITHUB_API_BASE_ENV, "http://127.0.0.1:8765")
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["exists"] is True
     assert opener.calls[0]["url"] == "http://127.0.0.1:8765/app/installations/999999/access_tokens"
     assert (
@@ -640,10 +640,10 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
     }
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
     assert result["remoteSha"] == "newsha"
     assert result["snapshotFormat"] == "sharded-v3"
@@ -695,10 +695,10 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
     local = {"active": [], "pending": [], "rejected": []}
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
     decoded = result["snapshot"]
     assert len(decoded["active"]) == 1
@@ -767,10 +767,10 @@ def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(sou
     }
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
     decoded = result["snapshot"]
     assert len(decoded["active"]) == 0
@@ -801,10 +801,10 @@ def test_401_triggers_installation_token_refresh(source_sync_test_root):
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["exists"]
     post_calls = [call for call in opener.calls if call["method"] == "POST"]
     assert len(post_calls) == 2
@@ -832,11 +832,11 @@ def test_rate_limited_error_sets_runtime_state(source_sync_test_root):
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         with pytest.raises(sync.SyncOperationError) as ctx:
             sync.read_remote_snapshot(cfg, opener=opener)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert ctx.value.code == sync.RUNTIME_STATE_RATE_LIMITED
     status = sync.config_status(cfg)
     assert status["state"] == sync.RUNTIME_STATE_RATE_LIMITED
@@ -982,10 +982,10 @@ def test_read_remote_snapshot_uses_ssl_context_for_default_runtime_opener(
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"
         result = sync.read_remote_snapshot(cfg, opener=sync.urlopen)
     finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        sync.build_app_jwt = original_build_jwt
     assert result["exists"] is True
     assert seen["timeout"] == sync.DEFAULT_TIMEOUT_S
     assert isinstance(seen["context"], ssl.SSLContext)

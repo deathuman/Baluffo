@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from email.message import Message
 from urllib.error import HTTPError
 
 from src.bridge.source_probe_evidence import (
@@ -20,7 +21,7 @@ def test_static_probe_uses_browser_like_headers_for_krafton_style_403() -> None:
     def fake_fetch(url: str, _timeout_s: int, *, headers: dict[str, str]):
         seen_headers.append(headers)
         if "Mozilla/5.0" not in headers.get("User-Agent", ""):
-            raise HTTPError(url, 403, "Forbidden", {}, None)
+            raise HTTPError(url, 403, "Forbidden", Message(), None)
         return ProbeFetchResponse(200, url, html)
 
     evidence = probe_source_evidence(
@@ -83,7 +84,7 @@ def test_static_probe_evidence_keeps_jsonld_only_weak() -> None:
 
 def test_static_probe_403_without_browser_returns_fallback_recommended() -> None:
     def blocked(url: str, _timeout_s: int, **_kwargs):
-        raise HTTPError(url, 403, "Forbidden", {}, None)
+        raise HTTPError(url, 403, "Forbidden", Message(), None)
 
     evidence = probe_source_evidence(
         {
@@ -102,7 +103,7 @@ def test_static_probe_403_without_browser_returns_fallback_recommended() -> None
 
 def test_static_probe_403_can_use_playwright_fallback() -> None:
     def blocked(url: str, _timeout_s: int, **_kwargs):
-        raise HTTPError(url, 403, "Forbidden", {}, None)
+        raise HTTPError(url, 403, "Forbidden", Message(), None)
 
     evidence = probe_source_evidence(
         {

@@ -27,7 +27,7 @@ def test_emit_envelope_reports_expected_json_serialization_failure(
     real_dumps = scrapy_runner.json.dumps
     calls = {"count": 0}
 
-    def fail_first_dumps(payload: object, **kwargs: object) -> str:
+    def fail_first_dumps(payload: object, **kwargs: Any) -> str:
         calls["count"] += 1
         if calls["count"] == 1:
             raise TypeError("cannot serialize envelope")
@@ -52,7 +52,7 @@ def test_emit_envelope_reports_expected_json_serialization_failure(
 def test_emit_envelope_does_not_swallow_unexpected_json_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_dumps(_payload: object, **_kwargs: object) -> str:
+    def fail_dumps(_payload: object, **_kwargs: Any) -> str:
         raise AssertionError("unexpected json bug")
 
     monkeypatch.setattr(scrapy_runner.json, "dumps", fail_dumps)
@@ -64,7 +64,7 @@ def test_emit_envelope_does_not_swallow_unexpected_json_failure(
 def test_run_scrapy_reports_missing_scrapy_import(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
 
-    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> object:
         if name == "scrapy.crawler":
             raise ImportError("scrapy unavailable")
         return real_import(name, *args, **kwargs)
@@ -83,7 +83,7 @@ def test_run_scrapy_does_not_swallow_unexpected_scrapy_import_failure(
 ) -> None:
     real_import = builtins.__import__
 
-    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> object:
         if name == "scrapy.crawler":
             raise RuntimeError("unexpected import bug")
         return real_import(name, *args, **kwargs)

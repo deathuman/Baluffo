@@ -43,7 +43,7 @@ class _Harness:
         self.current_runs: list[dict[str, Any]] = []
         self.recent_runs: list[dict[str, Any]] = []
         self.pipeline_status: dict[str, Any] = {"active": False}
-        self.started_payloads: list[dict[str, Any] | None] = []
+        self.started_payloads: list[dict[str, Any]] = []
         self.start_response: dict[str, Any] = {"started": True, "runId": "pipeline_scheduled"}
         self.logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
         self.timers: list[_FakeTimer] = []

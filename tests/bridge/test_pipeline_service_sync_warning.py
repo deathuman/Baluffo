@@ -4,6 +4,7 @@ from typing import Any
 
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
 from tests.bridge.test_pipeline_service import _make_pipeline_service
+from tests.helpers.mutation import append_and_return
 
 
 def test_pipeline_completes_with_warning_for_recoverable_sync_conflict() -> None:
@@ -32,13 +33,13 @@ def test_pipeline_completes_with_warning_for_recoverable_sync_conflict() -> None
             "status": "error",
             "summary": {"error": conflict},
         },
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
-    service._run_discovery_stage = lambda _run_id: None  # type: ignore[method-assign]
-    service._run_fetch_stage = lambda _run_id: None  # type: ignore[method-assign]
-    service._run_registry_conflict_adjudication_stage = lambda _run_id: None  # type: ignore[method-assign]
+    service._run_discovery_stage = lambda run_id: None  # type: ignore[method-assign]
+    service._run_fetch_stage = lambda run_id: None  # type: ignore[method-assign]
+    service._run_registry_conflict_adjudication_stage = lambda run_id: None  # type: ignore[method-assign]
 
     service._run_worker("pipeline_1")
     payload = service.get_status_payload()
@@ -88,8 +89,8 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_recoverable_sync
             },
             diagnostics=[],
         ),
-        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            finished_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 

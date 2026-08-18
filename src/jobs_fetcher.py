@@ -13,6 +13,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from urllib.request import urlopen
 
 
@@ -105,7 +106,7 @@ def maybe_fetch_kojima_job_listing_html(*args, **kwargs):
     return fetcher_compat_runtime_mod.maybe_fetch_kojima_job_listing_html(*args, **kwargs)
 
 
-def __getattr__(name: str) -> object:
+def __getattr__(name: str) -> Any:
     if name in _COMPAT_VALUES:
         return _COMPAT_VALUES[name]
     module_attr = _COMPAT_MODULE_EXPORTS.get(name)

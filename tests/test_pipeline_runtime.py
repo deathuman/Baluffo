@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from src.contracts import SCHEMA_VERSION
+from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import (
     PipelineTaskRuntime,
@@ -231,7 +232,7 @@ def test_write_progress_report_uses_incremental_runtime_counts_and_skips_dedup(
 
     write_progress_report(
         runtime=runtime,
-        canonical_rows=[object(), object(), object()],
+        canonical_rows=[CanonicalJob(), CanonicalJob(), CanonicalJob()],
         lifecycle_rows={},
         source_reports=[{"name": "family_row", "status": "excluded"}],
         runtime_payload={"maxWorkers": 12},

@@ -82,7 +82,9 @@ def test_start_registry_conflict_adjudication_returns_running_without_waiting(
     assert duplicate["alreadyRunning"] is True
 
     release_worker.set()
-    adjudication._ADJUDICATION_JOB_THREAD.join(timeout=5)
+    job_thread = adjudication._ADJUDICATION_JOB_THREAD
+    assert job_thread is not None
+    job_thread.join(timeout=5)
 
     assert calls[0]["runId"] == result["runId"]
     assert api.payload["status"] == "succeeded"

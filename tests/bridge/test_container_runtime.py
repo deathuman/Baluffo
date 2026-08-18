@@ -53,6 +53,7 @@ def _assert_no_cors(response) -> None:
 
 def _make_container_handler(root: Path, data_dir: Path):
     api = make_stub_bridge_api(data_dir, FakeDesktopLocalDataStore())
+    assert api.runtime_config is not None
     api.runtime_config.root = root
     api.runtime_config.data_dir = data_dir
     api.runtime_config.container_mode = True
@@ -407,6 +408,7 @@ def test_desktop_handler_preserves_existing_cors_headers(tmp_path: Path) -> None
     data_dir.mkdir()
     (root / "styles" / "jobs.css").write_text("body { color: black; }\n", encoding="utf-8")
     api = make_stub_bridge_api(data_dir, FakeDesktopLocalDataStore())
+    assert api.runtime_config is not None
     api.runtime_config.root = root
     api.runtime_config.data_dir = data_dir
     handler_cls = make_handler(
@@ -450,6 +452,7 @@ def test_container_handler_keeps_unknown_api_routes_as_json_404(tmp_path: Path) 
 
 def test_container_mode_disables_desktop_only_routes(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    assert api.runtime_config is not None
     api.runtime_config.container_mode = True
 
     get_handler = FakeHandler()

@@ -174,6 +174,7 @@ class TaskStartResponse(TypedDict, total=False):
     task: str
     taskType: str
     preset: str
+    smokeMode: str
     coverageScope: str
     args: list[str]
     pid: int

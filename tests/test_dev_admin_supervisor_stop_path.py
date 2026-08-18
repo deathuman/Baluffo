@@ -190,8 +190,8 @@ def test_terminate_pid_posix_suppresses_expected_kill_failure() -> None:
         def __enter__(self) -> TimedOutProcess:
             return self
 
-        def __exit__(self, *_args: object) -> bool:
-            return False
+        def __exit__(self, *_args: object) -> None:
+            return None
 
         def wait(self, *, timeout: float) -> None:
             raise supervisor.subprocess.TimeoutExpired("kill", timeout)
@@ -211,8 +211,8 @@ def test_terminate_pid_posix_does_not_suppress_unexpected_kill_failure() -> None
         def __enter__(self) -> BrokenProcess:
             return self
 
-        def __exit__(self, *_args: object) -> bool:
-            return False
+        def __exit__(self, *_args: object) -> None:
+            return None
 
         def wait(self, *, timeout: float) -> None:
             raise supervisor.subprocess.TimeoutExpired("kill", timeout)

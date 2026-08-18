@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -31,7 +32,7 @@ def _task_state_path(data_root: Path) -> Path:
     return data_root / "admin-task-state.json"
 
 
-def _load_json_object(path: Path, default: dict[str, object] | None = None) -> dict[str, object]:
+def _load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return {} if default is None else default
     payload = json.loads(path.read_text(encoding="utf-8"))

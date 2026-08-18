@@ -85,11 +85,15 @@ def test_task_abort_route_calls_async_variant_with_202(tmp_path: Path) -> None:
 def test_task_abort_route_rejects_sync(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.abort_task = lambda _payload=None: (
-        400,
-        {"ok": False, "error": "unsupported_task_abort", "taskType": "sync"},
-    )
-    api.abort_task_async = api.abort_task
+
+    def abort_rejected(payload: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
+        return (
+            400,
+            {"ok": False, "error": "unsupported_task_abort", "taskType": "sync"},
+        )
+
+    api.abort_task = abort_rejected
+    api.abort_task_async = abort_rejected
 
     handler = FakeHandler()
     result = handle_post(

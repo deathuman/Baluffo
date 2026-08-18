@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from src.bridge.pipeline_service import PipelineAbortRequested
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
 from tests.bridge.test_pipeline_service import _make_pipeline_service
+from tests.helpers.mutation import append_and_return
 
 
 def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_without_report(
@@ -18,7 +19,7 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
     events: list[tuple[str, dict[str, Any]]] = []
     service = _make_pipeline_service(
         pipeline_status={"runId": "pipeline_1", "stage": "fetch"},
-        bridge_log=lambda _level, message, **fields: events.append((str(message), dict(fields))),
+        bridge_log=lambda level, message, **fields: events.append((str(message), dict(fields))),
         load_json_object=lambda _path, _default: {
             "runId": "fetch_1",
             "startedAt": "2026-05-06T18:00:00Z",
@@ -43,8 +44,8 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
             },
             diagnostics=[],
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failures.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failures, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -69,7 +70,7 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
 
 def test_pipeline_propagates_terminal_fetch_report_error_code() -> None:
     service = _make_pipeline_service()
-    service.wait_for_report_completion = lambda **_kwargs: {
+    cast(Any, service).wait_for_report_completion = lambda **_kwargs: {
         "status": "error",
         "finishedAt": "2026-07-17T08:03:00+00:00",
         "summary": {
@@ -115,8 +116,8 @@ def test_wait_for_report_completion_cancels_when_discovery_child_canceled_withou
             },
             diagnostics=[],
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failures.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failures, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
 
@@ -137,7 +138,7 @@ def test_wait_for_report_completion_cancels_when_discovery_child_canceled_withou
 def test_live_child_evidence_extends_absolute_fetch_wait_cap(tmp_path: Path) -> None:
     failures: list[dict[str, Any]] = []
     heartbeats: list[tuple[str, str, str]] = []
-    current = {"now": datetime(2026, 5, 6, 18, 0, tzinfo=UTC), "calls": 0}
+    current: dict[str, Any] = {"now": datetime(2026, 5, 6, 18, 0, tzinfo=UTC), "calls": 0}
 
     def load_report(_path: Path, _default: dict[str, Any]) -> dict[str, Any]:
         current["calls"] = int(current["calls"]) + 1
@@ -167,15 +168,15 @@ def test_live_child_evidence_extends_absolute_fetch_wait_cap(tmp_path: Path) -> 
     service = _make_pipeline_service(
         pipeline_status={"runId": "pipeline_1", "stage": "fetch"},
         load_json_object=load_report,
-        refresh_child_task_heartbeat=lambda task_type, run_id, started_at: (
-            heartbeats.append((task_type, run_id, started_at)) or True
+        refresh_child_task_heartbeat=lambda task_type, run_id, started_at: append_and_return(
+            heartbeats, (task_type, run_id, started_at), True
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failures.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
+            failures, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
     )
     service._report_wait_now = lambda: current["now"]  # type: ignore[method-assign]
-    service._report_wait_sleep = lambda _seconds: current.update(  # type: ignore[method-assign]
+    service._report_wait_sleep = lambda seconds: current.update(  # type: ignore[method-assign]
         {"now": current["now"] + timedelta(seconds=1000)}
     )
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gc
 import os
+import sys
 import threading
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -140,7 +141,7 @@ def test_pool_fetch_returns_html_and_counts_acquisition(http_server) -> None:
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_concurrent_fetches_from_worker_threads(http_server) -> None:
     pool = BrowserFallbackPool()
-    results: dict[str, tuple[str, str]] = {}
+    results: dict[int, tuple[str, str]] = {}
     try:
         with __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(
             max_workers=4
@@ -173,6 +174,35 @@ def test_pool_context_isolation_no_cookie_bleed(http_server) -> None:
         assert "cookie=none" in html2
     finally:
         pool.close()
+
+
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
+def test_pool_close_leaves_no_unclosed_asyncio_transports(http_server, monkeypatch) -> None:
+    """pool.close() must run playwright's real shutdown path on the pool loop.
+
+    If the node-driver subprocess pipe transports or the pool event loop are
+    left unclosed, their __del__ fires at GC time: a ResourceWarning on
+    selector loops, or -- on Windows proactor, where the pipe handle is
+    already gone and repr() inside the warning raises ValueError -- an
+    unraisable exception. Both are enforced as errors here so the regression
+    cannot reappear silently.
+    """
+    unraisable: list[object] = []
+    monkeypatch.setattr(sys, "unraisablehook", lambda args: unraisable.append(args))
+
+    pool = BrowserFallbackPool()
+    try:
+        html, error = pool.fetch(f"{http_server}/x", 15)
+        assert error == ""
+        assert html
+    finally:
+        pool.close()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        gc.collect()  # collect the pool loop and any abandoned transports
+        gc.collect()  # second pass for __del__ chains that spawn new garbage
+    assert unraisable == [], f"unclosed asyncio transports at GC: {unraisable!r}"
 
 
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs

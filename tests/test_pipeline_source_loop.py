@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from threading import Lock
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from src.jobs import pipeline_source_loop
+from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 
 
 def test_root_module_falls_back_to_jobs_fetcher_package(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,6 +38,22 @@ def test_browser_fallback_runtime_returns_no_helper_when_root_has_none() -> None
         def resolve_fetch_browser_fallback_helper(self) -> None:
             return None
 
+        def _build_capped_try_playwright(
+            self,
+            try_playwright,
+            *,
+            max_concurrent: int,
+            pool=None,
+        ):
+            return try_playwright
+
+        def set_browser_fallback_state(
+            self,
+            source_state_rows: dict[str, dict[str, Any]] | None,
+            state_row: dict[str, Any],
+        ) -> None:
+            return None
+
     guard, guarded_try_playwright = pipeline_source_loop._browser_fallback_runtime(
         RootWithoutBrowserFallback(),
         source_state_rows={},
@@ -61,6 +78,13 @@ def test_browser_fallback_runtime_uses_dedicated_cap_when_helper_exists() -> Non
             calls["max_concurrent"] = max_concurrent
             calls["pool"] = pool
             return try_playwright
+
+        def set_browser_fallback_state(
+            self,
+            source_state_rows: dict[str, dict[str, Any]] | None,
+            state_row: dict[str, Any],
+        ) -> None:
+            return None
 
     _guard, guarded_try_playwright = pipeline_source_loop._browser_fallback_runtime(
         RootWithBrowserFallback(),
@@ -107,7 +131,7 @@ def test_execute_loader_started_returns_fallback_report_for_expected_profiled_fa
         static_listing_async_fetch=None,
         source_state_rows={},
         redirect_resolver=None,
-        task_runtime=SimpleNamespace(),
+        task_runtime=cast(PipelineTaskRuntime, SimpleNamespace()),
         task_rows={"source_a": {"name": "source_a"}},
         task_lock=Lock(),
         thread_local=SimpleNamespace(),
@@ -147,8 +171,8 @@ def test_run_selected_loaders_batches_futures_to_bound_live_set(
         def __enter__(self) -> _TrackingExecutor:
             return self
 
-        def __exit__(self, *_args: Any) -> bool:
-            return False
+        def __exit__(self, *_args: Any) -> None:
+            return None
 
         def submit(self, fn: Any, source_name: str, loader: Any) -> Future:
             nonlocal live_peak, live_now

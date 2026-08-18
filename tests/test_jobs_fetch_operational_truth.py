@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import src.admin_bridge as admin_bridge
 from src import jobs_fetcher as jf
@@ -8,7 +9,7 @@ from src.shared.json_io import read_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-def _truth_job(title: str = "Operational Truth Engineer") -> dict[str, object]:
+def _truth_job(title: str = "Operational Truth Engineer") -> dict[str, Any]:
     return {
         "title": title,
         "company": "Truth Studio",
@@ -23,7 +24,7 @@ def _truth_job(title: str = "Operational Truth Engineer") -> dict[str, object]:
     }
 
 
-def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: Path) -> None:
+def _assert_completed_fetch_report_truth(report: dict[str, Any], output_dir: Path) -> None:
     summary = report.get("summary") or {}
     progress = report.get("taskProgress") or {}
     counts = progress.get("counts") or {}

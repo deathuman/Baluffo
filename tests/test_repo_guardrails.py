@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.mutation import append_and_return
 from tools.repo_health import repo_guardrails, suite_contract_policy
 from tools.repo_health.suppression_inventory import collect_suppressions
 
@@ -16,8 +17,8 @@ def test_repo_guardrails_group_selection_runs_only_requested_group(monkeypatch) 
         repo_guardrails,
         "GROUP_RUNNERS",
         {
-            "docs": lambda: called.append("docs") or [],
-            "workflow": lambda: called.append("workflow") or [],
+            "docs": lambda: append_and_return(called, "docs", []),
+            "workflow": lambda: append_and_return(called, "workflow", []),
         },
     )
 

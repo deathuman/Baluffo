@@ -50,7 +50,7 @@ _DISCOVERY_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
 
 
 class _DiscoveryRouteApi(Protocol):
-    DISCOVERY_CANDIDATES_PATH: Path
+    DISCOVERY_CANDIDATES_PATH: Path | None
     DISCOVERY_LOG_PATH: Path
     DISCOVERY_REPORT_PATH: Path
 

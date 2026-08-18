@@ -151,7 +151,7 @@ class _GatewayState:
         data_dir: Path,
         static_root: Path,
         internal_base_url: str,
-        bridge_process: subprocess.Popen[bytes],
+        bridge_process: Any,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.static_service = StaticFileService(

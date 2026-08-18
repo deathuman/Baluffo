@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
 
-def _call_route(tmp_path: Path, query: dict[str, list[str]] | None = None) -> dict:
+def _call_route(tmp_path: Path, query: dict[str, list[str]] | None = None) -> dict[str, Any]:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     handler = FakeHandler()
     assert handle_get(
@@ -18,7 +19,7 @@ def _call_route(tmp_path: Path, query: dict[str, list[str]] | None = None) -> di
         query=query or {},
     )
     assert handler.sent[-1]["status"] == 200
-    return handler.sent[-1]["payload"]
+    return cast(dict[str, Any], handler.sent[-1]["payload"])
 
 
 def test_discovery_audit_artifacts_route_reports_known_missing_files(tmp_path: Path) -> None:
