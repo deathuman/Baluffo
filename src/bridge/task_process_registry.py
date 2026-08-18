@@ -7,7 +7,7 @@ import signal
 import subprocess
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,7 @@ class TaskProcessRegistry:
         entry: TaskProcessEntry, signal_value: signal.Signals, warning_prefix: str
     ) -> tuple[bool, list[str]]:
         try:
-            os.killpg(entry.pid, signal_value)
+            cast(Any, os).killpg(entry.pid, signal_value)
             return False, []
         except ProcessLookupError:
             return True, []
@@ -128,7 +128,9 @@ class TaskProcessRegistry:
         if exited:
             return True, warnings
         disappeared, kill_warnings = self._send_posix_signal(
-            entry, signal.SIGKILL, "sigkill_failed"
+            entry,
+            cast(Any, signal).SIGKILL,
+            "sigkill_failed",
         )
         warnings.extend(kill_warnings)
         return disappeared or self._wait_process(process, 1.0), warnings

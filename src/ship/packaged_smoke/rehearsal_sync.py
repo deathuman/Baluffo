@@ -317,7 +317,7 @@ def _packaged_sync_runtime_env(
         }
     )
     deps.clear_packaged_desktop_session_state(runtime_env)
-    return runtime_env
+    return dict(runtime_env or {})
 
 
 def _start_process_memory_sampler(deps: Any, process: Any) -> Any | None:

@@ -434,7 +434,8 @@ class PipelineService:
 
     @staticmethod
     def _pipeline_parent_run_id(row: dict[str, Any]) -> str:
-        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+        summary_value = row.get("summary")
+        summary = summary_value if isinstance(summary_value, dict) else {}
         return str(row.get("parentRunId") or summary.get("pipelineRunId") or "").strip()
 
     @staticmethod
@@ -598,7 +599,7 @@ class PipelineService:
             status_snapshot = dict(self._status)
         self._write_control_status(status_snapshot)
         if callable(self._heartbeat_lifecycle_run):
-            summary = {
+            summary: dict[str, Any] = {
                 "stage": next_stage,
                 "abortRequestedAt": requested_at,
                 "abortReason": reason,
@@ -1034,17 +1035,12 @@ class PipelineService:
         return False
 
     def _child_task_has_live_evidence(self, task_type: str, run_id: str = "") -> bool:
-        checked_child_liveness = bool(
-            callable(self._child_run_is_live) and str(run_id or "").strip()
-        )
-        if checked_child_liveness:
+        child_run_is_live = self._child_run_is_live
+        if callable(child_run_is_live) and str(run_id or "").strip():
             try:
-                if bool(self._child_run_is_live(task_type, run_id)):
-                    return True
+                return bool(child_run_is_live(task_type, run_id))
             except (RuntimeError, TypeError, ValueError):
                 return False
-        if checked_child_liveness:
-            return False
         return self._child_task_is_active(task_type, run_id)
 
     def _child_terminal_snapshot(self, task_type: str, run_id: str = "") -> Any:
@@ -1602,20 +1598,20 @@ class PipelineService:
         )
         report_status = str(report.get("status") or "").strip().lower()
         if report_status in {"error", "failed", "failure"}:
-            summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+            summary_raw = report.get("summary")
+            summary = summary_raw if isinstance(summary_raw, dict) else {}
             error = str(summary.get("error") or "discovery failed").strip()
             raise RuntimeError(f"discovery_wait: {error}")
         self._wait_for_discovery_auto_approval(report)
 
     def _wait_for_discovery_auto_approval(self, report: dict[str, Any]) -> None:
-        runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-        auto_approval = (
-            runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
-        )
+        runtime_value = report.get("runtime")
+        runtime = runtime_value if isinstance(runtime_value, dict) else {}
+        auto_approval_value = runtime.get("autoApproval")
+        auto_approval = auto_approval_value if isinstance(auto_approval_value, dict) else {}
+        registry_finalization_value = runtime.get("registryFinalization")
         registry_finalization = (
-            runtime.get("registryFinalization")
-            if isinstance(runtime.get("registryFinalization"), dict)
-            else {}
+            registry_finalization_value if isinstance(registry_finalization_value, dict) else {}
         )
         status = str(auto_approval.get("status") or "completed").strip().lower()
         registry_status = str(registry_finalization.get("status") or "completed").strip().lower()
@@ -1649,18 +1645,13 @@ class PipelineService:
             self._heartbeat_pipeline_wait()
             latest = self._load_runtime_evidence(self._discovery_report_path, {})
             latest_report = latest if isinstance(latest, dict) else {}
-            runtime = (
-                latest_report.get("runtime")
-                if isinstance(latest_report.get("runtime"), dict)
-                else {}
-            )
-            auto_approval = (
-                runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
-            )
+            runtime_value = latest_report.get("runtime")
+            runtime = runtime_value if isinstance(runtime_value, dict) else {}
+            auto_approval_value = runtime.get("autoApproval")
+            auto_approval = auto_approval_value if isinstance(auto_approval_value, dict) else {}
+            registry_finalization_value = runtime.get("registryFinalization")
             registry_finalization = (
-                runtime.get("registryFinalization")
-                if isinstance(runtime.get("registryFinalization"), dict)
-                else {}
+                registry_finalization_value if isinstance(registry_finalization_value, dict) else {}
             )
             status = str(auto_approval.get("status") or "completed").strip().lower()
             registry_status = (

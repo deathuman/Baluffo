@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
@@ -75,7 +75,7 @@ def _needs_rendered_detail_resolution(row: dict[str, Any]) -> bool:
 
 def _fetch_static_html(fetch_text, timeout_s, fetch_html_cached, url, **kwargs) -> tuple[str, bool]:
     if callable(fetch_html_cached):
-        return fetch_html_cached(url, **kwargs)
+        return cast(tuple[str, bool], fetch_html_cached(url, **kwargs))
     return fetch_text(url, timeout_s), False
 
 
@@ -419,32 +419,38 @@ def run(
         rows, company=company, source_name=source_name, source_id=source_id, source_row=source_row
     )
     if cleaned:
-        return _enrich_rendered_rows(
-            cleaned,
-            source_name=source_name,
-            source_id=source_id,
-            source_row=source_row,
-            company=company,
-            fetch_text=fetch_text,
-            timeout_s=timeout_s,
-            retries=retries,
-            fetch_html_cached=fetch_html_cached,
-            resolve_one_man_detail=False,
+        return cast(
+            list[dict[str, Any]],
+            _enrich_rendered_rows(
+                cleaned,
+                source_name=source_name,
+                source_id=source_id,
+                source_row=source_row,
+                company=company,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                fetch_html_cached=fetch_html_cached,
+                resolve_one_man_detail=False,
+            ),
         )
     rendered_rows, html = _rendered_rows(
         html, page_url, company, source_id, timeout_s, try_playwright
     )
     if rendered_rows:
-        return _enrich_rendered_rows(
-            rendered_rows,
-            source_name=source_name,
-            source_id=source_id,
-            source_row=source_row,
-            company=company,
-            fetch_text=fetch_text,
-            timeout_s=timeout_s,
-            retries=retries,
-            fetch_html_cached=fetch_html_cached,
+        return cast(
+            list[dict[str, Any]],
+            _enrich_rendered_rows(
+                rendered_rows,
+                source_name=source_name,
+                source_id=source_id,
+                source_row=source_row,
+                company=company,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                fetch_html_cached=fetch_html_cached,
+            ),
         )
     _record_empty_sheet_result(html, page_url, company, source_row)
     return []

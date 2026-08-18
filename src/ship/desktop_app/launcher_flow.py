@@ -12,6 +12,8 @@ import traceback
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
@@ -44,7 +46,7 @@ def _as_int(value: object, default: int = 0) -> int:
 
 
 def _child_env_for(
-    api: object, current_config: DesktopRuntimeConfig, session_root: Path
+    api: Any, current_config: DesktopRuntimeConfig, session_root: Path
 ) -> dict[str, str]:
     install_root = (
         current_config.ship_root.parent
@@ -119,14 +121,14 @@ def _bridge_owner_idle_timeout_s(config: DesktopRuntimeConfig) -> float:
     return PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
 
 
-def _parallel_bridge_startup_enabled(api: object, config: DesktopRuntimeConfig) -> bool:
+def _parallel_bridge_startup_enabled(api: Any, config: DesktopRuntimeConfig) -> bool:
     value = str(api.os.environ.get(STARTUP_PARALLEL_BRIDGE_ENV) or "").strip().lower()
     return bool(config.startup_probe and value in {"1", "true", "yes", "on"})
 
 
 def _start_desktop_bridge_process(
     *,
-    api: object,
+    api: ModuleType,
     config: DesktopRuntimeConfig,
     child_env: dict[str, str],
     desktop_job: int | None,

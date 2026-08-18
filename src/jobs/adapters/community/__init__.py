@@ -190,8 +190,10 @@ def run_remote_ok_source(
             errors.append(f"{url}: {exc}")
 
         parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
-        if parsed or valid_empty:
+        if parsed:
             return parsed
+        if valid_empty:
+            return []
     raise (
         AdapterValidationError.from_errors(errors)
         if errors
@@ -223,8 +225,10 @@ def run_remotive_source(
             errors.append(f"{url}: {exc}")
 
         parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
-        if parsed or valid_empty:
+        if parsed:
             return parsed
+        if valid_empty:
+            return []
     raise (
         AdapterValidationError.from_errors(errors)
         if errors

@@ -469,11 +469,11 @@ def parse_gamesindustry_html(
     html_text: str, base_url: str = "https://jobs.gamesindustry.biz"
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
-    seen_links = set()
+    seen_links: set[str] = set()
     listing_row_pattern = re.compile(r'(?is)<div[^>]+class=["\'][^"\']*views-row[^"\']*["\'][^>]*>')
     listing_row_starts = [match.start() for match in listing_row_pattern.finditer(html_text)]
-    for row in _gamesindustry_jsonld_rows(html_text, base_url):
-        _append_gamesindustry_job(jobs, seen_links, row)
+    for jsonld_row in _gamesindustry_jsonld_rows(html_text, base_url):
+        _append_gamesindustry_job(jobs, seen_links, jsonld_row)
 
     link_pattern = re.compile(
         r'(?is)<a[^>]+href=["\']([^"\']*/job/[^"\']+)["\'][^>]*class=["\'][^"\']*recruiter-job-link[^"\']*["\'][^>]*>(.*?)</a>'

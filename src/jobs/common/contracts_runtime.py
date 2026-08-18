@@ -88,13 +88,13 @@ def _normalize_setup_counts(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_setup_timing(payload: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(payload)
-    phase_timings = _normalize_setup_phase_timings(src.get("phaseTimingsMs"))
+    phase_timings = _normalize_setup_phase_timings(as_json_object(src.get("phaseTimingsMs")))
     phase_order = [
         phase_key
         for phase_key in [clean_text(item) for item in as_json_list(src.get("phaseOrder"))]
         if phase_key
     ][:12]
-    counts = _normalize_setup_counts(src.get("counts"))
+    counts = _normalize_setup_counts(as_json_object(src.get("counts")))
     result: dict[str, Any] = {
         "totalSetupMs": _clamped_int(src.get("totalSetupMs"), 0, 0),
     }

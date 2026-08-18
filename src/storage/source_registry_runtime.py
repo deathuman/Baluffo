@@ -347,7 +347,7 @@ class SourceRegistryRuntimeStore:
 
     def state_for_generation(self, generation: str) -> dict[str, list[dict[str, Any]]]:
         registry_generation = _clean_text(generation)
-        state = {bucket: [] for bucket in SOURCE_REGISTRY_BUCKETS}
+        state: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in SOURCE_REGISTRY_BUCKETS}
         if not registry_generation:
             return state
         rows = self.store.execute_read(
@@ -380,7 +380,7 @@ class SourceRegistryRuntimeStore:
         generation = self.current_generation()
         selected = [bucket for bucket in buckets if bucket in SOURCE_REGISTRY_BUCKETS]
         limit = max(1, int(limit_per_bucket or 1))
-        rows_by_bucket = {bucket: [] for bucket in selected}
+        rows_by_bucket: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in selected}
         if not generation or not selected:
             return rows_by_bucket
         for bucket in selected:

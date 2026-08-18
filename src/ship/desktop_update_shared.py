@@ -366,7 +366,8 @@ def _pid_is_running_windows(pid: int) -> bool:
     process_query_limited_information = 0x1000
     still_active = 259
     try:
-        handle = ctypes.windll.kernel32.OpenProcess(
+        ctypes_mod = cast(Any, ctypes)
+        handle = ctypes_mod.windll.kernel32.OpenProcess(
             process_query_limited_information,
             False,
             int(pid),
@@ -375,14 +376,14 @@ def _pid_is_running_windows(pid: int) -> bool:
             return False
         exit_code = wintypes.DWORD()
         try:
-            if not ctypes.windll.kernel32.GetExitCodeProcess(
+            if not ctypes_mod.windll.kernel32.GetExitCodeProcess(
                 handle,
                 ctypes.byref(exit_code),
             ):
                 return False
             return int(exit_code.value) == still_active
         finally:
-            ctypes.windll.kernel32.CloseHandle(handle)
+            ctypes_mod.windll.kernel32.CloseHandle(handle)
     except (AttributeError, OSError, TypeError, ValueError):
         return False
 

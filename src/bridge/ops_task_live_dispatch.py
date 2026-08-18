@@ -8,7 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused task live dispat
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from src.bridge import ops_task_discovery_live as ops_task_discovery_live_mod
 from src.bridge import ops_task_fetch_live as ops_task_fetch_live_mod
@@ -31,12 +31,15 @@ def _apply_sqlite_task_events(
     events = event_reader(run_id=run_id, task_type=task_type)
     if not events:
         return payload
-    return normalize_live_task_payload(
-        {**payload, "recentEvents": events},
-        task_type=task_type,
-        run_id=run_id,
-        started_at=str(payload.get("startedAt") or ""),
-        finished_at=str(payload.get("finishedAt") or ""),
+    return cast(
+        dict[str, Any],
+        normalize_live_task_payload(
+            {**payload, "recentEvents": events},
+            task_type=task_type,
+            run_id=run_id,
+            started_at=str(payload.get("startedAt") or ""),
+            finished_at=str(payload.get("finishedAt") or ""),
+        ),
     )
 
 
@@ -75,7 +78,7 @@ def get_task_live_payload(
             history_by_type=ops_task_projection_mod.history_by_type(projection),
         )
     else:
-        payload = normalize_live_task_payload({}, task_type=normalized_type)
+        payload = cast(dict[str, Any], normalize_live_task_payload({}, task_type=normalized_type))
         return compact_live_task_payload(payload, task_type=normalized_type) if summary else payload
 
     payload = _apply_sqlite_task_events(context, payload, task_type=normalized_type)

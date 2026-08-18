@@ -178,18 +178,18 @@ def _stage_durations_ms(runtime: dict[str, Any]) -> dict[str, int]:
         "probe": ("probeDurationMs", "probeMs"),
         "finalization": ("finalizationDurationMs", "finalizeDurationMs", "finalizeMs"),
     }
-    stages: dict[str, int] = {}
+    fallback_stages: dict[str, int] = {}
     for stage, keys in stage_keys.items():
         for key in keys:
             value = runtime.get(key)
             try:
-                duration = int(float(value))
+                duration = int(float(value or 0))
             except (TypeError, ValueError):
                 continue
             if duration > 0:
-                stages[stage] = duration
+                fallback_stages[stage] = duration
                 break
-    return stages
+    return fallback_stages
 
 
 def main(argv: list[str] | None = None) -> int:

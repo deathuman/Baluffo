@@ -462,7 +462,7 @@ def _google_sheets_role_bucket_audit_summary(
     limit: int = 10,
 ) -> GoogleSheetsRoleBucketAuditPayload:
     classification_counts: Counter[str] = Counter()
-    examples: list[dict[str, Any]] = []
+    examples: list[Any] = []
     current_run_count = 0
     carried_count = 0
     classification_counts["fixed_by_generic_role_guard"] += max(0, int(guard_blocked_count))

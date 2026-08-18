@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused live-task tests.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, TypedDict, cast
 
 from src.shared.json_shapes import (
@@ -123,7 +124,7 @@ def _normalize_progress_count_array(key: str, value: Any) -> list[str] | None:
     return names
 
 
-def normalize_live_task_progress(payload: dict[str, Any] | None) -> LiveTaskProgress:
+def normalize_live_task_progress(payload: Mapping[str, Any] | None) -> LiveTaskProgress:
     src = as_json_object(payload)
     mode = clean_text(src.get("mode")).lower()
     if mode not in {"determinate", "indeterminate"}:
@@ -214,7 +215,7 @@ def normalize_live_task_event(
 
 
 def normalize_live_task_payload(
-    payload: dict[str, Any] | None,
+    payload: Mapping[str, Any] | None,
     *,
     task_type: str = "",
     run_id: str = "",
@@ -252,7 +253,7 @@ def normalize_live_task_payload(
 
 
 def build_live_task_contract_fields(
-    payload: dict[str, Any] | None,
+    payload: Mapping[str, Any] | None,
 ) -> LiveTaskPayload:
     normalized = normalize_live_task_payload(payload)
     work_items = [
@@ -314,7 +315,7 @@ def build_live_task_work_item(
     duration_ms: int = 0,
     heartbeat_at: str = "",
     error: str = "",
-    progress: dict[str, Any] | None = None,
+    progress: LiveTaskProgress | dict[str, Any] | None = None,
 ) -> LiveTaskWorkItem:
     return normalize_live_task_work_item(
         {
@@ -340,7 +341,7 @@ def build_live_task_payload(
     finished_at: str = "",
     heartbeat_at: str = "",
     status: str = "",
-    task_progress: dict[str, Any] | None = None,
+    task_progress: LiveTaskProgress | dict[str, Any] | None = None,
     summary: dict[str, Any] | None = None,
     work_items: list[dict[str, Any]] | None = None,
     recent_events: list[dict[str, Any]] | None = None,
@@ -378,7 +379,7 @@ def append_live_task_event(
     normalized = normalize_live_task_event(event)
     if not normalized.get("message"):
         return current
-    current.append(normalized)
+    current.append(cast(dict[str, Any], normalized))
     max_events = max(1, int(limit or 1))
     if len(current) > max_events:
         current = current[-max_events:]

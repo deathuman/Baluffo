@@ -81,7 +81,10 @@ def run(
         return []
 
     def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
-        rows = ctx.parse_jobpostings_from_html(
+        parser = ctx.parse_jobpostings_from_html
+        if not callable(parser):
+            return []
+        rows = parser(
             ctx.html,
             base_url=ctx.page_url,
             fallback_company=ctx.company,
@@ -92,7 +95,7 @@ def run(
         if callable(try_playwright):
             browser_html, _ = try_playwright(ctx.page_url, max(3, min(timeout_s, 20)))
             if browser_html:
-                rows = ctx.parse_jobpostings_from_html(
+                rows = parser(
                     browser_html,
                     base_url=ctx.page_url,
                     fallback_company=ctx.company,

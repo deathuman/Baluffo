@@ -118,7 +118,8 @@ def _terminalize_report(
     payload["status"] = status
     if terminal_reason:
         payload["terminalReason"] = terminal_reason
-    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    summary_value = payload.get("summary")
+    summary = summary_value if isinstance(summary_value, dict) else {}
     payload["summary"] = (
         {
             **summary,
@@ -129,7 +130,8 @@ def _terminalize_report(
         if status == "canceled"
         else {**summary, "error": error}
     )
-    progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
+    progress_value = payload.get("taskProgress")
+    progress = progress_value if isinstance(progress_value, dict) else {}
     if progress or status == "canceled":
         payload["taskProgress"] = {
             **progress,
@@ -137,8 +139,10 @@ def _terminalize_report(
             "phaseKey": "canceled" if status == "canceled" else progress.get("phaseKey", ""),
             "updatedAt": finished_at,
         }
-    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime_value = payload.get("runtime")
+    runtime = runtime_value if isinstance(runtime_value, dict) else {}
+    lifecycle_value = runtime.get("lifecycle")
+    lifecycle = lifecycle_value if isinstance(lifecycle_value, dict) else {}
     if runtime or lifecycle or status == "canceled":
         lifecycle_payload = {**lifecycle, "heartbeatAt": finished_at}
         if status == "canceled":
@@ -171,7 +175,8 @@ def _terminalize_fetch_tasks(
     if terminal_reason:
         payload["terminalReason"] = terminal_reason
     payload["heartbeatAt"] = finished_at
-    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    summary_value = payload.get("summary")
+    summary = summary_value if isinstance(summary_value, dict) else {}
     payload["summary"] = (
         {
             **summary,
@@ -182,7 +187,8 @@ def _terminalize_fetch_tasks(
         if status == "canceled"
         else {**summary, "error": error}
     )
-    progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
+    progress_value = payload.get("taskProgress")
+    progress = progress_value if isinstance(progress_value, dict) else {}
     if progress or status == "canceled":
         payload["taskProgress"] = {
             **progress,

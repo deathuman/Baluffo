@@ -183,7 +183,9 @@ class TaskAbortService:
         warning = _clean_text(terminate_result.get("warning"))
         if warning:
             warnings.append(warning)
-        warnings.extend(str(item) for item in terminate_result.get("warnings") or [])
+        warnings_raw = terminate_result.get("warnings")
+        warnings_list = warnings_raw if isinstance(warnings_raw, list) else []
+        warnings.extend(str(item) for item in warnings_list)
         exited = bool(terminate_result.get("exited"))
         if not exited:
             row = self._lifecycle_row(task_type, run_id) or {}

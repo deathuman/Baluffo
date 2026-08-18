@@ -44,7 +44,7 @@ def _restore_existing_rows(
     fetched_at: str,
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
-    canonical_job_cls: type | None = None,
+    canonical_job_cls: type[Any] | None = None,
 ) -> list[Any]:
     """Restore canonical jobs from raw/dict rows (shared by sidecar + blob paths)."""
     restored: list[Any] = []
@@ -67,7 +67,7 @@ def read_existing_output(
     *,
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
-    canonical_job_cls: type | None = None,
+    canonical_job_cls: type[Any] | None = None,
     row_predicate: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[Any]:
     # ponytail: sidecar-only read — the legacy json.loads fallback on the
@@ -92,7 +92,7 @@ def _existing_output_row_to_canonical(
     fetched_at: str,
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
-    canonical_job_cls: type | None = None,
+    canonical_job_cls: type[Any] | None = None,
 ) -> Any:
     dedup_key = clean_text(row.get("dedupKey"))
     if canonical_job_cls is not None and row.get("availabilityId") and row.get("jobLink"):
@@ -144,7 +144,7 @@ def _write_streamed_tmp(tmp_path: Path, target: Path, stream_fn: Callable[[Any],
         def write(self, text: str) -> int:
             nonlocal write_count
             write_count += len(text)
-            return self._inner.write(text)
+            return int(self._inner.write(text))
 
         def flush(self) -> None:
             self._inner.flush()

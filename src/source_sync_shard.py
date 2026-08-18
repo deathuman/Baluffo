@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 from src import source_sync_config as _source_sync_config
@@ -343,9 +343,7 @@ def _validate_manifest_totals(
         "totalRowCount": sum(entry["rowCount"] for entry in shards),
         "totalSizeBytes": sum(entry["sizeBytes"] for entry in shards),
     }
-    totals = {
-        key: int(payload.get(key) if key in payload else value) for key, value in expected.items()
-    }
+    totals = {key: int(payload.get(key, value)) for key, value in expected.items()}
     for key, value in expected.items():
         if totals[key] != value:
             raise SourceSyncShardError(f"source-sync manifest {key} does not match shards")
@@ -793,11 +791,11 @@ def push_changed_shards(
                     ),
                 )
         parallel_finished_at = time.perf_counter()
-    for output in shard_outputs:
-        if output is None:
+    for shard_output in shard_outputs:
+        if shard_output is None:
             continue
-        results.append(dict(output.get("pushResult") or {}))
-        verifications.append(dict(output.get("verification") or {}))
+        results.append(dict(shard_output.get("pushResult") or {}))
+        verifications.append(dict(shard_output.get("verification") or {}))
         remote_requests.extend(list(output.get("remoteRequests") or []))
     return {
         "shardCount": len(shards),
@@ -1211,11 +1209,11 @@ def read_sharded_snapshot(
                 for future in future_to_index:
                     future.cancel()
                 raise
-    for shard_result in shard_results:
-        if shard_result is None:
+    for completed_shard in shard_results:
+        if completed_shard is None:
             continue
-        bucket = str(shard_result["entry"]["bucket"])
-        rows_by_bucket.setdefault(bucket, []).extend(shard_result["rows"])
+        bucket = str(completed_shard["entry"]["bucket"])
+        rows_by_bucket.setdefault(bucket, []).extend(completed_shard["rows"])
     snapshot: dict[str, Any] = {
         "schemaVersion": SHARD_SCHEMA_VERSION,
         "generatedAt": manifest["generatedAt"],
@@ -1419,7 +1417,7 @@ def _request_download_bytes(
     }
     request_raw_bytes = getattr(module, "_request_raw_bytes", None)
     if callable(request_raw_bytes):
-        return request_raw_bytes(**kwargs)
+        return cast(tuple[int, bytes, dict[str, str]], request_raw_bytes(**kwargs))
     return _source_sync_config.request_raw_bytes(module, **kwargs)
 
 

@@ -72,7 +72,7 @@ from src.bridge.registry_conflicts_row import (
     source_identity,
 )
 
-TRIAGE_BUCKETS = (
+TRIAGE_BUCKETS: tuple[dict[str, Any], ...] = (
     {
         "bucket": "exact_duplicate_auto_healable",
         "label": "Exact duplicate",
@@ -107,7 +107,7 @@ TRIAGE_BUCKETS = (
 
 _TRIAGE_BY_BUCKET = {str(row["bucket"]): row for row in TRIAGE_BUCKETS}
 
-REVIEW_QUEUES = (
+REVIEW_QUEUES: tuple[dict[str, Any], ...] = (
     {
         "queue": "p0_multi_active_provider",
         "priority": 0,
@@ -307,7 +307,7 @@ def _build_triage_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]:
     counts = Counter(
         str(card.get("triageBucket") or "ambiguous_manual_review") for card in conflicts
     )
-    buckets = []
+    buckets: list[dict[str, Any]] = []
     for meta in TRIAGE_BUCKETS:
         bucket = str(meta["bucket"])
         buckets.append(
@@ -410,7 +410,7 @@ def _classify_conflict_review(rows: list[dict[str, Any]], triage_bucket: str) ->
 def _build_review_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]:
     counts = Counter(str(card.get("reviewQueue") or "p3_low_signal_manual") for card in conflicts)
     priority_counts = Counter(str(card.get("reviewPriority", 3)) for card in conflicts)
-    queues = []
+    queues: list[dict[str, Any]] = []
     for meta in REVIEW_QUEUES:
         queue = str(meta["queue"])
         queues.append(

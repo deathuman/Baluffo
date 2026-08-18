@@ -12,7 +12,7 @@ import json
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from src.bridge.container_mode import is_container_runtime
@@ -32,6 +32,44 @@ class ServerHandlerApi(Protocol):
     def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
 
     def mark_desktop_session_activity(self, path: str) -> None: ...
+
+
+class _JsonHandler(Protocol):
+    """Request-handler surface used by the module-level bridge helpers.
+
+    Satisfied structurally by the Handler class produced in ``make_handler``
+    (BaseHTTPRequestHandler plus the JSON helpers it adds).
+    """
+
+    path: str
+    command: str
+    headers: Any
+    rfile: Any
+    wfile: Any
+    close_connection: bool
+    _baluffo_last_response_status: int
+
+    def send_response(self, code: int, message: str | None = None) -> None: ...
+
+    def send_header(self, keyword: str, value: str) -> None: ...
+
+    def end_headers(self) -> None: ...
+
+    def log_message(self, format: str, *args: Any) -> None: ...
+
+    def send_json(self, payload: Any, status: int = 200) -> None: ...
+
+    def send_bytes(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        filename: str = "",
+        disposition: str = "inline",
+        status: int = 200,
+        cache_control: str = "no-store",
+        content_encoding: str = "",
+    ) -> None: ...
 
 
 _EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS = (AttributeError, TypeError, ValueError)
@@ -59,7 +97,7 @@ def _is_expected_client_disconnect(exc: BaseException) -> bool:
     return False
 
 
-def _request_timing_category(handler: BaseHTTPRequestHandler, method: str, path: str = "") -> str:
+def _request_timing_category(handler: _JsonHandler, method: str, path: str = "") -> str:
     route_path = path or ""
     if not route_path:
         try:
@@ -71,7 +109,7 @@ def _request_timing_category(handler: BaseHTTPRequestHandler, method: str, path:
 
 
 def _handle_response_write_exception(
-    handler: BaseHTTPRequestHandler,
+    handler: _JsonHandler,
     api: ServerHandlerApi,
     exc: BaseException,
     *,
@@ -99,17 +137,17 @@ def _handle_response_write_exception(
     return False
 
 
-def _route_path(handler: BaseHTTPRequestHandler) -> str:
+def _route_path(handler: _JsonHandler) -> str:
     # Defensive normalization: some clients/environments can introduce
     # whitespace/control characters that otherwise cause routes to miss.
     return str(urlparse(handler.path).path or "").strip()
 
 
-def _route_query(handler: BaseHTTPRequestHandler) -> dict[str, list[str]]:
+def _route_query(handler: _JsonHandler) -> dict[str, list[str]]:
     return parse_qs(urlparse(handler.path).query)
 
 
-def _send_cors_headers(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
+def _send_cors_headers(handler: _JsonHandler, api: ServerHandlerApi) -> None:
     if is_container_runtime(api):
         return
     handler.send_header("Access-Control-Allow-Origin", "*")
@@ -118,7 +156,7 @@ def _send_cors_headers(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -
 
 
 def _send_json_response(
-    handler: BaseHTTPRequestHandler,
+    handler: _JsonHandler,
     api: ServerHandlerApi,
     payload: Any,
     *,
@@ -149,7 +187,7 @@ def _send_json_response(
 
 
 def _send_bytes_response(
-    handler: BaseHTTPRequestHandler,
+    handler: _JsonHandler,
     api: ServerHandlerApi,
     body: bytes,
     *,
@@ -190,7 +228,7 @@ def _send_bytes_response(
 
 
 def _log_request_message(
-    handler: BaseHTTPRequestHandler, api: ServerHandlerApi, format: str, args: tuple[Any, ...]
+    handler: _JsonHandler, api: ServerHandlerApi, format: str, args: tuple[Any, ...]
 ) -> None:
     runtime_config = getattr(api, "runtime_config", None)
     if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
@@ -209,7 +247,7 @@ def _log_request_message(
 
 
 def _handle_get_request(
-    handler: BaseHTTPRequestHandler,
+    handler: _JsonHandler,
     api: ServerHandlerApi,
     static_service: StaticGetService | None,
 ) -> None:
@@ -237,7 +275,7 @@ def _handle_get_request(
 
         from src.bridge.routes.get_routes import handle_get
 
-        if handle_get(handler, api=api, path=path, query=query):
+        if handle_get(handler, api=cast(Any, api), path=path, query=query):
             return
         if static_service is not None and static_service.handle_get(handler, path=path):
             return
@@ -283,7 +321,7 @@ def _handle_get_request(
             )
 
 
-def _handle_post_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
+def _handle_post_request(handler: _JsonHandler, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False
@@ -295,10 +333,10 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi)
             api.mark_desktop_session_activity(path)
         except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
             pass
-        payload = read_json_from_request(handler)
+        payload = read_json_from_request(cast(BaseHTTPRequestHandler, handler))
         from src.bridge.routes.post_routes import handle_post
 
-        if handle_post(handler, api=api, path=path, payload=payload):
+        if handle_post(handler, api=cast(Any, api), path=path, payload=payload):
             return
         handler.send_json({"error": "Not found"}, status=404)
 
@@ -351,7 +389,7 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi)
             )
 
 
-def _handle_options_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
+def _handle_options_request(handler: _JsonHandler, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False
@@ -381,6 +419,8 @@ def make_handler(
     """Create a request handler bound to the active bridge API instance."""
 
     class Handler(BaseHTTPRequestHandler):
+        _baluffo_last_response_status: int = 200
+
         def _request_timing_category(self, method: str, path: str = "") -> str:
             return _request_timing_category(self, method, path)
 

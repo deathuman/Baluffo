@@ -21,6 +21,20 @@ class DedupMergeExampleRow(TypedDict, total=False):
     dedupKey: str
     mergeReason: str
     mergeGateTier: str
+    incomingSource: str
+    recommendedReviewAction: str
+    suspectedCause: str
+    classification: str
+    blocksLifecycle: bool
+    existingDedupKey: str
+    nonBlockingReason: str
+    incomingJobLink: str
+    incomingSourceJobId: str
+    targetTitle: str
+    targetCompany: str
+    targetSource: str
+    targetJobLink: str
+    targetSourceJobId: str
     sourceBundleCount: int
     bundleEvidenceOrigin: str
     sampleSources: list[str]
@@ -39,6 +53,19 @@ class DedupReviewQueueRow(TypedDict, total=False):
     dedupKey: str
     sourceBundleCount: int
     bundleEvidenceOrigin: str
+    incomingSource: str
+    mergeReason: str
+    existingDedupKey: str
+    disagreementClassification: str
+    disagreementGateDisposition: str
+    collisionReviewHint: str
+    carriedLocationPollutionAudit: str
+    classification: str
+    sharedPrimaryUrl: bool
+    uniqueJobLinkCount: int
+    urlHostDiversity: int
+    urlPathPrefixDiversity: int
+    evidence: list[str]
     recommendedReviewAction: str
     suspectedCause: str
     causeEvidence: list[str]
@@ -69,6 +96,9 @@ class ProviderStaticDisagreementRow(TypedDict, total=False):
     dedupKey: str
     bundleEvidenceOrigin: str
     sourceBundleCount: int
+    recommendedReviewAction: str
+    suspectedCause: str
+    operatorReviewReason: str
     providerSources: list[str]
     staticSources: list[str]
     providerSourceJobIds: list[str]
@@ -106,6 +136,11 @@ class GoogleSheetsRoleBucketAuditPayload(TypedDict, total=False):
     blockedByDifferentPrimaryUrlCount: int
     likelyHistoricalCollisionCount: int
     fixedByGenericRoleGuardCount: int
+    totalRoleBucketCount: int
+    currentRunRoleBucketCount: int
+    carriedHistoricalRoleBucketCount: int
+    allowedSamePrimaryUrlCount: int
+    likelyParserCategoryBucketCount: int
     classificationCounts: IntCountMap
     examples: list[JsonObject]
     guardExamples: list[JsonObject]
@@ -159,7 +194,7 @@ class DedupAuditGatePayload(TypedDict, total=False):
     warnings: list[str]
     blockerDetails: list[DedupAuditGateDetail]
     warningDetails: list[DedupAuditGateDetail]
-    examples: list[JsonObject]
+    examples: list[Any]
     nonzeroReviewQueueCauseCounts: IntCountMap
 
 

@@ -278,7 +278,7 @@ def _overview_summary(
             totals["usersCount"] = max(1, _int(totals.get("usersCount")))
             overview["totals"] = totals
         return overview
-    fallback = {
+    fallback: dict[str, Any] = {
         "users": [],
         "totals": {},
         "detailLevel": "summary",

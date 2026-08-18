@@ -547,7 +547,7 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[DedupReviewQ
             }
             for row in warning_provider_static_examples[:5]
         ]
-    examples = []
+    examples: list[DedupReviewQueueRow] = []
     for row in dedup_evidence.get("reviewQueue") or []:
         if not isinstance(row, Mapping):
             continue

@@ -91,8 +91,8 @@ class BrowserFallbackPool:
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
-        self._playwright = None
-        self._browser = None
+        self._playwright: Any = None
+        self._browser: Any = None
         self._backend = browser_fallback_backend()
         self._obscura_proc: subprocess.Popen | None = None
         self._available = True
@@ -109,14 +109,15 @@ class BrowserFallbackPool:
             if self._loop is not None:
                 return
             self._loop = asyncio.new_event_loop()
+            loop = self._loop
             self._thread = threading.Thread(
-                target=self._loop.run_forever,
+                target=loop.run_forever,
                 name=_POOL_THREAD_NAME,
                 daemon=True,
             )
             self._thread.start()
             t0 = time.monotonic()
-            future = asyncio.run_coroutine_threadsafe(self._start_browser(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(self._start_browser(), loop)
             try:
                 future.result(timeout=120)
             except BaseException:
@@ -223,7 +224,10 @@ class BrowserFallbackPool:
         """Sync entry-point for worker threads; returns (html, error)."""
         try:
             self._ensure_started()
-            future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s), self._loop)
+            loop = self._loop
+            if loop is None:
+                raise RuntimeError("browser pool event loop not started")
+            future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s), loop)
             html = future.result(timeout=max(1, int(timeout_s)) + 30)
         except BaseException as exc:
             return "", normalize_browser_fallback_error(str(exc))

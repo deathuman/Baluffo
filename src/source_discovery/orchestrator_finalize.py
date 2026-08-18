@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery finali
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import MutableMapping
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
@@ -102,7 +103,7 @@ def _prepare_review_candidates(
 
 def _count_queued_stages(
     queued_candidates: list[dict[str, Any]],
-    stage_counter: Counter[str],
+    stage_counter: MutableMapping[str, int],
 ) -> None:
     for row in queued_candidates:
         stage_counter[str(row.get("discoveryStage") or "provider_pattern")] += 1

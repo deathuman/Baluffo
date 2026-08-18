@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,7 +35,12 @@ from src.bridge.fetch_report_summary import (
 from src.bridge.performance_profile import time_operation
 from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
-from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
+from src.shared.live_task import (
+    LiveTaskPayload,
+    LiveTaskProgress,
+    TaskStatePayload,
+    TaskStateRow,
+)
 from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry_io import load_runtime_evidence
 from src.storage_metrics import duration_ms, record_storage_read
@@ -140,7 +145,7 @@ def _task_type(row: dict[str, Any]) -> str:
     return str(row.get("type") or row.get("taskType") or "").strip().lower()
 
 
-def _run_id(row: dict[str, Any]) -> str:
+def _run_id(row: Mapping[str, Any]) -> str:
     return str(row.get("runId") or row.get("id") or "").strip()
 
 
@@ -266,7 +271,7 @@ def _enrich_active_row_for_type(
     task_type: str,
     run_id: str,
     row: dict[str, Any],
-    pipeline_row: dict[str, Any],
+    pipeline_row: Mapping[str, Any],
     pipeline_run_id: str,
     pipeline_stage: str,
     fetch_live: dict[str, Any],
@@ -371,7 +376,9 @@ def _pipeline_status_to_task_row(pipeline_status: dict[str, Any]) -> TaskStateRo
         "status": "running" if active else str(status.get("stage") or "").strip().lower(),
         "lifecycleStatus": "running" if active else "",
         "stage": str(status.get("stage") or "").strip().lower(),
-        "taskProgress": _ops_live_payload.build_pipeline_task_progress(status),
+        "taskProgress": cast(
+            LiveTaskProgress, _ops_live_payload.build_pipeline_task_progress(status)
+        ),
         "summary": {
             "stage": str(status.get("stage") or "").strip().lower(),
             "updatesFound": bool(status.get("updatesFound")),
@@ -439,12 +446,13 @@ def _compact_task_state_payload(payload: dict[str, Any]) -> TaskStatePayload:
     tasks = [
         _compact_task_state_row(row) for row in payload.get("tasks", []) if isinstance(row, dict)
     ]
-    return {
+    compact: dict[str, Any] = {
         **{key: value for key, value in payload.items() if key not in {"tasks", "count"}},
         "tasks": tasks,
         "count": len(tasks),
         "summary": True,
     }
+    return cast(TaskStatePayload, compact)
 
 
 def _bounded_fetch_summary_for_run(paths: OpsPaths, run_id: str) -> dict[str, Any]:
@@ -591,7 +599,7 @@ class OpsApi:
         age_seconds = max(
             0.0, (now_dt.astimezone(UTC) - heartbeat_dt.astimezone(UTC)).total_seconds()
         )
-        return age_seconds > _STALE_TERMINAL_PROGRESS_GRACE_SECONDS
+        return bool(age_seconds > _STALE_TERMINAL_PROGRESS_GRACE_SECONDS)
 
     def _has_live_task_evidence(
         self,
@@ -1230,11 +1238,14 @@ class OpsApi:
                 if hot_payload is not None:
                     return cast(LiveTaskPayload, hot_payload)
         projection = self.get_projected_run_history()
-        return _ops_task_live.get_task_live_payload(
-            self._task_live_context(),
-            task_type,
-            projection=projection,
-            summary=summary,
+        return cast(
+            LiveTaskPayload,
+            _ops_task_live.get_task_live_payload(
+                self._task_live_context(),
+                task_type,
+                projection=projection,
+                summary=summary,
+            ),
         )
 
     def get_current_task_state_payload(self) -> TaskStatePayload:
@@ -1259,10 +1270,11 @@ class OpsApi:
         )
         sync_live_run_id = _run_id(sync_live_payload)
         pipeline_status = self._deps.get_jobs_pipeline_status_payload()
-        pipeline_row = (
+        pipeline_row = cast(
+            dict[str, Any],
             _pipeline_status_to_task_row(pipeline_status)
             if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
-            else {}
+            else {},
         )
         pipeline_run_id = _run_id(pipeline_row)
         pipeline_stage = str(pipeline_row.get("stage") or "").strip().lower()
@@ -1336,10 +1348,13 @@ class OpsApi:
                 task_by_key[key] = {**existing, **pipeline_row, "active": True, "finishedAt": ""}
                 task_by_key[key]["stage"] = pipeline_stage or str(existing.get("stage") or "")
         _enrich_pipeline_rows_with_children(task_by_key)
-        tasks = sorted(
-            list(task_by_key.values()),
-            key=lambda row: str(row.get("startedAt") or ""),
-            reverse=True,
+        tasks: list[TaskStateRow] = cast(
+            list[TaskStateRow],
+            sorted(
+                list(task_by_key.values()),
+                key=lambda row: str(row.get("startedAt") or ""),
+                reverse=True,
+            ),
         )
         return {
             "tasks": tasks,
@@ -1359,10 +1374,11 @@ class OpsApi:
                 return cast(TaskStatePayload, hot_payload)
 
         lifecycle_current = self._current_lifecycle_rows()
-        pipeline_row = (
+        pipeline_row = cast(
+            dict[str, Any],
             _pipeline_status_to_task_row(pipeline_status)
             if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
-            else {}
+            else {},
         )
         pipeline_run_id = _run_id(pipeline_row)
         pipeline_stage = str(pipeline_row.get("stage") or "").strip().lower()
@@ -1425,12 +1441,17 @@ class OpsApi:
                 run_id=run_id,
                 lifecycle_row=row,
             )
-            task_by_key[(task_type, run_id)] = _compact_task_state_row(route_row)
+            task_by_key[(task_type, run_id)] = cast(
+                dict[str, Any], _compact_task_state_row(route_row)
+            )
         if pipeline_row and pipeline_run_id:
             key = ("pipeline", pipeline_run_id)
             existing = task_by_key.get(key)
-            task_by_key[key] = _compact_task_state_row(
-                {**(existing or {}), **pipeline_row, "active": True, "finishedAt": ""}
+            task_by_key[key] = cast(
+                dict[str, Any],
+                _compact_task_state_row(
+                    {**(existing or {}), **pipeline_row, "active": True, "finishedAt": ""}
+                ),
             )
         _enrich_pipeline_rows_with_children(task_by_key)
         tasks = sorted(

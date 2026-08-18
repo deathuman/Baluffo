@@ -18,7 +18,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from src.bridge.task_abort_evidence import (
     ABORT_TERMINAL_REASON,
@@ -259,9 +259,11 @@ class TaskLaunchApi:
             save_json_atomic=save_json_atomic or self._deps.save_json_atomic,
             finish_lifecycle_run=finish_lifecycle_run or (lambda *_a, **_kw: {}),
             fail_lifecycle_run=fail_lifecycle_run or (lambda *_a, **_kw: {}),
-            cancel_lifecycle_run=cancel_lifecycle_run
-            or self._deps.cancel_lifecycle_run
-            or (lambda *_a, **_kw: {}),
+            cancel_lifecycle_run=(
+                cancel_lifecycle_run
+                or getattr(self._deps, "cancel_lifecycle_run", None)
+                or (lambda *_a, **_kw: {})
+            ),
             heartbeat_lifecycle_run=heartbeat_lifecycle_run or (lambda *_a, **_kw: None),
             get_lifecycle_row=self._deps.get_lifecycle_row,
             mirror_fetch_source_runs=lambda report: _mirror_fetch_source_runs(
@@ -595,8 +597,11 @@ class TaskLaunchApi:
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]],
     ) -> TaskStartResponse | None:
         ctx = self._build_fetch_lifecycle_context()
-        return _active_fetch_start_response(
-            ctx, get_lifecycle_current_runs=get_lifecycle_current_runs
+        return cast(
+            TaskStartResponse | None,
+            _active_fetch_start_response(
+                ctx, get_lifecycle_current_runs=get_lifecycle_current_runs
+            ),
         )
 
     def _fetch_report_shell(
@@ -1431,10 +1436,12 @@ class TaskLaunchApi:
             pid_is_running=self._deps.pid_is_running,
         )
         if not active_metadata:
-            active_metadata = (
+            fallback_metadata = (
                 self._active_bootstrap_process_metadata()
                 or self._active_bootstrap_report_metadata()
             )
+            if isinstance(fallback_metadata, dict):
+                active_metadata = fallback_metadata
         if not active_metadata:
             return None
         response = build_duplicate_start_payload("jobs_bootstrap", "fetch", active_metadata)
@@ -2094,7 +2101,7 @@ class TaskLaunchApi:
                 get_lifecycle_current_runs=get_lifecycle_current_runs,
             )
             if active_response:
-                return active_response
+                return cast(TaskStartResponse, active_response)
 
             run_id = f"jobs_bootstrap_{uuid.uuid4().hex[:10]}"
             started_at = self._deps.now_iso()
@@ -2117,20 +2124,23 @@ class TaskLaunchApi:
                 normalize_fetch_report_contract(report_shell),
             )
             if self._packaged_smoke_bootstrap_controlled_success_enabled():
-                return self._start_packaged_smoke_controlled_bootstrap(
-                    run_id=run_id,
-                    started_at=started_at,
-                    staging_dir=staging_dir,
-                    spawn_args=spawn_args,
-                    report_shell=report_shell,
-                    normalize_fetch_report_contract=normalize_fetch_report_contract,
-                    save_json_atomic=save_json_atomic,
-                    schema_version=schema_version,
-                    start_lifecycle_run=start_lifecycle_run,
-                    finish_lifecycle_run=finish_lifecycle_run,
-                    fail_lifecycle_run=fail_lifecycle_run,
-                    cancel_lifecycle_run=cancel_lifecycle_run,
-                    heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                return cast(
+                    TaskStartResponse,
+                    self._start_packaged_smoke_controlled_bootstrap(
+                        run_id=run_id,
+                        started_at=started_at,
+                        staging_dir=staging_dir,
+                        spawn_args=spawn_args,
+                        report_shell=report_shell,
+                        normalize_fetch_report_contract=normalize_fetch_report_contract,
+                        save_json_atomic=save_json_atomic,
+                        schema_version=schema_version,
+                        start_lifecycle_run=start_lifecycle_run,
+                        finish_lifecycle_run=finish_lifecycle_run,
+                        fail_lifecycle_run=fail_lifecycle_run,
+                        cancel_lifecycle_run=cancel_lifecycle_run,
+                        heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                    ),
                 )
             try:
                 pid = self._call_run_background_script(
@@ -2315,18 +2325,21 @@ class TaskLaunchApi:
                 run_id=run_id, started_at=started_at, schema_version=schema_version
             )
             if self._packaged_smoke_fetch_source_runs_enabled():
-                return self._start_packaged_smoke_source_runs_fetch(
-                    run_id=run_id,
-                    started_at=started_at,
-                    preset=preset,
-                    spawn_args=spawn_args,
-                    schema_version=schema_version,
-                    normalize_fetch_report_contract=normalize_fetch_report_contract,
-                    load_json_object=load_json_object,
-                    save_json_atomic=save_json_atomic,
-                    start_lifecycle_run=start_lifecycle_run,
-                    finish_lifecycle_run=finish_lifecycle_run,
-                    fail_lifecycle_run=fail_lifecycle_run,
+                return cast(
+                    TaskStartResponse,
+                    self._start_packaged_smoke_source_runs_fetch(
+                        run_id=run_id,
+                        started_at=started_at,
+                        preset=preset,
+                        spawn_args=spawn_args,
+                        schema_version=schema_version,
+                        normalize_fetch_report_contract=normalize_fetch_report_contract,
+                        load_json_object=load_json_object,
+                        save_json_atomic=save_json_atomic,
+                        start_lifecycle_run=start_lifecycle_run,
+                        finish_lifecycle_run=finish_lifecycle_run,
+                        fail_lifecycle_run=fail_lifecycle_run,
+                    ),
                 )
             save_json_atomic(
                 self._paths.jobs_fetch_report,
@@ -2347,18 +2360,21 @@ class TaskLaunchApi:
                     metadata={"task": "jobs_fetcher", "preset": preset},
                 )
             except OSError as exc:
-                return self._write_fetch_launch_failure(
-                    run_id=run_id,
-                    started_at=started_at,
-                    preset=preset,
-                    spawn_args=spawn_args,
-                    error=str(exc),
-                    report_shell=report_shell,
-                    append_run_history=append_run_history,
-                    normalize_fetch_report_contract=normalize_fetch_report_contract,
-                    prune_started_rows_for_type=prune_started_rows_for_type,
-                    save_json_atomic=save_json_atomic,
-                    fail_lifecycle_run=fail_lifecycle_run,
+                return cast(
+                    TaskStartResponse,
+                    self._write_fetch_launch_failure(
+                        run_id=run_id,
+                        started_at=started_at,
+                        preset=preset,
+                        spawn_args=spawn_args,
+                        error=str(exc),
+                        report_shell=report_shell,
+                        append_run_history=append_run_history,
+                        normalize_fetch_report_contract=normalize_fetch_report_contract,
+                        prune_started_rows_for_type=prune_started_rows_for_type,
+                        save_json_atomic=save_json_atomic,
+                        fail_lifecycle_run=fail_lifecycle_run,
+                    ),
                 )
             self._reset_fetch_approval_state(
                 load_json_object=load_json_object,

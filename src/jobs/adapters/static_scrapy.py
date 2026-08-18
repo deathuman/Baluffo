@@ -396,7 +396,9 @@ def _merge_envelope_stats(source_detail: dict[str, Any], envelope_dict: dict[str
     stats = _as_dict(envelope_dict.get("stats"))
     if not stats:
         return
-    stats_payload = {key: _coerce_int(stats.get(key)) for key in SCRAPY_STATS_INT_FIELDS}
+    stats_payload: dict[str, Any] = {
+        key: _coerce_int(stats.get(key)) for key in SCRAPY_STATS_INT_FIELDS
+    }
     stats_payload["finish_reason"] = clean_text(stats.get("finish_reason"))
     source_detail["stats"] = stats_payload
     source_detail_loss = _as_dict(source_detail.get("loss"))

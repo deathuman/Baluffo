@@ -12,6 +12,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused active-task snap
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -116,7 +117,8 @@ def compact_task_row(row: dict[str, Any]) -> dict[str, Any]:
     if "taskProgress" not in compact and progress:
         compact["taskProgress"] = progress
     elif isinstance(compact.get("taskProgress"), dict):
-        compact["taskProgress"] = dict(compact["taskProgress"])
+        task_progress = compact["taskProgress"]
+        compact["taskProgress"] = dict(task_progress) if isinstance(task_progress, dict) else {}
     summary = _as_dict(compact.get("summary"))
     if summary:
         compact["summary"] = summary
@@ -250,7 +252,7 @@ def write_snapshot(
 
 def upsert_snapshot_rows(
     path: Path,
-    rows: list[dict[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
     *,
     snapshot_at: str = "",
 ) -> dict[str, Any]:

@@ -93,7 +93,7 @@ class PipelineScheduleService:
         data = payload if isinstance(payload, dict) else {}
         default = PipelineScheduleService.default_config()
         interval_source = data.get("intervalHours", default["intervalHours"])
-        normalized = {
+        normalized: dict[str, Any] = {
             "schemaVersion": SCHEMA_VERSION,
             "enabled": _is_truthy(data.get("enabled", default["enabled"])),
             "intervalHours": _parse_interval_hours(interval_source),

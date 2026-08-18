@@ -16,7 +16,7 @@ import ssl
 import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 from urllib.error import URLError
 
 from src.source_registry import (
@@ -334,12 +334,15 @@ def _snapshot_too_large_error(
     max_snapshot_size_bytes: int,
     size_warning: bool,
 ) -> Exception:
-    return module.SyncOperationError(
-        "snapshot_too_large",
-        str(exc),
-        sizeBytes=snapshot_size_bytes,
-        maxSnapshotSizeBytes=max_snapshot_size_bytes,
-        sizeWarning=size_warning,
+    return cast(
+        Exception,
+        module.SyncOperationError(
+            "snapshot_too_large",
+            str(exc),
+            sizeBytes=snapshot_size_bytes,
+            maxSnapshotSizeBytes=max_snapshot_size_bytes,
+            sizeWarning=size_warning,
+        ),
     )
 
 
@@ -700,7 +703,7 @@ def _validate_normalized_remote_snapshot(snapshot: dict[str, Any]) -> None:
                 )
 
 
-def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_snapshot(module: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
     generated_at = str(data.get("generatedAt") or "")
     return {
@@ -862,7 +865,7 @@ def _read_monolithic_remote_snapshot(
 
 
 def merge_registry_state(
-    module: Any, local_state: dict[str, Any], remote_snapshot: dict[str, Any]
+    module: Any, local_state: Mapping[str, Any], remote_snapshot: Mapping[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
     remote = normalize_snapshot(module, remote_snapshot)
     tombstones = module.load_tombstones()

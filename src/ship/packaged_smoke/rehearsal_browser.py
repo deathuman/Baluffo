@@ -27,7 +27,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _preferred_desktop_browser_env() -> dict[str, str]:
     deps = _root()
-    return deps.preferred_packaged_desktop_browser_env(deps.os.environ)
+    return dict(deps.preferred_packaged_desktop_browser_env(deps.os.environ) or {})
 
 
 def _select_packaged_browser_job_browser(

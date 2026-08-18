@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 
 _THREAD_LOCK = threading.RLock()
 _THREAD_STATE = threading.local()
@@ -34,11 +34,13 @@ def _acquire_file_lock(handle: BinaryIO) -> None:
     if os.name == "nt":
         import msvcrt
 
-        _retry_contended_lock(lambda: msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1))
+        msvcrt_mod = cast(Any, msvcrt)
+        _retry_contended_lock(lambda: msvcrt_mod.locking(handle.fileno(), msvcrt_mod.LK_NBLCK, 1))
         return
     import fcntl
 
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    fcntl_mod = cast(Any, fcntl)
+    fcntl_mod.flock(handle.fileno(), fcntl_mod.LOCK_EX)
 
 
 def _release_file_lock(handle: BinaryIO) -> None:
@@ -46,11 +48,13 @@ def _release_file_lock(handle: BinaryIO) -> None:
     if os.name == "nt":
         import msvcrt
 
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        msvcrt_mod = cast(Any, msvcrt)
+        msvcrt_mod.locking(handle.fileno(), msvcrt_mod.LK_UNLCK, 1)
         return
     import fcntl
 
-    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    fcntl_mod = cast(Any, fcntl)
+    fcntl_mod.flock(handle.fileno(), fcntl_mod.LOCK_UN)
 
 
 @contextmanager

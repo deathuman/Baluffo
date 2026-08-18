@@ -240,7 +240,7 @@ class DiscoveryService:
             if callable(self._deps.load_runtime_evidence)
             else self._deps.load_json_object
         )
-        return reader(self._paths.report, {})
+        return dict(reader(self._paths.report, {}) or {})
 
     def _refresh_discovery_task_heartbeat(self, *, run_id: str, pid: int, started_at: str) -> None:
         now = self._deps.now_iso()
@@ -441,6 +441,8 @@ class DiscoveryService:
         if not self._lifecycle_row_is_terminal(row):
             return None
         repaired = self._repair_terminal_discovery_report_from_row(row or {}, report)
+        if not isinstance(repaired, dict):
+            return None
         repaired_finished_at = str(repaired.get("finishedAt") or "").strip()
         if repaired_finished_at:
             self._reconcile_terminal_discovery_registry_state(
@@ -798,7 +800,7 @@ class DiscoveryService:
                     report,
                     finished_at=failed_at,
                 )
-                return
+                return None
             self._refresh_discovery_task_heartbeat(
                 run_id=run_id,
                 pid=pid,

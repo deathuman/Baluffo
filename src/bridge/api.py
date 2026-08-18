@@ -564,9 +564,11 @@ class BridgeApi:
                     payload: JsonObject | None = None,
                 ) -> JsonObject:
                     try:
+                        assert self.availability is not None
                         self.availability.prepare_priority_manifest()
                     except (OSError, RuntimeError, TypeError, ValueError):
                         pass
+                    assert self.pipeline is not None
                     return self.pipeline.start_task(payload)
 
                 self.start_jobs_pipeline_task = _start_pipeline_with_availability_priority

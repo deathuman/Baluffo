@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.fetch_report_summary import (
@@ -247,7 +247,11 @@ def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
             or _summary_payload_from_report_prefix(report_path)
         )
 
-    return _cached_summary_payload(_FETCH_REPORT_SUMMARY_CACHE, signature, _build)
+    return _cached_summary_payload(
+        _FETCH_REPORT_SUMMARY_CACHE,
+        cast(tuple[str, int, int] | None, signature),
+        _build,
+    )
 
 
 def _fetch_report_live_payload_from_file(path: Any) -> dict[str, Any]:

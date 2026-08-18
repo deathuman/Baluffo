@@ -13,7 +13,7 @@ from __future__ import annotations
 import unicodedata
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.common.contracts_dedup_evidence import (
@@ -203,13 +203,14 @@ def _provider_static_row_with_gate_fields(
 ) -> ProviderStaticDisagreementRow:
     review_pair = find_dedup_review_pair(review_state or {}, row)
     disposition, gate_evidence = dedup_disagreement_gate_disposition(row, review_pair)
-    with_gate = {
+    with_gate: dict[str, Any] = {
         **row,
         **dedup_review_pair_public_fields(review_pair),
         "disagreementGateDisposition": disposition,
         "disagreementGateEvidence": gate_evidence,
     }
-    return {**with_gate, **dedup_operator_review_fields(with_gate)}
+    merged = {**with_gate, **dedup_operator_review_fields(with_gate)}
+    return cast(ProviderStaticDisagreementRow, merged)
 
 
 def _is_known_gracklehq_gamesjobsdirect_mirror_bundle(
@@ -609,7 +610,7 @@ def _update_review_pressure_cause_counts(
 
 def _provider_static_disagreement_origin_update(
     summary: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
-) -> tuple[int, int, list[dict[str, Any]]]:
+) -> tuple[int, int, list[ProviderStaticDisagreementRow]]:
     if summary.get("outlierReason") != "provider_static_disagreement":
         return 0, 0, []
     origin = clean_text(summary.get("bundleEvidenceOrigin"))

@@ -52,6 +52,17 @@ from src.bridge import source_check_http as _source_check_http_mod
 from src.bridge import source_checker as _source_checker_mod
 from src.bridge import sync_task_flow as _sync_task_flow_mod
 from src.bridge import task_launch_api as _task_launch_api_mod
+from src.bridge.admin_entrypoint_services import (
+    _DesktopUpdateServiceLike,
+    _DiscoveryServiceLike,
+    _JobAvailabilityServiceLike,
+    _OpsApiLike,
+    _PipelineServiceLike,
+    _RegistryServiceLike,
+    _SyncServiceLike,
+    _SyncStateLike,
+    _TaskLaunchApiLike,
+)
 from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
 from src.bridge.discovery_service import (
@@ -230,30 +241,44 @@ _TASK_LIFECYCLE = AdminTaskLifecycle(
     save_json_atomic=save_json_atomic,
     now_iso=lambda: now_iso(),
     parse_iso=lambda value: parse_iso(value),
-    storage_data_dir=lambda: Path(RUNTIME_CONFIG.data_dir),
+    storage_data_dir=lambda: Path(cast(Any, RUNTIME_CONFIG).data_dir),
 )
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
 BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
 
 
-_get_sync_service = _bind_admin_root(admin_entrypoint_services_mod.get_sync_service)
-_get_sync_state = _bind_admin_root(admin_entrypoint_services_mod.get_sync_state)
-_get_registry_service = _bind_admin_root(admin_entrypoint_services_mod.get_registry_service)
-_get_discovery_service = _bind_admin_root(admin_entrypoint_services_mod.get_discovery_service)
-_get_task_launch_api = _bind_admin_root(admin_entrypoint_services_mod.get_task_launch_api)
-_get_ops_api = _bind_admin_root(admin_entrypoint_services_mod.get_ops_api)
-_get_pipeline_service = _bind_admin_root(admin_entrypoint_services_mod.get_pipeline_service)
-_get_job_availability_service = _bind_admin_root(
+_get_sync_service: Callable[[], _SyncServiceLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_sync_service
+)
+_get_sync_state: Callable[[], _SyncStateLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_sync_state
+)
+_get_registry_service: Callable[[], _RegistryServiceLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_registry_service
+)
+_get_discovery_service: Callable[[], _DiscoveryServiceLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_discovery_service
+)
+_get_task_launch_api: Callable[[], _TaskLaunchApiLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_task_launch_api
+)
+_get_ops_api: Callable[[], _OpsApiLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_ops_api
+)
+_get_pipeline_service: Callable[[], _PipelineServiceLike] = _bind_admin_root(
+    admin_entrypoint_services_mod.get_pipeline_service
+)
+_get_job_availability_service: Callable[[], _JobAvailabilityServiceLike] = _bind_admin_root(
     admin_entrypoint_services_mod.get_job_availability_service
 )
-_get_desktop_update_service = _bind_admin_root(
+_get_desktop_update_service: Callable[[], _DesktopUpdateServiceLike] = _bind_admin_root(
     admin_entrypoint_services_mod.get_desktop_update_service
 )
 
 RuntimeConfig = bridge_config.RuntimeConfig
 
 
-RUNTIME_CONFIG = RuntimeConfig(
+RUNTIME_CONFIG: Any = RuntimeConfig(
     root=ROOT,
     data_dir=ROOT / "data",
     host="127.0.0.1",

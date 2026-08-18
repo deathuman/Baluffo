@@ -28,7 +28,10 @@ can_handle = static_identity_handler("cdprojektred.com", "www.cdprojektred.com")
 
 
 def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
-    return ctx.parse_jobpostings_from_html(
+    parser = ctx.parse_jobpostings_from_html
+    if not callable(parser):
+        return []
+    return parser(
         ctx.html,
         base_url=ctx.page_url,
         fallback_company=ctx.company,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge.api import BridgeApi, RuntimeConfigLike
 from src.bridge.server import make_handler, run_http_server
@@ -128,7 +128,10 @@ def build_bridge_api(
         persist_state_and_auto_sync=persist_state_and_auto_sync,
         add_manual_source=add_manual_source,
         trigger_source_check=trigger_source_check,
-        check_registry_conflicts=check_registry_conflicts or _empty_task_live_payload,
+        check_registry_conflicts=cast(
+            Callable[[dict[str, Any] | None], dict[str, Any]],
+            check_registry_conflicts or _empty_task_live_payload,
+        ),
         load_registry_conflict_adjudication=(
             load_registry_conflict_adjudication or _empty_task_live_payload
         ),

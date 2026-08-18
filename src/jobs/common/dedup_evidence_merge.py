@@ -70,7 +70,7 @@ def _current_run_merge_example(row: Mapping[str, Any]) -> DedupMergeExampleRow:
         if gate_tier
         else merge_reason not in {"primary_url", "known_mirror_pair"}
     )
-    example = {
+    example: DedupMergeExampleRow = {
         "mergeReason": merge_reason,
         "existingDedupKey": clean_text(row.get("existingDedupKey")),
         "incomingSource": clean_text(row.get("incomingSource")),
@@ -96,7 +96,7 @@ def _current_run_merge_example(row: Mapping[str, Any]) -> DedupMergeExampleRow:
 def _current_run_merge_examples_by_reason(
     dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
 ) -> dict[str, list[DedupMergeExampleRow]]:
-    by_reason = {
+    by_reason: dict[str, list[DedupMergeExampleRow]] = {
         "secondaryKey": [],
         "sparseIdentity": [],
         "socialKey": [],

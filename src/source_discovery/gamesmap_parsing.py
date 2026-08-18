@@ -452,7 +452,7 @@ def _parse_gamesmap_index_entries_with_diagnostics(
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     out: list[dict[str, Any]] = []
     diagnostics = {"unresolvedReferenceCount": 0}
-    seen = set()
+    seen: set[str] = set()
     companies = _extract_gamesmap_next_companies(html)
     if isinstance(companies, list):
         normalized_rows, diagnostics = _normalize_gamesmap_company_entries(
@@ -478,7 +478,7 @@ def _parse_gamesmap_index_entries_with_diagnostics(
 def parse_gamesmap_index_links(html: str, base_url: str) -> list[str]:
     links = re.findall(r'(?is)href=["\']([^"\']+)["\']', str(html or ""))
     out: list[str] = []
-    seen = set()
+    seen: set[str] = set()
     for raw in links:
         absolute = urljoin(base_url, raw)
         try:

@@ -18,7 +18,7 @@ from binascii import Error as BinasciiError
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cryptography.fernet import InvalidToken
 
@@ -50,9 +50,9 @@ _RATE_LIMIT_STATE: dict[str, Any] = {
 _AUTH_MANAGER_LOCK = threading.RLock()
 _AUTH_MANAGER: dict[str, Any] = {}
 _LOGGER = logging.getLogger(__name__)
-_crypt_protect_data: Callable[..., bool] | None
-_crypt_unprotect_data: Callable[..., bool] | None
-_local_free: Callable[[Any], Any]
+_crypt_protect_data: Any
+_crypt_unprotect_data: Any
+_local_free: Any
 
 
 class _DPAPI_BLOB(ctypes.Structure):
@@ -60,8 +60,9 @@ class _DPAPI_BLOB(ctypes.Structure):
 
 
 if os.name == "nt":
-    _crypt32 = ctypes.windll.crypt32
-    _kernel32 = ctypes.windll.kernel32
+    ctypes_mod = cast(Any, ctypes)
+    _crypt32 = ctypes_mod.windll.crypt32
+    _kernel32 = ctypes_mod.windll.kernel32
     _crypt_protect_data = _crypt32.CryptProtectData
     _crypt_protect_data.argtypes = [
         ctypes.POINTER(_DPAPI_BLOB),
@@ -312,10 +313,13 @@ def _get_fernet_key() -> bytes:
 
     from cryptography.fernet import Fernet
 
+    keyring: Any = None
     try:
-        import keyring
+        import importlib
+
+        keyring = importlib.import_module("keyring")
     except ImportError:
-        keyring = None
+        pass
 
     if keyring is not None:
         keyring_error = getattr(getattr(keyring, "errors", None), "KeyringError", None)
@@ -334,8 +338,9 @@ def _get_fernet_key() -> bytes:
             stored = keyring.get_password("Baluffo", "sync-fernet-key")
             if stored:
                 return base64.urlsafe_b64decode(stored)
-        except keyring_fallback_errors:
-            pass
+        except Exception as exc:
+            if not isinstance(exc, keyring_fallback_errors):
+                raise
 
     key_dir = _resolve_xdg_config_root()
     key_file = key_dir / "sync.key"

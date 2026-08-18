@@ -42,7 +42,9 @@ _EXPECTED_ASYNC_TRANSPORT_CLOSE_EXCEPTIONS = (
 )
 httpx: Any | None
 try:
-    import httpx as httpx
+    import importlib
+
+    httpx = importlib.import_module("httpx")
 except ImportError:
     httpx = None
 
@@ -182,13 +184,16 @@ class PooledRedirectResolver:
     def _resolve_with_client(self, normalized: str) -> str:
         if self._client is None:
             return resolve_supported_redirect_url(normalized, timeout_s=self._timeout_s)
+        httpx_mod = httpx
+        if httpx_mod is None:
+            raise RuntimeError("httpx is not installed")
         last_error: Exception | None = None
         for method in ("HEAD", "GET"):
             try:
                 response = self._client.request(method, normalized)
                 resolved = normalize_url(str(response.url))
                 return resolved or normalized
-            except httpx.HTTPError as exc:
+            except httpx_mod.HTTPError as exc:
                 last_error = exc
                 status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
                 if method == "HEAD" and status_code in {400, 403, 405, 429, 500, 501, 503}:

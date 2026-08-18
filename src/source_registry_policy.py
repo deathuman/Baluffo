@@ -31,11 +31,8 @@ from src.source_registry_state import (
 def _state_rows_by_key(source_state: Any) -> dict[str, dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if isinstance(source_state, dict):
-        raw_rows = (
-            source_state.get("sources")
-            if isinstance(source_state.get("sources"), dict)
-            else source_state
-        )
+        sources_raw = source_state.get("sources")
+        raw_rows = sources_raw if isinstance(sources_raw, dict) else source_state
         for key, value in raw_rows.items():
             if isinstance(value, dict):
                 row = dict(value)
@@ -97,8 +94,9 @@ def _metadata_score(row: dict[str, Any]) -> int:
 
 def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
     confidence = str(row.get("lastProbeCountConfidence") or "").strip().lower()
-    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal")) or (
-        confidence and confidence != "high"
+    return bool(
+        any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal"))
+        or (confidence and confidence != "high")
     )
 
 

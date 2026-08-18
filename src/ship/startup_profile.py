@@ -399,17 +399,19 @@ def summarize_startup_metrics(
         }
 
     if safe_page == "admin":
-        ready_event, ready_ms = _pick_first(events, ["admin_ready"])
+        admin_ready_event, admin_ready_ms = _pick_first(events, ["admin_ready"])
         if "admin_first_interactive" in events:
+            interactive_event: str | None
+            interactive_ms: int | None
             interactive_event, interactive_ms = (
                 "admin_first_interactive",
                 events["admin_first_interactive"],
             )
         else:
-            interactive_event, interactive_ms = ready_event, ready_ms
-        first_usable_event = interactive_event or ready_event
-        first_usable_ms = interactive_ms if interactive_ms is not None else ready_ms
-        page_loaded_ref = (
+            interactive_event, interactive_ms = admin_ready_event, admin_ready_ms
+        first_usable_event = interactive_event or admin_ready_event
+        first_usable_ms = interactive_ms if interactive_ms is not None else admin_ready_ms
+        admin_page_loaded_ref = (
             "desktop_page_loaded",
             "desktop_shell_loaded",
             "admin_module_boot_start",
@@ -433,7 +435,7 @@ def summarize_startup_metrics(
                 "window_shown_to_page_loaded",
                 "Window Shown -> Page Loaded",
                 WINDOW_SHOWN_EVENT_REFS,
-                page_loaded_ref,
+                admin_page_loaded_ref,
             ),
             (
                 "first_render_to_first_interactive",
@@ -461,29 +463,29 @@ def summarize_startup_metrics(
                 if stage[0] != "admin_ready_to_ops_health_first_render"
             ]
 
-        stages: list[dict[str, Any]] = []
-        missing_events: list[str] = []
+        admin_stages: list[dict[str, Any]] = []
+        admin_missing_events: list[str] = []
         for key, label, start_ref, end_ref in stage_defs:
             start_event, start_ms = _resolve_stage_event(events, start_ref)
             end_event, end_ms = _resolve_stage_event(events, end_ref)
             threshold_ms = int(thresholds.get(key, 0))
             if start_ms is None:
                 if isinstance(start_ref, (list, tuple)):
-                    missing_events.extend([str(item) for item in start_ref])
+                    admin_missing_events.extend([str(item) for item in start_ref])
                 else:
-                    missing_events.append(str(start_event or ""))
+                    admin_missing_events.append(str(start_event or ""))
             if end_ms is None:
                 if isinstance(end_ref, (list, tuple)):
-                    missing_events.extend([str(item) for item in end_ref])
+                    admin_missing_events.extend([str(item) for item in end_ref])
                 else:
-                    missing_events.append(str(end_event or ""))
+                    admin_missing_events.append(str(end_event or ""))
             duration_ms = (
                 None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
             )
             status = "missing"
             if duration_ms is not None:
                 status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
-            stages.append(
+            admin_stages.append(
                 {
                     "key": key,
                     "label": label,
@@ -498,8 +500,8 @@ def summarize_startup_metrics(
             )
 
         classification = _classify_stages(
-            stages=stages,
-            missing_events=missing_events,
+            stages=admin_stages,
+            missing_events=admin_missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
                 "site_ready_to_bridge_ready": "desktop bridge startup delayed",
@@ -516,20 +518,20 @@ def summarize_startup_metrics(
                 "admin_ready_to_ops_health_first_render": "admin operations health render delayed",
             },
         )
-        stage_statuses = [stage["status"] for stage in stages]
-        perf_regressions = _stage_perf_regressions(stages)
+        stage_statuses = [stage["status"] for stage in admin_stages]
+        perf_regressions = _stage_perf_regressions(admin_stages)
         return {
             "page": safe_page,
             "profileMode": mode,
             "events": events,
-            "stages": stages,
+            "stages": admin_stages,
             "firstUsableEvent": first_usable_event or "",
             "firstUsableMs": first_usable_ms,
             "classification": classification,
             "status": "passed"
             if stage_statuses and all(status == "passed" for status in stage_statuses)
             else "failed",
-            "missingEvents": sorted({event for event in missing_events if event}),
+            "missingEvents": sorted({event for event in admin_missing_events if event}),
             "perfRegressions": perf_regressions,
         }
 

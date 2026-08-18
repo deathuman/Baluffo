@@ -253,7 +253,7 @@ def _pipeline_smoke_load_json_object(
     default: Any,
 ) -> Any:
     resolved = Path(path).resolve()
-    specs = (
+    specs: tuple[tuple[Any, ...], ...] = (
         (
             root_mod.DISCOVERY_REPORT_PATH,
             "discoveryStartedAt",
@@ -751,7 +751,7 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 _status, result = get_task_abort_service(root_mod=root_mod).abort_task(
                     {"taskType": task_type, "runId": run_id, "reason": reason}
                 )
-                return result
+                return dict(result or {})
 
             services.pipeline_service = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,

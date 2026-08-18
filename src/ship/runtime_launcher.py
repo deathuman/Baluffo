@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from os import PathLike
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
@@ -598,7 +599,7 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         normalized = raw_path.lstrip("/")
         return self._resolve_static_data_path(normalized)
 
-    def guess_type(self, path: str) -> str:
+    def guess_type(self, path: str | PathLike[str]) -> str:
         if self._serve_gzip_json:
             return "application/json; charset=utf-8"
         return super().guess_type(path)

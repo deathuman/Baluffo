@@ -371,7 +371,7 @@ def _normalize_availability_status(row: dict[str, Any]) -> str:
 
 def _normalize_availability_evidence(value: Any) -> dict[str, Any]:
     source = value if isinstance(value, dict) else {}
-    evidence = {
+    evidence: dict[str, Any] = {
         "kind": clean_text(source.get("kind")),
         "confidence": clean_text(source.get("confidence")),
         "checkedAt": clean_text(source.get("checkedAt")),

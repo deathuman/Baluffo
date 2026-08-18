@@ -10,7 +10,7 @@ import it without a coordinator cycle).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypedDict
 
 from src.jobs.common import config as jobs_common_config
@@ -126,7 +126,7 @@ def _fetcher_runtime_defaults(container_mode: bool) -> tuple[int, int, int]:
 
 
 def _static_detail_concurrency_from_payload(
-    data: dict[str, Any],
+    data: Mapping[str, Any],
     *,
     safe_int: Callable[[Any, int, int, int], int],
     container_mode: bool,
@@ -183,7 +183,7 @@ def _apply_fetcher_preset_args(
 
 def _apply_fetcher_flag_overrides(
     args: list[str],
-    data: dict[str, Any],
+    data: Mapping[str, Any],
     *,
     source_ttl: int,
 ) -> None:
@@ -205,7 +205,7 @@ def _apply_fetcher_flag_overrides(
 
 def _apply_only_sources_override(
     args: list[str],
-    data: dict[str, Any],
+    data: Mapping[str, Any],
     *,
     default_source_loaders: Callable[[], list[tuple[str, Any]]],
 ) -> None:

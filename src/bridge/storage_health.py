@@ -41,7 +41,7 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
-def _storage_busy_config() -> dict[str, int]:
+def _storage_busy_config() -> dict[str, Any]:
     return {
         "busy_timeout_ms": _env_int("BALUFFO_STORAGE_BUSY_TIMEOUT_MS", DEFAULT_BUSY_TIMEOUT_MS),
         "busy_retry_attempts": _env_int(

@@ -875,7 +875,7 @@ def _fallback_detail_rows(
     )
     if not title_ok:
         return [], "dead_listing_page", f"{detail} | {title}" if title else detail
-    row = {
+    row: dict[str, Any] = {
         "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
         "company": company,
         "jobLink": apply_target_url or detail,

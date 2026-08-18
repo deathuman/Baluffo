@@ -76,17 +76,15 @@ def normalize_saved_job(
     identity_changed = bool(
         is_custom and previous_availability_id and previous_availability_id != availability_id
     )
-    availability_attention = (
-        {}
-        if identity_changed
-        else dict(
-            source.get("availabilityAttention")
-            if isinstance(source.get("availabilityAttention"), dict)
-            else base.get("availabilityAttention")
-            if isinstance(base.get("availabilityAttention"), dict)
-            else {}
+    if identity_changed:
+        availability_attention = {}
+    else:
+        attention_source = source.get("availabilityAttention")
+        if not isinstance(attention_source, dict):
+            attention_source = base.get("availabilityAttention")
+        availability_attention = (
+            dict(attention_source) if isinstance(attention_source, dict) else {}
         )
-    )
     return {
         "profileId": uid,
         "jobKey": job_key,

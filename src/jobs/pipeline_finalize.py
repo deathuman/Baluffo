@@ -629,11 +629,8 @@ def _quality_reports(deduped_payload_rows: list[dict[str, Any]]) -> tuple[dict[s
             "Public text contamination validation failed: "
             f"{contamination_rows} row(s) still contain HTML-like fragments"
         )
-    city_garbage_audit = (
-        contamination_report.get("cityGarbageAudit")
-        if isinstance(contamination_report.get("cityGarbageAudit"), dict)
-        else {}
-    )
+    city_garbage_raw = contamination_report.get("cityGarbageAudit")
+    city_garbage_audit = city_garbage_raw if isinstance(city_garbage_raw, dict) else {}
     return (
         location_quality_audit,
         sector_quality_audit,
@@ -1144,18 +1141,16 @@ def _serialize_jobs_feed_reconciliation(func):
 
 def _bounded_identity_failure_summary(exc: BaseException) -> tuple[str, str, dict[str, Any]]:
     if isinstance(exc, AvailabilityIdentityPreflightError):
-        allowed_counts = {
+        allowed_counts: dict[str, Any] = {
             clean_text(key): max(0, int(value or 0))
             for key, value in exc.summary.items()
             if clean_text(key).endswith("Count") and isinstance(value, (int, float))
         }
+        rejection_counts_raw = exc.summary.get("rejectionReasonCounts")
+        rejection_counts = rejection_counts_raw if isinstance(rejection_counts_raw, dict) else {}
         reason_counts = {
             clean_text(key): max(0, int(value or 0))
-            for key, value in (
-                exc.summary.get("rejectionReasonCounts")
-                if isinstance(exc.summary.get("rejectionReasonCounts"), dict)
-                else {}
-            ).items()
+            for key, value in rejection_counts.items()
             if clean_text(key) and isinstance(value, (int, float))
         }
         if reason_counts:

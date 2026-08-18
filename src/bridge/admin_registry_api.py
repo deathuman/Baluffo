@@ -180,18 +180,22 @@ def persist_state_and_auto_sync(
     state: RegistryState, *, reason: str, root_mod: Any
 ) -> RegistryState:
     root_mod = cast(_AdminBridgeRoot, root_mod)
-    return root_mod._registry_sync_flow.persist_state_and_auto_sync(
-        state,
-        reason=reason,
-        persist_state=root_mod.persist_state,
-        maybe_trigger_auto_sync_push=root_mod._maybe_trigger_auto_sync_push,
+    return cast(
+        RegistryState,
+        root_mod._registry_sync_flow.persist_state_and_auto_sync(
+            state,
+            reason=reason,
+            persist_state=root_mod.persist_state,
+            maybe_trigger_auto_sync_push=root_mod._maybe_trigger_auto_sync_push,
+        ),
     )
 
 
 def move_entries(
     pending: list[JsonObject], selected_ids: list[str], *, root_mod: Any
 ) -> tuple[list[JsonObject], list[JsonObject]]:
-    return cast(_AdminBridgeRoot, root_mod).RegistryService.move_entries(pending, selected_ids)
+    result = cast(_AdminBridgeRoot, root_mod).RegistryService.move_entries(pending, selected_ids)
+    return cast(tuple[list[JsonObject], list[JsonObject]], result)
 
 
 def build_manual_candidate(normalized_url: str, *, root_mod: Any) -> JsonObject | None:
@@ -219,13 +223,13 @@ def build_manual_candidate(normalized_url: str, *, root_mod: Any) -> JsonObject 
             "manualAddedAt": root_mod.now_iso(),
             "manualFallback": "generic_website",
         }
-        return root_mod.ensure_source_id(fallback)
+        return cast(JsonObject, root_mod.ensure_source_id(fallback))
     row = root_mod.ensure_source_id(inferred)
     row["enabledByDefault"] = False
     row["discoveryMethod"] = "manual"
     row["discoveredAt"] = root_mod.now_iso()
     row["manualAddedAt"] = root_mod.now_iso()
-    return row
+    return cast(JsonObject, row)
 
 
 def add_manual_source(raw_url: str, *, root_mod: Any) -> JsonObject:

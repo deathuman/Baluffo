@@ -126,9 +126,12 @@ def derive_registry_sync_summary(
     summary_payload = as_json_object(summary)
     use_summary = bool(summary_payload)
     if use_summary:
-        active_rows, active_invalid = [], 0
-        pending_rows, pending_invalid = [], 0
-        rejected_rows, rejected_invalid = [], 0
+        active_rows: list[dict[str, Any]] = []
+        active_invalid = 0
+        pending_rows: list[dict[str, Any]] = []
+        pending_invalid = 0
+        rejected_rows: list[dict[str, Any]] = []
+        rejected_invalid = 0
     else:
         active_rows, active_invalid = _bucket_rows(registry.get("active"))
         pending_rows, pending_invalid = _bucket_rows(registry.get("pending"))

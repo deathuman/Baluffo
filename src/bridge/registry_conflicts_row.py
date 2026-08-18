@@ -361,8 +361,9 @@ def _is_provider_like_row(row: dict[str, Any]) -> bool:
 
 def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
     confidence = _clean_text(row.get("lastProbeCountConfidence")).lower()
-    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal")) or (
-        confidence and confidence != "high"
+    return bool(
+        any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal"))
+        or (confidence and confidence != "high")
     )
 
 
@@ -1220,7 +1221,9 @@ def _source_state_row_for_registry_row(
 def _row_actions(row: dict[str, Any]) -> list[dict[str, Any]]:
     state = _row_state(row)
     row_id = _clean_text(row.get("id") or row.get("sourceId") or source_identity(row))
-    actions = [dict(action) for action in CONFLICT_ACTIONS_BY_STATE.get(state, ())]
+    actions: list[dict[str, Any]] = [
+        dict(action) for action in CONFLICT_ACTIONS_BY_STATE.get(state, ())
+    ]
     if row_id:
         for action in actions:
             action["ids"] = [row_id]

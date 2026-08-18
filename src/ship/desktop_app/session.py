@@ -93,7 +93,7 @@ def _lock_path_may_still_be_initializing(path: Path) -> bool:
 def _lock_backoff_delay(attempt: int) -> float:
     delay = min(_LOCK_BACKOFF_MAX_S, _LOCK_BACKOFF_BASE_S * (2 ** max(0, int(attempt))))
     jitter = random.uniform(0.0, delay * 0.25)
-    return min(_LOCK_BACKOFF_MAX_S, delay + jitter)
+    return float(min(_LOCK_BACKOFF_MAX_S, delay + jitter))
 
 
 def _sleep_for_lock_retry(attempt: int, deadline: float) -> None:

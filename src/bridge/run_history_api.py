@@ -189,6 +189,12 @@ class LifecycleProjection:
     diagnostics: list[dict[str, Any]]
 
 
+def _default_load_runtime_evidence(
+    path: Any, default: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    return dict(default or {})
+
+
 @dataclass
 class SyncHistoryDeps:
     ops_state_lock: Any
@@ -216,7 +222,7 @@ class SyncHistoryDeps:
     now_utc: Callable[[], datetime]
     get_jobs_pipeline_status_payload: Callable[[], dict[str, Any]] = lambda: {}
     load_runtime_evidence: Callable[[Any, dict[str, Any]], dict[str, Any]] = (
-        lambda path, default=None: dict(default or {})
+        _default_load_runtime_evidence
     )
     pid_is_running: Callable[[int], bool] | None = None
     get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] | None = None

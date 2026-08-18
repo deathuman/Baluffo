@@ -8,7 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery live-t
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
@@ -433,4 +433,4 @@ def build_discovery_live_payload(
         task_state_entry=discovery_state,
         snapshot=discovery_snapshot,
     )
-    return normalize_live_task_payload(payload, task_type="discovery")
+    return cast(dict[str, Any], normalize_live_task_payload(payload, task_type="discovery"))

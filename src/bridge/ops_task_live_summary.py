@@ -15,12 +15,12 @@ from src.shared.live_task import normalize_live_task_payload
 
 def compact_live_task_payload(payload: dict[str, Any], *, task_type: str) -> dict[str, Any]:
     normalized = normalize_live_task_payload(payload, task_type=task_type)
-    work_items = (
-        normalized.get("workItems") if isinstance(normalized.get("workItems"), list) else []
-    )
-    recent_events = (
-        normalized.get("recentEvents") if isinstance(normalized.get("recentEvents"), list) else []
-    )
+    work_items = normalized.get("workItems")
+    if not isinstance(work_items, list):
+        work_items = []
+    recent_events = normalized.get("recentEvents")
+    if not isinstance(recent_events, list):
+        recent_events = []
     return {
         **normalized,
         "summaryView": True,

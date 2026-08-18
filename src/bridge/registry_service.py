@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge import registry_tombstones as registry_tombstones_module
 from src.bridge.registry_conflicts import apply_registry_conflict_safe_demotions
@@ -452,7 +452,7 @@ class RegistryService:
         self._last_auto_heal_report["safeAutomation"] = safe_automation_report
         if safe_automation_report["autoDemoted"]:
             self._last_auto_heal_report["autoHealed"] = True
-        return result["state"]
+        return cast(dict[str, list[dict[str, Any]]], result["state"])
 
     def load_state(self) -> dict[str, list[dict[str, Any]]]:
         if self._authority_mode() == "sqlite":

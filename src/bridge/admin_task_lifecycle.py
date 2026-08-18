@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_lifecycle import TaskLifecycleService
@@ -66,10 +66,10 @@ class AdminTaskLifecycle:
     def _runtime_store(self) -> TaskRuntimeStore | None:
         task_runtime_store = self._task_runtime_store
         if task_runtime_store is not None:
-            return task_runtime_store()
+            return cast(TaskRuntimeStore | None, task_runtime_store())
         if self._storage_data_dir is None:
             return None
-        return self._default_task_runtime_store()
+        return cast(TaskRuntimeStore | None, self._default_task_runtime_store())
 
     def _record_diagnostic(self, **fields: Any) -> None:
         recorder = self._record_storage_diagnostic
@@ -308,7 +308,8 @@ class AdminTaskLifecycle:
             return
         started_at = str(row.get("startedAt") or "").strip()
         finished_at = str(row.get("finishedAt") or "").strip()
-        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+        summary_raw = row.get("summary")
+        summary = summary_raw if isinstance(summary_raw, dict) else {}
         status = str(row.get("status") or "").strip().lower()
         if finished_at:
             kwargs = {

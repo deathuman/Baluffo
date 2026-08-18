@@ -11,7 +11,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.ship.desktop_update_shared import iso_now
 
@@ -317,6 +317,7 @@ def _show_message(title: str, message: str) -> None:
     if os.name == "nt":
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(None, str(message or ""), str(title or "Baluffo"), 0)
+        ctypes_mod = cast(Any, ctypes)
+        ctypes_mod.windll.user32.MessageBoxW(None, str(message or ""), str(title or "Baluffo"), 0)
         return
     print(f"{title}: {message}", file=sys.stderr)

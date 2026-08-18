@@ -86,7 +86,7 @@ def _retry_delay_s(attempt: int) -> float:
         float(FETCH_RETRY_BASE_DELAY_S) * (2 ** max(0, int(attempt))),
     )
     jitter = random.uniform(0.0, base_delay * float(FETCH_RETRY_JITTER_RATIO))
-    return min(float(FETCH_RETRY_MAX_DELAY_S), base_delay + jitter)
+    return float(min(float(FETCH_RETRY_MAX_DELAY_S), base_delay + jitter))
 
 
 def _sleep_adapter_initial_delay(adapter: str) -> None:

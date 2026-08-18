@@ -13,9 +13,14 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from ._compat import desktop_api
 from .config import CHROMIUM_WINDOW_CLASS_PREFIXES
+
+# POSIX-only; Windows typeshed has no signal.SIGKILL, and this module is also
+# type-checked on Windows. Fall back to the conventional SIGKILL value 9.
+_SIGKILL = getattr(signal, "SIGKILL", 9)
 
 
 def _as_int(value: object, default: int = 0) -> int:
@@ -74,8 +79,8 @@ def _stale_runtime_reclaim_result(
     port: int = 0,
     confirmed: bool = False,
     **details: object,
-) -> dict[str, object]:
-    result: dict[str, object] = {
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "target": str(target or ""),
         "status": str(status or ""),
         "reason": str(reason or ""),
@@ -186,7 +191,7 @@ def _proc_start_ts_fallback(pid: int) -> float:
         if len(fields) >= 2:
             parts = fields[1].split()
             if len(parts) >= 20:
-                return float(parts[19]) / os.sysconf("SC_CLK_TCK")
+                return float(parts[19]) / float(cast(Any, os).sysconf("SC_CLK_TCK"))
     except (OSError, ValueError):
         pass
     return 0.0
@@ -218,7 +223,7 @@ def _windows_api_terminate_process_by_pid(pid: int, *, timeout_s: float = 5.0) -
         import psutil
     except ImportError:
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, _SIGKILL)
             result["signal"] = "SIGKILL"
             result["signalSent"] = True
             result["exited"] = _poll_process_exit_until_timeout(pid, timeout_s=timeout_s)
@@ -336,7 +341,7 @@ def _windows_close_desktop_job(job_handle: int | None) -> None:
         time.sleep(0.3)
     for pid in pids:
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, _SIGKILL)
         except OSError:
             pass
 

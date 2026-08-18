@@ -16,6 +16,7 @@ import time
 import webbrowser
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import cast
 
 from ._compat import desktop_api
 from .config import (
@@ -159,10 +160,13 @@ def _browser_candidates_for_launch(
             candidates.insert(0, preferred_candidate)
     preferred = str(preferred_browser_path).strip().lower()
     if not preferred:
-        return candidates
-    return sorted(
-        candidates,
-        key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
+        return cast(list[dict[str, str]], candidates)
+    return cast(
+        list[dict[str, str]],
+        sorted(
+            candidates,
+            key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
+        ),
     )
 
 

@@ -31,7 +31,7 @@ def _ratio(value: Any) -> float:
 
 def normalize_availability_summary(value: Any) -> dict[str, Any]:
     source = _object(value)
-    counts = {
+    counts: dict[str, Any] = {
         str(key): _count(item)
         for key, item in source.items()
         if str(key).endswith("Count") and str(key) != "shadowClassifierCounts"

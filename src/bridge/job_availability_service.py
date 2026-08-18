@@ -70,7 +70,8 @@ class JobAvailabilityService:
         return self.data_dir / "jobs-availability-priority.json"
 
     def _bounded(self, row: dict[str, Any]) -> dict[str, Any]:
-        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        result_raw = row.get("result")
+        result = result_raw if isinstance(result_raw, dict) else {}
         return {
             "runId": str(row.get("runId") or ""),
             "availabilityId": str(row.get("availabilityId") or ""),
@@ -125,7 +126,7 @@ class JobAvailabilityService:
             }
             if retained_custom != existing_custom:
                 write_job_lifecycle_state(self.custom_lifecycle_path, retained_custom)
-        return payload
+        return dict(payload or {})
 
     @staticmethod
     def _custom_manifest_entry(
@@ -192,7 +193,8 @@ class JobAvailabilityService:
         self, *, limit: int | None = None, max_concurrent: int = 4
     ) -> dict[str, Any]:
         plan = read_json(self.data_dir / "jobs-availability-sweep-plan.json", {})
-        rows = plan.get("rows") if isinstance(plan, dict) else []
+        plan_raw = plan if isinstance(plan, dict) else {}
+        rows = plan_raw.get("rows") or []
         safe_rows = [dict(row) for row in rows if isinstance(row, dict)]
         safe_limit = len(safe_rows) if limit is None else max(0, min(1000, int(limit)))
         selected = safe_rows[:safe_limit]
@@ -439,14 +441,17 @@ class JobAvailabilityService:
     def _rewrite_feeds(
         self, availability_id: str, entry: dict[str, Any]
     ) -> tuple[JobsFeedContext, JobsFeedReconciliationSnapshot]:
+        def _save_json_atomic(path: Path, payload: Any) -> None:
+            write_atomic_if_changed(
+                path, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            )
+
         context = JobsFeedContext(
             data_dir=self.data_dir,
             jobs_fetch_report=self.data_dir / "jobs-fetch-report.json",
             now_iso=now_iso,
             bridge_log=lambda *_args, **_kwargs: None,
-            save_json_atomic=lambda path, payload: write_atomic_if_changed(
-                path, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            ),
+            save_json_atomic=_save_json_atomic,
         )
         snapshot = reconcile_jobs_feed_availability(
             context, availability_id=availability_id, entry=entry

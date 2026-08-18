@@ -14,7 +14,7 @@ import inspect
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from src.bridge.active_task_snapshot import upsert_snapshot_rows
 from src.shared.json_shapes import as_json_object
@@ -276,21 +276,24 @@ def run_sync_task_worker(
             status="running" if not finished_at else status,
             task_progress=progress_payload,
             summary=summary,
-            work_items=[
-                build_live_task_work_item(
-                    item_id=action,
-                    name=f"Sync {action}",
-                    status="running"
-                    if not finished_at
-                    else ("error" if status == "error" else "ok"),
-                    started_at=started_at,
-                    finished_at=finished_at,
-                    duration_ms=duration_ms,
-                    heartbeat_at=timestamp,
-                    error=str(summary.get("error") or ""),
-                    progress=progress_payload,
-                )
-            ],
+            work_items=cast(
+                list[dict[str, Any]],
+                [
+                    build_live_task_work_item(
+                        item_id=action,
+                        name=f"Sync {action}",
+                        status="running"
+                        if not finished_at
+                        else ("error" if status == "error" else "ok"),
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
+                        heartbeat_at=timestamp,
+                        error=str(summary.get("error") or ""),
+                        progress=progress_payload,
+                    )
+                ],
+            ),
             recent_events=list(recent_events),
             outputs={},
         )

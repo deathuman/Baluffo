@@ -460,7 +460,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
         _sync_extract_to_install(install_root, temp_extract)
-        if migration_plan:
+        if migration_plan and backup_ref is not None:
             _save_install_stage_status(
                 paths,
                 install_state="installing",

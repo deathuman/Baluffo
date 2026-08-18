@@ -307,7 +307,8 @@ def _ubisoft_algolia_payload_count(text: str) -> tuple[int, str, str, tuple[str,
     if not isinstance(payload, dict):
         return 0, "none", "provider_embed:ubisoft_algolia", ()
     total = payload.get("nbHits")
-    hits = payload.get("hits") if isinstance(payload.get("hits"), list) else []
+    hits_raw = payload.get("hits")
+    hits = hits_raw if isinstance(hits_raw, list) else []
     sample_urls = tuple(
         _clean(hit.get("link") or hit.get("referralUrl"))
         for hit in hits

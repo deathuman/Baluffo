@@ -55,7 +55,7 @@ def collect_directory_index_entries(
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     detail_entries: list[dict[str, Any]] = []
-    seen_details = set()
+    seen_details: set[str] = set()
     unresolved_reference_count = 0
     kwargs = dict(parse_kwargs or {})
     entry_cap = max(0, int(max_entries or 0))

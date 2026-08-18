@@ -8,7 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET tests.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.bridge.admin_bootstrap import AdminBootstrapApi
 from src.bridge.routes.get_admin_bootstrap import handle_admin_bootstrap_routes
@@ -56,6 +56,8 @@ class _GetRouteApi(
     Protocol,
 ):
     """Composed capability set required by the public GET route delegator."""
+
+    def desktop_local_data_store(self) -> Any: ...
 
 
 def handle_get(

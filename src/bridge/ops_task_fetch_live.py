@@ -8,7 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused fetch live-task 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
@@ -159,7 +159,7 @@ def _active_task_artifact_matches_current(
         return False
     if not (
         _ops_live_payload.live_task_signal_is_recent(
-            _ops_live_payload.live_task_heartbeat_at(fetch_tasks),
+            _ops_live_payload.live_task_heartbeat_at(cast(dict[str, Any], fetch_tasks)),
             parse_iso=context.deps.parse_iso,
             now_utc=context.deps.now_utc,
         )
@@ -298,7 +298,7 @@ def build_fetch_live_summary_payload(
     )
     task_artifact_current = _active_task_artifact_matches_current(
         context,
-        fetch_tasks,
+        cast(dict[str, Any], fetch_tasks),
         current_run_id=snapshot_run_id,
     )
     live_source = fetch_tasks if task_artifact_current else {}
@@ -346,7 +346,7 @@ def build_fetch_live_summary_payload(
             as_json_object(summary_artifact.get("taskProgress")),
         )
     progress = normalize_live_task_progress(progress_source)
-    counts = _merged_summary_counts(progress, summary)
+    counts = _merged_summary_counts(cast(dict[str, Any], progress), summary)
     if active:
         progress["active"] = True
         if not str(progress.get("phaseKey") or "").strip():
@@ -371,7 +371,7 @@ def build_fetch_live_summary_payload(
             run_id=run_id,
             heartbeat_at=heartbeat_at,
             active=active,
-            progress=progress,
+            progress=cast(dict[str, Any], progress),
         )
         if event:
             recent_events = [event]
@@ -400,12 +400,15 @@ def build_fetch_live_summary_payload(
             **as_json_object(live_source.get("outputs")),
         },
     }
-    return normalize_live_task_payload(
-        payload,
-        task_type="fetch",
-        run_id=run_id,
-        started_at=started_at,
-        finished_at="" if active else finished_at,
+    return cast(
+        dict[str, Any],
+        normalize_live_task_payload(
+            payload,
+            task_type="fetch",
+            run_id=run_id,
+            started_at=started_at,
+            finished_at="" if active else finished_at,
+        ),
     )
 
 
@@ -444,7 +447,7 @@ def build_fetch_live_payload(
     task_progress = as_json_object(fetch_tasks.get("taskProgress"))
     task_artifact_recent = bool(
         _ops_live_payload.live_task_signal_is_recent(
-            _ops_live_payload.live_task_heartbeat_at(fetch_tasks),
+            _ops_live_payload.live_task_heartbeat_at(cast(dict[str, Any], fetch_tasks)),
             parse_iso=context.deps.parse_iso,
             now_utc=context.deps.now_utc,
         )
@@ -471,7 +474,7 @@ def build_fetch_live_payload(
     payload = ops_task_projection_mod.normalize_projected_live_payload(
         context,
         task_type="fetch",
-        live_source=fetch_live_source,
+        live_source=cast(dict[str, Any], fetch_live_source),
         report_payload=fetch_report,
         task_state_entry=fetch_state,
         snapshot=fetch_snapshot,
@@ -523,7 +526,7 @@ def build_fetch_live_payload(
         as_json_object(fetch_report.get("taskProgress")).get("counts")
     )
     task_counts = (
-        _ops_live_payload.fetch_progress_counts(fetch_tasks)
+        _ops_live_payload.fetch_progress_counts(cast(dict[str, Any], fetch_tasks))
         if task_artifact_matches_current
         else {}
     )
@@ -612,4 +615,4 @@ def build_fetch_live_payload(
             merged_progress["mode"] = "indeterminate"
     merged_progress["counts"] = merged_counts
     payload["taskProgress"] = merged_progress
-    return normalize_live_task_payload(payload, task_type="fetch")
+    return cast(dict[str, Any], normalize_live_task_payload(payload, task_type="fetch"))

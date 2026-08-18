@@ -20,12 +20,15 @@ except ImportError:
 else:
     httpx = httpx_mod
 
-_EXPECTED_PAGE_FETCH_EXCEPTIONS = (KeyError, OSError, RuntimeError, TimeoutError, ValueError)
+_EXPECTED_PAGE_FETCH_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    KeyError,
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    ValueError,
+)
 if httpx is not None:
-    _EXPECTED_PAGE_FETCH_EXCEPTIONS = (
-        *_EXPECTED_PAGE_FETCH_EXCEPTIONS,
-        httpx.HTTPError,
-    )
+    _EXPECTED_PAGE_FETCH_EXCEPTIONS = (*_EXPECTED_PAGE_FETCH_EXCEPTIONS, httpx.HTTPError)
 _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
 
 

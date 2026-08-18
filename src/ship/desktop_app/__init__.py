@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib
 import json
 import os
 import runpy
@@ -61,10 +62,9 @@ from . import process as _process_module
 from . import session as _session_module
 from . import startup as _startup_module
 
-if os.name == "nt":
-    from . import _windows as _platform_module
-else:
-    from . import _linux as _platform_module
+_platform_module = importlib.import_module(
+    "._windows" if os.name == "nt" else "._linux", package=__name__
+)
 
 _COMPAT_MODULES = (
     _startup_module,

@@ -382,7 +382,7 @@ class StaticFileService:
                     surface=_ROOT_DATA_READ_SURFACES.get(artifact, "runtimeData.static"),
                     artifact=artifact,
                     storage_kind="generated",
-                    duration_ms=0.0,
+                    duration_ms=0,
                     bytes_read=len(body),
                     row_count=0,
                     failed=False,

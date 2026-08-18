@@ -110,12 +110,12 @@ def _as_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def _timing_summary(report: dict[str, object]) -> dict[str, Any]:
+def _timing_summary(report: dict[str, Any]) -> dict[str, Any]:
     runtime = dict(report.get("runtime") or {})
     return dict(runtime.get("timingSummary") or {})
 
 
-def _runtime_duration_ms(report: dict[str, object]) -> int:
+def _runtime_duration_ms(report: dict[str, Any]) -> int:
     runtime = dict(report.get("runtime") or {})
     timing_summary = _timing_summary(report)
     return int(
@@ -127,7 +127,7 @@ def _runtime_duration_ms(report: dict[str, object]) -> int:
     )
 
 
-def _stage_durations_ms(*reports: dict[str, object]) -> dict[str, int]:
+def _stage_durations_ms(*reports: dict[str, Any]) -> dict[str, int]:
     totals: dict[str, int] = {}
     for report in reports:
         stage_totals = dict(_timing_summary(report).get("stageTotalsMs") or {})
@@ -141,7 +141,7 @@ def _stage_durations_ms(*reports: dict[str, object]) -> dict[str, int]:
     return totals
 
 
-def _network_wait_counters(*reports: dict[str, object]) -> dict[str, Any]:
+def _network_wait_counters(*reports: dict[str, Any]) -> dict[str, Any]:
     counters = {
         "cacheSkippedCount": 0,
         "revalidatedCount": 0,
@@ -175,9 +175,9 @@ def _network_wait_counters(*reports: dict[str, object]) -> dict[str, Any]:
     return {**counters, "adapterDurationsMs": adapter_durations}
 
 
-def _slowest_sources(report: dict[str, object], *, limit: int = 5) -> list[dict[str, object]]:
+def _slowest_sources(report: dict[str, Any], *, limit: int = 5) -> list[dict[str, Any]]:
     runtime = dict(report.get("runtime") or {})
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for row in _as_list(runtime.get("slowestSources")):
         if not isinstance(row, dict):
             continue
@@ -195,10 +195,8 @@ def _slowest_sources(report: dict[str, object], *, limit: int = 5) -> list[dict[
     return rows[: max(0, int(limit))]
 
 
-def _slowest_provider_boards(
-    report: dict[str, object], *, limit: int = 10
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
+def _slowest_provider_boards(report: dict[str, Any], *, limit: int = 10) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for source in _as_list(report.get("sources")):
         if not isinstance(source, dict):
             continue
@@ -312,7 +310,7 @@ def _normalized_host(value: object) -> str:
     return host.lower().removeprefix("www.")
 
 
-def _registry_page_signal_for_row(source_name: str, row: dict[str, object]) -> dict[str, object]:
+def _registry_page_signal_for_row(source_name: str, row: dict[str, Any]) -> dict[str, Any]:
     pages = [str(page) for page in _as_list(row.get("pages")) if str(page or "").strip()]
     listing_url = str(
         row.get("listing_url") or row.get("careersUrl") or (pages[0] if pages else "")
@@ -339,12 +337,12 @@ def _registry_page_signal_for_row(source_name: str, row: dict[str, object]) -> d
     }
 
 
-def _registry_page_signals(source_names: list[str]) -> dict[str, dict[str, object]]:
+def _registry_page_signals(source_names: list[str]) -> dict[str, dict[str, Any]]:
     from src.jobs.adapters import static as static_adapter
     from src.jobs.registry import registry_entries
 
     source_set = set(source_names)
-    signals: dict[str, dict[str, object]] = {}
+    signals: dict[str, dict[str, Any]] = {}
     for row in registry_entries("static"):
         if not isinstance(row, dict):
             continue
@@ -358,8 +356,8 @@ def _registry_page_signals(source_names: list[str]) -> dict[str, dict[str, objec
 
 
 def _registry_scope_summary(
-    registry_page_signals: dict[str, dict[str, object]],
-) -> dict[str, object]:
+    registry_page_signals: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     rows = list(registry_page_signals.values())
     rows.sort(
         key=lambda row: (
@@ -377,13 +375,13 @@ def _registry_scope_summary(
     }
 
 
-def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[str, object]:
+def _family_summary(report: dict[str, Any], source_names: list[str]) -> dict[str, Any]:
     rows = [
         row
         for row in _as_list(report.get("sources"))
         if isinstance(row, dict) and str(row.get("name") or "") in source_names
     ]
-    family: dict[str, object] = {}
+    family: dict[str, Any] = {}
     for row in rows:
         name = str(row.get("name") or "")
         family[name] = {
@@ -416,13 +414,13 @@ def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[
 
 
 def _source_policy_signals(
-    report: dict[str, object],
+    report: dict[str, Any],
     source_names: list[str],
     *,
     limit: int = 10,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     source_set = set(source_names)
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for row in _as_list(report.get("sources")):
         if not isinstance(row, dict):
             continue
@@ -477,13 +475,13 @@ def _source_policy_signals(
 
 
 def _next_optimization_targets(
-    source_policy_signals: list[dict[str, object]],
+    source_policy_signals: list[dict[str, Any]],
     *,
-    registry_page_signals: dict[str, dict[str, object]] | None = None,
+    registry_page_signals: dict[str, dict[str, Any]] | None = None,
     limit: int = 5,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     registry_page_signals = registry_page_signals or {}
-    targets: list[dict[str, object]] = []
+    targets: list[dict[str, Any]] = []
     for signal in source_policy_signals:
         name = str(signal.get("name") or "")
         flags = [str(flag) for flag in _as_list(signal.get("flags"))]
@@ -577,7 +575,7 @@ def _timeout_url_role(source_name: str, url: str) -> str:
     return "detail_or_registry_page"
 
 
-def _timeout_url_bucket(urls: list[str]) -> dict[str, object]:
+def _timeout_url_bucket(urls: list[str]) -> dict[str, Any]:
     return {
         "timeoutUrlCount": len(urls),
         "timeoutUrls": urls[:5],
@@ -589,8 +587,8 @@ def _timeout_url_bucket(urls: list[str]) -> dict[str, object]:
 def _timeout_diagnostics(
     source_name: str,
     error: object,
-    detail_timing: dict[str, object],
-) -> dict[str, object]:
+    detail_timing: dict[str, Any],
+) -> dict[str, Any]:
     parts = [part.strip() for part in str(error or "").split(";") if part.strip()]
     timeout_parts = [
         part
@@ -632,7 +630,7 @@ def _timeout_diagnostics(
     }
 
 
-def _kept_output_host_breakdown(report: dict[str, object], source_name: str) -> dict[str, object]:
+def _kept_output_host_breakdown(report: dict[str, Any], source_name: str) -> dict[str, Any]:
     host_counts: dict[str, int] = {}
     for row in _as_list(report.get("jobs")):
         if not isinstance(row, dict):
@@ -663,7 +661,7 @@ def _kept_output_host_breakdown(report: dict[str, object], source_name: str) -> 
     }
 
 
-def _load_output_jobs(output_dir: Path) -> list[dict[str, object]]:
+def _load_output_jobs(output_dir: Path) -> list[dict[str, Any]]:
     from src.shared.json_io import read_json
 
     payload = read_json(output_dir / "jobs-unified.json", [])
@@ -673,9 +671,9 @@ def _load_output_jobs(output_dir: Path) -> list[dict[str, object]]:
 
 
 def _source_policy_decision_evidence(
-    target: dict[str, object],
-    report: dict[str, object],
-) -> dict[str, object]:
+    target: dict[str, Any],
+    report: dict[str, Any],
+) -> dict[str, Any]:
     name = str(target.get("name") or "")
     registry_page_evidence = dict(target.get("registryPageEvidence") or {})
     listing_host = str(registry_page_evidence.get("listingHost") or "")
@@ -707,9 +705,9 @@ def _source_policy_decision_evidence(
     }
 
 
-def _source_detail_timing_signals(report: dict[str, object]) -> dict[str, dict[str, object]]:
+def _source_detail_timing_signals(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     runtime = dict(report.get("runtime") or {})
-    signals: dict[str, dict[str, object]] = {}
+    signals: dict[str, dict[str, Any]] = {}
     for row in _as_list(runtime.get("slowestSources")):
         if not isinstance(row, dict):
             continue
@@ -723,7 +721,7 @@ def _source_detail_timing_signals(report: dict[str, object]) -> dict[str, dict[s
     return signals
 
 
-def _decision_type_for_target(target: dict[str, object]) -> str:
+def _decision_type_for_target(target: dict[str, Any]) -> str:
     action = str(target.get("action") or "")
     kept_count = int(target.get("keptCount") or 0)
     if action == "source_policy_review" and kept_count <= 0:
@@ -748,10 +746,10 @@ def _next_decision_for_type(decision_type: str) -> str:
 
 
 def _is_slow_productive_static(
-    target: dict[str, object],
-    signal: dict[str, object],
-    registry_page_evidence: dict[str, object],
-    detail_timing: dict[str, object],
+    target: dict[str, Any],
+    signal: dict[str, Any],
+    registry_page_evidence: dict[str, Any],
+    detail_timing: dict[str, Any],
 ) -> bool:
     return (
         str(target.get("action") or "") == "timeout_or_network_budget"
@@ -764,14 +762,14 @@ def _is_slow_productive_static(
 
 
 def _source_decision_matrix(
-    targets: list[dict[str, object]],
-    source_policy_signals: list[dict[str, object]],
-    report: dict[str, object],
-) -> list[dict[str, object]]:
+    targets: list[dict[str, Any]],
+    source_policy_signals: list[dict[str, Any]],
+    report: dict[str, Any],
+) -> list[dict[str, Any]]:
     signal_by_name = {str(row.get("name") or ""): row for row in source_policy_signals}
     family_summary = _family_summary(report, [str(row.get("name") or "") for row in targets])
     detail_signals = _source_detail_timing_signals(report)
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for target in targets:
         name = str(target.get("name") or "")
         if not name:
@@ -821,7 +819,7 @@ def _format_markdown_list(values: object) -> str:
     return ", ".join(items) if items else "-"
 
 
-def _render_source_decision_matrix_markdown(rows: list[dict[str, object]]) -> str:
+def _render_source_decision_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# Source Decision Matrix",
         "",
@@ -881,7 +879,7 @@ def _render_source_decision_matrix_markdown(rows: list[dict[str, object]]) -> st
     return "\n".join(lines)
 
 
-def _render_source_decision_log_template_markdown(rows: list[dict[str, object]]) -> str:
+def _render_source_decision_log_template_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# Source Decision Log Template",
         "",
@@ -933,9 +931,9 @@ def _render_source_decision_log_template_markdown(rows: list[dict[str, object]])
 
 
 def _source_decision_trend(
-    current_rows: list[dict[str, object]],
-    previous_payload: dict[str, object] | None,
-) -> dict[str, object]:
+    current_rows: list[dict[str, Any]],
+    previous_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
     previous_rows = (
         _as_list(previous_payload.get("sourceDecisionMatrix"))
         if isinstance(previous_payload, dict)
@@ -944,7 +942,7 @@ def _source_decision_trend(
     previous_by_name = {
         str(row.get("name") or ""): row for row in previous_rows if isinstance(row, dict)
     }
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     stable_slow_productive = 0
     changed_decision_type = 0
     new_count = 0
@@ -997,7 +995,7 @@ def _source_decision_trend(
     }
 
 
-def _render_source_decision_trend_markdown(trend: dict[str, object]) -> str:
+def _render_source_decision_trend_markdown(trend: dict[str, Any]) -> str:
     lines = [
         "# Source Decision Trend",
         "",
@@ -1066,7 +1064,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output_dir)
     if not output_dir.is_absolute():
         output_dir = (root / output_dir).resolve()
-    previous_payload: dict[str, object] | None = None
+    previous_payload: dict[str, Any] | None = None
     previous_summary_path = output_dir / "benchmark-summary.json"
     if previous_summary_path.exists():
         try:
@@ -1114,7 +1112,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     source_decision_trend = _source_decision_trend(source_decision_matrix, previous_payload)
 
-    payload = {
+    payload: dict[str, Any] = {
         "outputDir": str(output_dir),
         "sources": selected_names,
         "benchmarkGroup": str(args.group or "custom"),

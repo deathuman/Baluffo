@@ -8,8 +8,8 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused task projection 
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, cast
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
@@ -71,7 +71,7 @@ def normalize_projected_live_payload(
     context: Any,
     *,
     task_type: str,
-    live_source: dict[str, Any],
+    live_source: Mapping[str, Any],
     report_payload: dict[str, Any],
     task_state_entry: dict[str, Any],
     snapshot: _run_history_api.ChildTaskSnapshot | None,
@@ -110,12 +110,15 @@ def normalize_projected_live_payload(
         or report_payload.get("finishedAt")
         or ""
     ).strip()
-    return normalize_live_task_payload(
-        payload,
-        task_type=task_type,
-        run_id=resolved["runId"],
-        started_at=resolved["startedAt"],
-        finished_at=payload["finishedAt"],
+    return cast(
+        dict[str, Any],
+        normalize_live_task_payload(
+            cast(dict[str, Any], payload),
+            task_type=task_type,
+            run_id=resolved["runId"],
+            started_at=resolved["startedAt"],
+            finished_at=payload["finishedAt"],
+        ),
     )
 
 
@@ -137,9 +140,15 @@ def build_sync_live_payload(
         sync_payload["status"] = "running"
         sync_payload["finishedAt"] = ""
     if sync_payload.get("active"):
-        return normalize_live_task_payload(sync_payload, task_type="sync")
+        return cast(
+            dict[str, Any],
+            normalize_live_task_payload(cast(dict[str, Any], sync_payload), task_type="sync"),
+        )
     if sync_payload.get("runId"):
-        return normalize_live_task_payload(sync_payload, task_type="sync")
+        return cast(
+            dict[str, Any],
+            normalize_live_task_payload(cast(dict[str, Any], sync_payload), task_type="sync"),
+        )
     match = next(
         (
             row
@@ -149,25 +158,31 @@ def build_sync_live_payload(
         None,
     )
     if not isinstance(match, dict):
-        return normalize_live_task_payload({}, task_type="sync")
+        return cast(dict[str, Any], normalize_live_task_payload({}, task_type="sync"))
     summary = dict(match.get("summary") or {})
     action = str(summary.get("action") or "").strip().lower()
     phase_label = f"Sync {action}" if action else "Sync running"
-    return build_live_task_payload(
-        task_type="sync",
-        active=False,
-        run_id=str(match.get("runId") or match.get("id") or "").strip(),
-        started_at=str(match.get("startedAt") or "").strip(),
-        finished_at=str(match.get("finishedAt") or "").strip(),
-        status=str(match.get("status") or "").strip().lower(),
-        task_progress=build_live_task_progress_payload(
+    return cast(
+        dict[str, Any],
+        build_live_task_payload(
+            task_type="sync",
             active=False,
-            phase_key=f"sync_{action}" if action else "sync",
-            phase_label=phase_label,
-            counts={"lastAction": action},
+            run_id=str(match.get("runId") or match.get("id") or "").strip(),
+            started_at=str(match.get("startedAt") or "").strip(),
+            finished_at=str(match.get("finishedAt") or "").strip(),
+            status=str(match.get("status") or "").strip().lower(),
+            task_progress=cast(
+                dict[str, Any],
+                build_live_task_progress_payload(
+                    active=False,
+                    phase_key=f"sync_{action}" if action else "sync",
+                    phase_label=phase_label,
+                    counts={"lastAction": action},
+                ),
+            ),
+            summary=summary,
+            outputs={},
         ),
-        summary=summary,
-        outputs={},
     )
 
 

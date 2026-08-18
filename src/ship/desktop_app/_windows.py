@@ -249,8 +249,8 @@ def _stale_runtime_reclaim_result(
     port: int = 0,
     confirmed: bool = False,
     **details: object,
-) -> dict[str, object]:
-    result: dict[str, object] = {
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "target": str(target or ""),
         "status": str(status or ""),
         "reason": str(reason or ""),

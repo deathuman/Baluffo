@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 LOGGER = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ class BaluffoStore:
         sql: str,
         parameters: Sequence[Any] | dict[str, Any],
     ) -> sqlite3.Row | None:
-        return conn.execute(sql, parameters).fetchone()
+        return cast(sqlite3.Row | None, conn.execute(sql, parameters).fetchone())
 
     def execute_read(
         self, sql: str, parameters: Sequence[Any] | dict[str, Any] = ()
@@ -461,7 +461,9 @@ class BaluffoStore:
 
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
         with self._write_lock:
-            return self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+            return cast(
+                sqlite3.Row, self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+            )
 
     @staticmethod
     def _path_size(path: Path) -> int:

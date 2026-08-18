@@ -267,7 +267,7 @@ def sync_task_running(*, root_mod: Any) -> bool:
                 get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
             )
         )
-    return root_mod._get_sync_service().sync_task_running()
+    return bool(root_mod._get_sync_service().sync_task_running())
 
 
 def wait_for_sync_tasks(timeout_s: float = 5.0, *, root_mod: Any) -> None:
@@ -286,11 +286,13 @@ def mark_discovery_sync_finished(finished_at: str, *, root_mod: Any) -> None:
 
 def maybe_trigger_auto_sync_push(reason: str, *, root_mod: Any) -> bool:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    return root_mod._registry_sync_flow.maybe_trigger_auto_sync_push(
-        reason=reason,
-        sync_guard=root_mod._sync_guard,
-        sync_task_running=root_mod.sync_task_running,
-        start_sync_task=root_mod.start_sync_task,
+    return bool(
+        root_mod._registry_sync_flow.maybe_trigger_auto_sync_push(
+            reason=reason,
+            sync_guard=root_mod._sync_guard,
+            sync_task_running=root_mod.sync_task_running,
+            start_sync_task=root_mod.start_sync_task,
+        )
     )
 
 
@@ -394,14 +396,17 @@ def wait_for_report_completion(
     root_mod: Any,
 ) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    return root_mod._get_pipeline_service().wait_for_report_completion(
-        report_path=report_path,
-        started_at=started_at,
-        timeout_s=timeout_s,
-        report_name=report_name,
-        load_json_object=root_mod.load_json_object,
-        report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
-        fail_on_stale=fail_on_stale,
+    return cast(
+        JsonObject,
+        root_mod._get_pipeline_service().wait_for_report_completion(
+            report_path=report_path,
+            started_at=started_at,
+            timeout_s=timeout_s,
+            report_name=report_name,
+            load_json_object=root_mod.load_json_object,
+            report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
+            fail_on_stale=fail_on_stale,
+        ),
     )
 
 
@@ -422,46 +427,52 @@ def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0, *, root_mod:
                 lifecycle_status in {"succeeded", "failed", "canceled", "orphaned"}
                 or status in {"ok", "warning", "error", "succeeded", "failed", "canceled"}
             ) and str(row.get("finishedAt") or "").strip():
-                return row
+                return cast(JsonObject, row)
         root_mod.threading.Event().wait(1.0)
     raise TimeoutError("sync task did not finish within timeout")
 
 
 def start_fetcher_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    return root_mod._get_task_launch_api().start_fetcher_task(
-        payload,
-        append_run_history=root_mod.append_run_history,
-        normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
-        prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
-        run_background_script=root_mod.run_background_script,
-        save_json_atomic=root_mod.save_json_atomic,
-        schema_version=root_mod.SCHEMA_VERSION,
-        load_json_object=root_mod.load_json_object,
-        start_lifecycle_run=root_mod.start_lifecycle_run,
-        finish_lifecycle_run=root_mod.finish_lifecycle_run,
-        fail_lifecycle_run=root_mod.fail_lifecycle_run,
-        cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
-        heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
-        get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+    return cast(
+        JsonObject,
+        root_mod._get_task_launch_api().start_fetcher_task(
+            payload,
+            append_run_history=root_mod.append_run_history,
+            normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
+            prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
+            run_background_script=root_mod.run_background_script,
+            save_json_atomic=root_mod.save_json_atomic,
+            schema_version=root_mod.SCHEMA_VERSION,
+            load_json_object=root_mod.load_json_object,
+            start_lifecycle_run=root_mod.start_lifecycle_run,
+            finish_lifecycle_run=root_mod.finish_lifecycle_run,
+            fail_lifecycle_run=root_mod.fail_lifecycle_run,
+            cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
+            heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+            get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+        ),
     )
 
 
 def start_jobs_bootstrap_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    return root_mod._get_task_launch_api().start_jobs_bootstrap_task(
-        payload,
-        normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
-        run_background_script=root_mod.run_background_script,
-        save_json_atomic=root_mod.save_json_atomic,
-        schema_version=root_mod.SCHEMA_VERSION,
-        start_lifecycle_run=root_mod.start_lifecycle_run,
-        finish_lifecycle_run=root_mod.finish_lifecycle_run,
-        fail_lifecycle_run=root_mod.fail_lifecycle_run,
-        cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
-        heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
-        get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
-        get_lifecycle_run_history_rows=root_mod.get_lifecycle_run_history_rows,
+    return cast(
+        JsonObject,
+        root_mod._get_task_launch_api().start_jobs_bootstrap_task(
+            payload,
+            normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
+            run_background_script=root_mod.run_background_script,
+            save_json_atomic=root_mod.save_json_atomic,
+            schema_version=root_mod.SCHEMA_VERSION,
+            start_lifecycle_run=root_mod.start_lifecycle_run,
+            finish_lifecycle_run=root_mod.finish_lifecycle_run,
+            fail_lifecycle_run=root_mod.fail_lifecycle_run,
+            cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
+            heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+            get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+            get_lifecycle_run_history_rows=root_mod.get_lifecycle_run_history_rows,
+        ),
     )
 
 
@@ -473,4 +484,4 @@ def start_jobs_pipeline_task(payload: JsonObject | None = None, *, root_mod: Any
         root_mod.bridge_log(
             "warn", "availability_priority_manifest_failed", error=type(exc).__name__
         )
-    return root_mod._get_pipeline_service().start_task(payload)
+    return cast(JsonObject, root_mod._get_pipeline_service().start_task(payload))

@@ -20,9 +20,11 @@ def clean_text(value: Any) -> str:
 def row_abort_requested(row: dict[str, Any] | None) -> bool:
     if not isinstance(row, dict):
         return False
-    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    summary_raw = row.get("summary")
+    summary = summary_raw if isinstance(summary_raw, dict) else {}
     progress = row.get("taskProgress") or row.get("progress")
-    progress = progress if isinstance(progress, dict) else {}
+    if not isinstance(progress, dict):
+        progress = {}
     stage = clean_text(row.get("stage")).lower()
     return bool(
         clean_text(summary.get("abortRequestedAt"))
@@ -140,8 +142,10 @@ def _repair_report(
         finished_at=finished_at,
         phase_label=phase_label,
     )
-    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime_raw = payload.get("runtime")
+    runtime = runtime_raw if isinstance(runtime_raw, dict) else {}
+    lifecycle_raw = runtime.get("lifecycle")
+    lifecycle = lifecycle_raw if isinstance(lifecycle_raw, dict) else {}
     payload["runtime"] = {
         **runtime,
         "lifecycle": {

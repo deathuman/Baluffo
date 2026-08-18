@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.common.contracts_dedup_evidence import (
     DedupAuditGatePayload,
@@ -645,7 +645,7 @@ def build_dedup_evidence(
     review_queue_rows: list[dict[str, Any]] = []
     carried_bundle_rows: list[dict[str, Any]] = []
     google_sheets_role_bucket_rows: list[dict[str, Any]] = []
-    provider_static_disagreement_rows: list[dict[str, Any]] = []
+    provider_static_disagreement_rows: list[Mapping[str, Any]] = []
     source_bundle_collision_count = 0
     current_run_source_bundle_collision_count = 0
     carried_source_bundle_collision_count = 0
@@ -1130,4 +1130,4 @@ def build_dedup_evidence(
         "riskyMergeExampleCount": len(risky_rows),
     }
     payload["dedupAuditGate"] = build_dedup_audit_gate(payload)
-    return payload
+    return cast(DedupEvidencePayload, payload)

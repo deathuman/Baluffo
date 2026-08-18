@@ -116,12 +116,14 @@ def _decrypt_passphrase_private_key(
         raise RuntimeError(
             f"Missing {module.PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key."
         )
-    return module.decrypt_private_key_pem_with_passphrase(
-        normalized["privateKeyPemEnc"],
-        salt_b64=normalized["keySalt"],
-        app_id=normalized["appId"],
-        installation_id=normalized["installationId"],
-        passphrase=passphrase,
+    return str(
+        module.decrypt_private_key_pem_with_passphrase(
+            normalized["privateKeyPemEnc"],
+            salt_b64=normalized["keySalt"],
+            app_id=normalized["appId"],
+            installation_id=normalized["installationId"],
+            passphrase=passphrase,
+        )
     )
 
 
@@ -133,22 +135,26 @@ def _decrypt_embedded_v2_private_key(
 ) -> str:
     if passphrase:
         try:
-            return module.decrypt_private_key_pem_with_passphrase(
-                normalized["privateKeyPemEnc"],
-                salt_b64=normalized["keySalt"],
-                app_id=normalized["appId"],
-                installation_id=normalized["installationId"],
-                passphrase=passphrase,
+            return str(
+                module.decrypt_private_key_pem_with_passphrase(
+                    normalized["privateKeyPemEnc"],
+                    salt_b64=normalized["keySalt"],
+                    app_id=normalized["appId"],
+                    installation_id=normalized["installationId"],
+                    passphrase=passphrase,
+                )
             )
         except (BinasciiError, InvalidTag, RuntimeError, UnicodeError, ValueError):
             pass
-    return _source_sync_crypto.decrypt_private_key_pem_for_embedded(
-        normalized["privateKeyPemEnc"],
-        salt_b64=normalized["keySalt"],
-        app_id=normalized["appId"],
-        installation_id=normalized["installationId"],
-        hint=normalized["embeddedKeyHint"],
-        version=normalized["embeddedKeyVersion"],
+    return str(
+        _source_sync_crypto.decrypt_private_key_pem_for_embedded(
+            normalized["privateKeyPemEnc"],
+            salt_b64=normalized["keySalt"],
+            app_id=normalized["appId"],
+            installation_id=normalized["installationId"],
+            hint=normalized["embeddedKeyHint"],
+            version=normalized["embeddedKeyVersion"],
+        )
     )
 
 
@@ -167,12 +173,14 @@ def _decrypt_embedded_private_key(
             hint=normalized["embeddedKeyHint"],
             version=normalized["embeddedKeyVersion"],
         )
-    return module.decrypt_private_key_pem_with_passphrase(
-        normalized["privateKeyPemEnc"],
-        salt_b64=normalized["keySalt"],
-        app_id=normalized["appId"],
-        installation_id=normalized["installationId"],
-        passphrase=passphrase,
+    return str(
+        module.decrypt_private_key_pem_with_passphrase(
+            normalized["privateKeyPemEnc"],
+            salt_b64=normalized["keySalt"],
+            app_id=normalized["appId"],
+            installation_id=normalized["installationId"],
+            passphrase=passphrase,
+        )
     )
 
 

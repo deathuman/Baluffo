@@ -1169,6 +1169,7 @@ def _google_sheets_provider_title_lookup_keys(provider: str, row: dict[str, Any]
         text = clean_text(value)
         if text:
             keys.add(f"id:{text}")
+    urls: tuple[Any, ...]
     if provider == "greenhouse":
         urls = (row.get("absolute_url"), row.get("url"))
     elif provider == "workable":
@@ -1829,18 +1830,14 @@ def _default_source_bundle(
 
 def _has_structured_location(details: dict[str, Any]) -> bool:
     detail_locations = details.get("locations") or []
-    return (
+    return bool(
         any(
             clean_text(item.get("city")) or clean_text(item.get("country"))
             for item in detail_locations
             if isinstance(item, dict)
         )
         or clean_text(details.get("city"))
-        or clean_text(details.get("country"))
-        not in {
-            "",
-            "Unknown",
-        }
+        or clean_text(details.get("country")) not in {"", "Unknown"}
     )
 
 
@@ -2148,7 +2145,7 @@ def canonicalize_job_with_reason(
         adapter=adapter,
         studio=studio,
     )
-    title, drop_reason = _google_sheets_repaired_title_or_reason(
+    repaired_title, drop_reason = _google_sheets_repaired_title_or_reason(
         title=title,
         source=source,
         company=company,
@@ -2157,8 +2154,9 @@ def canonicalize_job_with_reason(
     )
     if drop_reason:
         return None, drop_reason
-    if title is None:
+    if repaired_title is None:
         return None, "missing_title"
+    title = repaired_title
     raw_sector = sanitize_public_text(raw.get("sector"))
     normalized_sector = normalize_sector(
         raw_sector,

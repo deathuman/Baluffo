@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from src import container_gateway, container_server
 
@@ -31,7 +32,7 @@ def _runtime_identity(env: dict[str, str] | None = None) -> tuple[int, int, str]
         try:
             import pwd
 
-            entry = pwd.getpwnam(username)
+            entry = cast(Any, pwd).getpwnam(username)
             return int(entry.pw_uid), int(entry.pw_gid), username
         except (ImportError, KeyError):
             pass
@@ -49,7 +50,7 @@ def _chown_path_no_follow(path: Path, uid: int, gid: int) -> None:
     if lchown is not None:
         lchown(path, uid, gid)
         return
-    os.chown(path, uid, gid)
+    cast(Any, os).chown(path, uid, gid)
 
 
 def _chown_tree(path: Path, uid: int, gid: int) -> None:
@@ -79,8 +80,8 @@ def _ensure_data_dir_permissions(
 def _drop_privileges(uid: int, gid: int, username: str) -> None:
     if hasattr(os, "initgroups") and username:
         os.initgroups(username, gid)
-    os.setgid(gid)
-    os.setuid(uid)
+    cast(Any, os).setgid(gid)
+    cast(Any, os).setuid(uid)
     os.environ["HOME"] = f"/home/{username}" if username else "/"
     if username:
         os.environ["USER"] = username

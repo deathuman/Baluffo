@@ -277,7 +277,10 @@ def generic_parser_then_detail_links(
     *,
     extra_anchor_filter: Callable[[str], bool] | None = None,
 ) -> list[dict[str, Any]]:
-    rows = ctx.parse_jobpostings_from_html(
+    parser = ctx.parse_jobpostings_from_html
+    if not callable(parser):
+        return []
+    rows = parser(
         ctx.html,
         base_url=ctx.page_url,
         fallback_company=ctx.company,

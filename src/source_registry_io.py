@@ -1044,10 +1044,10 @@ def _load_json_journal_array_delta_payload(
     for row_id in removed:
         rows_by_id.pop(row_id, None)
     for row in changed:
-        row_id = row.get("id")
-        if not isinstance(row_id, str) or not row_id:
+        candidate_row_id = row.get("id")
+        if not isinstance(candidate_row_id, str) or not candidate_row_id:
             return None
-        rows_by_id[row_id] = dict(row)
+        rows_by_id[candidate_row_id] = dict(row)
     if set(rows_by_id) != set(row_ids):
         return None
     payload = [rows_by_id[row_id] for row_id in row_ids]
@@ -1102,8 +1102,11 @@ def _load_json_journal_object_delta_payload(
 
 
 def _json_journal_record_row_count(record: dict[str, Any]) -> int | None:
+    row_count = record.get("rowCount")
+    if row_count is None:
+        return None
     try:
-        return int(record.get("rowCount"))
+        return int(row_count)
     except (TypeError, ValueError):
         return None
 
@@ -1200,17 +1203,17 @@ def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
             _json_journal_path_for(path).exists()
         ):
             return False
-        return load_json_array(path, []) == _json_journal_image_payload(payload)
+        return bool(load_json_array(path, []) == _json_journal_image_payload(payload))
     if isinstance(payload, dict):
         if not any(candidate.exists() for candidate in _json_storage_candidates(path)) and not (
             _json_journal_path_for(path).exists()
         ):
             return False
-        return load_json_object(path, {}) == dict(payload)
+        return bool(load_json_object(path, {}) == dict(payload))
     target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
     if not target.exists():
         return False
-    return _load_json_payload_from_file(target) == payload
+    return bool(_load_json_payload_from_file(target) == payload)
 
 
 def _canonical_json_payload_matches_existing(path: Path, payload: Any) -> bool:
@@ -1221,7 +1224,7 @@ def _canonical_json_payload_matches_existing(path: Path, payload: Any) -> bool:
     if existing is None:
         return False
     try:
-        return _load_json_payload_from_file(existing) == _json_journal_image_payload(payload)
+        return bool(_load_json_payload_from_file(existing) == _json_journal_image_payload(payload))
     except (OSError, json.JSONDecodeError):
         return False
 

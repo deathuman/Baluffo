@@ -11,8 +11,8 @@ from __future__ import annotations
 import ctypes
 import os
 import threading
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 
 def _empty_sample(root_pid: int, *, unsupported_reason: str = "") -> dict[str, Any]:
@@ -94,7 +94,7 @@ def _normalize_process_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _sorted_processes(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _sorted_processes(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     normalized = [_normalize_process_row(row) for row in rows if isinstance(row, Mapping)]
     normalized.sort(key=lambda row: int(row.get("memoryBytes") or 0), reverse=True)
     return normalized
@@ -129,7 +129,7 @@ def _cached_process_metadata(
 
 
 def _windows_process_table() -> dict[int, dict[str, Any]]:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = cast(Any, ctypes).WinDLL("kernel32", use_last_error=True)
     th32cs_snapprocess = 0x00000002
     invalid_handle_value = ctypes.c_void_p(-1).value
 
@@ -149,7 +149,7 @@ def _windows_process_table() -> dict[int, dict[str, Any]]:
 
     snapshot = kernel32.CreateToolhelp32Snapshot(th32cs_snapprocess, 0)
     if not snapshot or snapshot == invalid_handle_value:
-        raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
+        raise OSError(cast(Any, ctypes).get_last_error(), "CreateToolhelp32Snapshot failed")
     try:
         entry = PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
@@ -171,7 +171,7 @@ def _windows_process_table() -> dict[int, dict[str, Any]]:
 
 
 def _windows_process_image_path(pid: int) -> str:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = cast(Any, ctypes).WinDLL("kernel32", use_last_error=True)
     process_query_limited_information = 0x1000
     query_full_process_image_name = getattr(kernel32, "QueryFullProcessImageNameW", None)
     if query_full_process_image_name is None:
@@ -190,8 +190,8 @@ def _windows_process_image_path(pid: int) -> str:
 
 
 def _windows_working_set_bytes(pid: int) -> int:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel32 = cast(Any, ctypes).WinDLL("kernel32", use_last_error=True)
+    psapi = cast(Any, ctypes).WinDLL("psapi", use_last_error=True)
     process_query_information = 0x0400
     process_query_limited_information = 0x1000
     process_vm_read = 0x0010
@@ -216,7 +216,7 @@ def _windows_working_set_bytes(pid: int) -> int:
     if not handle:
         handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
     if not handle:
-        raise OSError(ctypes.get_last_error(), f"OpenProcess failed for pid={pid}")
+        raise OSError(cast(Any, ctypes).get_last_error(), f"OpenProcess failed for pid={pid}")
     try:
         counters = PROCESS_MEMORY_COUNTERS_EX()
         counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
@@ -226,7 +226,9 @@ def _windows_working_set_bytes(pid: int) -> int:
             ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX),
         )
         if not ok:
-            raise OSError(ctypes.get_last_error(), f"GetProcessMemoryInfo failed for pid={pid}")
+            raise OSError(
+                cast(Any, ctypes).get_last_error(), f"GetProcessMemoryInfo failed for pid={pid}"
+            )
         return max(0, int(counters.WorkingSetSize))
     finally:
         kernel32.CloseHandle(handle)
@@ -290,7 +292,7 @@ def _posix_process_table(
 
 
 def _posix_rss_bytes(pid: int) -> int:
-    page_size = os.sysconf("SC_PAGE_SIZE")
+    page_size = float(cast(Any, os).sysconf("SC_PAGE_SIZE") or 0)
     statm_path = os.path.join("/proc", str(int(pid)), "statm")
     with open(statm_path, encoding="utf-8") as handle:
         raw = handle.read().split()
@@ -359,7 +361,7 @@ def sample_process_tree(
             pids = _process_tree(root, parents)
             skipped = 0
             total = 0
-            processes: list[dict[str, Any]] = []
+            posix_processes: list[dict[str, Any]] = []
             for pid in pids:
                 row = dict(table.get(pid) or {"pid": pid, "parentPid": 0})
                 try:
@@ -373,7 +375,7 @@ def sample_process_tree(
                     row["unsupportedReason"] = "memory unavailable"
                 normalized = _normalize_process_row(row)
                 total += int(normalized.get("rssBytes") or 0)
-                processes.append(normalized)
+                posix_processes.append(normalized)
             return {
                 "rootPid": root,
                 "platform": os.name,
@@ -381,7 +383,7 @@ def sample_process_tree(
                 "skippedProcessCount": skipped,
                 "workingSetBytes": 0,
                 "rssBytes": total,
-                "processes": _sorted_processes(processes),
+                "processes": _sorted_processes(posix_processes),
                 "unsupportedReason": "",
             }
         except (OSError, TypeError, ValueError) as exc:

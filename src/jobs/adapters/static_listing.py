@@ -1747,7 +1747,8 @@ class StaticFetchRunner:
             err_str,
             anti_bot_browser_retry=self.anti_bot_browser_retry,
         )
-        attempted = bool(self.deps.try_playwright and should_fallback)
+        try_playwright = self.deps.try_playwright
+        attempted = bool(try_playwright is not None and should_fallback)
         if attempted:
             browser_budget_s = effective_timeout_for_remaining_budget(
                 timeout_s=self.deps.timeout_s,
@@ -1755,7 +1756,8 @@ class StaticFetchRunner:
             )
             if browser_budget_s > 0:
                 self.stage_state.increment_browser_fallbacks()
-                html, fallback_error = self.deps.try_playwright(url, browser_budget_s)
+                if try_playwright is not None:
+                    html, fallback_error = try_playwright(url, browser_budget_s)
             self._log_playwright_fallback(url, reason, html)
         if not html:
             self._note_listing_fetch_failure(err_str, attempted, reason)

@@ -22,7 +22,10 @@ def can_handle(ctx: AdapterPluginContext) -> bool:
 
 
 def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
-    return ctx.parse_jobpostings_from_html(
+    parser = ctx.parse_jobpostings_from_html
+    if not callable(parser):
+        return []
+    return parser(
         ctx.html,
         base_url=ctx.page_url,
         fallback_company=ctx.company,

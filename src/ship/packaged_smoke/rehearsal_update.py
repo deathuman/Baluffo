@@ -17,7 +17,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 root: Any | None = None
 
@@ -326,10 +326,13 @@ def _post_install_update_handoff(
 ) -> tuple[int, dict[str, Any]]:
     deps = _root()
     try:
-        return deps.post_json(
-            f"http://127.0.0.1:{bridge_port}/app/install-update",
-            {},
-            timeout_s=timeout_s,
+        return cast(
+            tuple[int, dict[str, Any]],
+            deps.post_json(
+                f"http://127.0.0.1:{bridge_port}/app/install-update",
+                {},
+                timeout_s=timeout_s,
+            ),
         )
     except OSError:
         handoff_status = _confirmed_install_handoff_status(paths)
@@ -437,7 +440,8 @@ def _helper_diagnostic_rows(paths: Any) -> list[dict[str, Any]]:
 
 
 def _helper_failure_message(payload: dict[str, Any]) -> str:
-    fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+    fields_raw = payload.get("fields")
+    fields = fields_raw if isinstance(fields_raw, dict) else {}
     return str(fields.get("error") or payload.get("error") or payload).strip()
 
 

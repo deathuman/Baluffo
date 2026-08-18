@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from src.shared.json_io import json_dumps, loads_object
 from src.shared.live_task import normalize_live_task_event
@@ -441,7 +441,7 @@ class TaskRuntimeStore:
     ) -> dict[str, Any]:
         normalized = normalize_live_task_event(dict(event))
         if not _clean_text(normalized.get("message")):
-            return normalized
+            return cast(dict[str, Any], normalized)
         run_id = _clean_text(normalized.get("runId"))
         task_type = _clean_text(normalized.get("taskType")).lower()
         if not run_id or not task_type:

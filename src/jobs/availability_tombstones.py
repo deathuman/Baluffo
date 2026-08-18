@@ -48,7 +48,8 @@ def _canonical_row(row: Mapping[str, Any], availability_id: str) -> dict[str, An
 
 def normalize_availability_tombstones(payload: Any) -> dict[str, dict[str, Any]]:
     source = payload if isinstance(payload, dict) else {}
-    raw_rows = source.get("rows") if isinstance(source.get("rows"), dict) else {}
+    rows_raw = source.get("rows")
+    raw_rows = rows_raw if isinstance(rows_raw, dict) else {}
     rows: dict[str, dict[str, Any]] = {}
     for raw_id, raw_entry in raw_rows.items():
         availability_id = _clean_text(raw_id)
