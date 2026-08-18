@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import importlib
 import json
 import os
 import runpy
@@ -54,6 +53,8 @@ from src.ship.startup_telemetry import (
     wait_for_url,
 )
 
+from . import _linux as _linux_platform_module
+from . import _windows as _windows_platform_module
 from . import browser as _browser_module
 from . import config as _config_module
 from . import launcher as _launcher_module
@@ -62,9 +63,11 @@ from . import process as _process_module
 from . import session as _session_module
 from . import startup as _startup_module
 
-_platform_module = importlib.import_module(
-    "._windows" if os.name == "nt" else "._linux", package=__name__
-)
+# Static imports keep both platform modules in the PyInstaller bundle graph;
+# a dynamic importlib call here is invisible to the frozen module analysis and
+# the packaged EXE fails at startup with ModuleNotFoundError. Both modules are
+# safe to import on either platform (no platform-only module-level code).
+_platform_module = _windows_platform_module if os.name == "nt" else _linux_platform_module
 
 _COMPAT_MODULES = (
     _startup_module,
