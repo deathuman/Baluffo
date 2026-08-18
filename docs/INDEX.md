@@ -22,6 +22,7 @@ Historical archive detail is intentionally trimmed for this personal project. [`
 | [`AI_CODER_SETUP.md`](AI_CODER_SETUP.md) | AI environment setup | You are preparing or checking Windows, WSL, or Linux tooling for AI-assisted work |
 | [`architecture-ai-map.md`](architecture-ai-map.md) | **Architecture map** | You need system boundaries, task-to-file routing, runtime guardrails, and compatibility-surface detail |
 | [`../AGENTS.md`](../AGENTS.md) | Workflow guardrails | You need repo-specific editing discipline, validation habits, and the canonical docs read path |
+| [`../.agents/skills/`](../.agents/skills/) | Repo-local workflow skills | You need the Baluffo workflow skills for desktop incident triage, job-data quality audits, provider coverage triage, release shipping, or Umbrel performance triage |
 
 ## Compatibility Surfaces
 

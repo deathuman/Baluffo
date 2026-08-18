@@ -194,7 +194,7 @@ type data\jobs-fetch-report.json | findstr /C:"error"
 | Social enabled | Ensure `--social-enabled` flag or config |
 | Config file | Check `data/social-sources-config.json` |
 | Rate limiting | Wait and retry; social APIs have strict limits |
-| Stale bad social rows still in `jobs-unified.json` | Run `python scripts\\jobs_fetcher.py --force-refresh-all --social-enabled` so incremental cache skips do not preserve old Reddit/Mastodon contamination |
+| Stale bad social rows still in `jobs-unified.json` | Run `python src/jobs_fetcher.py --force-refresh-all --social-enabled` so incremental cache skips do not preserve old Reddit/Mastodon contamination |
 
 ---
 
@@ -324,8 +324,8 @@ Set `PLAYWRIGHT_SYSTEM_CHROMIUM=1` or use `npm run test:frontend:linux` which se
 
 | Data | Windows | Linux |
 |------|---------|-------|
-| Config/data root | `%APPDATA%\Baluffo\` | `~/.local/share/Baluffo/` |
-| Session/transient | `%LOCALAPPDATA%\Baluffo\` | `~/.cache/Baluffo/` |
+| Config/data root | `%APPDATA%\Baluffo\` (packaged) | `ship_root/data` by default (`BALUFFO_DATA_DIR` overrides; session/transient uses XDG data) |
+| Session/transient | `%LOCALAPPDATA%\Baluffo\` | `~/.local/share/Baluffo/` (XDG data root) |
 | Sync key | DPAPI (machine-protected) | System keyring, fallback `~/.config/baluffo/sync.key` (0o600) |
 
 ### Ship bundle launcher fails
