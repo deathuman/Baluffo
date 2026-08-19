@@ -6,6 +6,7 @@ import pytest
 
 from src.app_version import get_app_version
 from tools.repo_health.release_docs_policy import (
+    test_changelog_keeps_unreleased_above_versioned_rollup,
     test_release_notes_artifact_matches_current_version,
 )
 
@@ -46,6 +47,45 @@ def test_release_notes_guardrail_accepts_current_version(repo_root: Path) -> Non
     release_notes_path = repo_root / "release-notes.md"
     assert release_notes_path.is_file(), "test precondition: release-notes.md is tracked"
     test_release_notes_artifact_matches_current_version(repo_root)  # noqa: S101 - raises on stale
+
+
+def test_changelog_unreleased_guardrail_accepts_current_tree(repo_root: Path) -> None:
+    """The tracked changelog keeps an `[Unreleased]` section above the versioned rollup."""
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    assert changelog_path.is_file(), "test precondition: docs/CHANGELOG.md is tracked"
+    test_changelog_keeps_unreleased_above_versioned_rollup(repo_root)  # noqa: S101 - raises on drift
+
+
+def test_changelog_unreleased_guardrail_rejects_missing_unreleased(repo_root: Path) -> None:
+    """A changelog with no `[Unreleased]` heading must fail the docs guardrail."""
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    original = changelog_path.read_text(encoding="utf-8")
+    app_version = get_app_version()
+    try:
+        changelog_path.write_text(
+            f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(AssertionError, match="missing the `## \\[Unreleased\\]` section"):
+            test_changelog_keeps_unreleased_above_versioned_rollup(repo_root)
+    finally:
+        changelog_path.write_text(original, encoding="utf-8")
+
+
+def test_changelog_unreleased_guardrail_rejects_unreleased_below_rollup(repo_root: Path) -> None:
+    """An `[Unreleased]` heading below the versioned rollup must fail the docs guardrail."""
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    original = changelog_path.read_text(encoding="utf-8")
+    app_version = get_app_version()
+    try:
+        changelog_path.write_text(
+            f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n\n---\n\n## [Unreleased]\n\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(AssertionError, match="must sit above the versioned rollup"):
+            test_changelog_keeps_unreleased_above_versioned_rollup(repo_root)
+    finally:
+        changelog_path.write_text(original, encoding="utf-8")
 
 
 def test_release_notes_guardrail_rejects_stale_version(repo_root: Path, tmp_path: Path) -> None:

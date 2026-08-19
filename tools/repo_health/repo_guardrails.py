@@ -585,6 +585,7 @@ def run_docs_group() -> list[GuardFailure]:
         for name in (
             "test_release_guide_is_canonical_single_source",
             "test_release_docs_cover_the_current_public_release_line",
+            "test_changelog_keeps_unreleased_above_versioned_rollup",
             "test_release_notes_artifact_matches_current_version",
             "test_local_setup_points_to_canonical_commands_and_docs",
             "test_ai_bootstrap_sequence_is_single_path",

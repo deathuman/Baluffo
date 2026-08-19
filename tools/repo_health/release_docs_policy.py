@@ -42,6 +42,32 @@ def test_release_notes_artifact_matches_current_version(repo_root: Path) -> None
     )
 
 
+def test_changelog_keeps_unreleased_above_versioned_rollup(repo_root: Path) -> None:
+    """Require `docs/CHANGELOG.md` to keep an `[Unreleased]` section above the versioned rollup."""
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    assert changelog_path.is_file(), "docs/CHANGELOG.md must exist."
+    changelog_text = changelog_path.read_text(encoding="utf-8")
+    app_version = get_app_version()
+
+    unreleased_pos = changelog_text.find("## [Unreleased]")
+    assert unreleased_pos != -1, (
+        "docs/CHANGELOG.md is missing the `## [Unreleased]` section. Keep it directly above "
+        f"`## [{app_version}]` so in-progress changes accumulate at the top; release commits "
+        "roll it up into a new versioned section and reopen an empty Unreleased block."
+    )
+
+    versioned_pos = changelog_text.find(f"## [{app_version}]")
+    assert versioned_pos != -1, (
+        f"docs/CHANGELOG.md has no `## [{app_version}]` section for the current app version."
+    )
+
+    assert unreleased_pos < versioned_pos, (
+        "docs/CHANGELOG.md's `## [Unreleased]` section must sit above the versioned rollup "
+        f"`## [{app_version}]` (Keep a Changelog convention). Move the Unreleased heading above "
+        "the versioned sections so in-progress changes accumulate at the top of the file."
+    )
+
+
 def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     changelog_text = (docs_dir / "CHANGELOG.md").read_text(encoding="utf-8")
