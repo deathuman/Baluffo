@@ -2,7 +2,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from src.app_version import get_app_version
+from tools.repo_health.release_docs_policy import (
+    test_release_notes_artifact_matches_current_version,
+)
 
 
 def test_release_notes_extractor_uses_top_changelog_section(
@@ -34,3 +39,25 @@ def test_release_notes_extractor_uses_top_changelog_section(
     assert str(output_path) in completed.stdout
     assert extracted.startswith(f"## [{app_version}] - ")
     assert "## [Unreleased]" not in extracted
+
+
+def test_release_notes_guardrail_accepts_current_version(repo_root: Path) -> None:
+    """The tracked release-notes.md must be regenerated for the current app version."""
+    release_notes_path = repo_root / "release-notes.md"
+    assert release_notes_path.is_file(), "test precondition: release-notes.md is tracked"
+    test_release_notes_artifact_matches_current_version(repo_root)  # noqa: S101 - raises on stale
+
+
+def test_release_notes_guardrail_rejects_stale_version(repo_root: Path, tmp_path: Path) -> None:
+    """A version bump without regenerating release-notes.md must fail the docs guardrail."""
+    release_notes_path = repo_root / "release-notes.md"
+    original = release_notes_path.read_text(encoding="utf-8")
+    try:
+        release_notes_path.write_text(
+            "## [0.0.0] - 1970-01-01\n\n> stale placeholder\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(AssertionError, match="release-notes.md is stale"):
+            test_release_notes_artifact_matches_current_version(repo_root)
+    finally:
+        release_notes_path.write_text(original, encoding="utf-8")

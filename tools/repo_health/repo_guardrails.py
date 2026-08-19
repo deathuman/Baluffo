@@ -41,6 +41,11 @@ from desktop_update_root_dependency_inventory import (
 from desktop_updater_root_dependency_inventory import (
     check_desktop_updater_root_dependency_inventory,
 )
+from release_artifacts_policy import (
+    check_desktop_update_manifest_version,
+    check_portable_zip_embedded_version,
+    check_ship_bundle_embedded_version,
+)
 from update_manager_facade_inventory import check_update_manager_facade_inventory
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
@@ -56,6 +61,7 @@ GROUPS = (
     "test-shape",
     "fixtures",
     "line-budget",
+    "release",
 )
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
@@ -579,6 +585,7 @@ def run_docs_group() -> list[GuardFailure]:
         for name in (
             "test_release_guide_is_canonical_single_source",
             "test_release_docs_cover_the_current_public_release_line",
+            "test_release_notes_artifact_matches_current_version",
             "test_local_setup_points_to_canonical_commands_and_docs",
             "test_ai_bootstrap_sequence_is_single_path",
             "test_docs_workflow_is_indexed_and_linked_for_contributors",
@@ -755,6 +762,19 @@ def run_fixtures_group() -> list[GuardFailure]:
     return [failure] if failure else []
 
 
+def run_release_group() -> list[GuardFailure]:
+    failures: list[GuardFailure] = []
+    for name, messages in (
+        ("check_ship_bundle_embedded_version", check_ship_bundle_embedded_version()),
+        ("check_portable_zip_embedded_version", check_portable_zip_embedded_version()),
+        ("check_desktop_update_manifest_version", check_desktop_update_manifest_version()),
+    ):
+        failure = _failure_from_messages("release", name, messages)
+        if failure:
+            failures.append(failure)
+    return failures
+
+
 def run_line_budget_group() -> list[GuardFailure]:
     failures: list[GuardFailure] = []
     for name, messages in (
@@ -778,6 +798,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "test-shape": run_test_shape_group,
     "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
+    "release": run_release_group,
 }
 
 

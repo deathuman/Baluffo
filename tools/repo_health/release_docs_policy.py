@@ -20,6 +20,28 @@ def test_release_guide_is_canonical_single_source(repo_root: Path) -> None:
     assert len(text.splitlines()) > 0, "docs/RELEASE.md should not be empty."
 
 
+def test_release_notes_artifact_matches_current_version(repo_root: Path) -> None:
+    """Require the tracked `release-notes.md` artifact to be regenerated on release bumps."""
+    release_notes_path = repo_root / "release-notes.md"
+    assert release_notes_path.is_file(), (
+        "release-notes.md must exist at the repo root; regenerate it with "
+        "`python scripts/extract_release_notes.py`."
+    )
+    release_notes_text = release_notes_path.read_text(encoding="utf-8")
+    first_line = release_notes_text.splitlines()[0].strip()
+    app_version = get_app_version()
+    assert first_line.startswith(f"## [{app_version}]"), (
+        f"release-notes.md is stale: its top heading is {first_line!r} but the current app "
+        f"version is {app_version!r}. Release commits must regenerate it with "
+        "`python scripts/extract_release_notes.py` so the tracked artifact matches the "
+        "versioned changelog section."
+    )
+    assert "## [Unreleased]" not in release_notes_text, (
+        "release-notes.md must hold a versioned section, not the Unreleased block; regenerate "
+        "it with `python scripts/extract_release_notes.py`."
+    )
+
+
 def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     changelog_text = (docs_dir / "CHANGELOG.md").read_text(encoding="utf-8")
