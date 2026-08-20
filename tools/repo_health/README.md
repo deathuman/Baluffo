@@ -9,6 +9,7 @@ repo_health/
   bin/
     analyze_repo.py         # Config-driven maturity analysis
     analyze_refactorability.py  # AI-oriented refactorability scoring
+    verify_split_fidelity.py    # Per-definition byte-identity check for module splits
 
   profiles/baluffo/
     readiness/
@@ -32,6 +33,10 @@ python tools/repo_health/bin/analyze_refactorability.py
 
 # Run repository policy guardrails, including fixture references
 npm run lint:repo-guardrails
+
+# Verify a module split kept every function/class/constant body byte-identical
+python tools/repo_health/bin/verify_split_fidelity.py src/bridge/foo.py \
+    --leaves src/bridge/foo.py src/bridge/foo_alpha.py src/bridge/foo_beta.py
 
 # Generate an optional AI-coder orientation artifact
 python tools/repo_health/generate_system_map.py --output .tmp/system-map.json

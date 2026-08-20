@@ -244,7 +244,10 @@ class RefactorabilityAnalyzer:
             except (OSError, UnicodeDecodeError):
                 continue
 
-        hotspots.sort(key=lambda x: x["hotspot_score"], reverse=True)
+        # Rank by size first so the printed top-10 always surfaces the largest files
+        # (score is only a tiebreak): a score-primary key would hide pure-size files like
+        # canonicalize_google_sheets.py (score 50) behind the many 55-80 runtime-named files.
+        hotspots.sort(key=lambda x: (x["loc"], x["hotspot_score"]), reverse=True)
 
         return {
             "hotspots": hotspots[:10],
