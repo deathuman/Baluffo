@@ -11,7 +11,7 @@ Discovery (source_discovery)
   -> m5-strategic-backlog.json (derived review snapshot)
   -> pending registry / sync
 
-Pipeline (jobs/pipeline.py -> pipeline_run_setup.py -> pipeline_execution_flow.py -> pipeline_stage_source_execution.py -> pipeline_source_{loop,results,progress}.py -> pipeline_finalize.py)
+Pipeline (jobs/pipeline.py -> pipeline_run_setup.py -> pipeline_execution_flow.py -> pipeline_stage_source_execution.py -> pipeline_source_{loop,results,progress}.py -> pipeline_finalize.py, with finalization implementation split across the sibling `finalize_{locations,lifecycle,reports,output,availability}.py` leaves)
   -> keep seeded prior-output rows separate from rows observed in this run
   -> execute_loader per source (static, scrapy_static, provider APIs, etc.)
   -> Static adapter: listing fetch with optional try_playwright fallback (403/timeout or JS shell + no jobs)

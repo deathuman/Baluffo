@@ -5,7 +5,7 @@
 > - **Canonical for:** the 2026-05-17 initial refactoring target inventory, known analyzer false positives, and suggested sequencing for behavior-preserving cleanup
 > - **Not canonical for:** current runtime contracts, payload shapes, source registry policy, bridge route contracts, or implementation state after any later refactor lands
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-08-17 — Phase 1 facade removal (`state.py`/`parsers.py`) noted as shipped in `f7376c87`; remaining items still advisory
+> - **Last updated:** 2026-08-19 — largest-files list and hotspot ranking refreshed from the 2026-08-19 `analyze_refactorability.py` run; items 5–7, 10, 13, 15 marked done this session; §10 gained the when-to-split decision rule (size + active-subsystem + low-seam-risk)
 
 ## Summary
 
@@ -17,27 +17,33 @@ Highest-value jobs/fetcher targets:
 - Merge two compatibility helper modules into their owning facade: `src/jobs/fetcher_compat_exports.py` and `src/jobs/fetcher_compat_runtime.py`.
 - Consolidate small duplicated jobs JSON-shape helpers only where semantics are identical.
 - Treat jobs root injection as compatibility debt and avoid expanding it.
-- Split `src/jobs/reporting_dedup_evidence.py` behind its existing public builders.
+- Split `src/jobs/reporting_dedup_evidence.py` behind its existing public builders. **Done** (2026-08-19).
+
+**Current (2026-08-19) top remaining targets** — see §3F for the full refreshed ranking: `src/source_discovery/gamedevmap_active_dry_run.py` (2,087) is now the largest file in `src/`; the top jobs-side split targets are `src/jobs/state_lifecycle.py` (1,121) and `src/jobs/reporting_dedup_evidence.py` (1,133) (`dedup.py`, `canonicalize_google_sheets.py`, `static_listing.py`, `source_registry_io.py`, and `static_detail_heuristics.py` were split 2026-08-19 and are no longer hotspots).
 
 ## Current Repo Check
 
 The snapshot below was validated against the repo state on 2026-05-17 before this plan was added. Treat counts and consumer lists as starting evidence for a refactor charter, not as a substitute for a fresh `rg`/Serena check immediately before editing.
 
+**Refreshed 2026-08-19** (current `wc -l`; direct `.py` files per directory — nested subdirectories excluded, so the four `src/jobs` rows stay disjoint).
+
 ## Codebase Snapshot
 
-| Area | Files | Large Files (>500 lines) |
-|------|-------|--------------------------|
-| `src/jobs/` (core) | 41 | 14 |
-| `src/jobs/common/` | 31 | 4 |
-| `src/jobs/adapters/` | 17 | 8 |
-| `src/jobs/adapters/plugins/` | 40 | 3 |
-| `src/bridge/` | 51 | 20 |
-| `src/source_discovery/` | 62 | 12 |
-| `src/ship/` | 50 | 13 |
-| `src/shared/` | 11 | 1 (process_memory.py:511) |
-| `src/storage/` | 7 | 3 |
-| `src/scrapers/` | 9 | 1 (runner.py:433) |
-| `scripts/` | 39 | 0 |
+| Area | Files | Δ vs 2026-05-17 | Large Files (>500 lines) |
+|------|-------|-----------------|--------------------------|
+| `src/jobs/` (core) | 65 | +24 | 15 — top: `reporting_dedup_evidence.py:1,133`, `state_lifecycle.py:1,121` |
+| `src/jobs/common/` | 38 | +7 | 7 — top: `dedup_evidence_bundle.py:798` |
+| `src/jobs/adapters/` | 27 | +10 | 7 — top: `provider_structured_listing.py:860`, `location_rules.py:856` (+ `static_listing_{runner,traversal}.py` and the 4 `static_detail_heuristics_{config,filter,parse,entry}.py` leaves from the 2026-08-19 split) |
+| `src/jobs/adapters/plugins/` | 5 | −35 | 0 direct — large files live under `plugins/static/` (`_rendered_cards.py:990`), `plugins/social/` |
+| `src/bridge/` | 120 | +69 | 19 — top: `sync_service.py:1,019` |
+| `src/source_discovery/` | 66 | +4 | 16 — top: `gamedevmap_active_dry_run.py:2,087` |
+| `src/ship/` | 26 | −24 | 6 direct — top: `runtime_launcher.py:1,103`; `packaged_smoke/rehearsal_browser.py:1,341` is nested |
+| `src/shared/` | 16 | +5 | 2 — `fetch_report_normalization.py:1,167`, `process_memory.py:545` |
+| `src/storage/` | 7 | 0 | 4 — top: `task_runtime.py:703` |
+| `src/scrapers/` | 5 | −4 | 0 |
+| `scripts/` | 51 | +12 | 9 — top: `source_policy_soak_report.py:5,021` |
+
+Large-file counts moved as the coordinator+leaves splits landed: `dedup.py` (1,804→286) and `canonicalize_google_sheets.py` (1,607→45) dropped out of `src/jobs` core, while `src/bridge` grew by the `task_launch_api.py` (2,441) and `pipeline_service.py` split leaves. See §3F for the repo-wide hotspot ranking this snapshot now matches.
 
 **Corrected line counts** (previous estimates confused bytes with lines):
 
@@ -51,6 +57,22 @@ The snapshot below was validated against the repo state on 2026-05-17 before thi
 | `canonicalize.py` ~28k | **831** |
 
 Only 2 files exceed 1,000 lines in src/jobs. The codebase is well-decomposed.
+
+**Refreshed 2026-08-19** (current `wc -l`):
+
+| File | 2026-05-17 | Today |
+|------|-----------|-------|
+| `src/jobs/dedup.py` | 1,319 | **286** (coordinator; split 2026-08-19 — no longer a hotspot) |
+| `src/jobs/canonicalize_google_sheets.py` | n/a (extracted 2026-08-17 from `canonicalize.py`) | **45** (coordinator; split 2026-08-19 into 5 leaves: slug, category, link, provider, title — no longer a hotspot) |
+| `src/jobs/adapters/static_listing.py` | 1,645 | **52** (coordinator; split 2026-08-19 into 7 leaves — `runner` 726 and `traversal` 510 remain >500) |
+| `src/source_registry_io.py` | ~n/a | **146** (coordinator; split 2026-08-19 into paths/load/journal/save leaves — `journal` 603 remains >500) |
+| `src/bridge/ops_api.py` | ~1,474 | **45** (coordinator; split 2026-08-19 into 5 mixin leaves — `core` 469, `health` 433, `task_state` 463, `live` 155, `reports` 72; no longer a hotspot) |
+| `src/jobs/reporting_dedup_evidence.py` | 3,641 | **1,133** |
+| `src/jobs/state_lifecycle.py` | ~n/a | **1,121** |
+| `src/jobs/pipeline_source_results.py` | 721 | **807** |
+| `src/jobs/canonicalize.py` | 831 | **150** (thin coordinator post-split) |
+
+**2 files now exceed 1,000 lines in `src/jobs` core** (reporting_dedup_evidence, state_lifecycle). `dedup.py`, `canonicalize_google_sheets.py`, and `static_listing.py` dropped out after their 2026-08-19 splits (`static_listing.py` is now a 52-line coordinator; its `runner`/`traversal` leaves are 726/510). The largest files under `src/jobs` are now `reporting_dedup_evidence.py` (1,133) and `state_lifecycle.py` (1,121); the largest `src/jobs/adapters/` files are `provider_structured_listing.py` (860) and `location_rules.py` (856) — see §3F.
 
 ---
 
@@ -241,7 +263,7 @@ Two root-setting sites (source_discovery):
 
 ## 3. Consolidation Candidates
 
-### 3A. `reporting_dedup_evidence.py` (3,641 lines, 122 functions, 2 public)
+### 3A. `reporting_dedup_evidence.py` (3,641 lines at analysis time — **1,133 today**, item 11 done)
 
 Internal structure:
 | Section | Lines | Helpers |
@@ -264,11 +286,17 @@ Internal structure:
 
 These are in the bridge subsystem. Not part of the jobs pipeline refactoring, but worth noting as decomposition targets for a future bridge-focused pass.
 
+**2026-08-19 refresh**: both are now done — `registry_conflicts.py` decomposed 2026-05-26 into `registry_conflicts_{row,automation,demotions,summary}.py` (coordinator 489 lines; `automation` 1,544 was split 2026-08-19 into a 252-line coordinator + 4 leaves; `row` 1,401 → 1,313 was split the same session into a 139-line coordinator + 6 leaves (`registry_conflicts_row_{core,identity,path,source_state,adjudication,audit}.py`, all < 245); `adjudication` 1,128 was split the same session into a 98-line coordinator + 5 leaves (`registry_conflict_adjudication_{core,progress,probe,decide,run}.py`, all < 330) — the largest active bridge file is now `sync_service.py` (1,019)); `task_launch_api.py` split this session (item 15) into a 685-line coordinator + `task_launch_api_{state,contexts,smoke,bootstrap}.py`.
+
 ### 3C. Adapter: `static_listing.py` (1,645 lines), `static_detail_heuristics.py` (907 lines)
 
 Static adapter modules. These are large but are adapter implementations with clear scope. Decomposition deferrable.
 
+**2026-08-19 refresh**: `static_listing.py` grew to **2,237 lines — the largest file in all of `src/`** (+36% since the plan) and was **split the same day** into a 52-line coordinator + 7 leaves (common, state, flow, plugin, rows, traversal, runner — the latter two at 726/510). `static_detail_heuristics.py` grew to **1,153** (largest file under `src/jobs/adapters/`) and was **split the same day** into a 33-line coordinator + 4 leaves (`static_detail_heuristics_{config,filter,parse,entry}.py`, all < 490; the `extract_rendered_card_jobs` alias stays in the coordinator; 11-name re-export surface via `ruff.toml` per-file-ignore; the two `parse_jobpostings_from_html` monkeypatch seams in `test_detail_fallback.py` retargeted to the entry leaf where `process_detail_html` resolves it).
+
 ### 3D. `pipeline_run_setup.py` (508 lines) — Near threshold, but extracted helpers would need to be shared
+
+**2026-08-19 refresh**: grew to **712 lines** — item 12's revisit trigger fired (scanner score 55); evaluated as a single-function complexity problem (`prepare_pipeline_run` is 468 lines) and Option A internal-stage extraction was proposed, not yet implemented.
 
 ### 3E. `__init__.py` files
 
@@ -280,6 +308,86 @@ Static adapter modules. These are large but are adapter implementations with cle
 | `src/jobs/adapters/__init__.py` | Adapter registry + source loader orchestration | ~250 |
 
 The `src/jobs/adapters/__init__.py` (250 lines) contains `default_source_loaders()` and `EXTRACTED_ADAPTERS` — this is non-trivial logic, not just a facade. **Keep as-is**.
+
+### 3F. Current Hotspot Ranking (refreshed 2026-08-19)
+
+From the current `analyze_refactorability.py` run: **109 files ≥ 500 lines**. The tool's top-10 is now **size-primary** (line count descending, score only a tiebreak — changed 2026-08-19), so the largest pure-size files surface instead of being hidden behind runtime-named files. The table below is the tool's exact top-10 output; scoring is `size: 25/50` + `runtime-hotspot: 30` (name-match on runtime/app/domain/orchestrator/bridge/pipeline/main).
+
+**Tool top-10 (size-primary):**
+
+| # | File | Lines | Score |
+|---|------|-------|-------|
+| 1 | `src/source_discovery/gamedevmap_active_dry_run.py` | 2,087 | 50 |
+| 2 | `src/source_sync_shard.py` | 1,525 | 50 |
+| 3 | `src/source_sync_snapshot.py` | 1,345 | 50 |
+| 4 | `src/ship/packaged_smoke/rehearsal_browser.py` | 1,341 | 50 |
+| 5 | `src/source_discovery/active_audit_runtime.py` | 1,337 | 80 |
+| 6 | `src/source_discovery/web_search_candidates.py` | 1,263 | 50 |
+| 7 | `src/fetch_incremental_sanity_benchmark.py` | 1,171 | 50 |
+| 8 | `src/shared/fetch_report_normalization.py` | 1,167 | 50 |
+| 9 | `src/jobs/reporting_dedup_evidence.py` | 1,133 | 50 |
+| 10 | `src/jobs/state_lifecycle.py` | 1,121 | 50 |
+
+**Full tier breakdown** (same scoring, all tiers):
+
+**Score 80 — high-risk size + runtime name (3 files):**
+
+| File | Lines |
+|------|-------|
+| `src/source_discovery/active_audit_runtime.py` | 1,337 |
+| `src/ship/runtime_launcher.py` | 1,103 |
+| `src/source_discovery/orchestrator_generation.py` | 1,031 |
+
+All three are in sensitive/separate-scope subsystems (`src/source_discovery/`, `src/ship/`) — the plan's existing deferral stance applies; the jobs-side runtime-name files dropped out of the 80 tier as the coordinators shrank.
+
+**Score 55 — oversized + runtime name (16 files, all listed):**
+
+| File | Lines |
+|------|-------|
+| `src/jobs/pipeline_source_results.py` | 807 |
+| `src/ship/packaged_smoke/orchestrator.py` | 759 |
+| `src/source_sync_runtime.py` | 719 |
+| `src/jobs/pipeline_run_setup.py` | 712 (item 12) |
+| `src/jobs/pipeline_finalize.py` | 703 (coordinator) |
+| `src/storage/task_runtime.py` | 703 |
+| `src/source_registry_auto_approval.py` | 644 |
+| `src/jobs/pipeline_runtime_writers.py` | 643 |
+| `src/admin_bridge.py` | 626 |
+| `src/bridge/pipeline_service_control.py` | 568 |
+| `src/storage/source_registry_runtime.py` | 558 |
+| `src/jobs/pipeline_runtime_summary.py` | 554 |
+| `src/pipeline_audit.py` | 537 |
+| `src/source_discovery/orchestrator_probe.py` | 511 |
+| `src/storage/job_runtime.py` | 505 |
+| `src/bridge/pipeline_service_stages.py` | 503 |
+
+**Score 50 — high-risk size only (17 files):** the pure-size tier. These are the actual largest files in the repo and the natural next split targets:
+
+| File | Lines | Notes |
+|------|-------|-------|
+| `src/source_discovery/gamedevmap_active_dry_run.py` | 2,087 | **Largest file in `src/` now** |
+| `src/source_sync_shard.py` | 1,525 | Separate scope |
+| `src/source_sync_snapshot.py` | 1,345 | Separate scope |
+| `src/ship/packaged_smoke/rehearsal_browser.py` | 1,341 | Ship |
+| `src/source_discovery/web_search_candidates.py` | 1,263 | Separate scope |
+| `src/fetch_incremental_sanity_benchmark.py` | 1,171 | |
+| `src/shared/fetch_report_normalization.py` | 1,167 | Shared |
+| `src/jobs/reporting_dedup_evidence.py` | 1,133 | Item 11 done; size is now split leaves |
+| `src/jobs/state_lifecycle.py` | 1,121 | |
+| `src/container_gateway.py` | 1,084 | |
+| `src/bridge/sync_service.py` | 1,019 | Bridge |
+| `src/source_discovery/directory_page_recovery.py` | 1,017 | Separate scope |
+| `src/jobs/adapters/plugins/static/_rendered_cards.py` | 990 | Plugins are keep-as-is per guardrails |
+| `src/bridge/registry_service.py` | 963 | Bridge |
+| `src/jobs/adapters/parsers/json_payloads.py` | 913 | Adapter |
+| `src/jobs/adapters/parsers/location.py` | 910 | Adapter |
+| `src/ship/desktop_app/_windows.py` | 900 | Ship (paired with `_linux.py` 718) |
+
+**Jobs-side takeaway**: `dedup.py` (1,804), `canonicalize_google_sheets.py` (1,607), `static_listing.py` (2,237), and `static_detail_heuristics.py` (1,153) were split 2026-08-19 into coordinators + leaves and are no longer hotspots; the top remaining jobs-side targets are `reporting_dedup_evidence.py` (1,133, item 11's split leaves) and `state_lifecycle.py` (1,121) — neither flagged for monkeypatch or route-contract surface.
+
+**Bridge-side**: `registry_conflicts_automation.py` (1,544) was split the same day into a 252-line coordinator + 4 leaves (triage/eligibility/provider/static, all < 500) — no longer a hotspot — and `registry_conflicts_row.py` trimmed to 1,313 (dead duplicated `TRIAGE_BUCKETS`/`REVIEW_QUEUES` constants removed). `ops_api.py` (1,474) was split the same day into a 45-line coordinator + 5 mixin leaves (`ops_api_{core,reports,live,health,task_state}.py`, all < 500) using the `task_launch_api.py` mixin pattern — no longer a hotspot. `discovery_service.py` (1,162) was split the same day into a 34-line coordinator + 6 mixin leaves (`discovery_service_{core,config,launch,lifecycle,registry,watch}.py`, all < 330; cross-mixin surface stubbed in the core leaf's `DiscoveryServiceState`) — no longer a hotspot. `task_lifecycle.py` (1,153) was split the same day into a 62-line coordinator + 5 leaves (`task_lifecycle_{core,compact,rows,runs,legacy}.py`, all < 350; the `_compact_*`/`_legacy_*` helper chains moved to helper leaves, the class to mixin leaves via `--class-methods`, cross-mixin surface stubbed in the core leaf's `TaskLifecycleState`) — no longer a hotspot. `registry_conflict_adjudication.py` (1,128) was split the same session into a 98-line coordinator + 5 leaves (`registry_conflict_adjudication_{core,progress,probe,decide,run}.py`, all < 330; function-leaf pattern, `_AdjudicationProgress` moved whole into the progress leaf, the verbatim `__all__` tail folded into the run leaf per the fidelity checker's unit rules, coordinator's own `__all__` sits before its first matched unit) — no longer a hotspot. `registry_conflicts_row.py` (1,313) was split the same session into a 139-line coordinator + 6 leaves (`registry_conflicts_row_{core,identity,path,source_state,adjudication,audit}.py`, all < 245; the coordinator keeps the 23 `SAFE_AUTO_*`/`RESOLVED_PENDING_DEMOTION_REASONS` constants and the full 73-name re-export surface via `ruff.toml` per-file-ignore, mirroring the `admin_bridge.py` re-export hub; `_row_urls` moved into the core leaf to break the core↔identity cycle; the fidelity original was reconstructed as HEAD-minus-the-dead-`TRIAGE_BUCKETS`/`REVIEW_QUEUES`-blocks, validated 87/87 against the leaves before the full 110/110 run) — no longer a hotspot; the largest active bridge file is now `sync_service.py` (1,019).
+
+**Split verification**: any split of the files above must follow the fidelity-checker standard in §10 (`verify_split_fidelity.py` pre/post + the five-point checklist) instead of ad-hoc snapshot hashing.
 
 ---
 
@@ -329,40 +437,40 @@ This matches only bare package imports (`from src.jobs import X`, `import src.jo
 
 ### Phase 1: Quick Wins (~4h total, revised upward from ~2h after 2026-05-29 loophole audit)
 
-| # | Action | Risk | Files Changed | Lines | Effort |
-|---|--------|------|---------------|-------|--------|
-| 1 | **Remove `state.py` facade** (72 lines), update 7 source consumers + 2 test consumers + `__init__.py` cleanup + 3 package-import test files | Low | 12 | ~150 | ~1.5h |
-| 2 | **Remove `parsers.py` shim** (74 lines), rewrite `fetcher_compat_exports.py` compat table (29 entries → 4 targeted blocks + 1 inline wrapper), update 2 direct source consumers + 1 test consumer + `__init__.py` cleanup | Low | 6 | ~130 | ~2h |
-| 3 | **Fix the `analyze_refactorability.py` regex** — change `^from\s+src\.jobs\b\|^import\s+src\.jobs\b` to `^from\s+src\.jobs\s+import\b\|^import\s+src\.jobs\s*$` to eliminate 4 false positives on both `from` and `import` sides | Low | 1 | ~1 | ~10min |
-| 4 | **Fix `_clean_text`/`_norm_text` false alarm** — add doc comment to normalizers.py explaining circular import workaround | None | 1 | ~4 | ~5min |
-| 5 | **Extract `_as_list`/`_as_dict`/`_as_dict_rows`** to `src/shared/utils.py` — remove 4/3/2 copies across modules (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) | Low | 5 | ~40 | ~30min |
+| # | Action | Risk | Files Changed | Lines | Effort | Status |
+|---|--------|------|---------------|-------|--------|--------|
+| 1 | **Remove `state.py` facade** (72 lines), update 7 source consumers + 2 test consumers + `__init__.py` cleanup + 3 package-import test files | Low | 12 | ~150 | ~1.5h | ✅ Done — `state.py` no longer exists |
+| 2 | **Remove `parsers.py` shim** (74 lines), rewrite `fetcher_compat_exports.py` compat table (29 entries → 4 targeted blocks + 1 inline wrapper), update 2 direct source consumers + 1 test consumer + `__init__.py` cleanup | Low | 6 | ~130 | ~2h | ✅ Done — shim removed; `adapters/parsers/` is a package (`json_payloads.py`, `location.py`) |
+| 3 | **Fix the `analyze_refactorability.py` regex** — change `^from\s+src\.jobs\b\|^import\s+src\.jobs\b` to `^from\s+src\.jobs\s+import\b\|^import\s+src\.jobs\s*$` to eliminate 4 false positives on both `from` and `import` sides | Low | 1 | ~1 | ~10min | ✅ Done — scanner now uses the proposed `^from\s+{root}\s+import\b\|^import\s+{root}\s*$` form; 0 boundary violations |
+| 4 | **Fix `_clean_text`/`_norm_text` false alarm** — add doc comment to normalizers.py explaining circular import workaround | None | 1 | ~4 | ~5min | ✅ Done — circular-import comment added above the duplicates in `src/jobs/normalizers.py` |
+| 5 | **Extract `_as_list`/`_as_dict`/`_as_dict_rows`** to `src/shared/utils.py` — remove 4/3/2 copies across modules (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) | Low | 5 | ~40 | ~30min | ✅ Done (2026-08-19) — canonical helpers already existed in `src/shared/json_shapes.py`; 21 files + 6 consumers consolidated onto them |
 
 ### Phase 2: Medium Effort (30-60 min each)
 
-| # | Action | Risk | Files Changed | Lines |
-|---|--------|------|---------------|-------|
-| 6 | **Consolidate `build_excluded_source_report`** — unify 2 versions (pipeline_loader_selection.py and state_source_records.py) | Low | 2 | ~20 |
-| 7 | **Merge `fetcher_compat_exports.py` into `jobs_fetcher.py`** (223 lines moved, no logic change) | Low | 2 | ~0 delta |
-| 8 | **Merge `fetcher_compat_runtime.py` into `jobs_fetcher.py`** (68 lines moved, no logic change) | Low | 2 | ~0 delta |
-| 9 | **Unify root injection** — eliminate Points B (pipeline_stage_source_execution) and C (pipeline_source_loop fallback); all 4 root-dependent modules point to jobs_fetcher | Medium | 5 | ~100 |
-| 10 | **Extract shared guard in `state_incremental.py`** — both should_skip functions share `consecutiveFailures` check | Low | 1 | ~15 |
+| # | Action | Risk | Files Changed | Lines | Status |
+|---|--------|------|---------------|-------|--------|
+| 6 | **Consolidate `build_excluded_source_report`** — unify 2 versions (pipeline_loader_selection.py and state_source_records.py) | Low | 2 | ~20 | ✅ Done (2026-08-19) — single helper in `state_source_records.py` with the `static_source::` fallback folded in |
+| 7 | **Merge `fetcher_compat_exports.py` into `jobs_fetcher.py`** (223 lines moved, no logic change) | Low | 2 | ~0 delta | ✅ Done (2026-08-19) — merged as the in-facade `_COMPAT_MODULE_EXPORTS` table (116 entries); facade guardrail pins updated |
+| 8 | **Merge `fetcher_compat_runtime.py` into `jobs_fetcher.py`** (68 lines moved, no logic change) | Low | 2 | ~0 delta | Open — still a separate module; carries root-monkeypatch seams + facade-budget tradeoff |
+| 9 | **Unify root injection** — eliminate Points B (pipeline_stage_source_execution) and C (pipeline_source_loop fallback); all 4 root-dependent modules point to jobs_fetcher | Medium | 5 | ~100 | Open — root injection still in `pipeline_source_{loop,progress,results}.py` |
+| 10 | **Extract shared guard in `state_incremental.py`** — both should_skip functions share `consecutiveFailures` check | Low | 1 | ~15 | ✅ Done (2026-08-19) — `_has_consecutive_failures` helper extracted |
 
 ### Phase 3: Larger Effort (1-2 hours each)
 
-| # | Action | Risk | Description |
-|---|--------|------|-------------|
-| 11 | **Split `reporting_dedup_evidence.py`** (3,641 lines) into 5 sub-modules | Medium | Extract bundle_shapes, identity_quality, provider_static, review_queue, audit_gate |
-| 12 | **Review `pipeline_run_setup.py`** (508 lines) for helper extraction | Low | Currently manageable, revisit if it grows |
-| 13 | **Investigate 16 unreferenced scripts** (~7,600 lines total) | Low | Archive or document `source_policy_soak_report.py` (3,711 lines) and others |
+| # | Action | Risk | Description | Status |
+|---|--------|------|-------------|--------|
+| 11 | **Split `reporting_dedup_evidence.py`** (3,641 lines) into 5 sub-modules | Medium | Extract bundle_shapes, identity_quality, provider_static, review_queue, audit_gate | ✅ Done — 1,133 lines today; no longer a hotspot |
+| 12 | **Review `pipeline_run_setup.py`** (508 lines) for helper extraction | Low | Currently manageable, revisit if it grows | ⚠️ Revisit triggered (2026-08-19) — grew to **712 lines**, crossed the 500-line warning threshold (scanner score 55) |
+| 13 | **Investigate 16 unreferenced scripts** (~7,600 lines total) | Low | Archive or document `source_policy_soak_report.py` (3,711 lines) and others | ✅ Done (2026-08-19) — re-audited: 12 of 16 are live/documented; 4 one-off tools archived to `scripts/archive/` (see `scripts/ARCHIVED_SCRIPTS.md`) |
 
 ### Phase 4: Deferred
 
-| # | Action | Scope | Notes |
-|---|--------|-------|-------|
-| 14 | Decompose `registry_conflicts.py` (3,599 lines) | Bridge | Bridge-specific, out of jobs scope |
-| 15 | Decompose `task_launch_api.py` (2,377 lines) | Bridge | Bridge-specific, out of jobs scope |
-| 16 | Simplify `jobs_fetcher.py` dynamic dispatch for 100+ symbols | Jobs | Could use direct imports instead of __getattr__ |
-| 17 | Evaluate `static_listing.py` (1,645 lines) decomposition | Adapters | Not urgent, well-scoped |
+| # | Action | Scope | Notes | Status |
+|---|--------|-------|-------|--------|
+| 14 | Decompose `registry_conflicts.py` (3,599 lines) | Bridge | Bridge-specific, out of jobs scope | ✅ Done (2026-05-26) — split into `registry_conflicts_{row,automation,demotions,summary}.py`; coordinator is 489 lines |
+| 15 | Decompose `task_launch_api.py` (2,377 lines) | Bridge | Bridge-specific, out of jobs scope | ✅ Done (2026-08-19) — split into 685-line coordinator + `task_launch_api_{state,contexts,smoke,bootstrap}.py`; bridge call sites + monkeypatch seams preserved |
+| 16 | Simplify `jobs_fetcher.py` dynamic dispatch for 100+ symbols | Jobs | Could use direct imports instead of __getattr__ | Open — compat table is now in-facade with **116 entries** (post item 7); dynamic dispatch is guardrail-pinned as the compat surface |
+| 17 | Evaluate `static_listing.py` (1,645 lines) decomposition | Adapters | Not urgent, well-scoped | ✅ Done (2026-08-19) — split 2,237 → 52-line coordinator + 7 leaves |
 
 ## 7. Potentially Dead Scripts (16 scripts, ~7,600 lines)
 
@@ -391,33 +499,104 @@ These may be invoked manually by developers or through the bridge task system. `
 
 **Verdict**: Investigate whether these can be archived. If all are developer tools, consider an `ARCHIVED_SCRIPTS.md` or move to a `scripts/archive/` directory.
 
+**Re-audited 2026-08-19 (item 13)**: the "unreferenced" claim was largely stale. 12 of the 16 have tests, CI/config references, or runbook documentation and are kept; the 4 one-off tools with no reference path (`repro_discovery_spawn.py`, `generate_report.py`, `game_studios_sheet_funnel.py`, `refresh_url_patches.py`) were moved to `scripts/archive/` with recovery instructions in `scripts/ARCHIVED_SCRIPTS.md`.
+
 ## 8. Bridge Large Files (Separate Scope)
 
-These are in the bridge subsystem — not part of jobs pipeline but worth noting:
+These are in the bridge subsystem — not part of jobs pipeline but worth noting. **All 20 files > 500 lines** (live `wc -l`, 2026-08-19; 19 direct + `routes/post_routes_admin.py` nested):
 
 | File | Lines | Role |
 |------|-------|------|
-| `registry_conflicts.py` | 3,599 | Registry conflict detection |
-| `task_launch_api.py` | 2,377 | Bridge task launch API |
-| `registry_conflict_adjudication.py` | 1,120 | Conflict adjudication |
-| `sync_service.py` | 1,021 | Sync service |
-| `pipeline_service.py` | 941 | Pipeline service |
+| `sync_service.py` | 1,019 | Sync service |
+| `registry_service.py` | 963 | Registry service |
+| `admin_entrypoint_services.py` | 879 | Admin entrypoint services |
+| `ops_health.py` | 868 | Ops health panel services |
+| `task_launch_api_bootstrap.py` | 808 | Task-launch bootstrap leaf (history/staging) |
+| `run_history_api.py` | 751 | Run history API |
+| `task_launch_api_smoke.py` | 722 | Task-launch packaged-smoke leaf |
+| `routes/post_routes_admin.py` | 718 | Admin POST routes (nested in `routes/`) |
+| `lifecycle_cleanup.py` | 703 | Lifecycle cleanup |
+| `task_launch_api.py` | 685 | Coordinator (split 2026-08-19; was 2,441) |
+| `job_availability_service.py` | 635 | Job availability service |
+| `ops_task_fetch_live.py` | 618 | Ops task fetch live |
+| `api.py` | 601 | Bridge API |
+| `source_probe_evidence.py` | 595 | Source probe evidence |
+| `active_task_snapshot.py` | 575 | Active task snapshot |
+| `task_abort_service.py` | 575 | Task abort service |
+| `pipeline_service_control.py` | 568 | Pipeline service control (leaf) |
+| `report_normalizer.py` | 519 | Report normalizer |
+| `task_launch_jobs_feed.py` | 516 | Task-launch jobs feed leaf |
+| `pipeline_service_stages.py` | 503 | Pipeline service stages (leaf) |
+
+*(Table refreshed 2026-08-19 — `registry_conflicts.py` 3,599 and `task_launch_api.py` 2,377 no longer exist as monoliths; `registry_conflicts_automation.py` (1,544) is now a 252-line coordinator + 4 leaves (all < 500), `registry_conflicts_row.py` (1,313) is now a 139-line coordinator + 6 leaves (all < 245), `ops_api.py` (1,474) split into a 45-line coordinator + 5 mixin leaves (all < 500), and `registry_conflict_adjudication.py` (1,128) split into a 98-line coordinator + 5 leaves (`registry_conflict_adjudication_{core,progress,probe,decide,run}.py`, all < 330); the split leaves above are the current large bridge files. `pipeline_service.py` itself is now a 156-line coordinator, below the cutoff.)*
 
 ## 9. source_discovery Large Files (Separate Scope)
 
+**All 16 files > 500 lines** (live `wc -l`, 2026-08-19):
+
 | File | Lines | Role |
 |------|-------|------|
-| `gamedevmap_active_dry_run.py` | 2,174 | Game dev map active dry run |
-| `active_audit_runtime.py` | 1,318 | Active audit runtime |
-| `web_search_candidates.py` | 1,256 | Web search candidates |
-| `orchestrator_generation.py` | 1,023 | Orchestrator generation |
+| `gamedevmap_active_dry_run.py` | 2,087 | Game dev map active dry run |
+| `active_audit_runtime.py` | 1,337 | Active audit runtime (hotspot score 80) |
+| `web_search_candidates.py` | 1,263 | Web search candidates |
+| `orchestrator_generation.py` | 1,031 | Orchestrator generation (hotspot score 80) |
+| `directory_page_recovery.py` | 1,017 | Directory page recovery |
+| `provider_migration_advisory.py` | 829 | Provider migration advisory |
+| `probe.py` | 715 | Source probe |
+| `sheet_directory.py` | 704 | Sheet directory |
+| `gamesmap_candidates.py` | 686 | Gamesmap candidates |
+| `gamesmap_parsing.py` | 639 | Gamesmap parsing |
+| `reporting_backlog.py` | 616 | Reporting backlog |
+| `gameprog.py` | 599 | Gameprog discovery |
+| `config.py` | 590 | Source discovery config |
+| `browser_recovery.py` | 585 | Browser recovery |
+| `directory_adapter_templates.py` | 513 | Directory adapter templates |
+| `orchestrator_probe.py` | 511 | Orchestrator probe |
+
+*(Table refreshed 2026-08-19 — all 16 files listed, matching the snapshot's source_discovery large-file count.)*
 
 ### NOT Recommended
 - Removing fetcher_compat_* modules (essential for compatibility dispatch)
-- Decomposing `canonicalize.py` (831 lines, reasonable)
-- Decomposing `pipeline_finalize.py` (830 lines, well-organized)
-- Decomposing `pipeline_source_results.py` (721 lines, well-organized)
+- Decomposing `canonicalize.py` (150 lines coordinator, reasonable)
+- Decomposing `pipeline_finalize.py` (703-line coordinator, well-organized)
+- Decomposing `pipeline_source_results.py` (807 lines, well-organized)
 - Touching `src/source_discovery/`, `src/ship/`, `src/storage/`, `src/scrapers/` (separate subsystems)
+
+---
+
+## 10. Split Verification Standard (fidelity checker)
+
+**When to split (decision rule).** Line count alone is never a split trigger. A coordinator+leaves split is justified only when **all three** conditions hold; otherwise leave the file whole and keep it on the §3F ranking:
+
+1. **Size threshold** — the file exceeds **1,000 lines** (the plan's split bar). The ≥500-line "Large Files" tables in §3F/§8/§9 and the `analyze_refactorability.py` listing are inventories, not split triggers: well-organized 500–1,000-line files (e.g. `pipeline_finalize.py` 703, `pipeline_source_results.py` 807) are explicitly **not recommended** to decompose.
+2. **Active subsystem** — the file lives in a subsystem this plan is actively refactoring: `src/jobs/**` (core + adapters) and the bridge files §3F has already committed to splitting. Separate-scope areas — `src/source_discovery/`, `src/ship/`, `src/storage/`, `src/scrapers/`, `scripts/`, and `src/jobs/adapters/plugins/` (keep-as-is per guardrails) — stay out of the split bar unless a separate charter opens them.
+3. **Low seam risk** — the split is cheap on the compatibility surface: no route/bridge-contract surface, no coordinator-owned root-injection seam, and only a small, stable monkeypatch/import surface. Check this before starting, not after: enumerate importers, exported names, and test-patched names, and apply the compatibility-surface rule in [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md). A file with many seams (re-export hubs, root-injection seams, route payload builders, broad test-patching) is not a split target no matter how large — size alone must never drive a risky split.
+
+When only size holds, do **not** split: record the file as size-only/deferred and stop. When all three hold, proceed to the fidelity-checker verification below.
+
+Since the 2026-08-19 coordinator+leaves splits, every split is verified against the byte-exact original with the repo tool `tools/repo_health/bin/verify_split_fidelity.py` — **not** ad-hoc snapshot hashing:
+
+```bash
+# pre-split: confirm the working tree matches git HEAD
+python tools/repo_health/bin/verify_split_fidelity.py src/bridge/foo.py
+
+# post-split: every original def/class/constant must survive unchanged across leaves
+python tools/repo_health/bin/verify_split_fidelity.py src/bridge/foo.py \
+    --leaves src/bridge/foo.py src/bridge/foo_alpha.py src/bridge/foo_beta.py
+```
+
+- Reads the original from `git show HEAD:<original>`; pass `--snapshot FILE` when the original is untracked working-tree state (e.g. a module produced by an earlier uncommitted split). `--manifest-out` writes a JSON report for CI regression pinning.
+- Fingerprints every top-level unit (def/class/constant assignment) and requires each to exist **exactly once** across the leaves with identical byte content (exit 0); reports MISSING / DIFF / AMBIGUOUS / EXTRA (EXTRA is informational).
+- Validated on eleven real splits: `registry_conflicts_automation.py` (53/53), `canonicalize_google_sheets.py` (69/69, **untracked original via `--snapshot`**), `dedup.py` (97/97, zero seams), `ops_api.py` (**25/25 units + 37/37 class methods**, the first mixin-leaf split), `discovery_service.py` (**4/4 units + 37/37 class methods**, the second mixin-leaf split, zero seams), `task_lifecycle.py` (**30/30 units + 32/32 class methods**, the first hybrid split — module-level helper chains to helper leaves + class to mixin leaves, zero seams), `registry_conflict_adjudication.py` (**52/52 units**, function-leaf split; the verbatim `__all__` tail folds into the run leaf's `overlay_adjudication` unit per the checker's unit regex, so the run leaf carries it byte-identically and the coordinator's own `__all__` sits before its first matched unit; two test seams retargeted: `derive_registry_conflict_queue` patch → run leaf, `_probe_row` patch → decide leaf, `probe_source_evidence`/`try_fetch_with_playwright` patches + `_parse_jobs`/`_probe_row` imports → probe leaf), `registry_conflicts_row.py` (**110/110 units**, six-leaf split; the original was the uncommitted trimmed working-tree file, reconstructed as HEAD-minus-the-dead-`TRIAGE_BUCKETS`/`REVIEW_QUEUES`-blocks and validated 87/87 against the leaves before the full `--snapshot` run; zero seam migrations — the 73-name re-export surface and `ruff.toml` per-file-ignore keep all 9 importers unchanged; `_row_urls` moved into the core leaf to break the core↔identity cycle), `static_detail_heuristics.py` (**39/39 units**, four-leaf split into `static_detail_heuristics_{config,filter,parse,entry}.py`; the `extract_rendered_card_jobs` assignment stays in the coordinator and the other 10 names re-export via `ruff.toml` per-file-ignore; two `parse_jobpostings_from_html` monkeypatch seams retargeted to the entry leaf) — all `ALL BYTE-IDENTICAL`; `static_listing.py` (59/65 byte-identical + 6 units differing only by the documented `_sl.` call-time seam imports; the traversal-leaf `process_detail_html` seam was later removed by importing the heuristics leaf directly, moving that unit to byte-identical) and `source_registry_io.py` (91/106 + 15 `_srio.` seam units, incl. the `DATA_DIR` root-injection seam) — every non-identical unit is a seam rewrite, verified by strip-normalization, no content drift.
+- Tool fixes found by running it on the above (2026-08-19): `_git_show_head` now decodes `git show` output as UTF-8 (was locale/cp1252 on Windows → false DIFFs on non-ASCII originals like `static_listing.py`'s 177 non-ASCII bytes); top-level decorators are now unit boundaries owned by the following def/class (a `@dataclass` line was leaking into the preceding unit's slice → spurious DIFF); the summary line's byte-identical count is now honest (owned minus diffed, denominator = ref units). New `--class-methods CLASS` mode fingerprints the composed class's methods individually across mixin leaves (for class-based splits), skipping `raise NotImplementedError`/`...` stubs that mixin state bases use for mypy typing, and the method pass now correctly flips the exit code. All guarded by `tests/test_repo_health_split_fidelity.py` (20 tests, incl. decorator, UTF-8, class-methods, and trailing-`__all__`-fold cases).
+
+Fidelity alone is necessary but not sufficient — every split also verifies:
+
+1. **Re-export surface**: coordinator attrs must `is` the leaf objects (identity check at import time).
+2. **Seams**: monkeypatch-visible names keep call-time `_mod.` resolution through the coordinator; root-injection seams (e.g. the `DATA_DIR` rebind) stay coordinator-owned.
+3. **Complexity baseline**: re-key `scripts/complexity_baseline.json` `path::symbol` entries whose functions moved to a leaf (the gate fails on un-baselined findings).
+4. **Ship-bundle closure**: `test_build_ship_bundle_import_closure.py` pins top-level `src/*.py`; add new top-level leaves there (bridge/`src/**` files are auto-included via `rglob`).
+5. **Full suite + full-project mypy + repo guardrails + precommit gate**, then refresh §3F and the Codebase Snapshot tables when a hotspot is split.
 
 ---
 
@@ -430,7 +609,7 @@ These are in the bridge subsystem — not part of jobs pipeline but worth noting
 | Duplicated type-coercion helpers | **3 functions x 4/3/2 files** | `_as_list`, `_as_dict`, `_as_dict_rows` (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) |
 | Duplicated report builder | **2 files** | `build_excluded_source_report` |
 | Root injection duplication (jobs only) | **4 modules, 3 injection points** | Unify to single point |
-| Large files to split | **1 primary** | `reporting_dedup_evidence.py` (3,641 lines) |
+| Large files to split | **0 primary now** | `reporting_dedup_evidence.py` (done), `dedup.py` (done 2026-08-19), `canonicalize_google_sheets.py` (done), `static_listing.py` (done), `source_registry_io.py` (done), `static_detail_heuristics.py` (done) — remaining >1,000: `state_lifecycle.py` (1,121), see §3F |
 | Potentially dead scripts | **16 scripts (~7,600 lines)** | Investigate `source_policy_soak_report.py` (3,711 lines) |
 | Tool false positives | **4** | `analyze_refactorability.py` regex over-match on both `from` and `import` sides |
 

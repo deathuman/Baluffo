@@ -188,5 +188,5 @@ When adding or modifying documentation:
 - Source code: [`src/`](../src/)
 - Frontend: [`frontend/`](../frontend/)
 - Tests: [`tests/`](../tests/)
-- Scripts: [`scripts/`](../scripts/)
+- Scripts: [`scripts/`](../scripts/) (dead one-off tools archived under [`scripts/archive/`](../scripts/ARCHIVED_SCRIPTS.md))
 - Runtime data/artifacts: [`data/`](../data/), `_out/`
