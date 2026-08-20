@@ -421,7 +421,7 @@ def test_static_detail_fallback_enriches_unknown_rows_from_tokyo_detail_block() 
         return detail_html, False
 
     with mock.patch(
-        "src.jobs.adapters.static_detail_heuristics.parse_jobpostings_from_html",
+        "src.jobs.adapters.static_detail_heuristics_entry.parse_jobpostings_from_html",
         return_value=[
             {
                 "sourceJobId": "static:kojima:environment-artist",
@@ -691,7 +691,7 @@ def test_static_detail_fallback_sanitizes_source_specific_noise_city_values(
         return detail_html, False
 
     with mock.patch(
-        "src.jobs.adapters.static_detail_heuristics.parse_jobpostings_from_html",
+        "src.jobs.adapters.static_detail_heuristics_entry.parse_jobpostings_from_html",
         return_value=[
             {
                 "sourceJobId": f"static:test:{city_token}",
