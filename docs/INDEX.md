@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-08-17 (archive move + plans/snapshots index completeness)
+> - **Last updated:** 2026-08-20 (reporting_dedup_evidence 1,133→12 + state_lifecycle 1,121→38 splits; initial_findings archived)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -70,7 +70,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/registry-summary-desktop-performance-cleanup-report.md`](plans/registry-summary-desktop-performance-cleanup-report.md) | Cleanup Evidence / Performance | You are checking exact registry summary diagnostics, Admin count-basis copy, or the June 2026 desktop startup/page performance benchmark evidence |
 | [`plans/test-reduction-triage.md`](plans/test-reduction-triage.md) | Closeout Baseline / Test Reduction | You are checking the completed May 2026 test-reduction campaign, retained-test rationale, or prerequisites for a new coverage-backed sweep |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Parked Plan / Deferred Follow-Ups | You are deciding whether to restart Saved Job Tracker work, add v2 CRM-style tracking, or revisit deferred Saved-page list-management behavior |
-| [`plans/initial_findings.md`](plans/initial_findings.md) | Plans / Refactoring Inventory | You are doing jobs/fetcher refactoring, consolidation, dead-code triage, or validating analyzer findings from the 2026-05-17 initial refactoring analysis |
+| [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) | Archived / Refactoring Inventory | Historical 2026-05-17 initial refactoring inventory (reporting_dedup_evidence 1,133→12 + state_lifecycle 1,121→38 now done); use git history and [`architecture-ai-map.md`](architecture-ai-map.md) for current routing |
 | [`plans/dedup-pressure-reduction-plan.md`](plans/dedup-pressure-reduction-plan.md) | Plans / Follow-Ups | You are reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable Dedup badge split |
 | [`plans/art-title-repair-quality-gate-plan.md`](plans/art-title-repair-quality-gate-plan.md) | Plans / Follow-Ups | You are fixing Google Sheets title-column parsing, Grackle redirect `Unknown company` repair, misleading exact source-category titles such as `Art`, or the final job-title quality gate |
 | [`plans/provider-discovery-coverage-gap-plan.md`](plans/provider-discovery-coverage-gap-plan.md) | Plans / Follow-Ups | You are improving ATS/provider discovery coverage, provider migration staging evidence, or provider coverage gap reporting without adding Apify |
@@ -136,6 +136,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/linux-compatibility-plan.md`](archive/linux-compatibility-plan.md) | Archived plan | Completed Linux compatibility implementation: all 8 phases shipped to `main` on 2026-05-25 |
 | [`archive/windows-user-data-migration-plan.md`](archive/windows-user-data-migration-plan.md) | Archived plan | Completed Windows packaged user-data migration; shipped to `main` on 2026-05-25 |
 | [`archive/ai-modification-safety-improvements-plan.md`](archive/ai-modification-safety-improvements-plan.md) | Archived plan with closeout | Completed AI modification safety improvements: boundary markers, dedup/conflict/task-launch splits, Admin Ops partition, discovery labels, packaged desktop side-effect labels; deferred §3 typed contracts tracked in closeout |
+| [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) | Archived refactoring inventory | Initial 2026-05-17 refactoring inventory closed 2026-08-20 after reporting_dedup_evidence 1,133→12 (12/12) + state_lifecycle 1,121→38 (45/49+4) + 16 total splits; current routing lives in [`architecture-ai-map.md`](architecture-ai-map.md) |
 
 ## Quick Routing by Goal
 
@@ -151,7 +152,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
 | Update docs | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | [`INDEX.md`](INDEX.md), then the owning authoritative doc |
 | Revisit Saved Job Tracker deferred work | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`frontend/local-data`](../frontend/local-data/), [`testing.md`](testing.md) |
-| Triage refactoring or dead-code candidates | [`plans/initial_findings.md`](plans/initial_findings.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
+| Triage refactoring or dead-code candidates | [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Prepare, validate, or operate Umbrel raw-LAN deployment | [`RELEASE.md`](RELEASE.md) | [`plans/umbrel-raw-lan-deployment-plan.md`](plans/umbrel-raw-lan-deployment-plan.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
 | Fix Google Sheets category title or redirect company leaks | [`plans/art-title-repair-quality-gate-plan.md`](plans/art-title-repair-quality-gate-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |

@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-07-05
+> - **Last updated:** 2026-08-20 (reporting_dedup_evidence 1,133→12 + state_lifecycle 1,121→38 splits; initial_findings archived)
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -24,7 +24,7 @@ This is not a React/Vite app and not a cloud backend.
 
 1. This guide
 2. [`architecture-ai-map.md`](architecture-ai-map.md) only when you need task-to-files routing, ownership detail, or compatibility-surface classification
-3. [`plans/initial_findings.md`](plans/initial_findings.md) when doing refactoring, consolidation, or dead-code triage work
+3. [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) (archived 2026-05-17 inventory; 16 splits now done) when checking historical refactoring provenance for jobs/fetcher consolidation or dead-code triage
 4. One matching contract or workflow doc:
    - [`DATA_CONTRACT.md`](DATA_CONTRACT.md)
    - [`admin-bridge-api.md`](admin-bridge-api.md)
@@ -62,7 +62,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Bridge changes only need backend tests | Verify both Python backend and frontend/runtime callers as needed |
 | UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
-| Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py`) and registry conflict coordinator (`registry_conflicts.py`) were split into leaf modules in 2026-05; public entrypoints remain stable in the coordinator files |
+| Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py` 1,133→12, 12/12) and lifecycle coordinator (`state_lifecycle.py` 1,121→38, 45/49+4 via `_sl.`) plus `registry_conflicts.py` were split into leaf modules (2026-05 through 2026-08-20); public entrypoints remain stable in the coordinator files |
 
 ## Verification Shortcuts
 

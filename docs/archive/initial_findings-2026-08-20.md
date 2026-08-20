@@ -1,11 +1,14 @@
-# Initial Refactoring Findings Plan
+# Initial Refactoring Findings — Archived 2026-08-20
 
-> - **Status:** Active plan, advisory-only
-> - **Use this when:** doing jobs/fetcher refactoring, consolidation, dead-code triage, or validating refactorability analyzer findings from the 2026-05-17 analysis
-> - **Canonical for:** the 2026-05-17 initial refactoring target inventory, known analyzer false positives, and suggested sequencing for behavior-preserving cleanup
-> - **Not canonical for:** current runtime contracts, payload shapes, source registry policy, bridge route contracts, or implementation state after any later refactor lands
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-08-20 — `reporting_dedup_evidence 1,133→15` (12/12) + `state_lifecycle 1,121→70` (45/49 + 4 seam diffs via `_sl.`) splits + §3F/snapshot/Findings refresh; when-to-split now **13 files → 0 candidates** (only deferred `sync_service` 1,019 remains ≥1k in an active subsystem). (Earlier 2026-08-20: `reporting_dedup` split + §3F re-verify; 2026-08-19: hotspot refresh + items 5–7,10,13,15 done + §10 rule.)
+> - **Status:** Archived — historical record only (was Active plan, advisory-only)
+> - **Use this when:** checking provenance for the 2026-05-17 analysis or the 16 splits closed through 2026-08-20 (`reporting_dedup_evidence` 1,133→12 + `state_lifecycle` 1,121→38 now done)
+> - **Canonical for:** the 2026-05-17 initial refactoring target inventory as archived; not canonical for current routing
+> - **Not canonical for:** current runtime contracts, payload shapes, source registry policy, bridge route contracts, or implementation state after any later refactor lands — use [`../architecture-ai-map.md`](../architecture-ai-map.md) and [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md) instead
+> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../plans/refactor-charter-template.md`](../plans/refactor-charter-template.md), and [`../testing.md`](../testing.md)
+> - **Last updated:** 2026-08-20 — archived after `reporting_dedup_evidence 1,133→12` (12/12) + `state_lifecycle 1,121→38` (45/49 + 4 seam diffs via `_sl.`) splits + §3F/snapshot/Findings refresh; when-to-split now **13 files → 0 candidates** (only deferred `sync_service` 1,019 remains ≥1k in an active subsystem). (Earlier 2026-08-20: `reporting_dedup` split + §3F re-verify; 2026-08-19: hotspot refresh + items 5–7,10,13,15 done + §10 rule.)
+> - **Location:** `docs/archive/initial_findings-2026-08-20.md` (archived from `docs/plans/initial_findings.md`)
+
+> **Archived 2026-08-20:** 16 splits now done (including the final `reporting_dedup_evidence` and `state_lifecycle` pair). For current file routing and hotspot ranking, use [`architecture-ai-map.md`](../architecture-ai-map.md) and run `python tools/repo_health/bin/analyze_refactorability.py` — do not treat this inventory as the current hotspot list.
 
 ## Summary
 
@@ -17,9 +20,9 @@ Highest-value jobs/fetcher targets:
 - Merge two compatibility helper modules into their owning facade: `src/jobs/fetcher_compat_exports.py` and `src/jobs/fetcher_compat_runtime.py`.
 - Consolidate small duplicated jobs JSON-shape helpers only where semantics are identical.
 - Treat jobs root injection as compatibility debt and avoid expanding it.
-- Split `src/jobs/reporting_dedup_evidence.py` behind its existing public builders. **Done** (2026-08-20 — `1,133 → 15`-line coordinator + 3 leaves `dedup_evidence_review_queue.py:277` + `dedup_evidence_audit_gate_payload.py:300` + `dedup_evidence_bundle_report.py:593`, **12/12 byte-identical**; was 3,641 at analysis time).
+- Split `src/jobs/reporting_dedup_evidence.py` behind its existing public builders. **Done** (2026-08-20 — `1,133 → 12`-line coordinator + 3 leaves `dedup_evidence_review_queue.py:285` + `dedup_evidence_audit_gate_payload.py:302` + `dedup_evidence_bundle_report.py:596`, **12/12 byte-identical**; was 3,641 at analysis time).
 
-**Current (2026-08-20) top remaining targets** — see §3F for the full refreshed ranking: `src/source_discovery/gamedevmap_active_dry_run.py` (2,087) is now the largest file in `src/`; the sole remaining jobs-core hotspot is `src/jobs/state_lifecycle.py` (1,121) (`reporting_dedup_evidence.py` `1,133 → 15` split 2026-08-20 is now done; `dedup.py`, `canonicalize_google_sheets.py`, `static_listing.py`, `source_registry_io.py`, and `static_detail_heuristics.py` were split 2026-08-19 and are no longer hotspots).
+**Current (2026-08-20) top remaining targets** — see §3F for the full refreshed ranking: `src/source_discovery/gamedevmap_active_dry_run.py` (2,087) is now the largest file in `src/`; **no jobs-core hotspot remains — 0 files exceed 1,000 lines in `src/jobs` core** — largest are `src/jobs/state_source_records.py:864` and `src/jobs/pipeline_source_results.py:807` (`reporting_dedup_evidence.py` `1,133 → 12` and `state_lifecycle.py` `1,121 → 38` splits 2026-08-20 are now done; both now 12/38-line coordinators, no longer hotspots; `dedup.py`, `canonicalize_google_sheets.py`, `static_listing.py`, `source_registry_io.py`, and `static_detail_heuristics.py` were split 2026-08-19 and are no longer hotspots).
 
 ## Current Repo Check
 
@@ -32,7 +35,7 @@ The snapshot below was validated against the repo state on 2026-05-17 before thi
 | Area | Files | Δ vs 2026-05-17 | Large Files (>500 lines) |
 |------|-------|-----------------|--------------------------|
 | `src/jobs/` (core) | 70 | +29 | 13 — top: `pipeline_source_results.py:807` |
-| `src/jobs/common/` | 41 | +10 | 8 — top: `dedup_evidence_bundle.py:798` (+ `dedup_evidence_bundle_report.py:593`) |
+| `src/jobs/common/` | 41 | +10 | 8 — top: `dedup_evidence_bundle.py:798` (+ `dedup_evidence_bundle_report.py:596`) |
 | `src/jobs/adapters/` | 27 | +10 | 7 — top: `provider_structured_listing.py:860`, `location_rules.py:856` (+ `static_listing_{runner,traversal}.py` and the 4 `static_detail_heuristics_{config,filter,parse,entry}.py` leaves from the 2026-08-19 split) |
 | `src/jobs/adapters/plugins/` | 5 | −35 | 0 direct — large files live under `plugins/static/` (`_rendered_cards.py:990`), `plugins/social/` |
 | `src/bridge/` | 120 | +69 | 19 — top: `sync_service.py:1,019` |
@@ -43,7 +46,7 @@ The snapshot below was validated against the repo state on 2026-05-17 before thi
 | `src/scrapers/` | 5 | −4 | 0 |
 | `scripts/` | 51 | +12 | 9 — top: `source_policy_soak_report.py:5,021` |
 
-Large-file counts moved as the coordinator+leaves splits landed: `dedup.py` (1,804→286), `canonicalize_google_sheets.py` (1,607→45), `reporting_dedup_evidence.py` (3,641→1,133→15) and `state_lifecycle.py` (1,121→70) dropped out of `src/jobs` core (former 2026-08-20 into `dedup_evidence_review_queue:277` + `audit_gate_payload:300` + `bundle_report:593`; latter 2026-08-20 into `state_lifecycle_{identity:112,availability:223,normalization:238,transitions:284,orchestration:302}`), while `src/bridge` grew by the `task_launch_api.py` (2,441) and `pipeline_service.py` split leaves. See §3F for the repo-wide hotspot ranking this snapshot now matches.
+Large-file counts moved as the coordinator+leaves splits landed: `dedup.py` (1,804→286), `canonicalize_google_sheets.py` (1,607→45), `reporting_dedup_evidence.py` (3,641→1,133→12) and `state_lifecycle.py` (1,121→38) dropped out of `src/jobs` core (former 2026-08-20 into `dedup_evidence_review_queue:285` + `audit_gate_payload:302` + `bundle_report:596`; latter 2026-08-20 into `state_lifecycle_{identity:120,availability:236,normalization:257,transitions:291,orchestration:321}`), while `src/bridge` grew by the `task_launch_api.py` (2,441) and `pipeline_service.py` split leaves. See §3F for the repo-wide hotspot ranking this snapshot now matches.
 
 **Corrected line counts** (previous estimates confused bytes with lines):
 
@@ -67,12 +70,12 @@ Only 2 files exceed 1,000 lines in src/jobs. The codebase is well-decomposed.
 | `src/jobs/adapters/static_listing.py` | 1,645 | **52** (coordinator; split 2026-08-19 into 7 leaves — `runner` 726 and `traversal` 510 remain >500) |
 | `src/source_registry_io.py` | ~n/a | **149** (coordinator; split 2026-08-19 into paths/load/journal/save leaves — all < 500: `load` 465, `journal` 426, `paths` 330, `save` 229) |
 | `src/bridge/ops_api.py` | ~1,474 | **45** (coordinator; split 2026-08-19 into 5 mixin leaves — `core` 469, `health` 433, `task_state` 463, `live` 155, `reports` 72; no longer a hotspot) |
-| `src/jobs/reporting_dedup_evidence.py` | 3,641 | **15** (coordinator; split 2026-08-20 into `dedup_evidence_review_queue.py:277`, `dedup_evidence_audit_gate_payload.py:300`, `dedup_evidence_bundle_report.py:593` — no longer a hotspot) |
-| `src/jobs/state_lifecycle.py` | ~n/a | **70** (coordinator; split 2026-08-20 into `state_lifecycle_{identity:112,availability:223,normalization:238,transitions:284,orchestration:302}.py` — all <500, 45/49 byte-identical + 4 seam diffs) |
+| `src/jobs/reporting_dedup_evidence.py` | 3,641 | **12** (coordinator; split 2026-08-20 into `dedup_evidence_review_queue.py:285`, `dedup_evidence_audit_gate_payload.py:302`, `dedup_evidence_bundle_report.py:596` — no longer a hotspot) |
+| `src/jobs/state_lifecycle.py` | ~n/a | **38** (coordinator; split 2026-08-20 into `state_lifecycle_{identity:120,availability:236,normalization:257,transitions:291,orchestration:321}.py` — all <500, 45/49 byte-identical + 4 seam diffs) |
 | `src/jobs/pipeline_source_results.py` | 721 | **807** |
 | `src/jobs/canonicalize.py` | 831 | **150** (thin coordinator post-split) |
 
-**0 files now exceed 1,000 lines in `src/jobs` core.** `dedup.py`, `canonicalize_google_sheets.py`, `static_listing.py`, `reporting_dedup_evidence.py`, and `state_lifecycle.py` dropped out after their coordinators landed (`static_listing.py` 52, `reporting_dedup_evidence.py` 15, `state_lifecycle.py` 70). The largest files under `src/jobs` are now `pipeline_source_results.py:807` and `pipeline_run_setup.py:713`; the largest `src/jobs/adapters/` files are `provider_structured_listing.py` (860) and `location_rules.py` (856) — see §3F.
+**0 files now exceed 1,000 lines in `src/jobs` core.** `dedup.py`, `canonicalize_google_sheets.py`, `static_listing.py`, `reporting_dedup_evidence.py`, and `state_lifecycle.py` dropped out after their coordinators landed (`static_listing.py` 52, `reporting_dedup_evidence.py` 12, `state_lifecycle.py` 38). The largest files under `src/jobs` are now `state_source_records.py:864` and `pipeline_source_results.py:807` (and `pipeline_run_setup.py:712`); the largest `src/jobs/adapters/` files are `provider_structured_listing.py` (860) and `location_rules.py` (856) — see §3F.
 
 ---
 
@@ -263,7 +266,7 @@ Two root-setting sites (source_discovery):
 
 ## 3. Consolidation Candidates
 
-### 3A. `reporting_dedup_evidence.py` (3,641 lines at analysis time — **15 today** — split 2026-08-20 into `dedup_evidence_review_queue:277` + `dedup_evidence_audit_gate_payload:300` + `dedup_evidence_bundle_report:593`, item 11 done)
+### 3A. `reporting_dedup_evidence.py` (3,641 lines at analysis time — **12 today** — split 2026-08-20 into `dedup_evidence_review_queue:285` + `dedup_evidence_audit_gate_payload:302` + `dedup_evidence_bundle_report:596`, item 11 done)
 
 Internal structure:
 | Section | Lines | Helpers |
@@ -311,7 +314,7 @@ The `src/jobs/adapters/__init__.py` (250 lines) contains `default_source_loaders
 
 ### 3F. Current Hotspot Ranking (refreshed 2026-08-20)
 
-From the current `analyze_refactorability.py` run (re-run 2026-08-20 against the committed tree — after `reporting_dedup 1,133→15` and `state_lifecycle 1,121→70` splits): **108 files ≥ 500 lines** (down from 109). The tool's top-10 is now **size-primary** (line count descending, score only a tiebreak — changed 2026-08-19), so the largest pure-size files surface instead of being hidden behind runtime-named files. The table below is the tool's exact top-10 output; scoring is `size: 25/50` + `runtime-hotspot: 30` (name-match on runtime/app/domain/orchestrator/bridge/pipeline/main).
+From the current `analyze_refactorability.py` run (re-run 2026-08-20 against the committed tree — after `reporting_dedup 1,133→12` and `state_lifecycle 1,121→38` splits): **108 files ≥ 500 lines** (down from 109). The tool's top-10 is now **size-primary** (line count descending, score only a tiebreak — changed 2026-08-19), so the largest pure-size files surface instead of being hidden behind runtime-named files. The table below is the tool's exact top-10 output; scoring is `size: 25/50` + `runtime-hotspot: 30` (name-match on runtime/app/domain/orchestrator/bridge/pipeline/main).
 
 **Tool top-10 (size-primary, after both 2026-08-20 splits):**
 
@@ -361,7 +364,7 @@ All three are in sensitive/separate-scope subsystems (`src/source_discovery/`, `
 | `src/storage/job_runtime.py` | 505 |
 | `src/bridge/pipeline_service_stages.py` | 503 |
 
-**Score 50 — high-risk size only (15 files, after both 2026-08-20 splits):** the pure-size tier. These are the actual largest files in the repo and the natural next split targets (`reporting_dedup_evidence` 15 + `state_lifecycle` 70 are now coordinators; largest leaves `dedup_evidence_bundle_report:593` and `state_lifecycle_orchestration:302` are below this tier):
+**Score 50 — high-risk size only (15 files, after both 2026-08-20 splits):** the pure-size tier. These are the actual largest files in the repo and the natural next split targets (`reporting_dedup_evidence` 12 + `state_lifecycle` 38 are now coordinators; largest leaves `dedup_evidence_bundle_report:596` and `state_lifecycle_orchestration:321` are below this tier):
 
 | File | Lines | Notes |
 |------|-------|-------|
@@ -381,11 +384,11 @@ All three are in sensitive/separate-scope subsystems (`src/source_discovery/`, `
 | `src/jobs/adapters/parsers/location.py` | 910 | Adapter |
 | `src/ship/desktop_app/_windows.py` | 900 | Ship (paired with `_linux.py` 718) |
 
-**Jobs-side takeaway**: `dedup.py` (1,804), `canonicalize_google_sheets.py` (1,607), `static_listing.py` (2,237), `static_detail_heuristics.py` (1,153) were split 2026-08-19; `reporting_dedup_evidence.py` (1,133 → 15) and `state_lifecycle.py` (1,121 → 70) were split 2026-08-20 into coordinators + leaves and are no longer hotspots; **0 files now exceed 1,000 lines in `src/jobs` core** — see snapshot. The largest `src/jobs` file is now `pipeline_source_results.py:807` (and `pipeline_run_setup.py:713`). No jobs-core file is a split candidate — see verdict below.
+**Jobs-side takeaway**: `dedup.py` (1,804), `canonicalize_google_sheets.py` (1,607), `static_listing.py` (2,237), `static_detail_heuristics.py` (1,153) were split 2026-08-19; `reporting_dedup_evidence.py` (1,133 → 12) and `state_lifecycle.py` (1,121 → 38) were split 2026-08-20 into coordinators + leaves and are no longer hotspots; **0 files now exceed 1,000 lines in `src/jobs` core** — see snapshot. The largest `src/jobs` file is now `pipeline_source_results.py:807` (and `pipeline_run_setup.py:713`). No jobs-core file is a split candidate — see verdict below.
 
 **Bridge-side**: `registry_conflicts_automation.py` (1,544) was split the same day into a 252-line coordinator + 4 leaves (triage/eligibility/provider/static, all < 500) — no longer a hotspot — and `registry_conflicts_row.py` trimmed to 1,313 (dead duplicated `TRIAGE_BUCKETS`/`REVIEW_QUEUES` constants removed). `ops_api.py` (1,474) was split the same day into a 45-line coordinator + 5 mixin leaves (`ops_api_{core,reports,live,health,task_state}.py`, all < 500) using the `task_launch_api.py` mixin pattern — no longer a hotspot. `discovery_service.py` (1,162) was split the same day into a 34-line coordinator + 6 mixin leaves (`discovery_service_{core,config,launch,lifecycle,registry,watch}.py`, all < 330; cross-mixin surface stubbed in the core leaf's `DiscoveryServiceState`) — no longer a hotspot. `task_lifecycle.py` (1,153) was split the same day into a 62-line coordinator + 5 leaves (`task_lifecycle_{core,compact,rows,runs,legacy}.py`, all < 350; the `_compact_*`/`_legacy_*` helper chains moved to helper leaves, the class to mixin leaves via `--class-methods`, cross-mixin surface stubbed in the core leaf's `TaskLifecycleState`) — no longer a hotspot. `registry_conflict_adjudication.py` (1,128) was split the same session into a 98-line coordinator + 5 leaves (`registry_conflict_adjudication_{core,progress,probe,decide,run}.py`, all < 330; function-leaf pattern, `_AdjudicationProgress` moved whole into the progress leaf, the verbatim `__all__` tail folded into the run leaf per the fidelity checker's unit rules, coordinator's own `__all__` sits before its first matched unit) — no longer a hotspot. `registry_conflicts_row.py` (1,313) was split the same session into a 139-line coordinator + 6 leaves (`registry_conflicts_row_{core,identity,path,source_state,adjudication,audit}.py`, all < 245; the coordinator keeps the 23 `SAFE_AUTO_*`/`RESOLVED_PENDING_DEMOTION_REASONS` constants and the full 73-name re-export surface via `ruff.toml` per-file-ignore, mirroring the `admin_bridge.py` re-export hub; `_row_urls` moved into the core leaf to break the core↔identity cycle; the fidelity original was reconstructed as HEAD-minus-the-dead-`TRIAGE_BUCKETS`/`REVIEW_QUEUES`-blocks, validated 87/87 against the leaves before the full 110/110 run) — no longer a hotspot; the largest active bridge file is now `sync_service.py` (1,019).
 
-**When-to-split verdict (2026-08-20, §10 rule applied; refreshed after both 2026-08-20 splits).** Of the **13 files ≥ 1,000 lines** in `src/` (down from 15 after `reporting_dedup 1,133→15` and `state_lifecycle 1,121→70`), **0 files meet all three bars**. The only remaining ≥1,000 file in an active subsystem is `sync_service.py` (1,019, bridge) which is **formally deferred** per seam audit (holder singleton + 6 Protocols + `RLock` + `BridgeApi` wiring), not a split candidate. `reporting_dedup` and `state_lifecycle` are now done:
+**When-to-split verdict (2026-08-20, §10 rule applied; refreshed after both 2026-08-20 splits).** Of the **13 files ≥ 1,000 lines** in `src/` (down from 15 after `reporting_dedup 1,133→12` and `state_lifecycle 1,121→38`), **0 files meet all three bars**. The only remaining ≥1,000 file in an active subsystem is `sync_service.py` (1,019, bridge) which is **formally deferred** per seam audit (holder singleton + 6 Protocols + `RLock` + `BridgeApi` wiring), not a split candidate. `reporting_dedup` and `state_lifecycle` are now done:
 
 | File | Lines | Subsystem | Verdict |
 |------|-------|-----------|---------|
@@ -467,8 +470,8 @@ This matches only bare package imports (`from src.jobs import X`, `import src.jo
 
 | # | Action | Risk | Description | Status |
 |---|--------|------|-------------|--------|
-| 11 | **Split `reporting_dedup_evidence.py`** (3,641 lines) into 5 sub-modules | Medium | Extract bundle_shapes, identity_quality, provider_static, review_queue, audit_gate | ✅ Done — **split 2026-08-20: 1,133 → 15-line coordinator** + 3 leaves (`dedup_evidence_review_queue.py:277`, `dedup_evidence_audit_gate_payload.py:300`, `dedup_evidence_bundle_report.py:593`), **12/12 byte-identical**; no longer a hotspot (dropped out of top-10; `dedup_evidence_bundle_report.py:593` is the only new large file in `src/jobs/common/`) |
-| 11b | **Split `state_lifecycle.py`** (1,121 lines) into 5 sibling leaves | Medium | `state_lifecycle_{identity:112,availability:223,normalization:238,transitions:284,orchestration:302}` + coordinator 70 — identity, availability, normalization (`_sl.` seam for `normalize_job_lifecycle_payload`), transitions, orchestration | ✅ Done — **split 2026-08-20: 1,121 → 70-line coordinator** + 5 leaves, **45/49 byte-identical + 4 seam diffs** (`read_job_lifecycle_state`, `read_job_lifecycle_archive_state`, `write_job_lifecycle_archive_state` via `_sl.normalize_job_lifecycle_payload` + `AVAILABILITY_HISTORY_DAYS` const relocation with `fingerprint_url`); retargeted 4 private test imports (`_index_lifecycle_entry_aliases`, `_lifecycle_alias_index`, `_resolve_lifecycle_key` → `state_lifecycle_identity`, `_initialize_carried_lifecycle_rows` → `state_lifecycle_orchestration`); no longer a hotspot (dropped out of top-10; `0` jobs-core files >1k) |
+| 11 | **Split `reporting_dedup_evidence.py`** (3,641 lines) into 5 sub-modules | Medium | Extract bundle_shapes, identity_quality, provider_static, review_queue, audit_gate | ✅ Done — **split 2026-08-20: 1,133 → 12-line coordinator** + 3 leaves (`dedup_evidence_review_queue.py:285`, `dedup_evidence_audit_gate_payload.py:302`, `dedup_evidence_bundle_report.py:596`), **12/12 byte-identical**; no longer a hotspot (dropped out of top-10; `dedup_evidence_bundle_report.py:596` is the only new large file in `src/jobs/common/`) |
+| 11b | **Split `state_lifecycle.py`** (1,121 lines) into 5 sibling leaves | Medium | `state_lifecycle_{identity:120,availability:236,normalization:257,transitions:291,orchestration:321}` + coordinator 70 — identity, availability, normalization (`_sl.` seam for `normalize_job_lifecycle_payload`), transitions, orchestration | ✅ Done — **split 2026-08-20: 1,121 → 70-line coordinator** + 5 leaves, **45/49 byte-identical + 4 seam diffs** (`read_job_lifecycle_state`, `read_job_lifecycle_archive_state`, `write_job_lifecycle_archive_state` via `_sl.normalize_job_lifecycle_payload` + `AVAILABILITY_HISTORY_DAYS` const relocation with `fingerprint_url`); retargeted 4 private test imports (`_index_lifecycle_entry_aliases`, `_lifecycle_alias_index`, `_resolve_lifecycle_key` → `state_lifecycle_identity`, `_initialize_carried_lifecycle_rows` → `state_lifecycle_orchestration`); no longer a hotspot (dropped out of top-10; `0` jobs-core files >1k) |
 | 12 | **Review `pipeline_run_setup.py`** (508 lines) for helper extraction | Low | Currently manageable, revisit if it grows | ⚠️ Revisit triggered (2026-08-19) — grew to **712 lines**, crossed the 500-line warning threshold (scanner score 55) — **deferred per §10** (500–1k not a bar; `pipeline_finalize 703` precedent) |
 | 13 | **Investigate 16 unreferenced scripts** (~7,600 lines total) | Low | Archive or document `source_policy_soak_report.py` (3,711 lines) and others | ✅ Done (2026-08-19) — re-audited: 12 of 16 are live/documented; 4 one-off tools archived to `scripts/archive/` (see `scripts/ARCHIVED_SCRIPTS.md`) |
 
@@ -618,7 +621,7 @@ Fidelity alone is necessary but not sufficient — every split also verifies:
 | Duplicated type-coercion helpers | **3 functions x 4/3/2 files** | `_as_list`, `_as_dict`, `_as_dict_rows` (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) |
 | Duplicated report builder | **2 files** | `build_excluded_source_report` |
 | Root injection duplication (jobs only) | **4 modules, 3 injection points** | Unify to single point |
-| Large files to split | **0 candidates** (when-to-split rule, §3F verdict — 13 files ≥1k) | **16** coordinator+leaves splits done (14 previous 2026-08-19 + **`reporting_dedup_evidence.py` 2026-08-20** `1,133→15` 12/12 + **`state_lifecycle.py` 2026-08-20** `1,121→70` 45/49 + 4 seam diffs); remaining >1,000: `sync_service.py` (1,019) — **formally deferred** (holder singleton + 6 Protocols + `RLock`, see §3F verdict) |
+| Large files to split | **0 candidates** (when-to-split rule, §3F verdict — 13 files ≥1k) | **16** coordinator+leaves splits done (14 previous 2026-08-19 + **`reporting_dedup_evidence.py` 2026-08-20** `1,133→12` 12/12 + **`state_lifecycle.py` 2026-08-20** `1,121→38` 45/49 + 4 seam diffs); remaining >1,000: `sync_service.py` (1,019) — **formally deferred** (holder singleton + 6 Protocols + `RLock`, see §3F verdict) |
 | Potentially dead scripts | **16 scripts (~7,600 lines)** | Investigate `source_policy_soak_report.py` (3,711 lines) |
 | Tool false positives | **4** | `analyze_refactorability.py` regex over-match on both `from` and `import` sides |
 
