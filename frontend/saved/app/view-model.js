@@ -7,29 +7,29 @@ import {
 
 export const SAVED_FILTER_ALL = "all";
 export const SAVED_FILTER_NEEDS_ACTION = "needs_action";
-export const SAVED_FILTER_APPLIED = "applied";
+const SAVED_FILTER_APPLIED = "applied";
 export const SAVED_FILTER_INTERVIEWING = "interviewing";
-export const SAVED_FILTER_OFFER = "offer";
+const SAVED_FILTER_OFFER = "offer";
 export const SAVED_FILTER_CLOSED = "closed";
-export const SAVED_FILTER_DUE_SOON = "due_soon";
-export const SAVED_FILTER_NO_REMINDER = "no_reminder";
-export const SAVED_FILTER_HAS_NOTES = "has_notes";
+const SAVED_FILTER_DUE_SOON = "due_soon";
+const SAVED_FILTER_NO_REMINDER = "no_reminder";
+const SAVED_FILTER_HAS_NOTES = "has_notes";
 export const SAVED_FILTER_HAS_ATTACHMENTS = "has_attachments";
-export const SAVED_FILTER_MISSING_LINK = "missing_link";
-export const SAVED_FILTER_LIKELY_REMOVED = "likely_removed";
-export const SAVED_FILTER_CUSTOM = "custom";
-export const SAVED_FILTER_IMPORTED = "imported";
+const SAVED_FILTER_MISSING_LINK = "missing_link";
+const SAVED_FILTER_LIKELY_REMOVED = "likely_removed";
+const SAVED_FILTER_CUSTOM = "custom";
+const SAVED_FILTER_IMPORTED = "imported";
 export const SAVED_FILTER_AVAILABILITY_ATTENTION = "availability_attention";
 
 export const SORT_UPDATED = "updated";
-export const SORT_SAVED = "saved";
-export const SORT_REMINDER = "reminder";
-export const SORT_PERSONAL = "personal";
+const SORT_SAVED = "saved";
+const SORT_REMINDER = "reminder";
+const SORT_PERSONAL = "personal";
 export const SORT_ACTIVITY = "activity";
-export const SORT_STAGE = "stage";
+const SORT_STAGE = "stage";
 export const REMINDER_SOON_HOURS = 72;
 export const SAVED_GROUP_NONE = "none";
-export const SAVED_GROUP_STAGE = "stage";
+const SAVED_GROUP_STAGE = "stage";
 
 const VALID_FILTERS = new Set([
   SAVED_FILTER_ALL,

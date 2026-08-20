@@ -9,19 +9,63 @@ import {
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
 } from "../../render.js?v=25";
-import {
-  filterSourcePolicyReviewPairs,
-  getMigrationLinkLinkedActions,
-  getMigrationLinkReviewActions,
-  renderAdminSourcePolicyReview
-} from "../../render/source-policy-review.js?v=6";
+import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js?v=6";
 import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js?v=6";
-import { setTooltip } from "../../../shared/ui/index.js?v=6";
 import {
   ACTIVE_ADMIN_TASK_TYPES,
   ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES,
   hasActiveAdminTaskRows
 } from "../active-work-policy.js";
+import { getObjectValue, isPlainObject } from "../../domain/ops-shape-utils.js";
+import {
+  mergeOpsHealth,
+  isDegradedControlFallbackPayload
+} from "../../domain/ops-merge-model.js";
+import {
+  hasActionablePipelineSchedule,
+  normalizePipelineSchedulePayload,
+  hasKnownPipelineSchedule,
+  hasPipelineScheduleNextRun,
+  getPipelineScheduleRenderModel
+} from "../../domain/ops-schedule-model.js";
+import {
+  FETCH_KPI_LOADING_LABEL,
+  buildFetchKpiPendingLabels,
+  maskDeferredFetchKpisForRender,
+  hasFetchKpiValues,
+  markFetchKpisDeferredDuringActiveRun
+} from "../../domain/ops-fetch-kpi-model.js";
+import {
+  getOpsAbortKey,
+  buildOptimisticAbortRow,
+  isAbortAcceptedResult
+} from "../../domain/ops-abort-model.js";
+import {
+  getTaskRowType,
+  getTaskRowRunId,
+  shouldKeepExistingActiveTaskState,
+  buildPipelineTaskStatePayload
+} from "../../domain/ops-pipeline-status-model.js";
+import {
+  OPS_TAB_KEYS,
+  toDiscoveryBadgeState,
+  isLoadedDiscoveryReport,
+  isLoadedDedupPayload,
+  hasRegistrySyncDetails,
+  renderOpsTabBadges
+} from "./health-badges.js";
+import { createHistoryHydration } from "./hydrate-history.js";
+import { createOverviewHydration } from "./hydrate-overview.js";
+import { createPipelineScheduleHydration } from "./hydrate-pipeline-schedule.js";
+import { createTaskStateHydration } from "./hydrate-task-state.js";
+import { createRegistryConflictsHydration } from "./hydrate-registry-conflicts.js";
+import { createFetchKpisHydration } from "./hydrate-fetch-kpis.js";
+import { createDashboardHealthHydration } from "./hydrate-dashboard-health.js";
+import { createPipelineStatusHydration } from "./hydrate-pipeline-status.js";
+import { createActiveOpsHydration } from "./hydrate-active-ops.js";
+import { createRegistrySyncHydration } from "./hydrate-registry-sync.js";
+import { createTabCountsHydration } from "./hydrate-tab-counts.js";
+import { createOpsActions } from "./health-actions.js";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
 const OPS_DASHBOARD_HEALTH_SUMMARY_PATH = "/ops/dashboard-health?view=summary";
@@ -42,13 +86,6 @@ const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
-const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Updating while job is running.";
-const FETCH_KPI_LOADING_LABEL = "Loading latest fetch KPI...";
-const FETCH_KPI_UNAVAILABLE_LABEL = "Not available";
-const FETCH_KPI_NO_SUCCESS_LABEL = "No successful fetch yet";
-const OPS_TAB_BADGE_PENDING_TEXT = "...";
-const OPS_TAB_BADGE_DELAYED_TEXT = "-";
-const OPS_TAB_COUNTS_UNAVAILABLE_LABEL = "Count temporarily unavailable; retrying.";
 const OPS_DEGRADED_ACTIVE_TTL_MS = 30000;
 const OPS_HEAVY_ROUTE_BACKOFF_BASE_MS = 5000;
 const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
@@ -58,329 +95,39 @@ const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
 const ACTIVE_IDLE_RECOVERY_COOLDOWN_MS = 1500;
 
 function historyRunKey(row) {
-  if (!row || typeof row !== "object" || Array.isArray(row)) return "";
-  const direct = String(row.runId || row.id || "").trim();
-  if (direct) return direct;
-  const fallback = [row.type, row.taskId, row.startedAt, row.finishedAt]
-    .map(value => String(value || "").trim())
-    .join("|");
-  return fallback.replace(/^\|+|\|+$/g, "") || JSON.stringify(row);
+  return `${String(row?.taskType || row?.type || "").trim().toLowerCase()}|${String(row?.runId || row?.id || "").trim()}`;
 }
 
-/** Merge bounded history refreshes without discarding an already loaded full cache. */
 export function mergeOpsHistoryPayload(existing, incoming, limit = 80) {
-  const previous = existing && typeof existing === "object" && !Array.isArray(existing)
-    ? existing
-    : {};
-  const next = incoming && typeof incoming === "object" && !Array.isArray(incoming)
-    ? incoming
-    : {};
-  const cap = Math.max(1, Math.min(80, Number(limit) || 80));
-  const previousRows = Array.isArray(previous.runs) ? previous.runs : [];
-  const nextRows = Array.isArray(next.runs) ? next.runs : [];
-  const previousByKey = new Map(
-    previousRows
-      .filter(row => row && typeof row === "object" && !Array.isArray(row))
-      .map(row => [historyRunKey(row), row])
-  );
-  const seenKeys = new Set();
-  const refreshedRows = [];
-  nextRows.forEach(row => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return;
+  const base = getObjectValue(existing);
+  const patch = getObjectValue(incoming);
+  const seen = new Set();
+  const merged = [];
+  [...(Array.isArray(patch?.runs) ? patch.runs : []), ...(Array.isArray(base?.runs) ? base.runs : [])].forEach(row => {
+    if (!row || typeof row !== "object") return;
     const key = historyRunKey(row);
-    if (!key || seenKeys.has(key)) return;
-    seenKeys.add(key);
-    refreshedRows.push({ ...(previousByKey.get(key) || {}), ...row });
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(row);
   });
-  // Newest payload rows lead the list; cached rows not present in the bounded
-  // refresh follow so older/open state survives the refresh.
-  const retainedRows = previousRows.filter(row => !seenKeys.has(historyRunKey(row)));
-  const rows = [...refreshedRows, ...retainedRows];
   return {
-    ...previous,
-    ...next,
-    runs: rows.slice(0, cap)
+    ...base,
+    ...patch,
+    runs: merged.slice(0, Math.max(1, Number(limit) || merged.length)),
+    count: Math.max(0, Number(limit) || merged.length),
+    summaryView: true
   };
 }
 
 function maybeUnrefTimer(timer) {
-  timer?.unref?.();
-  return timer;
-}
-
-const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "registry-conflicts", "dedup"]);
-
-function getObjectValue(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function formatBadgeTitle(count, singular, plural = `${singular}s`) {
-  const total = Math.max(0, Number(count) || 0);
-  return total ? `${total.toLocaleString()} ${total === 1 ? singular : plural}` : `No ${plural}`;
-}
-
-function toAlertBadgeState(alerts = []) {
-  const rows = Array.isArray(alerts) ? alerts : [];
-  const criticalCount = rows.filter(alert => String(alert?.severity || "").toLowerCase() === "critical").length;
-  const count = rows.length;
-  return {
-    count,
-    tone: count > 0 ? (criticalCount > 0 ? "critical" : "warning") : "neutral",
-    title: count > 0 ? formatBadgeTitle(count, "active alert", "active alerts") : "No active alerts"
-  };
-}
-
-function toDiscoveryBadgeState(report = {}) {
-  const review = getObjectValue(report?.candidateReview);
-  const summary = getObjectValue(report?.summary);
-  const counts = getObjectValue(report?.counts);
-  const count = Number(
-    review?.totalCandidates
-    || summary?.queuedCandidateCount
-    || summary?.candidateCount
-    || summary?.newCandidateCount
-    || counts?.candidateCount
-    || counts?.queuedCandidates
-    || 0
-  );
-  return {
-    count,
-    tone: count > 0 ? "warning" : "neutral",
-    title: count > 0 ? formatBadgeTitle(count, "discovery review item", "discovery review items") : "No discovery review items"
-  };
-}
-
-function toSourcePolicyBadgeState(payload = {}) {
-  const rows = Array.isArray(payload?.recommendations?.pairs) ? payload.recommendations.pairs : [];
-  const needsActionCount = filterSourcePolicyReviewPairs(rows, "needs_action").length;
-  const linkBackfill = getObjectValue(payload?.providerCoverageLinkBackfill);
-  const reviewCandidates = Array.isArray(linkBackfill.reviewCandidates) ? linkBackfill.reviewCandidates : [];
-  const linkedCandidates = Array.isArray(linkBackfill.linkedCandidates) ? linkBackfill.linkedCandidates : [];
-  const blockedCandidates = Array.isArray(linkBackfill.blockedCandidates) ? linkBackfill.blockedCandidates : [];
-  const actionableMigrationCount = reviewCandidates.filter(candidate => getMigrationLinkReviewActions(candidate).length > 0).length
-    + linkedCandidates.filter(candidate => getMigrationLinkLinkedActions(candidate).length > 0).length;
-  const count = needsActionCount + actionableMigrationCount + blockedCandidates.length;
-  return {
-    count,
-    tone: blockedCandidates.length > 0 ? "critical" : count > 0 ? "warning" : "neutral",
-    title: count > 0
-      ? formatBadgeTitle(count, "source policy review item", "source policy review items")
-      : "No source policy review items"
-  };
-}
-
-function toDedupBadgeState(dedupEvidence = {}) {
-  const gate = getObjectValue(dedupEvidence?.dedupAuditGate);
-  const providerStaticRows = Array.isArray(dedupEvidence?.providerStaticDisagreementExamples) ? dedupEvidence.providerStaticDisagreementExamples : [];
-  const titleCompanyRows = Array.isArray(dedupEvidence?.providerStaticTitleCompanyCollisionExamples) ? dedupEvidence.providerStaticTitleCompanyCollisionExamples : [];
-  const reviewQueueRows = Array.isArray(dedupEvidence?.reviewQueue) ? dedupEvidence.reviewQueue : [];
-  const reviewCount = providerStaticRows.length + titleCompanyRows.length + reviewQueueRows.length;
-  const nonPrimaryMergeCounts = getObjectValue(gate?.currentRunNonPrimaryMergeCounts);
-  const blockingCount = Math.max(0, Number(gate?.currentRunBlockingReviewQueueCount || 0))
-    + Math.max(0, Number(gate?.carriedBlockingReviewQueueCount || 0))
-    + Math.max(0, Number(gate?.providerStaticDisagreementBlockedCount || 0))
-    + Math.max(0, Number(nonPrimaryMergeCounts?.blocking || 0));
-  const monitorCount = Math.max(0, Number(gate?.currentRunMonitorReviewQueueCount || 0))
-    + Math.max(0, Number(gate?.carriedMonitorReviewQueueCount || 0));
-  const gateCount = Number(gate?.blockers?.length || 0) + Number(gate?.warnings?.length || 0);
-  const count = Math.max(reviewCount, blockingCount, gateCount);
-  return {
-    count,
-    tone: String(gate?.status || "").toLowerCase() === "blocked" || Number(gate?.blockers?.length || 0) > 0
-      ? "critical"
-      : count > 0 || monitorCount > 0
-        ? "warning"
-        : "neutral",
-    title: count > 0
-      ? formatBadgeTitle(count, "dedup blocker", "dedup blockers")
-      : monitorCount > 0
-        ? formatBadgeTitle(monitorCount, "dedup diagnostic", "dedup diagnostics")
-        : "No dedup blockers"
-  };
-}
-
-function pendingBadgeState(title = "Loading count", options = {}) {
-  return {
-    count: 0,
-    tone: String(options?.tone || "pending"),
-    title,
-    loaded: false,
-    pendingText: String(options?.pendingText || OPS_TAB_BADGE_PENDING_TEXT)
-  };
-}
-
-function delayedBadgeState(title = ACTIVE_PIPELINE_KPI_DELAYED_LABEL) {
-  return pendingBadgeState(title, {
-    pendingText: OPS_TAB_BADGE_DELAYED_TEXT
-  });
-}
-
-function normalizeBadgeState(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (value.loaded === false) {
-    return pendingBadgeState(String(value.title || "Loading count"), {
-      tone: value.tone,
-      pendingText: value.pendingText
-    });
-  }
-  return {
-    count: Math.max(0, Number(value.count || 0)),
-    tone: String(value.tone || "neutral"),
-    title: String(value.title || "No items"),
-    loaded: true
-  };
-}
-
-function getSummaryBadgeState(tabCountsPayload, key) {
-  const badges = getObjectValue(tabCountsPayload?.badges);
-  return normalizeBadgeState(badges[key]);
-}
-
-function isLoadedOverviewHealth(health = {}) {
-  if (!health || typeof health !== "object") return false;
-  if (health.alertsEvaluated === true) return true;
-  if (health.summaryView === true) return false;
-  return Array.isArray(health.alerts) || Boolean(health.status);
-}
-
-function isLoadedDiscoveryReport(report = {}) {
-  if (!report || typeof report !== "object") return false;
-  const count = toDiscoveryBadgeState(report).count;
-  return count > 0
-    || Boolean(report.candidateReview)
-    || Array.isArray(report.candidates)
-    || Array.isArray(report.failures)
-    || (
-      report.summaryView === true
-      && Boolean(report.runId || report.startedAt || report.finishedAt || report.status)
-    );
-}
-
-function isLoadedSourcePolicyPayload(payload = {}) {
-  if (!payload || typeof payload !== "object") return false;
-  return Boolean(payload.recommendations)
-    || Boolean(payload.providerCoverageLinkBackfill)
-    || Array.isArray(payload.warnings);
-}
-
-function isLoadedRegistryConflictsPayload(payload = {}) {
-  if (!payload || typeof payload !== "object") return false;
-  const status = String(payload.summaryStatus || "").toLowerCase();
-  if (status === "pending") return false;
-  return Boolean(status)
-    || Boolean(payload.summary)
-    || Array.isArray(payload.conflicts);
-}
-
-function isLoadedDedupPayload(payload = {}) {
-  const dedupEvidence = getObjectValue(payload?.latestRun?.dedupEvidence);
-  return Object.keys(dedupEvidence).length > 0;
-}
-
-const REGISTRY_SYNC_DETAIL_FIELDS = [
-  "activeCount",
-  "pendingCount",
-  "hiddenPendingCount",
-  "deferredPendingCount",
-  "ignoredRejectedCount",
-  "ignoredTombstonedCount",
-  "lastSyncAt",
-  "lastSyncStatus",
-  "pulledCount",
-  "pushedCount",
-  "conflictCount",
-  "invalidRowsCount"
-];
-
-function hasRegistrySyncDetails(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return REGISTRY_SYNC_DETAIL_FIELDS.every(field => (
-    Object.prototype.hasOwnProperty.call(value, field)
-  ));
-}
-
-function renderOpsTabBadges(refs, {
-  health = {},
-  discoveryReport = null,
-  sourcePolicyRecommendations = {},
-  registryConflictsPayload = {},
-  fetcherMetricsPayload = {},
-  tabCountsPayload = null,
-  activePipelineOrFetch = false,
-  tabCountsUnavailable = false
-} = {}) {
-  const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
-  if (!badges.length) return;
-  const discovery = discoveryReport && typeof discoveryReport === "object"
-    ? discoveryReport
-    : {};
-  const dedupEvidence = getObjectValue(fetcherMetricsPayload?.latestRun?.dedupEvidence);
-  const registryConflictsSummary = getObjectValue(registryConflictsPayload?.summary);
-  const registrySummaryStatus = String(registryConflictsPayload?.summaryStatus || "").toLowerCase();
-  const registryConflictCount = Number(registryConflictsSummary?.conflictCount || 0);
-  const registryConflictBadgeState = registrySummaryStatus === "pending"
-    ? {
-        count: 0,
-        tone: "pending",
-        title: "Registry conflict summary pending",
-        loaded: false
-      }
-    : registrySummaryStatus === "unavailable"
-      ? {
-        count: 0,
-        tone: "neutral",
-        title: "Registry conflict summary unavailable",
-        loaded: true
-      }
-    : {
-        count: registryConflictCount,
-        tone: registryConflictCount > 0 ? "warning" : "neutral",
-        title: registryConflictCount > 0
-          ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
-          : "No registry conflicts"
-    };
-  const pendingBadge = title => (
-    activePipelineOrFetch
-      ? delayedBadgeState()
-      : tabCountsUnavailable
-        ? pendingBadgeState(OPS_TAB_COUNTS_UNAVAILABLE_LABEL, {
-            pendingText: OPS_TAB_BADGE_DELAYED_TEXT
-          })
-        : pendingBadgeState(title)
-  );
-  const localBadgeStates = {
-    overview: isLoadedOverviewHealth(health)
-      ? toAlertBadgeState(health?.alerts || [])
-      : pendingBadge("Loading Overview count"),
-    discovery: isLoadedDiscoveryReport(discovery)
-      ? toDiscoveryBadgeState(discovery)
-      : pendingBadge("Loading Discovery Review count"),
-    "source-policy": isLoadedSourcePolicyPayload(sourcePolicyRecommendations)
-      ? toSourcePolicyBadgeState(sourcePolicyRecommendations || {})
-      : pendingBadge("Loading Source Policy Review count"),
-    "registry-conflicts": isLoadedRegistryConflictsPayload(registryConflictsPayload)
-      ? registryConflictBadgeState
-      : pendingBadge("Loading Registry Conflicts count"),
-    dedup: isLoadedDedupPayload(fetcherMetricsPayload)
-      ? toDedupBadgeState(dedupEvidence)
-      : pendingBadge("Loading Dedup Lists count")
-  };
-  badges.forEach(badge => {
-    const key = String(badge?.dataset?.opsTab || badge?.getAttribute?.("data-ops-tab") || "");
-    const summaryState = getSummaryBadgeState(tabCountsPayload, key);
-    const localState = localBadgeStates[key];
-    const localLoaded = localState ? localState.loaded !== false : false;
-    const state = summaryState && (summaryState.loaded || !localLoaded)
-      ? summaryState
-      : (localState || summaryState || pendingBadgeState());
-    if (badge) {
-      badge.textContent = state.loaded === false
-        ? String(state.pendingText || OPS_TAB_BADGE_PENDING_TEXT)
-        : Number(state.count || 0).toLocaleString();
-      badge.setAttribute?.("data-badge-tone", state.tone);
-      setTooltip(badge, state.title);
+  if (timer && typeof timer.unref === "function") {
+    try {
+      timer.unref();
+    } catch {
+      // Best-effort unref for Node-style timers.
     }
-  });
+  }
+  return timer;
 }
 
 export function createOpsHealthController({
@@ -407,7 +154,7 @@ export function createOpsHealthController({
   escapeHtml,
   idlePollIntervalMs,
   taskStateController,
-  getBridgeStatus,
+  getBridgeStatus: _getBridgeStatus,
   awaitBridgeReady = async () => true,
   loadLatestDiscoveryReport,
   onActivePipelineIdle,
@@ -425,23 +172,17 @@ export function createOpsHealthController({
 }) {
   let initialBridgeReadyResolved = false;
   let opsRenderToken = 0;
-  let opsOverviewDetailLoad = null;
-  let opsOverviewDetailLoadToken = 0;
-  let dashboardHealthSummaryLoad = null;
-  let fetchKpisLoad = null;
-  let pipelineScheduleLoad = null;
-  let pipelineStatusLoad = null;
-  let taskStateSummaryLoad = null;
-  let taskStateSummaryLoadToken = 0;
-  let opsTabCountsLoad = null;
-  let opsHistoryLoad = null;
-  let opsHistoryLoadLimit = 0;
   let idleRecoveryHealthLoad = null;
   let opsIdleHeavyHydrationTimer = null;
   let opsIdleHeavyHydrationInFlight = false;
-  let sourcePolicyDetailLoad = null;
-  let registryConflictsDetailLoad = null;
-  let dedupListsDetailLoad = null;
+
+  function currentRenderToken() {
+    return opsRenderToken;
+  }
+
+  function isStaleRenderToken(renderToken) {
+    return renderToken !== opsRenderToken;
+  }
 
   function canHydrateCompactDuringActiveRun() {
     return String(activeHydrationPolicy || "protected").trim().toLowerCase() === "desktop";
@@ -521,10 +262,6 @@ export function createOpsHealthController({
     }
   }
 
-  function isPlainObject(value) {
-    return value && typeof value === "object" && !Array.isArray(value);
-  }
-
   function resolveLiveRef(refName, selector, diagnosticName) {
     const current = refs?.[refName] || null;
     const currentConnected = Boolean(
@@ -555,207 +292,289 @@ export function createOpsHealthController({
     return resolveLiveRef("adminOpsHistoryEl", '[data-ui="admin-ops-history"]', "ops_history");
   }
 
-  function hasUsefulValue(value) {
-    if (value === null || value === undefined) return false;
-    if (typeof value === "string") {
-      const normalized = value.trim().toLowerCase();
-      return Boolean(normalized)
-        && normalized !== "unknown"
-        && normalized !== "never"
-        && normalized !== "none"
-        && normalized !== "not loaded yet";
-    }
-    return true;
-  }
+  // ── Per-endpoint hydration leaves ────────────────────────────────────
 
-  const FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER = new Set([
-    "sevenDayFetchSuccessRate",
-    "avgFetchDurationMs7d",
-    "failedSourceRatioLatest"
-  ]);
+  const historyHydration = createHistoryHydration({
+    state,
+    getErrorMessage,
+    markStep,
+    measuredGetBridge,
+    mergeOpsHistoryPayload,
+    OPS_HISTORY_STARTUP_PATH,
+    OPS_AUTHORITY_FETCH_TIMEOUT_MS,
+    scheduleOpsHistoryRetry,
+    renderDeferredHistoryDetails
+  });
 
-  function mergeKpis(existing = {}, incoming = {}, { preserveExisting = false } = {}) {
-    const result = isPlainObject(existing) ? { ...existing } : {};
-    if (!isPlainObject(incoming)) return result;
-    Object.entries(incoming).forEach(([key, value]) => {
-      if (key === "registrySync" && isPlainObject(value)) {
-        result.registrySync = mergePlainObjects(
-          isPlainObject(result.registrySync) ? result.registrySync : {},
-          value,
-          { preserveUnknowns: preserveExisting }
-        );
-        return;
-      }
-      if (
-        preserveExisting
-        && Object.prototype.hasOwnProperty.call(result, key)
-        && hasUsefulValue(result[key])
-        && (
-          !hasUsefulValue(value)
-          || (FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER.has(key) && Number(value) === 0)
-        )
-      ) {
-        return;
-      }
-      if (hasUsefulValue(value) || !Object.prototype.hasOwnProperty.call(result, key)) {
-        result[key] = value;
-      }
-    });
-    return result;
-  }
+  const pipelineScheduleHydration = createPipelineScheduleHydration({
+    state,
+    markStep,
+    measuredGetBridge,
+    getErrorMessage,
+    showToast,
+    normalizePipelineSchedulePayload,
+    rememberPipelineSchedule,
+    renderPipelineScheduleModel,
+    hasKnownPipelineSchedule: schedule => hasKnownPipelineSchedule(schedule),
+    hasPipelineScheduleNextRun: schedule => hasPipelineScheduleNextRun(schedule),
+    schedulePipelineScheduleRetry,
+    scheduleIdleOpsHeavyHydration,
+    JOBS_PIPELINE_SCHEDULE_PATH,
+    OPS_AUTHORITY_FETCH_TIMEOUT_MS,
+    currentRenderToken
+  });
 
-  function mergePlainObjects(existing = {}, incoming = {}, { preserveUnknowns = false } = {}) {
-    const result = isPlainObject(existing) ? { ...existing } : {};
-    if (!isPlainObject(incoming)) return result;
-    Object.entries(incoming).forEach(([key, value]) => {
-      if (
-        preserveUnknowns
-        && Object.prototype.hasOwnProperty.call(result, key)
-        && hasUsefulValue(result[key])
-        && !hasUsefulValue(value)
-      ) {
-        return;
-      }
-      result[key] = value;
-    });
-    return result;
-  }
+  const taskStateHydration = createTaskStateHydration({
+    state,
+    measuredGetBridge,
+    taskStateController,
+    hasActiveRows,
+    hasOptimisticRows,
+    hasPossibleActiveRunEvidence,
+    markOpsDegradedActive,
+    renderOpsHealthSnapshot,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_TASK_STATE_SUMMARY_PATH
+  });
 
-  function mergeOpsHealth(existing = {}, incoming = {}, { summary = false } = {}) {
-    const base = isPlainObject(existing) ? existing : {};
-    const patch = isPlainObject(incoming) ? incoming : {};
-    const preserveExisting = Boolean(summary);
-    const patchAlertsAuthoritative = !summary || patch.alertsEvaluated === true;
-    const merged = {
-      ...base,
-      ...patch,
-      kpis: mergeKpis(base.kpis, patch.kpis, { preserveExisting })
-    };
-    if (!patchAlertsAuthoritative) {
-      if (Object.prototype.hasOwnProperty.call(base, "status")) merged.status = base.status;
-      if (Object.prototype.hasOwnProperty.call(base, "alerts")) merged.alerts = base.alerts;
-      if (Object.prototype.hasOwnProperty.call(base, "suppressedAlertsCount")) {
-        merged.suppressedAlertsCount = base.suppressedAlertsCount;
-      }
-      if (Object.prototype.hasOwnProperty.call(base, "alertsEvaluated")) {
-        merged.alertsEvaluated = base.alertsEvaluated;
-      }
-      if (Object.prototype.hasOwnProperty.call(base, "alertBasis")) merged.alertBasis = base.alertBasis;
-    }
-    if (isPlainObject(base.schedule) || isPlainObject(patch.schedule)) {
-      merged.schedule = mergePlainObjects(base.schedule, patch.schedule, {
-        preserveUnknowns: preserveExisting
-      });
-    }
-    return merged;
-  }
+  const fetchKpisHydration = createFetchKpisHydration({
+    state,
+    canHydrateCompactDuringActiveRun,
+    hasPossibleActiveRunEvidence,
+    markFetchKpisDeferredDuringActiveRun: () => markFetchKpisDeferredDuringActiveRun(state),
+    renderOpsHealthSnapshot,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    mergeOpsHealth,
+    measuredGetBridge,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_FETCH_KPIS_SUMMARY_PATH
+  });
 
-  function isDegradedControlFallbackPayload(payload = {}) {
-    const source = String(payload?.source || "").toLowerCase();
-    return Boolean(
-      payload?.degraded === true
-      && (
-        source === "container-gateway-fallback"
-        || source === "frontend-bootstrap-fallback"
-        || source === "gateway-degraded"
-      )
-    );
-  }
+  const dashboardHealthHydration = createDashboardHealthHydration({
+    state,
+    hasPossibleActiveRunEvidence,
+    isOpsRouteBackedOff,
+    markOpsRouteFailure,
+    clearOpsRouteFailure,
+    measuredGetBridge,
+    mergeOpsHealth,
+    renderOpsHealthSnapshot,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
+    OPS_HEAVY_ROUTE_DASHBOARD
+  });
 
-  function hasActionablePipelineSchedule(payload = {}) {
-    const pipeline = isPlainObject(payload?.schedule?.pipeline)
-      ? payload.schedule.pipeline
-      : {};
-    return Boolean(
-      pipeline.nextAfterCurrentCompletes === true
-      || String(pipeline.nextRunAt || "").trim()
-      || pipeline.pending === true
-      || pipeline.due === true
-    );
-  }
+  const pipelineStatusHydration = createPipelineStatusHydration({
+    state,
+    measuredGetBridge,
+    buildPipelineTaskStatePayload,
+    shouldKeepExistingActiveTaskState,
+    hasActiveRows,
+    hasActivePipelineOrFetchRows,
+    canHydrateCompactDuringActiveRun,
+    markFetchKpisDeferredDuringActiveRun: () => markFetchKpisDeferredDuringActiveRun(state),
+    hasPossibleActiveRunEvidence,
+    markOpsDegradedActive,
+    stopPipelineStatusPolling,
+    schedulePipelineStatusPolling,
+    queueIdleRecoveryHealthLoad,
+    getOpsPollIntervalMs,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    renderOpsHealthSnapshot,
+    currentRenderToken,
+    isStaleRenderToken,
+    JOBS_PIPELINE_STATUS_PATH
+  });
 
-  function normalizePipelineSchedulePayload(payload = {}) {
-    if (
-      isPlainObject(payload?.schedule)
-      && isPlainObject(payload.schedule.pipeline)
-      && !isDegradedControlFallbackPayload(payload)
-    ) {
-      return payload.schedule;
-    }
-    if (isPlainObject(payload?.pipeline)) {
-      return { pipeline: { ...payload.pipeline } };
-    }
-    const saved = isPlainObject(payload?.savedConfig) ? payload.savedConfig : {};
-    const status = isPlainObject(payload?.status) ? payload.status : {};
-    if (!Object.keys(saved).length && !Object.keys(status).length) return {};
-    const {
-      scheduleDelayed: statusScheduleDelayed,
-      scheduleAuthority: statusScheduleAuthority,
-      ...statusFields
-    } = status;
-    const enabled = Object.prototype.hasOwnProperty.call(saved, "enabled")
-      ? Boolean(saved.enabled)
-      : Boolean(status.enabled);
-    const intervalHours = Number(
-      Object.prototype.hasOwnProperty.call(saved, "intervalHours")
-        ? saved.intervalHours
-        : status.intervalHours
-    );
-    const statusDelayed = Boolean(
-      statusScheduleDelayed === true
-      || String(statusScheduleAuthority || "").toLowerCase() === "degraded"
-    );
-    return {
-      pipeline: {
-        ...statusFields,
-        enabled,
-        ...(Number.isFinite(intervalHours) && intervalHours > 0 ? { intervalHours } : {}),
-        ...(statusDelayed ? { scheduleStatusRefreshing: true } : {})
-      }
-    };
-  }
+  const activeOpsHydration = createActiveOpsHydration({
+    state,
+    loadTaskStateSummaryData: (renderToken, options) => loadTaskStateSummaryData(renderToken, options),
+    loadPipelineStatusFallbackData: (renderToken, options) => loadPipelineStatusFallbackData(renderToken, options),
+    getCachedTaskStatePayload,
+    hasActivePipelineOrFetchRows,
+    hasActiveAdminWorkRows,
+    hasPossibleActiveRunEvidence,
+    hasPossiblePipelineOrFetchEvidence,
+    clearOpsDegradedActive,
+    markOpsDegradedActive,
+    clearAllPendingOpsAborts,
+    markActiveIdleRecoveryCooldown,
+    notifyActiveAdminWorkIdleIfNeeded,
+    schedulePipelineStatusPolling,
+    stopPipelineStatusPolling,
+    queueIdleRecoveryHealthLoad,
+    getOpsPollIntervalMs,
+    currentRenderToken,
+    isStaleRenderToken
+  });
 
-  function hasKnownPipelineSchedule(schedule = state.pipelineScheduleModel) {
-    const pipeline = isPlainObject(schedule?.pipeline) ? schedule.pipeline : {};
-    const hasSavedConfig = Boolean(
-      Object.prototype.hasOwnProperty.call(pipeline, "enabled")
-      || Object.prototype.hasOwnProperty.call(pipeline, "intervalHours")
-    );
-    return Boolean(
-      isPlainObject(schedule)
-      && isPlainObject(pipeline)
-      && Object.keys(pipeline).length > 0
-      && pipeline.scheduleLoading !== true
-      && (
-        hasSavedConfig
-        || (
-          pipeline.scheduleAuthority !== "degraded"
-          && pipeline.scheduleDelayed !== true
-        )
-      )
-    );
-  }
+  const registrySyncHydration = createRegistrySyncHydration({
+    state,
+    renderOpsHealthSnapshot,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    hasRegistrySyncDetails,
+    measuredGetBridge,
+    mergeOpsHealth,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_DASHBOARD_HEALTH_SUMMARY_PATH
+  });
 
-  function hasPipelineScheduleNextRun(schedule = state.pipelineScheduleModel) {
-    return Boolean(String(schedule?.pipeline?.nextRunAt || "").trim());
-  }
+  const tabCountsHydration = createTabCountsHydration({
+    state,
+    isOpsRouteBackedOff,
+    markOpsRouteFailure,
+    clearOpsRouteFailure,
+    measuredGetBridge,
+    rerenderOpsTabBadges,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_TAB_COUNTS_SUMMARY_PATH,
+    OPS_HEAVY_ROUTE_TAB_COUNTS
+  });
 
-  function getPipelineScheduleRenderModel() {
-    if (hasKnownPipelineSchedule(state.pipelineScheduleModel)) {
-      return state.pipelineScheduleModel;
-    }
-    return {
-      pipeline: {
-        scheduleLoading: true,
-        scheduleRetrying: Boolean(state.pipelineScheduleLastError)
-      }
-    };
-  }
+  const {
+    loadOpsHistoryData
+  } = historyHydration;
+  const {
+    loadPipelineScheduleData
+  } = pipelineScheduleHydration;
+  const {
+    loadTaskStateSummaryData
+  } = taskStateHydration;
+  const {
+    loadFetchKpisSummaryData
+  } = fetchKpisHydration;
+  const {
+    loadDashboardHealthSummaryData
+  } = dashboardHealthHydration;
+  const {
+    loadPipelineStatusFallbackData
+  } = pipelineStatusHydration;
+  const {
+    loadActiveOpsSupplementalData,
+    loadActiveOpsSummaryData
+  } = activeOpsHydration;
+  const {
+    loadRegistrySyncDiagnosticsData
+  } = registrySyncHydration;
+  const {
+    loadOpsTabCountsSummaryData
+  } = tabCountsHydration;
+
+  const {
+    handleDedupReviewAction,
+    handleCopySectionDiagnostics,
+    handleCopyRunDiagnostics,
+    handleRefreshAuditArtifacts,
+    handleRefreshTaskFailureAttempts,
+    handleRefreshPerformanceProfile,
+    handleAbortRun,
+    renderRegistryConflictsQueue,
+    renderDiscoveryReviewPanel,
+    renderSourcePolicyReviewQueue
+  } = createOpsActions({
+    state,
+    refs,
+    postBridge,
+    showToast,
+    getErrorMessage,
+    escapeHtml,
+    getObjectValue,
+    loadOpsHealthData,
+    loadSourcePolicyDetail: options => loadSourcePolicyDetail(options),
+    loadOpsOverviewDetailData: renderToken => loadOpsOverviewDetailData(renderToken),
+    loadActiveOpsSummaryData,
+    applyOptimisticAbortRow,
+    setPendingOpsAbort,
+    clearPendingOpsAbort,
+    hasPendingOpsAbort,
+    isAbortAcceptedResult,
+    hasActivePipelineOrFetchRows,
+    renderAdminRegistryConflictsImpl,
+    renderDiscoveryCandidateReviewHtml,    toDiscoveryBadgeState,
+    renderAdminSourcePolicyReviewImpl,
+    currentRenderToken
+  });
+
+  const registryConflictsHydration = createRegistryConflictsHydration({
+    state,
+    isOpsRouteBackedOff,
+    markOpsRouteFailure,
+    clearOpsRouteFailure,
+    measuredGetBridge,
+    getCachedTaskStatePayload,
+    getCachedRegistryConflictsPayload,
+    renderOpsHealthSnapshot,
+    renderRegistryConflictsQueue,
+    currentRenderToken,
+    isStaleRenderToken,
+    REGISTRY_CONFLICTS_SUMMARY_PATH,
+    OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS
+  });
+  const {
+    loadRegistryConflictsSummaryData
+  } = registryConflictsHydration;
+
+  const overviewHydration = createOverviewHydration({
+    state,
+    refs,
+    getBridge,
+    getErrorMessage,
+    showToast,
+    escapeHtml,
+    getObjectValue,
+    isLoadedDiscoveryReport,
+    isLoadedDedupPayload,
+    maybeUnrefTimer,
+    loadLatestDiscoveryReport,
+    getCachedSourcePolicyPayload,
+    getCachedRegistryConflictsPayload,
+    renderDeferredOverviewDetails,
+    renderSourcePolicyReviewQueue,
+    renderRegistryConflictsQueue,
+    renderDiscoveryReviewPanel,
+    renderAdminOpsDedupListsImpl,
+    buildFetcherMetricsPayload,
+    handleDedupReviewAction,
+    rerenderOpsTabBadges,
+    currentRenderToken,
+    isStaleRenderToken,
+    OPS_HISTORY_DETAIL_PATH,
+    OPS_FETCHER_METRICS_DETAIL_PATH,
+    OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH,
+    OPS_TASK_FAILURE_ATTEMPTS_PATH,
+    OPS_PERFORMANCE_PROFILE_PATH,
+    SOURCE_POLICY_DETAIL_PATH,
+    REGISTRY_CONFLICTS_DETAIL_PATH
+  });
+
+  const {
+    loadOpsOverviewDetailData,
+    handleLoadDebugDiagnostics,
+    scheduleOpsOverviewDetailData,
+    loadSourcePolicyDetail,
+    loadActiveOpsTabDetail
+  } = overviewHydration;
+
+  // ── Pipeline schedule model (coordinator-owned) ──────────────────────
 
   function renderPipelineScheduleModel() {
     renderAdminOpsScheduleImpl(
       getScheduleElement(),
-      getPipelineScheduleRenderModel(),
+      getPipelineScheduleRenderModel(state.pipelineScheduleModel, {
+        hasError: Boolean(state.pipelineScheduleLastError)
+      }),
       state.latestOpsHealthCache
     );
   }
@@ -804,6 +623,271 @@ export function createOpsHealthController({
       loadPipelineScheduleData({ force: true, silent: true }).catch(() => {});
     }, delayMs));
   }
+
+  // ── Cached payload getters ───────────────────────────────────────────
+
+  function getCachedTaskStatePayload() {
+    return getObjectValue(state.latestOpsTaskStatePayload);
+  }
+
+  function getCachedHistoryPayload() {
+    return state.latestOpsHistoryPayload
+      && typeof state.latestOpsHistoryPayload === "object"
+      && !Array.isArray(state.latestOpsHistoryPayload)
+      ? state.latestOpsHistoryPayload
+      : { runs: [] };
+  }
+
+  function scheduleOpsHistoryRetry() {
+    if (state.opsHistoryRetryTimer) return;
+    const failures = Math.max(1, Number(state.opsHistoryFailureCount || 1));
+    const delayMs = Math.min(OPS_AUTHORITY_RETRY_MAX_MS, OPS_AUTHORITY_RETRY_BASE_MS * (2 ** Math.min(3, failures - 1)));
+    state.opsHistoryRetryTimer = maybeUnrefTimer(setTimeout(() => {
+      state.opsHistoryRetryTimer = null;
+      loadOpsHistoryData({ force: true, silent: true }).catch(() => {});
+    }, delayMs));
+  }
+
+  function getCachedSourcePolicyPayload() {
+    return state.latestSourcePolicyRecommendationsPayload
+      && typeof state.latestSourcePolicyRecommendationsPayload === "object"
+      && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
+      ? state.latestSourcePolicyRecommendationsPayload
+      : { summaryStatus: "pending" };
+  }
+
+  function getCachedRegistryConflictsPayload() {
+    return state.latestRegistryConflictsPayload
+      && typeof state.latestRegistryConflictsPayload === "object"
+      && !Array.isArray(state.latestRegistryConflictsPayload)
+      ? state.latestRegistryConflictsPayload
+      : { summary: {}, summaryStatus: "pending", conflicts: [] };
+  }
+
+  function getCachedDiscoveryAuditArtifactsPayload() {
+    return state.latestDiscoveryAuditArtifactsPayload
+      && typeof state.latestDiscoveryAuditArtifactsPayload === "object"
+      && !Array.isArray(state.latestDiscoveryAuditArtifactsPayload)
+      ? state.latestDiscoveryAuditArtifactsPayload
+      : { ok: true, artifacts: [] };
+  }
+
+  function getCachedTaskFailureAttemptsPayload() {
+    return state.latestTaskFailureAttemptsPayload
+      && typeof state.latestTaskFailureAttemptsPayload === "object"
+      && !Array.isArray(state.latestTaskFailureAttemptsPayload)
+      ? state.latestTaskFailureAttemptsPayload
+      : { ok: true, fetch: {}, discovery: {}, warnings: [] };
+  }
+
+  function getCachedPerformanceProfilePayload() {
+    return state.latestOpsPerformanceProfilePayload
+      && typeof state.latestOpsPerformanceProfilePayload === "object"
+      && !Array.isArray(state.latestOpsPerformanceProfilePayload)
+      ? state.latestOpsPerformanceProfilePayload
+      : { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
+  }
+
+  // ── Active-run / abort state ─────────────────────────────────────────
+
+  function hasActiveRows(taskStatePayload = getCachedTaskStatePayload()) {
+    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    return rows.some(row => row && row.active !== false && !row.finishedAt);
+  }
+
+  function getOpsAbortRequests() {
+    if (!state.adminOpsAbortRequests || typeof state.adminOpsAbortRequests !== "object" || Array.isArray(state.adminOpsAbortRequests)) {
+      state.adminOpsAbortRequests = {};
+    }
+    return state.adminOpsAbortRequests;
+  }
+
+  function hasPendingOpsAbort(taskType, runId) {
+    const key = getOpsAbortKey(taskType, runId);
+    return Boolean(key.trim() && getOpsAbortRequests()[key]);
+  }
+
+  function setPendingOpsAbort(taskType, runId, value = {}) {
+    const key = getOpsAbortKey(taskType, runId);
+    if (!key.trim()) return null;
+    const pending = {
+      taskType: String(taskType || "").trim().toLowerCase(),
+      runId: String(runId || "").trim(),
+      requestedAt: new Date().toISOString(),
+      ...value
+    };
+    getOpsAbortRequests()[key] = pending;
+    return pending;
+  }
+
+  function clearPendingOpsAbort(taskType, runId) {
+    const key = getOpsAbortKey(taskType, runId);
+    if (!key.trim() || !state.adminOpsAbortRequests) return;
+    delete state.adminOpsAbortRequests[key];
+  }
+
+  function clearAllPendingOpsAborts() {
+    state.adminOpsAbortRequests = {};
+  }
+
+  function hasPendingOpsAbortRequests() {
+    return Object.keys(getOpsAbortRequests()).length > 0;
+  }
+
+  function applyOptimisticAbortRow(taskType, runId, pendingAbort = null) {
+    const cleanTaskType = String(taskType || "").trim().toLowerCase();
+    const cleanRunId = String(runId || "").trim();
+    if (!cleanTaskType || !cleanRunId) return null;
+    const abortMeta = pendingAbort || setPendingOpsAbort(cleanTaskType, cleanRunId);
+    const existingPayload = getCachedTaskStatePayload();
+    const existingRows = Array.isArray(existingPayload?.tasks) ? existingPayload.tasks : [];
+    let matched = false;
+    const tasks = existingRows.map(row => {
+      if (getTaskRowType(row) !== cleanTaskType || getTaskRowRunId(row) !== cleanRunId) {
+        return row;
+      }
+      matched = true;
+      return buildOptimisticAbortRow(row, cleanTaskType, cleanRunId, abortMeta);
+    });
+    if (!matched) {
+      tasks.unshift(buildOptimisticAbortRow({}, cleanTaskType, cleanRunId, abortMeta));
+    }
+    state.latestOpsTaskStatePayload = {
+      ...getObjectValue(existingPayload),
+      tasks,
+      count: tasks.length,
+      summary: true
+    };
+    if (cleanTaskType === "pipeline") setBusyFlag("livePipelineRunning", true);
+    if (cleanTaskType === "fetch") setBusyFlag("liveFetchRunning", true);
+    if (cleanTaskType === "discovery") setBusyFlag("liveDiscoveryRunning", true);
+    if (["pipeline", "fetch", "discovery"].includes(cleanTaskType)) {
+      state.opsActivePipelineOrFetchLastActive = true;
+      markOpsDegradedActive("abort_requested");
+    }
+    renderOpsHealthSnapshot(opsRenderToken, state.latestOpsHealthCache || {}, {
+      taskStatePayload: state.latestOpsTaskStatePayload,
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      syncTaskState: true,
+      renderDeferredPanels: false,
+      renderActivityPanel: true,
+      schedulePolling: false
+    });
+    return state.latestOpsTaskStatePayload;
+  }
+
+  function hasOptimisticRows() {
+    return Boolean(state.discoveryOptimisticRun || state.fetchOptimisticRun);
+  }
+
+  function hasRecentOpsDegradedActive() {
+    return Date.now() < Number(state.opsDegradedActiveUntilMs || 0);
+  }
+
+  function markActiveIdleRecoveryCooldown() {
+    state.opsActiveIdleRecoveryCooldownUntilMs = Date.now() + ACTIVE_IDLE_RECOVERY_COOLDOWN_MS;
+  }
+
+  function hasActiveIdleRecoveryCooldown() {
+    return Date.now() < Number(state.opsActiveIdleRecoveryCooldownUntilMs || 0);
+  }
+
+  function hasPossiblePipelineOrFetchEvidence({ includeRecent = true } = {}) {
+    if (hasActiveIdleRecoveryCooldown()) return false;
+    const busyState = state.adminBusyState || {};
+    return Boolean(
+      hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
+      || hasOptimisticRows()
+      || hasPendingOpsAbortRequests()
+      || state.opsActivePipelineOrFetchLastActive
+      || state.fetcherLiveProgressState
+      || busyState.fetcherWatch
+      || busyState.livePipelineRunning
+      || busyState.liveFetchRunning
+      || (includeRecent && hasRecentOpsDegradedActive() && state.opsActivePipelineOrFetchLastActive)
+    );
+  }
+
+  function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
+    if (hasActiveIdleRecoveryCooldown()) return false;
+    const busyState = state.adminBusyState || {};
+    return Boolean(
+      hasActiveAdminWorkRows(getCachedTaskStatePayload())
+      || hasOptimisticRows()
+      || hasPendingOpsAbortRequests()
+      || state.opsActiveAdminWorkLastActive
+      || state.opsActivePipelineOrFetchLastActive
+      || state.fetcherLiveProgressState
+      || state.discoveryLiveProgressState
+      || busyState.fetcherWatch
+      || busyState.discoveryWatch
+      || busyState.livePipelineRunning
+      || busyState.liveFetchRunning
+      || busyState.liveDiscoveryRunning
+      || busyState.liveSyncRunning
+      || (includeRecent && hasRecentOpsDegradedActive())
+    );
+  }
+
+  function markOpsDegradedActive(reason = "control_plane_unavailable") {
+    state.opsDegradedActiveUntilMs = Date.now() + OPS_DEGRADED_ACTIVE_TTL_MS;
+    state.opsDegradedActiveReason = String(reason || "control_plane_unavailable");
+    state.opsActiveAdminWorkLastActive = true;
+    if (hasPossiblePipelineOrFetchEvidence({ includeRecent: false })) {
+      state.opsActivePipelineOrFetchLastActive = true;
+    }
+  }
+
+  function clearOpsDegradedActive() {
+    state.opsDegradedActiveUntilMs = 0;
+    state.opsDegradedActiveReason = "";
+  }
+
+  function hasActivePipelineOrFetchRows(taskStatePayload = getCachedTaskStatePayload()) {
+    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES);
+  }
+
+  function hasActiveAdminWorkRows(taskStatePayload = getCachedTaskStatePayload()) {
+    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_ADMIN_TASK_TYPES);
+  }
+
+  function notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, { wasPipelineOrFetchActive = false, pipelineOrFetchActive = false } = {}) {
+    state.opsActiveAdminWorkLastActive = Boolean(isActive);
+    state.opsActivePipelineOrFetchLastActive = Boolean(pipelineOrFetchActive);
+    if (!wasActive || isActive || typeof onActivePipelineIdle !== "function") return;
+    Promise.resolve(onActivePipelineIdle({
+      reason: wasPipelineOrFetchActive ? "active_pipeline_idle" : "active_admin_work_idle",
+      at: new Date().toISOString()
+    })).catch(() => {});
+  }
+
+  function deriveLiveRunContext(taskStatePayload, registryConflictsPayload) {
+    const historyPayload = getCachedHistoryPayload();
+    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+    const runModel = deriveAdminRunsModel(
+      {
+        taskState: taskStatePayload || {},
+        historyRuns
+      },
+      Date.now()
+    );
+    const liveTaskRows = taskStateController.getActiveTaskRows(taskStatePayload);
+    const liveTypes = new Set(
+      liveTaskRows
+        .map(row => taskStateController.getTaskType(row))
+        .filter(Boolean)
+    );
+    const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+    return {
+      historyRuns,
+      runModel,
+      liveTaskRows,
+      liveTypes,
+      registryConflictRunning
+    };
+  }
+
+  // ── Tabs and schedule controls ───────────────────────────────────────
 
   function getOpsTabPanels() {
     return {
@@ -900,6 +984,8 @@ export function createOpsHealthController({
 
   setupOpsTabs();
   setupPipelineScheduleControls();
+
+  // ── Placeholders and polling ─────────────────────────────────────────
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {
@@ -1012,346 +1098,7 @@ export function createOpsHealthController({
     opsIdleHeavyHydrationTimer = maybeUnrefTimer(setTimeout(hydrate, OPS_IDLE_HEAVY_HYDRATION_DELAY_MS));
   }
 
-  function buildSourcePolicyActionPayload(row, action) {
-    const payload = {
-      action,
-      staticSourceId: String(row?.staticSourceId || ""),
-      staticSourceName: String(row?.staticSourceName || ""),
-      providerSourceId: String(row?.providerSourceId || ""),
-      providerSourceName: String(row?.providerSourceName || "")
-    };
-    if (action === "snooze") {
-      payload.snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    }
-    return payload;
-  }
-
-  function buildMigrationLinkActionPayload(candidate, action) {
-    if (action === "apply_migration_identity_link") {
-      return { ...(candidate?.recommendedApiPayload || {}) };
-    }
-    if (action === "clear_migration_identity_link") {
-      return {
-        action,
-        providerSourceId: String(candidate?.providerSourceId || candidate?.recommendedApiPayload?.providerSourceId || ""),
-        staticSourceId: String(
-          candidate?.selectedStaticSourceId
-          || candidate?.staticSourceId
-          || candidate?.migrationSourceIdentity
-          || candidate?.recommendedApiPayload?.staticSourceId
-          || ""
-        )
-      };
-    }
-    return { action };
-  }
-
-  function buildDedupReviewActionPayload(row, action) {
-    return {
-      action,
-      title: String(row?.title || ""),
-      company: String(row?.company || ""),
-      dedupKey: String(row?.dedupKey || ""),
-      bundleEvidenceOrigin: String(row?.bundleEvidenceOrigin || ""),
-      disagreementClassification: String(row?.disagreementClassification || ""),
-      providerSourceJobIds: Array.isArray(row?.providerSourceJobIds) ? row.providerSourceJobIds : [],
-      staticSourceJobIds: Array.isArray(row?.staticSourceJobIds) ? row.staticSourceJobIds : [],
-      providerSources: Array.isArray(row?.providerSources) ? row.providerSources : [],
-      staticSources: Array.isArray(row?.staticSources) ? row.staticSources : [],
-      providerUrls: Array.isArray(row?.providerUrls) ? row.providerUrls : [],
-      staticUrls: Array.isArray(row?.staticUrls) ? row.staticUrls : [],
-      sharedIdentifierTokens: Array.isArray(row?.sharedIdentifierTokens) ? row.sharedIdentifierTokens : [],
-      distinctLocationCount: Number(row?.distinctLocationCount || 0),
-      sampleLocations: Array.isArray(row?.sampleLocations) ? row.sampleLocations : [],
-      identityQuality: String(row?.identityQuality || ""),
-      carriedLocationPollutionAudit: String(row?.carriedLocationPollutionAudit || "")
-    };
-  }
-
-  async function handleSourcePolicyAction(row, action) {
-    if (!row || !action) return;
-    try {
-      await postBridge("/source-policy/review-action", buildSourcePolicyActionPayload(row, action));
-      await loadOpsHealthData();
-      await loadSourcePolicyDetail({ force: true });
-    } catch (err) {
-      showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
-    }
-  }
-
-  async function handleDedupReviewAction(row, action) {
-    if (!row || !action) return;
-    try {
-      await postBridge("/dedup/review-action", buildDedupReviewActionPayload(row, action));
-      await loadOpsHealthData();
-    } catch (err) {
-      showToast(`Could not update dedup review: ${getErrorMessage(err)}`, "error");
-    }
-  }
-
-  async function handleCopySectionDiagnostics(section) {
-    if (!section || typeof section !== "object" || Array.isArray(section)) return;
-    const title = String(section?.title || section?.key || "section");
-    const payload = JSON.stringify(section, null, 2);
-    if (globalThis.navigator?.clipboard?.writeText) {
-      try {
-        await globalThis.navigator.clipboard.writeText(payload);
-        showToast(`${title} diagnostics copied.`, "success");
-        return;
-      } catch {
-        // Fall through to toast-only failure below.
-      }
-    }
-    showToast(`Could not copy ${title} diagnostics.`, "warn");
-  }
-
-  async function handleCopyRunDiagnostics(payload) {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
-    const title = String(payload?.title || payload?.taskType || "Run");
-    const serialized = JSON.stringify(payload, null, 2);
-    if (globalThis.navigator?.clipboard?.writeText) {
-      try {
-        await globalThis.navigator.clipboard.writeText(serialized);
-        showToast(`${title} run diagnostics copied.`, "success");
-        return;
-      } catch {
-        // Fall through to toast-only failure below.
-      }
-    }
-    showToast(`Could not copy ${title} run diagnostics.`, "warn");
-  }
-
-  async function handleRefreshAuditArtifacts() {
-    state.latestDiscoveryAuditArtifactsPayload = { ok: true, artifacts: [] };
-    try {
-      await loadOpsOverviewDetailData(opsRenderToken);
-      showToast("Discovery audit artifacts refreshed.", "success");
-    } catch (err) {
-      showToast(`Could not refresh discovery audit artifacts: ${getErrorMessage(err)}`, "warn");
-    }
-  }
-
-  async function handleRefreshTaskFailureAttempts() {
-    state.latestTaskFailureAttemptsPayload = { ok: true, fetch: {}, discovery: {}, warnings: [] };
-    try {
-      await loadOpsOverviewDetailData(opsRenderToken);
-      showToast("Task failure-attempt diagnostics refreshed.", "success");
-    } catch (err) {
-      showToast(`Could not refresh task failure-attempt diagnostics: ${getErrorMessage(err)}`, "warn");
-    }
-  }
-
-  async function handleRefreshPerformanceProfile() {
-    state.latestOpsPerformanceProfilePayload = { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
-    try {
-      await loadOpsOverviewDetailData(opsRenderToken);
-      showToast("Performance diagnostics refreshed.", "success");
-    } catch (err) {
-      showToast(`Could not refresh performance diagnostics: ${getErrorMessage(err)}`, "warn");
-    }
-  }
-
-  async function handleAbortRun(row) {
-    const taskType = String(row?.taskType || "").trim().toLowerCase();
-    const runId = String(row?.runId || "").trim();
-    if (!taskType || !runId) return;
-    if (hasPendingOpsAbort(taskType, runId)) {
-      showToast("Task abort is already queued.", "info");
-      return;
-    }
-    const confirmed = typeof globalThis.confirm === "function"
-      ? globalThis.confirm(`Abort ${taskType} task ${runId}?`)
-      : true;
-    if (!confirmed) return;
-    const pendingAbort = setPendingOpsAbort(taskType, runId, {
-      startedAt: String(row?.startedAt || "")
-    });
-    applyOptimisticAbortRow(taskType, runId, pendingAbort);
-    try {
-      const result = await postBridge("/tasks/abort", {
-        taskType,
-        runId,
-        reason: "admin_ops_abort",
-      });
-      if (!isAbortAcceptedResult(result)) {
-        throw new Error(String(result?.error || "abort failed"));
-      }
-      showToast(result?.gatewayAccepted ? "Task abort queued." : "Task abort requested.", "success");
-      await loadActiveOpsSummaryData(opsRenderToken, { fromPoll: false });
-    } catch (err) {
-      clearPendingOpsAbort(taskType, runId);
-      showToast(`Could not abort task: ${getErrorMessage(err)}`, "error");
-      if (hasActivePipelineOrFetchRows()) {
-        await loadActiveOpsSummaryData(opsRenderToken, { fromPoll: false });
-      }
-    }
-  }
-
-  async function handleMigrationLinkAction(candidate, action) {
-    if (!candidate || !action) return;
-    try {
-      await postBridge("/source-policy/migration-link-action", buildMigrationLinkActionPayload(candidate, action));
-      showToast(
-        action === "clear_migration_identity_link"
-          ? "Migration identity link cleared."
-          : "Migration identity link applied.",
-        "success"
-      );
-      await loadOpsHealthData();
-      await loadSourcePolicyDetail({ force: true });
-    } catch (err) {
-      showToast(`Could not update migration identity link: ${getErrorMessage(err)}`, "error");
-    }
-  }
-
-  function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
-    if (payload?.summaryView && refs.adminRegistryConflictsReviewEl) {
-      const conflictCount = Number(payload?.summary?.conflictCount || 0);
-      const summaryStatus = String(payload?.summaryStatus || "").toLowerCase();
-      refs.adminRegistryConflictsReviewEl.innerHTML = summaryStatus === "pending"
-        ? '<div class="muted">Registry conflict summary is loading in the background. Details load when this panel is opened.</div>'
-        : summaryStatus === "unavailable"
-          ? '<div class="muted">Registry conflict summary is unavailable. Details load when this panel is opened.</div>'
-          : conflictCount > 0
-        ? `<div class="muted">${escapeHtml(`${conflictCount.toLocaleString()} registry conflict(s) detected. Details load when this panel is opened.`)}</div>`
-        : '<div class="muted">No registry conflicts detected.</div>';
-      return;
-    }
-    const adjudication = getObjectValue(payload?.adjudication);
-    const conflictCheckRunning = Boolean(state.registryConflictCheckRunning)
-      || String(adjudication?.status || "") === "running";
-    renderAdminRegistryConflictsImpl(refs.adminRegistryConflictsReviewEl, payload || {}, {
-      onRegistryConflictAction: handleRegistryConflictAction,
-      onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation,
-      onRegistryConflictCheck: handleRegistryConflictCheck,
-      checkingConflicts: conflictCheckRunning
-    });
-  }
-
-  function renderDiscoveryReviewPanel(report = state.latestDiscoveryReportCache || {}) {
-    if (!refs.adminDiscoveryReviewEl) return;
-    const candidateReview = getObjectValue(report?.candidateReview);
-    refs.adminDiscoveryReviewEl.innerHTML = renderDiscoveryCandidateReviewHtml(
-      candidateReview,
-      { showEmpty: true }
-    );
-    if (!Object.keys(candidateReview).length) {
-      const count = toDiscoveryBadgeState(report).count;
-      if (count > 0) {
-        const suffix = count === 1 ? "" : "s";
-        refs.adminDiscoveryReviewEl.innerHTML = `<div class="no-results">${escapeHtml(`${count.toLocaleString()} discovery review item${suffix} counted, but detailed review lanes are not loaded in the latest report.`)}</div>`;
-      }
-    }
-  }
-
-  async function handleRegistryConflictCheck(options = {}) {
-    if (state.registryConflictCheckRunning) return;
-    state.registryConflictCheckRunning = true;
-    renderRegistryConflictsQueue(state.latestRegistryConflictsPayload || {});
-    try {
-      const result = await postBridge("/registry/conflicts/check-sources", {
-        applyAutopilot: Boolean(options?.applyAutopilot)
-      });
-      const started = Boolean(result?.started);
-      const alreadyRunning = Boolean(result?.alreadyRunning);
-      const demoted = Number(result?.demoted || 0);
-      const checked = Number(result?.checkedSourceCount || 0);
-      if (started || alreadyRunning || String(result?.status || "") === "running") {
-        showToast(
-          alreadyRunning
-            ? "Conflict source check is already running."
-            : (
-              options?.applyAutopilot
-                ? "Conflict source check started; high-confidence recommendations will apply when probes finish."
-                : "Conflict source check started."
-            ),
-          "success"
-        );
-      } else {
-        showToast(
-          options?.applyAutopilot
-            ? `Conflict source check finished: ${demoted} demoted, ${checked} checked.`
-            : `Conflict source check finished: ${checked} checked.`,
-          "success"
-        );
-      }
-      await loadOpsHealthData();
-    } catch (err) {
-      showToast(`Could not check conflicting sources: ${getErrorMessage(err)}`, "error");
-    } finally {
-      state.registryConflictCheckRunning = false;
-      renderRegistryConflictsQueue(state.latestRegistryConflictsPayload || {});
-    }
-  }
-
-  async function handleRegistryConflictSafeAutomation(safeAutomation) {
-    if (!safeAutomation || !safeAutomation.action) return;
-    const route = String(safeAutomation?.route || "/registry/conflicts/auto-demote-safe").trim();
-    const ids = Array.isArray(safeAutomation?.targetIds)
-      ? safeAutomation.targetIds.map(id => String(id).trim()).filter(Boolean)
-      : [];
-    if (!route) return;
-    try {
-      const result = await postBridge(route, {
-        action: String(safeAutomation.action || "auto_demote_same_adapter_provider_alias"),
-        ids
-      });
-      const demoted = Number(result?.demoted || 0);
-      const skipped = Number(result?.skipped || 0);
-      showToast(`Safe auto-demotion applied: ${demoted} demoted, ${skipped} skipped.`, "success");
-      await loadOpsHealthData();
-    } catch (err) {
-      showToast(`Could not apply safe registry automation: ${getErrorMessage(err)}`, "error");
-    }
-  }
-
-  async function handleRegistryConflictAction(row, action) {
-    if (!row || !action) return;
-    const route = String(action?.route || "").trim();
-    const ids = Array.isArray(action?.ids) && action.ids.length > 0
-      ? action.ids.map(id => String(id).trim()).filter(Boolean)
-      : [row?.id, row?.sourceId]
-          .map(id => String(id || "").trim())
-          .filter(Boolean);
-    if (!route || !ids.length) return;
-    try {
-      const result = await postBridge(route, { ids });
-      const count = Number(
-        result?.approved
-        ?? result?.rejected
-        ?? result?.demoted
-        ?? result?.restored
-        ?? ids.length
-      );
-      const actionKey = String(action?.action || "").trim().toLowerCase();
-      const noun = count === 1 ? "source" : "sources";
-      const message = actionKey === "approve"
-        ? `Promoted ${count} ${noun}.`
-        : actionKey === "reject"
-          ? `Rejected ${count} ${noun}.`
-          : actionKey === "demote-active"
-            ? `Demoted ${count} ${noun}.`
-            : actionKey === "restore-rejected"
-              ? `Restored ${count} ${noun}.`
-              : `${String(action?.label || "Action")} applied to ${count} ${noun}.`;
-      showToast(message, "success");
-      await loadOpsHealthData();
-    } catch (err) {
-      showToast(`Could not update registry conflict review: ${getErrorMessage(err)}`, "error");
-    }
-  }
-
-  function renderSourcePolicyReviewQueue(payload = state.latestSourcePolicyRecommendationsPayload || {}) {
-    renderAdminSourcePolicyReviewImpl(refs.adminSourcePolicyReviewEl, payload || {}, {
-      selectedFilter: state.sourcePolicyReviewFilter || "all",
-      onSourcePolicyFilter: filter => {
-        state.sourcePolicyReviewFilter = filter || "all";
-        renderSourcePolicyReviewQueue(state.latestSourcePolicyRecommendationsPayload || payload || {});
-      },
-      onSourcePolicyAction: handleSourcePolicyAction,
-      onMigrationLinkAction: handleMigrationLinkAction
-    });
-  }
+  // ── Render helpers and hub ───────────────────────────────────────────
 
   function setOpsReadinessShell() {
     if (refs.adminOpsAlertsEl) refs.adminOpsAlertsEl.innerHTML = "";
@@ -1380,64 +1127,6 @@ export function createOpsHealthController({
         callback();
         return () => {};
       };
-  }
-
-  function getCachedHistoryPayload() {
-    return state.latestOpsHistoryPayload
-      && typeof state.latestOpsHistoryPayload === "object"
-      && !Array.isArray(state.latestOpsHistoryPayload)
-      ? state.latestOpsHistoryPayload
-      : { runs: [] };
-  }
-
-  function scheduleOpsHistoryRetry() {
-    if (state.opsHistoryRetryTimer) return;
-    const failures = Math.max(1, Number(state.opsHistoryFailureCount || 1));
-    const delayMs = Math.min(OPS_AUTHORITY_RETRY_MAX_MS, OPS_AUTHORITY_RETRY_BASE_MS * (2 ** Math.min(3, failures - 1)));
-    state.opsHistoryRetryTimer = maybeUnrefTimer(setTimeout(() => {
-      state.opsHistoryRetryTimer = null;
-      loadOpsHistoryData({ force: true, silent: true }).catch(() => {});
-    }, delayMs));
-  }
-
-  function getCachedSourcePolicyPayload() {
-    return state.latestSourcePolicyRecommendationsPayload
-      && typeof state.latestSourcePolicyRecommendationsPayload === "object"
-      && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
-      ? state.latestSourcePolicyRecommendationsPayload
-      : { summaryStatus: "pending" };
-  }
-
-  function getCachedRegistryConflictsPayload() {
-    return state.latestRegistryConflictsPayload
-      && typeof state.latestRegistryConflictsPayload === "object"
-      && !Array.isArray(state.latestRegistryConflictsPayload)
-      ? state.latestRegistryConflictsPayload
-      : { summary: {}, summaryStatus: "pending", conflicts: [] };
-  }
-
-  function getCachedDiscoveryAuditArtifactsPayload() {
-    return state.latestDiscoveryAuditArtifactsPayload
-      && typeof state.latestDiscoveryAuditArtifactsPayload === "object"
-      && !Array.isArray(state.latestDiscoveryAuditArtifactsPayload)
-      ? state.latestDiscoveryAuditArtifactsPayload
-      : { ok: true, artifacts: [] };
-  }
-
-  function getCachedTaskFailureAttemptsPayload() {
-    return state.latestTaskFailureAttemptsPayload
-      && typeof state.latestTaskFailureAttemptsPayload === "object"
-      && !Array.isArray(state.latestTaskFailureAttemptsPayload)
-      ? state.latestTaskFailureAttemptsPayload
-      : { ok: true, fetch: {}, discovery: {}, warnings: [] };
-  }
-
-  function getCachedPerformanceProfilePayload() {
-    return state.latestOpsPerformanceProfilePayload
-      && typeof state.latestOpsPerformanceProfilePayload === "object"
-      && !Array.isArray(state.latestOpsPerformanceProfilePayload)
-      ? state.latestOpsPerformanceProfilePayload
-      : { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
   }
 
   function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
@@ -1533,8 +1222,6 @@ export function createOpsHealthController({
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable),
-        // ponytail: pass task-state last error so renderer can distinguish
-        // "empty list" (server answered, no rows) from "bridge hiccup".
         taskStateError: String(state.lastTaskStateError || "").trim(),
         historyPending: Boolean(state.opsHistoryLoadPending),
         historyLoaded: Boolean(state.opsHistoryLoaded),
@@ -1576,775 +1263,6 @@ export function createOpsHealthController({
         renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       }
     });
-  }
-
-  function loadOpsHistoryData(options = {}) {
-    const renderToken = Object.prototype.hasOwnProperty.call(options, "renderToken")
-      ? Number(options?.renderToken)
-      : null;
-    const requestedLimit = Math.max(1, Math.min(80, Number(options?.limit) || 2));
-    if (opsHistoryLoad) {
-      if (requestedLimit <= opsHistoryLoadLimit) return opsHistoryLoad;
-      return opsHistoryLoad.catch(() => null).then(() => loadOpsHistoryData(options));
-    }
-    const path = requestedLimit === 2
-      ? OPS_HISTORY_STARTUP_PATH
-      : `/ops/history?limit=${encodeURIComponent(String(requestedLimit))}`;
-    opsHistoryLoadLimit = requestedLimit;
-    state.opsHistoryLoadPending = true;
-    state.opsHistoryLastError = "";
-    markStep("admin_ops_history_model_fetch_start", {
-      limit: requestedLimit
-    });
-    renderDeferredHistoryDetails(renderToken);
-    opsHistoryLoad = measuredGetBridge(
-      path,
-      "admin_ops_history_fetch",
-      {
-        enabled: !options?.silent,
-        requestOptions: { timeoutMs: OPS_AUTHORITY_FETCH_TIMEOUT_MS }
-      }
-    )
-      .then(payload => {
-        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-          const shouldMerge = Boolean(
-            state.opsHistoryFullLoaded
-            || requestedLimit >= 80
-          );
-          state.latestOpsHistoryPayload = shouldMerge
-            ? mergeOpsHistoryPayload(state.latestOpsHistoryPayload, payload, 80)
-            : payload;
-          state.opsHistoryLoaded = true;
-          if (requestedLimit >= 80) state.opsHistoryFullLoaded = true;
-          state.opsHistoryLastError = "";
-          state.opsHistoryFailureCount = 0;
-          markStep("admin_ops_history_model_fetch_done", {
-            ok: true,
-            limit: requestedLimit,
-            runCount: Array.isArray(payload?.runs) ? payload.runs.length : 0
-          });
-          renderDeferredHistoryDetails(renderToken);
-        }
-        return payload || null;
-      })
-      .catch(err => {
-        state.opsHistoryLastError = getErrorMessage(err);
-        state.opsHistoryFailureCount = Math.max(1, Number(state.opsHistoryFailureCount || 0) + 1);
-        markStep("admin_ops_history_model_fetch_done", {
-          ok: false,
-          limit: requestedLimit,
-          error: String(state.opsHistoryLastError || "unknown error")
-        });
-        renderDeferredHistoryDetails(renderToken);
-        scheduleOpsHistoryRetry();
-        return null;
-      })
-      .finally(() => {
-        state.opsHistoryLoadPending = false;
-        opsHistoryLoad = null;
-        opsHistoryLoadLimit = 0;
-        renderDeferredHistoryDetails(renderToken);
-      });
-    return opsHistoryLoad;
-  }
-
-  function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
-    if (opsOverviewDetailLoad && opsOverviewDetailLoadToken === renderToken) return opsOverviewDetailLoad;
-    state.opsDebugDiagnosticsLoading = true;
-    opsOverviewDetailLoadToken = renderToken;
-    renderDeferredOverviewDetails(renderToken);
-    const detailLoad = (async () => {
-      const [
-        historyResult,
-        fetcherMetricsResult,
-        auditArtifactsResult,
-        taskFailureAttemptsResult,
-        performanceProfileResult
-      ] = await Promise.allSettled([
-        getBridge(OPS_HISTORY_DETAIL_PATH),
-        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
-        getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
-        getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
-        getBridge(OPS_PERFORMANCE_PROFILE_PATH)
-      ]);
-      if (renderToken !== opsRenderToken) return;
-      let changed = false;
-      if (
-        historyResult.status === "fulfilled"
-        && historyResult.value
-        && typeof historyResult.value === "object"
-        && !Array.isArray(historyResult.value)
-      ) {
-        state.latestOpsHistoryPayload = historyResult.value;
-        state.opsHistoryLoaded = true;
-        state.opsHistoryFullLoaded = true;
-        changed = true;
-      }
-      if (
-        fetcherMetricsResult.status === "fulfilled"
-        && fetcherMetricsResult.value
-        && typeof fetcherMetricsResult.value === "object"
-        && !Array.isArray(fetcherMetricsResult.value)
-      ) {
-        state.latestOpsFetcherMetricsPayload = fetcherMetricsResult.value;
-        changed = true;
-      }
-      if (
-        auditArtifactsResult.status === "fulfilled"
-        && auditArtifactsResult.value
-        && typeof auditArtifactsResult.value === "object"
-        && !Array.isArray(auditArtifactsResult.value)
-      ) {
-        state.latestDiscoveryAuditArtifactsPayload = auditArtifactsResult.value;
-        changed = true;
-      }
-      if (
-        taskFailureAttemptsResult.status === "fulfilled"
-        && taskFailureAttemptsResult.value
-        && typeof taskFailureAttemptsResult.value === "object"
-        && !Array.isArray(taskFailureAttemptsResult.value)
-      ) {
-        state.latestTaskFailureAttemptsPayload = taskFailureAttemptsResult.value;
-        changed = true;
-      }
-      if (
-        performanceProfileResult.status === "fulfilled"
-        && performanceProfileResult.value
-        && typeof performanceProfileResult.value === "object"
-        && !Array.isArray(performanceProfileResult.value)
-      ) {
-        state.latestOpsPerformanceProfilePayload = performanceProfileResult.value;
-        changed = true;
-      }
-      if (changed) {
-        state.opsDebugDiagnosticsLoaded = true;
-        renderDeferredOverviewDetails(renderToken);
-      }
-    })().finally(() => {
-      if (opsOverviewDetailLoad === detailLoad) {
-        opsOverviewDetailLoad = null;
-        opsOverviewDetailLoadToken = 0;
-        state.opsDebugDiagnosticsLoading = false;
-        renderDeferredOverviewDetails(renderToken);
-      }
-    });
-    opsOverviewDetailLoad = detailLoad;
-    return opsOverviewDetailLoad;
-  }
-
-  function handleLoadDebugDiagnostics() {
-    return loadOpsOverviewDetailData(opsRenderToken).catch(err => {
-      showToast(`Could not load debug diagnostics: ${getErrorMessage(err)}`, "error");
-    });
-  }
-
-  function scheduleOpsOverviewDetailData(renderToken = opsRenderToken) {
-    maybeUnrefTimer(setTimeout(() => {
-      loadOpsOverviewDetailData(renderToken).catch(() => {});
-    }, 0));
-  }
-
-  async function loadSourcePolicyDetail({ force = false } = {}) {
-    if (!force && state.sourcePolicyRecommendationsDetailLoaded) {
-      return getCachedSourcePolicyPayload();
-    }
-    if (sourcePolicyDetailLoad) return sourcePolicyDetailLoad;
-    sourcePolicyDetailLoad = (async () => {
-      try {
-        const payload = await getBridge(SOURCE_POLICY_DETAIL_PATH);
-        const sourcePolicyRecommendations = payload
-          && typeof payload === "object"
-          && !Array.isArray(payload)
-          ? payload
-          : { recommendations: { pairs: [] } };
-        state.latestSourcePolicyRecommendationsPayload = sourcePolicyRecommendations;
-        state.sourcePolicyRecommendationsDetailLoaded = true;
-        renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
-        rerenderOpsTabBadges();
-        return sourcePolicyRecommendations;
-      } catch (err) {
-        if (refs.adminSourcePolicyReviewEl) {
-          refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load source policy details: ${getErrorMessage(err)}`)}</div>`;
-        }
-        return null;
-      }
-    })().finally(() => {
-      sourcePolicyDetailLoad = null;
-    });
-    return sourcePolicyDetailLoad;
-  }
-
-  async function loadRegistryConflictsDetail({ force = false } = {}) {
-    if (!force && state.registryConflictsDetailLoaded) {
-      return getCachedRegistryConflictsPayload();
-    }
-    if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
-    registryConflictsDetailLoad = (async () => {
-      try {
-        const payload = await getBridge(REGISTRY_CONFLICTS_DETAIL_PATH);
-        const registryConflictsPayload = payload
-          && typeof payload === "object"
-          && !Array.isArray(payload)
-          ? payload
-          : { summary: { conflictCount: 0 }, conflicts: [] };
-        state.latestRegistryConflictsPayload = registryConflictsPayload;
-        state.registryConflictsDetailLoaded = true;
-        state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
-        renderRegistryConflictsQueue(registryConflictsPayload);
-        rerenderOpsTabBadges();
-        return registryConflictsPayload;
-      } catch (err) {
-        if (refs.adminRegistryConflictsReviewEl) {
-          refs.adminRegistryConflictsReviewEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load registry conflict details: ${getErrorMessage(err)}`)}</div>`;
-        }
-        return null;
-      }
-    })().finally(() => {
-      registryConflictsDetailLoad = null;
-    });
-    return registryConflictsDetailLoad;
-  }
-
-  async function loadDiscoveryReviewDetail({ force = false } = {}) {
-    const cachedReport = getObjectValue(state.latestDiscoveryReportCache);
-    if (!force && isLoadedDiscoveryReport(cachedReport) && cachedReport.candidateReview) {
-      renderDiscoveryReviewPanel(cachedReport);
-      return cachedReport;
-    }
-    if (refs.adminDiscoveryReviewEl) {
-      refs.adminDiscoveryReviewEl.innerHTML = '<div class="muted">Loading Discovery Review...</div>';
-    }
-    try {
-      const report = typeof loadLatestDiscoveryReport === "function"
-        ? await loadLatestDiscoveryReport({ silent: true })
-        : await getBridge("/discovery/report");
-      if (report && typeof report === "object" && !Array.isArray(report)) {
-        state.latestDiscoveryReportCache = report;
-        renderDiscoveryReviewPanel(report);
-        rerenderOpsTabBadges();
-        return report;
-      }
-      renderDiscoveryReviewPanel({});
-      return null;
-    } catch (err) {
-      if (refs.adminDiscoveryReviewEl) {
-        refs.adminDiscoveryReviewEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load Discovery Review: ${getErrorMessage(err)}`)}</div>`;
-      }
-      return null;
-    }
-  }
-
-  async function loadDedupListsDetail({ force = false } = {}) {
-    const cachedMetrics = getObjectValue(state.latestOpsFetcherMetricsPayload);
-    if (!force && isLoadedDedupPayload(cachedMetrics)) {
-      renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, buildFetcherMetricsPayload(), {
-        onDedupReviewAction: handleDedupReviewAction
-      });
-      return cachedMetrics;
-    }
-    if (dedupListsDetailLoad) return dedupListsDetailLoad;
-    if (refs.adminOpsDedupListsEl) {
-      refs.adminOpsDedupListsEl.innerHTML = '<div class="muted">Loading Dedup Lists...</div>';
-    }
-    dedupListsDetailLoad = (async () => {
-      try {
-        const payload = await getBridge(OPS_FETCHER_METRICS_DETAIL_PATH);
-        const fetcherMetricsPayload = payload && typeof payload === "object" && !Array.isArray(payload)
-          ? payload
-          : { latestRun: {} };
-        state.latestOpsFetcherMetricsPayload = fetcherMetricsPayload;
-        renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, buildFetcherMetricsPayload(), {
-          onDedupReviewAction: handleDedupReviewAction
-        });
-        rerenderOpsTabBadges();
-        return fetcherMetricsPayload;
-      } catch (err) {
-        if (refs.adminOpsDedupListsEl) {
-          refs.adminOpsDedupListsEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load Dedup Lists: ${getErrorMessage(err)}`)}</div>`;
-        }
-        return null;
-      }
-    })().finally(() => {
-      dedupListsDetailLoad = null;
-    });
-    return dedupListsDetailLoad;
-  }
-
-  function loadActiveOpsTabDetail(tabKey = state.adminOpsActiveTab || "overview", { force = false } = {}) {
-    if (tabKey === "discovery") return loadDiscoveryReviewDetail({ force });
-    if (tabKey === "source-policy") return loadSourcePolicyDetail({ force });
-    if (tabKey === "registry-conflicts") return loadRegistryConflictsDetail({ force });
-    if (tabKey === "dedup") return loadDedupListsDetail({ force });
-    return Promise.resolve(null);
-  }
-
-  function getCachedTaskStatePayload() {
-    return getObjectValue(state.latestOpsTaskStatePayload);
-  }
-
-  function hasActiveRows(taskStatePayload = getCachedTaskStatePayload()) {
-    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
-    return rows.some(row => row && row.active !== false && !row.finishedAt);
-  }
-
-  function getTaskRowType(row) {
-    return String(row?.taskType || row?.type || "").trim().toLowerCase();
-  }
-
-  function getTaskRowRunId(row) {
-    return String(row?.runId || row?.id || "").trim();
-  }
-
-  function getOpsAbortRequests() {
-    if (!state.adminOpsAbortRequests || typeof state.adminOpsAbortRequests !== "object" || Array.isArray(state.adminOpsAbortRequests)) {
-      state.adminOpsAbortRequests = {};
-    }
-    return state.adminOpsAbortRequests;
-  }
-
-  function getOpsAbortKey(taskType, runId) {
-    return `${String(taskType || "").trim().toLowerCase()}|${String(runId || "").trim()}`;
-  }
-
-  function hasPendingOpsAbort(taskType, runId) {
-    const key = getOpsAbortKey(taskType, runId);
-    return Boolean(key.trim() && getOpsAbortRequests()[key]);
-  }
-
-  function setPendingOpsAbort(taskType, runId, value = {}) {
-    const key = getOpsAbortKey(taskType, runId);
-    if (!key.trim()) return null;
-    const pending = {
-      taskType: String(taskType || "").trim().toLowerCase(),
-      runId: String(runId || "").trim(),
-      requestedAt: new Date().toISOString(),
-      ...value
-    };
-    getOpsAbortRequests()[key] = pending;
-    return pending;
-  }
-
-  function clearPendingOpsAbort(taskType, runId) {
-    const key = getOpsAbortKey(taskType, runId);
-    if (!key.trim() || !state.adminOpsAbortRequests) return;
-    delete state.adminOpsAbortRequests[key];
-  }
-
-  function clearAllPendingOpsAborts() {
-    state.adminOpsAbortRequests = {};
-  }
-
-  function hasPendingOpsAbortRequests() {
-    return Object.keys(getOpsAbortRequests()).length > 0;
-  }
-
-  function buildOptimisticAbortRow(row, taskType, runId, pendingAbort) {
-    const existingProgress = getObjectValue(row?.taskProgress || row?.progress);
-    const summary = getObjectValue(row?.summary);
-    const startedAt = String(row?.startedAt || pendingAbort?.startedAt || "").trim();
-    return {
-      ...getObjectValue(row),
-      id: String(row?.id || runId),
-      runId,
-      taskType,
-      type: taskType,
-      active: true,
-      isLive: true,
-      status: "running",
-      displayStatus: "aborting",
-      lifecycleStatus: "aborting",
-      stage: "aborting",
-      startedAt,
-      finishedAt: "",
-      taskProgress: {
-        ...existingProgress,
-        active: true,
-        phaseKey: "aborting",
-        phaseLabel: "Aborting...",
-        label: "Aborting...",
-        mode: String(existingProgress?.mode || "indeterminate")
-      },
-      summary: {
-        ...summary,
-        abortRequestedAt: String(summary?.abortRequestedAt || pendingAbort?.requestedAt || ""),
-        abortReason: String(summary?.abortReason || "admin_ops_abort")
-      }
-    };
-  }
-
-  function applyOptimisticAbortRow(taskType, runId, pendingAbort = null) {
-    const cleanTaskType = String(taskType || "").trim().toLowerCase();
-    const cleanRunId = String(runId || "").trim();
-    if (!cleanTaskType || !cleanRunId) return null;
-    const abortMeta = pendingAbort || setPendingOpsAbort(cleanTaskType, cleanRunId);
-    const existingPayload = getCachedTaskStatePayload();
-    const existingRows = Array.isArray(existingPayload?.tasks) ? existingPayload.tasks : [];
-    let matched = false;
-    const tasks = existingRows.map(row => {
-      if (getTaskRowType(row) !== cleanTaskType || getTaskRowRunId(row) !== cleanRunId) {
-        return row;
-      }
-      matched = true;
-      return buildOptimisticAbortRow(row, cleanTaskType, cleanRunId, abortMeta);
-    });
-    if (!matched) {
-      tasks.unshift(buildOptimisticAbortRow({}, cleanTaskType, cleanRunId, abortMeta));
-    }
-    state.latestOpsTaskStatePayload = {
-      ...getObjectValue(existingPayload),
-      tasks,
-      count: tasks.length,
-      summary: true
-    };
-    if (cleanTaskType === "pipeline") setBusyFlag("livePipelineRunning", true);
-    if (cleanTaskType === "fetch") setBusyFlag("liveFetchRunning", true);
-    if (cleanTaskType === "discovery") setBusyFlag("liveDiscoveryRunning", true);
-    if (["pipeline", "fetch", "discovery"].includes(cleanTaskType)) {
-      state.opsActivePipelineOrFetchLastActive = true;
-      markOpsDegradedActive("abort_requested");
-    }
-    renderOpsHealthSnapshot(opsRenderToken, state.latestOpsHealthCache || {}, {
-      taskStatePayload: state.latestOpsTaskStatePayload,
-      registryConflictsPayload: getCachedRegistryConflictsPayload(),
-      syncTaskState: true,
-      renderDeferredPanels: false,
-      renderActivityPanel: true,
-      schedulePolling: false
-    });
-    return state.latestOpsTaskStatePayload;
-  }
-
-  function isAbortAcceptedResult(result) {
-    return Boolean(
-      result?.ok
-      || result?.abortAccepted
-      || result?.gatewayAccepted
-      || result?.accepted
-      || Number(result?.status) === 202
-    );
-  }
-
-  function getPipelineRunIdFromTaskState(taskStatePayload = {}) {
-    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
-    const pipelineRow = rows.find(row => getTaskRowType(row) === "pipeline" && String(row?.runId || row?.id || "").trim());
-    return String(pipelineRow?.runId || pipelineRow?.id || "").trim();
-  }
-
-  function getPipelineChildSignature(taskStatePayload = {}, pipelineRunId = "") {
-    const cleanPipelineRunId = String(pipelineRunId || "").trim();
-    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
-    const hasMatchingPipelineRow = Boolean(cleanPipelineRunId) && rows.some(row => (
-      getTaskRowType(row) === "pipeline"
-      && String(row?.runId || row?.id || "").trim() === cleanPipelineRunId
-    ));
-    return rows
-      .filter(row => {
-        const type = getTaskRowType(row);
-        if (!type || type === "pipeline" || row?.active === false || row?.finishedAt) return false;
-        const parentRunId = String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim();
-        const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
-        return cleanPipelineRunId
-          ? parentRunId === cleanPipelineRunId
-            || (!parentRunId && parentTaskType === "pipeline")
-            || (hasMatchingPipelineRow && !parentRunId && !parentTaskType)
-          : parentTaskType === "pipeline" || Boolean(parentRunId);
-      })
-      .map(row => `${getTaskRowType(row)}|${String(row?.runId || row?.id || "").trim()}`)
-      .filter(Boolean)
-      .sort()
-      .join(",");
-  }
-
-  function shouldKeepExistingActiveTaskState(existingPayload, pipelineStatusPayload) {
-    if (!hasActiveRows(existingPayload)) return false;
-    if (existingPayload?.source === "pipeline-status") return false;
-    const pipelineRunId = getPipelineRunIdFromTaskState(pipelineStatusPayload);
-    if (!pipelineRunId) return true;
-    const existingRows = Array.isArray(existingPayload?.tasks) ? existingPayload.tasks : [];
-    const hasRelatedPipelineRows = existingRows.some(row => {
-      const type = getTaskRowType(row);
-      const parentRunId = String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim();
-      const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
-      return (
-        type === "pipeline" && String(row?.runId || row?.id || "").trim() === pipelineRunId
-      ) || parentRunId === pipelineRunId
-        || (!parentRunId && parentTaskType === "pipeline");
-    });
-    if (!hasRelatedPipelineRows) return true;
-    const nextChildSignature = getPipelineChildSignature(pipelineStatusPayload, pipelineRunId);
-    if (!nextChildSignature) return true;
-    return getPipelineChildSignature(existingPayload, pipelineRunId) === nextChildSignature;
-  }
-
-  function buildPipelineTaskStatePayload(payload = {}) {
-    if (!payload?.active) return null;
-    const progress = getObjectValue(payload?.progress);
-    const runId = String(payload?.runId || "").trim();
-    const startedAt = String(payload?.startedAt || "").trim();
-    const stage = String(payload?.stage || progress.phaseKey || "pipeline").trim();
-    const progressLabel = String(
-      progress.phaseLabel
-      || progress.label
-      || payload?.progressLabel
-      || (stage && stage !== "pipeline" ? `Pipeline ${stage}` : "Pipeline running")
-    ).trim();
-    const parentSummary = payload?.summary && typeof payload.summary === "object" ? payload.summary : {};
-    const activeChildren = Array.isArray(payload?.activeChildren)
-      ? payload.activeChildren
-          .filter(row => row && typeof row === "object" && row.active !== false)
-          .slice(0, 3)
-          .map(row => ({
-            ...row,
-            id: String(row.id || row.runId || ""),
-            runId: String(row.runId || row.id || ""),
-            taskType: String(row.taskType || row.type || "").trim().toLowerCase(),
-            type: String(row.type || row.taskType || "").trim().toLowerCase(),
-            active: true,
-            status: String(row.status || "running"),
-            displayStatus: String(row.displayStatus || row.status || "running"),
-            controlPlaneSource: "pipeline-status",
-            displayOnly: true,
-            summary: {
-              ...(row.summary && typeof row.summary === "object" ? row.summary : {}),
-              controlPlane: true,
-              pipelineRunId: runId
-            },
-            taskProgress: row.taskProgress && typeof row.taskProgress === "object"
-              ? { ...row.taskProgress, active: true }
-              : {
-                  active: true,
-                  phaseKey: String(row.taskType || row.type || "task").trim().toLowerCase(),
-                  phaseLabel: "Task running",
-                  mode: "indeterminate",
-                  ratio: 0,
-                  counts: {}
-                }
-          }))
-      : [];
-    const parentRow = {
-      taskType: "pipeline",
-      type: "pipeline",
-      runId,
-      active: true,
-      startedAt,
-      status: "running",
-      controlPlaneSource: "pipeline-status",
-      taskProgress: {
-        ...progress,
-        phaseKey: progress.phaseKey || stage,
-        phaseLabel: progressLabel
-      },
-      summary: {
-        ...parentSummary,
-        activeChildTaskType: activeChildren[0]?.taskType || (stage && stage !== "pipeline" ? stage : undefined),
-        activeChildRunId: activeChildren[0]?.runId || "",
-        activeChildPhaseLabel: activeChildren[0]?.taskProgress?.phaseLabel || "",
-        activeChildDisplayLabel: activeChildren[0]?.taskProgress?.phaseLabel
-          ? `${String(activeChildren[0]?.taskType || "").trim()}: ${activeChildren[0].taskProgress.phaseLabel}`
-          : "",
-        stage
-      }
-    };
-    const tasks = [
-      ...activeChildren,
-      parentRow
-    ];
-    return {
-      tasks,
-      count: tasks.length,
-      summary: true,
-      source: "pipeline-status"
-    };
-  }
-
-  function hasOptimisticRows() {
-    return Boolean(state.discoveryOptimisticRun || state.fetchOptimisticRun);
-  }
-
-  function hasRecentOpsDegradedActive() {
-    return Date.now() < Number(state.opsDegradedActiveUntilMs || 0);
-  }
-
-  function markActiveIdleRecoveryCooldown() {
-    state.opsActiveIdleRecoveryCooldownUntilMs = Date.now() + ACTIVE_IDLE_RECOVERY_COOLDOWN_MS;
-  }
-
-  function hasActiveIdleRecoveryCooldown() {
-    return Date.now() < Number(state.opsActiveIdleRecoveryCooldownUntilMs || 0);
-  }
-
-  function hasPossiblePipelineOrFetchEvidence({ includeRecent = true } = {}) {
-    if (hasActiveIdleRecoveryCooldown()) return false;
-    const busyState = state.adminBusyState || {};
-    return Boolean(
-      hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
-      || hasOptimisticRows()
-      || hasPendingOpsAbortRequests()
-      || state.opsActivePipelineOrFetchLastActive
-      || state.fetcherLiveProgressState
-      || busyState.fetcherWatch
-      || busyState.livePipelineRunning
-      || busyState.liveFetchRunning
-      || (includeRecent && hasRecentOpsDegradedActive() && state.opsActivePipelineOrFetchLastActive)
-    );
-  }
-
-  function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
-    if (hasActiveIdleRecoveryCooldown()) return false;
-    const busyState = state.adminBusyState || {};
-    return Boolean(
-      hasActiveAdminWorkRows(getCachedTaskStatePayload())
-      || hasOptimisticRows()
-      || hasPendingOpsAbortRequests()
-      || state.opsActiveAdminWorkLastActive
-      || state.opsActivePipelineOrFetchLastActive
-      || state.fetcherLiveProgressState
-      || state.discoveryLiveProgressState
-      || busyState.fetcherWatch
-      || busyState.discoveryWatch
-      || busyState.livePipelineRunning
-      || busyState.liveFetchRunning
-      || busyState.liveDiscoveryRunning
-      || busyState.liveSyncRunning
-      || (includeRecent && hasRecentOpsDegradedActive())
-    );
-  }
-
-  function markOpsDegradedActive(reason = "control_plane_unavailable") {
-    state.opsDegradedActiveUntilMs = Date.now() + OPS_DEGRADED_ACTIVE_TTL_MS;
-    state.opsDegradedActiveReason = String(reason || "control_plane_unavailable");
-    state.opsActiveAdminWorkLastActive = true;
-    if (hasPossiblePipelineOrFetchEvidence({ includeRecent: false })) {
-      state.opsActivePipelineOrFetchLastActive = true;
-    }
-  }
-
-  function clearOpsDegradedActive() {
-    state.opsDegradedActiveUntilMs = 0;
-    state.opsDegradedActiveReason = "";
-  }
-
-  function hasFetchKpiValues(kpis = state.latestOpsHealthCache?.kpis || {}) {
-    return [
-      "lastSuccessfulFetchAt",
-      "lastSuccessfulFetchAge",
-      "sevenDayFetchSuccessRate",
-      "avgFetchDurationMs7d",
-      "failedSourceRatioLatest"
-    ].some(key => hasUsefulValue(kpis?.[key]));
-  }
-
-  function hasActivePipelineOrFetchRows(taskStatePayload = getCachedTaskStatePayload()) {
-    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES);
-  }
-
-  function hasActiveAdminWorkRows(taskStatePayload = getCachedTaskStatePayload()) {
-    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_ADMIN_TASK_TYPES);
-  }
-
-  function buildFetchKpiPendingLabels(health = {}, activePipelineOrFetch = false) {
-    const fetchKpisLoaded = Boolean(health?.fetchKpisLoaded);
-    const fetchKpisDelayed = Boolean(health?.fetchKpisDelayedDuringActiveRun);
-    const fetchNeverRun = Array.isArray(health?.alerts)
-      && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
-    if (fetchKpisDelayed) {
-      if (hasFetchKpiValues(health?.kpis || {})) {
-        return { default: ACTIVE_PIPELINE_KPI_DELAYED_LABEL };
-      }
-      return {
-        default: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
-        lastSuccessfulFetchAge: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
-        lastSuccessfulFetchAt: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
-        sevenDayFetchSuccessRate: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
-        avgFetchDurationMs7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
-        failedSourceRatioLatest: ACTIVE_PIPELINE_KPI_DELAYED_LABEL
-      };
-    }
-    if (fetchKpisLoaded) {
-      const generic = FETCH_KPI_UNAVAILABLE_LABEL;
-      return {
-        default: generic,
-        lastSuccessfulFetchAge: fetchNeverRun ? FETCH_KPI_NO_SUCCESS_LABEL : generic,
-        lastSuccessfulFetchAt: fetchNeverRun ? FETCH_KPI_NO_SUCCESS_LABEL : generic,
-        sevenDayFetchSuccessRate: generic,
-        avgFetchDurationMs7d: generic,
-        failedSourceRatioLatest: generic
-      };
-    }
-    const pending = fetchKpisDelayed
-      ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
-      : FETCH_KPI_LOADING_LABEL;
-    return { default: pending };
-  }
-
-  function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
-    if (!health?.fetchKpisDelayedDuringActiveRun || !isPlainObject(kpis)) {
-      return kpis || {};
-    }
-    if (hasFetchKpiValues(kpis)) {
-      return kpis || {};
-    }
-    const masked = { ...kpis };
-    [
-      "lastSuccessfulFetchAge",
-      "lastSuccessfulFetchAt",
-      "sevenDayFetchSuccessRate",
-      "avgFetchDurationMs7d",
-      "failedSourceRatioLatest",
-      "pendingSourcesCount",
-      "pendingApprovalsCount"
-    ].forEach(key => {
-      delete masked[key];
-    });
-    return masked;
-  }
-
-  function markFetchKpisDeferredDuringActiveRun() {
-    state.latestOpsHealthCache = mergeOpsHealth(
-      state.latestOpsHealthCache || {},
-      {
-        fetchKpisDelayedDuringActiveRun: true,
-        fetchKpisLoaded: false,
-        summaryView: true
-      },
-      { summary: true }
-    );
-  }
-
-  function notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, { wasPipelineOrFetchActive = false, pipelineOrFetchActive = false } = {}) {
-    state.opsActiveAdminWorkLastActive = Boolean(isActive);
-    state.opsActivePipelineOrFetchLastActive = Boolean(pipelineOrFetchActive);
-    if (!wasActive || isActive || typeof onActivePipelineIdle !== "function") return;
-    Promise.resolve(onActivePipelineIdle({
-      reason: wasPipelineOrFetchActive ? "active_pipeline_idle" : "active_admin_work_idle",
-      at: new Date().toISOString()
-    })).catch(() => {});
-  }
-
-  function deriveLiveRunContext(taskStatePayload, registryConflictsPayload) {
-    const historyPayload = getCachedHistoryPayload();
-    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
-    const runModel = deriveAdminRunsModel(
-      {
-        taskState: taskStatePayload || {},
-        historyRuns
-      },
-      Date.now()
-    );
-    const liveTaskRows = taskStateController.getActiveTaskRows(taskStatePayload);
-    const liveTypes = new Set(
-      liveTaskRows
-        .map(row => taskStateController.getTaskType(row))
-        .filter(Boolean)
-    );
-    const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
-    return {
-      historyRuns,
-      runModel,
-      liveTaskRows,
-      liveTypes,
-      registryConflictRunning
-    };
   }
 
   function renderOpsHealthSnapshot(renderToken, health, {
@@ -2477,6 +1395,8 @@ export function createOpsHealthController({
     }
   }
 
+  // ── Bootstrap payload and top-level conductor ────────────────────────
+
   function applyBootstrapPayload(payload = {}) {
     const renderToken = ++opsRenderToken;
     const tasks = payload?.tasks && typeof payload.tasks === "object" ? payload.tasks : {};
@@ -2496,7 +1416,7 @@ export function createOpsHealthController({
       currentRows.length
       && cachedTaskStatePayload?.source === "pipeline-status"
       && hasActiveRows(cachedTaskStatePayload)
-      && !shouldKeepExistingActiveTaskState(candidateTaskStatePayload, cachedTaskStatePayload)
+      && !shouldKeepExistingActiveTaskState(candidateTaskStatePayload, cachedTaskStatePayload, hasActiveRows)
     ) {
       currentRows = Array.isArray(cachedTaskStatePayload.tasks) ? cachedTaskStatePayload.tasks : [];
       taskStateSource = "pipeline-status";
@@ -2537,7 +1457,7 @@ export function createOpsHealthController({
     state.latestOpsTaskStatePayload = taskStatePayload;
     state.taskStateUnavailable = false;
     if (hasActivePipelineOrFetchRows(taskStatePayload) && !canHydrateCompactDuringActiveRun()) {
-      markFetchKpisDeferredDuringActiveRun();
+      markFetchKpisDeferredDuringActiveRun(state);
     }
     renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || health, {
       taskStatePayload,
@@ -2565,587 +1485,6 @@ export function createOpsHealthController({
       }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
-  }
-
-  async function loadPipelineScheduleData(options = {}) {
-    if (!options?.force && hasKnownPipelineSchedule()) {
-      renderPipelineScheduleModel();
-      return state.pipelineScheduleModel || {};
-    }
-    if (pipelineScheduleLoad) return pipelineScheduleLoad;
-    markStep("admin_pipeline_schedule_model_fetch_start");
-    pipelineScheduleLoad = measuredGetBridge(
-      JOBS_PIPELINE_SCHEDULE_PATH,
-      "admin_pipeline_schedule_fetch",
-      {
-        enabled: !options?.silent,
-        requestOptions: { timeoutMs: OPS_AUTHORITY_FETCH_TIMEOUT_MS }
-      }
-    )
-      .then(payload => {
-        const schedule = normalizePipelineSchedulePayload(payload);
-        const accepted = rememberPipelineSchedule(schedule);
-        markStep("admin_pipeline_schedule_model_fetch_done", {
-          ok: Boolean(accepted),
-          enabled: Boolean(schedule?.pipeline?.enabled),
-          intervalHours: Number(schedule?.pipeline?.intervalHours || 0),
-          nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
-        });
-        renderPipelineScheduleModel();
-        if (schedule?.pipeline?.scheduleStatusRefreshing && !hasPipelineScheduleNextRun()) {
-          state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
-          schedulePipelineScheduleRetry();
-        }
-        if (!options?.deferIdleHydration) {
-          scheduleIdleOpsHeavyHydration(opsRenderToken, { silent: true });
-        }
-        return hasKnownPipelineSchedule(state.pipelineScheduleModel)
-          ? state.pipelineScheduleModel
-          : schedule;
-      })
-      .catch(err => {
-        state.pipelineScheduleLastError = getErrorMessage(err);
-        state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
-        markStep("admin_pipeline_schedule_model_fetch_done", {
-          ok: false,
-          error: String(state.pipelineScheduleLastError || "unknown error")
-        });
-        renderPipelineScheduleModel();
-        schedulePipelineScheduleRetry();
-        if (!options?.silent) {
-          showToast(`Could not load pipeline schedule: ${getErrorMessage(err)}`, "error");
-        }
-        return null;
-      })
-      .finally(() => {
-        pipelineScheduleLoad = null;
-      });
-    return pipelineScheduleLoad;
-  }
-
-  function ensurePipelineScheduleLoaded(options = {}) {
-    if (!options?.force && hasKnownPipelineSchedule()) return Promise.resolve(state.latestOpsHealthCache?.schedule || {});
-    return loadPipelineScheduleData({ silent: true, ...options });
-  }
-
-  async function loadTaskStateSummaryData(renderToken, options = {}) {
-    const previousTaskStatePayload = getCachedTaskStatePayload();
-    try {
-      const canReuseTaskStateLoad = Boolean(
-        taskStateSummaryLoad
-        && (options?.fromPoll || taskStateSummaryLoadToken === renderToken)
-      );
-      if (!canReuseTaskStateLoad) {
-        taskStateSummaryLoadToken = renderToken;
-        taskStateSummaryLoad = measuredGetBridge(
-          OPS_TASK_STATE_SUMMARY_PATH,
-          "admin_ops_task_summary_fetch",
-          { enabled: !options?.fromPoll }
-        ).finally(() => {
-          taskStateSummaryLoad = null;
-          taskStateSummaryLoadToken = 0;
-        });
-      }
-      const payload = await taskStateSummaryLoad;
-      if (renderToken !== opsRenderToken) return null;
-      const taskStatePayload = taskStateController.resolveTaskStatePayload({
-        status: "fulfilled",
-        value: payload
-      });
-      state.latestOpsTaskStatePayload = taskStatePayload || {};
-      state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
-      const renderActivityPanel = Boolean(options?.summary)
-        || !options?.fromPoll
-        || hasActiveRows(taskStatePayload)
-        || hasActiveRows(previousTaskStatePayload)
-        || hasOptimisticRows();
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload,
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        syncTaskState: true,
-        renderDeferredPanels: false,
-        renderActivityPanel,
-        schedulePolling: options?.schedulePolling !== false
-      });
-      return taskStatePayload;
-    } catch (err) {
-      if (renderToken !== opsRenderToken) return null;
-      if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
-        markOpsDegradedActive("task_state_summary_unavailable");
-      }
-      const taskStatePayload = taskStateController.resolveTaskStatePayload({
-        status: "rejected",
-        reason: err
-      });
-      const fallbackTaskStatePayload = hasActiveRows(previousTaskStatePayload)
-        ? previousTaskStatePayload
-        : taskStatePayload || {};
-      state.latestOpsTaskStatePayload = fallbackTaskStatePayload || {};
-      state.taskStateUnavailable = !hasActiveRows(previousTaskStatePayload);
-      const renderActivityPanel = Boolean(options?.summary)
-        || !options?.fromPoll
-        || hasActiveRows(fallbackTaskStatePayload)
-        || hasActiveRows(previousTaskStatePayload)
-        || hasOptimisticRows();
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload: fallbackTaskStatePayload,
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        syncTaskState: true,
-        renderDeferredPanels: false,
-        renderActivityPanel,
-        schedulePolling: options?.schedulePolling !== false
-      });
-      return null;
-    }
-  }
-
-  async function loadRegistryConflictsSummaryData(renderToken, options = {}) {
-    if (state.registryConflictsDetailLoaded) return getCachedRegistryConflictsPayload();
-    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS)) {
-      return getCachedRegistryConflictsPayload();
-    }
-    try {
-      const payload = await measuredGetBridge(
-        REGISTRY_CONFLICTS_SUMMARY_PATH,
-        "admin_registry_conflicts_summary_fetch",
-        { enabled: !options?.fromPoll }
-      );
-      if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
-      clearOpsRouteFailure(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS);
-      const registryConflictsPayload = payload
-        && typeof payload === "object"
-        && !Array.isArray(payload)
-        ? payload
-        : { summary: { conflictCount: 0 }, summaryStatus: "unavailable", conflicts: [], summaryView: true };
-      state.latestRegistryConflictsPayload = registryConflictsPayload;
-      state.registryConflictsDetailLoaded = !registryConflictsPayload?.summaryView;
-      state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload: getCachedTaskStatePayload(),
-        registryConflictsPayload,
-        renderDeferredPanels: false
-      });
-      renderRegistryConflictsQueue(registryConflictsPayload);
-      return registryConflictsPayload;
-    } catch {
-      if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
-      markOpsRouteFailure(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS);
-      const registryConflictsPayload = {
-        summary: { conflictCount: 0 },
-        summaryStatus: "unavailable",
-        conflicts: [],
-        summaryView: true
-      };
-      state.latestRegistryConflictsPayload = registryConflictsPayload;
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload: getCachedTaskStatePayload(),
-        registryConflictsPayload,
-        renderDeferredPanels: false
-      });
-      renderRegistryConflictsQueue(registryConflictsPayload);
-      return null;
-    }
-  }
-
-  async function loadFetchKpisSummaryData(renderToken = opsRenderToken, options = {}) {
-    if (
-      !canHydrateCompactDuringActiveRun()
-      && !options?.force
-      && hasPossibleActiveRunEvidence({ includeRecent: false })
-    ) {
-      markFetchKpisDeferredDuringActiveRun();
-      if (renderToken === opsRenderToken) {
-        renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-          taskStatePayload: getCachedTaskStatePayload(),
-          registryConflictsPayload: getCachedRegistryConflictsPayload(),
-          renderDeferredPanels: false,
-          renderActivityPanel: false,
-          schedulePolling: false
-        });
-      }
-      return state.latestOpsHealthCache || null;
-    }
-    if (!fetchKpisLoad) {
-      fetchKpisLoad = measuredGetBridge(
-        OPS_FETCH_KPIS_SUMMARY_PATH,
-        "admin_ops_fetch_kpis_summary_fetch",
-        { enabled: !options?.fromPoll && !options?.silent }
-      ).finally(() => {
-        fetchKpisLoad = null;
-      });
-    }
-    let payload;
-    try {
-      payload = await fetchKpisLoad;
-    } catch (err) {
-      if (
-        !canHydrateCompactDuringActiveRun()
-        && renderToken === opsRenderToken
-        && hasPossibleActiveRunEvidence()
-      ) {
-        markFetchKpisDeferredDuringActiveRun();
-        renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-          taskStatePayload: getCachedTaskStatePayload(),
-          registryConflictsPayload: getCachedRegistryConflictsPayload(),
-          renderDeferredPanels: false,
-          renderActivityPanel: false,
-          schedulePolling: false
-        });
-      }
-      throw err;
-    }
-    const targetRenderToken = options?.renderWithCurrentToken ? opsRenderToken : renderToken;
-    if (targetRenderToken !== opsRenderToken) return payload || null;
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      state.latestOpsHealthCache = mergeOpsHealth(
-        state.latestOpsHealthCache || {},
-        {
-          kpis: payload.kpis || {},
-          status: payload.status,
-          alerts: payload.alerts,
-          suppressedAlertsCount: payload.suppressedAlertsCount,
-          alertsEvaluated: payload.alertsEvaluated,
-          alertBasis: payload.alertBasis,
-          fetchKpisLoaded: true,
-          fetchKpisDelayedDuringActiveRun: false,
-          summaryView: true
-        },
-        { summary: true }
-      );
-      renderOpsHealthSnapshot(targetRenderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload: getCachedTaskStatePayload(),
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        renderDeferredPanels: false,
-        renderActivityPanel: false,
-        schedulePolling: false
-      });
-    }
-    return payload || null;
-  }
-
-  async function loadDashboardHealthSummaryData(renderToken = opsRenderToken, options = {}) {
-    if (!options?.force && hasPossibleActiveRunEvidence({ includeRecent: false })) {
-      return state.latestOpsHealthCache || null;
-    }
-    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_DASHBOARD)) {
-      return state.latestOpsHealthCache || null;
-    }
-    if (!dashboardHealthSummaryLoad) {
-      dashboardHealthSummaryLoad = measuredGetBridge(
-        OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
-        "admin_dashboard_health_summary_fetch",
-        { enabled: !options?.fromPoll && !options?.silent }
-      ).finally(() => {
-        dashboardHealthSummaryLoad = null;
-      });
-    }
-    let payload;
-    try {
-      payload = await dashboardHealthSummaryLoad;
-    } catch (err) {
-      markOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
-      throw err;
-    }
-    if (renderToken !== opsRenderToken) return payload || null;
-    clearOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      state.latestOpsHealthCache = mergeOpsHealth(
-        state.latestOpsHealthCache || {},
-        payload || {},
-        { summary: true }
-      );
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || payload || {}, {
-        taskStatePayload: getCachedTaskStatePayload(),
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        renderDeferredPanels: false,
-        renderActivityPanel: false,
-        schedulePolling: false
-      });
-    }
-    return payload || null;
-  }
-
-  async function loadPipelineStatusFallbackData(renderToken = opsRenderToken, options = {}) {
-    const shouldScheduleNext = options?.scheduleNext !== false;
-    try {
-      if (!pipelineStatusLoad) {
-        pipelineStatusLoad = measuredGetBridge(
-          JOBS_PIPELINE_STATUS_PATH,
-          "admin_jobs_pipeline_status_fallback_fetch",
-          { enabled: false }
-        ).finally(() => {
-          pipelineStatusLoad = null;
-        });
-      }
-      const payload = await pipelineStatusLoad;
-      const activeRenderToken = renderToken === opsRenderToken ? renderToken : opsRenderToken;
-      const taskStatePayload = buildPipelineTaskStatePayload(payload);
-      if (!taskStatePayload) {
-        if (getCachedTaskStatePayload()?.source === "pipeline-status") {
-          state.latestOpsTaskStatePayload = { tasks: [], count: 0, summary: true, source: "pipeline-status" };
-          renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
-            taskStatePayload: getCachedTaskStatePayload(),
-            registryConflictsPayload: getCachedRegistryConflictsPayload(),
-            syncTaskState: true,
-            renderDeferredPanels: false,
-            renderActivityPanel: true,
-            schedulePolling: false
-          });
-        }
-        stopPipelineStatusPolling();
-        if (options?.fromPoll && shouldScheduleNext) {
-          if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
-            markOpsDegradedActive("pipeline_status_idle_task_state_unknown");
-            schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-          } else {
-            queueIdleRecoveryHealthLoad({ summary: true });
-          }
-        }
-        return payload || null;
-      }
-      const cachedTaskStatePayload = getCachedTaskStatePayload();
-      if (shouldKeepExistingActiveTaskState(cachedTaskStatePayload, taskStatePayload)) {
-        if (shouldScheduleNext) {
-          schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-        }
-        return payload || null;
-      }
-      state.latestOpsTaskStatePayload = taskStatePayload;
-      state.taskStateUnavailable = false;
-      state.waitingForTaskState = false;
-      if (hasActivePipelineOrFetchRows(taskStatePayload) && !canHydrateCompactDuringActiveRun()) {
-        markFetchKpisDeferredDuringActiveRun();
-      }
-      renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload,
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        syncTaskState: true,
-        renderDeferredPanels: false,
-        renderActivityPanel: true,
-        schedulePolling: false
-      });
-      if (shouldScheduleNext) {
-        schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-      }
-      return payload || null;
-    } catch {
-      if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
-        markOpsDegradedActive("pipeline_status_unavailable");
-      }
-      if (shouldScheduleNext && hasPossibleActiveRunEvidence()) {
-        schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-      }
-      return hasPossibleActiveRunEvidence() ? { active: true, degradedActive: true } : null;
-    }
-  }
-
-  async function loadActiveOpsSupplementalData(renderToken = opsRenderToken, options = {}) {
-    const taskStatePromise = loadTaskStateSummaryData(renderToken, {
-      ...options,
-      fromPoll: Boolean(options?.fromPoll),
-      summary: true,
-      schedulePolling: false
-    }).then(value => ({ loaded: Boolean(value), payload: value || null })).catch(() => ({ loaded: false, payload: null }));
-    const [taskStateResult] = await Promise.allSettled([taskStatePromise]);
-    if (taskStateResult.status === "fulfilled" && taskStateResult.value?.payload) {
-      return options?.returnMeta
-        ? {
-            taskStatePayload: taskStateResult.value.payload,
-            taskStateLoaded: Boolean(taskStateResult.value.loaded)
-          }
-        : taskStateResult.value.payload;
-    }
-    const fallbackPayload = getCachedTaskStatePayload();
-    return options?.returnMeta
-      ? { taskStatePayload: fallbackPayload, taskStateLoaded: false }
-      : fallbackPayload;
-  }
-
-  async function loadActiveOpsSummaryData(renderToken = opsRenderToken, options = {}) {
-    const cachedTaskStatePayload = getCachedTaskStatePayload();
-    const wasPipelineOrFetchActive = Boolean(
-      state.opsActivePipelineOrFetchLastActive
-      || hasActivePipelineOrFetchRows(cachedTaskStatePayload)
-    );
-    const wasActive = Boolean(
-      state.opsActiveAdminWorkLastActive
-      || wasPipelineOrFetchActive
-      || hasActiveAdminWorkRows(cachedTaskStatePayload)
-      || state.adminBusyState?.liveSyncRunning
-    );
-    const pipelinePayload = await loadPipelineStatusFallbackData(renderToken, {
-      ...options,
-      fromPoll: Boolean(options?.fromPoll),
-      scheduleNext: false
-    });
-    if (renderToken !== opsRenderToken) return pipelinePayload || null;
-    const supplemental = await loadActiveOpsSupplementalData(renderToken, {
-      ...options,
-      fromPoll: Boolean(options?.fromPoll),
-      returnMeta: true
-    });
-    if (renderToken !== opsRenderToken) return pipelinePayload || null;
-    const taskStatePayload = supplemental?.taskStatePayload || getCachedTaskStatePayload();
-    const taskStateLoaded = Boolean(supplemental?.taskStateLoaded);
-    const hasActiveTaskRows = hasActiveAdminWorkRows(taskStatePayload);
-    const hasActivePipelineOrFetchTaskRows = hasActivePipelineOrFetchRows(taskStatePayload);
-    const pipelineKnownIdle = Boolean(pipelinePayload && pipelinePayload.active === false && !pipelinePayload.degradedActive);
-    const positiveIdle = Boolean(
-      pipelineKnownIdle
-      && taskStateLoaded
-      && !hasActiveTaskRows
-    );
-    const degradedActive = Boolean(
-      !positiveIdle
-      && (
-        pipelinePayload?.degradedActive
-        || (!taskStateLoaded && hasPossibleActiveRunEvidence())
-        || (!pipelinePayload && hasPossibleActiveRunEvidence())
-      )
-    );
-    const pipelineOrFetchActive = Boolean(
-      pipelinePayload?.active
-      || hasActivePipelineOrFetchTaskRows
-      || (degradedActive && hasPossiblePipelineOrFetchEvidence())
-    );
-    const isActive = Boolean(pipelinePayload?.active || hasActiveTaskRows || degradedActive);
-    if (positiveIdle) {
-      clearOpsDegradedActive();
-      clearAllPendingOpsAborts();
-      state.opsActiveAdminWorkLastActive = false;
-      state.opsActivePipelineOrFetchLastActive = false;
-      markActiveIdleRecoveryCooldown();
-    } else if (degradedActive) {
-      markOpsDegradedActive("active_summary_unresolved");
-    }
-    notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, {
-      wasPipelineOrFetchActive,
-      pipelineOrFetchActive
-    });
-    if (isActive) {
-      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-    } else {
-      clearOpsDegradedActive();
-      state.opsActiveAdminWorkLastActive = false;
-      state.opsActivePipelineOrFetchLastActive = false;
-      stopPipelineStatusPolling();
-      if (!options?.summaryOnly) {
-        queueIdleRecoveryHealthLoad({ summary: true });
-      }
-    }
-    if (options?.returnMeta) {
-      return {
-        pipelinePayload: pipelinePayload || null,
-        taskStatePayload,
-        taskStateLoaded,
-        hasActiveTaskRows,
-        hasActivePipelineOrFetchTaskRows,
-        degradedActive,
-        isActive,
-        positiveIdle
-      };
-    }
-    return pipelinePayload || null;
-  }
-
-  async function loadRegistrySyncDiagnosticsData(options = {}) {
-    const renderToken = opsRenderToken;
-    renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-      taskStatePayload: getCachedTaskStatePayload(),
-      registryConflictsPayload: getCachedRegistryConflictsPayload(),
-      renderDeferredPanels: false,
-      renderActivityPanel: false,
-      schedulePolling: false
-    });
-    const registrySync = state.latestOpsHealthCache?.kpis?.registrySync;
-    const needsRegistrySync = !hasRegistrySyncDetails(registrySync);
-    if (!needsRegistrySync) {
-      return {
-        dashboardHealth: null,
-        registrySync,
-        kpis: null,
-        registryConflicts: null
-      };
-    }
-    const payload = await measuredGetBridge(
-      OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
-      "admin_registry_sync_diagnostics_fetch",
-      { enabled: !options?.silent }
-    );
-    if (renderToken !== opsRenderToken) {
-      return {
-        dashboardHealth: payload || null,
-        registrySync: null,
-        kpis: null,
-        registryConflicts: null
-      };
-    }
-    const nextRegistrySync = payload?.kpis?.registrySync;
-    if (nextRegistrySync && typeof nextRegistrySync === "object" && !Array.isArray(nextRegistrySync)) {
-      state.latestOpsHealthCache = mergeOpsHealth(
-        state.latestOpsHealthCache || {},
-        {
-          kpis: {
-            registrySync: nextRegistrySync
-          },
-          summaryView: true
-        },
-        { summary: true }
-      );
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload: getCachedTaskStatePayload(),
-        registryConflictsPayload: getCachedRegistryConflictsPayload(),
-        renderDeferredPanels: false,
-        renderActivityPanel: false,
-        schedulePolling: false
-      });
-    }
-    return {
-      dashboardHealth: payload || null,
-      registrySync: nextRegistrySync || null,
-      kpis: null,
-      registryConflicts: null
-    };
-  }
-
-  async function loadOpsTabCountsSummaryData(renderToken = opsRenderToken, options = {}) {
-    if (!options?.force && isOpsRouteBackedOff(OPS_HEAVY_ROUTE_TAB_COUNTS)) {
-      if (renderToken === opsRenderToken && !state.latestOpsTabCountsPayload) {
-        state.opsTabCountsUnavailable = true;
-        rerenderOpsTabBadges();
-      }
-      return state.latestOpsTabCountsPayload || null;
-    }
-    if (!opsTabCountsLoad) {
-      opsTabCountsLoad = measuredGetBridge(
-        OPS_TAB_COUNTS_SUMMARY_PATH,
-        "admin_ops_tab_counts_summary_fetch",
-        { enabled: !options?.fromPoll && !options?.silent }
-      ).finally(() => {
-        opsTabCountsLoad = null;
-      });
-    }
-    let payload;
-    try {
-      payload = await opsTabCountsLoad;
-    } catch (err) {
-      markOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
-      if (renderToken === opsRenderToken && !state.latestOpsTabCountsPayload) {
-        state.opsTabCountsUnavailable = true;
-        rerenderOpsTabBadges();
-      }
-      throw err;
-    }
-    const targetRenderToken = options?.renderWithCurrentToken ? opsRenderToken : renderToken;
-    if (targetRenderToken !== opsRenderToken) return payload || null;
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      clearOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
-      state.opsTabCountsDelayedDuringActiveRun = false;
-      state.opsTabCountsUnavailable = false;
-      state.latestOpsTabCountsPayload = payload;
-      rerenderOpsTabBadges();
-    }
-    return payload || null;
   }
 
   async function loadOpsHealthData(options = {}) {

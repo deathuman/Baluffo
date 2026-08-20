@@ -57,7 +57,7 @@ const OPS_TASK_LANE_TYPES = [
   { type: "sync", label: "Sync" }
 ];
 
-export function getOpsFetcherMetricSectionDefinitions() {
+function getOpsFetcherMetricSectionDefinitions() {
   return OPS_FETCHER_METRIC_SECTION_DEFINITIONS.map(section => ({ ...section }));
 }
 

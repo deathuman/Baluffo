@@ -108,5 +108,3 @@ export function applyFilterPreset(name, currentState) {
   if (!filters) return null;
   return applyPresetFilters(filters, currentState);
 }
-
-export { applyPresetFilters, stripDefaultFilters };

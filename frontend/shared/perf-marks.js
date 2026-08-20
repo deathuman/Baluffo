@@ -11,7 +11,7 @@ function emitMetric(startupMetrics, event, payload = {}) {
   }
 }
 
-export function markStep(startupMetrics, name, payload = {}) {
+function markStep(startupMetrics, name, payload = {}) {
   const event = String(name || "").trim();
   if (!event) return;
   const perf = safePerformance();
@@ -25,7 +25,7 @@ export function markStep(startupMetrics, name, payload = {}) {
   emitMetric(startupMetrics, event, payload);
 }
 
-export function measureStep(startupMetrics, name, startMark, endMark, payload = {}) {
+function measureStep(startupMetrics, name, startMark, endMark, payload = {}) {
   const event = String(name || "").trim();
   if (!event) return;
   let durationMs = null;

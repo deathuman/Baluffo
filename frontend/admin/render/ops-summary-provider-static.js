@@ -305,18 +305,7 @@ function formatProviderStaticTitleCompanyCollisionAuditCounts(auditCounts) {
 }
 
 export {
-  humanizeProviderStaticValue,
-  formatProviderStaticList,
-  providerStaticRecommendationLabel,
-  providerStaticReasonLabel,
-  providerStaticReviewStatus,
-  formatProviderStaticRawEvidence,
-  formatProviderStaticEvidenceBlock,
-  isProviderStaticBlockedRow,
-  isProviderStaticAutoSafeVariantRow,
   visibleProviderStaticRows,
-  renderDedupReviewActionButtons,
-  formatProviderStaticGuidedRows,
   formatProviderStaticDisagreementRows,
   formatProviderStaticTitleCompanyCollisionRows,
   formatProviderStaticDisagreementCounts,

@@ -91,7 +91,7 @@ function cleanSummary(summary, options) {
     .join(" | ");
 }
 
-export function formatCompactJobLocation(job, {
+function formatCompactJobLocation(job, {
   fullCountryName = value => String(value || "")
 } = {}) {
   const options = {

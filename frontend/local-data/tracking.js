@@ -18,16 +18,8 @@ export const OUTCOME_STATUSES = [
   "accepted"
 ];
 
-export const TERMINAL_OUTCOME_STATUSES = OUTCOME_STATUSES.filter(status => status !== "active");
+const TERMINAL_OUTCOME_STATUSES = OUTCOME_STATUSES.filter(status => status !== "active");
 
-export const COMPAT_APPLICATION_STATUSES = [
-  "bookmark",
-  "applied",
-  "interview_1",
-  "interview_2",
-  "offer",
-  "rejected"
-];
 
 export const PIPELINE_PHASE_LABELS = {
   bookmark: "Saved",
@@ -84,7 +76,7 @@ function normalizeTimestampMap(value, allowedKeys) {
   return normalized;
 }
 
-export function normalizePhaseTimestamps(value, { savedAt = "" } = {}) {
+function normalizePhaseTimestamps(value, { savedAt = "" } = {}) {
   const timestamps = normalizeTimestampMap(value, PIPELINE_PHASES);
   if (!timestamps.bookmark && savedAt) {
     timestamps.bookmark = String(savedAt);
@@ -92,11 +84,11 @@ export function normalizePhaseTimestamps(value, { savedAt = "" } = {}) {
   return timestamps;
 }
 
-export function normalizeOutcomeTimestamps(value) {
+function normalizeOutcomeTimestamps(value) {
   return normalizeTimestampMap(value, TERMINAL_OUTCOME_STATUSES);
 }
 
-export function bestPipelinePhaseFromTimestamps(phaseTimestamps, fallback = "applied") {
+function bestPipelinePhaseFromTimestamps(phaseTimestamps, fallback = "applied") {
   const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
   for (let idx = PIPELINE_PHASES.length - 1; idx >= 0; idx -= 1) {
     const phase = PIPELINE_PHASES[idx];

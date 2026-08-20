@@ -2,7 +2,7 @@ import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js?v=6";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 
-export const SOURCE_POLICY_REVIEW_FILTERS = Object.freeze([
+const SOURCE_POLICY_REVIEW_FILTERS = Object.freeze([
   { key: "all", label: "All" },
   { key: "needs_action", label: "Needs action" },
   { key: "stable_safe", label: "Stable safe" },

@@ -1,8 +1,8 @@
-export const SAVED_LIFECYCLE_JOBS_URLS = [
+const SAVED_LIFECYCLE_JOBS_URLS = [
   "data/jobs-unified-light.json"
 ];
 
-export const SAVED_LIFECYCLE_STATE_URLS = [
+const SAVED_LIFECYCLE_STATE_URLS = [
   "data/jobs-lifecycle-state.json",
   "jobs-lifecycle-state.json"
 ];

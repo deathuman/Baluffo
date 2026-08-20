@@ -1,5 +1,3 @@
-import { set as stateHubSet } from "../../shared/state-hub.js";
-
 function cloneFilterState(filters = {}) {
   return {
     ...filters,
@@ -58,7 +56,7 @@ function reportStatus(report) {
   return String(summary.status || report?.status || "").trim().toLowerCase();
 }
 
-export function isSuccessfulJobsFetchReport(report) {
+function isSuccessfulJobsFetchReport(report) {
   if (!report || typeof report !== "object") return false;
   if (!reportFinishedTimestamp(report)) return false;
   const summary = reportSummary(report);
@@ -335,8 +333,6 @@ export async function initJobsFeed(deps) {
 
     function renderFirstRunBootstrapState() {
       if (typeof setAllJobs === "function") setAllJobs([]);
-      stateHubSet("jobsFeedCount", 0);
-      stateHubSet("jobsLastUpdated", "");
       recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
@@ -412,8 +408,6 @@ export async function initJobsFeed(deps) {
       updateFilterOptions();
       applyStateToFilters();
       applyFiltersAndRender({ resetPage: false });
-      stateHubSet("jobsFeedCount", getAllJobs().length);
-      stateHubSet("jobsLastUpdated", Date.now());
       markStartupRendered("cache", getAllJobs().length);
       markJobsFirstInteractive("cache");
 
@@ -775,8 +769,6 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
       : null;
     const reportTimestamp = reportFinishedTimestamp(latestReport);
     const lastUpdated = reportTimestamp || (!isDesktopRuntimeMode() ? now : null);
-    stateHubSet("jobsFeedCount", getAllJobs().length);
-    stateHubSet("jobsLastUpdated", lastUpdated || "");
     if (!isDesktopRuntimeMode()) {
       await writeCachedJobs(getAllJobs());
     }

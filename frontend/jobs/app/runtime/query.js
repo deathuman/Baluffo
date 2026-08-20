@@ -113,14 +113,14 @@ function normalizeSearchValue(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-export function tokenizeJobsSearchQuery(value) {
+function tokenizeJobsSearchQuery(value) {
   return normalizeSearchValue(value)
     .split(/\s+/)
     .map(token => token.trim())
     .filter(Boolean);
 }
 
-export function buildJobSearchText(job, {
+function buildJobSearchText(job, {
   getJobLocationCities = () => [],
   getJobLocationCountries = () => []
 } = {}) {
@@ -146,7 +146,7 @@ export function buildJobSearchText(job, {
   return normalizeSearchValue(fields.filter(Boolean).join(" "));
 }
 
-export function jobMatchesSearch(job, searchTokens, options = {}) {
+function jobMatchesSearch(job, searchTokens, options = {}) {
   if (!Array.isArray(searchTokens) || searchTokens.length === 0) return true;
   const haystack = buildJobSearchText(job, options);
   return searchTokens.every(token => haystack.includes(token));

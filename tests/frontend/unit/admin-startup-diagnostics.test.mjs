@@ -14,6 +14,10 @@ const opsHealthSource = readFileSync(
   new URL("../../../frontend/admin/app/ops/health.js", import.meta.url),
   "utf8"
 );
+const opsScheduleHydrationSource = readFileSync(
+  new URL("../../../frontend/admin/app/ops/hydrate-pipeline-schedule.js", import.meta.url),
+  "utf8"
+);
 const authSource = readFileSync(
   new URL("../../../frontend/admin/app/auth.js", import.meta.url),
   "utf8"
@@ -110,7 +114,8 @@ test("admin startup heavy hydration is sequential and defers while source load i
   );
   assert.match(body, /shouldDeferIdleOpsHeavyHydration\(options\)/);
   assert.match(compositionSource, /allowStartupBridgeLane:\s*true/);
-  assert.match(opsHealthSource, /deferIdleHydration/);
+  assert.match(opsScheduleHydrationSource, /deferIdleHydration/);
+  assert.match(compositionSource, /deferIdleHydration:\s*true/);
 });
 
 test("admin critical bootstrap fallback hydrates summaries before delayed source tables", () => {

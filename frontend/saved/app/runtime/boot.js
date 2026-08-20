@@ -4,7 +4,6 @@ import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-but
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { availabilityCheckResultLabel, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
-import { set as stateHubSet } from "../../../shared/state-hub.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
 import { runExportBackup as runExportBackupFromModule, runImportBackup as runImportBackupFromModule } from "../backup.js";
 import { cacheSavedDom } from "../dom.js";
@@ -182,8 +181,6 @@ export function createSavedBoot(deps) {
         const overlayRequestId = (Number(deps.viewState.savedLifecycleOverlayRequestId) || 0) + 1;
         deps.viewState.savedLifecycleOverlayRequestId = overlayRequestId;
         const count = Array.isArray(jobs) ? jobs.length : 0;
-        stateHubSet("savedCount", count);
-        stateHubSet("savedLastUpdated", Date.now());
         deps.setSourceStatus(`Loaded ${count} saved jobs.`);
         const isEditingNotes = isEditingNotesField();
         deps.viewState.lastSavedJobsByKey = new Map(

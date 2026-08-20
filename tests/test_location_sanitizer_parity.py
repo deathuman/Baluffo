@@ -21,7 +21,7 @@ def _load_cases() -> list[dict[str, Any]]:
 
 
 def _frontend_probe(repo_root: Path, cases: list[dict[str, Any]]) -> dict[str, Any]:
-    domain_uri = (repo_root / "frontend" / "jobs" / "domain.js").resolve().as_uri()
+    domain_uri = (repo_root / "frontend" / "jobs" / "domain" / "query.js").resolve().as_uri()
     city_noise_uri = (
         (repo_root / "frontend" / "shared" / "data" / "city-noise.js").resolve().as_uri()
     )

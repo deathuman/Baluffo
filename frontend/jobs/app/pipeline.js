@@ -22,7 +22,7 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   stalledSuffixLabel: "No progress"
 });
 
-export function getJobsUpdateUnavailableTooltip(error) {
+function getJobsUpdateUnavailableTooltip(error) {
   const normalized = String(error || "").trim().toLowerCase();
   if (normalized.includes("timed out") || normalized.includes("timeout")) {
     return JOBS_UPDATE_COPY.tooltipBridgeTimedOut;

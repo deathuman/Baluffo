@@ -134,4 +134,4 @@ export function installExplainStateHandler() {
   });
 }
 
-export { showExplain, hideExplain };
+export { showExplain };

@@ -18,7 +18,7 @@ export function normalizeLifecycleStatus(value, fallback = "active") {
   return fallback;
 }
 
-export function getLifecycleStatusLabel(value) {
+function getLifecycleStatusLabel(value) {
   const normalized = normalizeLifecycleStatus(value, "");
   if (normalized === "all") return "Any";
   if (normalized === "active") return "Active";

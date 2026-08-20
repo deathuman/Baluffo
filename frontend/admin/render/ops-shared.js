@@ -12,13 +12,6 @@ export function formatDateTime(value) {
   return new Date(parsed).toLocaleString();
 }
 
-export function formatScheduleCell(entry) {
-  const interval = Number(entry?.intervalHours || 0);
-  const next = formatDateTime(entry?.nextRunAt || "");
-  if (interval > 0) return `every ${interval}h, next ${next}`;
-  if (String(entry?.note || "") === "manual_task") return "manual task (no interval)";
-  return "unknown";
-}
 
 export function sanitizeSlowSourceName(value, maxLen = 64) {
   const text = String(value || "")
@@ -30,13 +23,6 @@ export function sanitizeSlowSourceName(value, maxLen = 64) {
   return `${text.slice(0, Math.max(1, maxLen - 3)).trim()}...`;
 }
 
-export function formatLastRunCell(lastRun) {
-  const type = String(lastRun?.type || "");
-  const status = String(lastRun?.status || "");
-  const finished = formatDateTime(lastRun?.finishedAt || "");
-  if (!type) return "none";
-  return `${type} ${status} @ ${finished}`;
-}
 
 export function buildRunStatusTooltip(row) {
   const status = String(row?.status || "").toLowerCase();

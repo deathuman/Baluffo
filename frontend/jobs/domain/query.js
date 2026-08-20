@@ -259,7 +259,7 @@ function matchesCityFilterContractList(text, key, matcher) {
   return values.some(value => matcher(value));
 }
 
-export function classifyCityFilterRejection(value) {
+function classifyCityFilterRejection(value) {
   const text = sanitizePublicText(value);
   if (!text) return "empty";
   const normalized = normalizeCityNoiseText(text);
