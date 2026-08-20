@@ -1,5 +1,7 @@
-from src.bridge import registry_conflict_adjudication
-from src.bridge.registry_conflict_adjudication import _parse_jobs, _probe_row
+# _parse_jobs/_probe_row (and the probe_source_evidence/try_fetch_with_playwright
+# monkeypatch targets below) moved to the probe leaf in the adjudication split.
+from src.bridge import registry_conflict_adjudication_probe as adjudication_probe
+from src.bridge.registry_conflict_adjudication_probe import _parse_jobs, _probe_row
 from src.bridge.source_probe_evidence import ProbeFetchResponse, probe_source_evidence
 from src.url_hosts import url_host_matches_domain
 
@@ -28,7 +30,7 @@ def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
         return ProbeFetchResponse(200, url, payload)
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
     )
@@ -63,7 +65,7 @@ def test_conflict_adjudication_greenhouse_open_application_board_is_not_positive
     """
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(
             row,
@@ -114,7 +116,7 @@ def test_conflict_adjudication_smartrecruiters_count_uses_provider_total(
         return ProbeFetchResponse(200, url, payload)
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
     )
@@ -157,7 +159,7 @@ def test_conflict_adjudication_jazzhr_probe_reconstructs_compact_board_url(
         return ProbeFetchResponse(200, url, payload)
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
     )
@@ -210,7 +212,7 @@ def test_conflict_adjudication_static_probe_uses_browser_fallback_for_rendered_j
     """
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **kwargs: probe_source_evidence(
             row,
@@ -222,7 +224,7 @@ def test_conflict_adjudication_static_probe_uses_browser_fallback_for_rendered_j
         ),
     )
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "try_fetch_with_playwright",
         lambda *_args: (rendered_html, ""),
     )
@@ -267,7 +269,7 @@ def test_conflict_adjudication_static_probe_counts_embedded_lever_board(
         return ProbeFetchResponse(200, url, page_html)
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(
             row,
@@ -327,7 +329,7 @@ def test_conflict_adjudication_static_probe_counts_ubisoft_algolia_search(
         return ProbeFetchResponse(200, url, page_html)
 
     monkeypatch.setattr(
-        registry_conflict_adjudication,
+        adjudication_probe,
         "probe_source_evidence",
         lambda row, timeout_s, **_kwargs: probe_source_evidence(
             row,

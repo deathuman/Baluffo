@@ -5,7 +5,21 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from src.bridge import registry_conflict_adjudication as adjudication
+from src.bridge import (
+    registry_conflict_adjudication as adjudication,
+)
+from src.bridge import (
+    registry_conflict_adjudication_decide as adjudication_decide,
+)
+from src.bridge import (
+    registry_conflict_adjudication_run as adjudication_run,
+)
+from src.bridge.registry_conflict_adjudication_decide import _classify_loser
+from src.bridge.registry_conflict_adjudication_probe import _best_probe
+from src.bridge.registry_conflict_adjudication_progress import (
+    _failed_adjudication_payload,
+    _running_adjudication_payload,
+)
 
 
 class FakeAdjudicationApi:
@@ -92,7 +106,7 @@ def test_start_registry_conflict_adjudication_returns_running_without_waiting(
 
 
 def test_running_adjudication_payload_exposes_compact_progress() -> None:
-    payload = adjudication._running_adjudication_payload(
+    payload = _running_adjudication_payload(
         {"applyAutopilot": True},
         run_id="run-1",
         started_at="2026-05-08T12:00:00+00:00",
@@ -133,7 +147,7 @@ def test_run_registry_conflict_adjudication_writes_incremental_progress(
         ]
     }
     monkeypatch.setattr(
-        adjudication,
+        adjudication_run,
         "derive_registry_conflict_queue",
         lambda _state, _source_state: conflict_payload,
     )
@@ -151,7 +165,8 @@ def test_run_registry_conflict_adjudication_writes_incremental_progress(
             "jobs": [{"key": "job-1"}] if row["adapter"] == "greenhouse" else [],
         }
 
-    monkeypatch.setattr(adjudication, "_probe_row", fake_probe)
+    # _build_family_adjudication (decide leaf) resolves _probe_row from the decide module.
+    monkeypatch.setattr(adjudication_decide, "_probe_row", fake_probe)
 
     result = adjudication.run_registry_conflict_adjudication(
         api,
@@ -194,7 +209,7 @@ def test_failed_adjudication_payload_preserves_latest_progress() -> None:
         }
     }
 
-    payload = adjudication._failed_adjudication_payload(
+    payload = _failed_adjudication_payload(
         {},
         run_id="run-1",
         started_at="2026-05-08T12:00:00+00:00",
@@ -230,7 +245,7 @@ def test_best_probe_prefers_canonical_non_redirecting_source_on_equal_jobs() -> 
         },
     ]
 
-    best = adjudication._best_probe(probes)
+    best = _best_probe(probes)
 
     assert best["sourceId"] == "teamtailor:listing_url:https://career.paradoxplaza.com/jobs"
 
@@ -251,7 +266,7 @@ def test_zero_job_loser_is_auto_demoted_when_winner_has_live_jobs() -> None:
         "jobs": [],
     }
 
-    status, confidence, reason, _overlap = adjudication._classify_loser(best, loser)
+    status, confidence, reason, _overlap = _classify_loser(best, loser)
 
     assert status == "auto_demote_applied"
     assert confidence == "high"
