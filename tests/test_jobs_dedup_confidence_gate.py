@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from src.jobs.common.dedup_evidence_provider_static import _review_pressure_origin_counts
+from src.jobs.common.dedup_evidence_review_queue import _recommended_review_action
 from src.jobs.dedup import deduplicate_jobs
-from src.jobs.reporting_dedup_evidence import (
-    _recommended_review_action,
-    build_dedup_evidence,
-)
+from src.jobs.reporting_dedup_evidence import build_dedup_evidence
 
 
 def _job(

@@ -39,6 +39,12 @@ ignore = [
 "src/bridge/registry_conflicts_row.py" = [
   "F401",  # re-export hub - the 73-name surface is imported by the automation-family modules via module attribute
 ]
+"src/jobs/reporting_dedup_evidence.py" = [
+  "F401",  # re-export hub - coordinator re-exports leaf names for downstream consumers
+]
+"src/jobs/state_lifecycle.py" = [
+  "F401",  # re-export hub - coordinator re-exports leaf names for downstream consumers
+]
 "whitelist.py" = [
   "B018",
   "F821",
