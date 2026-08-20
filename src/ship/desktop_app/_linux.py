@@ -38,10 +38,6 @@ def _as_int(value: object, default: int = 0) -> int:
     return default
 
 
-def _as_dict_rows(value: object) -> list[dict[str, object]]:
-    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
-
-
 def _normalize_path_text(value: object) -> str:
     text = str(value or "").strip()
     if not text:

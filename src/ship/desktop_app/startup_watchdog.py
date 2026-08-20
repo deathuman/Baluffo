@@ -12,6 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from src.shared.json_shapes import as_json_object as _as_dict
+
 from ._compat import desktop_api
 from .config import (
     ACTIVE_WORK_BACKGROUND_RECOVERY_POLL_INTERVAL_S,
@@ -22,10 +24,6 @@ from .config import (
     STARTUP_HANDOFF_GRACE_TIMEOUT_S,
     DesktopRuntimeConfig,
 )
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
 
 
 def _as_int(value: object, default: int = 0) -> int:

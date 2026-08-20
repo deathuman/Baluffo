@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
@@ -16,14 +16,12 @@ from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE, SOURCE_DIAGNOS
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return cast(dict[str, object], value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: object) -> list[object]:
-    return cast(list[object], value) if isinstance(value, list) else []
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 
 
 def _bool_value(value: object, default: bool = False) -> bool:

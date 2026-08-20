@@ -19,6 +19,12 @@ from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 from src.shared.utils import now_iso
 
 from . import audit_ledger
@@ -293,14 +299,6 @@ def build_active_audit_loop_strategy(
         write_artifact=write_artifact,
         progress_callback=progress_callback,
     )
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _safe_int(value: Any) -> int:

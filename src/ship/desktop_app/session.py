@@ -21,6 +21,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
+
 from ._compat import desktop_api
 from .config import ACTIVE_WORK_TASK_TYPES, INSTANCE_CONFLICT_RETRY_S, INSTANCE_LOCK_WAIT_S
 
@@ -101,14 +108,6 @@ def _sleep_for_lock_retry(attempt: int, deadline: float) -> None:
     if remaining <= 0:
         return
     time.sleep(min(_lock_backoff_delay(attempt), remaining))
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
 
 
 def _as_int(value: object, default: int = 0) -> int:

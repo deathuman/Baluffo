@@ -13,6 +13,13 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
+from src.shared.json_shapes import (
+    json_object_rows as _as_dict_rows,
+)
+
 from ._compat import desktop_api
 from .config import (
     CHROMIUM_WINDOW_REVEAL_POLL_INTERVAL_S,
@@ -22,14 +29,6 @@ from .config import (
     STARTUP_HANDOFF_GRACE_TIMEOUT_S,
     STARTUP_HANDOFF_POLL_INTERVAL_S,
 )
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_dict_rows(value: object) -> list[dict[str, object]]:
-    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
 
 
 def _as_float(value: object, default: float = 0.0) -> float:

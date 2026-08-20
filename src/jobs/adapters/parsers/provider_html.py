@@ -19,16 +19,14 @@ from src.jobs.adapters.html_parsers import (
 )
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 
 from .location import normalize_location_details, parse_generic_location_fields
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
 
 
 def _ashby_structured_jobs(html_text: str, board_url: str, fallback_company: str) -> list[RawJob]:

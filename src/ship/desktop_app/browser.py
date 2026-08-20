@@ -18,6 +18,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
+from src.shared.json_shapes import as_json_object as _as_dict
+
 from ._compat import desktop_api
 from .config import (
     APP_PATH_REGISTRY_SUBKEY,
@@ -41,10 +43,6 @@ LEAN_CHROMIUM_APP_FLAGS = (
     "--disable-sync",
     "--metrics-recording-only",
 )
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
 
 
 def _as_int(value: object, default: int = 0) -> int:

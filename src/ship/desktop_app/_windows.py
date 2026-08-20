@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_shapes import json_object_rows as _as_dict_rows
+
 from ._compat import desktop_api
 from .config import CHROMIUM_WINDOW_CLASS_PREFIXES, WINDOW_TITLE
 
@@ -40,10 +42,6 @@ def _as_int(value: object, default: int = 0) -> int:
         except ValueError:
             return default
     return default
-
-
-def _as_dict_rows(value: object) -> list[dict[str, object]]:
-    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
 
 
 def _current_exe_path() -> str:

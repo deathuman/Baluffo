@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.models import RawJob
 from src.jobs.text_utils import normalize_url
+from src.shared.json_shapes import as_json_list as _as_list
+from src.shared.json_shapes import as_json_object as _as_dict
 
 from .signals import (
-    _as_dict,
-    _as_list,
     _clean_text,
     _increment_reason,
     _norm_text,

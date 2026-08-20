@@ -176,14 +176,6 @@ SOCIAL_CONTENT_ONLY_PATH_HINTS = (
 )
 
 
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
-
-
 def _clean_text(value: Any) -> str:
     return _clean_text_impl(value)
 

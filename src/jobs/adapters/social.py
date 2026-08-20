@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
@@ -27,6 +27,12 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 
 from ..common import config as common_config
 
@@ -37,14 +43,6 @@ _SOCIAL_SUBSOURCE_ERRORS = (
     TypeError,
     ValueError,
 )
-
-
-def _as_dict(value: object) -> dict[str, Any]:
-    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: object) -> list[Any]:
-    return cast(list[Any], value) if isinstance(value, list) else []
 
 
 def _text_items(value: object) -> list[str]:

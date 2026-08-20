@@ -25,10 +25,7 @@ from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
+from src.shared.json_shapes import as_json_object as _as_dict
 
 
 def extract_json_ld_blocks(html_text: str) -> list[str]:

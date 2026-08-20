@@ -21,6 +21,12 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -74,14 +80,6 @@ def _oracle_hcm_requisitions_url(source: dict[str, object]) -> str:
             "",
         )
     )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _payload_requisition_count(payload: Any) -> int:

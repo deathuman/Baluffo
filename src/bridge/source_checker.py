@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.json_shapes import as_json_list as _as_list
 from src.source_discovery.provider_inference import infer_web_candidate
 from src.source_registry import normalize_source_url
 from src.url_hosts import host_matches_subdomain
@@ -21,10 +22,6 @@ _EXPECTED_EMBEDDED_FETCH_RUNTIME_ERROR_TOKENS = (
     "timed out",
     "Timeout",
 )
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _is_expected_embedded_fetch_error(exc: Exception) -> bool:

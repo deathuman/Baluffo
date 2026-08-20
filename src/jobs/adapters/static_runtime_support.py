@@ -30,10 +30,6 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from ..common import config as common_config
 
 
-def _as_dict(value: object) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 def classify_static_fetch_exception(
     exc: Exception | str,
     *,

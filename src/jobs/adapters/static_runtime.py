@@ -18,12 +18,12 @@ from typing import Any
 from src.jobs.models import RawJob
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import as_json_object as _as_dict
 
 from ..common import config as common_config
 from .static_runtime_support import (
     StaticHtmlFetcher,
     StaticSourceRuntimeConfig,
-    _as_dict,
     build_static_entry_report,
     build_static_source_deadline,
     classify_static_fetch_exception,

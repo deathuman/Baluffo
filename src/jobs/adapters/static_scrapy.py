@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.diagnostics import set_source_diagnostics
@@ -33,10 +33,12 @@ from src.jobs.page_gating import (
 )
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.shared.json_shapes import as_json_list as _as_list
+from src.shared.json_shapes import as_json_object as _as_dict
 from src.shared.utils import coerce_int, env_flag
 
 from ..common import config as common_config
-from .static_runtime_support import _as_dict, update_source_detail_taxonomy
+from .static_runtime_support import update_source_detail_taxonomy
 
 TIMEOUT_BUCKET_SOURCE_NAMES = {
     "andarion games gmbh (gamesmap)",
@@ -63,10 +65,6 @@ SCRAPY_STATS_INT_FIELDS = (
     "jobs_emitted",
     "jobs_rejected_validation",
 )
-
-
-def _as_list(value: object) -> list[Any]:
-    return cast(list[Any], value) if isinstance(value, list) else []
 
 
 def _page_text_list(value: object) -> list[str]:

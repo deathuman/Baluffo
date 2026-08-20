@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
+from src.shared.json_shapes import as_json_list as _as_list
+
 if TYPE_CHECKING:
     from src.jobs.interfaces import SourceLoader
 else:
@@ -104,10 +106,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Reuse the output dir instead of removing it before pass one.",
     )
     return parser.parse_args(argv)
-
-
-def _as_list(value: object) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _timing_summary(report: dict[str, Any]) -> dict[str, Any]:

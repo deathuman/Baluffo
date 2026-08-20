@@ -17,6 +17,12 @@ from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.normalizers import normalize_country
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 
 from ..html_parsers import strip_html_text
 from .location import (
@@ -59,14 +65,6 @@ def _smartrecruiters_public_job_link(company_id: str, posting_id: str, ref_value
 
 def _normalized_location_details(location_value: Any) -> dict[str, Any]:
     return normalize_location_details(location_value)
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _first_clean(row: dict[str, Any], *keys: str) -> str:

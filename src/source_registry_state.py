@@ -36,14 +36,6 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
 def _first_text(*values: Any) -> str:
     for value in values:
         text = str(value or "").strip()

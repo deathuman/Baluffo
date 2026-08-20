@@ -13,17 +13,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_shapes import (
+    as_json_list as _as_list,
+)
+from src.shared.json_shapes import (
+    as_json_object as _as_dict,
+)
 from src.shared.live_task import normalize_live_task_progress
 
 JsonObject = dict[str, Any]
-
-
-def _as_dict(payload: Any) -> JsonObject:
-    return payload if isinstance(payload, dict) else {}
-
-
-def _as_list(payload: Any) -> list[Any]:
-    return payload if isinstance(payload, list) else []
 
 
 def coerce_non_negative_int(value: Any) -> int:

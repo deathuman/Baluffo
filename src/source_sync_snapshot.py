@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from typing import Any, cast
 from urllib.error import URLError
 
+from src.shared.json_shapes import as_json_object as _as_dict
 from src.source_registry import (
     REGISTRY_MIGRATION_V2,
     REGISTRY_REASON_PENDING_DEFAULT,
@@ -47,10 +48,6 @@ _REMOTE_SNAPSHOT_TOP_LEVEL_KEYS = {
     "pending",
     "rejected",
 }
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _duration_ms(started_at: float, finished_at: float) -> int:
