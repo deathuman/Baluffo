@@ -1,9 +1,12 @@
+import time
 from datetime import UTC, datetime
 from unittest import mock
 
 import pytest
 
 from src.bridge import ops_api as ops_api_module
+from src.bridge import ops_api_core as ops_api_core_module
+from src.bridge import ops_task_live as ops_task_live_module
 from src.bridge.active_task_snapshot import write_snapshot
 
 
@@ -259,8 +262,9 @@ def test_ops_api_lifecycle_cache_returns_copied_rows(tmp_path) -> None:
 
 def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
     now = 100.0
-    monkeypatch.setattr(ops_api_module.time, "monotonic", lambda: now)
-    monkeypatch.setattr(ops_api_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.5)
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    # the TTL constant lives with the cache implementation in the core leaf
+    monkeypatch.setattr(ops_api_core_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.5)
     current_rows: list[dict[str, object]] = [{"type": "fetch", "runId": "fetch_active_old"}]
     api, calls = _make_ops_api(tmp_path, current_rows=current_rows, recent_rows=[])
 
@@ -289,7 +293,8 @@ def test_ops_api_lifecycle_loader_failure_records_failed_storage_read(
         }
     )
     monkeypatch.setattr(
-        ops_api_module,
+        # the storage-read recording lives with the cache implementation in the core leaf
+        ops_api_core_module,
         "record_storage_read",
         lambda **kwargs: records.append(dict(kwargs)),
     )
@@ -320,7 +325,7 @@ def test_task_state_summary_does_not_hydrate_full_live_reports(tmp_path, monkeyp
     )
 
     monkeypatch.setattr(
-        ops_api_module._ops_task_live,
+        ops_task_live_module,
         "get_task_live_payload",
         mock.Mock(side_effect=AssertionError("summary path must not hydrate live reports")),
     )

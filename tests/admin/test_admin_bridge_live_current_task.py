@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 
 from src import admin_bridge
-from src.bridge.ops_api import _compact_task_state_payload
+from src.bridge.ops_api_task_state import _compact_task_state_payload
 
 from ._admin_bridge_live_payloads_shared import (
     CURRENT_TASK_STATE_CASES,
