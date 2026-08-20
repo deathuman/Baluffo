@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Any, Protocol, cast
 
+from src.jobs import pipeline_root
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.models import CanonicalJob
@@ -48,13 +49,13 @@ class _RootLike(Protocol):
     ) -> None: ...
 
 
-root: _RootLike | None = None
 _EXPECTED_PROFILED_SOURCE_FAILURES = (OSError, TimeoutError, ValueError)
 
 
 def _root_module() -> _RootLike:
-    if root is not None:
-        return cast(_RootLike, root)
+    root_mod = pipeline_root.pipeline_root_or_none()
+    if root_mod is not None:
+        return cast(_RootLike, root_mod)
     from src import jobs_fetcher as jobs_fetcher_pkg
 
     return cast(_RootLike, jobs_fetcher_pkg)

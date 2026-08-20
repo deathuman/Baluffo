@@ -313,9 +313,12 @@ def test_source_discovery_web_search_root_stays_thin_compat_surface(repo_root: P
 def test_jobs_fetcher_compat_exports_use_leaf_common_modules_not_root_symbol_barrel(
     repo_root: Path,
 ) -> None:
-    target = repo_root / "src" / "jobs" / "fetcher_compat_exports.py"
+    # The lazy compat export table merged into the facade; it must keep importing
+    # leaf common modules, never the root symbol barrel.
+    target = repo_root / "src" / "jobs_fetcher.py"
     text = target.read_text(encoding="utf-8")
 
+    assert "fetcher_compat_exports" not in text
     assert "from src.jobs import common as _common" not in text
     assert "from src.jobs.common import config as common_config_mod" in text
     assert "from src.jobs.common import diagnostics as common_diagnostics_mod" in text
@@ -528,9 +531,11 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     text = target.read_text(encoding="utf-8")
 
     function_names = set(_top_level_function_names(tree))
-    assert "from src.jobs import fetcher_compat_exports as fetcher_compat_exports_mod" in text
+    # The compat export table merged into the facade; it must not re-import the
+    # removed fetcher_compat_exports module or drift toward implementation ownership.
+    assert "fetcher_compat_exports" not in text
     assert "from src.jobs import fetcher_compat_runtime as fetcher_compat_runtime_mod" in text
-    assert "fetcher_compat_runtime_mod.root = sys.modules[__name__]" in text
+    assert "pipeline_root.bind_jobs_fetcher(sys.modules[__name__])" in text
     assert {
         "_ensure_repo_on_path",
         "__getattr__",
@@ -544,11 +549,13 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
         "maybe_fetch_kojima_job_listing_html",
     } <= function_names
     assert "_COMPAT_MODULE_EXPORTS" in text
-    assert "def _module_attr_exports(" not in text
+    assert "def _module_attr_exports(" in text
     assert "parse_google_sheets_csv = _parsers.parse_google_sheets_csv" not in text
     assert "run_static_studio_pages_source = _static.run_static_studio_pages_source" not in text
     assert "raise SystemExit(main())" in text
-    assert len(text.splitlines()) <= 280, "jobs_fetcher root drifted back toward monolith size"
+    # Budget accounts for the lazy compat export table merged from
+    # fetcher_compat_exports.py (dispatch data + leaf module imports, no pipeline logic).
+    assert len(text.splitlines()) <= 440, "jobs_fetcher root drifted back toward monolith size"
     assert callable(jobs_fetcher.canonicalize_job)
     assert callable(jobs_fetcher.canonicalize_job_with_reason)
     assert callable(jobs_fetcher.canonicalize_google_sheets_rows)
@@ -1513,7 +1520,12 @@ def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_
     assert "--max-workers" not in admin_bridge
 
     # Coordinator assertions
-    assert "class TaskLaunchApi:" in task_launch_api
+    # task_launch_api composes TaskLaunchApi from the mixin leaves; the class and
+    # public entry points stay in the coordinator.
+    assert "class TaskLaunchApi(" in task_launch_api
+    assert "TaskLaunchApiContextsMixin" in task_launch_api
+    assert "TaskLaunchApiSmokeMixin" in task_launch_api
+    assert "TaskLaunchApiBootstrapMixin" in task_launch_api
     assert "def run_background_script(" in task_launch_api
     assert "def start_fetcher_task(" in task_launch_api
     assert "def start_jobs_bootstrap_task(" in task_launch_api
@@ -1563,11 +1575,20 @@ def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Pa
     assert "compute_ops_health" in _function_call_names(ops_health_fn)
     assert "_get_ops_api" in _function_call_names(fetcher_metrics_fn)
     assert "compute_fetcher_metrics" in _function_call_names(fetcher_metrics_fn)
-    assert "class OpsApi:" in ops_api
-    assert "def failed_source_names_from_latest_report(" in ops_api
-    assert "def sync_history_from_reports(" in ops_api
-    assert "def compute_ops_health(" in ops_api
-    assert "def compute_fetcher_metrics(" in ops_api
+    # ops_api is a thin coordinator: OpsApi composes the mixin leaves, and the
+    # delegated method bodies live in those leaves (mixin split, 2026-08-19).
+    assert "class OpsApi(" in ops_api
+    assert "OpsApiReportsMixin" in ops_api
+    assert "OpsApiHealthMixin" in ops_api
+    assert "OpsApiLiveMixin" in ops_api
+    for mixin_leaf, method in [
+        ("ops_api_reports.py", "def failed_source_names_from_latest_report("),
+        ("ops_api_reports.py", "def sync_history_from_reports("),
+        ("ops_api_health.py", "def compute_ops_health("),
+        ("ops_api_live.py", "def compute_fetcher_metrics("),
+    ]:
+        leaf_text = (repo_root / "src" / "bridge" / mixin_leaf).read_text(encoding="utf-8")
+        assert method in leaf_text
 
 
 def test_bridge_api_defaults_registry_identity_helpers_to_source_registry(repo_root: Path) -> None:

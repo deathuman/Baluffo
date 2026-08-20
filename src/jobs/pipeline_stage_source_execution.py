@@ -31,16 +31,13 @@ from src.jobs.pipeline_runtime_summary import (
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.utils import now_iso as _now_iso
 
+from . import pipeline_root
 from . import pipeline_source_loop as pipeline_source_loop_mod
-from . import pipeline_source_progress as pipeline_source_progress_mod
-from . import pipeline_source_results as pipeline_source_results_mod
 from .state_source_records import set_browser_fallback_state as _set_browser_fallback_state
 
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
-pipeline_source_loop_mod.root = sys.modules[__name__]
-pipeline_source_progress_mod.root = sys.modules[__name__]
-pipeline_source_results_mod.root = sys.modules[__name__]
+pipeline_root.bind_pipeline(sys.modules[__name__])
 
 # Preserve the stable root-owned helpers that the focused leaf modules resolve through `root`.
 SOURCE_DIAGNOSTICS = _SOURCE_DIAGNOSTICS

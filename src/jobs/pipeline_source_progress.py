@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
+from src.jobs import pipeline_root
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
@@ -31,13 +32,11 @@ class _PipelineSourceProgressRoot(Protocol):
     ) -> FailureBucket: ...
 
 
-root: _PipelineSourceProgressRoot | None = None
-
-
 def _require_root() -> _PipelineSourceProgressRoot:
-    if root is None:
-        raise RuntimeError("jobs.pipeline_source_progress root is not bound")
-    return root
+    return cast(
+        _PipelineSourceProgressRoot,
+        pipeline_root.require_pipeline_root("pipeline_source_progress"),
+    )
 
 
 def _all_source_rows_terminal(task_rows: dict[str, dict[str, Any]]) -> bool:

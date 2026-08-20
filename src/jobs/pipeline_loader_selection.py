@@ -12,6 +12,12 @@ from src.jobs.common.contracts_static_suppression_policy import (
     find_prior_static_suppression_pair,
 )
 from src.jobs.interfaces import SourceLoader
+from src.jobs.state_source_records import (
+    _STATIC_SOURCE_PREFIX,
+)
+from src.jobs.state_source_records import (
+    build_excluded_source_report as build_excluded_source_report,
+)
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.utils import env_flag
 
@@ -35,7 +41,6 @@ DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES = {
 }
 
 DYNAMIC_REDUNDANT_PROVIDER_REASON = "dynamic_redundant_provider"
-_STATIC_SOURCE_PREFIX = "static_source::"
 
 
 def _positive_int(*values: Any) -> int:
@@ -53,30 +58,6 @@ def _source_state_proves_feed_output(entry: dict[str, Any] | None) -> bool:
     if not isinstance(entry, dict):
         return False
     return _positive_int(entry.get("lastKeptCount"), entry.get("lastJobsKept")) > 0
-
-
-def build_excluded_source_report(
-    source_name: str,
-    reason: str,
-    *,
-    source_report_meta: dict[str, dict[str, Any]],
-) -> dict[str, Any]:
-    adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
-    if not adapter and clean_text(source_name).startswith(_STATIC_SOURCE_PREFIX):
-        adapter = "static"
-    return {
-        "name": source_name,
-        "status": "excluded",
-        "adapter": adapter or "custom",
-        "fetchStrategy": clean_text(source_report_meta.get(source_name, {}).get("fetchStrategy"))
-        or "auto",
-        "studio": clean_text(source_report_meta.get(source_name, {}).get("studio")) or "",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": clean_text(reason),
-        "exclusionReason": clean_text(reason),
-        "durationMs": 0,
-    }
 
 
 def select_pipeline_loaders(

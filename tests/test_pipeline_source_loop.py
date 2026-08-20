@@ -6,14 +6,14 @@ from typing import Any, cast
 
 import pytest
 
-from src.jobs import pipeline_source_loop
+from src.jobs import pipeline_root, pipeline_source_loop
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 
 
 def test_root_module_falls_back_to_jobs_fetcher_package(monkeypatch: pytest.MonkeyPatch) -> None:
     from src import jobs_fetcher
 
-    monkeypatch.setattr(pipeline_source_loop, "root", None)
+    monkeypatch.setattr(pipeline_root, "_PIPELINE_ROOT", None)
 
     assert pipeline_source_loop._root_module() is jobs_fetcher
 

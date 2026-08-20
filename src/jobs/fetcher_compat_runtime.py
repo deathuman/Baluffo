@@ -5,18 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from src.jobs import pipeline as pipeline_mod
+from src.jobs import pipeline_root
 from src.jobs import registry as registry_mod
 from src.jobs import transport as transport_mod
 from src.jobs.adapters import static as static_mod
 from src.jobs.adapters import static_scrapy as static_scrapy_mod
 
-root: Any | None = None
-
 
 def _root_mod() -> Any:
-    if root is None:
-        raise RuntimeError("src.jobs_fetcher root module was not bound to fetcher_compat_runtime")
-    return root
+    return pipeline_root.require_jobs_fetcher_root()
 
 
 def run_pipeline(*args, **kwargs):

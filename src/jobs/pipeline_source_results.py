@@ -12,8 +12,9 @@ import inspect
 import time
 from collections import Counter
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
+from src.jobs import pipeline_root
 from src.jobs.canonicalize import (
     CanonicalNormalizer,
     GoogleSheetsCategoryLinkStatusResolver,
@@ -139,13 +140,11 @@ class _ZeroKeptFailureBucketResolver(Protocol):
     ) -> FailureBucket: ...
 
 
-root: _PipelineSourceResultsRoot | None = None
-
-
 def _require_root() -> _PipelineSourceResultsRoot:
-    if root is None:
-        raise RuntimeError("jobs.pipeline_source_results root is not bound")
-    return root
+    return cast(
+        _PipelineSourceResultsRoot,
+        pipeline_root.require_pipeline_root("pipeline_source_results"),
+    )
 
 
 def _build_initial_report(

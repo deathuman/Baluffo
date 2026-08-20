@@ -527,14 +527,32 @@ def circuit_breaker_until(
     return parse_datetime(entry.get("quarantinedUntilAt"))
 
 
-def build_excluded_source_report(source_name: str, reason: str) -> dict[str, Any]:
+_STATIC_SOURCE_PREFIX = "static_source::"
+
+
+def build_excluded_source_report(
+    source_name: str,
+    reason: str,
+    *,
+    source_report_meta: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a standardized "excluded" source report row.
+
+    Canonical home for the report builder; ``pipeline_loader_selection`` re-exports
+    it. ``source_report_meta`` defaults to the registry ``SOURCE_REPORT_META`` so
+    simple two-argument callers (circuit breaker, default-source exclusions) and
+    meta-injecting callers (loader-selection lambdas) share one implementation.
+    """
+    meta = SOURCE_REPORT_META if source_report_meta is None else source_report_meta
+    adapter = clean_text(meta.get(source_name, {}).get("adapter"))
+    if not adapter and clean_text(source_name).startswith(_STATIC_SOURCE_PREFIX):
+        adapter = "static"
     return {
         "name": source_name,
         "status": "excluded",
-        "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
-        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy"))
-        or "auto",
-        "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
+        "adapter": adapter or "custom",
+        "fetchStrategy": clean_text(meta.get(source_name, {}).get("fetchStrategy")) or "auto",
+        "studio": clean_text(meta.get(source_name, {}).get("studio")) or "",
         "fetchedCount": 0,
         "keptCount": 0,
         "error": clean_text(reason),

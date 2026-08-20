@@ -50,6 +50,10 @@ def _zero_kept_streak(entry: dict[str, Any]) -> int:
     )
 
 
+def _has_consecutive_failures(entry: dict[str, Any]) -> bool:
+    return int(entry.get("consecutiveFailures") or 0) > 0
+
+
 def should_skip_source_by_ttl(
     source_name: str,
     state_rows: dict[str, dict[str, Any]],
@@ -60,7 +64,7 @@ def should_skip_source_by_ttl(
     entry = state_rows.get(source_name)
     if not isinstance(entry, dict):
         return False
-    if int(entry.get("consecutiveFailures") or 0) > 0:
+    if _has_consecutive_failures(entry):
         return False
     last_success = parse_datetime(entry.get("lastSuccessAt"))
     if not last_success:
@@ -79,7 +83,7 @@ def should_skip_source_by_cadence(
     entry = state_rows.get(source_name)
     if not isinstance(entry, dict):
         return False
-    if int(entry.get("consecutiveFailures") or 0) > 0:
+    if _has_consecutive_failures(entry):
         return False
     baseline = parse_datetime(entry.get("lastSuccessAt"))
     if not baseline:
