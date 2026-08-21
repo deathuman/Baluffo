@@ -275,11 +275,13 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         low_yield_detail_cap=low_yield_detail_cap,
         very_low_yield_detail_cap=very_low_yield_detail_cap,
         uncapped_deep_static=uncapped_deep_static,
+        # ponytail: heavy outlier hosts (603 MiB peak on en.moonton.com) are
+        # forced listing-only so detail fanout (4×20 MiB) cannot amplify the peak.
         listing_only_hosts=[
             clean_text(part).lower()
             for part in (
                 os.getenv("BALUFFO_STATIC_LISTING_ONLY_HOSTS")
-                or "hrmos.co,www.riotgames.com,careers.activision.com"
+                or "hrmos.co,www.riotgames.com,careers.activision.com,en.moonton.com,carx-online.com,targem.ru,lazyapply.com,koeitecmo.vn,shapeshiftergames.com,chessiverse.com,facepunch.com,doradogames.com"
             ).split(",")
             if clean_text(part)
         ],

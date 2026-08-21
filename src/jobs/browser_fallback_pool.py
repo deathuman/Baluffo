@@ -188,7 +188,18 @@ class BrowserFallbackPool:
                     if self._browser_death_marker(exc):
                         self._mark_unavailable()
                     raise
-                return await page.content() or ""
+                html = await page.content() or ""
+                # ponytail: cap browser-fetched HTML like the httpx path; outlier
+                # listings (603 MiB) would otherwise pin the pool browser's renderer.
+                try:
+                    from src.jobs.common.http import fetch_max_bytes_for_url
+
+                    cap = fetch_max_bytes_for_url(url)
+                except Exception:
+                    cap = 20 * 1024 * 1024
+                if len(html) > cap:
+                    html = html[:cap]
+                return html
             finally:
                 try:
                     await page.close()

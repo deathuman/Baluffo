@@ -167,16 +167,28 @@ class PooledRedirectResolver:
         self._client = None
         if httpx is not None:
             try:
-                self._client = httpx.Client(
-                    follow_redirects=True,
-                    headers=DEFAULT_REDIRECT_HEADERS,
-                    timeout=httpx.Timeout(float(self._timeout_s)),
-                    limits=httpx.Limits(
-                        max_keepalive_connections=max(1, int(max_connections or 1)),
-                        max_connections=max(2, int(max_connections or 1) * 2),
-                    ),
-                )
-            except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
+                try:
+                    self._client = httpx.Client(
+                        follow_redirects=True,
+                        headers=DEFAULT_REDIRECT_HEADERS,
+                        timeout=httpx.Timeout(float(self._timeout_s)),
+                        limits=httpx.Limits(
+                            max_keepalive_connections=max(1, int(max_connections or 1)),
+                            max_connections=max(2, int(max_connections or 1) * 2),
+                        ),
+                        http2=True,
+                    )
+                except (TypeError, ImportError):
+                    self._client = httpx.Client(
+                        follow_redirects=True,
+                        headers=DEFAULT_REDIRECT_HEADERS,
+                        timeout=httpx.Timeout(float(self._timeout_s)),
+                        limits=httpx.Limits(
+                            max_keepalive_connections=max(1, int(max_connections or 1)),
+                            max_connections=max(2, int(max_connections or 1) * 2),
+                        ),
+                    )
+            except (_EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS, ImportError):
                 self._client = None
         if isinstance(initial_cache, dict) and initial_cache:
             self.seed_cache(initial_cache)
@@ -307,7 +319,13 @@ async def async_fetch_text_httpx(
         headers = build_headers(request or default_request_config(timeout_s=timeout_s))
         response = await client.get(url, timeout=timeout, headers=headers)
         response.raise_for_status()
-        max_bytes = common_fetch_max_bytes()
+        # ponytail: host-specific cap for heavy outlier listings (603 MiB observed).
+        try:
+            from src.jobs.common.http import fetch_max_bytes_for_url
+
+            max_bytes = fetch_max_bytes_for_url(url)
+        except Exception:
+            max_bytes = common_fetch_max_bytes()
         content = bytearray()
         # ponytail: streamed read-at-most cap; see common.http.fetch_max_bytes.
         async for chunk in response.aiter_bytes():
@@ -345,14 +363,31 @@ class AsyncHttpTextFetcher:
         if httpx_mod is None:
             self._ready.set()
             return
-        self._client = httpx_mod.AsyncClient(
-            follow_redirects=True,
-            headers=DEFAULT_HTTP_HEADERS,
-            limits=httpx_mod.Limits(
-                max_keepalive_connections=self._max_connections,
-                max_connections=max(self._max_connections * 2, self._max_connections),
-            ),
-        )
+        # ponytail: http2 multiplexes provider boards on the same host (e.g. boards.greenhouse.io)
+        # through one TLS connection — stdlib-only win before per-board parallel fanout.
+        try:
+            try:
+                self._client = httpx_mod.AsyncClient(
+                    follow_redirects=True,
+                    headers=DEFAULT_HTTP_HEADERS,
+                    limits=httpx_mod.Limits(
+                        max_keepalive_connections=self._max_connections,
+                        max_connections=max(self._max_connections * 2, self._max_connections),
+                    ),
+                    http2=True,
+                )
+            except (TypeError, ImportError):
+                self._client = httpx_mod.AsyncClient(
+                    follow_redirects=True,
+                    headers=DEFAULT_HTTP_HEADERS,
+                    limits=httpx_mod.Limits(
+                        max_keepalive_connections=self._max_connections,
+                        max_connections=max(self._max_connections * 2, self._max_connections),
+                    ),
+                )
+        except (ImportError, _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS):
+            self._ready.set()
+            return
         self._ready.set()
         try:
             self._loop.run_forever()
