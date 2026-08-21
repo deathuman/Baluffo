@@ -900,6 +900,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fetch-max-bytes-env",
+        default="",
+        help=(
+            "Optional bench override for BALUFFO_FETCH_MAX_BYTES forwarded via "
+            "--env-file. Caps per-response body reads (httpx + urllib + browser "
+            "content); truncated listings retry next run."
+        ),
+    )
+    parser.add_argument(
         "--profile-alloc",
         action="store_true",
         help=(
@@ -1037,6 +1046,10 @@ def main(argv: list[str] | None = None) -> int:
             bench_env_lines.append(
                 "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS="
                 + str(args.browser_fallback_max_workers_env).strip()
+            )
+        if str(args.fetch_max_bytes_env or "").strip():
+            bench_env_lines.append(
+                "BALUFFO_FETCH_MAX_BYTES=" + str(args.fetch_max_bytes_env).strip()
             )
         if bool(args.profile_alloc):
             bench_env_lines.append("BALUFFO_PROFILE_ALLOC=1")
