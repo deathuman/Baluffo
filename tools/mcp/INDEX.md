@@ -33,7 +33,8 @@
 
 Freebuff ships two separate clients with different MCP behavior. Verified 2026-08-17 against Freebuff
 **CLI** 0.0.149 (npm `freebuff`) and Freebuff **Desktop** 0.0.63 (orchestrator build from 2026-08-15),
-including the public [`CodebuffAI/freebuff`](https://github.com/CodebuffAI/freebuff) source.
+including the public [`CodebuffAI/freebuff`](https://github.com/CodebuffAI/freebuff) source. Desktop MCP
+behavior re-verified 2026-08-21 (current build reads user-scope `~/.agents/mcp.json`).
 
 ### Freebuff CLI — supported native MCP path (use this)
 
@@ -53,12 +54,21 @@ gets `mcp__<server>__<tool>` tools directly:
 
 Use it with `cd` into the repo and run `freebuff`; MCP servers start lazily on first tool call.
 
-### Freebuff Desktop — no external MCP for the main agent
+### Freebuff Desktop — current builds read user-scope `~/.agents/mcp.json`
 
-Desktop 0.0.63's orchestrator does **not** load `.agents/mcp.json` — `loadMCPConfig` is never called in
-the installed bundle — and the hosted `codebuff` engine's tool list comes from the cloud-fetched base agent
-template plus Freebuff's own file/terminal/web tools. `.freebuff/settings.json` has no MCP surface (only
-`startupScript`). Engine specifics:
+Re-verified 2026-08-21: the current Desktop build's MCP settings surface reads `~/.agents/mcp.json`
+("Tools from your MCP servers, available to every agent. Read from `~/.agents/mcp.json` — the same
+file the CLI uses"), merging each configured server into the agent's tool list; new servers become
+available after adding/editing the file and reloading the app. Only the **user-scope** file is read —
+whether the Desktop build also reads repo-scoped `{cwd}/.agents/mcp.json` like the CLI is not yet
+verified. This repo works via the user-scope file (created 2026-08-21 with `serena` and `basic-memory`,
+same commands as `opencode.json`).
+
+Historical baseline (Desktop 0.0.63, 2026-08-17): the orchestrator did **not** load `.agents/mcp.json`
+— `loadMCPConfig` was never called in the installed bundle — and the hosted `codebuff` engine's tool
+list came from the cloud-fetched base agent template plus Freebuff's own file/terminal/web tools.
+`.freebuff/settings.json` has no MCP surface (only `startupScript`). Engine specifics as of 0.0.63
+(re-verify now that the MCP loader is wired in):
 
 - `claude-code` engine: fully locked down. The harness runs the Claude Code SDK with
   `settingSources: ["user"]` and `strictMcpConfig: true`, passing only Freebuff's own `freebuff` MCP
@@ -71,10 +81,11 @@ template plus Freebuff's own file/terminal/web tools. `.freebuff/settings.json` 
   `mcpServers` (loaded via `loadLocalAgents`, exposed via `getMCPToolData`), but the Desktop UI does not
   expose custom agents, so it is not usable end-to-end yet.
 
-Practical route for Desktop users: run MCP-heavy work in the Freebuff **CLI** (above), or in **Codex CLI**
-(`codex --profile baluffo`) / **OpenCode** from the repo root, which load both MCPs per
-[SERENA.md](SERENA.md) and [BASIC_MEMORY.md](BASIC_MEMORY.md). Re-verify after app updates — Desktop may
-start wiring in the `loadMCPConfig` loader (already bundled in its SDK, not yet called).
+Practical route for Desktop users: MCP servers work through the user-scope `~/.agents/mcp.json` (add
+servers there, then reload). MCP-heavy work can also run in the Freebuff **CLI** (above), or in
+**Codex CLI** (`codex --profile baluffo`) / **OpenCode** from the repo root, which load both MCPs per
+[SERENA.md](SERENA.md) and [BASIC_MEMORY.md](BASIC_MEMORY.md). Re-verify engine behavior after app
+updates.
 
 ## Conventions for Future MCP Docs
 

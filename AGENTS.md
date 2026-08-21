@@ -34,3 +34,8 @@ Always-loaded rules only. Keep detailed workflow in the owning docs.
 - At closeout, update Basic Memory only when the task created durable continuity value. Detailed policy lives in `tools/mcp/BASIC_MEMORY.md`.
 - For environment/toolbelt triage, run `python scripts/ai_env_check.py --smoke`; run `python scripts/toolbelt_check.py --install` only when missing tools matter. Toolbelt tools are conveniences, not build/CI requirements.
 - Avoid broad repo packers or context generators by default; use targeted search, structured filters, and symbol tools first.
+
+## Testing
+
+- The repo `.venv` is a Linux/WSL venv whose `bin/python` symlink is broken on Windows; run Python tests with the global `python -m pytest`, not `.venv/bin/python`. Verification commands, fixture layout, and test routing live in `docs/testing.md`.
+- Test runs must never leave discovery audit artifacts (`gameprog-*`/`gamesmap-*`/`*-discovery-audit.json`) in repo `data/`; if they do, an unpinned caller ran the real stages — see `docs/testing.md` (Discovery audit artifact hygiene).

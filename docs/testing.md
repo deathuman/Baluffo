@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-07-17
+> - **Last updated:** 2026-08-21
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -16,6 +16,8 @@ uv pip compile requirements.txt -o requirements-lock.txt
 ```
 
 ## Python tests (pytest)
+
+The repo `.venv` is a Linux/WSL venv whose `bin/python` symlink is broken on Windows; run Python tests with the global `python -m pytest` (pytest 9.x is installed there), not `.venv/bin/python`.
 
 Availability-focused development lane:
 
@@ -293,6 +295,18 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - Keep pytest temp roots under `.tmp/pytest`; the repo disables pytest's cacheprovider by default so unreadable `pytest-cache-files-*` debris does not accumulate in the workspace.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
+
+**Discovery audit artifact hygiene:**
+
+- Discovery audits land in repo `data/` unless `activeAuditPath` is pinned: `audit_artifact_path()` (src/source_discovery/audit_config.py) falls back to a hardcoded `Path(__file__).parents[2] / "data"` — ignoring redirected runtime dirs — and `run_directory_audit` always writes the artifact, even on empty/failed scans. `DEFAULT_DISCOVERY_CONFIG` (config.py) pins explicit paths for all four adapters; keep it that way.
+- `stage_control.discovery_stage_enabled()` defaults stages to ENABLED when `stageToggles` is absent, so flow tests running `run_discovery` with partial configs run all real stages. Gameprog/gamesmap config resolves via flat `.get` (no default merge), unreachable by `override_discovery_runtime` (tests/helpers/discovery_runtime.py, which pins only sheet/web) — any test passing its own gameprog/gamesmap section must pin `activeAuditPath` itself.
+- This `data/` audit pollution already recurred once (Aug 16 fix, Aug 20 reappearance); `gameprog-discovery-audit.json` / `gamesmap-discovery-audit.json` appearing in `data/` after a test run means an unpinned caller snuck in again.
+
+**`data/` directory hygiene (runtime state vs regenerable artifacts):**
+
+- Tracked `data/` files (`git ls-files data/`) are canonical — never delete them in cleanup: `.gitkeep`, `contracts/`, `defaults/`, `adapter-audit-report.md`, `pipeline-audit-report.md`, `release-repeatability-report.md`, `desktop-startup-metrics.jsonl`, `jobs-fetch-tasks.json`, `jobs-lifecycle-state.json`, `jobs-source-state.json`, `jobs-success-cache.json`, `social-sources-config.json`, `source-discovery-candidates.json`, `source-discovery-config.json`, `source-discovery-report.json`.
+- Everything else under `data/` is gitignored (`data/*.json`, `*.csv`, `*.log`, `*.md`, `*.jsonl`, `*.jsonl.gz`, `*.json.gz`, `*.lock`, `*.db`, `local-user-data/`). Among ignored files, only these are **regenerable** one-shot artifacts — the safe cleanup candidates: the five discovery audits (`gameprog-`/`gamesmap-`/`web-search-`/`sheet-directory-discovery-audit.json`, `gamedevmap-active-source-dry-run.json`), `m5-strategic-backlog.json`, `packaged-desktop-smoke-report.json`, `source-policy-recommendations.json`. Real discovery runs rewrite the audit files into `data/` by design (the ops UI reads them there), so their presence alone is not a pollution signal.
+- Everything else ignored is **live runtime state** the app reads/writes every run — keep it: `baluffo-runtime.db`, `source-registry-*`, `jobs-unified*` feeds, `jobs-fetch-report.json` + `-summary.json`, `jobs-lifecycle-state.json.gz` + archive, `jobs-source-state.json.gz`, `jobs-availability-*`, `jobs-parser-regression-queue.json`, `admin-*` journals, `storage-metrics.jsonl`, `sync-live-task.json`, `sync-timing-history.json`, `source-sync-runtime.json`, `url-patch-manifest.json`, `registry-conflicts-summary.json` + `-full.json` (route caches), `source-approval-state.json`, `social-experiment-review.json`, `runtime/`, `local-user-data/`.
 
 ## Packaged artifact ownership
 
