@@ -1,11 +1,11 @@
 # Jobs Pipeline Memory Reduction Plan
 
-> - **Status:** Completed (P1–P3 + profiling) 2026-08-09; validated 2026-08-11 with subset-500 pi4-tight bench — pi4-tight requires `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` to stay under the 1.5 GiB cap
+> - **Status:** Completed (P1–P3 + profiling) 2026-08-09; validated 2026-08-11 with subset-500 pi4-tight bench; **2026-08-21 streaming + memory-lever pass landed — frozen 2,125-key full run completes under 2.5 GiB with browser fallback ON (see "Streaming + Memory Levers")**
 > - **Use this when:** revisiting jobs-pipeline peak-RSS pressure, evaluating the next fetch-side lever, or running the alloc profiler
 > - **Canonical for:** measured peaks, landed phases, bench methodology, and deferred next steps
 > - **Not canonical for:** runtime contract changes — data formats, payload keys, and API surfaces are in [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Then inspect:** [`../fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`../testing.md`](../testing.md), [`../../src/pipeline_io.py`](../../src/pipeline_io.py), [`../../src/jobs/state_lifecycle.py`](../../src/jobs/state_lifecycle.py)
-> - **Last updated:** 2026-08-09
+> - **Last updated:** 2026-08-21
 
 ## Summary
 
@@ -192,3 +192,40 @@ Key findings:
 - The first production run after `32794f97` ships will write `.rows.jsonl.gz` alongside the legacy blob. From that point forward `read_existing_output` reads the sidecar only.
 - Disk overhead: roughly `sizeof(blob) + sizeof(blob) ≈ 2×` per artifact. Consider pruning the blob write after two successful full cycles if disk pressure matters (not required for memory).
 - **2026-08-12: the legacy blob read fallback was removed** (`read_existing_output` cold-seeds `[]` when the sidecar is missing; the module no longer imports `read_json`). Deleting a sidecar is now safe but **cold-seeds the next run** — the feed rebuilds from the lifecycle carry (the source of truth). Gate note: the deployed Umbrel image (0.2.129, 2026-08-07) predates the sidecar (`32794f97`, 2026-08-10) — the device has no sidecar yet; the sidecar-only read ships in the same release as the fix batch, and the first device cycle on the new image is the production verification (bench evidence: the sidecar path is exercised by every fresh-seed bench run, `seeding_existing_output` 0.8 s at 500 keys).
+
+## Streaming + Memory Levers (2026-08-21)
+
+Goal: full 2,317-key production fetch under **2.5 GiB** with **browser fallback ON** (functional requirement) and **100% sources** per cycle. Prior full-seed evidence peaked at the cgroup ceiling (~2.5 GiB) during `fetch/executing_sources` and OOM-killed the fetch child before dedup; retained-row memory scaled with coverage, not worker count.
+
+### Landed commits
+
+| Hash | Subject | Lever |
+|------|---------|-------|
+| `586ca0c3` | `perf(pipeline): stream fetched canonical rows through incremental sidecar` | Fetch workers append each canonical batch to an ephemeral `.pipeline-fetched-rows.jsonl` under a lock (`IncrementalFetchedRowsWriter`, `src/pipeline_io.py`); `run_pipeline` rehydrates chunked before finalize. Fetch RSS stays at seeded-rows + in-flight batches — this is the lever that made peak flat across 500→2125 sources. |
+| `70f50bae` | `perf(transport): http2 attempt with graceful fallback + heavy-host body caps` | `http2=True` try/fallback on both pooled httpx clients; `fetch_max_bytes_for_url` caps measured outlier hosts at 2 MiB (alloc profile: en.moonton.com single-source peak **603 MiB**) on urllib, async streamed read, and pooled-browser content; outliers forced `listing_only_hosts`. |
+| `1d219950` | `perf(runtime): compact hot-state JSON writes` | Task-state / live progress / prep writers emit compact separators (0.75s/5s polled artifacts). |
+| `a7cef6b0` | `fix(container): restore browser-fallback default 4; bench harness env staging` | Fallback default restored to 4 after bench debugging left it 0; safe fetch default 8 (cap 12); harness stages env vars without `--only-sources-file`; `pi4-roomy-3g` probe profile. |
+| `91ea4f6b` | `perf(finalize): copy-on-write lifecycle rows, replace-based renumber, progress gate` | `apply_job_lifecycle_state` shares untouched entry dicts (CoW at the three mutation sites); `_sort_enrich_and_number` uses `dataclasses.replace(id=...)` instead of `to_dict()/from_mapping()` round trip; `update_fetch_work_item_progress` skips payload rebuild when the resolved signature is unchanged. |
+
+### Gate bench (frozen seed = full copy of live volume, 2,125 selected keys)
+
+Image `ghcr.io/deathuman/baluffo:bench-streaming` (defaults mw=8 / fb=4), `pi4-roomy` 2.5g/2cpu, preset `smoke`, run `pipeline_408378f9df`, artifacts `_out/perf-pipeline/full2317-roomy-gate-mw8fb4/`:
+
+| Gate | Result |
+|---|---|
+| Terminal | **completed** |
+| Wall | **500,909 ms (8.3 min)** — warm-state caveat below |
+| Peak RSS (cgroup, fb=4 active) | **2,191 MiB** (sync_push stage); fetch phases ≤2,063 MiB — under the 2.5 GiB cap with headroom |
+| Sources | 2,126 selected (100%), outputCount **42,558**, rawFetched 39,558 |
+
+Per-stage peaks: read_lifecycle_state 1,666 MiB transient (json parse tree of the 36 MB state; the normalized fast-path already avoids a rebuild), executing_sources 1,775, deduplicating 1,857, applying_lifecycle 2,063, writing_outputs 2,012.
+
+Wall caveat: prior benches mutated source-state on this shared frozen copy, so many loaders were recently successful and ran shorter paths; the coldest observed wall remains the 3g run at 41.8 min (incl. 314 s sync_push), which also meets the <45 min budget. Cold-wall re-verification belongs on a pristine re-frozen seed.
+
+Earlier same-day runs (for provenance): alloc-profiled mw8 run captured per-source peaks in `_out/perf-admin-flows/seed-data/perf-profiles/allocations.jsonl` via `BALUFFO_DATA_DIR=<seed> python scripts/perf_alloc_top.py`; top frames `httpx/_models.py` 89.9 MiB cumulative, `src/shared/live_task.py` 67.9 MiB, `src/jobs/transport.py` 49.5 MiB; top outlier en.moonton.com 603.8 MiB single-source peak (now capped).
+
+### Notes for future levers
+
+- Remaining largest retained block is the lifecycle parse tree itself; if a tighter seat is ever needed, stream-normalize or convert persistence to JSONL chunks (storage-contract change).
+- Heavy-host list is ops-extensible via `BALUFFO_STATIC_LISTING_ONLY_HOSTS`; body caps scale from `BALUFFO_FETCH_MAX_BYTES`.
+- `perf_admin_seed.py` whitelist misses newer artifacts (`admin-task-lifecycle.json`, `*.rows.jsonl.gz`, delta `source-registry-*.jsonl`); freeze seeds with a full directory copy instead.
