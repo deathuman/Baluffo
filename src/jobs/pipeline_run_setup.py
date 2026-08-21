@@ -85,7 +85,11 @@ from src.jobs.transport import (
     build_redirect_resolver as transport_build_redirect_resolver,
 )
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
-from src.pipeline_io import read_existing_output, write_hot_text_if_changed
+from src.pipeline_io import (
+    IncrementalFetchedRowsWriter,
+    read_existing_output,
+    write_hot_text_if_changed,
+)
 from src.shared.json_io import read_json
 from src.shared.utils import env_flag, now_iso
 
@@ -115,6 +119,7 @@ class PipelineRunSetup:
     stage_config: SourceExecutionStageConfig
     effective_seed_from_existing_output: bool
     seeded_row_count: int
+    fetched_rows_writer: Any | None = None
 
 
 from dataclasses import replace as _dc_replace
@@ -285,6 +290,15 @@ def prepare_pipeline_run(
     if build_redirect_resolver_fn is None:
         build_redirect_resolver_fn = transport_build_redirect_resolver
     paths = build_pipeline_paths(output_dir)
+    # ponytail: incremental sidecar for fetched rows — keeps fetch RSS flat when
+    # 2 317 sources each emit canonical jobs. Fail-safe: file lives in output_dir
+    # so a crash leaves it on disk but the next run truncates it here.
+    try:
+        fetched_rows_writer: IncrementalFetchedRowsWriter | None = IncrementalFetchedRowsWriter(
+            paths.output_dir
+        )
+    except Exception:
+        fetched_rows_writer = None
     SOURCE_DIAGNOSTICS.clear()
     reset_location_quality_audit()
     reset_sector_quality_audit()
@@ -709,4 +723,5 @@ def prepare_pipeline_run(
         stage_config=stage_config,
         effective_seed_from_existing_output=effective_seed_from_existing_output,
         seeded_row_count=seeded_row_count,
+        fetched_rows_writer=fetched_rows_writer,
     )

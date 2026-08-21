@@ -78,6 +78,7 @@ def run_source_execution_stage(
     write_progress_report,
     canonical_rows: list[CanonicalJob],
     source_reports: list[dict[str, Any]],
+    fetched_rows_writer: Any | None = None,
 ) -> None:
     if task_runtime is None:
         task_runtime = PipelineTaskRuntime(
@@ -130,6 +131,7 @@ def run_source_execution_stage(
             execute_loader_started=execute_started,
             canonical_rows=canonical_rows,
             source_reports=source_reports,
+            fetched_rows_writer=fetched_rows_writer,
         )
         if pool is not None and bool(config.show_progress):
             metrics = pool.metrics.snapshot()
@@ -269,9 +271,21 @@ def _append_loader_result(
     *,
     canonical_rows: list[CanonicalJob],
     source_reports: list[dict[str, Any]],
+    fetched_rows_writer: Any | None = None,
 ) -> None:
     report, canonical_batch = result
-    canonical_rows.extend(canonical_batch)
+    # ponytail: stream fetched rows to sidecar instead of pinning 25k+ CanonicalJobs
+    # through the whole ThreadPool window. Keep the legacy in-mem extend only
+    # when the writer is absent (unit tests) or when sidecar allocation failed.
+    if fetched_rows_writer is not None and canonical_batch:
+        try:
+            fetched_rows_writer.append_canonical_jobs(canonical_batch)
+        except Exception:
+            canonical_rows.extend(canonical_batch)
+        # else: batch is now durable on disk — reference dies with the stack
+        # frame, so fetch-window RSS stays at seeded-rows + in-flight batches.
+    else:
+        canonical_rows.extend(canonical_batch)
     source_reports.append(report)
 
 
@@ -282,6 +296,7 @@ def _run_selected_loaders(
     execute_loader_started,
     canonical_rows: list[CanonicalJob],
     source_reports: list[dict[str, Any]],
+    fetched_rows_writer: Any | None = None,
 ) -> None:
     if max_workers <= 1 or len(selected_loaders) <= 1:
         for source_name, loader in selected_loaders:
@@ -289,6 +304,7 @@ def _run_selected_loaders(
                 execute_loader_started(source_name, loader),
                 canonical_rows=canonical_rows,
                 source_reports=source_reports,
+                fetched_rows_writer=fetched_rows_writer,
             )
         return
 
@@ -307,4 +323,5 @@ def _run_selected_loaders(
                     future.result(),
                     canonical_rows=canonical_rows,
                     source_reports=source_reports,
+                    fetched_rows_writer=fetched_rows_writer,
                 )

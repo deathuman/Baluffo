@@ -179,8 +179,44 @@ def run_pipeline(
         # ponytail: hand over ownership of canonical_rows to finalize; clear
         # the setup reference so the fetch loop's accumulator is dropped from
         # the setup frame before dedup+lifecycle materialize their own copies.
+        # When the incremental fetched sidecar is active, canonical_rows holds
+        # only seeded rows — hydrate the just-fetched batch from disk before
+        # finalize so fetch-stage RSS was never `seeded + fetched`.
         canonical_rows_for_finalize = setup.canonical_rows
         setup.canonical_rows = []
+        fetched_writer = getattr(setup, "fetched_rows_writer", None)
+        if fetched_writer is not None and int(getattr(fetched_writer, "count", 0) or 0) > 0:
+            try:
+                from src.jobs.models import CanonicalJob as _CJ
+                from src.pipeline_io import (
+                    read_fetched_rows_sidecar,
+                )
+
+                # Chunked extend avoids one large intermediate list copy.
+                _buf: list = []
+                for _job in read_fetched_rows_sidecar(
+                    setup.paths.output_dir, canonical_job_cls=_CJ
+                ):
+                    _buf.append(_job)
+                    if len(_buf) >= 5000:
+                        canonical_rows_for_finalize.extend(_buf)
+                        _buf = []
+                if _buf:
+                    canonical_rows_for_finalize.extend(_buf)
+            except Exception:
+                pass
+            # File is no longer needed — dedup now owns the objects.
+            try:
+                from src.pipeline_io import cleanup_fetched_rows_sidecar as _cleanup
+
+                _cleanup(setup.paths.output_dir)
+            except Exception:
+                pass
+            # pong: drop writer ref so its lock/file path dies with setup.
+            try:
+                object.__setattr__(setup, "fetched_rows_writer", None)
+            except Exception:
+                pass
         try:
             return cast(
                 dict[str, Any],
@@ -237,6 +273,13 @@ def run_pipeline(
         jobs_registry.set_include_pending_provider_migration(previous_include_pending)
         if setup is not None:
             setup.stop_progress_reporter()
+            # ponytail: best-effort cleanup of the incremental fetch sidecar (ephemeral).
+            try:
+                from src.pipeline_io import cleanup_fetched_rows_sidecar as _cleanup_sidecar
+
+                _cleanup_sidecar(setup.paths.output_dir)
+            except Exception:
+                pass
 
 
 def parse_args() -> argparse.Namespace:

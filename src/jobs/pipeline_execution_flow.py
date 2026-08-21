@@ -118,6 +118,7 @@ def execute_pipeline_sources(setup: PipelineRunSetup) -> None:
             write_progress_report=setup.write_progress_report,
             canonical_rows=setup.canonical_rows,
             source_reports=setup.source_reports,
+            fetched_rows_writer=getattr(setup, "fetched_rows_writer", None),
         )
     finally:
         _close_runtime_resources(setup.async_fetcher, setup.redirect_resolver)

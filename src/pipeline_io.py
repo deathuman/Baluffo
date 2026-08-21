@@ -6,6 +6,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -224,11 +225,20 @@ def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None])
 
 
 _PIPELINE_ROWS_SIDECAR_SUFFIX = ".rows.jsonl.gz"
+_FETCHED_ROWS_SIDECAR_NAME = ".pipeline-fetched-rows.jsonl"
 
 
 def _pipeline_rows_sidecar_path(path: Path) -> Path:
     path = _trusted_local_path(path)
     return path.with_name(path.name + _PIPELINE_ROWS_SIDECAR_SUFFIX)
+
+
+def _fetched_rows_sidecar_path(output_dir: Path) -> Path:
+    # ponytail: ephemeral sidecar for freshly fetched rows during the fetch stage
+    # — streamed incrementally so the ThreadPoolExecutor window does not pin 25k
+    # CanonicalJob objects while 2 317 sources run. Plain JSONL (no gzip) so
+    # concurrent worker threads can append cheaply; gzipped at finalize time only.
+    return _trusted_local_path(output_dir) / _FETCHED_ROWS_SIDECAR_NAME
 
 
 def write_pipeline_rows_sidecar(path: Path, rows: Sequence[RawJob]) -> None:
@@ -277,6 +287,89 @@ def read_pipeline_rows_sidecar(path: Path) -> Iterator[dict[str, Any]] | None:
                     yield row
 
     return _iter()
+
+
+class IncrementalFetchedRowsWriter:
+    """Thread-safe incremental JSONL writer for freshly fetched canonical rows.
+
+    Keeps fetch-stage RSS flat: workers append compact JSONL lines under a lock
+    instead of extending a 25k+ CanonicalJob list that lives through the whole
+    ThreadPoolExecutor window. The file is plain text (no gzip) so appends are
+    cheap and lock-hold is minimal. Caller later streams it back via
+    ``read_fetched_rows_sidecar``.
+    """
+
+    def __init__(self, output_dir: Path) -> None:
+        self.path = _fetched_rows_sidecar_path(output_dir)
+        self._lock = threading.Lock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Truncate stale sidecar from a prior run / crash.
+        try:
+            self.path.write_text("", encoding="utf-8")
+        except OSError:
+            pass
+        self._count = 0
+
+    def append_canonical_jobs(self, rows: Sequence[Any]) -> None:
+        if not rows:
+            return
+        # Serialize outside the lock to keep it brief.
+        lines: list[str] = []
+        for row in rows:
+            try:
+                payload = row.to_dict() if hasattr(row, "to_dict") else dict(row)
+            except Exception:
+                continue
+            lines.append(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        if not lines:
+            return
+        text = "\n".join(lines) + "\n"
+        with self._lock:
+            with open(self.path, "a", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
+            self._count += len(lines)
+
+    @property
+    def count(self) -> int:
+        return int(self._count)
+
+
+def read_fetched_rows_sidecar(
+    output_dir: Path,
+    *,
+    canonical_job_cls: Any | None = None,
+) -> Iterator[Any]:
+    """Yield CanonicalJob objects from the incremental fetched sidecar."""
+
+    path = _fetched_rows_sidecar_path(output_dir)
+    if not path.exists():
+        return
+        yield  # make this a generator even when empty
+    # codeql[py/path-injection] Sidecar lives beside a trusted pipeline artifact.
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if canonical_job_cls is not None:
+                try:
+                    yield canonical_job_cls.from_mapping(payload)
+                except Exception:
+                    continue
+            else:
+                yield payload
+
+
+def cleanup_fetched_rows_sidecar(output_dir: Path) -> None:
+    try:
+        _fetched_rows_sidecar_path(output_dir).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:
