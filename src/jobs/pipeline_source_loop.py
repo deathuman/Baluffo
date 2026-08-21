@@ -266,6 +266,33 @@ def _execute_loader_started(
     return report, canonical_batch
 
 
+_TRIM_EVERY_N_COMPLETIONS = 50
+_trim_state = {"completed": 0}
+
+
+def _trim_fetch_allocator() -> None:
+    """Periodically gc + return freed arenas to the OS during the fetch stage.
+
+    ponytail: finalize already trims via `_return_freed_memory_to_os`, but a
+    2k-source cold fetch never trims mid-run — mixed-size transient allocations
+    (bodies, parse trees) fragment glibc arenas and RSS high-water drifts ~hundreds
+    of MiB even though the live set is flat. Trim cost is ms-scale every 50
+    completions; no-op where malloc_trim is absent (non-glibc).
+    """
+
+    import gc as _gc
+
+    _gc.collect()
+    try:
+        import ctypes
+
+        malloc_trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if malloc_trim is not None:
+            malloc_trim(0)
+    except (AttributeError, OSError, TypeError, ValueError):
+        pass
+
+
 def _append_loader_result(
     result: tuple[dict[str, Any], list[CanonicalJob]],
     *,
@@ -287,6 +314,9 @@ def _append_loader_result(
     else:
         canonical_rows.extend(canonical_batch)
     source_reports.append(report)
+    _trim_state["completed"] += 1
+    if _trim_state["completed"] % _TRIM_EVERY_N_COMPLETIONS == 0:
+        _trim_fetch_allocator()
 
 
 def _run_selected_loaders(
