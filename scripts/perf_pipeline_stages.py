@@ -62,6 +62,9 @@ PROFILES: dict[str, dict[str, str]] = {
     # OOMs at the ceiling. This seat mirrors the uncapped Umbrel deployment
     # (no compose mem_limit) while staying Pi4-class.
     "pi4-roomy": {"cpus": "2.0", "memory": "2.5g"},
+    # ponytail: 3.5g probe to verify full 2125 completes after heavy-host caps;
+    # uncapped production has no mem_limit, so 3.5g is still Pi-4-class headroom probe.
+    "pi4-roomy-3g": {"cpus": "2.0", "memory": "3.5g"},
 }
 
 
@@ -1009,6 +1012,11 @@ def main(argv: list[str] | None = None) -> int:
             "-v",
             f"{str(data_volume)}:/data",
         ]
+        # ponytail: --profile-alloc and --fetch-max-workers-env should work even
+        # without --only-sources-file (full 2123 run with alloc profiling).
+        bench_env_lines: list[str] = []
+        only_sources: list[str] = []
+        only_sources_path: Path | None = None
         if str(args.only_sources_file or "").strip():
             only_sources_path = Path(str(args.only_sources_file)).expanduser().resolve()
             only_sources = [
@@ -1017,32 +1025,33 @@ def main(argv: list[str] | None = None) -> int:
                 if name.strip()
             ]
             if only_sources:
-                # ponytail: env-file staging avoids the Windows CreateProcess 32k
-                # command-line cap — a 500-name only-sources list is ~36 KB.
-                env_file = output_dir / "bench-only-sources.env"
-                env_lines = [
-                    "BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES=" + ",".join(only_sources),
-                ]
-                if str(args.fetch_max_workers_env or "").strip():
-                    env_lines.append(
-                        "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS="
-                        + str(args.fetch_max_workers_env).strip()
-                    )
-                if str(args.browser_fallback_max_workers_env or "").strip():
-                    env_lines.append(
-                        "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS="
-                        + str(args.browser_fallback_max_workers_env).strip()
-                    )
-                if bool(args.profile_alloc):
-                    env_lines.append("BALUFFO_PROFILE_ALLOC=1")
-                env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
-                docker_args.extend(["--env-file", str(env_file)])
-                print(
-                    f"[bench] only-sources env file: {env_file} ({len(only_sources)} names), "
-                    f"alloc_profile={bool(args.profile_alloc)}, "
-                    f"maxWorkers={str(args.fetch_max_workers_env or '-')}",
-                    flush=True,
+                bench_env_lines.append(
+                    "BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES=" + ",".join(only_sources)
                 )
+        if str(args.fetch_max_workers_env or "").strip():
+            bench_env_lines.append(
+                "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS="
+                + str(args.fetch_max_workers_env).strip()
+            )
+        if str(args.browser_fallback_max_workers_env or "").strip():
+            bench_env_lines.append(
+                "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS="
+                + str(args.browser_fallback_max_workers_env).strip()
+            )
+        if bool(args.profile_alloc):
+            bench_env_lines.append("BALUFFO_PROFILE_ALLOC=1")
+        if bench_env_lines:
+            env_file = output_dir / "bench-only-sources.env"
+            # ponytail: env-file staging avoids the Windows CreateProcess 32k
+            # command-line cap — a 500-name only-sources list is ~36 KB.
+            env_file.write_text("\n".join(bench_env_lines) + "\n", encoding="utf-8")
+            docker_args.extend(["--env-file", str(env_file)])
+            print(
+                f"[bench] bench env file: {env_file} "
+                f"({len(only_sources)} only-sources, alloc_profile={bool(args.profile_alloc)}, "
+                f"maxWorkers={str(args.fetch_max_workers_env or '-')})",
+                flush=True,
+            )
         docker_args.append(str(args.image))
         _docker(*docker_args)
         starting_fresh = True
