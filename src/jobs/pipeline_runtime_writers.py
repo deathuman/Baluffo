@@ -170,9 +170,11 @@ class FetchPrepProgressWriter:
             started_at=self.started_at,
             report_path=self.report_path,
         )
+        # ponytail: compact JSON for 0.75 s polled task state — indent=2 pretty
+        # costs ~3× alloc/encode CPU per tick for no functional gain.
         self.write_text_if_changed(
             self.task_state_path,
-            json.dumps(payload, indent=2, ensure_ascii=False),
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         )
         write_fetch_report_summary_artifact(
             self.report_path,
@@ -546,8 +548,11 @@ def write_progress_report(
                 },
             }
         )
+        # ponytail: compact hot progress report (5 s cadence + phaseChanges) — pretty
+        # indent dominated the fetch alloc profile (json.dumps per tick).
         write_text_if_changed(
-            paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False)
+            paths.report_path,
+            json.dumps(progress_payload, ensure_ascii=False, separators=(",", ":")),
         )
         if force or phase_changed:
             write_fetch_report_summary_artifact(
@@ -600,8 +605,10 @@ def make_task_state_writer(
                 finished_at=finished_at,
                 report_path=str(report_path),
             )
+            # ponytail: compact live task payload (5 s cadence) — see above.
             write_text_if_changed(
-                task_state_path, json.dumps(payload, indent=2, ensure_ascii=False)
+                task_state_path,
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             )
             write_fetch_report_summary_artifact(
                 report_path,
