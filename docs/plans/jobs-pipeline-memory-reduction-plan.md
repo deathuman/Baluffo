@@ -224,6 +224,20 @@ Wall caveat: prior benches mutated source-state on this shared frozen copy, so m
 
 Earlier same-day runs (for provenance): alloc-profiled mw8 run captured per-source peaks in `_out/perf-admin-flows/seed-data/perf-profiles/allocations.jsonl` via `BALUFFO_DATA_DIR=<seed> python scripts/perf_alloc_top.py`; top frames `httpx/_models.py` 89.9 MiB cumulative, `src/shared/live_task.py` 67.9 MiB, `src/jobs/transport.py` 49.5 MiB; top outlier en.moonton.com 603.8 MiB single-source peak (now capped).
 
+### Cold-wall follow-up (2026-08-22): full-cold cycles do not yet hold 2.5 GiB
+
+The gate pass above ran against warm source-state (incremental skips shrank the working set). Pristine-seed probes with source-state/success-cache deleted — i.e. the "100% sources run each cycle" shape — all pinned the 2.5 GiB cgroup ceiling inside `fetch/executing_sources`:
+
+| Probe | mw | body cap | fb | wall | terminal | executing peak |
+|---|---|---|---|---|---|---|
+| cold-1 | 8 | 20 MiB | 4 | died ~838 s in | failed (OOM) | 2,560 MiB |
+| cold-2 | 6 | 20 MiB | 4 | died ~1,782 s in | failed (OOM) | 2,554 MiB |
+| cold-3 | 6 | 8 MiB (`BALUFFO_FETCH_MAX_BYTES=8388608`) | 4 | died ~2,558 s in | failed (OOM) | 2,520 MiB |
+
+Samples show accumulation (~+800 MiB drift over the fetch window) roughly independent of worker count and body size; candidates are per-source report retention (`completed_source_reports` incl. static `details` lists), `SOURCE_DIAGNOSTICS`, and allocator fragmentation (finalize already trims via `_return_freed_memory_to_os`; nothing trims during fetch).
+
+Status: **steady-state/incremental cycles meet the 2.5 GiB + fb=4 SLO; full-cold cycles need either the retention code lever or a 3 g seat.** Artifacts: `_out/perf-pipeline/full2317-COLD-*`.
+
 ### Notes for future levers
 
 - Remaining largest retained block is the lifecycle parse tree itself; if a tighter seat is ever needed, stream-normalize or convert persistence to JSONL chunks (storage-contract change).
