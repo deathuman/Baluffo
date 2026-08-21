@@ -285,7 +285,15 @@ def _looks_like_parser_code_payload(text: str) -> bool:
         raw,
     ):
         return True
-    if "{" in raw and "}" in raw and (";" in raw or ":" in raw):
+    # ponytail: a single balanced {Token} next to a colon is a legitimate title
+    # shape ("Member of Technical Staff : Dev Extension {Backend}") — require
+    # code-shaped signals instead: multiple CSS-style blocks, statement
+    # separators, or an entire JSON/dict payload.
+    if raw.count("{") >= 2 and (";" in raw or ":" in raw):
+        return True
+    if "{" in raw and "}" in raw and ";" in raw:
+        return True
+    if raw.lstrip().startswith("{") and raw.rstrip().endswith("}"):
         return True
     return False
 

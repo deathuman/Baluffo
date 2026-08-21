@@ -111,6 +111,7 @@ def test_static_parser_noise_titles_are_classified_as_noise(title: str) -> None:
         ".sendgrid-subscription-widget input { padding: .5em .5em .55em; }",
         'const t="undefined"!=typeof HTMLImageElement&&"loading"in HTMLImageElement.prototype',
         "#nprogress{pointer-events:none}#nprogress .bar{background:#FFCE27;position:fixed}",
+        '{"title": "Senior Dev", "company": "Example"}',
         "REQUIREMENTS",
         "On-site",
         "Odpowiedz na ofertę",
@@ -144,10 +145,34 @@ def test_static_parser_code_and_ui_noise_titles_are_classified_as_noise(title: s
         "UI/UX Designer",
         "3D Environment Artist",
         "Level Designer (m/f/d)",
+        "Member of Technical Staff : Dev Extension {Backend}",
+        "Engineer - Platform {Remote}",
     ],
 )
 def test_static_parser_noise_classifier_keeps_real_titles(title: str) -> None:
     assert not looks_like_static_parser_noise_title(title)
+
+
+def test_jobs_artifact_quality_gate_keeps_single_brace_token_titles(tmp_path: object) -> None:
+    artifact = str(tmp_path) + "/jobs-unified.json"
+    _write_json(
+        artifact,
+        [
+            {
+                "id": "1",
+                "title": "Member of Technical Staff : Dev Extension {Backend}",
+                "company": "Devrev",
+                "jobLink": "https://job-boards.greenhouse.io/devrev/jobs/5736862004",
+                "source": "greenhouse_boards",
+                "sourceJobId": "greenhouse:devrev:5736862004",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(artifact)
+
+    assert report["counts"]["parserNoiseTitleLeaks"] == 0
+    assert report["status"] != "blocked"
 
 
 @pytest.mark.parametrize(

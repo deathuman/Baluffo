@@ -1,11 +1,11 @@
 # Google Sheets Title Column, Redirect Company Repair, and Category Gate Plan
 
-> - **Status:** Active follow-up plan, parser/redirect/company hardening implemented and validated on 2026-05-30; shipped-artifact gate tooling and fresh live-pipeline validation also completed on 2026-05-30, with remaining blockers now isolated to static-source category-page rows
+> - **Status:** Active follow-up plan, parser/redirect/company hardening implemented and validated on 2026-05-30; shipped-artifact gate tooling and fresh live-pipeline validation also completed on 2026-05-30, with remaining blockers now isolated to static-source category-page rows. 2026-08-21: parser-noise classifier tightened so a single balanced \{Token}\ beside a colon in an otherwise real title is kept (was blocking the Devrev greenhouse row); JSON-payload / multi-block / semicolon shapes still classified as noise
 > - **Use this when:** Fixing misleading Google Sheets category titles such as `Art`, Grackle redirect rows with `Unknown company`, or related exact source-category leaks.
 > - **Canonical for:** The root cause that the default Google Sheets `gviz` CSV can make `Job Category` look like the title column, the redirect-cache loophole that can preserve unresolved Grackle URLs, and the product policy that likely-live jobs must not be dropped only because title or company extraction failed.
 > - **Not canonical for:** Broad company-name inference without redirect/provider evidence, public job payload schema changes, or frontend display changes.
 > - **Then inspect:** `docs/scraping-pipeline.md`, `docs/DATA_CONTRACT.md`, `docs/testing.md`, `src/jobs/adapters/community/google_sheets.py`, `src/jobs/canonicalize.py`, `src/jobs/transport.py`, `src/jobs/dedup.py`, `src/jobs/job_link_company.py`
-> - **Last updated:** 2026-05-30
+> - **Last updated:** 2026-08-21
 
 ## Summary
 
