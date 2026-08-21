@@ -88,6 +88,8 @@ def override_discovery_runtime(
     for section_name, artifact_name in (
         ("sheetDirectory", "sheet-directory-discovery-audit.json"),
         ("webSearch", "web-search-discovery-audit.json"),
+        ("gamesmap", "gamesmap-discovery-audit.json"),
+        ("gameprog", "gameprog-discovery-audit.json"),
     ):
         section = isolated_default_config.get(section_name)
         if isinstance(section, dict):

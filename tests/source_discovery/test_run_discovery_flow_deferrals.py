@@ -220,7 +220,22 @@ def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"thresholds": {"patternProviderProbeThreshold": 32}},
+                discovery_config={
+                    "stageToggles": {
+                        "curatedSeed": True,
+                        "sheetDirectory": False,
+                        "providerPatterns": True,
+                        "seedCareersScan": False,
+                        "gamesmap": False,
+                        "gameprog": False,
+                        "gamedevmap": False,
+                        "webSearch": False,
+                    },
+                    "gamesmap": {"enabled": False},
+                    "gameprog": {"enabled": False},
+                    "gamedevmap": {"enabled": False},
+                    "thresholds": {"patternProviderProbeThreshold": 32},
+                },
                 fetcher=lambda *_: json.dumps({"jobs": [{}]}),
             )
             assert int(report["summary"].get("probedCandidateCount") or 0) == 0

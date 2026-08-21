@@ -7,6 +7,7 @@ def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-readiness-caps-audit.json"),
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,

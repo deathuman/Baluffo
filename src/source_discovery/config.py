@@ -299,6 +299,7 @@ DEFAULT_STUDIO_SEEDS: list[dict[str, Any]] = [
 DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "gameprog": {
         "enabled": True,
+        "activeAuditPath": "data/gameprog-discovery-audit.json",
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "teamsUrl": "https://gameprog.it/teams.json",
@@ -309,6 +310,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "gamesmap": {
         "enabled": True,
+        "activeAuditPath": "data/gamesmap-discovery-audit.json",
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "activeAuditTtlMinutes": 360,

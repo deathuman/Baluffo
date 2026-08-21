@@ -327,6 +327,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             config = {
                 "gamesmap": {
                     "enabled": True,
+                    "activeAuditPath": str(root / "gamesmap-audit.json"),
                     "baseUrl": "https://www.gamesmap.de",
                     "indexUrls": ["https://www.gamesmap.de/en"],
                     "websiteOnlyFallback": False,
