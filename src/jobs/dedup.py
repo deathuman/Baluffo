@@ -10,6 +10,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup tests.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace as _dc_replace
 from typing import Any
 
 from src.jobs.canonicalize import clean_text, norm_text
@@ -66,10 +67,10 @@ def _sort_enrich_and_number(rows: list[CanonicalJob]) -> list[CanonicalJob]:
         reverse=True,
     )
     enriched_rows = _enrich_unknown_company_from_gracklehq_redirect(rows)
-    return [
-        CanonicalJob.from_mapping({**row.to_dict(), "id": idx})
-        for idx, row in enumerate(enriched_rows, start=1)
-    ]
+    # ponytail: dataclasses.replace instead of to_dict()/from_mapping() — the
+    # round trip built a full payload dict + re-validated every row (2x row
+    # memory transiently at 40k+ rows) just to bump the id field.
+    return [_dc_replace(row, id=idx) for idx, row in enumerate(enriched_rows, start=1)]
 
 
 def deduplicate_jobs(

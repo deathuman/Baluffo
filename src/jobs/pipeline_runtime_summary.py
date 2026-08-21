@@ -510,6 +510,29 @@ def append_fetch_runtime_event(
         )
 
 
+def _progress_signature(
+    *,
+    active: bool,
+    phase_key: str,
+    phase_label: str,
+    counts: dict[str, Any],
+    target_label: str,
+    target_url: str,
+    wait_reason: str,
+) -> tuple[Any, ...]:
+    # ponytail: repr() keeps unhashable count values (e.g. runningSourceNames)
+    # comparable; this gate exists so unchanged ticks skip the payload rebuild.
+    return (
+        active,
+        phase_key,
+        phase_label,
+        tuple(sorted((key, repr(value)) for key, value in counts.items())),
+        target_label,
+        target_url,
+        wait_reason,
+    )
+
+
 def update_fetch_work_item_progress(
     runtime: PipelineTaskRuntime,
     source_name: str,
@@ -532,23 +555,54 @@ def update_fetch_work_item_progress(
             return
         progress = as_json_object(row.get("progress"))
         next_counts = counts if isinstance(counts, dict) else {}
-        next_progress = build_live_task_progress_payload(
-            active=str(row.get("status") or "").strip().lower() == "running",
-            phase_key=str(phase_key or progress.get("phaseKey") or "").strip(),
-            phase_label=str(phase_label or progress.get("phaseLabel") or "").strip(),
-            counts=dict(next_counts),
-            target_label=str(target_label or progress.get("targetLabel") or "").strip(),
-            target_url=str(target_url or progress.get("targetUrl") or "").strip(),
-            wait_reason=str(wait_reason or progress.get("waitReason") or "").strip(),
-            updated_at=now_iso(),
+        active = str(row.get("status") or "").strip().lower() == "running"
+        resolved_phase = str(phase_key or progress.get("phaseKey") or "").strip()
+        resolved_label = str(phase_label or progress.get("phaseLabel") or "").strip()
+        resolved_target_label = str(target_label or progress.get("targetLabel") or "").strip()
+        resolved_target_url = str(target_url or progress.get("targetUrl") or "").strip()
+        resolved_wait = str(wait_reason or progress.get("waitReason") or "").strip()
+        signature = _progress_signature(
+            active=active,
+            phase_key=resolved_phase,
+            phase_label=resolved_label,
+            counts=next_counts,
+            target_label=resolved_target_label,
+            target_url=resolved_target_url,
+            wait_reason=resolved_wait,
         )
-        row["progress"] = next_progress
-        row["heartbeatAt"] = next_progress["updatedAt"]
-    if emit_event and str(event_message or "").strip():
+        has_event = bool(emit_event and str(event_message or "").strip())
+        if signature == row.get("_progressSig"):
+            # ponytail: unchanged tick — refresh timestamps only instead of
+            # rebuilding/renormalizing the whole progress payload per call.
+            stamp = now_iso()
+            row["heartbeatAt"] = stamp
+            try:
+                progress["updatedAt"] = stamp
+            except TypeError:
+                pass
+            if not has_event:
+                return
+            event_phase = resolved_phase
+        else:
+            row["_progressSig"] = signature
+            next_progress = build_live_task_progress_payload(
+                active=active,
+                phase_key=resolved_phase,
+                phase_label=resolved_label,
+                counts=dict(next_counts),
+                target_label=resolved_target_label,
+                target_url=resolved_target_url,
+                wait_reason=resolved_wait,
+                updated_at=now_iso(),
+            )
+            row["progress"] = next_progress
+            row["heartbeatAt"] = next_progress["updatedAt"]
+            event_phase = str(next_progress.get("phaseKey") or "")
+    if has_event:
         append_fetch_runtime_event(
             runtime,
             level=event_level,
             message=event_message,
             work_item_id=source_name,
-            phase_key=phase_key or next_progress.get("phaseKey") or "",
+            phase_key=event_phase,
         )

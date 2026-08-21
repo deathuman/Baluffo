@@ -146,6 +146,10 @@ def _apply_missing_lifecycle_rows(
         source_is_eligible = source_name in eligible_sources
         if not source_is_eligible and not (allow_mark_missing and not eligible_sources):
             if norm_text(entry.get("status")) in {"active", "likely_removed"}:
+                # ponytail: copy-on-write — materialize a private copy exactly
+                # when this entry mutates; untouched entries stay shared.
+                entry = dict(entry)
+                next_rows[key] = entry
                 if source_name in failed_sources:
                     summary["preservedBecauseSourceFailed"] += 1
                     entry["lifecycleEvent"] = "preserved"
@@ -170,7 +174,7 @@ def _apply_missing_lifecycle_rows(
                     # the branch above; skipped entries keep their status.
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
-            entry,
+            dict(entry),
             now_dt=now_dt,
             finished_at=finished_at,
             remove_to_archive_days=remove_to_archive_days,
@@ -248,10 +252,12 @@ def apply_job_lifecycle_state(
     dict[str, int],
 ]:
     payload_rows = [row.to_dict() for row in deduped_rows]
+    # ponytail: share untouched entry dicts with the caller instead of copying
+    # all ~55k rows up front; every mutation site below materializes a private
+    # copy first (copy-on-write). The normalized fast-path reader returns the
+    # parse tree directly, so these shared dicts are the only copy that exists.
     next_rows: dict[str, dict[str, Any]] = {
-        clean_text(key): dict(value)
-        for key, value in (lifecycle_rows or {}).items()
-        if clean_text(key)
+        clean_text(key): value for key, value in (lifecycle_rows or {}).items() if clean_text(key)
     }
     archive_rows_by_year: dict[int, dict[str, dict[str, Any]]] = {}
     summary = _empty_lifecycle_summary()
