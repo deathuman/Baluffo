@@ -15,12 +15,26 @@ RUN npm run build:container-frontend -- --out-dir /container-frontend
 
 FROM python:3.13-slim
 
+# ponytail: glibc arena fragmentation pins RSS at cgroup ceilings under
+# concurrent fetch workloads — freed pages stay resident because glibc's
+# auto-trim only fires on fully-free arena tops. jemalloc's background
+# purger returns dirty/muzzy pages after a 1 s decay, keeping RSS close to
+# the live heap. MMAP_THRESHOLD forces large transient buffers (HTML bodies,
+# parse trees) through mmap for immediate OS reclamation on free.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libjemalloc2 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     BALUFFO_DATA_DIR=/data \
     BALUFFO_CONTAINER_HOST=0.0.0.0 \
     BALUFFO_CONTAINER_PORT=8080 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+    MALLOC_CONF=background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000 \
+    MALLOC_MMAP_THRESHOLD_=65536 \
+    MALLOC_TRIM_THRESHOLD_=65536
 
 WORKDIR /app
 
