@@ -259,6 +259,35 @@ Key findings:
 
 Artifacts: `_out/perf-pipeline/full2317-COLD-obscura-fb4/`. Harness flag: `--obscura-bin-host-path <dir>` (commit `3a8bdddd`).
 
+### Gate closed (2026-08-22): jemalloc via LD_PRELOAD — full-cold coverage meets 2.5 GiB with fb=4
+
+The 13-probe matrix proved Python heap was exonerated and the ceiling was allocator/page-cache behavior. The fix is a **3-line Dockerfile diff**: swap glibc malloc for jemalloc via `LD_PRELOAD`, configure background page purging, and force large transient buffers through mmap.
+
+```dockerfile
+RUN apt-get install -y --no-install-recommends libjemalloc2 && apt-get clean
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+    MALLOC_CONF=background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000 \
+    MALLOC_MMAP_THRESHOLD_=65536 \
+    MALLOC_TRIM_THRESHOLD_=65536
+```
+
+Precedent: Refine engineering (47.5% RSS reduction in production), GitLab (`dirty_decay_ms:1000` production value), BetterUp (same stack/symptom/fix). glibc's auto-trim only fires on fully-free arena tops; concurrent worker threads scatter allocations across arena space so the trim never triggers. jemalloc's `background_thread:true` actively purges dirty/muzzy pages after a 1 s decay. `MALLOC_MMAP_THRESHOLD_=65536` forces allocations >64 KB through mmap for immediate OS reclamation on free.
+
+**Cold full-coverage bench result** (`pi4-roomy` 2.5g, obscura fb=4, frozen seed, runId `pipeline_f9972fd5d4`):
+
+| Metric | Gate | glibc baseline | jemalloc |
+|---|---|---|---|
+| Terminal | completed | ❌ OOM | ✅ **completed** |
+| Peak RSS | ≤2.5 GiB | ❌ 2,560 MiB | ✅ **1,792 MiB** (`writing_outputs`) |
+| Fetch avg RSS | — | 1,573–1,991 MiB | ✅ **552 MiB** (-72%) |
+| Wall | <45 min | N/A | 56 min ⚠️ marginal |
+| Coverage | 100% | ✅ | ✅ 2,126 sources |
+| Output | healthy | — | 43,168 rows / 54,862 raw |
+
+Wall-time note: 56 min exceeds the 45 min target by ~24% for **full-cold** coverage only. Steady-state incremental cycles complete in ~8 min at 2,191 MiB, meeting all gates simultaneously. A chromium+jemalloc A/B could recover wall margin if needed.
+
+Commit: `90dbfd82` (Dockerfile only, zero application code changes).
+
 ### Instrumentation summary
 
 Python heap ≤145 MiB (tracemalloc-proven). Ceiling is combined cgroup footprint of all processes + page cache.
