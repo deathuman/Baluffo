@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import pathlib
+import threading
+import time
 from threading import Lock
 from typing import Any, Protocol, cast
 
@@ -61,6 +64,67 @@ def _root_module() -> _RootLike:
     return cast(_RootLike, jobs_fetcher_pkg)
 
 
+_HEAP_DIAGNOSTICS_ENV = "BALUFFO_FETCH_HEAP_DIAGNOSTICS"
+
+
+def _heap_diagnostics_enabled() -> bool:
+    import os
+
+    return str(os.environ.get(_HEAP_DIAGNOSTICS_ENV) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _run_heap_sampler(stop, data_dir: Any, interval_s: float = 60.0) -> None:
+    """Diagnostics-only: sample global tracemalloc stats to fetch-heap.jsonl.
+
+    ponytail: gated behind BALUFFO_FETCH_HEAP_DIAGNOSTICS=1; distorts wall-clock
+    (tracemalloc overhead) — diagnosis only, never a benchmark config.
+    """
+    import json as _json
+    import tracemalloc
+
+    if not tracemalloc.is_tracing():
+        tracemalloc.start()
+    out_dir = pathlib.Path(str(data_dir)) / "perf-profiles"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log = out_dir / "fetch-heap.jsonl"
+    while not stop.is_set():
+        current, peak = tracemalloc.get_traced_memory()
+        top = []
+        try:
+            for stat in tracemalloc.take_snapshot().statistics("filename")[:25]:
+                frame = stat.traceback[0] if stat.traceback else None
+                top.append(
+                    {
+                        "frame": f"{frame.filename}:{frame.lineno}" if frame else "<unknown>",
+                        "size_mib": round(stat.size / (1024 * 1024), 2),
+                        "count": stat.count,
+                    }
+                )
+        except Exception:
+            pass
+        try:
+            with log.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    _json.dumps(
+                        {
+                            "t": time.time(),
+                            "current_mib": round(current / 1048576, 1),
+                            "peak_mib": round(peak / 1048576, 1),
+                            "top": top,
+                        }
+                    )
+                    + "\n"
+                )
+        except OSError:
+            pass
+        stop.wait(interval_s)
+
+
 def run_source_execution_stage(
     *,
     config,
@@ -80,6 +144,18 @@ def run_source_execution_stage(
     source_reports: list[dict[str, Any]],
     fetched_rows_writer: Any | None = None,
 ) -> None:
+    heap_stop = None
+    heap_thread = None
+    if _heap_diagnostics_enabled() and fetched_rows_writer is not None:
+        stop = threading.Event()
+        heap_thread = threading.Thread(
+            target=_run_heap_sampler,
+            args=(stop, fetched_rows_writer.path.parent),
+            name="fetch-heap-sampler",
+            daemon=True,
+        )
+        heap_stop = stop
+        heap_thread.start()
     if task_runtime is None:
         task_runtime = PipelineTaskRuntime(
             task_lock=task_lock,
@@ -142,6 +218,8 @@ def run_source_execution_stage(
                 f"relaunchCount={metrics['pool_relaunch_count']}"
             )
     finally:
+        if heap_stop is not None:
+            heap_stop.set()
         if pool is not None:
             pool.close()
     root_mod.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())

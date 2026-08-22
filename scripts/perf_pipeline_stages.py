@@ -909,6 +909,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--heap-diagnostics",
+        action="store_true",
+        help=(
+            "Set BALUFFO_FETCH_HEAP_DIAGNOSTICS=1 in the staged env file: sample "
+            "global tracemalloc current/peak + top frames every 60s into "
+            "<data>/perf-profiles/fetch-heap.jsonl. Distorts wall-clock; diagnosis only."
+        ),
+    )
+    parser.add_argument(
         "--profile-alloc",
         action="store_true",
         help=(
@@ -1053,6 +1062,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if bool(args.profile_alloc):
             bench_env_lines.append("BALUFFO_PROFILE_ALLOC=1")
+        if bool(args.heap_diagnostics):
+            bench_env_lines.append("BALUFFO_FETCH_HEAP_DIAGNOSTICS=1")
         if bench_env_lines:
             env_file = output_dir / "bench-only-sources.env"
             # ponytail: env-file staging avoids the Windows CreateProcess 32k
