@@ -934,6 +934,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--obscura-bin-host-path",
+        default="",
+        help=(
+            "Host directory containing the Linux obscura binary (from releases). "
+            "Mounted read-only at /opt/obscura; stages BALUFFO_BROWSER_FALLBACK_"
+            "BACKEND=obscura and BALUFFO_OBSCURA_BIN=/opt/obscura/obscura."
+        ),
+    )
+    parser.add_argument(
         "--profile-alloc",
         action="store_true",
         help=(
@@ -1080,6 +1089,16 @@ def main(argv: list[str] | None = None) -> int:
             bench_env_lines.append("BALUFFO_PROFILE_ALLOC=1")
         if bool(args.heap_diagnostics):
             bench_env_lines.append("BALUFFO_FETCH_HEAP_DIAGNOSTICS=1")
+        if str(args.obscura_bin_host_path or "").strip():
+            # ponytail: mount the host-side obscura binary read-only and point
+            # the pool's backend switch at the in-container path. The Linux ELF
+            # must match the container arch (x86_64) and glibc (>=2.35).
+            obscura_host = Path(str(args.obscura_bin_host_path)).expanduser().resolve()
+            if not obscura_host.is_dir():
+                raise SystemExit(f"obscura bin dir not found: {obscura_host}")
+            docker_args.extend(["-v", f"{str(obscura_host)}:/opt/obscura:ro"])
+            bench_env_lines.append("BALUFFO_BROWSER_FALLBACK_BACKEND=obscura")
+            bench_env_lines.append("BALUFFO_OBSCURA_BIN=/opt/obscura/obscura")
         if bench_env_lines:
             env_file = output_dir / "bench-only-sources.env"
             # ponytail: env-file staging avoids the Windows CreateProcess 32k
