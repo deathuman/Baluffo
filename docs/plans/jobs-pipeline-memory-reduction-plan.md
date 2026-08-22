@@ -288,6 +288,21 @@ Wall-time note: 56 min exceeds the 45 min target by ~24% for **full-cold** cover
 
 Commit: `90dbfd82` (Dockerfile only, zero application code changes).
 
+### Wall-time tuning round (2026-08-22): mw=12 closes most of the gap
+
+With jemalloc freeing allocator overhead, container-pipeline concurrency defaults raised from glibc-era conservative values (`a3d64548`): mw 8→12, `max_per_domain` 2→3, static_detail_concurrency 4→6, adapter_http_concurrency cap 24→32.
+
+**Cold full-coverage result** (same seed/reset protocol, runId `pipeline_220cb5d164`, artifacts `_out/perf-pipeline/full2317-COLD-jemalloc-t0/`):
+
+| Metric | mw=8 jemalloc | mw=12 tuned | Gate |
+|---|---|---|---|
+| Terminal | completed | **completed** | ✅ |
+| Peak RSS | 1,792 MiB | **1,940 MiB** | ✅ ≤2.5 GiB |
+| Fetch avg RSS | 552 MiB | 627 MiB | ✅ |
+| Wall | **56.0 min** | **45.5 min** (-19%) | ⚠️ marginal |
+
+Effective parallelism improved from ~4.7× to ~6.1×. Only 6 sources exceed 60s; top-10 consume 8.1% of serial time. The 0.5-minute overshoot on full-cold is within single-run variance; steady-state cycles meet all gates at ~8 min.
+
 ### Instrumentation summary
 
 Python heap ≤145 MiB (tracemalloc-proven). Ceiling is combined cgroup footprint of all processes + page cache.
