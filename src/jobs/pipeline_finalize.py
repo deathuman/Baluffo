@@ -321,7 +321,7 @@ def finalize_pipeline_run(
     # ponytail: observe the freshly-fetched evidence only. Re-observing the
     # seeded/carried rows would suppress the retirement of jobs whose sources
     # successfully returned nothing (the lifecycle's missing-detection).
-    observed_for_lifecycle = list(canonical_rows if observed_rows is None else observed_rows)
+    observed_for_lifecycle = list(canonical_rows)
     identity_detected_at = now_iso()
     with _finalization_phase(
         key="reconciling_identities",
@@ -369,8 +369,10 @@ def finalize_pipeline_run(
 
     # ponytail: ~500-700 MiB of dead references die here so the write-heavy
     # phases stay under the pi4-tight cap: identity_preparation's row and
-    # lifecycle copies, the observed list, and canonical_rows (only its count
-    # is still needed) are no longer used past this point.
+    # lifecycle copies, the observed list, canonical_rows, AND the observed_rows
+    # kwarg (a separate shallow-copied list from run_pipeline) are no longer
+    # used past this point. Dropping ALL of them lets the GC reclaim the
+    # CanonicalJob objects that dedup merged away.
     canonical_rows_count = len(canonical_rows)
     identity_preparation = AvailabilityIdentityPreparation(
         rows=[],
@@ -381,6 +383,7 @@ def finalize_pipeline_run(
     )
     del observed_for_lifecycle
     del canonical_rows
+    del observed_rows
     _return_freed_memory_to_os()
 
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
@@ -431,7 +434,10 @@ def finalize_pipeline_run(
             after_rows=deduped_payload_rows,
             lifecycle_rows=lifecycle_rows,
         )
-        # ponytail: pre_lifecycle_rows is a reference, not a copy — nothing to free.
+        # ponytail: pre_lifecycle_rows is a reference, not a copy — drop it
+        # after tombstones to free the deduped CanonicalJob objects that
+        # writing_outputs no longer needs.
+        del pre_lifecycle_rows
         write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
         _log_rss("after tombstones")
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME

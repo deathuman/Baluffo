@@ -178,12 +178,9 @@ def run_pipeline(
         setup.progress_phase["label"] = "Merging results"
         setup.write_progress_report(force=True)
         setup.stop_progress_reporter()
-        # ponytail: hand over ownership of canonical_rows to finalize; clear
-        # the setup reference so the fetch loop's accumulator is dropped from
-        # the setup frame before dedup+lifecycle materialize their own copies.
-        # Both row segments are rehydrated here, after the fetch window closes:
-        # [seeded (rows sidecar), fetched (.pipeline-fetched-rows.jsonl)] — the
-        # order preserves the observed_rows = rows[seeded_row_count:] slice.
+        # ponytail: hydrate both row segments here (seeded from rows sidecar,
+        # fetched from .pipeline-fetched-rows.jsonl) — the order preserves
+        # observed_rows = rows[seeded_row_count:] slice semantics.
         canonical_rows_for_finalize: list = []
         if setup.effective_seed_from_existing_output:
             try:
@@ -208,31 +205,24 @@ def run_pipeline(
         if fetched_writer is not None and int(getattr(fetched_writer, "count", 0) or 0) > 0:
             try:
                 from src.jobs.models import CanonicalJob as _CJ
-                from src.pipeline_io import (
-                    read_fetched_rows_sidecar,
-                )
+                from src.pipeline_io import read_fetched_rows_sidecar
 
-                # Chunked extend avoids one large intermediate list copy.
-                _buf: list = []
-                for _job in read_fetched_rows_sidecar(
-                    setup.paths.output_dir, canonical_job_cls=_CJ
-                ):
-                    _buf.append(_job)
-                    if len(_buf) >= 5000:
-                        canonical_rows_for_finalize.extend(_buf)
-                        _buf = []
-                if _buf:
-                    canonical_rows_for_finalize.extend(_buf)
+                buf: list = []
+                for job in read_fetched_rows_sidecar(setup.paths.output_dir, canonical_job_cls=_CJ):
+                    buf.append(job)
+                    if len(buf) >= 5000:
+                        canonical_rows_for_finalize.extend(buf)
+                        buf = []
+                if buf:
+                    canonical_rows_for_finalize.extend(buf)
             except Exception:
                 pass
-            # File is no longer needed — dedup now owns the objects.
             try:
                 from src.pipeline_io import cleanup_fetched_rows_sidecar as _cleanup
 
                 _cleanup(setup.paths.output_dir)
             except Exception:
                 pass
-            # pong: drop writer ref so its lock/file path dies with setup.
             try:
                 object.__setattr__(setup, "fetched_rows_writer", None)
             except Exception:
