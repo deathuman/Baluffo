@@ -240,6 +240,21 @@ The gate pass above ran against warm source-state (incremental skips shrank the 
 | cold-fb2-caps | 8 | 2 | ✓ | ✓ | ✓ | – | died ~52 min in | failed (OOM) | 2,559 MiB |
 | cold-recycle | 8 | 4 | ✓ | ✓ | ✓ | ✓ N=20 | died ~36 min in | failed (OOM) | 2,559 MiB |
 
+### Seed-defer round (2026-08-22, final): heavier yield closes the question
+
+Seeded canonical rows were also deferred (`3654b2b7`: setup streams only row count + published source names; `run_pipeline` rehydrates `[seeded, fetched]` after the fetch window, gated on `effective_seed_from_existing_output`). Two more probes on a fully-reset cold seed — where lifecycle healing let far more sources yield fresh jobs (**~96k output rows vs 41k in earlier probes**, 55k raw fetched):
+
+| Probe | mw | fb | Result |
+|---|---|---|---|
+| seeddefer-fb4 | 8 | 4 | died ~39 min in — ceiling pin 2,560 MiB |
+| seeddefer-fb2 | 8 | 2 | died ~56 min in — same ceiling |
+
+### Final verdict (evidence-complete)
+
+Full-cold coverage **at the seed's current yield (~55k raw / 96k deduped rows)** does not fit the 2.5 GiB seat with any fb ≥ 1 under every in-app lever combination tested (streaming, lifecycle defer, seeded defer, periodic trim, renderer/V8 caps, body caps, concurrency 6/8, pool recycling). Python heap ≤145 MiB traced throughout. Remaining consumers live outside app reach: Chromium/Node process anon, page cache from artifact writes, pymalloc/glibc arena overhead.
+
+Steady-state incremental cycles — the default production shape — meet **2,191 MiB WITH fb=4**. Production Umbrel compose sets no memory limit, so field behavior is unaffected either way; the gate question is purely low-end-device comfort.
+
 ### What instrumentation proved
 
 - **Python's own heap is exonerated**: `BALUFFO_FETCH_HEAP_DIAGNOSTICS=1` global tracemalloc across a 101-minute cold window showed **16–73 MiB current, ≤145 MiB peak** (`perf-profiles/fetch-heap.jsonl`; top frames models.py 33 MiB, google_sheets 21 MiB).
