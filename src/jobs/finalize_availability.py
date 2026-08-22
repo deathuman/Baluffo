@@ -192,8 +192,16 @@ def _serialize_jobs_feed_reconciliation(func):
                 # writer between setup and finalize.
                 fingerprint_at_setup = kwargs.get("lifecycle_state_fingerprint")
                 current_fingerprint = lifecycle_state_fingerprint(paths.lifecycle_state_path)
-                if fingerprint_at_setup is not None and current_fingerprint == fingerprint_at_setup:
-                    latest_lifecycle = kwargs.get("lifecycle_rows") or {}
+                rows_arg = kwargs.get("lifecycle_rows")
+                if rows_arg is None:
+                    # ponytail: deferred lifecycle tree — setup dropped the parsed
+                    # rows to keep fetch-window RSS flat, so finalize owns the only
+                    # parse; reload from the file even when the fingerprint matches.
+                    latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
+                elif (
+                    fingerprint_at_setup is not None and current_fingerprint == fingerprint_at_setup
+                ):
+                    latest_lifecycle = rows_arg or {}
                 else:
                     latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
                 kwargs["lifecycle_rows"] = latest_lifecycle

@@ -377,6 +377,11 @@ def prepare_pipeline_run(
             "lifecycleRows": len(lifecycle_rows),
         },
     )
+    # ponytail: defer the lifecycle parse tree — ~600-800 MiB resident through
+    # the whole fetch window but unused until finalize. Drop it here; finalize
+    # re-reads the unchanged file (fingerprint captured above proves no writer
+    # raced). Hot progress reports never consumed the rows (dead params).
+    lifecycle_rows = None
 
     seed_existing_output_override = env_flag("BALUFFO_FETCH_SEED_EXISTING_OUTPUT", False)
     incremental_cache_enabled = bool(
@@ -660,7 +665,8 @@ def prepare_pipeline_run(
         write_pipeline_progress_report(
             runtime=task_runtime,
             canonical_rows=canonical_rows,
-            lifecycle_rows=lifecycle_rows,
+            # dead param downstream — never read by write_progress_report.
+            lifecycle_rows={},
             source_reports=source_reports,
             runtime_payload=runtime_payload,
             started_at=started_at,

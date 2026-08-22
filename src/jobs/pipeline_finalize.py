@@ -298,6 +298,11 @@ def finalize_pipeline_run(
     lifecycle_state_fingerprint: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     finalization_timings: dict[str, int] = {}
+    if lifecycle_rows is None:
+        # ponytail: deferred lifecycle tree — setup dropped the parsed rows to
+        # keep fetch-window RSS flat; re-read here (file untouched since the
+        # fingerprint was captured, so downstream skip logic still applies).
+        lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
     with _finalization_phase(
         key="deduplicating",
         label="Deduplicating jobs",
