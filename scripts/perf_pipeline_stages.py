@@ -418,6 +418,10 @@ def _poll_pipeline_task_live(
     last_parsed: dict[str, Any] = {}
     observed_run_id: str = run_id_hint
     last_fetch_phase: str = ""
+    # ponytail: the bridge can report the new runId with active=false for a few
+    # ticks before registration flips, and jobs-fetch-tasks.json still holds the
+    # previous run's phases — never declare idle before seeing this run active.
+    seen_active_for_run = False
 
     def _read_fetch_phase() -> tuple[str, str]:
         if fetch_tasks_path is None or not fetch_tasks_path.is_file():
@@ -475,10 +479,22 @@ def _poll_pipeline_task_live(
                     }
                 )
                 last_stage = stage
+            if (
+                active
+                and run_id_from_status == observed_run_id
+                and not str(stage or "").startswith("fetch/")
+            ):
+                seen_active_for_run = True
             last_parsed = parsed
             # ponytail: only treat as terminal when the bridge explicitly says
-            # runId matches AND active is False. Empty/error payloads keep polling.
-            if not active and observations and run_id_from_status == observed_run_id:
+            # runId matches AND active is False AND we saw this run active at
+            # least once. Empty/error payloads keep polling.
+            if (
+                not active
+                and seen_active_for_run
+                and observations
+                and run_id_from_status == observed_run_id
+            ):
                 observations.append(
                     {
                         "t": time.monotonic(),
