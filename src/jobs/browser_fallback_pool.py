@@ -132,7 +132,20 @@ class BrowserFallbackPool:
         if self._backend == _BACKEND_OBSCURA:
             self._browser = await self._connect_obscura()
             return
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        # ponytail: bound pooled-Chromium footprint inside tight cgroups —
+        # renderer pages are separate processes the body-cap cannot reach;
+        # heavy SPA renders were pinning 2.5g seats during full-coverage fetch.
+        self._browser = await self._playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--renderer-process-limit=2",
+                "--js-flags=--max-old-space-size=512",
+                "--disable-background-networking",
+                "--mute-audio",
+            ],
+        )
 
     async def _connect_obscura(self) -> Any:
         """Connect to a subprocess ``obscura serve`` over CDP (spike, dev-only)."""
