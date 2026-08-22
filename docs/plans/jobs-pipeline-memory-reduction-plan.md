@@ -228,15 +228,28 @@ Earlier same-day runs (for provenance): alloc-profiled mw8 run captured per-sour
 
 The gate pass above ran against warm source-state (incremental skips shrank the working set). Pristine-seed probes with source-state/success-cache deleted — i.e. the "100% sources run each cycle" shape — all pinned the 2.5 GiB cgroup ceiling inside `fetch/executing_sources`:
 
-| Probe | mw | body cap | fb | wall | terminal | executing peak |
-|---|---|---|---|---|---|---|
-| cold-1 | 8 | 20 MiB | 4 | died ~838 s in | failed (OOM) | 2,560 MiB |
-| cold-2 | 6 | 20 MiB | 4 | died ~1,782 s in | failed (OOM) | 2,554 MiB |
-| cold-3 | 6 | 8 MiB (`BALUFFO_FETCH_MAX_BYTES=8388608`) | 4 | died ~2,558 s in | failed (OOM) | 2,520 MiB |
+| Probe | mw | fb | defer | trim | caps | recycle | wall | terminal | executing peak |
+|---|---|---|---|---|---|---|---|---|---|
+| cold-1 | 8 | 4 | – | – | – | – | died ~14 min in | failed (OOM) | 2,560 MiB |
+| cold-2 | 6 | 4 | – | – | – | – | died | failed (OOM) | 2,554 MiB |
+| cold-3 | 6 | 4 | – | – | 8 MiB bytes | – | died | failed (OOM) | 2,520 MiB |
+| **cold-fb0** | 8 | **0** | – | – | – | – | **completed, 66 min** | completed | 2,456 MiB |
+| cold-defer | 8 | 4 | ✓ | ✓ | – | – | died ~29 min in | failed (OOM) | 2,559 MiB |
+| cold-fb2 | 8 | 2 | ✓ | ✓ | – | – | died ~39 min in | failed (OOM) | 2,533 MiB |
+| cold-capped | 8 | 4 | ✓ | ✓ | chromium args | – | died ~15 min in | failed (OOM) | 2,510 MiB |
+| cold-fb2-caps | 8 | 2 | ✓ | ✓ | ✓ | – | died ~52 min in | failed (OOM) | 2,559 MiB |
+| cold-recycle | 8 | 4 | ✓ | ✓ | ✓ | ✓ N=20 | died ~36 min in | failed (OOM) | 2,559 MiB |
 
-Samples show accumulation (~+800 MiB drift over the fetch window) roughly independent of worker count and body size; candidates are per-source report retention (`completed_source_reports` incl. static `details` lists), `SOURCE_DIAGNOSTICS`, and allocator fragmentation (finalize already trims via `_return_freed_memory_to_os`; nothing trims during fetch).
+### What instrumentation proved
 
-Status: **steady-state/incremental cycles meet the 2.5 GiB + fb=4 SLO; full-cold cycles need either the retention code lever or a 3 g seat.** Artifacts: `_out/perf-pipeline/full2317-COLD-*`.
+- **Python's own heap is exonerated**: `BALUFFO_FETCH_HEAP_DIAGNOSTICS=1` global tracemalloc across a 101-minute cold window showed **16–73 MiB current, ≤145 MiB peak** (`perf-profiles/fetch-heap.jsonl`; top frames models.py 33 MiB, google_sheets 21 MiB).
+- cgroup `memory.stat` split: anon peaks ~1.5 GiB, file cache 470–720 MiB, slab <45 MiB.
+- Browser-pool recycling (every 20 acquisitions) landed as a real improvement but did not close the gap — accumulation also lives in renderer/driver churn between recycles, page cache, and pymalloc/glibc arena overhead invisible to tracemalloc.
+- fb=0 completing at 2,456 MiB means the *pipeline alone* fills 96% of the seat on full coverage; any Chromium presence tips it over.
+
+**Status: steady-state/incremental cycles meet 2.5 GiB + fb=4 (proven, 2,191 MiB). Full-cold coverage with fb≥1 does not fit the 2.5 GiB seat on current architecture — remaining levers are architectural (defer seeded canonical_rows out of the fetch window; browser pool as a sidecar container outside the cgroup) or a documented 3 g seat for full-cold re-baselines.**
+
+Artifacts: `_out/perf-pipeline/full2317-COLD-*`. Harness fixes landed: `--fetch-max-bytes-env`, `--heap-diagnostics`, poll loop never declares idle before observing the run active (stale `jobs-fetch-tasks.json` + registration race killed three diagnostic runs silently).
 
 ### Notes for future levers
 
