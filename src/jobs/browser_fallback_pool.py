@@ -43,6 +43,12 @@ from src.bridge.source_check_http import normalize_browser_fallback_error
 _BROWSER_POOL_DISABLE_VALUES = {"0", "false", "no", "off"}
 _POOL_THREAD_NAME = "baluffo-browser-pool"
 _POOL_THREAD_JOIN_TIMEOUT_S = 5.0
+# ponytail: per-acquisition growth inside the pooled Chromium/Node driver pinned
+# full-cold fetches at tight cgroup ceilings — contexts are closed per call but
+# driver/browser footprint still climbs. Recycle the browser every N successful
+# acquisitions (relaunch ≈560 ms vs 90–215 s legacy launch-per-call).
+_BROWSER_POOL_RECYCLE_ENV = "BALUFFO_BROWSER_POOL_RECYCLE_ACQUISITIONS"
+_BROWSER_POOL_RECYCLE_DEFAULT = 20
 
 _BACKEND_CHROMIUM = "chromium"
 _BACKEND_OBSCURA = "obscura"
@@ -85,6 +91,16 @@ def browser_fallback_backend(env: dict[str, str] | None = None) -> str:
     return raw if raw in {_BACKEND_CHROMIUM, _BACKEND_OBSCURA} else _BACKEND_CHROMIUM
 
 
+def browser_pool_recycle_acquisitions(env: dict[str, str] | None = None) -> int:
+    """Acquisitions after which the pooled browser is relaunched (0 = never)."""
+    values = os.environ if env is None else env
+    raw = str(values.get(_BROWSER_POOL_RECYCLE_ENV) or "").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _BROWSER_POOL_RECYCLE_DEFAULT
+
+
 class BrowserFallbackPool:
     """Lazy single-browser pool; fresh BrowserContext per fetch call."""
 
@@ -98,32 +114,71 @@ class BrowserFallbackPool:
         self._available = True
         self._start_lock = threading.Lock()
         self.metrics = _PoolMetrics(backend=self._backend)
+        self._recycle_after = browser_pool_recycle_acquisitions()
+        self._acquisitions_since_launch = 0
         atexit.register(self._atexit_close)
 
     def _ensure_started(self) -> None:
         if not self._available:
             raise RuntimeError("browser fallback unavailable (browser has been closed)")
-        if self._loop is not None:
+        if self._browser is not None and self._loop is not None:
             return
         with self._start_lock:
-            if self._loop is not None:
+            if self._browser is not None and self._loop is not None:
                 return
-            self._loop = asyncio.new_event_loop()
-            loop = self._loop
-            self._thread = threading.Thread(
-                target=loop.run_forever,
-                name=_POOL_THREAD_NAME,
-                daemon=True,
+            if self._loop is None:
+                self._loop = asyncio.new_event_loop()
+                loop = self._loop
+                self._thread = threading.Thread(
+                    target=loop.run_forever,
+                    name=_POOL_THREAD_NAME,
+                    daemon=True,
+                )
+                self._thread.start()
+                t0 = time.monotonic()
+                future = asyncio.run_coroutine_threadsafe(self._start_browser(), loop)
+                try:
+                    future.result(timeout=120)
+                except BaseException:
+                    self._hard_close_locked()
+                    raise
+                self.metrics.incr("pool_startup_ms", int((time.monotonic() - t0) * 1000))
+            else:
+                # planned recycle: loop alive, browser dropped — relaunch only.
+                future = asyncio.run_coroutine_threadsafe(self._start_browser(), self._loop)
+                try:
+                    future.result(timeout=120)
+                except BaseException:
+                    self._hard_close_locked()
+                    raise
+
+    def _maybe_recycle_browser(self) -> None:
+        """Relaunch the pooled browser after N acquisitions (0 disables)."""
+        limit = self._recycle_after
+        if limit <= 0 or self._acquisitions_since_launch < limit:
+            return
+        with self._start_lock:
+            if (
+                self._acquisitions_since_launch < limit
+                or self._browser is None
+                or self._loop is None
+            ):
+                return
+            browser = self._browser
+            playwright = self._playwright
+            self._browser = None
+            self._playwright = None
+            self._acquisitions_since_launch = 0
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._shutdown(browser, playwright), self._loop
             )
-            self._thread.start()
-            t0 = time.monotonic()
-            future = asyncio.run_coroutine_threadsafe(self._start_browser(), loop)
-            try:
-                future.result(timeout=120)
-            except BaseException:
-                self._hard_close_locked()
-                raise
-            self.metrics.incr("pool_startup_ms", int((time.monotonic() - t0) * 1000))
+            future.result(timeout=15)
+        except BaseException:
+            pass
+        self.metrics.incr("pool_relaunch_count")
+        # Next fetch() re-launches a fresh browser via the loop-alive branch of
+        # _ensure_started; concurrent callers block on the start lock meanwhile.
 
     async def _start_browser(self) -> None:
         from playwright.async_api import async_playwright
@@ -246,6 +301,7 @@ class BrowserFallbackPool:
 
     def fetch(self, url: str, timeout_s: int) -> tuple[str, str]:
         """Sync entry-point for worker threads; returns (html, error)."""
+        self._maybe_recycle_browser()
         try:
             self._ensure_started()
             loop = self._loop
@@ -256,6 +312,8 @@ class BrowserFallbackPool:
         except BaseException as exc:
             return "", normalize_browser_fallback_error(str(exc))
         self.metrics.incr("pool_acquisitions")
+        with self._start_lock:
+            self._acquisitions_since_launch += 1
         if not html:
             return "", "browser fallback returned empty content"
         return html, ""

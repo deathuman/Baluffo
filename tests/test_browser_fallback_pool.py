@@ -253,3 +253,26 @@ def test_pool_fetch_bad_url_returns_error_not_raise(http_server) -> None:
         assert error  # TimeoutError normalized to a string
     finally:
         pool.close()
+
+
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
+def test_pool_recycles_browser_after_acquisition_threshold(http_server, monkeypatch) -> None:
+    monkeypatch.setenv("BALUFFO_BROWSER_POOL_RECYCLE_ACQUISITIONS", "1")
+    pool = BrowserFallbackPool()
+    try:
+        html1, err1 = pool.fetch(f"{http_server}/a", 15)
+        assert err1 == ""
+        first_browser = pool._browser
+        assert pool._acquisitions_since_launch == 1
+
+        # Second fetch crosses the threshold (limit=1): the pre-fetch recycle
+        # drops the old browser and _ensure_started launches a fresh one.
+        html2, err2 = pool.fetch(f"{http_server}/b", 15)
+        assert err2 == ""
+        assert html2
+        assert pool._browser is not None and pool._browser is not first_browser
+        assert pool._acquisitions_since_launch == 1  # counter reset post-recycle
+        metrics = pool.metrics.snapshot()
+        assert int(metrics["pool_relaunch_count"]) >= 1
+    finally:
+        pool.close()
