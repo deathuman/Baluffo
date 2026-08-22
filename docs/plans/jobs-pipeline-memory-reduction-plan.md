@@ -259,16 +259,11 @@ Key findings:
 
 Artifacts: `_out/perf-pipeline/full2317-COLD-obscura-fb4/`. Harness flag: `--obscura-bin-host-path <dir>` (commit `3a8bdddd`).
 
-### What instrumentation proved
+### Instrumentation summary
 
-- **Python's own heap is exonerated**: `BALUFFO_FETCH_HEAP_DIAGNOSTICS=1` global tracemalloc across a 101-minute cold window showed **16–73 MiB current, ≤145 MiB peak** (`perf-profiles/fetch-heap.jsonl`; top frames models.py 33 MiB, google_sheets 21 MiB).
-- cgroup `memory.stat` split: anon peaks ~1.5 GiB, file cache 470–720 MiB, slab <45 MiB.
-- Browser-pool recycling (every 20 acquisitions) landed as a real improvement but did not close the gap — accumulation also lives in renderer/driver churn between recycles, page cache, and pymalloc/glibc arena overhead invisible to tracemalloc.
-- fb=0 completing at 2,456 MiB means the *pipeline alone* fills 96% of the seat on full coverage; any Chromium presence tips it over.
+Python heap ≤145 MiB (tracemalloc-proven). Ceiling is combined cgroup footprint of all processes + page cache.
 
-**Status: steady-state/incremental cycles meet 2.5 GiB + fb=4 (proven, 2,191 MiB). Full-cold coverage with fb≥1 does not fit the 2.5 GiB seat on current architecture — remaining levers are architectural (defer seeded canonical_rows out of the fetch window; browser pool as a sidecar container outside the cgroup) or a documented 3 g seat for full-cold re-baselines.**
-
-Artifacts: `_out/perf-pipeline/full2317-COLD-*`. Harness fixes landed: `--fetch-max-bytes-env`, `--heap-diagnostics`, poll loop never declares idle before observing the run active (stale `jobs-fetch-tasks.json` + registration race killed three diagnostic runs silently).
+**Complete matrix: 13 cold full-coverage probes, only fb=0 completes (2,456 MiB).** Every fb≥1 configuration dies regardless of engine (Chromium/Obscura), concurrency, body caps, renderer caps, recycling, lifecycle defer, seeded defer, or trim timing. Steady-state incremental cycles meet 2,191 MiB WITH fb=4. Production Umbrel has no memory limit.
 
 ### Notes for future levers
 
