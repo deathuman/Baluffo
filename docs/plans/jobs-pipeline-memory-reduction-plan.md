@@ -240,20 +240,24 @@ The gate pass above ran against warm source-state (incremental skips shrank the 
 | cold-fb2-caps | 8 | 2 | ✓ | ✓ | ✓ | – | died ~52 min in | failed (OOM) | 2,559 MiB |
 | cold-recycle | 8 | 4 | ✓ | ✓ | ✓ | ✓ N=20 | died ~36 min in | failed (OOM) | 2,559 MiB |
 
-### Seed-defer round (2026-08-22, final): heavier yield closes the question
+### Obscura A/B round (2026-08-22): engine swap executed — fetch survived, finalize still pins
 
-Seeded canonical rows were also deferred (`3654b2b7`: setup streams only row count + published source names; `run_pipeline` rehydrates `[seeded, fetched]` after the fetch window, gated on `effective_seed_from_existing_output`). Two more probes on a fully-reset cold seed — where lifecycle healing let far more sources yield fresh jobs (**~96k output rows vs 41k in earlier probes**, 55k raw fetched):
+The A/B ran against the real [obscura](https://github.com/h4ckf0r0day/obscura) Rust engine (Apache-2.0, v0.2.0, ~30 MB vs Chromium 200+). Binary downloaded from releases, volume-mounted read-only into the bench container via `--obscura-bin-host-path`; host smoke passed including a LinkedIn challenge page (478 KB rendered HTML, startup 380 ms).
 
-| Probe | mw | fb | Result |
+| Probe | backend | fb | Result |
 |---|---|---|---|
-| seeddefer-fb4 | 8 | 4 | died ~39 min in — ceiling pin 2,560 MiB |
-| seeddefer-fb2 | 8 | 2 | died ~56 min in — same ceiling |
+| seeddefer-fb4 (control) | chromium | 4 | died mid-executing_sources @39 min |
+| **seeddefer-obscura** | **obscura** | 4 | **fetch completed all 2,126 sources (95,491 rows)** → child died at finalize/dedup boundary |
 
-### Final verdict (evidence-complete)
+Key findings:
 
-Full-cold coverage **at the seed's current yield (~55k raw / 96k deduped rows)** does not fit the 2.5 GiB seat with any fb ≥ 1 under every in-app lever combination tested (streaming, lifecycle defer, seeded defer, periodic trim, renderer/V8 caps, body caps, concurrency 6/8, pool recycling). Python heap ≤145 MiB traced throughout. Remaining consumers live outside app reach: Chromium/Node process anon, page cache from artifact writes, pymalloc/glibc arena overhead.
+1. **Obscura kept fetch alive through the entire source sweep** — every fallback acquisition succeeded, zero browser errors. The death moved from mid-fetch to the dedup/finalize boundary, where the 96k-row working set materializes.
+2. The lighter engine freed enough headroom for the *fetch* phase but not for the *finalize* phases (dedup + lifecycle + write), whose working set scales with output rows regardless of backend.
+3. Efficacy: no browser-error work items; LinkedIn rendered at full fidelity in host smoke.
 
-Steady-state incremental cycles — the default production shape — meet **2,191 MiB WITH fb=4**. Production Umbrel compose sets no memory limit, so field behavior is unaffected either way; the gate question is purely low-end-device comfort.
+**Final verdict unchanged but sharpened:** the binding constraint is the 96k-row finalize working set, not any single process. Full-cold coverage at current seed-yield needs either (a) the sidecar browser charter AND seeded/fetched defer already landed, plus a finalize-row-streaming pass, or (b) acceptance that full-cold re-baselines need ≥3 g while steady-state meets 2,191 MiB WITH fb=4.
+
+Artifacts: `_out/perf-pipeline/full2317-COLD-obscura-fb4/`. Harness flag: `--obscura-bin-host-path <dir>` (commit `3a8bdddd`).
 
 ### What instrumentation proved
 
