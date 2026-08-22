@@ -8,7 +8,7 @@ from typing import Any
 
 from src.baluffo_config import get_storage_defaults
 
-DEFAULT_TIMEOUT_S = 15
+DEFAULT_TIMEOUT_S = 10
 DEFAULT_RETRIES = 2
 DEFAULT_BACKOFF_S = 1.2
 DEFAULT_FETCH_STRATEGY = "auto"
