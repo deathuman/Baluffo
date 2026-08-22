@@ -87,7 +87,7 @@ from src.jobs.transport import (
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.pipeline_io import (
     IncrementalFetchedRowsWriter,
-    read_existing_output,
+    read_pipeline_rows_sidecar,
     write_hot_text_if_changed,
 )
 from src.shared.json_io import read_json
@@ -204,23 +204,34 @@ def _existing_output_has_rows(json_path: Path) -> bool:
     return False
 
 
-def _published_source_names_from_rows(rows: list[CanonicalJob]) -> set[str]:
+def _streamed_seed_metadata(json_path: Path) -> tuple[int, set[str]]:
+    """Stream the rows sidecar once for ``(line_count, published_source_names)``.
+
+    ponytail: setup only needs these two facts to drive loader selection and
+    progress counts — materializing 40k+ CanonicalJob objects here pinned them
+    in RAM through the whole fetch window. The rows themselves are rehydrated
+    from the same sidecar at finalize handoff (run_pipeline).
+    """
+    count = 0
     names: set[str] = set()
-    for row in rows:
-        payload = row.to_dict()
-        source_name = clean_text(payload.get("source"))
+    sidecar_rows = read_pipeline_rows_sidecar(json_path)
+    if sidecar_rows is None:
+        return count, names
+    for row in sidecar_rows:
+        if not isinstance(row, dict):
+            continue
+        count += 1
+        source_name = clean_text(row.get("source"))
         if source_name:
             names.add(source_name)
-        source_bundle = payload.get("sourceBundle")
-        if not isinstance(source_bundle, list):
-            continue
-        for item in source_bundle:
-            if not isinstance(item, dict):
-                continue
-            bundled_source = clean_text(item.get("source"))
-            if bundled_source:
-                names.add(bundled_source)
-    return names
+        source_bundle = row.get("sourceBundle")
+        if isinstance(source_bundle, list):
+            for item in source_bundle:
+                if isinstance(item, dict):
+                    bundled_source = clean_text(item.get("source"))
+                    if bundled_source:
+                        names.add(bundled_source)
+    return count, names
 
 
 def _include_linked_static_validation_loaders(
@@ -399,29 +410,24 @@ def prepare_pipeline_run(
             "incrementalCacheEnabled": incremental_cache_enabled,
         },
     )
+    # ponytail: defer the seeded rows — stream only their count and published
+    # source names here; run_pipeline rehydrates the rows themselves from the
+    # same sidecar at finalize handoff, keeping them out of the fetch window.
+    canonical_rows: list[CanonicalJob] = []
+    seeded_row_count = 0
+    published_source_names: set[str] = set()
     if effective_seed_from_existing_output:
-        seeded_rows = read_existing_output(
-            paths.json_path,
-            started_at,
-            canonicalize_job=canonicalize_existing_output_row,
-            clean_text=clean_text,
-            canonical_job_cls=CanonicalJob,
-        )
-        # canonicalize_existing_output_row returns CanonicalJob directly, so
-        # the previous `CanonicalJob.from_mapping(row)` double-conversion is
-        # unnecessary. Duck-typing accepted by read_existing_output.
-        canonical_rows.extend(seeded_rows)
-    seeded_row_count = len(canonical_rows)
+        streamed_count, published_source_names = _streamed_seed_metadata(paths.json_path)
+        seeded_row_count = streamed_count
     prep_progress.emit(
         "seeding_existing_output",
         "Seeding existing output",
         counts={
             "setupStep": 2,
             "seedExistingOutput": effective_seed_from_existing_output,
-            "seededOutputRows": len(canonical_rows),
+            "seededOutputRows": seeded_row_count,
         },
     )
-    published_source_names = _published_source_names_from_rows(canonical_rows)
 
     effective_social_config_path = (
         Path(social_config_path)
@@ -431,7 +437,7 @@ def prepare_pipeline_run(
     prep_progress.emit(
         "selecting_sources",
         "Selecting sources",
-        counts={"setupStep": 3, "seededOutputRows": len(canonical_rows)},
+        counts={"setupStep": 3, "seededOutputRows": seeded_row_count},
     )
     social_config = common_social.load_social_config(
         config_path=effective_social_config_path,
@@ -621,7 +627,7 @@ def prepare_pipeline_run(
         counts={
             "setupStep": 5,
             "selectedSourceCount": len(selected_loaders),
-            "seededOutputRows": len(canonical_rows),
+            "seededOutputRows": seeded_row_count,
             "excludedSourceCount": len(source_reports),
         },
     )
@@ -632,8 +638,9 @@ def prepare_pipeline_run(
         started_at=started_at,
         show_progress=show_progress,
     )
-    if canonical_rows:
-        task_runtime.current_output_count = len(canonical_rows)
+    # ponytail: seeded count is streamed (rows themselves deferred to the
+    # finalize handoff in run_pipeline).
+    task_runtime.current_output_count = max(0, int(seeded_row_count))
     write_task_state = make_task_state_writer(
         runtime=task_runtime,
         run_id=run_id,

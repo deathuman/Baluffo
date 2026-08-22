@@ -20,8 +20,10 @@ from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
 from src.jobs.interfaces import SourceLoader
+from src.jobs.text_utils import clean_text
 from src.jobs.transport import build_redirect_resolver as transport_build_redirect_resolver
 from src.jobs.transport import default_fetch_text
+from src.pipeline_io import read_existing_output
 
 from . import pipeline_cli as pipeline_cli_pkg
 from . import pipeline_execution_flow as pipeline_execution_flow_mod
@@ -179,11 +181,29 @@ def run_pipeline(
         # ponytail: hand over ownership of canonical_rows to finalize; clear
         # the setup reference so the fetch loop's accumulator is dropped from
         # the setup frame before dedup+lifecycle materialize their own copies.
-        # When the incremental fetched sidecar is active, canonical_rows holds
-        # only seeded rows — hydrate the just-fetched batch from disk before
-        # finalize so fetch-stage RSS was never `seeded + fetched`.
-        canonical_rows_for_finalize = setup.canonical_rows
-        setup.canonical_rows = []
+        # Both row segments are rehydrated here, after the fetch window closes:
+        # [seeded (rows sidecar), fetched (.pipeline-fetched-rows.jsonl)] — the
+        # order preserves the observed_rows = rows[seeded_row_count:] slice.
+        canonical_rows_for_finalize: list = []
+        if setup.effective_seed_from_existing_output:
+            try:
+                from src.jobs.models import CanonicalJob as _CJ
+                from src.jobs.pipeline_run_setup import (
+                    canonicalize_existing_output_row,
+                )
+
+                hydrated_seeded = read_existing_output(
+                    setup.paths.json_path,
+                    setup.started_at,
+                    canonicalize_job=canonicalize_existing_output_row,
+                    clean_text=clean_text,
+                    canonical_job_cls=_CJ,
+                )
+                canonical_rows_for_finalize.extend(hydrated_seeded)
+                setup.seeded_row_count = len(hydrated_seeded)
+                del hydrated_seeded
+            except Exception:
+                pass
         fetched_writer = getattr(setup, "fetched_rows_writer", None)
         if fetched_writer is not None and int(getattr(fetched_writer, "count", 0) or 0) > 0:
             try:
