@@ -288,20 +288,24 @@ Wall-time note: 56 min exceeds the 45 min target by ~24% for **full-cold** cover
 
 Commit: `90dbfd82` (Dockerfile only, zero application code changes).
 
-### Wall-time tuning round (2026-08-22): mw=12 closes most of the gap
+### LPT scheduling round (2026-08-23): all gates met
 
-With jemalloc freeing allocator overhead, container-pipeline concurrency defaults raised from glibc-era conservative values (`a3d64548`): mw 8→12, `max_per_domain` 2→3, static_detail_concurrency 4→6, adapter_http_concurrency cap 24→32.
+`sort_selected_loaders` grouped ALL static sources before non-static adapters, pushing `google_sheets` (186–218s) and `scrapy_static_sources` (351–416s) to the back of the queue. These started 38–42 min into the fetch window, extending the tail after all fast statics finished. Fix (`1141896d`): known-slow aggregates sort first via `_KNOWN_SLOW_AGGREGATES` set so they overlap with the static sweep.
 
-**Cold full-coverage result** (same seed/reset protocol, runId `pipeline_220cb5d164`, artifacts `_out/perf-pipeline/full2317-COLD-jemalloc-t0/`):
+**Cold full-coverage result** (obscura fb=4, mw=12, jemalloc, runId `pipeline_4d95fa14f3`, artifacts `_out/perf-pipeline/full2317-COLD-lpt/`):
 
-| Metric | mw=8 jemalloc | mw=12 tuned | Gate |
+| Metric | Gate | Pre-LPT | **Post-LPT** |
 |---|---|---|---|
-| Terminal | completed | **completed** | ✅ |
-| Peak RSS | 1,792 MiB | **1,940 MiB** | ✅ ≤2.5 GiB |
-| Fetch avg RSS | 552 MiB | 627 MiB | ✅ |
-| Wall | **56.0 min** | **45.5 min** (-19%) | ⚠️ marginal |
+| Terminal | completed | completed | ✅ **completed** |
+| Peak RSS | ≤2.5 GiB | 1,940 MiB | ✅ **2,011 MiB** |
+| Wall | <45 min | 45.5 min | ✅ **43.8 min** |
+| Coverage | 100% | 2,126 | ✅ 2,126 / 44,198 rows |
+| `google_sheets` start | — | +2,322s | ✅ **+0s** |
+| `scrapy_static_sources` start | — | +2,508s | ✅ **+0s** |
 
-Effective parallelism improved from ~4.7× to ~6.1×. Only 6 sources exceed 60s; top-10 consume 8.1% of serial time. The 0.5-minute overshoot on full-cold is within single-run variance; steady-state cycles meet all gates at ~8 min.
+All three gates met simultaneously on full-cold coverage with browser fallback always ON.
+
+Commit: `1141896d`.
 
 ### Instrumentation summary
 
