@@ -307,6 +307,20 @@ All three gates met simultaneously on full-cold coverage with browser fallback a
 
 Commit: `1141896d`.
 
+### Verification round (2026-08-23): chromium-vs-obscura A/B + steady-state proof
+
+With LPT scheduling active, two additional benches validated the final configuration:
+
+| Scenario | Backend | Wall | Peak RSS | Terminal | Output |
+|---|---|---|---|---|---|
+| Full-cold (state reset) | **Chromium** | **40.1 min** | 2,043 MiB | completed ✅ | 44,428 |
+| Full-cold (state reset) | Obscura | 43.8 min | 2,011 MiB | completed ✅ | 44,198 |
+| Steady-state (warm skips) | Chromium | **4.8 min** | 2,179 MiB | completed ✅ | 44,882 |
+
+Chromium is the default backend: 3.7 min faster than obscura at comparable memory. Obscura remains available via `BALUFFO_BROWSER_FALLBACK_BACKEND=obscura`. Steady-state improved from 8.3 min (glibc) to 4.8 min (jemalloc).
+
+Artifacts: `_out/perf-pipeline/full2317-COLD-chromium-jem/`, `_out/perf-pipeline/full2317-WARM-jemalloc-lpt/`.
+
 ### Instrumentation summary
 
 Python heap ≤145 MiB (tracemalloc-proven). Ceiling is combined cgroup footprint of all processes + page cache.
