@@ -214,6 +214,20 @@ def apply_dynamic_redundant_static_exclusions(
     return filtered, excluded, build_static_suppression_policy_summary(policy_pairs)
 
 
+# ponytail: aggregate loaders that are known to be slow (CSV download +
+# redirect resolution + title hydration; Scrapy spider sweep) — start them
+# FIRST so their execution overlaps with the thousands of fast static sources
+# rather than extending the tail after all statics finish.
+_KNOWN_SLOW_AGGREGATES = frozenset(
+    {
+        "google_sheets",
+        "scrapy_static_sources",
+        "google_sheets_1er2oaxo",
+        "google_sheets_1mvqhxat",
+    }
+)
+
+
 def sort_selected_loaders(
     selected_loaders: list[tuple[str, SourceLoader]],
     *,
@@ -222,6 +236,8 @@ def sort_selected_loaders(
 ) -> list[tuple[str, SourceLoader]]:
     def _source_priority(item: tuple[str, SourceLoader]) -> tuple[int, int]:
         source_name = clean_text(item[0])
+        if source_name in _KNOWN_SLOW_AGGREGATES:
+            return (-1, 0)
         adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
         if not adapter and source_name.startswith(_STATIC_SOURCE_PREFIX):
             adapter = "static"
