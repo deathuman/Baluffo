@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-08-18
+> - **Last updated:** 2026-08-23
 
 ## CLI runtime options
 
@@ -57,11 +57,11 @@ Bridge defaults:
   - `--adapter-http-concurrency 16`
   - `--static-detail-concurrency 4`
 - Container/Umbrel pipeline-launched fetch is a separate bounded throughput profile for the full Jobs pipeline only:
-  - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `10` and is clamped to `1..12`
+  - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `12` and is clamped to `1..12`
   - `BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS` defaults to `4` and is clamped to `0..6`; `0` disables Playwright browser fallback for this container pipeline fetch profile.
-  - `--max-per-domain 2`
-  - `--adapter-http-concurrency min(maxWorkers * 4, 24)`
-  - `--static-detail-concurrency 4`
+  - `--max-per-domain 3`
+  - `--adapter-http-concurrency min(maxWorkers * 4, 32)`
+  - `--static-detail-concurrency 6`
   - manual fetch defaults and desktop defaults are not changed by this pipeline profile.
 - The `uncapped` preset remains intentionally aggressive in container mode (`--max-workers 50`, `--max-per-domain 5`, `--adapter-http-concurrency 48`, and default static detail concurrency).
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
