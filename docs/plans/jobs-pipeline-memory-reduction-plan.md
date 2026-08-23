@@ -307,6 +307,16 @@ All three gates met simultaneously on full-cold coverage with browser fallback a
 
 Commit: `1141896d`.
 
+### CI fix round (2026-08-23): 5 test failures resolved, all workflows green
+
+Push to main triggered 5 test failures on Linux CI:
+
+1. Container fetch profile tests asserted old values (mw=10, mpd=2, ahc=24, sdc=4) — updated to match raised concurrency (mw=12, mpd=3, ahc=32, sdc=6).
+2. Transport constructor ratchet — combined `(_EXPECTED..., ImportError)` except tuple triggered `TypeError: catching classes that do not inherit from BaseException` on Python 3.13/Linux. Split into separate `except ImportError:` and `except _EXPECTED...:` blocks.
+3. `test_seeded_row_is_not_observed_and_successful_source_absence_retires_it` — finalize's observed_rows handling was accidentally replaced with `list(canonical_rows)` during the defer refactoring, causing seeded rows to be treated as freshly-observed evidence and preventing retirement when sources go missing. Restored proper `observed_rows` parameter handling.
+
+All fixed in commit `87d2571e`. All 5 workflows green on re-run.
+
 ### Verification round (2026-08-23): chromium-vs-obscura A/B + steady-state proof
 
 With LPT scheduling active, two additional benches validated the final configuration:
