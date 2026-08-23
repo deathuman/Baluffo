@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+
+- Admin pipeline schedule no longer sticks on "loading schedule..." indefinitely:
+  a schedule fetch that succeeded but normalized to an unhydratable payload
+  (empty/degraded shape) previously recorded neither an error nor a retry, so
+  the Ops schedule control and its Enable/interval inputs stayed disabled for
+  the whole active run. Such payloads now surface "schedule delayed; retrying"
+  and arm the existing backoff retry until a hydratable payload lands.
+
 ## [0.2.133] - 2026-08-23
 
 > Shared Desktop + Umbrel performance patch: fetch-stage row streaming,

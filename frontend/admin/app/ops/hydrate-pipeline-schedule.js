@@ -45,6 +45,13 @@ export function createPipelineScheduleHydration({
         if (schedule?.pipeline?.scheduleStatusRefreshing && !hasPipelineScheduleNextRun(state.pipelineScheduleModel)) {
           state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
           schedulePipelineScheduleRetry();
+        } else if (!accepted) {
+          // ponytail: success-but-unhydratable payload used to stick on
+          // "loading schedule..." forever (no error, no retry). Arm the retry.
+          markStep("admin_pipeline_schedule_soft_reject", { keys: Object.keys(schedule || {}).length });
+          state.pipelineScheduleLastError = "schedule payload not hydratable";
+          state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
+          schedulePipelineScheduleRetry();
         }
         if (!options?.deferIdleHydration) {
           scheduleIdleOpsHeavyHydration(currentRenderToken(), { silent: true });

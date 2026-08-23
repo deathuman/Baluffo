@@ -155,3 +155,65 @@ test("desktop active pipeline renders compact KPI and schedule summaries", async
   assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /loading schedule/);
   assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /data-ui="admin-pipeline-schedule-enabled"[^>]*disabled/);
 });
+
+async function drainPromises() {
+  for (let round = 0; round < 8; round += 1) {
+    await Promise.resolve();
+  }
+}
+
+test("empty-normalized schedule payload during active run arms retry and recovers", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const state = createState();
+  const refs = createRefs();
+  let scheduleCalls = 0;
+  const controller = createController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/tasks/run-jobs-pipeline-status") {
+        return { active: true, runId: "pipeline_live_2", stage: "fetch" };
+      }
+      if (path === "/ops/task-state?view=summary") {
+        return {
+          tasks: [
+            { taskType: "fetch", type: "fetch", runId: "fetch_live_2", parentTaskType: "pipeline", active: true }
+          ],
+          count: 1,
+          summary: true
+        };
+      }
+      if (path === "/tasks/jobs-pipeline-schedule") {
+        scheduleCalls += 1;
+        if (scheduleCalls <= 2) {
+          return {};
+        }
+        return {
+          ok: true,
+          savedConfig: { enabled: true, intervalHours: 11 },
+          status: { enabled: true, intervalHours: 11, nextRunAt: "2026-08-24T02:00:00Z" }
+        };
+      }
+      return {};
+    }
+  });
+
+    await controller.loadOpsHealthData({ summary: true });
+    await drainPromises();
+    assert.equal(scheduleCalls >= 1, true);
+    assert.match(refs.adminOpsScheduleEl.innerHTML, /delayed; retrying/);
+    assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /loading schedule\.\.\./);
+
+    t.mock.timers.tick(3200);
+    await drainPromises();
+    await drainPromises();
+    assert.equal(scheduleCalls >= 2, true);
+    assert.match(refs.adminOpsScheduleEl.innerHTML, /delayed; retrying/);
+
+    t.mock.timers.tick(6100);
+    await drainPromises();
+    await drainPromises();
+    assert.equal(scheduleCalls >= 3, true);
+    assert.match(refs.adminOpsScheduleEl.innerHTML, /every 11h, next/);
+    assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /delayed; retrying/);
+});
