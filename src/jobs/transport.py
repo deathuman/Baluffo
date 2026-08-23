@@ -188,7 +188,9 @@ class PooledRedirectResolver:
                             max_connections=max(2, int(max_connections or 1) * 2),
                         ),
                     )
-            except (_EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS, ImportError):
+            except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
+                self._client = None
+            except ImportError:
                 self._client = None
         if isinstance(initial_cache, dict) and initial_cache:
             self.seed_cache(initial_cache)
@@ -385,7 +387,10 @@ class AsyncHttpTextFetcher:
                         max_connections=max(self._max_connections * 2, self._max_connections),
                     ),
                 )
-        except (ImportError, _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS):
+        except ImportError:
+            self._ready.set()
+            return
+        except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
             self._ready.set()
             return
         self._ready.set()
