@@ -344,7 +344,6 @@ def read_fetched_rows_sidecar(
     path = _fetched_rows_sidecar_path(output_dir)
     if not path.exists():
         return
-        yield  # make this a generator even when empty
     # codeql[py/path-injection] Sidecar lives beside a trusted pipeline artifact.
     with open(path, encoding="utf-8") as handle:
         for line in handle:

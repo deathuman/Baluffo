@@ -8,11 +8,11 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline source-
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import pathlib
 import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Any, Protocol, cast
 
