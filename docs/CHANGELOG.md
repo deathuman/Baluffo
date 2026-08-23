@@ -12,10 +12,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [0.2.133] - 2026-08-23
 
-> Container-only performance patch: fetch-stage row streaming, lifecycle
-> tree defer, jemalloc allocator swap, LPT scheduling, browser-pool
-> recycling + renderer caps, parser-noise classifier fix, and container
-> concurrency profile raise.
+> Shared Desktop + Umbrel performance patch: fetch-stage row streaming,
+> lifecycle tree defer, jemalloc container allocator swap, LPT scheduling,
+> browser-pool recycling + renderer caps, parser-noise classifier fix, and
+> container concurrency profile raise.
 
 ### Changed
 
