@@ -43,6 +43,7 @@ data/*.db-*
 data/*.json.gz
 data/local-user-data/
 data/updater/
+data/runtime/
 !data/.gitkeep
 !data/source-discovery-config.json
 !data/contracts/
