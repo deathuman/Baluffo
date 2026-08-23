@@ -103,7 +103,7 @@ class PipelineRunSetup:
     selected_loaders: list[tuple[str, SourceLoader]]
     using_default_loaders: bool
     source_state_rows: dict[str, dict[str, Any]]
-    lifecycle_rows: dict[str, dict[str, Any]]
+    lifecycle_rows: dict[str, dict[str, Any]] | None
     lifecycle_state_fingerprint: tuple[int, int] | None
     runtime_payload: dict[str, Any]
     async_fetcher: Any
@@ -331,7 +331,6 @@ def prepare_pipeline_run(
         force=True,
     )
     source_reports = [row for row in (selection_exclusions or []) if isinstance(row, dict)]
-    canonical_rows: list[CanonicalJob] = []
 
     max_workers = max(1, int(max_workers or 1))
     max_per_domain = max(1, int(max_per_domain or 1))
@@ -377,7 +376,9 @@ def prepare_pipeline_run(
         "Loading lifecycle state",
         counts={"setupStep": 1, "sourceStateRows": len(source_state_rows)},
     )
-    lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
+    lifecycle_rows: dict[str, dict[str, Any]] | None = read_job_lifecycle_state(
+        paths.lifecycle_state_path
+    )
     lifecycle_state_fingerprint_ = lifecycle_state_fingerprint(paths.lifecycle_state_path)
     prep_progress.emit(
         "loading_state",
@@ -385,7 +386,7 @@ def prepare_pipeline_run(
         counts={
             "setupStep": 1,
             "sourceStateRows": len(source_state_rows),
-            "lifecycleRows": len(lifecycle_rows),
+            "lifecycleRows": len(lifecycle_rows) if lifecycle_rows is not None else 0,
         },
     )
     # ponytail: defer the lifecycle parse tree — ~600-800 MiB resident through
