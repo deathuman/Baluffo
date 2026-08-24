@@ -75,6 +75,28 @@ export function hasKnownPipelineSchedule(schedule) {
   );
 }
 
+export function isTrustedBootstrapSchedule(payload = {}) {
+  return Boolean(
+    isPlainObject(payload?.schedule)
+    && isPlainObject(payload.schedule.pipeline)
+    && payload.degraded !== true
+    && payload.overview?.degraded !== true
+    && payload.ops?.scheduleDelayed !== true
+    && payload.scheduleDelayed !== true
+  );
+}
+
+export function bootstrapScheduleNeedsRefresh(payload = {}, state = {}) {
+  // Degraded/unhydratable bootstraps must fall back to an early GET instead
+  // of being trusted for panel state.
+  if (!isTrustedBootstrapSchedule(payload)) {
+    return true;
+  }
+  // The panel renders from state.pipelineScheduleModel, not from the raw
+  // payload; if seeding failed for any reason, fall back to an early GET.
+  return !hasKnownPipelineSchedule(state.pipelineScheduleModel);
+}
+
 export function hasPipelineScheduleNextRun(schedule) {
   return Boolean(String(schedule?.pipeline?.nextRunAt || "").trim());
 }

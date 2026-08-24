@@ -28,3 +28,6 @@ export {
   getOpsPollIntervalMs,
   normalizeOpsRuns
 } from "./domain/runs.js";
+export {
+  bootstrapScheduleNeedsRefresh
+} from "./domain/ops-schedule-model.js";

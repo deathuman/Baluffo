@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+
+- Admin Ops schedule panel no longer sits on "loading schedule..." for the
+  first idle-poll interval (~10s) after opening or refreshing the page: the
+  bootstrap payload's schedule section now seeds the panel model directly,
+  with the early schedule GET kept as a fallback whenever seeding does not
+  yield a hydratable model.
+
 ## [0.2.134] - 2026-08-24
 
 > Shared Desktop + Umbrel Admin performance patch: ops summary TTL caching

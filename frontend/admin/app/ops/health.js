@@ -26,7 +26,8 @@ import {
   normalizePipelineSchedulePayload,
   hasKnownPipelineSchedule,
   hasPipelineScheduleNextRun,
-  getPipelineScheduleRenderModel
+  getPipelineScheduleRenderModel,
+  isTrustedBootstrapSchedule
 } from "../../domain/ops-schedule-model.js";
 import {
   FETCH_KPI_LOADING_LABEL,
@@ -1454,6 +1455,13 @@ export function createOpsHealthController({
       if (Object.prototype.hasOwnProperty.call(registrySummary, "pendingCount")) {
         kpis.pendingApprovalsCount = registrySummary.pendingCount;
       }
+    }
+    // Seed the schedule model straight from the bootstrap payload so the Ops
+    // panel paints real settings on first render instead of waiting for the
+    // first poll (previously ~10s of "loading schedule..." after every open).
+    // Degraded bootstrap schedules are not trusted over an existing model.
+    if (isTrustedBootstrapSchedule(payload)) {
+      rememberPipelineSchedule(normalizePipelineSchedulePayload({ schedule: payload.schedule }));
     }
     const health = {
       ok: true,

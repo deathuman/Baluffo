@@ -30,6 +30,9 @@ import { createAdminOverviewController } from "./overview.js?v=15";
 import { createActionCenterController } from "../action-center.js?v=3";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
+import {
+  bootstrapScheduleNeedsRefresh as bootstrapScheduleNeedsRefreshFromDomain
+} from "../../domain.js";
 
 export function composeAdminControllers({
   state,
@@ -515,12 +518,12 @@ export function composeAdminControllers({
       };
     }
     const bootstrapDegraded = payload?.degraded === true || payload?.overview?.degraded === true;
-    const bootstrapScheduleNeedsRefresh = Boolean(
-      bootstrapDegraded
-      || !payload?.schedule
-      || !payload?.schedule?.pipeline
-      || payload?.ops?.scheduleDelayed === true
-      || payload?.scheduleDelayed === true
+    // Seed the schedule model first, then decide whether an early schedule GET
+    // is still needed — the panel reads the model, not the raw payload.
+    opsController.applyBootstrapPayload(payload || {});
+    const bootstrapScheduleNeedsRefresh = bootstrapScheduleNeedsRefreshFromDomain(
+      payload || {},
+      state
     );
     const bootstrapSyncNeedsRefresh = !isAuthoritativeSyncPayload(payload?.sync || null);
     overviewController.renderOverview(payload?.overview || {}, { degraded: bootstrapDegraded });
@@ -534,7 +537,6 @@ export function composeAdminControllers({
         logAdminError("Admin overview fallback refresh delayed.", err);
       });
     }
-    opsController.applyBootstrapPayload(payload || {});
     renderBootstrapSyncPayload(payload?.sync || null);
     scheduleBootstrapSourceTablesLoad();
     scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh });
