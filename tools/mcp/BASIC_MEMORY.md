@@ -369,6 +369,28 @@ process, restart the Codex thread/app or re-add the MCP registration so Codex op
 transport. The CLI validation commands above still verify the local Basic Memory install and search
 index.
 
+### Migration Revision Skew (DB newer than pinned tool)
+
+Symptom: every `basic-memory` invocation fails with
+`Can't locate revision identified by '<hash>'`, and MCP clients show basic-memory disconnected
+(the stdio server dies during startup migrations). Verified 2026-08-24: the uv-tool-pinned install
+was 0.22.1 while `memory.db` had been migrated to revision `2d26b287813b` by 0.23.0 — a client
+using `uvx basic-memory` (always latest, e.g. the Claude Desktop registration) ran against the
+shared `%USERPROFILE%\.basic-memory\memory.db`.
+
+Fix: back up `memory.db`, align the pinned tool with the version that migrated the DB, then run the
+health check sequence above:
+
+```powershell
+Copy-Item "$env:USERPROFILE\.basic-memory\memory.db" "$env:USERPROFILE\.basic-memory\memory.db.bak-<date>" -Force
+uv tool install -p 3.13 basic-memory@latest --force
+basic-memory project list   # must not report the revision error
+```
+
+Prevention: keep all clients on one delivery channel. Prefer the pinned `basic-memory.exe`
+(`uv tool install`) everywhere; avoid `uvx basic-memory` registrations that float to latest while
+another install is pinned.
+
 ## Required Use
 
 Use Basic Memory for AI-assisted Baluffo planning, handoff, recurring gotchas, current focus, and stale-memory corrections.
