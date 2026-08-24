@@ -24,7 +24,6 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
         "parse_iso": _parse_iso,
         "append_run_history": lambda row: row,
         "upsert_run_history": lambda entry, **_kwargs: entry,
-        "task_running_from_state": lambda _task_type: False,
         "sync_task_running": lambda: False,
         "current_fetch_output_count": lambda: 0,
         "load_json_object": lambda _path, default: default,

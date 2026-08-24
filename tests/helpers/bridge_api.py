@@ -230,7 +230,6 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
         },
     }
     api.compute_fetcher_metrics = lambda **kw: {"windowRuns": 20, "runs": [], "aggregates": {}}
-    api.sync_history_from_reports = lambda: []
     api.get_lifecycle_run_history_rows = lambda: []
     api.get_lifecycle_current_runs = lambda: []
     api.get_lifecycle_recent_runs = lambda: []
@@ -377,7 +376,6 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
             Path(runtime_config.data_dir).resolve()
         ),
         compute_fetcher_metrics=admin_bridge.compute_fetcher_metrics,
-        sync_history_from_reports=admin_bridge.sync_history_from_reports,
         get_projected_run_history=admin_bridge._get_ops_api().get_projected_run_history,
         get_lifecycle_run_history_rows=admin_bridge._get_ops_api().get_lifecycle_run_history_rows,
         get_current_task_state_payload=admin_bridge._get_ops_api().get_current_task_state_payload,

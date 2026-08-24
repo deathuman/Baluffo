@@ -147,25 +147,3 @@ def test_start_sync_task_creates_started_lifecycle_row(admin_bridge_entrypoint_r
     assert len(started) >= 1
     assert str((started[-1].get("summary") or {}).get("action") or "") == "pull"
     assert _load_run_history(admin_bridge_entrypoint_root) == []
-
-
-def test_sync_history_discards_stale_sync_started_row_without_run_id(admin_bridge_entrypoint_root):
-    api = build_admin_bridge_api()
-    api.save_json_atomic(
-        admin_bridge_entrypoint_root / "admin-run-history.json",
-        [
-            {
-                "id": "sync_stale_1",
-                "type": "sync",
-                "status": "started",
-                "startedAt": "2026-03-09T12:00:00+00:00",
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {"action": "push"},
-            }
-        ],
-    )
-
-    rows = api.sync_history_from_reports()
-
-    assert not any(str(row.get("id") or "") == "sync_stale_1" for row in rows)

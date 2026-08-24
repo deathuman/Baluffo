@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from src.bridge import ops_health as _ops_health
-from src.bridge import ops_history_projection as _ops_history_projection
 from src.bridge import report_normalizer
 from src.bridge.ops_api_core import OpsApiState
 from src.source_registry_io import load_runtime_evidence
@@ -61,12 +60,4 @@ class OpsApiReportsMixin(OpsApiState):
             report,
             self._deps.normalize_discovery_report_contract,
             self._deps.parse_iso,
-        )
-
-    def sync_history_from_reports(self) -> list[dict[str, Any]]:
-        return _ops_history_projection.sync_history_from_reports(
-            deps=self._deps,
-            paths=self._paths,
-            summarize_fetch_report=self.summarize_fetch_report,
-            summarize_discovery_report=self.summarize_discovery_report,
         )

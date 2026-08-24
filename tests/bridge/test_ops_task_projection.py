@@ -10,7 +10,6 @@ def test_terminal_lifecycle_snapshot_wins_over_live_task_state() -> None:
     cleared: list[str] = []
     context = SimpleNamespace(
         deps=SimpleNamespace(
-            task_running_from_state=lambda _task_type: True,
             clear_task_state=lambda task_type: cleared.append(task_type),
         )
     )

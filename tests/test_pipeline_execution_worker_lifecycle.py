@@ -92,7 +92,6 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -173,7 +172,6 @@ def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path)
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: x,
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -287,7 +285,6 @@ def test_run_worker_keeps_waiting_for_attached_fetch_child_while_live_evidence_r
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -400,7 +397,6 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 0,
         load_json_object=load_json_object,
@@ -457,7 +453,6 @@ def test_pipeline_start_allows_live_fetch_to_attach_later(tmp_path: Path) -> Non
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: x,
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 0,
         load_json_object=load_json_object_stub,
@@ -517,9 +512,6 @@ def test_packaged_smoke_pipeline_completes_all_stages_without_journal_shadowing(
     if runtime is not None and runtime.active_thread is not None:
         runtime.active_thread.join(timeout=15.0)
         assert not runtime.active_thread.is_alive(), "smoke pipeline did not finish"
-
-    # Reconcile history from reports (no longer persists to admin-run-history.json).
-    admin_bridge.sync_history_from_reports()
 
     ops_api = admin_bridge._get_ops_api()  # noqa: SLF001
 

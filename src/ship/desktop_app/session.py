@@ -542,7 +542,6 @@ def _load_active_critical_desktop_tasks(
     *,
     bridge_port: int,
     timeout_s: float = 1.5,
-    allow_disk_fallback: bool = True,
 ) -> list[dict[str, str]]:
     try:
         payload = _fetch_json(
@@ -562,25 +561,9 @@ def _load_active_critical_desktop_tasks(
     if active_tasks:
         return active_tasks
 
-    if not allow_disk_fallback:
-        return []
-
-    task_state_path = Path(data_dir) / "admin-task-state.json"
-    try:
-        task_state_payload = json.loads(task_state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return []
-    if not isinstance(task_state_payload, dict):
-        return []
-
-    disk_tasks: list[dict[str, str]] = []
-    for fallback_task_type, row in task_state_payload.items():
-        if not isinstance(row, dict):
-            continue
-        task = _normalize_active_task_descriptor(row, fallback_task_type=str(fallback_task_type))
-        if _task_descriptor_is_active(task, row):
-            disk_tasks.append(task)
-    return disk_tasks
+    # ponytail: the legacy admin-task-state.json disk fallback was removed
+    # 2026-08-24; lifecycle rows above are the sole active-task evidence.
+    return []
 
 
 def diagnose_instance_conflict(

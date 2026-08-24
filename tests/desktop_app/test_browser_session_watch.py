@@ -259,7 +259,6 @@ def test_load_active_critical_desktop_tasks_uses_summary_route() -> None:
         active_tasks = desktop_app._load_active_critical_desktop_tasks(
             Path("C:/tmp"),
             bridge_port=ADMIN_BRIDGE_TEST_PORT,
-            allow_disk_fallback=False,
         )
 
     assert called_urls == ["http://127.0.0.1:8877/ops/task-state?view=summary"]

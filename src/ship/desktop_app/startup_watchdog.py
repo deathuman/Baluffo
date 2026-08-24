@@ -244,7 +244,6 @@ def watch_browser_session(
                 data_dir,
                 bridge_port=bridge_port,
                 timeout_s=0.75,
-                allow_disk_fallback=not bridge_healthy,
             )
             if active_tasks:
                 time.sleep(ACTIVE_WORK_BACKGROUND_RECOVERY_POLL_INTERVAL_S)

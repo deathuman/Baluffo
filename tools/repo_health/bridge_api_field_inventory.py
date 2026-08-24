@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE_API_PATH = Path("src/bridge/api.py")
-EXPECTED_BRIDGE_API_FIELD_COUNT = 96
+EXPECTED_BRIDGE_API_FIELD_COUNT = 95
 
 CATEGORIES = {
     "runtime-path",

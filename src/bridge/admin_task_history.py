@@ -92,11 +92,6 @@ class AdminTaskHistory:
     def clear_task_state_locked(self, task_type: str) -> None:
         self._get_manager()._clear_task_state_locked(task_type)
 
-    def task_running_from_state(self, task_type: str) -> bool:
-        return _run_history_api.task_running_from_state(
-            task_type, self._load_json_object, self._task_state_path(), self._pid_is_running
-        )
-
     def report_is_stale_in_progress(
         self,
         task_type: str,
@@ -110,11 +105,8 @@ class AdminTaskHistory:
             task_type,
             path,
             report,
-            load_json_object=self._load_json_object,
-            task_state_path=self._task_state_path(),
             parse_iso=self._parse_iso,
             now_utc=self._now_utc,
-            pid_is_running=self._pid_is_running,
             max_age_minutes=max_age_minutes,
             max_mtime_idle_minutes=max_mtime_idle_minutes,
         )

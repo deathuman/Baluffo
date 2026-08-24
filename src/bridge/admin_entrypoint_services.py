@@ -169,7 +169,6 @@ class _OpsApiLike(Protocol):
     def parse_schedule_metadata(self) -> JsonObject: ...
     def summarize_fetch_report(self, report: JsonObject) -> JsonObject: ...
     def summarize_discovery_report(self, report: JsonObject) -> tuple[JsonObject, str]: ...
-    def sync_history_from_reports(self) -> list[JsonObject]: ...
     def get_projected_run_history(self) -> _run_history_api.LifecycleProjection: ...
     def get_lifecycle_run_history_rows(self) -> list[JsonObject]: ...
     def compute_ops_health(self) -> JsonObject: ...
@@ -616,7 +615,6 @@ def get_ops_api(*, root_mod: Any) -> _OpsApiLike:
                 clear_task_state=root_mod.clear_task_state,
                 clear_task_state_locked=root_mod._clear_task_state_locked,
                 upsert_run_history=root_mod.upsert_run_history,
-                task_running_from_state=root_mod.task_running_from_state,
                 report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
                 get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
                 get_sync_status_payload=root_mod.get_sync_status_payload,
@@ -770,7 +768,6 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 parse_iso=root_mod.parse_iso,
                 append_run_history=root_mod.append_run_history,
                 upsert_run_history=root_mod.upsert_run_history,
-                task_running_from_state=root_mod.task_running_from_state,
                 sync_task_running=root_mod.sync_task_running,
                 current_fetch_output_count=pipeline_current_fetch_output_count,
                 load_json_object=pipeline_load_json_object,

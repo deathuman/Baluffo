@@ -81,7 +81,6 @@ class PipelineService(
         parse_iso: Callable[[Any], Any],
         append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
         upsert_run_history: Callable[..., dict[str, Any]],
-        task_running_from_state: Callable[[str], bool],
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
         load_json_object: Callable[[Any, Any], Any],

@@ -33,7 +33,6 @@ STOP_PID_TERMINATION_TIMEOUT_S = 3.0
 LOCAL_BROWSER_EXIT_POLL_INTERVAL_S = 0.25
 LOCAL_BROWSER_EXIT_SETTLE_S = 1.0
 SESSION_FILENAME = "admin-dev-session.json"
-TASK_STATE_FILENAME = "admin-task-state.json"
 FETCH_REPORT_FILENAME = "jobs-fetch-report.json"
 FETCH_TASKS_FILENAME = "jobs-fetch-tasks.json"
 _EXPECTED_RECLAIM_TERMINATE_EXCEPTIONS = (
@@ -57,10 +56,6 @@ class DevAdminConfig:
 
 def _session_path(data_dir: Path) -> Path:
     return Path(data_dir) / SESSION_FILENAME
-
-
-def _task_state_path(data_dir: Path) -> Path:
-    return Path(data_dir) / TASK_STATE_FILENAME
 
 
 def _fetch_report_path(data_dir: Path) -> Path:
@@ -194,22 +189,6 @@ def clear_session_state(data_dir: Path, *, owner_token: str = "") -> None:
         return
 
 
-def _load_task_state(data_dir: Path) -> dict[str, Any]:
-    path = _task_state_path(data_dir)
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _clear_task_state(data_dir: Path) -> None:
-    try:
-        _task_state_path(data_dir).unlink()
-    except OSError:
-        return
-
-
 def _reset_fetch_report(data_dir: Path) -> None:
     path = _fetch_report_path(data_dir)
     _write_json(
@@ -269,7 +248,6 @@ def reclaim_previous_dev_session(
     data_dir: Path, *, kill_recorded_pids: bool = True
 ) -> dict[str, Any]:
     session_state = load_session_state(data_dir)
-    task_state = _load_task_state(data_dir)
     targets: list[int] = []
     seen: set[int] = set()
     current_pid = int(os.getpid())
@@ -279,18 +257,7 @@ def reclaim_previous_dev_session(
             if pid > 0 and pid != current_pid and pid not in seen:
                 seen.add(pid)
                 targets.append(pid)
-    if kill_recorded_pids and task_state:
-        for task_type, entry in task_state.items():
-            if not isinstance(entry, dict):
-                continue
-            if str(task_type) not in {"discovery", "fetch"}:
-                continue
-            pid = int(entry.get("pid") or 0)
-            if pid > 0 and pid != current_pid and pid not in seen:
-                seen.add(pid)
-                targets.append(pid)
     clear_session_state(data_dir)
-    _clear_task_state(data_dir)
     _reset_fetch_artifacts(data_dir)
     for pid in targets:
         with contextlib.suppress(*_EXPECTED_RECLAIM_TERMINATE_EXCEPTIONS):
@@ -312,8 +279,7 @@ def _admin_url(config: DevAdminConfig) -> str:
 
 def _ensure_previous_owned_session_stopped(data_dir: Path) -> None:
     state = load_session_state(data_dir)
-    task_state = _load_task_state(data_dir)
-    if not state and not task_state:
+    if not state:
         _reset_fetch_artifacts(data_dir)
         return
     reclaim_previous_dev_session(data_dir)

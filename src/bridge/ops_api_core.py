@@ -53,7 +53,6 @@ class OpsDeps:
     clear_task_state: Callable[[str], None]
     clear_task_state_locked: Callable[[str], None]
     upsert_run_history: Callable[..., dict[str, Any]]
-    task_running_from_state: Callable[[str], bool]
     report_is_stale_in_progress: Callable[..., bool]
     get_active_sync_runs: Callable[[], set[str]]
     get_sync_status_payload: Callable[[], dict[str, Any]]
@@ -338,13 +337,8 @@ class OpsApiCoreMixin(OpsApiState):
     ) -> bool:
         if task_type == "sync" and run_id in set(self._deps.get_active_sync_runs() or set()):
             return True
-        try:
-            if task_type in {"fetch", "discovery", "sync"} and self._deps.task_running_from_state(
-                task_type
-            ):
-                return True
-        except (OSError, TypeError, ValueError):
-            return True
+        # ponytail: the frozen admin-task-state.json artifact is no longer
+        # consulted as liveness evidence; lifecycle rows are the authority.
         if task_type == "pipeline":
             return (
                 bool(pipeline_status.get("active"))

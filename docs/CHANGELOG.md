@@ -12,6 +12,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Removed
 
+- Dead report-file history projection lane (`sync_history_from_reports`,
+  `project_run_history`) and its facade/wiring; `/ops/history` and fetcher
+  metrics already read the lifecycle-ledger projection.
+- Runtime reads of the frozen `admin-task-state.json` artifact: stale-report
+  classification and live-task evidence checks now use lifecycle/report
+  signals only. The file is never consulted outside explicit migration
+  tooling, and the packaged desktop no longer falls back to it for conflict
+  diagnosis.
+
+### Fixed
+
 - `/registry/sources` legacy modes: `view=full`, the `detail=full|summary`
   selection, and the `activeCompact`/`compactActive` aliases now return HTTP
   400 with `removedParams`. The endpoint serves one authority-aware

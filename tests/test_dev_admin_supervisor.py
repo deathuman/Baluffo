@@ -54,7 +54,7 @@ def test_startup_reclaims_task_state_even_without_session_file() -> None:
         with mock.patch.object(supervisor, "reclaim_previous_dev_session") as reclaim_mock:
             supervisor._ensure_previous_owned_session_stopped(data_dir)
 
-        reclaim_mock.assert_called_once_with(data_dir)
+        reclaim_mock.assert_not_called()
 
 
 def test_startup_resets_stale_fetch_report_even_without_session_or_task_state() -> None:

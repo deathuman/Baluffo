@@ -82,7 +82,6 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
             Path(config.data_dir).resolve()
         ),
         compute_fetcher_metrics=root_mod.compute_fetcher_metrics,
-        sync_history_from_reports=root_mod.sync_history_from_reports,
         get_projected_run_history=ops_api.get_projected_run_history,
         get_lifecycle_run_history_rows=ops_api.get_lifecycle_run_history_rows,
         get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,

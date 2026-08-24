@@ -636,7 +636,6 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             active_tasks = api._load_active_critical_desktop_tasks(
                 config.data_dir,
                 bridge_port=config.bridge_port,
-                allow_disk_fallback=not bridge_healthy,
             )
             if not active_tasks:
                 break

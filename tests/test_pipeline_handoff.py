@@ -95,7 +95,6 @@ def make_service(
         parse_iso=make_parse_iso(),
         append_run_history=lambda x: x,
         upsert_run_history=lambda x, **kw: x,
-        task_running_from_state=lambda x: False,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 5,
         load_json_object=load_json_object,

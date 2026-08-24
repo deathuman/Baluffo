@@ -421,7 +421,6 @@ class BridgeApi:
     compute_ops_fetch_kpis_summary: Callable[[], JsonObject] = _ok_payload
     get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
-    sync_history_from_reports: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_lifecycle_current_runs: Callable[[], list[JsonObject]] = _empty_startup_metrics

@@ -60,7 +60,6 @@ def _make_ops_api(
         clear_task_state=lambda _task_type: None,
         clear_task_state_locked=lambda _task_type: None,
         upsert_run_history=lambda *_args, **_kwargs: {},
-        task_running_from_state=lambda _task_type: False,
         report_is_stale_in_progress=lambda *_args, **_kwargs: False,
         get_active_sync_runs=lambda: set(),
         get_sync_status_payload=lambda: {},
@@ -413,41 +412,6 @@ def test_task_state_summary_propagates_unexpected_stale_repair_failures(tmp_path
 
     with pytest.raises(RuntimeError, match="repair bug"):
         api.get_current_task_state_summary_payload()
-
-
-def test_ops_live_task_evidence_fallback_is_expected_failures_only(tmp_path) -> None:
-    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
-    api._deps = ops_api_module.OpsDeps(
-        **{
-            **api._deps.__dict__,
-            "task_running_from_state": mock.Mock(side_effect=OSError("state unavailable")),
-        }
-    )
-
-    assert (
-        api._has_live_task_evidence(
-            task_type="fetch",
-            run_id="fetch_1",
-            row={},
-            pipeline_status={},
-        )
-        is True
-    )
-
-    api._deps = ops_api_module.OpsDeps(
-        **{
-            **api._deps.__dict__,
-            "task_running_from_state": mock.Mock(side_effect=RuntimeError("programmer bug")),
-        }
-    )
-
-    with pytest.raises(RuntimeError, match="programmer bug"):
-        api._has_live_task_evidence(
-            task_type="fetch",
-            run_id="fetch_1",
-            row={},
-            pipeline_status={},
-        )
 
 
 def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) -> None:

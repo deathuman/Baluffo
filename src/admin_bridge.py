@@ -463,7 +463,6 @@ save_run_history = _TASK_HISTORY.save_run_history
 prune_started_rows_for_type = _TASK_HISTORY.prune_started_rows_for_type
 _clear_task_state_locked = _TASK_HISTORY.clear_task_state_locked
 clear_task_state = _TASK_HISTORY.clear_task_state
-task_running_from_state = _TASK_HISTORY.task_running_from_state
 report_is_stale_in_progress = _TASK_HISTORY.report_is_stale_in_progress
 start_lifecycle_run = _TASK_LIFECYCLE.start_run
 heartbeat_lifecycle_run = _TASK_LIFECYCLE.heartbeat_run
@@ -515,10 +514,6 @@ def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
 
 def summarize_discovery_report(report: dict[str, Any]) -> tuple[dict[str, Any], str]:
     return _get_ops_api().summarize_discovery_report(report)
-
-
-def sync_history_from_reports() -> list[dict[str, Any]]:
-    return _get_ops_api().sync_history_from_reports()
 
 
 def get_projected_run_history() -> _run_history_api.LifecycleProjection:

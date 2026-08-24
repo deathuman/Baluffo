@@ -1563,14 +1563,11 @@ def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Pa
     ops_api = (repo_root / "src" / "bridge" / "ops_api.py").read_text(encoding="utf-8")
     assert "src.bridge" in _imported_modules(admin_bridge_tree)
     failed_names_fn = _find_function(admin_bridge_tree, "_failed_source_names_from_latest_report")
-    sync_history_fn = _find_function(admin_bridge_tree, "sync_history_from_reports")
     ops_health_fn = _find_function(admin_bridge_tree, "compute_ops_health")
     fetcher_metrics_fn = _find_function(admin_bridge_tree, "compute_fetcher_metrics")
 
     assert "_get_ops_api" in _function_call_names(failed_names_fn)
     assert "failed_source_names_from_latest_report" in _function_call_names(failed_names_fn)
-    assert "_get_ops_api" in _function_call_names(sync_history_fn)
-    assert "sync_history_from_reports" in _function_call_names(sync_history_fn)
     assert "_get_ops_api" in _function_call_names(ops_health_fn)
     assert "compute_ops_health" in _function_call_names(ops_health_fn)
     assert "_get_ops_api" in _function_call_names(fetcher_metrics_fn)
@@ -1583,7 +1580,6 @@ def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Pa
     assert "OpsApiLiveMixin" in ops_api
     for mixin_leaf, method in [
         ("ops_api_reports.py", "def failed_source_names_from_latest_report("),
-        ("ops_api_reports.py", "def sync_history_from_reports("),
         ("ops_api_health.py", "def compute_ops_health("),
         ("ops_api_live.py", "def compute_fetcher_metrics("),
     ]:

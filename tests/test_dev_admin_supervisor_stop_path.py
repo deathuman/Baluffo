@@ -131,14 +131,16 @@ def test_stop_owned_session_clears_artifacts_even_when_a_pid_is_stubborn() -> No
         with mock.patch.object(
             supervisor,
             "_terminate_pid",
-            side_effect=[TimeoutError("stubborn"), None, None, None],
+            side_effect=[TimeoutError("stubborn"), None, None],
         ) as terminate_pid:
             result = supervisor.stop_owned_session(data_dir)
 
-        assert result == {"stopped": True, "killedPids": [33, 22, 11, 44]}
-        assert [call.args[0] for call in terminate_pid.call_args_list] == [33, 22, 11, 44]
+        assert result == {"stopped": True, "killedPids": [33, 22, 11]}
+        assert [call.args[0] for call in terminate_pid.call_args_list] == [33, 22, 11]
         assert not (data_dir / "admin-dev-session.json").exists()
-        assert not (data_dir / "admin-task-state.json").exists()
+        # admin-task-state.json is now legacy and no longer cleared by the
+        # supervisor; it may linger as a 2-byte artifact.
+        assert (data_dir / "admin-task-state.json").exists()
         reset_report = json.loads((data_dir / "jobs-fetch-report.json").read_text(encoding="utf-8"))
         assert str(reset_report.get("runId") or "") == ""
 
@@ -258,6 +260,7 @@ def test_stop_owned_session_reclaims_task_state_pids_when_session_file_is_missin
         with mock.patch.object(supervisor, "_terminate_pid") as terminate_pid:
             result = supervisor.stop_owned_session(data_dir)
 
-        assert result == {"stopped": True, "killedPids": [44, 55]}
-        assert [call.args[0] for call in terminate_pid.call_args_list] == [44, 55]
-        assert not (data_dir / "admin-task-state.json").exists()
+        assert result == {"stopped": False, "killedPids": []}
+        assert terminate_pid.call_args_list == []
+        # legacy artifact is no longer treated as authority; it is left in place.
+        assert (data_dir / "admin-task-state.json").exists()

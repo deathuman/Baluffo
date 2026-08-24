@@ -386,7 +386,7 @@ def _finalize_alerts(
 
         visible_alerts = [row for row in active_conditions if str(row.get("id") or "") not in acked]
         # ponytail: this runs on every summary poll (dashboard-health, fetch-kpis);
-        # rewriting ops-alert-state.json when nothing changed put a constant disk
+        # rewriting admin-alert-state.json when nothing changed put a constant disk
         # write on the poll path. Only save when the state actually moved.
         new_alert_state = {"acked": acked}
         if dict(alert_state.get("acked") or {}) != acked:

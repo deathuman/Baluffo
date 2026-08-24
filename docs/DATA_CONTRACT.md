@@ -817,7 +817,7 @@ Lifecycle invariants:
 - `admin-task-state.json` and `admin-run-history.json` are legacy compatibility/migration artifacts and must not be treated as lifecycle authority.
 - Production bridge startup must not import lifecycle rows from legacy history/state files. Legacy lifecycle reconciliation is reserved for explicit migration or test tooling.
 - Terminal report evidence with `finishedAt` wins over stale active progress, task-state heartbeat, or copied live metadata during lifecycle projection.
-- Live task projection must not use `admin-task-state.json` as liveness authority or progress evidence. Lifecycle rows decide active/terminal state; report/task evidence files supply display progress.
+- Live task projection must not use `admin-task-state.json` as liveness authority or progress evidence. Lifecycle rows decide active/terminal state; report/task evidence files supply display progress. As of 2026-08-24 the bridge no longer reads `admin-task-state.json` at runtime at all (stale-report classification and live-evidence checks use lifecycle/report signals only); only the explicit migration tooling may open it.
 - Fetch, discovery, sync, and pipeline lifecycle state is written to `admin-task-lifecycle.json`; `admin-run-history.json` is not updated by normal task launch/completion flows.
 
 Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.

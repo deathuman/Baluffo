@@ -107,7 +107,6 @@ class _AdminTaskRuntimeRoot(Protocol):
     clear_task_state: Callable[..., Any]
     _clear_task_state_locked: Callable[..., Any]
     upsert_run_history: Callable[..., Any]
-    task_running_from_state: Callable[..., bool]
     report_is_stale_in_progress: Callable[..., bool]
     load_json_object: Callable[..., JsonObject]
     normalize_fetch_report_contract: Callable[[JsonObject], JsonObject]
@@ -127,7 +126,6 @@ class _AdminTaskRuntimeRoot(Protocol):
     SCHEMA_VERSION: int
     append_run_history: Callable[..., Any]
     run_background_script: Callable[..., Any]
-    sync_history_from_reports: Callable[[], list[JsonObject]]
     sync_pull_sources: Callable[[], JsonObject]
     sync_push_sources: Callable[[], JsonObject]
     threading: Any
@@ -236,37 +234,6 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
 
 def sync_task_running(*, root_mod: Any) -> bool:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    with root_mod.OPS_STATE_LOCK:
-        root_mod._run_history_api.reconcile_sync_history_locked(
-            root_mod._run_history_api.SyncHistoryDeps(
-                ops_state_lock=root_mod.OPS_STATE_LOCK,
-                load_run_history=root_mod.load_run_history,
-                save_run_history=root_mod.save_run_history,
-                save_json_atomic=root_mod.save_json_atomic,
-                prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
-                clear_task_state=root_mod.clear_task_state,
-                clear_task_state_locked=root_mod._clear_task_state_locked,
-                upsert_run_history=root_mod.upsert_run_history,
-                task_running_from_state=root_mod.task_running_from_state,
-                report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
-                load_json_object=root_mod.load_json_object,
-                load_runtime_evidence=root_mod.load_runtime_evidence,
-                normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
-                normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
-                summarize_fetch_report=root_mod.summarize_fetch_report,
-                summarize_discovery_report=root_mod.summarize_discovery_report,
-                jobs_fetch_report_path=root_mod.JOBS_FETCH_REPORT_PATH,
-                jobs_fetch_tasks_path=root_mod.JOBS_FETCH_TASKS_PATH,
-                discovery_report_path=root_mod.DISCOVERY_REPORT_PATH,
-                task_state_path=root_mod.TASK_STATE_PATH,
-                get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
-                parse_iso=root_mod.parse_iso,
-                now_iso=root_mod.now_iso,
-                now_utc=root_mod.now_utc,
-                pid_is_running=root_mod.pid_is_running,
-                get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
-            )
-        )
     return bool(root_mod._get_sync_service().sync_task_running())
 
 
