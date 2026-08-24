@@ -60,13 +60,12 @@ def test_registry_summary_exact_view_uses_normalized_summary_payload(
 
 def test_registry_sources_summary_reports_normalized_basis(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
-    api.load_state = lambda: {
-        "active": [{"id": "active-1", "name": "Active"}],
-        "pending": [],
-        "rejected": [],
+    api.get_registry_compact_table_payload = lambda **kwargs: {
+        "ok": True,
+        "source": "registry-json-table",
+        "sources": {"active": [{"id": "active-1", "name": "Active"}]},
+        "summary": {"activeCount": 1, "summaryExact": True, "countBasis": "normalized"},
     }
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
-    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/registry/sources", query={})

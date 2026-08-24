@@ -750,7 +750,6 @@ class RegistryService:
                 "ok": True,
                 "summaryView": True,
                 "detailLevel": "table",
-                "activeCompact": True,
                 "degraded": True,
                 "source": "registry-sqlite-compact-fallback",
                 "sources": {bucket: [] for bucket in selected},
@@ -773,7 +772,6 @@ class RegistryService:
                 "ok": True,
                 "summaryView": True,
                 "detailLevel": "table",
-                "activeCompact": True,
                 "degraded": True,
                 "source": "registry-sqlite-compact-fallback",
                 "sources": {bucket: [] for bucket in selected},
@@ -793,7 +791,6 @@ class RegistryService:
             "ok": True,
             "summaryView": True,
             "detailLevel": "table",
-            "activeCompact": True,
             "source": "registry-sqlite-compact",
             "sources": rows,
             "summary": {
@@ -823,7 +820,6 @@ class RegistryService:
                 "ok": True,
                 "summaryView": True,
                 "detailLevel": "table",
-                "activeCompact": True,
                 "degraded": True,
                 "source": "registry-json-compact-fallback",
                 "sources": {bucket: [] for bucket in buckets},
@@ -845,7 +841,6 @@ class RegistryService:
             "ok": True,
             "summaryView": True,
             "detailLevel": "table",
-            "activeCompact": True,
             "source": "registry-json-table",
             "sources": {
                 bucket: [

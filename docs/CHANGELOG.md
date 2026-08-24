@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Removed
+
+- `/registry/sources` legacy modes: `view=full`, the `detail=full|summary`
+  selection, and the `activeCompact`/`compactActive` aliases now return HTTP
+  400 with `removedParams`. The endpoint serves one authority-aware
+  compact-table lane (`view=table` or omitted; JSON-authority deployments get
+  real rows instead of the previous degraded-empty stub). `/registry/summary`
+  no longer accepts the dead `cheap`/`storage` view aliases.
+
 ### Fixed
 
 - Admin Ops schedule panel no longer sits on "loading schedule..." for the

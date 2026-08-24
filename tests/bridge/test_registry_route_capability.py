@@ -45,7 +45,28 @@ class MinimalRegistryRouteApi:
         }
 
     def get_registry_compact_table_payload(self, **kwargs: Any) -> dict[str, Any]:
-        return {}
+        state = self.load_state()
+        include_hidden = bool(kwargs.get("include_hidden_pending"))
+        pending = [
+            row
+            for row in state.get("pending", [])
+            if include_hidden or not row.get("hiddenFromDefault")
+        ]
+        return {
+            "ok": True,
+            "source": "registry-json-table",
+            "sources": {
+                "pending": [
+                    dict(row) for row in pending[: int(kwargs.get("limit_per_bucket") or 25)]
+                ],
+                "active": [dict(row) for row in state.get("active", [])],
+                "rejected": [dict(row) for row in state.get("rejected", [])],
+            },
+            "summary": {
+                **self.summarize_state(state),
+                "authorityMode": "json",
+            },
+        }
 
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]:
         try:
@@ -102,30 +123,21 @@ def test_registry_get_routes_accept_minimal_capability_object(tmp_path: Path) ->
     )
     assert exact_summary_handler.sent[-1]["payload"]["summary"]["summaryExact"] is True
 
-    full_sources_handler = FakeHandler()
+    sources_handler = FakeHandler()
     assert (
         handle_registry_routes(
-            full_sources_handler,
+            sources_handler,
             api=api,
             path="/registry/sources",
             query={"buckets": ["active,pending,rejected"]},
         )
         is True
     )
-    assert full_sources_handler.sent[-1]["payload"]["sources"]["active"][0]["id"] == "active-1"
-
-    table_sources_handler = FakeHandler()
-    assert (
-        handle_registry_routes(
-            table_sources_handler,
-            api=api,
-            path="/registry/sources",
-            query={"view": ["table"], "buckets": ["active,pending,rejected"]},
-        )
-        is True
-    )
-    assert table_sources_handler.sent[-1]["payload"]["detailLevel"] == "table"
-    assert table_sources_handler.sent[-1]["payload"]["sources"]["pending"][0]["id"] == "pending-1"
+    sources_payload = sources_handler.sent[-1]["payload"]
+    assert sources_payload["detailLevel"] == "table"
+    assert sources_payload["summaryView"] is True
+    assert sources_payload["sources"]["active"][0]["id"] == "active-1"
+    assert sources_payload["sources"]["pending"][0]["id"] == "pending-1"
 
 
 def test_registry_get_routes_minimal_capability_rejects_unknown_summary_view(

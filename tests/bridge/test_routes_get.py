@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -202,27 +203,32 @@ def test_registry_summary_uses_lightweight_payload_without_sources(tmp_path: Pat
 def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    calls = {"load_state": 0}
+    compact_calls: list[dict[str, Any]] = []
 
-    def load_state():
-        calls["load_state"] += 1
+    def compact_payload(**kwargs):
+        compact_calls.append(kwargs)
+        pending = [
+            {"id": "pending_visible", "name": "Visible", "jobsFound": 1},
+            {
+                "id": "pending_hidden",
+                "name": "Hidden",
+                "jobsFound": 0,
+                "hiddenFromDefault": True,
+            },
+        ]
+        if not kwargs.get("include_hidden_pending"):
+            pending = [row for row in pending if not row.get("hiddenFromDefault")]
         return {
-            "active": [{"id": "active_1", "name": "Active"}],
-            "pending": [
-                {"id": "pending_visible", "name": "Visible", "jobsFound": 1},
-                {
-                    "id": "pending_hidden",
-                    "name": "Hidden",
-                    "jobsFound": 0,
-                    "hiddenFromDefault": True,
-                },
-            ],
-            "rejected": [{"id": "rejected_1", "name": "Rejected"}],
+            "ok": True,
+            "source": "registry-json-table",
+            "sources": {
+                "active": [{"id": "active_1", "name": "Active"}],
+                "pending": pending,
+            },
+            "summary": {"pendingCount": 2, "hiddenPendingCount": 1},
         }
 
-    api.load_state = load_state
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
-    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
+    api.get_registry_compact_table_payload = compact_payload
 
     handler = FakeHandler()
     result = handle_get(
@@ -235,7 +241,7 @@ def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path
     assert result is True
     payload = handler.sent[-1]["payload"]
     assert handler.sent[-1]["status"] == 200
-    assert calls["load_state"] == 1
+    assert len(compact_calls) == 1
     assert payload["ok"] is True
     assert set(payload["sources"]) == {"pending", "active"}
     assert [row["id"] for row in payload["sources"]["pending"]] == ["pending_visible"]
@@ -247,16 +253,22 @@ def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path
 def test_registry_sources_can_include_hidden_pending_rows(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_state = lambda: {
-        "active": [],
-        "pending": [
-            {"id": "visible", "name": "Visible", "jobsFound": 1},
-            {"id": "hidden", "name": "Hidden", "jobsFound": 0, "hiddenFromDefault": True},
-        ],
-        "rejected": [],
-    }
-    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
-    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
+
+    def compact_payload(**kwargs):
+        assert kwargs["include_hidden_pending"] is True
+        return {
+            "ok": True,
+            "source": "registry-json-table",
+            "sources": {
+                "pending": [
+                    {"id": "visible", "name": "Visible", "jobsFound": 1},
+                    {"id": "hidden", "name": "Hidden", "jobsFound": 0, "hiddenFromDefault": True},
+                ]
+            },
+            "summary": {"hiddenPendingCount": 1},
+        }
+
+    api.get_registry_compact_table_payload = compact_payload
 
     handler = FakeHandler()
     result = handle_get(

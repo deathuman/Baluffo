@@ -24,7 +24,7 @@
     "tests/admin/test_admin_bridge_runtime_config.py": 728,
     "tests/bridge/test_discovery_service.py": "983",
     "tests/bridge/test_registry_conflicts.py": 918,
-    "tests/bridge/test_routes_get.py": 655,
+    "tests/bridge/test_routes_get.py": 665,
     "tests/bridge/test_routes_post.py": 793,
     "tests/bridge/test_routes_smoke.py": 413,
     "tests/desktop_app/test_browser_session_watch.py": 436,

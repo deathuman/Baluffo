@@ -620,7 +620,6 @@ def test_registry_service_json_authority_compact_table_serves_rows(tmp_path: Pat
         assert payload["ok"] is True
         assert "degraded" not in payload
         assert payload["source"] == "registry-json-table"
-        assert payload["activeCompact"] is True
         # Hidden pending filtered by default; active limited to the bucket cap.
         assert [row["id"] for row in payload["sources"]["pending"]] == ["pending-1"]
         assert len(payload["sources"]["active"]) == 2

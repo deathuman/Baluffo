@@ -1,4 +1,4 @@
-﻿# Admin Bridge API Reference
+# Admin Bridge API Reference
 
 > - **Status:** Active
 > - **Use this when:** editing frontend bridge consumers, route handlers, or task launch/status flows
@@ -71,8 +71,7 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 |--------|------|---------|
 | GET | `/registry/summary` | Lightweight registry summary counts without source rows |
 | GET | `/registry/summary?view=exact` | Normalized registry summary counts without source rows; slower than the default summary and intended for diagnostics |
-| GET | `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0` | Compact Admin source-table payload for selected buckets from one backend state load |
-| GET | `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0` | Full diagnostic source payload for selected buckets from one backend state load |
+| GET | `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250` | Compact Admin source-table payload for selected buckets; the single supported mode (authority-aware: SQLite rows or normalized JSON rows) |
 | GET | `/registry/conflicts` | Full duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, evidence cards, and lifecycle actions |
 | GET | `/registry/conflicts?view=summary` | Cheap Admin startup conflict summary. It must not build the full conflict queue; it returns cached exact counts when available, otherwise `summaryStatus: "pending"` with registry counts and `detailRoute` |
 | POST | `/registry/approve` | Approve pending sources (`{ids: []}`) |
@@ -84,7 +83,7 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
 | POST | `/sources/manual` | Add manual source (`{url: ""}`) |
 
-The default `/registry/summary` response is a cheap storage snapshot and returns `summaryExact: false`, `countBasis: "storage"`. Use `/registry/summary?view=exact` only when diagnostics need normalized counts from the same path as the full registry state. The combined `/registry/sources` response also marks its summary as `summaryExact: true`, `countBasis: "normalized"` because it already performed one full state load. Admin source tables use `/registry/sources?view=table&detail=summary`, which keeps the same envelope and source-table/action fields but omits heavy diagnostic fields such as full `pages`, `detailPagesSample`, raw source-directory details, nested evidence payloads, **and skips the pending auto-approval annotation pass** (drops `summary.pendingApproval` and `summary.pendingAutoApprovalEligibleCount`). Table view keeps direct source URL fields and includes `pages[0]` only as a fallback when the direct table URL fields are absent. The default `/registry/sources?view=table` (without `detail`) keeps the legacy full-detail contract for backward compatibility — it is equivalent to `detail=full`. The default `/registry/sources` view remains full-fidelity for diagnostics.
+The default `/registry/summary` response is a cheap storage snapshot and returns `summaryExact: false`, `countBasis: "storage"`. Use `/registry/summary?view=exact` only when diagnostics need normalized counts from the same path as the full registry state. `/registry/sources` serves one compact-table lane: rows keep direct source URL fields, include `pages[0]` only as a fallback when the direct table URL fields are absent, and omit heavy diagnostic fields such as full `pages`, `detailPagesSample`, raw source-directory details, nested evidence payloads, and the pending auto-approval annotation. The summary block inside the sources payload is exact (`summaryExact: true`, `countBasis: "normalized"`). Removed legacy modes — `view=full`, the `detail=full|summary` selection, and the `activeCompact`/`compactActive` aliases — now return HTTP 400 with `removedParams`; use the single table lane (`view` may be omitted; `limitPerBucket` defaults to 25 and caps at 500).
 
 When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read and publish through the SQLite source-registry generation before regenerating active/pending/rejected/tombstone compatibility exports. Payload shapes stay unchanged. Storage, busy-timeout, missing-generation, parity, export, or direct-JSON-drift failures persist `sourceRegistry=json` and return the JSON artifact path while leaving SQLite rows available for diagnostics.
 

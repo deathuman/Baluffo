@@ -167,7 +167,6 @@ def _empty_registry_compact_table_payload(**_kwargs: Any) -> JsonObject:
         "ok": True,
         "summaryView": True,
         "detailLevel": "table",
-        "activeCompact": True,
         "sources": {"pending": [], "active": [], "rejected": []},
         "summary": _empty_registry_summary_payload(),
     }
