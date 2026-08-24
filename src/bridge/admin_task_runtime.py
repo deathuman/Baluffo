@@ -55,12 +55,6 @@ class _SyncTaskFlowLike(Protocol):
     def run_sync_task_worker(self, **kwargs: Any) -> None: ...
 
 
-class _RunHistoryApiLike(Protocol):
-    SyncHistoryDeps: Callable[..., Any]
-
-    def reconcile_sync_history_locked(self, deps: Any) -> None: ...
-
-
 class _PipelineServiceLike(Protocol):
     def get_status_payload(self) -> JsonObject: ...
 
@@ -93,7 +87,6 @@ class _AdminTaskRuntimeRoot(Protocol):
     TASKS_CONFIG_PATH: Path
     OPS_STATE_LOCK: Any
     SYNC_STATE_LOCK: Any
-    _run_history_api: _RunHistoryApiLike
     _registry_sync_flow: _RegistrySyncFlowLike
     _sync_task_flow: _SyncTaskFlowLike
     SyncState: Any
