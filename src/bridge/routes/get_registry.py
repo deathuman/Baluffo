@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from src.bridge.performance_profile import time_operation
@@ -19,7 +20,14 @@ from src.bridge.routes.route_storage_metrics import record_storage_read_metric
 
 
 class _RegistryRouteApi(Protocol):
+    JOBS_FETCH_REPORT_PATH: Path
+    runtime_config: Any
+
     def get_registry_compact_table_payload(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def get_registry_exact_summary_payload(self) -> dict[str, Any]: ...
+
+    def get_registry_summary_payload(self) -> dict[str, Any]: ...
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

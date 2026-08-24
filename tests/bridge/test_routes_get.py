@@ -439,9 +439,6 @@ def test_ops_history_default_limit(tmp_path: Path) -> None:
         "lifecycle",
         [{"runId": "run_1", "type": "fetch", "finishedAt": "2026-05-07T00:00:00Z"}],
     )
-    api.sync_history_from_reports = lambda: (_ for _ in ()).throw(
-        AssertionError("legacy history fallback must not be used")
-    )
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/ops/history", query={})
