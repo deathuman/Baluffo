@@ -34,7 +34,7 @@ For direct CLI use on Windows, the `uv`-managed executable is typically availabl
 
 This setup was validated on Windows with:
 
-- `basic-memory` 0.21.5+
+- `basic-memory` 0.23.0 (re-verified 2026-08-24 after the revision-skew fix; earlier baselines 0.21.5/0.22.1)
 - Python 3.13
 - Semantic search enabled and vector reindex validated
 
