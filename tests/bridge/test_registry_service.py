@@ -568,3 +568,75 @@ def test_registry_service_exact_summary_uses_normalized_rows_without_saving(
         assert "storage" not in summary
     finally:
         close_storage_stores()
+
+
+def test_registry_service_json_authority_compact_table_serves_rows(tmp_path: Path) -> None:
+    """JSON authority must serve real compact rows, not a degraded-empty stub.
+
+    The Admin startup lane always requests /registry/sources?detail=summary,
+    which routes to get_compact_table_payload; the old json-mode stub returned
+    degraded + zero rows, leaving source tables stuck on "refreshing" forever.
+    """
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    sr.save_json_atomic(
+        active_path,
+        [{"id": f"active-{i}", "name": f"Active {i}", "adapter": "static"} for i in range(3)],
+    )
+    sr.save_json_atomic(
+        pending_path,
+        [
+            {"id": "pending-1", "name": "Pending", "adapter": "greenhouse"},
+            {
+                "id": "pending-hidden",
+                "name": "Hidden",
+                "adapter": "lever",
+                "hiddenFromDefault": True,
+            },
+        ],
+    )
+    sr.save_json_atomic(rejected_path, [{"id": "rejected-1", "name": "Rejected"}])
+
+    try:
+        store = get_storage_store(tmp_path)
+        store.set_authority_mode("sourceRegistry", "json", reason="test-json-compact")
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[],
+            normalize_manual_static=lambda row: row,
+        )
+
+        payload = service.get_compact_table_payload(
+            buckets=["pending", "active", "rejected"],
+            limit_per_bucket=2,
+            include_hidden_pending=False,
+        )
+
+        assert payload["ok"] is True
+        assert "degraded" not in payload
+        assert payload["source"] == "registry-json-table"
+        assert payload["activeCompact"] is True
+        # Hidden pending filtered by default; active limited to the bucket cap.
+        assert [row["id"] for row in payload["sources"]["pending"]] == ["pending-1"]
+        assert len(payload["sources"]["active"]) == 2
+        assert len(payload["sources"]["rejected"]) == 1
+        # Summary counts stay exact regardless of the per-bucket row limit.
+        assert payload["summary"]["activeCount"] == 3
+        assert payload["summary"]["pendingCount"] == 2
+        assert payload["summary"]["rejectedCount"] == 1
+        assert payload["summary"]["countBasis"] == "normalized"
+        assert payload["summary"]["tableLimitPerBucket"] == 2
+
+        hidden_payload = service.get_compact_table_payload(
+            buckets=["pending"],
+            limit_per_bucket=5,
+            include_hidden_pending=True,
+        )
+        assert len(hidden_payload["sources"]["pending"]) == 2
+    finally:
+        close_storage_stores()

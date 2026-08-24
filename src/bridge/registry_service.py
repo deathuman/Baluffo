@@ -21,6 +21,7 @@ from typing import Any, cast
 
 from src.bridge import registry_tombstones as registry_tombstones_module
 from src.bridge.registry_conflicts import apply_registry_conflict_safe_demotions
+from src.bridge.registry_source_table import compact_registry_source_table_row
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.bridge.registry_tombstones import load_tombstones as load_registry_tombstones
 from src.bridge.registry_tombstones import normalize_tombstones as normalize_registry_tombstones
@@ -36,6 +37,7 @@ from src.source_registry import (
     demote_duplicate_active_variants,
     ensure_source_id,
     hide_repeated_zero_job_pending,
+    is_hidden_from_default,
     load_json_array,
     load_json_object,
     normalize_source_url,
@@ -722,21 +724,16 @@ class RegistryService:
         selected = [bucket for bucket in buckets if bucket in {"pending", "active", "rejected"}]
         limit = max(1, int(limit_per_bucket or 1))
         if mode != "sqlite":
-            summary = self._cheap_json_summary_payload(reason=f"{mode}_compact_summary")
-            return {
-                "ok": True,
-                "summaryView": True,
-                "detailLevel": "table",
-                "activeCompact": True,
-                "degraded": True,
-                "source": "registry-json-compact-fallback",
-                "sources": {bucket: [] for bucket in selected},
-                "summary": {
-                    **summary,
-                    "tableLimitPerBucket": limit,
-                    "tableTruncatedBuckets": {},
-                },
-            }
+            # ponytail: JSON-authority deployments (default outside sqlite
+            # migration) have no compact storage lane; the old stub returned
+            # degraded+empty rows, which left Admin source tables stuck on
+            # "refreshing" forever. Serve real limited rows instead.
+            return self._json_compact_table_payload(
+                buckets=selected,
+                limit_per_bucket=limit,
+                include_hidden_pending=include_hidden_pending,
+                authority_mode=mode,
+            )
         try:
             summary = {
                 **self._runtime_store().current_summary(),
@@ -802,6 +799,67 @@ class RegistryService:
             "summary": {
                 **summary,
                 "tableLimitPerBucket": limit,
+                "tableTruncatedBuckets": {},
+            },
+        }
+
+    def _json_compact_table_payload(
+        self,
+        *,
+        buckets: list[str],
+        limit_per_bucket: int,
+        include_hidden_pending: bool,
+        authority_mode: str,
+    ) -> dict[str, Any]:
+        try:
+            state = self._load_json_state_normalized(save_on_change=False)
+        except _STORAGE_OPERATION_ERRORS as exc:
+            self._record_registry_diagnostic(
+                "source_registry_json_compact_read_failed",
+                ok=False,
+                message=str(exc),
+            )
+            return {
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "table",
+                "activeCompact": True,
+                "degraded": True,
+                "source": "registry-json-compact-fallback",
+                "sources": {bucket: [] for bucket in buckets},
+                "summary": {
+                    **self._cheap_json_summary_payload(reason=f"{authority_mode}_compact_summary"),
+                    "tableLimitPerBucket": limit_per_bucket,
+                    "tableTruncatedBuckets": {},
+                },
+            }
+        pending_rows = [dict(row) for row in state.get("pending") or [] if isinstance(row, dict)]
+        if not include_hidden_pending:
+            pending_rows = [row for row in pending_rows if not is_hidden_from_default(row)]
+        row_sources: dict[str, list[dict[str, Any]]] = {
+            "pending": pending_rows,
+            "active": [dict(r) for r in state.get("active") or [] if isinstance(r, dict)],
+            "rejected": [dict(r) for r in state.get("rejected") or [] if isinstance(r, dict)],
+        }
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "table",
+            "activeCompact": True,
+            "source": "registry-json-table",
+            "sources": {
+                bucket: [
+                    compact_registry_source_table_row(row)
+                    for row in row_sources.get(bucket, [])[:limit_per_bucket]
+                ]
+                for bucket in buckets
+            },
+            "summary": {
+                **self.summarize_state(state),
+                "authorityMode": authority_mode,
+                "summaryExact": True,
+                "countBasis": "normalized",
+                "tableLimitPerBucket": limit_per_bucket,
                 "tableTruncatedBuckets": {},
             },
         }
