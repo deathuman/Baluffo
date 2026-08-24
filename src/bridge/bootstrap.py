@@ -71,6 +71,7 @@ def build_bridge_api(
     should_exit_for_owner_timeout: Callable[[], bool],
     load_alert_state: Callable[[], dict[str, Any]],
     save_alert_state: Callable[[dict[str, Any]], None],
+    ops_state_lock: Any | None = None,
     app_version: str = "",
     get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] | None = None,
     get_lifecycle_recent_runs: Callable[[], list[dict[str, Any]]] | None = None,
@@ -178,6 +179,7 @@ def build_bridge_api(
         should_exit_for_owner_timeout=should_exit_for_owner_timeout,
         load_alert_state=load_alert_state,
         save_alert_state=save_alert_state,
+        ops_state_lock=ops_state_lock,
     )
 
 

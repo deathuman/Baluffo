@@ -1027,7 +1027,9 @@ export function createOpsHealthController({
   }
 
   function schedulePipelineStatusPolling(delayMs) {
-    stopPipelineStatusPolling();
+    // ponytail: exclusive lanes — starting the active lane must cancel any
+    // pending idle poll or the two loops stack duplicate summary requests.
+    stopOpsHealthPolling();
     const waitMs = Math.max(600, Number(delayMs) || 2000);
     state.pipelineStatusPollTimer = maybeUnrefTimer(setTimeout(() => {
       loadActiveOpsSummaryData(opsRenderToken, { fromPoll: true }).catch(() => {});
@@ -1037,6 +1039,14 @@ export function createOpsHealthController({
   function scheduleOpsHealthPolling(delayMs) {
     stopOpsHealthPolling();
     const waitMs = Math.max(600, Number(delayMs) || 10000);
+    if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
+      // Route through the active lane while run evidence exists: it keeps
+      // cadence adaptive and skips the heavy dashboard-health summary.
+      state.pipelineStatusPollTimer = maybeUnrefTimer(setTimeout(() => {
+        loadActiveOpsSummaryData(opsRenderToken, { fromPoll: true }).catch(() => {});
+      }, waitMs));
+      return;
+    }
     state.opsHealthPollTimer = maybeUnrefTimer(setTimeout(() => {
       loadOpsHealthData({ fromPoll: true, summary: true }).catch(() => {});
     }, waitMs));

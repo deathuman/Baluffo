@@ -93,5 +93,6 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         should_exit_for_owner_timeout=root_mod.owner_session_should_exit,
         load_alert_state=root_mod.load_alert_state,
         save_alert_state=root_mod.save_alert_state,
+        ops_state_lock=root_mod.OPS_STATE_LOCK,
         app_version=root_mod.get_app_version(),
     )

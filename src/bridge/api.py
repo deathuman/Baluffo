@@ -450,6 +450,8 @@ class BridgeApi:
     reconcile_terminal_discovery_report_from_state: ReconcileDiscoveryReportFunc = _noop
     load_alert_state: Callable[[], JsonObject] = _default_alert_state
     save_alert_state: Callable[[JsonObject], None] = _save_alert_state
+    # Shared ops lock for alert read-modify-write serialization; None in stubs.
+    ops_state_lock: Any | None = None
 
     # Jobs pipeline status (GET route).
     get_jobs_pipeline_status_payload: Callable[[], JsonObject] = _inactive_jobs_pipeline_payload

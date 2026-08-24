@@ -9,6 +9,9 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
 from __future__ import annotations
 
 import json
+import math
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -163,17 +166,18 @@ def _ops_tab_counts_cache_path(api: _AdminOpsTabCountsRouteApi) -> Path:
 
 
 def _ops_tab_counts_cache_key(api: _AdminOpsTabCountsRouteApi) -> list[list[Any]]:
-    """mtime_ns for every file the badge computation reads.
+    """mtime_ns for every stable file the badge computation reads.
 
     Files that don't exist contribute `None`, which is fine — an absent file
     is also a stable signal. Overview badge depends on `compute_ops_dashboard_health_summary`
     which has no single backing file to mtime-check; the TTL bound absorbs that.
+    jobs-source-state.json is size-keyed only (see below): mtime invalidation
+    fired on every heartbeat rewrite during runs, exactly while Admin was open.
     """
     paths = (
         Path(api.DISCOVERY_REPORT_PATH),
         Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH),
         Path(api.SOURCE_POLICY_REVIEW_STATE_PATH),
-        Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json"),
         Path(api.JOBS_FETCH_REPORT_PATH).with_name("registry-conflict-adjudication.json"),
     )
     signature: list[list[Any]] = []
@@ -182,6 +186,14 @@ def _ops_tab_counts_cache_key(api: _AdminOpsTabCountsRouteApi) -> list[list[Any]
             signature.append([str(path), path.stat().st_mtime_ns])
         except OSError:
             signature.append([str(path), None])
+    # jobs-source-state.json gets a size-only signature: heartbeats rewrite it
+    # with stable size during runs (cache holds), while real merges/finalize
+    # change the row set and therefore its size (cache invalidates).
+    source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+    try:
+        signature.append([f"{source_state_path}:size", int(source_state_path.stat().st_size)])
+    except OSError:
+        signature.append([f"{source_state_path}:size", None])
     return signature
 
 
@@ -192,8 +204,15 @@ def _read_ops_tab_counts_cache(path: Path, key: list[list[Any]]) -> dict[str, An
         return None
     if not isinstance(cached, dict):
         return None
-    cached_at = float(cached.get("cachedAtUnix") or 0.0)
-    if cached_at <= 0.0 or (time.time() - cached_at) > OPS_TAB_COUNTS_CACHE_TTL_S:
+    try:
+        cached_at = float(cached.get("cachedAtUnix") or 0.0)
+    except (TypeError, ValueError, OverflowError):
+        # ponytail: a corrupt envelope must degrade to recompute, never to a
+        # route 500; inf/nan timestamps from bad JSON land here too.
+        return None
+    if not math.isfinite(cached_at) or cached_at <= 0.0:
+        return None
+    if (time.time() - cached_at) > OPS_TAB_COUNTS_CACHE_TTL_S:
         # Even with matching mtimes, refuse to serve a stale envelope. The TTL is a
         # safety net for cases where a backing file gets rewritten without an mtime
         # bump visible to us (network fs, copy truncation windows); 30s is short
@@ -216,7 +235,9 @@ def _write_ops_tab_counts_cache(path: Path, key: list[list[Any]], payload: dict[
         "cachedAtUnix": time.time(),
         "payload": payload,
     }
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    # Unique tmp name: concurrent ThreadingHTTPServer writers must not clobber
+    # each other's staging file before the atomic replace.
+    tmp_path = path.with_suffix(f"{path.suffix}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         tmp_path.write_text(
             json.dumps(envelope, separators=(",", ":"), sort_keys=True),

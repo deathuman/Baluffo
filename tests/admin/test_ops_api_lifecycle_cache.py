@@ -1,3 +1,4 @@
+import threading
 import time
 from datetime import UTC, datetime
 from unittest import mock
@@ -52,7 +53,7 @@ def _make_ops_api(
         now_utc=lambda: datetime(2026, 6, 5, 10, 0, tzinfo=UTC),
         parse_iso=parse_iso or (lambda _value: None),
         read_tasks_config=lambda: {},
-        ops_state_lock=mock.Mock(),
+        ops_state_lock=threading.RLock(),
         load_run_history=lambda: [],
         save_run_history=lambda _rows: None,
         prune_started_rows_for_type=lambda *_args, **_kwargs: None,

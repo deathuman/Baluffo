@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -363,24 +364,33 @@ def _finalize_alerts(
     *,
     load_alert_state_fn: Callable[[], dict[str, Any]],
     save_alert_state_fn: Callable[[dict[str, Any]], None],
+    state_lock: Any = None,
 ) -> dict[str, Any]:
     for row in active_conditions:
         row["dismissible"] = str(row.get("id") or "") not in NON_DISMISSIBLE_ALERT_IDS
 
-    alert_state = load_alert_state_fn()
-    acked = dict(alert_state.get("acked") or {})
-    active_ids = {str(row.get("id") or "") for row in active_conditions}
-    non_dismissible_ids = {
-        str(row.get("id") or "")
-        for row in active_conditions
-        if not bool(row.get("dismissible", True))
-    }
-    for key in list(acked.keys()):
-        if key not in active_ids or key in non_dismissible_ids:
-            acked.pop(key, None)
+    # ponytail: the read-modify-write below races with /ops/alerts/ack under
+    # ThreadingHTTPServer; callers pass the shared ops lock to serialize it.
+    with state_lock if state_lock is not None else nullcontext():
+        alert_state = load_alert_state_fn()
+        acked = dict(alert_state.get("acked") or {})
+        active_ids = {str(row.get("id") or "") for row in active_conditions}
+        non_dismissible_ids = {
+            str(row.get("id") or "")
+            for row in active_conditions
+            if not bool(row.get("dismissible", True))
+        }
+        for key in list(acked.keys()):
+            if key not in active_ids or key in non_dismissible_ids:
+                acked.pop(key, None)
 
-    visible_alerts = [row for row in active_conditions if str(row.get("id") or "") not in acked]
-    save_alert_state_fn({"acked": acked})
+        visible_alerts = [row for row in active_conditions if str(row.get("id") or "") not in acked]
+        # ponytail: this runs on every summary poll (dashboard-health, fetch-kpis);
+        # rewriting ops-alert-state.json when nothing changed put a constant disk
+        # write on the poll path. Only save when the state actually moved.
+        new_alert_state = {"acked": acked}
+        if dict(alert_state.get("acked") or {}) != acked:
+            save_alert_state_fn(new_alert_state)
     return {
         "alerts": visible_alerts,
         "suppressedCount": max(0, len(active_conditions) - len(visible_alerts)),
@@ -396,6 +406,7 @@ def evaluate_alerts_summary(
     parse_iso: Callable[[Any], datetime | None],
     now_iso: Callable[[], str],
     now_utc: Callable[[], datetime],
+    state_lock: Any = None,
 ) -> dict[str, Any]:
     """Evaluate cheap, history-backed alerts for summary health routes.
 
@@ -452,6 +463,7 @@ def evaluate_alerts_summary(
         active_conditions,
         load_alert_state_fn=load_alert_state_fn,
         save_alert_state_fn=save_alert_state_fn,
+        state_lock=state_lock,
     )
     return {
         **finalized,
@@ -469,6 +481,7 @@ def evaluate_alerts(
     parse_iso: Callable[[Any], datetime | None],
     now_iso: Callable[[], str],
     now_utc: Callable[[], datetime],
+    state_lock: Any = None,
 ) -> dict[str, Any]:
     active_conditions: list[dict[str, Any]] = []
     now = now_utc()
@@ -650,6 +663,7 @@ def evaluate_alerts(
         active_conditions,
         load_alert_state_fn=load_alert_state_fn,
         save_alert_state_fn=save_alert_state_fn,
+        state_lock=state_lock,
     )
     return {
         **finalized,
@@ -707,6 +721,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             parse_iso=deps.parse_iso,
             now_iso=deps.now_iso,
             now_utc=deps.now_utc,
+            state_lock=getattr(deps, "alert_state_lock", None),
         )
 
     with time_operation("ops.dashboard.fetch_history_metrics"):

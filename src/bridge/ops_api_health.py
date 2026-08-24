@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.bridge import active_task_snapshot as _active_snapshot
 from src.bridge import ops_health as _ops_health
 from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active, _task_type
 from src.bridge.performance_profile import time_operation
@@ -35,6 +36,7 @@ class OpsHealthDeps:
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
+    alert_state_lock: Any = None
     get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
@@ -72,6 +74,7 @@ class OpsApiHealthMixin(OpsApiState):
             parse_schedule_metadata_fn=self.parse_schedule_metadata,
             parse_iso=self._deps.parse_iso,
             now_utc=self._deps.now_utc,
+            alert_state_lock=self._deps.ops_state_lock,
             get_jobs_pipeline_schedule_ops_entry=self._pipeline_schedule_ops_entry_cached,
             get_updater_status_payload=self._deps.get_updater_status_payload,
             app_version=str(self._deps.app_version or ""),
@@ -94,7 +97,19 @@ class OpsApiHealthMixin(OpsApiState):
     def _active_pipeline_or_fetch_summary(self) -> dict[str, Any]:
         payload = self._active_pipeline_status_payload()
         if not bool(payload.get("active")):
-            return {}
+            # ponytail: standalone fetch/bootstrap runs never appear in pipeline
+            # status; the fresh hot snapshot covers them with one small read.
+            snapshot = self._fresh_active_task_snapshot()
+            if snapshot is None or not _active_snapshot.snapshot_has_active_task(snapshot):
+                return {}
+            return {
+                "active": True,
+                "source": str(snapshot.get("source") or "hot-active-snapshot"),
+                "runId": "",
+                "stage": "",
+                "activeChildTaskType": "",
+                "activeChildRunId": "",
+            }
         return {
             "active": True,
             "runId": str(payload.get("runId") or "").strip(),
@@ -197,6 +212,7 @@ class OpsApiHealthMixin(OpsApiState):
                 parse_iso=self._deps.parse_iso,
                 now_iso=self._deps.now_iso,
                 now_utc=self._deps.now_utc,
+                state_lock=self._deps.ops_state_lock,
             )
             alerts = list(alert_result.get("alerts") or [])
             severity = _ops_health.derive_ops_severity(alerts)
@@ -291,6 +307,7 @@ class OpsApiHealthMixin(OpsApiState):
                 parse_iso=self._deps.parse_iso,
                 now_iso=self._deps.now_iso,
                 now_utc=self._deps.now_utc,
+                state_lock=self._deps.ops_state_lock,
             )
             alerts = list(alert_result.get("alerts") or [])
             return {

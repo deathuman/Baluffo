@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.bridge.routes.get_admin_ops_tab_counts import handle_admin_ops_tab_counts_routes
 from tests.helpers.bridge_api import FakeHandler
 
@@ -205,5 +207,115 @@ def test_admin_ops_tab_counts_drops_stale_envelope_after_ttl(tmp_path: Path) -> 
         is True
     )
     payload = handler.sent[-1]["payload"]
+    assert "cachedResponse" not in payload
+    assert payload["badges"]["discovery"]["count"] == 2
+
+
+def test_admin_ops_tab_counts_cache_survives_source_state_heartbeat(
+    tmp_path: Path,
+) -> None:
+    """Heartbeat rewrites keep a stable size; the cache must survive them."""
+    api, first_handler = _open_counts_for(tmp_path)
+    assert first_handler.sent[-1]["payload"]["badges"]["discovery"]["count"] == 2
+
+    source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+    heartbeat_payload = {
+        "schemaVersion": 1,
+        "updatedAt": "2026-06-19T10:05:00+00:00",
+        "sources": {},
+    }
+    _write_json(source_state_path, heartbeat_payload)
+    source_state_path.touch()
+    size_after_first = source_state_path.stat().st_size
+
+    # Second heartbeat: new mtime, identical size -> still a cache hit.
+    heartbeat_payload["updatedAt"] = "2026-06-19T10:06:00+00:00"
+    _write_json(source_state_path, heartbeat_payload)
+    assert source_state_path.stat().st_size == size_after_first
+
+    # First drive after the size appeared: recomputes and refreshes the cache
+    # with the new (size-based) key. Second drive: hit.
+    refresh_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            refresh_handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    assert "cachedResponse" not in refresh_handler.sent[-1]["payload"]
+
+    second_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            second_handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    second_payload = second_handler.sent[-1]["payload"]
+    assert second_payload.get("cachedResponse") is True
+    assert second_payload["badges"]["discovery"]["count"] == 2
+
+
+def test_admin_ops_tab_counts_recomputes_when_source_state_grows(
+    tmp_path: Path,
+) -> None:
+    """A real merge changes the row set -> size key mismatch -> recompute."""
+    api, first_handler = _open_counts_for(tmp_path)
+    assert first_handler.sent[-1]["payload"]["badges"]["discovery"]["count"] == 2
+
+    source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+    _write_json(
+        source_state_path,
+        {
+            "schemaVersion": 1,
+            "updatedAt": "2026-06-19T10:07:00+00:00",
+            "sources": {"static_source::new": {"status": "ok"}},
+        },
+    )
+
+    second_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            second_handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    second_payload = second_handler.sent[-1]["payload"]
+    assert "cachedResponse" not in second_payload
+    assert second_payload["badges"]["discovery"]["count"] == 2
+
+
+@pytest.mark.parametrize("bad_stamp", ["not-a-number", None, float("inf")])
+def test_admin_ops_tab_counts_corrupt_envelope_recomputes_without_error(
+    tmp_path: Path, bad_stamp: Any
+) -> None:
+    api, _ = _open_counts_for(tmp_path)
+
+    cache_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("ops-tab-counts.json")
+    cache_doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    cache_doc["cachedAtUnix"] = bad_stamp
+    cache_path.write_text(json.dumps(cache_doc), encoding="utf-8")
+
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
     assert "cachedResponse" not in payload
     assert payload["badges"]["discovery"]["count"] == 2

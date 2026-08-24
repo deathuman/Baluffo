@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused POST route tests
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -652,10 +653,14 @@ def handle_post(
         if active_alert is not None and not bool(active_alert.get("dismissible", True)):
             handler.send_json({"acked": alert_id, "ignored": True, "ok": True})
             return True
-        state_alert = api.load_alert_state()
-        acked = copy_json_object(state_alert.get("acked"))
-        acked[alert_id] = api.now_iso()
-        api.save_alert_state({"acked": acked})
+        # ponytail: serialize with the summary-poll alert cleanup (shared ops
+        # lock) so a concurrent poll can't overwrite this acknowledgement.
+        state_lock = getattr(api, "ops_state_lock", None)
+        with state_lock if state_lock is not None else nullcontext():
+            state_alert = api.load_alert_state()
+            acked = copy_json_object(state_alert.get("acked"))
+            acked[alert_id] = api.now_iso()
+            api.save_alert_state({"acked": acked})
         handler.send_json({"acked": alert_id, "ok": True})
         return True
 
