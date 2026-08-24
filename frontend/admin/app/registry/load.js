@@ -577,12 +577,9 @@ export function createRegistryLoadController({
         const registryLimitPerBucket = activeCompactSourceTables
           ? ACTIVE_ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET
           : ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET;
-        // detail=summary is the new cheap hydration lane. The legacy `activeCompact=1`
-        // flag remains supported for backward compat but is no longer the only
-        // way to skip the auto-approval annotation pass. The startup source-table
-        // render does not need auto-approval badges; per-row drill flows opt into
-        // the fuller payload by passing `detail=full`.
-        const registrySourcesPath = `/registry/sources?view=table&detail=summary&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}&limitPerBucket=${registryLimitPerBucket}`;
+        // Single compact-table lane: detail/annotation modes were removed
+        // server-side (2026-08-24); the endpoint now serves this lane by default.
+        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}&limitPerBucket=${registryLimitPerBucket}`;
         const registrySourcesTimeoutMs = activeCompactSourceTables
           ? ACTIVE_REGISTRY_LOAD_TIMEOUT_MS
           : FULL_REGISTRY_LOAD_TIMEOUT_MS;
