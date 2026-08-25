@@ -10,6 +10,49 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.137] - 2026-08-25
+
+> Shared Desktop + Umbrel release fixing Admin review-panel interactions and
+> styling consistency, repairing Action Center copy over plain HTTP, removing
+> the redundant Ops Health refresh button, and eliminating Jobs feed
+> first-load jumps.
+
+### Fixed
+
+- Registry Conflicts: the document-level Inspector click delegate no longer
+  hijacks native `<details>` toggles, so "Decision details" and per-row
+  evidence sections open again; card bodies keep opening the Inspector.
+- Dedup tab badge shows a real review count from the jobs fetch report as
+  soon as Ops loads (previously stuck on "..." until the tab was opened),
+  with fetch-report changes invalidating the counts cache.
+- Source Policy Review badge turns warning-toned only when actionable items
+  exist; artifact warnings moved into the tooltip.
+- Action Center "Copy all diagnostics" works over non-secure HTTP (Umbrel
+  LAN) via a clipboard fallback; failure toasts only when every path fails.
+
+### Changed
+
+- Admin panels unify on the elevated card language (12px gradient shells):
+  Action Center internals adopt alert-banner severity tints and standard
+  buttons; Stored Profiles Overview matches; severity colors consolidated
+  into shared `--tint-ok/--tint-warning/--tint-critical` variables, fixing
+  the light-theme bulk-busy message contrast.
+- Sticky Admin section nav centers its links so they clear the floating
+  bridge badge at narrow widths.
+- Removed the redundant "Refresh Ops Health" button; Operations Health stays
+  auto-refreshed by its existing pollers.
+- Conflict cards are more compact: winner-vs-loser summary line plus folded
+  decision-signal and adjudication/diff disclosures; hover affordance added.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
+### Performance
+
+- Jobs page first-load jumps eliminated: identical list content no longer
+  rewrites the DOM when boot/auth/auto-refresh paths re-render; unified feed
+  mirrors race instead of chaining sequential timeouts; the guest notice
+  renders visible by default so auth resolution no longer shifts layout by
+  ~62px (measured CLS 0.094 -> 0.0025 locally).
+
 ## [0.2.136] - 2026-08-25
 
 > Shared Desktop + Umbrel Admin review-panels UX release: registry-conflict
