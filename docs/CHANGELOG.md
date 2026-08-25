@@ -10,6 +10,24 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.138] - 2026-08-25
+
+> Follow-up patch restoring status-chip severity coloring and fixing the Ops
+> Dedup badge against the live fetch-report shape.
+
+### Fixed
+
+- Status chip severity coloring restored: the shared `--tint-ok/--tint-warning/
+  --tint-critical` variables referenced themselves (cyclic definitions), which
+  invalidated every `color-mix` usage and left "Warning"/"Succeeded"/
+  "Auto-Approvable" chips uncolored. Definitions now use literal colors; a
+  cycle guard stops this from shipping again.
+- Ops Dedup badge loads from the fetch report shape the bridge actually
+  writes (top-level `dedupEvidence`) instead of assuming a `latestRun` wrapper,
+  so the badge shows the real review count on first load.
+- Admin CSS cache-bust bumped to v15 so browsers fetch the fixed stylesheet.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.137] - 2026-08-25
 
 > Shared Desktop + Umbrel release fixing Admin review-panel interactions and
