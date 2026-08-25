@@ -748,6 +748,35 @@ body::-webkit-scrollbar-thumb:hover,
   flex-wrap: wrap;
 }
 
+.admin-dedup-review-evidence-body {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.25rem 0 0.35rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.admin-source-policy-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+}
+
+.admin-source-policy-select-label {
+  display: inline-flex;
+  align-items: flex-start;
+  padding-top: 0.15rem;
+}
+
+.admin-dedup-review-evidence-line {
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .admin-dedup-audit-gate-flag {
   display: flex;
   align-items: baseline;
@@ -1065,6 +1094,10 @@ body::-webkit-scrollbar-thumb:hover,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.admin-source-policy-row-main.admin-source-policy-row-main-selectable {
+  grid-template-columns: auto repeat(2, minmax(0, 1fr));
+}
+
 .admin-source-policy-name {
   color: var(--text-primary);
   font-size: 0.88rem;
@@ -1157,7 +1190,8 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-registry-conflict-filter-select,
-.admin-registry-conflict-review-filter-select {
+.admin-registry-conflict-review-filter-select,
+.admin-registry-conflict-search-input {
   width: 100%;
   min-width: 0;
   min-height: 2rem;
@@ -1169,6 +1203,21 @@ body::-webkit-scrollbar-thumb:hover,
   font: inherit;
   font-size: 0.78rem;
   line-height: 1.2;
+}
+
+.admin-registry-conflict-load-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+}
+
+.admin-registry-conflict-action-group-start {
+  border-color: color-mix(in srgb, var(--accent, #4a9eff) 55%, var(--surface-11));
 }
 
 .admin-registry-conflict-actions .btn {

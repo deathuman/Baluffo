@@ -50,6 +50,22 @@ function formatPercent(value) {
   return `${Math.round(confidence * 100)}%`;
 }
 
+function renderMetaSpans(items, { inlineCount = 5 } = {}) {
+  const spans = items
+    .filter(item => item.value !== null && item.value !== undefined)
+    .map(item => `<span><strong>${escapeHtml(item.label)}</strong> ${escapeHtml(String(item.value))}</span>`);
+  const inline = spans.slice(0, inlineCount).join("");
+  const extra = spans.slice(inlineCount);
+  if (!extra.length) return inline;
+  return `
+    ${inline}
+    <details class="admin-source-policy-more-details">
+      <summary>More details (${extra.length.toLocaleString()})</summary>
+      <div class="admin-source-policy-meta admin-source-policy-meta-extra">${extra.join("")}</div>
+    </details>
+  `;
+}
+
 function formatOptionalDate(value) {
   const text = stringValue(value);
   return text ? formatDateTime(text) : "None";
@@ -239,7 +255,36 @@ function renderFilterButtons(rows, selectedFilter) {
   }).join("");
 }
 
-function renderSourcePolicyReviewRow(row, index) {
+function getSelectedStaticIds(reviewEl) {
+  try {
+    const parsed = JSON.parse(reviewEl?.dataset?.sourcePolicySelected || "[]");
+    return Array.isArray(parsed) ? parsed.map(id => String(id)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function renderSourcePolicyBulkToolbar(selectedCount = 0) {
+  return `
+    <div class="admin-source-policy-bulk-bar" role="group" aria-label="Bulk review actions">
+      <span class="muted" data-source-policy-bulk-count>${selectedCount.toLocaleString()} selected</span>
+      <button
+        type="button"
+        class="btn back-btn admin-source-policy-bulk-btn"
+        data-source-policy-bulk-action="acknowledge"
+        ${selectedCount ? "" : "disabled"}
+      >Acknowledge selected</button>
+      <button
+        type="button"
+        class="btn back-btn admin-source-policy-bulk-btn"
+        data-source-policy-bulk-action="snooze"
+        ${selectedCount ? "" : "disabled"}
+      >Snooze selected 7d</button>
+    </div>
+  `;
+}
+
+function renderSourcePolicyReviewRow(row, index, { checked = false } = {}) {
   const staticName = stringValue(row?.staticSourceName, stringValue(row?.staticSourceId, "Unknown static source"));
   const staticId = stringValue(row?.staticSourceId, "unknown-static");
   const providerName = stringValue(row?.providerSourceName, stringValue(row?.providerSourceId, "Unknown provider"));
@@ -263,7 +308,15 @@ function renderSourcePolicyReviewRow(row, index) {
   `).join("");
   return `
     <div class="admin-source-policy-row" data-source-policy-index="${index}">
-      <div class="admin-source-policy-row-main">
+      <div class="admin-source-policy-row-main admin-source-policy-row-main-selectable">
+        <label class="admin-source-policy-select-label">
+          <input
+            type="checkbox"
+            class="admin-source-policy-select-box"
+            data-source-policy-static-id="${escapeHtml(staticId)}"
+            ${checked ? "checked" : ""}
+          />
+        </label>
         <div>
           <div class="admin-source-policy-name">${escapeHtml(staticName)}</div>
           <div class="admin-source-policy-id">${escapeHtml(staticId)}</div>
@@ -274,28 +327,30 @@ function renderSourcePolicyReviewRow(row, index) {
         </div>
       </div>
       <div class="admin-source-policy-meta">
-        <span><strong>Recommendation</strong> ${escapeHtml(recommendation)}</span>
-        <span><strong>Action</strong> ${escapeHtml(action)}</span>
-        <span><strong>Confidence</strong> ${escapeHtml(formatPercent(row?.confidence))}</span>
-        <span><strong>Review</strong> ${escapeHtml(reviewState)}</span>
-        <span><strong>Override</strong> ${escapeHtml(override)}</span>
-        <span><strong>Snoozed until</strong> ${escapeHtml(formatOptionalDate(row?.snoozedUntil))}</span>
-        <span><strong>Safe runs</strong> ${numberValue(row?.safeRunCount).toLocaleString()}</span>
-        <span><strong>Safe streak</strong> ${numberValue(row?.consecutiveSafeRunCount).toLocaleString()}</span>
-        <span><strong>Static-only runs</strong> ${numberValue(row?.staticOnlyDetectedRunCount).toLocaleString()}</span>
-        <span><strong>Provider unstable runs</strong> ${numberValue(row?.providerUnstableRunCount).toLocaleString()}</span>
-        <span><strong>Last proposal</strong> ${escapeHtml(lastProposal)}</span>
-        <span><strong>Last audit</strong> ${escapeHtml(lastAuditStatus)}</span>
+        ${renderMetaSpans([
+          { label: "Recommendation", value: recommendation },
+          { label: "Action", value: action },
+          { label: "Confidence", value: formatPercent(row?.confidence) },
+          { label: "Review", value: reviewState },
+          { label: "Override", value: override },
+          { label: "Snoozed until", value: formatOptionalDate(row?.snoozedUntil) },
+          { label: "Safe runs", value: numberValue(row?.safeRunCount).toLocaleString() },
+          { label: "Safe streak", value: numberValue(row?.consecutiveSafeRunCount).toLocaleString() },
+          { label: "Static-only runs", value: numberValue(row?.staticOnlyDetectedRunCount).toLocaleString() },
+          { label: "Provider unstable runs", value: numberValue(row?.providerUnstableRunCount).toLocaleString() },
+          { label: "Last proposal", value: lastProposal },
+          { label: "Last audit", value: lastAuditStatus }
+        ])}
       </div>
       <div class="admin-source-policy-actions">${actionButtons}</div>
     </div>
   `;
 }
 
-function renderEvidenceList(items) {
+function rawEvidenceList(items) {
   const values = listValue(items).map(item => stringValue(item)).filter(Boolean);
   if (!values.length) return "None";
-  return values.map(item => escapeHtml(formatMachineLabel(item))).join(", ");
+  return values.map(item => formatMachineLabel(item)).join(", ");
 }
 
 function formatMigrationLinkDisambiguationBlockerCounts(counts) {
@@ -359,15 +414,17 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
       </div>
       <div class="admin-source-policy-copy">${escapeHtml(copy)}</div>
       <div class="admin-source-policy-meta">
-        <span><strong>Confidence</strong> ${escapeHtml(formatPercent(candidate?.confidence))}</span>
-        <span><strong>Tier</strong> ${escapeHtml(formatMachineLabel(tier))}</span>
-        <span><strong>API eligible</strong> ${candidate?.apiEligible === true ? "Yes" : "No"}</span>
-        <span><strong>Why not high</strong> ${escapeHtml(stringValue(candidate?.whyNotHighConfidence, "None"))}</span>
-        <span><strong>Evidence</strong> ${renderEvidenceList(candidate?.evidenceReasons)}</span>
-        <span><strong>Last kept</strong> ${numberValue(sourceState.lastKeptCount).toLocaleString()}</span>
-        <span><strong>Last status</strong> ${escapeHtml(formatMachineLabel(sourceState.lastStatus))}</span>
-        <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
-        <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
+        ${renderMetaSpans([
+          { label: "Confidence", value: formatPercent(candidate?.confidence) },
+          { label: "Tier", value: formatMachineLabel(tier) },
+          { label: "API eligible", value: candidate?.apiEligible === true ? "Yes" : "No" },
+          { label: "Why not high", value: stringValue(candidate?.whyNotHighConfidence, "None") },
+          { label: "Evidence", value: rawEvidenceList(candidate?.evidenceReasons) },
+          { label: "Last kept", value: numberValue(sourceState.lastKeptCount).toLocaleString() },
+          { label: "Last status", value: formatMachineLabel(sourceState.lastStatus) },
+          { label: "Evidence score", value: numberValue(sourceState.evidenceScore).toLocaleString() },
+          { label: "Ignored alternatives", value: ignoredAlternatives.length.toLocaleString() }
+        ])}
       </div>
       <div class="admin-source-policy-actions">${actionButtons || `<span class="muted">${escapeHtml(unavailableReason)}</span>`}</div>
     </div>
@@ -403,20 +460,22 @@ function renderBlockedMigrationLinkCandidate(candidate, index) {
       </div>
       <div class="admin-source-policy-copy">Blocked candidate. Review the blocker evidence before any link is applied.</div>
       <div class="admin-source-policy-meta">
-        <span><strong>Confidence</strong> ${escapeHtml(formatPercent(candidate?.confidence))}</span>
-        <span><strong>API eligible</strong> ${candidate?.apiEligible === true ? "Yes" : "No"}</span>
-        <span><strong>Blockers</strong> ${renderEvidenceList(blockers)}</span>
-        <span><strong>Evidence</strong> ${renderEvidenceList(evidenceReasons)}</span>
-        <span><strong>Disambiguation</strong> ${renderEvidenceList(disambiguationBlockers)}</span>
-        <span><strong>Last kept</strong> ${numberValue(sourceState.lastKeptCount).toLocaleString()}</span>
-        <span><strong>Last status</strong> ${escapeHtml(formatMachineLabel(sourceState.lastStatus))}</span>
-        <span><strong>Last successful</strong> ${escapeHtml(formatMachineLabel(sourceState.lastSuccessfulAt))}</span>
-        <span><strong>Last fetched</strong> ${escapeHtml(formatMachineLabel(sourceState.lastFetchedAt))}</span>
-        <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
-        <span><strong>Coverage status</strong> ${escapeHtml(formatMachineLabel(providerCoverageStatus))}</span>
-        <span><strong>Coverage successes</strong> ${providerCoverageConsecutiveSuccesses.toLocaleString()}</span>
-        <span><strong>Coverage latest kept</strong> ${providerCoverageLatestKeptCount.toLocaleString()}</span>
-        <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
+        ${renderMetaSpans([
+          { label: "Confidence", value: formatPercent(candidate?.confidence) },
+          { label: "API eligible", value: candidate?.apiEligible === true ? "Yes" : "No" },
+          { label: "Blockers", value: rawEvidenceList(blockers) },
+          { label: "Evidence", value: rawEvidenceList(evidenceReasons) },
+          { label: "Disambiguation", value: rawEvidenceList(disambiguationBlockers) },
+          { label: "Last kept", value: numberValue(sourceState.lastKeptCount).toLocaleString() },
+          { label: "Last status", value: formatMachineLabel(sourceState.lastStatus) },
+          { label: "Last successful", value: formatMachineLabel(sourceState.lastSuccessfulAt) },
+          { label: "Last fetched", value: formatMachineLabel(sourceState.lastFetchedAt) },
+          { label: "Evidence score", value: numberValue(sourceState.evidenceScore).toLocaleString() },
+          { label: "Coverage status", value: formatMachineLabel(providerCoverageStatus) },
+          { label: "Coverage successes", value: providerCoverageConsecutiveSuccesses.toLocaleString() },
+          { label: "Coverage latest kept", value: providerCoverageLatestKeptCount.toLocaleString() },
+          { label: "Ignored alternatives", value: ignoredAlternatives.length.toLocaleString() }
+        ])}
       </div>
       <div class="admin-source-policy-actions"><span class="muted">Read-only blocked candidate.</span></div>
     </div>
@@ -456,13 +515,15 @@ function renderLinkedMigrationIdentityRow(candidate, index) {
         Linked migration identity. Suppression evidence requires repeated successful provider fetches; one validated fetch may not be enough.
       </div>
       <div class="admin-source-policy-meta">
-        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(candidate?.providerBucket))}</span>
-        <span><strong>Linked by</strong> ${escapeHtml(formatMachineLabel(candidate?.migrationLinkedBy))}</span>
-        <span><strong>Admin-owned</strong> ${candidate?.adminBackfillOwned === true ? "Yes" : "No"}</span>
-        <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(candidate?.providerCoverageStatus))}</span>
-        <span><strong>Success streak</strong> ${numberValue(candidate?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
-        <span><strong>Latest kept</strong> ${numberValue(candidate?.providerCoverageLatestKeptCount).toLocaleString()}</span>
-        <span><strong>Readiness</strong> ${escapeHtml(formatMachineLabel(candidate?.providerReplacementReadiness))}</span>
+        ${renderMetaSpans([
+          { label: "Bucket", value: formatMachineLabel(candidate?.providerBucket) },
+          { label: "Linked by", value: formatMachineLabel(candidate?.migrationLinkedBy) },
+          { label: "Admin-owned", value: candidate?.adminBackfillOwned === true ? "Yes" : "No" },
+          { label: "Coverage", value: formatMachineLabel(candidate?.providerCoverageStatus) },
+          { label: "Success streak", value: numberValue(candidate?.providerCoverageConsecutiveSuccesses).toLocaleString() },
+          { label: "Latest kept", value: numberValue(candidate?.providerCoverageLatestKeptCount).toLocaleString() },
+          { label: "Readiness", value: formatMachineLabel(candidate?.providerReplacementReadiness) }
+        ])}
       </div>
       <div class="admin-source-policy-actions">${actionButtons || '<span class="muted">Linked, but not clearable by this Admin action.</span>'}</div>
     </div>
@@ -481,13 +542,10 @@ function renderMigrationLinkReviewSection(candidates, linkedCandidates) {
   return `
     <div class="admin-source-policy-migration-link-review">
       <h4>Migration Link Review</h4>
-      <div class="admin-source-policy-copy">
-        Apply or clear one reviewed provider/static migration identity link at a time. This links coverage evidence only; it does not delete, hide, reject, demote, tombstone, or force-suppress any source.
-      </div>
       <div class="admin-source-policy-list">${content}</div>
       <h4>Linked Migration Identities</h4>
       <div class="admin-source-policy-copy">
-        Linked providers stay visible here so Admin-owned links can be cleared after fetch/soak. Suppression evidence requires repeated successful provider fetches; one validated fetch may not be enough.
+        Admin-owned links stay visible here so they can be cleared after fetch/soak evidence.
       </div>
       <div class="admin-source-policy-list">${linkedContent}</div>
     </div>
@@ -550,27 +608,29 @@ function renderSuppressionEligibilityRow(row) {
         Provider ready, static not selected. Runtime suppression can emit a row only when the linked static source is selected in the current fetch.
       </div>
       <div class="admin-source-policy-meta">
-        <span><strong>Selection reason</strong> ${escapeHtml(formatMachineLabel(row?.selectionReason || row?.reason))}</span>
-        <span><strong>Readiness</strong> ${escapeHtml(formatMachineLabel(row?.providerReplacementReadiness))}</span>
-        <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(row?.providerCoverageStatus))}</span>
-        <span><strong>Success streak</strong> ${numberValue(row?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
-        <span><strong>Latest kept</strong> ${numberValue(row?.providerCoverageLatestKeptCount).toLocaleString()}</span>
-        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(registryBucket))}</span>
-        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(registryState))}</span>
-        <span><strong>Adapter</strong> ${escapeHtml(formatMachineLabel(staticAdapter))}</span>
-        <span><strong>Hidden</strong> ${escapeHtml(hiddenLabel)}</span>
-        <span><strong>Pending reason</strong> ${escapeHtml(formatMachineLabel(pendingReason))}</span>
-        <span><strong>Duplicate of</strong> ${escapeHtml(stringValue(duplicateOfSourceId, "none"))}</span>
-        <span><strong>Loader match</strong> ${escapeHtml(formatMachineLabel(row?.loaderNameMatchStatus))}</span>
-        <span><strong>Expected loader</strong> ${escapeHtml(stringValue(expectedLoaderName, "unknown"))}</span>
-        <span><strong>Generated loader</strong> ${escapeHtml(stringValue(generatedLoaderName, "unknown"))}</span>
-        <span><strong>Possible loaders</strong> ${escapeHtml(stringValue(possibleLoaderNames, "none"))}</span>
-        <span><strong>Actual source row</strong> ${escapeHtml(stringValue(actualSourceRowName, "none"))}</span>
-        <span><strong>Loader not generated</strong> ${escapeHtml(formatMachineLabel(row?.loaderNotGeneratedReason))}</span>
-        <span><strong>Selected</strong> ${escapeHtml(selectedLabel)}</span>
-        <span><strong>Default loader</strong> ${escapeHtml(defaultLoaderLabel)}</span>
-        <span><strong>Cache/cadence</strong> ${escapeHtml(cacheLabel)}</span>
-        <span><strong>Only sources</strong> ${escapeHtml(onlySourcesLabel)}</span>
+        ${renderMetaSpans([
+          { label: "Selection reason", value: formatMachineLabel(row?.selectionReason || row?.reason) },
+          { label: "Readiness", value: formatMachineLabel(row?.providerReplacementReadiness) },
+          { label: "Coverage", value: formatMachineLabel(row?.providerCoverageStatus) },
+          { label: "Success streak", value: numberValue(row?.providerCoverageConsecutiveSuccesses).toLocaleString() },
+          { label: "Latest kept", value: numberValue(row?.providerCoverageLatestKeptCount).toLocaleString() },
+          { label: "Bucket", value: formatMachineLabel(registryBucket) },
+          { label: "Registry state", value: formatMachineLabel(registryState) },
+          { label: "Adapter", value: formatMachineLabel(staticAdapter) },
+          { label: "Hidden", value: hiddenLabel },
+          { label: "Pending reason", value: formatMachineLabel(pendingReason) },
+          { label: "Duplicate of", value: stringValue(duplicateOfSourceId, "none") },
+          { label: "Loader match", value: formatMachineLabel(row?.loaderNameMatchStatus) },
+          { label: "Expected loader", value: stringValue(expectedLoaderName, "unknown") },
+          { label: "Generated loader", value: stringValue(generatedLoaderName, "unknown") },
+          { label: "Possible loaders", value: stringValue(possibleLoaderNames, "none") },
+          { label: "Actual source row", value: stringValue(actualSourceRowName, "none") },
+          { label: "Loader not generated", value: formatMachineLabel(row?.loaderNotGeneratedReason) },
+          { label: "Selected", value: selectedLabel },
+          { label: "Default loader", value: defaultLoaderLabel },
+          { label: "Cache/cadence", value: cacheLabel },
+          { label: "Only sources", value: onlySourcesLabel }
+        ])}
       </div>
     </div>
   `;
@@ -617,6 +677,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   const filteredEntries = rows
     .map((row, index) => ({ row, index }))
     .filter(entry => filteredRows.includes(entry.row));
+  const selectedIds = getSelectedStaticIds(reviewEl);
   const emptyText = rows.length
     ? "No recommendation pairs match this filter."
     : "No source-policy recommendations are available yet.";
@@ -627,9 +688,14 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
     <div class="saved-custom-filter-actions admin-source-policy-filters" role="group" aria-label="Source policy review filter">
       ${renderFilterButtons(rows, selectedFilter)}
     </div>
+    ${renderSourcePolicyBulkToolbar(
+      filteredEntries.filter(entry => selectedIds.includes(stringValue(entry.row?.staticSourceId))).length
+    )}
     <div class="admin-source-policy-list">
       ${filteredEntries.length
-        ? filteredEntries.map(entry => renderSourcePolicyReviewRow(entry.row, entry.index)).join("")
+        ? filteredEntries.map(entry => renderSourcePolicyReviewRow(entry.row, entry.index, {
+            checked: selectedIds.includes(stringValue(entry.row?.staticSourceId))
+          })).join("")
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
     ${renderMigrationLinkReviewSection(migrationLinkCandidates, linkedMigrationCandidates)}
@@ -638,6 +704,40 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
+  const syncBulkBar = () => {
+    const count = reviewEl.querySelectorAll(".admin-source-policy-select-box:checked").length;
+    reviewEl.querySelectorAll("[data-source-policy-bulk-count]").forEach(el => {
+      el.textContent = `${count.toLocaleString()} selected`;
+    });
+    reviewEl.querySelectorAll(".admin-source-policy-bulk-btn").forEach(btn => {
+      if (count > 0) btn.removeAttribute("disabled");
+      else btn.setAttribute("disabled", "");
+    });
+  };
+  const persistSelection = () => {
+    if (!canPatchInPlace) return;
+    const checked = [...reviewEl.querySelectorAll(".admin-source-policy-select-box:checked")]
+      .map(box => stringValue(box.dataset.sourcePolicyStaticId));
+    reviewEl.dataset.sourcePolicySelected = JSON.stringify(checked);
+  };
+  reviewEl.querySelectorAll(".admin-source-policy-select-box").forEach(box => {
+    box.addEventListener("change", () => {
+      persistSelection();
+      syncBulkBar();
+    });
+  });
+  reviewEl.querySelectorAll(".admin-source-policy-bulk-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const action = stringValue(btn.dataset.sourcePolicyBulkAction);
+      persistSelection();
+      const currentIds = getSelectedStaticIds(reviewEl);
+      const selectedRows = filteredEntries
+        .filter(entry => currentIds.includes(stringValue(entry.row?.staticSourceId)))
+        .map(entry => entry.row);
+      if (!action || !selectedRows.length || typeof options.onSourcePolicyBulkAction !== "function") return;
+      options.onSourcePolicyBulkAction(action, selectedRows);
+    });
+  });
   reviewEl.querySelectorAll(ui(FILTER_TOKEN)).forEach(btn => {
     btn.addEventListener("click", () => {
       const filter = normalizeFilterKey(btn.dataset.sourcePolicyFilter);

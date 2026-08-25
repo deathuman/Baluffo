@@ -58,6 +58,48 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _conflict_page_sort_key(card: dict[str, Any]) -> tuple[int, str, str]:
+    try:
+        priority = int(card.get("reviewPriority", 3))
+    except (TypeError, ValueError):
+        priority = 3
+    return (
+        priority,
+        _clean_text(card.get("reviewQueue")),
+        _clean_text(card.get("familyKey")),
+    )
+
+
+def slice_registry_conflicts_for_query(
+    payload: dict[str, Any],
+    *,
+    limit: int,
+    offset: int,
+    queue: str,
+) -> dict[str, Any]:
+    """Page the conflict cards after the full payload (and its summary cache) exist.
+
+    Deterministic ordering mirrors the frontend grouping key
+    (reviewPriority, reviewQueue, familyKey) so offset pages stay stable.
+    """
+    conflicts = payload.get("conflicts")
+    rows = (
+        [card for card in conflicts if isinstance(card, dict)]
+        if isinstance(conflicts, list)
+        else []
+    )
+    if limit <= 0 and offset <= 0 and not queue:
+        return payload
+    if queue:
+        rows = [card for card in rows if _clean_text(card.get("reviewQueue")).lower() == queue]
+    rows = sorted(rows, key=_conflict_page_sort_key)
+    end = offset + limit if limit > 0 else None
+    paged = rows[offset:end]
+    payload["conflicts"] = paged
+    payload["returnedCount"] = len(paged)
+    return payload
+
+
 def registry_conflicts_badge_from_exact_summary(
     api: _RegistryConflictsRouteApi,
 ) -> dict[str, Any]:
@@ -175,6 +217,13 @@ def handle_registry_conflict_routes(
             )
         except OSError:
             logger.debug("Could not write registry conflicts summary cache", exc_info=True)
+        limit = max(0, _safe_int((query.get("limit") or ["0"])[0]))
+        offset = max(0, _safe_int((query.get("offset") or ["0"])[0]))
+        queue = _clean_text((query.get("queue") or [""])[0]).lower()
+        if limit > 0 or offset > 0 or queue:
+            payload = slice_registry_conflicts_for_query(
+                payload, limit=limit, offset=offset, queue=queue
+            )
         handler.send_json(payload)
         return True
 

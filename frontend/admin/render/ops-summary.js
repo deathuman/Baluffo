@@ -42,7 +42,6 @@ import {
   formatDedupOutlierRows,
   formatDedupRiskRows,
   formatDedupReviewQueueRows,
-  formatDedupAuditGate,
   formatDedupAuditGateCard,
   formatDedupAuditGateExamples,
   formatDedupReviewStateSummary,

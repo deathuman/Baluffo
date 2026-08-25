@@ -72,7 +72,7 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | GET | `/registry/summary` | Lightweight registry summary counts without source rows |
 | GET | `/registry/summary?view=exact` | Normalized registry summary counts without source rows; slower than the default summary and intended for diagnostics |
 | GET | `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250` | Compact Admin source-table payload for selected buckets; the single supported mode (authority-aware: SQLite rows or normalized JSON rows) |
-| GET | `/registry/conflicts` | Full duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, evidence cards, and lifecycle actions |
+| GET | `/registry/conflicts` | Full duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, evidence cards, and lifecycle actions. Optional paging params: `limit` (positive page size), `offset` (0-based), and `queue` (exact review-queue token filter, case-insensitive). When any param is present, cards are sorted by `reviewPriority`, `reviewQueue`, `familyKey` before slicing, the response gains additive `returnedCount`, and `summary.conflictCount` stays the untouched total. Without params the payload is byte-compatible with prior behavior |
 | GET | `/registry/conflicts?view=summary` | Cheap Admin startup conflict summary. It must not build the full conflict queue; it returns cached exact counts when available, otherwise `summaryStatus: "pending"` with registry counts and `detailRoute` |
 | POST | `/registry/approve` | Approve pending sources (`{ids: []}`) |
 | POST | `/registry/reject` | Reject pending sources (`{ids: []}`) |

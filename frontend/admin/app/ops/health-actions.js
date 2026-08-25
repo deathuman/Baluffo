@@ -8,6 +8,7 @@ export function createOpsActions({
   getObjectValue,
   loadOpsHealthData,
   loadSourcePolicyDetail,
+  loadRegistryConflictsMore,
   loadOpsOverviewDetailData,
   loadActiveOpsSummaryData,
   applyOptimisticAbortRow,
@@ -87,6 +88,42 @@ export function createOpsActions({
     } catch (err) {
       showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
     }
+  }
+
+  // ponytail: sequential per-row POSTs; batch endpoint only if bulk runs feel slow
+  let sourcePolicyBulkInFlight = false;
+  async function handleSourcePolicyBulkAction(action, selectedRows = []) {
+    if (!action || !selectedRows.length) return;
+    if (sourcePolicyBulkInFlight) {
+      showToast("A bulk review action is already running.", "warn");
+      return;
+    }
+    sourcePolicyBulkInFlight = true;
+    let ok = 0;
+    let failed = 0;
+    try {
+      for (const row of selectedRows) {
+        try {
+          await postBridge("/source-policy/review-action", buildSourcePolicyActionPayload(row, action));
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    } finally {
+      sourcePolicyBulkInFlight = false;
+    }
+    showToast(
+      failed
+        ? `Bulk ${action}: ${ok.toLocaleString()} applied, ${failed.toLocaleString()} failed.`
+        : `Bulk ${action}: ${ok.toLocaleString()} pair${ok === 1 ? "" : "s"} updated.`,
+      failed ? "warn" : "success"
+    );
+    if (ok > 0 && refs?.adminSourcePolicyReviewEl?.dataset) {
+      refs.adminSourcePolicyReviewEl.dataset.sourcePolicySelected = "[]";
+    }
+    await loadOpsHealthData();
+    await loadSourcePolicyDetail({ force: true });
   }
 
   async function handleDedupReviewAction(row, action) {
@@ -234,16 +271,31 @@ export function createOpsActions({
       onRegistryConflictAction: handleRegistryConflictAction,
       onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation,
       onRegistryConflictCheck: handleRegistryConflictCheck,
+      onRegistryConflictsLoadMore: handleRegistryConflictsLoadMore,
       checkingConflicts: conflictCheckRunning
     });
+  }
+
+  async function handleRegistryConflictsLoadMore() {
+    try {
+      await loadRegistryConflictsMore();
+    } catch (err) {
+      showToast(`Could not load more registry conflicts: ${getErrorMessage(err)}`, "error");
+    }
   }
 
   function renderDiscoveryReviewPanel(report = state.latestDiscoveryReportCache || {}) {
     if (!refs.adminDiscoveryReviewEl) return;
     const candidateReview = getObjectValue(report?.candidateReview);
+    let laneLimits = {};
+    try {
+      laneLimits = JSON.parse(refs.adminDiscoveryReviewEl?.dataset?.discoveryLaneLimits || "{}") || {};
+    } catch {
+      laneLimits = {};
+    }
     refs.adminDiscoveryReviewEl.innerHTML = renderDiscoveryCandidateReviewHtml(
       candidateReview,
-      { showEmpty: true }
+      { showEmpty: true, laneLimits, expandableLanes: true }
     );
     if (!Object.keys(candidateReview).length) {
       const count = toDiscoveryBadgeState(report).count;
@@ -251,7 +303,22 @@ export function createOpsActions({
         const suffix = count === 1 ? "" : "s";
         refs.adminDiscoveryReviewEl.innerHTML = `<div class="no-results">${escapeHtml(`${count.toLocaleString()} discovery review item${suffix} counted, but detailed review lanes are not loaded in the latest report.`)}</div>`;
       }
+      return;
     }
+    refs.adminDiscoveryReviewEl.querySelectorAll?.(".admin-discovery-lane-more-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = String(btn.dataset.discoveryLaneKey || "");
+        if (!key) return;
+        try {
+          laneLimits = JSON.parse(refs.adminDiscoveryReviewEl.dataset.discoveryLaneLimits || "{}") || {};
+        } catch {
+          laneLimits = {};
+        }
+        laneLimits[key] = Number(laneLimits[key] || 5) + 10;
+        refs.adminDiscoveryReviewEl.dataset.discoveryLaneLimits = JSON.stringify(laneLimits);
+        renderDiscoveryReviewPanel(state.latestDiscoveryReportCache || report);
+      });
+    });
   }
 
   async function handleRegistryConflictCheck(options = {}) {
@@ -359,6 +426,7 @@ export function createOpsActions({
         renderSourcePolicyReviewQueue(state.latestSourcePolicyRecommendationsPayload || payload || {});
       },
       onSourcePolicyAction: handleSourcePolicyAction,
+      onSourcePolicyBulkAction: handleSourcePolicyBulkAction,
       onMigrationLinkAction: handleMigrationLinkAction
     });
   }

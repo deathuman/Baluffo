@@ -494,6 +494,7 @@ export function createOpsHealthController({
     getObjectValue,
     loadOpsHealthData,
     loadSourcePolicyDetail: options => loadSourcePolicyDetail(options),
+    loadRegistryConflictsMore: () => loadRegistryConflictsMore(),
     loadOpsOverviewDetailData: renderToken => loadOpsOverviewDetailData(renderToken),
     loadActiveOpsSummaryData,
     applyOptimisticAbortRow,
@@ -503,7 +504,8 @@ export function createOpsHealthController({
     isAbortAcceptedResult,
     hasActivePipelineOrFetchRows,
     renderAdminRegistryConflictsImpl,
-    renderDiscoveryCandidateReviewHtml,    toDiscoveryBadgeState,
+    renderDiscoveryCandidateReviewHtml,
+    toDiscoveryBadgeState,
     renderAdminSourcePolicyReviewImpl,
     currentRenderToken
   });
@@ -565,6 +567,7 @@ export function createOpsHealthController({
     handleLoadDebugDiagnostics,
     scheduleOpsOverviewDetailData,
     loadSourcePolicyDetail,
+    loadRegistryConflictsMore,
     loadActiveOpsTabDetail
   } = overviewHydration;
 
@@ -900,9 +903,36 @@ export function createOpsHealthController({
     };
   }
 
+  function opsTabFromHash() {
+    try {
+      const value = new URLSearchParams((globalThis.location?.hash || "").replace(/^#\??/, "")).get("ops-tab") || "";
+      return OPS_TAB_KEYS.has(value) ? value : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function rememberOpsTabInHash(tabKey) {
+    try {
+      if (!globalThis.history?.replaceState || !globalThis.location) return;
+      const params = new URLSearchParams((globalThis.location?.hash || "").replace(/^#\??/, ""));
+      if (OPS_TAB_KEYS.has(tabKey) && tabKey !== "overview") params.set("ops-tab", tabKey);
+      else params.delete("ops-tab");
+      const qs = params.toString();
+      globalThis.history.replaceState(
+        null,
+        "",
+        qs ? `#${qs}` : `${globalThis.location.pathname || ""}${globalThis.location.search || ""}`
+      );
+    } catch {
+      // Stub environments without location/history.
+    }
+  }
+
   function selectOpsTab(tabKey = "overview") {
     const activeKey = OPS_TAB_KEYS.has(tabKey) ? tabKey : "overview";
     state.adminOpsActiveTab = activeKey;
+    rememberOpsTabInHash(activeKey);
     const buttons = Array.isArray(refs.adminOpsTabBtnEls) ? refs.adminOpsTabBtnEls : [];
     buttons.forEach(button => {
       const buttonKey = String(button?.dataset?.opsTab || button?.getAttribute?.("data-ops-tab") || "");
@@ -928,7 +958,7 @@ export function createOpsHealthController({
   function setupOpsTabs() {
     const buttons = Array.isArray(refs.adminOpsTabBtnEls) ? refs.adminOpsTabBtnEls : [];
     if (!buttons.length || state.adminOpsTabsInitialized) {
-      selectOpsTab(state.adminOpsActiveTab || "overview");
+      selectOpsTab(opsTabFromHash() || state.adminOpsActiveTab || "overview");
       return;
     }
     state.adminOpsTabsInitialized = true;
@@ -937,7 +967,7 @@ export function createOpsHealthController({
         selectOpsTab(String(button?.dataset?.opsTab || button?.getAttribute?.("data-ops-tab") || "overview"));
       });
     });
-    selectOpsTab(state.adminOpsActiveTab || "overview");
+    selectOpsTab(opsTabFromHash() || state.adminOpsActiveTab || "overview");
   }
 
   async function handlePipelineScheduleSave(button) {

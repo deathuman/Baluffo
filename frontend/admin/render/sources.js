@@ -5,11 +5,11 @@ function formatCompactNumber(value) {
   return Number.isFinite(number) ? number.toLocaleString() : "0";
 }
 
-function renderCandidateReviewRows(rows) {
+function renderCandidateReviewRows(rows, limit = 5) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return '<div class="no-results">No candidates in this lane.</div>';
   }
-  return rows.slice(0, 5).map(row => {
+  return rows.slice(0, Math.max(1, limit)).map(row => {
     const name = escapeHtml(String(row?.name || row?.sourceIdentity || "Unnamed source"));
     const recommendation = escapeHtml(String(row?.promotionRecommendation || "review").replaceAll("_", " "));
     const provider = row?.providerFamily ? ` · ${escapeHtml(String(row.providerFamily))}` : "";
@@ -24,11 +24,11 @@ function renderCandidateReviewRows(rows) {
   }).join("");
 }
 
-function renderProviderMigrationRows(rows) {
+function renderProviderMigrationRows(rows, limit = 5) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return '<div class="no-results">No candidates in this lane.</div>';
   }
-  return rows.slice(0, 5).map(row => {
+  return rows.slice(0, Math.max(1, limit)).map(row => {
     const name = escapeHtml(String(row?.name || row?.sourceIdentity || "Unnamed source"));
     const provider = row?.detectedProviderFamily
       ? ` &middot; ${escapeHtml(String(row.detectedProviderFamily))}`
@@ -47,16 +47,41 @@ function renderProviderMigrationRows(rows) {
   }).join("");
 }
 
-function renderReviewLaneDetails(title, rows, renderRows, { open = false } = {}) {
+function renderReviewLaneDetails(title, rows, renderRows, { open = false, laneKey = "", limit = 5, expandableLanes = false } = {}) {
   const count = Array.isArray(rows) ? rows.length : 0;
+  if (!count) {
+    return `
+      <details class="admin-source-review-lane-details"${open ? " open" : ""}>
+        <summary>
+          <span>${escapeHtml(title)}</span>
+          <span class="muted">0 shown</span>
+        </summary>
+        <div class="admin-source-review-lane-body">
+          ${renderRows(rows)}
+        </div>
+      </details>
+    `;
+  }
+  // ponytail: per-lane +10 expansion kept in panel dataset; server caps lanes anyway
+  const shown = Math.min(count, Math.max(1, limit));
+  const moreButton = shown < count && laneKey && expandableLanes
+    ? `
+      <button
+        type="button"
+        class="btn back-btn admin-discovery-lane-more-btn"
+        data-discovery-lane-key="${escapeHtml(laneKey)}"
+      >Show 10 more (${(count - shown).toLocaleString()} left)</button>
+    `
+    : "";
   return `
     <details class="admin-source-review-lane-details"${open ? " open" : ""}>
       <summary>
         <span>${escapeHtml(title)}</span>
-        <span class="muted">${formatCompactNumber(count)} shown</span>
+        <span class="muted">showing ${shown.toLocaleString()} of ${count.toLocaleString()}</span>
       </summary>
       <div class="admin-source-review-lane-body">
-        ${renderRows(rows)}
+        ${renderRows(rows, limit)}
+        ${moreButton}
       </div>
     </details>
   `;
@@ -81,6 +106,8 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview, options = {}
     ["Needs browser probe", review.needsBrowserProbeCandidates],
     ["Likely reject/noise", review.likelyRejectCandidates]
   ];
+  const laneLimits = options?.laneLimits && typeof options.laneLimits === "object" ? options.laneLimits : {};
+  const laneLimit = key => Number(laneLimits[key] || 5);
   const counts = review.recommendationCounts && typeof review.recommendationCounts === "object"
     ? Object.entries(review.recommendationCounts)
       .map(([key, value]) => `${escapeHtml(String(key).replaceAll("_", " "))}: ${formatCompactNumber(value)}`)
@@ -108,7 +135,12 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview, options = {}
           title,
           rows,
           renderCandidateReviewRows,
-          { open: index === 0 }
+          {
+            open: index === 0,
+            laneKey: `lane-${index}`,
+            limit: laneLimit(`lane-${index}`),
+            expandableLanes: options?.expandableLanes === true
+          }
         )).join("")}
       </div>
       ${migrationTotal ? `
@@ -119,10 +151,15 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview, options = {}
           </summary>
           <p class="muted">Read-only migration evidence for ${formatCompactNumber(migrationTotal)} candidates.</p>
           <div class="admin-source-review-disclosures">
-            ${migrationLanes.map(([title, rows]) => renderReviewLaneDetails(
+            ${migrationLanes.map(([title, rows], index) => renderReviewLaneDetails(
               title,
               rows,
-              renderProviderMigrationRows
+              renderProviderMigrationRows,
+              {
+                laneKey: `mig-${index}`,
+                limit: laneLimit(`mig-${index}`),
+                expandableLanes: options?.expandableLanes === true
+              }
             )).join("")}
           </div>
         </details>

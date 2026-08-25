@@ -162,7 +162,7 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /total 1, current 0, carried 1/i);
   assert.match(metricsEl.innerHTML, /Gate: blocked 1, warning 0, current blocked 0, carried blocked 1/i);
   assert.match(metricsEl.innerHTML, /same job\/different URLs 1/i);
-  assert.match(metricsEl.innerHTML, /provider\/static current 0/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /provider\/static current 0/i);
   assert.match(metricsEl.innerHTML, /provider\/static carried 1/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-provider-static-list/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-provider-static-card/i);

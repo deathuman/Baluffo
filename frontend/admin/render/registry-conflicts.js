@@ -8,6 +8,8 @@ const TRIAGE_FILTER_SELECTOR = ".admin-registry-conflict-filter-btn";
 const REVIEW_FILTER_SELECTOR = ".admin-registry-conflict-review-filter-btn";
 const TRIAGE_FILTER_SELECT_SELECTOR = ".admin-registry-conflict-filter-select";
 const REVIEW_FILTER_SELECT_SELECTOR = ".admin-registry-conflict-review-filter-select";
+const SEARCH_INPUT_SELECTOR = ".admin-registry-conflict-search-input";
+const LOAD_MORE_BUTTON_SELECTOR = ".admin-registry-conflict-load-more-btn";
 const SAFE_AUTOMATION_SELECTOR = ".admin-registry-conflict-safe-automation-btn";
 const TRIAGE_BUCKET_FALLBACKS = [
   {
@@ -246,6 +248,65 @@ function getReviewPayload(payload, conflicts) {
   };
 }
 
+function conflictMatchesSearch(card, query) {
+  const needle = stringValue(query).trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    stringValue(card?.familyKey),
+    ...listValue(card?.rows).map(row => `${stringValue(row?.name)} ${stringValue(row?.id || row?.sourceId || row?.sourceStateName)}`)
+  ].join(" ").toLowerCase();
+  return haystack.includes(needle);
+}
+
+function conflictHashParams() {
+  try {
+    return new URLSearchParams((globalThis.location?.hash || "").replace(/^#\??/, ""));
+  } catch {
+    return new URLSearchParams("");
+  }
+}
+
+function seedConflictFiltersFromHash(reviewEl) {
+  const dataset = reviewEl?.dataset;
+  if (!dataset) return;
+  let params;
+  try {
+    params = conflictHashParams();
+  } catch {
+    return;
+  }
+  if (dataset.registryConflictTriageFilter === undefined && params.get("conflict-triage") !== null) {
+    dataset.registryConflictTriageFilter = params.get("conflict-triage") || "all";
+  }
+  if (dataset.registryConflictReviewFilter === undefined && params.get("conflict-queue") !== null) {
+    dataset.registryConflictReviewFilter = params.get("conflict-queue") || "all";
+  }
+  if (dataset.registryConflictSearchQuery === undefined && params.get("conflict-q") !== null) {
+    dataset.registryConflictSearchQuery = params.get("conflict-q") || "";
+  }
+}
+
+function syncConflictFiltersToHash(reviewEl) {
+  try {
+    if (!globalThis.history?.replaceState || !globalThis.location) return;
+    const params = conflictHashParams();
+    const setOrDelete = (key, value) => {
+      if (value && value !== "all") params.set(key, value);
+      else params.delete(key);
+    };
+    setOrDelete("conflict-triage", stringValue(reviewEl?.dataset?.registryConflictTriageFilter));
+    setOrDelete("conflict-queue", stringValue(reviewEl?.dataset?.registryConflictReviewFilter));
+    const search = stringValue(reviewEl?.dataset?.registryConflictSearchQuery);
+    if (search) params.set("conflict-q", search);
+    else params.delete("conflict-q");
+    const qs = params.toString();
+    const base = `${globalThis.location.pathname || ""}${globalThis.location.search || ""}`;
+    globalThis.history.replaceState(null, "", qs ? `#${qs}` : base);
+  } catch {
+    // Stub environments without location/history.
+  }
+}
+
 function sortedConflictCards(conflicts) {
   return [...conflicts].sort((left, right) => {
     const priorityDelta = Number(left?.reviewPriority ?? 3) - Number(right?.reviewPriority ?? 3);
@@ -326,7 +387,7 @@ function renderAllReviewFilterOption(total, activeFilter) {
   `;
 }
 
-function renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter) {
+function renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter, activeSearchQuery) {
   const triageTotal = Number(triage?.summary?.totalConflictCount || 0);
   const reviewTotal = Number(review?.summary?.totalConflictCount || 0);
   const buckets = listValue(triage?.buckets);
@@ -354,6 +415,16 @@ function renderConflictFilterToolbar(triage, review, activeTriageFilter, activeR
           ${renderAllReviewFilterOption(reviewTotal, activeReviewFilter)}
           ${queues.map(queue => renderReviewFilterOption(queue, activeReviewFilter)).join("")}
         </select>
+      </div>
+      <div class="admin-registry-conflict-filter-group" role="group" aria-label="Search conflicts">
+        <label class="admin-registry-conflict-filter-label" for="admin-registry-conflict-search">Search</label>
+        <input
+          id="admin-registry-conflict-search"
+          type="search"
+          class="admin-registry-conflict-search-input"
+          placeholder="Family or source ID"
+          value="${escapeHtml(stringValue(activeSearchQuery))}"
+        />
       </div>
     </div>
   `;
@@ -710,6 +781,10 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
   const demoted = Number(adjudication?.demoted || 0);
   const recommended = Number(objectValue(adjudication?.summary)?.recommendedDemotion || 0);
   const disabled = running || !visibleConflicts.length;
+  const neverChecked = !checkedAt && !demoted && !recommended;
+  const startHereBadge = !running && neverChecked && visibleConflicts.length > 0
+    ? '<span class="admin-registry-conflict-triage-badge">Recommended first step</span>'
+    : "";
   const checkLabel = running && !applyAutopilot ? "Checking conflicts..." : "Check conflicting sources";
   const applyLabel = running && applyAutopilot
     ? "Applying recommendations..."
@@ -730,9 +805,9 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
     ? renderRunningAdjudicationStatus(adjudication)
     : `${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.`;
   return `
-    <div class="admin-registry-conflict-action-group">
+    <div class="admin-registry-conflict-action-group${startHereBadge ? " admin-registry-conflict-action-group-start" : ""}">
       <div>
-        <div class="admin-registry-conflict-action-title">Conflict source checks</div>
+        <div class="admin-registry-conflict-action-title">Conflict source checks ${startHereBadge}</div>
         <div class="admin-registry-conflict-action-summary">
           ${statusCopy}
         </div>
@@ -815,7 +890,7 @@ function renderConflictGroups(conflicts, review, options = {}) {
     .map(([queue, rows]) => {
       const meta = queueMeta.get(queue) || { queue, priority: 3, label: queue, description: "" };
       const priority = Number(meta?.priority ?? rows[0]?.card?.reviewPriority ?? 3);
-      const open = priority < 3 ? " open" : "";
+      const open = priority < 2 ? " open" : "";
       return `
         <details
           class="admin-registry-conflict-review-group"
@@ -834,6 +909,20 @@ function renderConflictGroups(conflicts, review, options = {}) {
     .join("");
 }
 
+function renderLoadMoreFooter(visibleCount, loadedCount, totalCount) {
+  if (!totalCount || loadedCount >= totalCount) return "";
+  return `
+    <div class="admin-registry-conflict-load-more">
+      <span class="muted">Showing ${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} conflicts.</span>
+      <button
+        type="button"
+        class="btn back-btn admin-registry-conflict-load-more-btn"
+        ${tooltipAttrs("Load the next page of conflict cards.")}
+      >Show 50 more</button>
+    </div>
+  `;
+}
+
 export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const conflicts = sortedConflictCards(getConflictCards(payload));
@@ -842,14 +931,17 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   const review = getReviewPayload(payload, conflicts);
   const suppressedIndependentProviderBoards = objectValue(payload?.suppressedIndependentProviderBoards);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
+  seedConflictFiltersFromHash(reviewEl);
   const activeTriageFilter = stringValue(reviewEl?.dataset?.registryConflictTriageFilter, "all");
   const activeReviewFilter = stringValue(reviewEl?.dataset?.registryConflictReviewFilter, "all");
+  const activeSearchQuery = stringValue(reviewEl?.dataset?.registryConflictSearchQuery);
   const triageFilteredConflicts = activeTriageFilter === "all"
     ? conflicts
     : conflicts.filter(card => stringValue(card?.triageBucket, "ambiguous_manual_review") === activeTriageFilter);
-  const visibleConflicts = activeReviewFilter === "all"
+  const reviewFilteredConflicts = activeReviewFilter === "all"
     ? triageFilteredConflicts
     : triageFilteredConflicts.filter(card => stringValue(card?.reviewQueue, "p3_low_signal_manual") === activeReviewFilter);
+  const visibleConflicts = reviewFilteredConflicts.filter(card => conflictMatchesSearch(card, activeSearchQuery));
   const adjudication = adjudicationValue(payload);
   const checkingConflicts = Boolean(options?.checkingConflicts)
     || stringValue(adjudication?.status) === "running";
@@ -860,6 +952,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     adjudication,
     activeTriageFilter,
     activeReviewFilter,
+    activeSearchQuery,
     checkingConflicts,
     conflicts,
     suppressedIndependentProviderBoards
@@ -869,7 +962,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
 
   const conflictCount = Number(summary?.conflictCount || conflicts.length || 0);
   reviewEl.innerHTML = `
-    ${renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter)}
+    ${renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter, activeSearchQuery)}
     ${renderRegistryConflictActionStrip(payload, visibleConflicts, checkingConflicts)}
     ${renderSuppressedIndependentProviderBoards(payload)}
     <div class="admin-registry-conflicts-list">
@@ -877,10 +970,11 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
         ? renderConflictGroups(visibleConflicts, review, { disableSafeAutomation: checkingConflicts })
         : `<div class="muted">${escapeHtml(
             conflictCount
-              ? "No registry conflict cards match the selected triage or review queue."
+              ? "No registry conflict cards match the selected triage, review queue, or search."
               : "No duplicate-family registry conflicts are currently queued."
           )}</div>`}
     </div>
+    ${renderLoadMoreFooter(visibleConflicts.length, conflicts.length, conflictCount)}
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
@@ -889,6 +983,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
       reviewEl.dataset.registryConflictTriageFilter = bucket;
       reviewEl.dataset.registryConflictsSig = "";
     }
+    syncConflictFiltersToHash(reviewEl);
     renderAdminRegistryConflicts(reviewEl, payload, options);
   };
   const applyReviewFilter = queue => {
@@ -896,8 +991,39 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
       reviewEl.dataset.registryConflictReviewFilter = queue;
       reviewEl.dataset.registryConflictsSig = "";
     }
+    syncConflictFiltersToHash(reviewEl);
     renderAdminRegistryConflicts(reviewEl, payload, options);
   };
+  const applySearch = query => {
+    if (canPatchInPlace) {
+      reviewEl.dataset.registryConflictSearchQuery = stringValue(query);
+      reviewEl.dataset.registryConflictsSig = "";
+    }
+    syncConflictFiltersToHash(reviewEl);
+    renderAdminRegistryConflicts(reviewEl, payload, options);
+  };
+  reviewEl.querySelectorAll(SEARCH_INPUT_SELECTOR).forEach(input => {
+    input.addEventListener("input", () => {
+      const query = stringValue(input.value).trim();
+      if (stringValue(reviewEl?.dataset?.registryConflictSearchQuery) === query) return;
+      applySearch(query);
+      const fresh = typeof reviewEl.querySelector === "function"
+        ? reviewEl.querySelector(SEARCH_INPUT_SELECTOR)
+        : null;
+      if (fresh) {
+        fresh.focus();
+        const end = fresh.value.length;
+        fresh.setSelectionRange?.(end, end);
+      }
+    });
+  });
+  reviewEl.querySelectorAll(LOAD_MORE_BUTTON_SELECTOR).forEach(button => {
+    button.addEventListener("click", () => {
+      if (typeof options.onRegistryConflictsLoadMore === "function") {
+        options.onRegistryConflictsLoadMore();
+      }
+    });
+  });
   reviewEl.querySelectorAll(TRIAGE_FILTER_SELECT_SELECTOR).forEach(select => {
     select.addEventListener("change", () => {
       applyTriageFilter(stringValue(select.value, "all"));

@@ -35,6 +35,8 @@ export function createOverviewHydration({
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
+  // ponytail: fixed 50-row pages; tune if conflict payloads grow past ~5k cards
+  const REGISTRY_CONFLICTS_PAGE_SIZE = 50;
 
   function loadOpsOverviewDetailData(renderToken = currentRenderToken()) {
     if (opsOverviewDetailLoad && opsOverviewDetailLoadToken === renderToken) return opsOverviewDetailLoad;
@@ -169,7 +171,7 @@ export function createOverviewHydration({
     if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
     registryConflictsDetailLoad = (async () => {
       try {
-        const payload = await getBridge(REGISTRY_CONFLICTS_DETAIL_PATH);
+        const payload = await getBridge(`${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}`);
         const registryConflictsPayload = payload
           && typeof payload === "object"
           && !Array.isArray(payload)
@@ -187,6 +189,31 @@ export function createOverviewHydration({
         }
         return null;
       }
+    })().finally(() => {
+      registryConflictsDetailLoad = null;
+    });
+    return registryConflictsDetailLoad;
+  }
+
+  async function loadRegistryConflictsMore() {
+    const payload = getObjectValue(state.latestRegistryConflictsPayload);
+    if (!payload || payload.summaryView) return null;
+    const loaded = Array.isArray(payload.conflicts) ? payload.conflicts.length : 0;
+    const total = Number(payload?.summary?.conflictCount || 0);
+    if (!total || loaded >= total) return null;
+    if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
+    registryConflictsDetailLoad = (async () => {
+      const next = await getBridge(
+        `${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}&offset=${loaded}`
+      );
+      const cards = Array.isArray(next?.conflicts) ? next.conflicts : [];
+      const current = getObjectValue(state.latestRegistryConflictsPayload);
+      if (cards.length && current === payload) {
+        payload.conflicts = [...(payload.conflicts || []), ...cards];
+        payload.returnedCount = payload.conflicts.length;
+        renderRegistryConflictsQueue(payload);
+      }
+      return next;
     })().finally(() => {
       registryConflictsDetailLoad = null;
     });
@@ -272,6 +299,7 @@ export function createOverviewHydration({
     scheduleOpsOverviewDetailData,
     loadSourcePolicyDetail,
     loadRegistryConflictsDetail,
+    loadRegistryConflictsMore,
     loadDiscoveryReviewDetail,
     loadDedupListsDetail,
     loadActiveOpsTabDetail
