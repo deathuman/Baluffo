@@ -319,3 +319,90 @@ def test_admin_ops_tab_counts_corrupt_envelope_recomputes_without_error(
     assert handler.sent[-1]["status"] == 200
     assert "cachedResponse" not in payload
     assert payload["badges"]["discovery"]["count"] == 2
+
+
+def _write_fetch_report_with_dedup(api: MinimalAdminOpsTabCountsRouteApi, gate_status: str) -> None:
+    _write_json(
+        api.JOBS_FETCH_REPORT_PATH,
+        {
+            "latestRun": {
+                "dedupEvidence": {
+                    "reviewQueue": [
+                        {"title": "Role A"},
+                        {"title": "Role B"},
+                    ],
+                    "providerStaticDisagreementExamples": [{"title": "X"}],
+                    "dedupAuditGate": {
+                        "status": gate_status,
+                        "currentRunBlockingReviewQueueCount": 1,
+                        "carriedBlockingReviewQueueCount": 0,
+                        "providerStaticDisagreementBlockedCount": 0,
+                        "blockers": (
+                            ["provider_static_disagreement_needs_review"]
+                            if gate_status == "blocked"
+                            else []
+                        ),
+                        "warnings": [],
+                    },
+                }
+            }
+        },
+    )
+
+
+def test_admin_ops_tab_counts_dedup_badge_loads_from_fetch_report(tmp_path: Path) -> None:
+    api = MinimalAdminOpsTabCountsRouteApi(tmp_path)
+    _write_json(
+        api.DISCOVERY_REPORT_PATH,
+        {"summary": {"candidateCount": 1}, "candidateReview": {"totalCandidates": 1}},
+    )
+    _write_fetch_report_with_dedup(api, gate_status="blocked")
+
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler, api=api, path="/admin/ops-tab-counts", query={"view": ["summary"]}
+        )
+        is True
+    )
+    badge = handler.sent[-1]["payload"]["badges"]["dedup"]
+    # max(review rows=3, blocking=1, gate flags=1) and blocked gate -> critical
+    assert badge["loaded"] is True
+    assert badge["count"] == 3
+    assert badge["tone"] == "critical"
+    assert badge["title"] == "3 dedup review items"
+
+
+def test_admin_ops_tab_counts_dedup_badge_recomputes_when_fetch_report_moves(
+    tmp_path: Path,
+) -> None:
+    api = MinimalAdminOpsTabCountsRouteApi(tmp_path)
+    _write_json(
+        api.DISCOVERY_REPORT_PATH,
+        {"summary": {"candidateCount": 1}, "candidateReview": {"totalCandidates": 1}},
+    )
+    _write_fetch_report_with_dedup(api, gate_status="ok")
+
+    first_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            first_handler, api=api, path="/admin/ops-tab-counts", query={"view": ["summary"]}
+        )
+        is True
+    )
+    first_badge = first_handler.sent[-1]["payload"]["badges"]["dedup"]
+    assert first_badge["count"] == 3
+    assert first_badge["tone"] == "warning"
+
+    _write_fetch_report_with_dedup(api, gate_status="ok")
+    second_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            second_handler, api=api, path="/admin/ops-tab-counts", query={"view": ["summary"]}
+        )
+        is True
+    )
+    second_payload = second_handler.sent[-1]["payload"]
+    # Fetch report mtime moved -> cache invalidated even though other inputs match.
+    assert "cachedResponse" not in second_payload
+    assert second_payload["badges"]["dedup"]["loaded"] is True

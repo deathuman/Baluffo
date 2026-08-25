@@ -1220,6 +1220,14 @@ body::-webkit-scrollbar-thumb:hover,
   border-color: color-mix(in srgb, var(--accent, #4a9eff) 55%, var(--surface-11));
 }
 
+.admin-registry-conflict-card {
+  transition: border-color 120ms ease;
+}
+
+.admin-registry-conflict-card:hover {
+  border-color: color-mix(in srgb, var(--surface-11) 55%, var(--text-secondary));
+}
+
 .admin-registry-conflict-actions .btn {
   min-height: 1.95rem;
   padding: 0.32rem 0.52rem;

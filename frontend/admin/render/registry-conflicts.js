@@ -528,7 +528,7 @@ function renderRowMoreDetails(row) {
 }
 
 function renderAdjudicationProbe(probe) {
-  const status = Boolean(probe?.ok) ? "ok" : stringValue(probe?.error, "failed");
+  const status = probe?.ok ? "ok" : stringValue(probe?.error, "failed");
   return `
     <div class="admin-registry-conflict-triage-card">
       <span class="admin-registry-conflict-triage-badge">${escapeHtml(stringValue(probe?.name, stringValue(probe?.sourceId, "source")))}</span>
@@ -550,19 +550,17 @@ function renderAdjudicationDecision(decision) {
   `;
 }
 
-function renderAdjudicationCard(card) {
+function renderAdjudicationCardInner(card) {
   const adjudication = familyAdjudicationValue(card);
   if (!Object.keys(adjudication).length) return "";
   const probes = listValue(adjudication?.probes);
   const decisions = listValue(adjudication?.decisions);
   return `
-    <details class="admin-registry-conflict-detail admin-registry-conflict-adjudication">
-      <summary>Adjudication · ${escapeHtml(stringValue(adjudication?.status, "checked"))} · winner ${escapeHtml(stringValue(adjudication?.winnerSourceId, "unknown"))}</summary>
-      <div class="admin-registry-conflict-detail-body">
-        ${probes.map(renderAdjudicationProbe).join("")}
-        ${decisions.map(renderAdjudicationDecision).join("")}
-      </div>
-    </details>
+    <div class="admin-registry-conflict-triage-card">
+      <span class="admin-registry-conflict-triage-badge">Adjudication · ${escapeHtml(stringValue(adjudication?.status, "checked"))} · winner ${escapeHtml(stringValue(adjudication?.winnerSourceId, "unknown"))}</span>
+    </div>
+    ${probes.map(renderAdjudicationProbe).join("")}
+    ${decisions.map(renderAdjudicationDecision).join("")}
   `;
 }
 
@@ -675,15 +673,23 @@ function renderConflictCard(card, cardIndex, options = {}) {
         <span>Winner selected from completed source-check counts; registry counts remain visible on each row.</span>
       </div>`
     : "";
-  const detailCount = rationale.length + diffs.reduce((total, diff) => total + listValue(diff?.fields).length, 0);
+  const detailCount = rationale.length
+    + diffs.reduce((total, diff) => total + listValue(diff?.fields).length, 0)
+    + listValue(adjudicationValue(card)?.probes).length
+    + listValue(adjudicationValue(card)?.decisions).length;
+  const loserName = stringValue(
+    listValue(rows)[1]?.name,
+    stringValue(listValue(rows)[1]?.id || listValue(rows)[1]?.sourceId, "")
+  );
+  const summaryLine = loserName
+    ? `${rowCount.toLocaleString()} rows · winner ${winnerName} vs ${loserName}`
+    : `${rowCount.toLocaleString()} rows · winner ${winnerName}`;
   return `
-    <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}" data-conflict-key="${escapeHtml(familyKey)}">
+    <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}" data-conflict-key="${escapeHtml(familyKey)}"${tooltipAttrs("Card background opens the Inspector")}>
       <div class="admin-registry-conflict-card-head">
         <div class="admin-registry-conflict-card-title">
           <div class="admin-registry-conflict-family">${escapeHtml(familyKey)}</div>
-          <div class="admin-registry-conflict-summary">${escapeHtml(
-            `${rowCount.toLocaleString()} rows · winner ${winnerName}`
-          )}</div>
+          <div class="admin-registry-conflict-summary">${escapeHtml(summaryLine)}</div>
         </div>
         <div class="admin-registry-conflict-card-badges" aria-label="Conflict classification">
           <span class="admin-registry-conflict-triage-badge">${escapeHtml(triageLabel)} · ${escapeHtml(triageRisk)}</span>
@@ -696,7 +702,6 @@ function renderConflictCard(card, cardIndex, options = {}) {
         <strong>${escapeHtml(suggestedDisposition)}</strong>
         <span>${escapeHtml(reviewReason)}</span>
       </div>
-      ${winnerSourceNote}
       <details class="admin-registry-conflict-detail">
         <summary>Decision details · ${detailCount.toLocaleString()} signals</summary>
         <div class="admin-registry-conflict-detail-body">
@@ -712,22 +717,28 @@ function renderConflictCard(card, cardIndex, options = {}) {
             <span class="admin-registry-conflict-triage-badge">Winner health</span>
             <span>${escapeHtml(winnerHealthReason)}</span>
           </div>` : ""}
+          ${winnerSourceNote}
           <div class="admin-registry-conflict-rationale">
             ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
           </div>
         </div>
       </details>
-      ${renderAdjudicationCard(card)}
       ${renderSafeAutomationCard(card, cardIndex, Boolean(options?.disableSafeAutomation))}
+      <details class="admin-registry-conflict-detail admin-registry-conflict-adjudication">
+        <summary>Adjudication & diffs · ${detailCount.toLocaleString()} signals</summary>
+        <div class="admin-registry-conflict-detail-body">
+          ${renderAdjudicationCardInner(card)}
+          <div class="admin-registry-conflict-diffs">
+            ${diffs.length
+              ? diffs.map(diff => renderConflictDiff(cardIndex, diff, winner)).join("")
+              : `<div class="muted">No side-by-side diff available.</div>`}
+          </div>
+        </div>
+      </details>
       <div class="admin-registry-conflict-rows">
         ${rows.length
           ? rows.map((row, rowIndex) => renderConflictRow(row, cardIndex, rowIndex, rowIndex === 0 ? "winner" : "loser")).join("")
           : `<div class="muted">No conflict rows available.</div>`}
-      </div>
-      <div class="admin-registry-conflict-diffs">
-        ${diffs.length
-          ? diffs.map(diff => renderConflictDiff(cardIndex, diff, winner)).join("")
-          : `<div class="muted">No side-by-side diff available.</div>`}
       </div>
     </section>
   `;

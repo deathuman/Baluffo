@@ -108,14 +108,15 @@ def _source_policy_badge_from_artifacts(api: _AdminOpsTabCountsRouteApi) -> dict
         if review_state_text in {"new", "acknowledged"}:
             needs_action += 1
     warnings = [warning for warning in (recommendation_warning, review_state_warning) if warning]
-    tone = "warning" if needs_action > 0 or warnings else "neutral"
+    tone = "warning" if needs_action > 0 else "neutral"
     title = (
         f"{needs_action} source policy review item{'' if needs_action == 1 else 's'}"
         if needs_action > 0
         else "No source policy review items"
     )
-    if warnings and needs_action <= 0:
-        title = "Source policy review summary has warnings"
+    if warnings:
+        suffix = "; artifact warnings present" if needs_action <= 0 else "; artifact warnings"
+        title = f"{title}{suffix}"
     return _ops_tab_badge(count=needs_action, tone=tone, title=title)
 
 
@@ -160,6 +161,51 @@ def _discovery_review_badge_from_report(api: _AdminOpsTabCountsRouteApi) -> dict
     )
 
 
+def _dedup_badge_from_fetch_report(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
+    """Mirror frontend toDedupBadgeState so the badge loads without opening the tab."""
+    report = _as_dict(api.load_json_object(Path(api.JOBS_FETCH_REPORT_PATH), {}))
+    evidence = _as_dict(_as_dict(report.get("latestRun")).get("dedupEvidence")) if report else {}
+    if not evidence:
+        return _ops_tab_badge(
+            loaded=False,
+            title="Dedup count unavailable",
+            error="fetch_report_missing_or_empty" if not report else "dedup_evidence_missing",
+        )
+    gate = _as_dict(evidence.get("dedupAuditGate"))
+    review_rows = sum(
+        len(_as_list(evidence.get(key)))
+        for key in (
+            "reviewQueue",
+            "providerStaticDisagreementExamples",
+            "providerStaticTitleCompanyCollisionExamples",
+        )
+    )
+    non_primary = _as_dict(gate.get("currentRunNonPrimaryMergeCounts"))
+    blocking_count = sum(
+        max(0, _safe_int(gate.get(key), 0))
+        for key in (
+            "currentRunBlockingReviewQueueCount",
+            "carriedBlockingReviewQueueCount",
+            "providerStaticDisagreementBlockedCount",
+        )
+    ) + max(0, _safe_int(non_primary.get("blocking"), 0))
+    gate_flag_count = len(_as_list(gate.get("blockers"))) + len(_as_list(gate.get("warnings")))
+    count = max(review_rows, blocking_count, gate_flag_count)
+    blocked = (
+        _clean_text(gate.get("status")).lower() == "blocked"
+        or len(_as_list(gate.get("blockers"))) > 0
+    )
+    return _ops_tab_badge(
+        count=count,
+        tone="critical" if blocked else "warning" if count > 0 else "neutral",
+        title=(
+            f"{count} dedup review item{'' if count == 1 else 's'}"
+            if count > 0
+            else "No dedup review items"
+        ),
+    )
+
+
 def _ops_tab_counts_cache_path(api: _AdminOpsTabCountsRouteApi) -> Path:
     """Cache file sits alongside jobs-source-state.json (data dir, not _out/)."""
     return Path(api.JOBS_FETCH_REPORT_PATH).with_name("ops-tab-counts.json")
@@ -179,6 +225,7 @@ def _ops_tab_counts_cache_key(api: _AdminOpsTabCountsRouteApi) -> list[list[Any]
         Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH),
         Path(api.SOURCE_POLICY_REVIEW_STATE_PATH),
         Path(api.JOBS_FETCH_REPORT_PATH).with_name("registry-conflict-adjudication.json"),
+        Path(api.JOBS_FETCH_REPORT_PATH),
     )
     signature: list[list[Any]] = []
     for path in paths:
@@ -313,10 +360,14 @@ def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, 
             error=str(exc),
         )
 
-    badges["dedup"] = _ops_tab_badge(
-        loaded=False,
-        title="Dedup count loads with dedup diagnostics",
-    )
+    try:
+        badges["dedup"] = _dedup_badge_from_fetch_report(api)
+    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        badges["dedup"] = _ops_tab_badge(
+            loaded=False,
+            title="Dedup count unavailable",
+            error=str(exc),
+        )
 
     payload = {
         "ok": True,

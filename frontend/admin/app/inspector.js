@@ -1,5 +1,12 @@
-const ENTITY_TYPES = {
-  source: {
+// Native-toggle and form elements must never be hijacked: clicking a <summary>
+// (Decision details, More row evidence, gate examples) must toggle in place.
+export function isInspectorExcludedTarget(target) {
+  return Boolean(
+    target?.closest?.("summary, details, label, input, select, textarea, button, a")
+  );
+}
+
+const ENTITY_TYPES = {  source: {
     label: "Source",
     dataAttr: "data-source-id",
     resolveData: function (target) {
@@ -275,6 +282,7 @@ export function createAdminInspectorController({
 
     document.addEventListener("click", function delegateHandler(event) {
       const target = event.target;
+      if (isInspectorExcludedTarget(target)) return;
       for (const [type, spec] of Object.entries(ENTITY_TYPES)) {
         if (spec.noDom) continue;
         const matched = target.closest(`[${spec.dataAttr}]`);
