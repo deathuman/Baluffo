@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { displayJobs } from "../../../frontend/jobs/app/runtime/list-view.js";
 import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
 
-function renderJobsList(jobs, options = {}) {
-  const jobsList = createElement();
-  const pagination = createElement();
-  const resultsSummary = createElement();
+function renderJobsList(jobs, options = {}, reuse = {}) {
+  const jobsList = reuse.jobsList || createElement();
+  const pagination = reuse.pagination || createElement();
+  const resultsSummary = reuse.resultsSummary || createElement();
   const metrics = [];
 
   displayJobs(
@@ -109,4 +109,46 @@ test("jobs list view explains the expected first-run empty state", () => {
   assert.match(jobsList.innerHTML, /several minutes/);
   assert.doesNotMatch(jobsList.innerHTML, /No jobs found matching your filters/);
   assert.equal(resultsSummary.textContent, "0 jobs");
+});
+
+test("jobs list view skips the DOM rewrite when rendered content is unchanged", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    requestAnimationFrame: callback => {
+      if (typeof callback === "function") callback();
+      return 1;
+    }
+  };
+
+  try {
+    const jobs = [{ id: "1", title: "Gameplay Engineer", company: "Studio", country: "NL" }];
+    const reused = {
+      jobsList: createElement(),
+      pagination: createElement(),
+      resultsSummary: createElement()
+    };
+    renderJobsList(jobs, {}, reused);
+    const htmlAfterFirstRender = reused.jobsList.innerHTML;
+    assert.match(htmlAfterFirstRender, /Gameplay Engineer/);
+    const firstSignature = reused.jobsList.dataset.contentSignature;
+    let writeCount = 0;
+    Object.defineProperty(reused.jobsList, "innerHTML", {
+      get() { return htmlAfterFirstRender; },
+      set() { writeCount += 1; },
+      configurable: true
+    });
+
+    renderJobsList(jobs, {}, reused);
+    assert.equal(writeCount, 0);
+
+    const second = renderJobsList(
+      [...jobs, { id: "2", title: "Engine B", company: "Studio", country: "NL" }],
+      {},
+      reused
+    );
+    assert.equal(writeCount, 1);
+    assert.notEqual(second.jobsList.dataset.contentSignature, firstSignature);
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });

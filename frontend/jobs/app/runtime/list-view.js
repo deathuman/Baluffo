@@ -77,6 +77,9 @@ function renderPagination(totalPages, {
     }
   }
 
+  const paginationSig = `p${totalPages}c${state.currentPage}`;
+  if (pagination.dataset.contentSignature === paginationSig) return;
+  pagination.dataset.contentSignature = paginationSig;
   setTimedInnerHTML(pagination, html, "frontend_render_jobs_pagination", {
     totalPages,
     currentPage: state.currentPage
@@ -107,6 +110,18 @@ export function goToPage(page, {
   writeStateToUrl();
 }
 
+function htmlSignature(html) {
+  let hash = 5381;
+  for (let i = 0; i < html.length; i += 1) {
+    hash = ((hash << 5) + hash + html.charCodeAt(i)) | 0;
+  }
+  return `${html.length}:${hash}`;
+}
+
+// ponytail: content-signature guard — boot/auth/auto-refresh paths re-enter
+// displayJobs with unchanged rows; skipping identical writes kills the
+// first-load flash/jump without touching every caller. Remove when all
+// boot paths render exactly once.
 export function displayJobs(jobs, {
   jobsList,
   pagination,
@@ -141,11 +156,12 @@ export function displayJobs(jobs, {
     delete jobsList.dataset.renderedRows;
     const emptyMessage = EMPTY_STATE_MESSAGES[String(emptyStateReason || "").trim()]
       || EMPTY_STATE_MESSAGES.default;
-    setTimedInnerHTML(
-      jobsList,
-      `<div class="no-results">${emptyMessage}</div>`,
-      "frontend_render_jobs_list_empty"
-    );
+    const emptyHtml = `<div class="no-results">${emptyMessage}</div>`;
+    const emptySig = htmlSignature(emptyHtml);
+    if (jobsList.dataset.contentSignature !== emptySig) {
+      jobsList.dataset.contentSignature = emptySig;
+      setTimedInnerHTML(jobsList, emptyHtml, "frontend_render_jobs_list_empty");
+    }
     setTimedInnerHTML(pagination, "", "frontend_render_jobs_pagination_empty");
     updateResultsSummary(resultsSummary, 0, 0, 0, allJobs.length);
     emitDesktopStartupMetric("jobs_display_empty");
@@ -166,7 +182,7 @@ export function displayJobs(jobs, {
     totalPages
   });
 
-  setTimedInnerHTML(jobsList, `
+  const listHtml = `
     <div class="jobs-table-header">
       <div class="job-row-header">
         <div class="col-title">Position</div>
@@ -189,10 +205,15 @@ export function displayJobs(jobs, {
         renderJobRowHtml
       })).join("")}
     </div>
-  `, "frontend_render_jobs_list", {
-    pageJobs: pageJobs.length,
-    totalCount
-  });
+  `;
+  const listSig = htmlSignature(listHtml);
+  if (jobsList.dataset.contentSignature !== listSig) {
+    jobsList.dataset.contentSignature = listSig;
+    setTimedInnerHTML(jobsList, listHtml, "frontend_render_jobs_list", {
+      pageJobs: pageJobs.length,
+      totalCount
+    });
+  }
   emitDesktopStartupMetric("jobs_display_dom_committed", {
     pageJobs: pageJobs.length
   });

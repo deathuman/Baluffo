@@ -23,7 +23,7 @@ test("jobs data-source delegates csv parse", () => {
   assert.equal(rows.length, 1);
 });
 
-test("jobs data-source fetchUnifiedJobs short-circuits on first unified JSON success", async () => {
+test("jobs data-source fetchUnifiedJobs races unified JSON mirrors and reports the winner", async () => {
   const calls = [];
   const result = await fetchUnifiedJobs({
     unifiedJsonSources: [
@@ -48,9 +48,31 @@ test("jobs data-source fetchUnifiedJobs short-circuits on first unified JSON suc
 
   assert.deepEqual(result.jobs, [{ id: "json" }]);
   assert.equal(result.sourceName, "Unified JSON A");
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.match(calls[0].url, /^json-a\?t=\d+/);
   assert.equal(calls[0].init.cache, "no-store");
+});
+
+test("jobs data-source fetchUnifiedJobs survives a failing primary via racing", async () => {
+  const result = await fetchUnifiedJobs({
+    unifiedJsonSources: [
+      { name: "Dead Mirror", url: "dead-a" },
+      { name: "Healthy Mirror", url: "healthy-b" }
+    ],
+    unifiedCsvSources: [],
+    allowSheetsFallback: false,
+    parseUnifiedPayload: payload => (Array.isArray(payload?.jobs) ? payload.jobs : []),
+    parseCSV: () => [],
+    fetcher: async url => {
+      if (String(url).startsWith("healthy-b?")) {
+        return { ok: true, json: async () => ({ jobs: [{ id: "from-b" }] }) };
+      }
+      throw new Error("mirror down");
+    }
+  });
+
+  assert.deepEqual(result.jobs, [{ id: "from-b" }]);
+  assert.equal(result.sourceName, "Healthy Mirror");
 });
 
 test("jobs data-source fetchUnifiedJobs falls back to Google Sheets when unified sources fail", async () => {

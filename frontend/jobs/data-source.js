@@ -91,6 +91,31 @@ async function fetchFromGoogleSheets(options = {}) {
   };
 }
 
+// ponytail: raced instead of sequential so one dead/slow mirror can't chain
+// 20s timeouts into a long feed load; tiers still prefer JSON over CSV over Sheets.
+async function raceFeedSources(sources, attemptOne, setSourceStatus, label) {
+  const candidateSources = (Array.isArray(sources) ? sources : []).filter(s => s && s.url);
+  if (candidateSources.length === 0) {
+    return { jobs: null, error: "", sourceName: "" };
+  }
+  if (typeof setSourceStatus === "function") {
+    setSourceStatus(candidateSources.length > 1
+      ? `Checking ${candidateSources.length} ${label}...`
+      : `Fetching from ${candidateSources[0].name}...`);
+  }
+  try {
+    return await Promise.any(candidateSources.map(async source => {
+      const result = await attemptOne(source);
+      if (!result || !Array.isArray(result.jobs) || result.jobs.length === 0) {
+        throw new Error(`no jobs from ${source.name}`);
+      }
+      return { jobs: result.jobs, error: "", sourceName: source.name };
+    }));
+  } catch {
+    return { jobs: null, error: "", sourceName: "" };
+  }
+}
+
 export async function fetchUnifiedJobs(options = {}) {
   const {
     unifiedJsonSources,
@@ -104,38 +129,38 @@ export async function fetchUnifiedJobs(options = {}) {
   } = options;
   const requestTimeoutMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 20000;
 
-  for (const source of unifiedJsonSources || []) {
-    try {
-      if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
+  const jsonResult = await raceFeedSources(
+    unifiedJsonSources,
+    async source => {
       const response = await fetcher(withCacheBuster(source.url), requestTimeoutMs, {
         cache: "no-store",
         headers: { Accept: "application/json" }
       });
-      if (!response.ok) continue;
+      if (!response.ok) throw new Error(`${source.name}: HTTP ${response.status}`);
       const payload = await response.json();
-      const jobs = parseUnifiedPayload(payload);
-      if (jobs.length > 0) return { jobs, error: "", sourceName: source.name };
-    } catch {
-      // Try next source.
-    }
-  }
+      return { jobs: parseUnifiedPayload(payload) };
+    },
+    setSourceStatus,
+    "unified JSON feed sources"
+  );
+  if (jsonResult.jobs && jsonResult.jobs.length > 0) return jsonResult;
 
-  for (const source of unifiedCsvSources || []) {
-    try {
-      if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
+  const csvResult = await raceFeedSources(
+    unifiedCsvSources,
+    async source => {
       const response = await fetcher(withCacheBuster(source.url), requestTimeoutMs, {
         cache: "no-store",
         headers: { Accept: "text/csv,*/*" }
       });
-      if (!response.ok) continue;
-      const csv = await response.text();
-      if (!csv || csv.length < 100) continue;
-      const jobs = parseCSV(csv);
-      if (jobs.length > 0) return { jobs, error: "", sourceName: source.name };
-    } catch {
-      // Try next source.
-    }
-  }
+      if (!response.ok) throw new Error(`${source.name}: HTTP ${response.status}`);
+      const csvText = await response.text();
+      if (!csvText || csvText.length < 100) throw new Error(`${source.name}: empty csv`);
+      return { jobs: parseCSV(csvText) };
+    },
+    setSourceStatus,
+    "unified CSV feed sources"
+  );
+  if (csvResult.jobs && csvResult.jobs.length > 0) return csvResult;
 
   if (allowSheetsFallback) {
     const sheetsFallback = await fetchFromGoogleSheets({

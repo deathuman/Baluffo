@@ -122,7 +122,6 @@ export function createJobsAuthController({
     if (shouldWaitForAuth()) {
       emitDesktopStartupMetric("jobs_auth_waiting");
       setAuthStatus("Local auth starting...");
-      setGuestNoticeVisible(false);
       toggleAuthButtons(false);
       setAuthControlsReady(false);
       authReadyPoller.schedulePoll();
