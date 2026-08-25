@@ -1,39 +1,44 @@
-## [0.2.135] - 2026-08-24
+## [0.2.136] - 2026-08-25
 
-> Shared Desktop + Umbrel Admin reliability patch: instant schedule-panel
-> hydration, JSON-authority source tables fix, /registry/sources legacy-mode
-> removal, and dead history-projection/state-reader retirement.
+> Shared Desktop + Umbrel Admin review-panels UX release: registry-conflict
+> paging and search, dedup evidence readability, source-policy bulk actions,
+> discovery lane honesty, and Ops tab/filter URL persistence.
 
-### Fixed
+### Added
 
-- Admin Ops schedule panel no longer sits on "loading schedule..." for the
-  first idle-poll interval (~10s) after opening or refreshing the page: the
-  bootstrap payload's schedule section now seeds the panel model directly,
-  with the early schedule GET kept as a fallback whenever seeding does not
-  yield a hydratable model.
-- Pending/Active source tables on JSON-authority deployments (default outside
-  SQLite migration) no longer stick on "Source tables refreshing" forever:
-  the compact-table payload now serves real limited rows from the normalized
-  JSON registry state instead of a degraded-empty stub.
-- Stale-report classification and live-task evidence no longer read the frozen
-  `admin-task-state.json` artifact; lifecycle rows are the sole liveness
-  authority. The packaged desktop also dropped its disk-fallback for conflict
-  diagnosis, and the dev supervisor stopped reclaiming PIDs from it.
+- `/registry/conflicts` GET supports optional additive paging params
+  (`limit`, `offset`, `queue`). When any param is present, conflict cards are
+  sorted by `reviewPriority`/`reviewQueue`/`familyKey`, the response gains
+  `returnedCount`, and `summary.conflictCount` stays the untouched total;
+  without params the payload is unchanged. The Admin Registry Conflicts panel
+  now loads 50 cards per page with a "Show 50 more" footer, a family/source
+  text search, and P0/P1-only auto-expanded groups.
+- Source Policy Review supports bulk acknowledge/snooze: checkbox selection
+  persisted across poll re-renders, "Acknowledge selected"/"Snooze selected"
+  actions reusing the existing per-pair review-action route, one summary
+  toast, and in-flight double-submit protection.
+- Discovery Review candidate lanes show honest "showing X of N" counts with
+  per-lane "Show 10 more" expansion (Ops panel only; the read-only registry
+  page preview stays static).
+- Ops tab selection and Registry Conflicts triage/queue/search filters persist
+  in the URL hash and restore on page load.
+- The Registry Conflicts action strip highlights the first conflict-source
+  check as the recommended step when conflicts are queued but no check has
+  ever run.
+
+### Changed
+
+- Dedup Lists suppress zero-count buckets across all count summaries, gate
+  metric chips, and the merge-reason line ("none" fallback), and raise
+  evidence-table/example caps from 5 to 10 rows. The dedup review-queue table
+  replaces its single semicolon-joined evidence string with labeled
+  per-row evidence disclosures.
+- Source Policy Review rows keep the first five metadata fields inline and
+  collapse the rest behind "More details" disclosures (pair rows, migration
+  candidates, blocked candidates, linked identities, suppression eligibility).
 - Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ### Removed
 
-- `/registry/sources` legacy modes: `view=full`, the `detail=full|summary`
-  selection, and the `activeCompact`/`compactActive` aliases now return HTTP
-  400 with `removedParams`. The endpoint serves one authority-aware
-  compact-table lane (`view=table` or omitted; JSON-authority deployments get
-  real rows instead of the previous degraded-empty stub). `/registry/summary`
-  no longer accepts the dead `cheap`/`storage` view aliases.
-- Dead report-file history projection lane (`sync_history_from_reports`,
-  `project_run_history`) and its facade/wiring; `/ops/history` and fetcher
-  metrics already read the lifecycle-ledger projection.
-- Runtime reads of the frozen `admin-task-state.json` artifact: stale-report
-  classification and live-task evidence checks now use lifecycle/report
-  signals only. The file is never consulted outside explicit migration
-  tooling, and the packaged desktop no longer falls back to it for conflict
-  diagnosis.
+- Unused plain-text `formatDedupAuditGate` dedup gate formatter and its
+  re-export.
