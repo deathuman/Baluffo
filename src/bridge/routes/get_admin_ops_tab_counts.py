@@ -164,7 +164,13 @@ def _discovery_review_badge_from_report(api: _AdminOpsTabCountsRouteApi) -> dict
 def _dedup_badge_from_fetch_report(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
     """Mirror frontend toDedupBadgeState so the badge loads without opening the tab."""
     report = _as_dict(api.load_json_object(Path(api.JOBS_FETCH_REPORT_PATH), {}))
-    evidence = _as_dict(_as_dict(report.get("latestRun")).get("dedupEvidence")) if report else {}
+    # Live artifacts carry top-level dedupEvidence; legacy/task-shaped reports
+    # nest it under latestRun. Accept both so the badge survives either writer.
+    evidence = _as_dict(report.get("dedupEvidence")) if report else {}
+    if not evidence:
+        evidence = (
+            _as_dict(_as_dict(report.get("latestRun")).get("dedupEvidence")) if report else {}
+        )
     if not evidence:
         return _ops_tab_badge(
             loaded=False,

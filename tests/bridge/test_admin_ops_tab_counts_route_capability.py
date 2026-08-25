@@ -373,6 +373,45 @@ def test_admin_ops_tab_counts_dedup_badge_loads_from_fetch_report(tmp_path: Path
     assert badge["title"] == "3 dedup review items"
 
 
+def test_admin_ops_tab_counts_dedup_badge_loads_from_flat_fetch_report_shape(
+    tmp_path: Path,
+) -> None:
+    """Live fetch reports carry top-level dedupEvidence (no latestRun wrapper)."""
+    api = MinimalAdminOpsTabCountsRouteApi(tmp_path)
+    _write_json(
+        api.DISCOVERY_REPORT_PATH,
+        {"summary": {"candidateCount": 1}, "candidateReview": {"totalCandidates": 1}},
+    )
+    _write_json(
+        api.JOBS_FETCH_REPORT_PATH,
+        {
+            "schemaVersion": 1,
+            "status": "completed",
+            "dedupEvidence": {
+                "reviewQueue": [{"dedupKey": "url:abc"}],
+                "dedupAuditGate": {
+                    "status": "blocked",
+                    "currentRunBlockingReviewQueueCount": 0,
+                    "blockers": ["provider_static_disagreement_needs_review"],
+                    "warnings": [],
+                },
+            },
+        },
+    )
+
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler, api=api, path="/admin/ops-tab-counts", query={"view": ["summary"]}
+        )
+        is True
+    )
+    badge = handler.sent[-1]["payload"]["badges"]["dedup"]
+    assert badge["loaded"] is True
+    assert badge["count"] == 1
+    assert badge["tone"] == "critical"
+
+
 def test_admin_ops_tab_counts_dedup_badge_recomputes_when_fetch_report_moves(
     tmp_path: Path,
 ) -> None:

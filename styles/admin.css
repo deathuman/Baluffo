@@ -1,8 +1,8 @@
 /* Shared severity tints — single source for status colors across admin panels. */
 :root {
-  --tint-ok: var(--tint-ok);
-  --tint-warning: var(--tint-warning);
-  --tint-critical: var(--tint-critical);
+  --tint-ok: #61aa77;
+  --tint-warning: #c9a86c;
+  --tint-critical: #d36d6d;
 }
 
 .admin-panel {

@@ -29,6 +29,17 @@ test("shared source-list hover avoids transition-all on startup-visible lists", 
   assert.doesNotMatch(componentsCss, /\.sources-list\s+li\s*\{[^}]*transition:\s*all/s);
 });
 
+test("severity tint variables are defined once with literal colors", () => {
+  // Cycle guard: a tint var must never reference itself (var-name inside its
+  // own definition makes every color-mix usage invalid at computed-value time
+  // and strips all status chip coloring).
+  const rootRule = adminCss.match(/:root\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(rootRule, /--tint-ok:\s*#[0-9a-fA-F]{6}/);
+  assert.match(rootRule, /--tint-warning:\s*#[0-9a-fA-F]{6}/);
+  assert.match(rootRule, /--tint-critical:\s*#[0-9a-fA-F]{6}/);
+  assert.doesNotMatch(rootRule, /--tint-\w+:\s*var\(--tint-/);
+});
+
 test("admin source tables reserve a fixed virtual viewport height", () => {
   assert.match(adminCss, /#admin-pending-sources[\s\S]*min-height:\s*calc\(var\(--admin-source-row-height\)/);
   assert.match(adminCss, /#admin-pending-sources \.jobs-table-body[\s\S]*height:\s*calc\(var\(--admin-source-visible-rows\)/);
