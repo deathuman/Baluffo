@@ -1,9 +1,19 @@
+/* Shared severity tints — single source for status colors across admin panels. */
+:root {
+  --tint-ok: var(--tint-ok);
+  --tint-warning: var(--tint-warning);
+  --tint-critical: var(--tint-critical);
+}
+
 .admin-panel {
-  background-color: var(--surface-2);
-  border: 1px solid var(--surface-8);
-  border-radius: 8px;
+  background:
+    radial-gradient(circle at right top, var(--accent-soft-bg), transparent 48%),
+    linear-gradient(180deg, var(--surface-4), var(--surface-2));
+  border: 1px solid var(--surface-11);
+  border-radius: 12px;
   padding: 1rem;
   margin: 0 0 1rem;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
 .admin-section-title {
@@ -461,15 +471,15 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-alert-banner.warning {
-  border-color: color-mix(in srgb, #c7a56a 60%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-warning) 60%, var(--surface-11));
 }
 
 .admin-alert-banner.critical {
-  border-color: color-mix(in srgb, #cf6a6a 65%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-critical) 65%, var(--surface-11));
 }
 
 .admin-alert-banner.healthy {
-  border-color: color-mix(in srgb, #62a273 55%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-ok) 55%, var(--surface-11));
 }
 
 .admin-alert-message {
@@ -497,15 +507,15 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-status-chip.healthy {
-  border-color: color-mix(in srgb, #61aa77 60%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-ok) 60%, var(--surface-11));
 }
 
 .admin-status-chip.warning {
-  border-color: color-mix(in srgb, #c9a86c 60%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-warning) 60%, var(--surface-11));
 }
 
 .admin-status-chip.critical {
-  border-color: color-mix(in srgb, #d36d6d 65%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-critical) 65%, var(--surface-11));
 }
 
 .admin-ops-schedule {
@@ -727,11 +737,11 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-dedup-audit-gate-status {
-  border-color: color-mix(in srgb, #c9a86c 55%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-warning) 55%, var(--surface-11));
 }
 
 .admin-dedup-audit-gate-ready {
-  border-color: color-mix(in srgb, #61aa77 55%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-ok) 55%, var(--surface-11));
 }
 
 .admin-dedup-audit-gate-summary {
@@ -811,11 +821,11 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-dedup-audit-gate-detail-blocker {
-  border-color: color-mix(in srgb, #c96c6c 48%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-critical) 48%, var(--surface-11));
 }
 
 .admin-dedup-audit-gate-detail-warning {
-  border-color: color-mix(in srgb, #c9a86c 42%, var(--surface-11));
+  border-color: color-mix(in srgb, var(--tint-warning) 42%, var(--surface-11));
 }
 
 .admin-dedup-audit-gate-detail-head {
@@ -931,7 +941,7 @@ body::-webkit-scrollbar-thumb:hover,
   display: inline-flex;
   max-width: 100%;
   padding: 0.12rem 0.42rem;
-  border: 1px solid color-mix(in srgb, #c9a86c 55%, var(--surface-11));
+  border: 1px solid color-mix(in srgb, var(--tint-warning) 55%, var(--surface-11));
   border-radius: 999px;
   background: color-mix(in srgb, var(--table-row-odd) 65%, transparent);
   color: var(--text-primary);
@@ -1806,11 +1816,11 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-ops-run-detail-warning {
-  color: color-mix(in srgb, #c9a86c 82%, white 18%);
+  color: color-mix(in srgb, var(--tint-warning) 82%, white 18%);
 }
 
 .admin-ops-run-detail-failure {
-  color: color-mix(in srgb, #d36d6d 82%, white 18%);
+  color: color-mix(in srgb, var(--tint-critical) 82%, white 18%);
 }
 
 .admin-ops-run-detail-hints ul {
@@ -1847,7 +1857,7 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-ops-run-analysis-hint {
-  color: color-mix(in srgb, #c9a86c 82%, white 18%);
+  color: color-mix(in srgb, var(--tint-warning) 82%, white 18%);
 }
 
 .admin-ops-run-timeline {
@@ -2495,10 +2505,10 @@ body::-webkit-scrollbar-thumb:hover,
 .admin-bulk-busy-message {
   margin-top: 0.55rem;
   padding: 0.45rem 0.55rem;
-  border: 1px solid #80604a;
-  border-radius: 7px;
-  background-color: rgba(128, 96, 74, 0.18);
-  color: #f0d1b6;
+  border: 1px solid color-mix(in srgb, var(--tint-warning) 55%, var(--surface-11));
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--tint-warning) 14%, transparent);
+  color: color-mix(in srgb, var(--tint-warning) 55%, var(--text-primary));
 }
 
 .admin-advanced-bulk-action-row {
@@ -2854,24 +2864,14 @@ body::-webkit-scrollbar-thumb:hover,
 
 /* ── Action Center ── */
 .action-center-panel {
-  background-color: var(--surface-2);
-  border: 1px solid var(--surface-8);
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 12px;
+  padding: 1rem;
   margin: 0 0 1rem;
-}
-
-.action-center-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.6rem;
-}
-
-.action-center-title {
-  font-size: 1.05rem;
-  margin: 0;
-  color: var(--text-primary);
+  background:
+    radial-gradient(circle at right top, var(--accent-soft-bg), transparent 48%),
+    linear-gradient(180deg, var(--surface-4), var(--surface-2));
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
 .action-center-items {
@@ -2882,29 +2882,26 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .action-center-item {
-  background-color: var(--surface-5);
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
   padding: 0.55rem 0.7rem;
+  background: color-mix(in srgb, var(--table-row-even) 68%, transparent);
 }
 
 .action-center-item.action-center-item-ok {
-  border-color: var(--accent-green, #2ea043);
-  background-color: var(--surface-3);
+  border-color: color-mix(in srgb, var(--tint-ok) 55%, var(--surface-11));
 }
 
 .action-center-item.action-center-item-neutral {
-  border-color: var(--surface-8);
-  background-color: var(--surface-3);
   color: var(--text-secondary);
 }
 
 .action-center-item.action-center-item-critical {
-  border-left: 3px solid var(--critical, #f85149);
+  border-color: color-mix(in srgb, var(--tint-critical) 65%, var(--surface-11));
 }
 
 .action-center-item.action-center-item-warning {
-  border-left: 3px solid var(--warning, #d29922);
+  border-color: color-mix(in srgb, var(--tint-warning) 60%, var(--surface-11));
 }
 
 .action-center-item-body {
@@ -2926,7 +2923,7 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .action-center-item-summary {
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: var(--text-primary);
   line-height: 1.35;
 }
@@ -2938,28 +2935,8 @@ body::-webkit-scrollbar-thumb:hover,
   flex-wrap: wrap;
 }
 
-.action-center-item-btn {
-  font-size: 0.78rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border-default);
-  background-color: var(--surface-7);
-  color: var(--text-primary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.action-center-item-btn:hover {
-  background-color: var(--surface-9);
-}
-
 .action-center-footer {
   margin-top: 0.6rem;
-  text-align: right;
-}
-
-.action-center-copy-btn {
-  font-size: 0.78rem;
 }
 
 .action-center-view-all {
@@ -3014,6 +2991,7 @@ body::-webkit-scrollbar-thumb:hover,
 /* ── Admin section nav bar ── */
 .admin-section-nav {
   display: flex;
+  justify-content: center;
   gap: 0.3rem;
   flex-wrap: wrap;
   padding: 0.4rem 0;

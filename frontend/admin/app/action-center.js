@@ -274,17 +274,17 @@ export function createActionCenterController({
 
     for (const action of actions) {
       if (action === "review") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="review" data-signal="${signal.id}">\u25B6 Review</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="review" data-signal="${signal.id}">\u25B6 Review</button>`;
       } else if (action === "retry_fetch") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="retry" data-signal="${signal.id}" data-preset="default">\uD83D\uDD04 Run Jobs Fetcher</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="default">\uD83D\uDD04 Run Jobs Fetcher</button>`;
       } else if (action === "retry_failed") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="retry" data-signal="${signal.id}" data-preset="retry_failed">\uD83D\uDD04 Retry failed</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="retry_failed">\uD83D\uDD04 Retry failed</button>`;
       } else if (action === "retry_sync") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="retry" data-signal="${signal.id}" data-preset="sync_pull">\uD83D\uDD04 Retry sync</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="sync_pull">\uD83D\uDD04 Retry sync</button>`;
       } else if (action === "copy_diagnostics") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="copy-diagnostics" data-signal="${signal.id}">\uD83D\uDCCB Copy diagnostics</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="copy-diagnostics" data-signal="${signal.id}">\uD83D\uDCCB Copy diagnostics</button>`;
       } else if (action === "dismiss") {
-        actionsHtml += `<button class="btn action-center-item-btn" data-action="dismiss" data-signal="${signal.id}">\u2715 Dismiss</button>`;
+        actionsHtml += `<button class="btn clear-filters-btn" data-action="dismiss" data-signal="${signal.id}">\u2715 Dismiss</button>`;
       }
     }
 
@@ -435,22 +435,49 @@ export function createActionCenterController({
     }
   }
 
-  function copySignalDiagnostics(signalId) {
+  // ponytail: execCommand fallback for non-secure contexts (Umbrel LAN http),
+  // where navigator.clipboard is unavailable; drop when the UI is https-only.
+  async function copyTextToClipboard(text) {
+    const clipboardApi = typeof navigator === "undefined" ? null : navigator.clipboard;
+    const secureContext = typeof window !== "undefined" && Boolean(window.isSecureContext);
+    if (clipboardApi && secureContext) {
+      try {
+        await clipboardApi.writeText(text);
+        return true;
+      } catch {
+        /* fall through to legacy path */
+      }
+    }
+    if (typeof document === "undefined") return false;
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function copySignalDiagnostics(signalId) {
     let json;
     if (signalId === "storage_health") json = pollCache.storage;
     else if (signalId === "sync_status") json = pollCache.sync;
     else json = pollCache.health;
-    try {
-      navigator.clipboard.writeText(JSON.stringify(json || {}, null, 2)).then(
-        () => showToast("Diagnostics copied", "success"),
-        () => showToast("Could not copy diagnostics", "warn")
-      );
-    } catch {
-      showToast("Could not copy diagnostics", "warn");
-    }
+    const ok = await copyTextToClipboard(JSON.stringify(json || {}, null, 2));
+    showToast(ok ? "Diagnostics copied" : "Could not copy diagnostics", ok ? "success" : "warn");
   }
 
-  function copyAllDiagnostics() {
+  async function copyAllDiagnostics() {
     const payload = {
       _meta: {
         generatedAt: nowIso(),
@@ -460,14 +487,8 @@ export function createActionCenterController({
       sync: pollCache.sync || { error: "endpoint not available" },
       storage: pollCache.storage || { error: "endpoint not available" }
     };
-    try {
-      navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(
-        () => showToast("All diagnostics copied", "success"),
-        () => showToast("Could not copy diagnostics", "warn")
-      );
-    } catch {
-      showToast("Could not copy diagnostics", "warn");
-    }
+    const ok = await copyTextToClipboard(JSON.stringify(payload, null, 2));
+    showToast(ok ? "All diagnostics copied" : "Could not copy diagnostics", ok ? "success" : "warn");
   }
 
   async function pollActionCenter(options = {}) {
@@ -570,6 +591,7 @@ export function createActionCenterController({
     startPolling,
     stopPolling,
     pollActionCenter,
+    copyAllDiagnostics,
     dispose
   };
 }

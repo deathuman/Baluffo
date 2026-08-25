@@ -22,13 +22,15 @@ function createFixture({
   getBridge,
   onSyncStatus,
   shouldDeferStorageHealth,
-  shouldDeferCoreSignals
+  shouldDeferCoreSignals,
+  showToast
 } = {}) {
   const refs = {
     actionCenterItemsEl: createElement(),
     actionCenterCopyBtnEl: createElement()
   };
   const calls = [];
+  const toasts = [];
   const controller = createActionCenterController({
     refs,
     getBridge: getBridge || (async path => {
@@ -45,13 +47,13 @@ function createFixture({
       return null;
     }),
     postBridge: async () => ({}),
-    showToast() {},
+    showToast: showToast || ((message, tone) => toasts.push([message, tone])),
     logAdminError() {},
     onSyncStatus,
     shouldDeferCoreSignals,
     shouldDeferStorageHealth
   });
-  return { refs, calls, controller };
+  return { refs, calls, toasts, controller };
 }
 
 test("action center renders partial state after lightweight clean core poll", async () => {
@@ -223,4 +225,60 @@ test("action center publishes fresh sync status for Source Sync panel hydration"
 
   assert.equal(publishedSync, syncPayload);
   assert.match(refs.actionCenterItemsEl.innerHTML, /Sync is enabled but not configured/);
+});
+
+test("copy all diagnostics falls back to execCommand on non-secure contexts", async () => {
+  const { controller, toasts } = createFixture();
+  let execCommandArgs = [];
+  const fakeTextArea = { value: "", style: {}, focus() {}, select() {}, setAttribute() {} };
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  globalThis.window = { isSecureContext: false };
+  globalThis.document = {
+    createElement: () => fakeTextArea,
+    body: {
+      appendChild() {},
+      removeChild() {}
+    },
+    execCommand: command => {
+      execCommandArgs.push(command);
+      return true;
+    }
+  };
+
+  try {
+    await controller.copyAllDiagnostics();
+
+    assert.deepEqual(execCommandArgs, ["copy"]);
+    assert.equal(fakeTextArea.value.includes('"health"'), true);
+    assert.deepEqual(toasts, [["All diagnostics copied", "success"]]);
+  } finally {
+    if (typeof previousWindow === "undefined") delete globalThis.window;
+    else globalThis.window = previousWindow;
+    if (typeof previousDocument === "undefined") delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
+test("copy all diagnostics reports failure when no clipboard path works", async () => {
+  const { controller, toasts } = createFixture();
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  globalThis.window = { isSecureContext: false };
+  globalThis.document = {
+    createElement: () => ({ value: "", style: {}, focus() {}, select() {}, setAttribute() {} }),
+    body: { appendChild() {}, removeChild() {} },
+    execCommand: () => false
+  };
+
+  try {
+    await controller.copyAllDiagnostics();
+
+    assert.deepEqual(toasts, [["Could not copy diagnostics", "warn"]]);
+  } finally {
+    if (typeof previousWindow === "undefined") delete globalThis.window;
+    else globalThis.window = previousWindow;
+    if (typeof previousDocument === "undefined") delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
 });

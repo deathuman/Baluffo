@@ -438,7 +438,6 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
     "Fetcher diagnostics"
   );
   await page.click("#admin-refresh-report-btn");
-  await page.click("#admin-refresh-ops-btn");
   const metrics = page.locator("#admin-ops-fetcher-metrics");
   const overviewTab = page.getByRole("tab", { name: "Overview" });
   const discoveryTab = page.getByRole("tab", { name: "Discovery Review" });

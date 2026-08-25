@@ -47,7 +47,6 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminDiscoveryLogDetailsEl: { token: "discoveryLogDetails" },
   adminBridgeStatusBadgeEl: { token: "bridgeStatusBadge" },
   adminShowZeroJobsToggleEl: { token: "showZeroJobsToggle" },
-  adminRefreshOpsBtnEl: { token: "refreshOpsBtn" },
   adminSyncPullBtnEl: { token: "syncPullBtn" },
   adminSyncPushBtnEl: { token: "syncPushBtn" },
   adminSyncTestBtnEl: { token: "syncTestBtn" },

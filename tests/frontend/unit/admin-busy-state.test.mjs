@@ -57,7 +57,6 @@ function buildRefs() {
     adminRetryFailedBtnEl: createElement("Retry Failed Sources"),
     adminRefreshReportBtnEl: createElement("Load Latest Report"),
     adminRefreshBtnEl: createElement("Refresh"),
-    adminRefreshOpsBtnEl: createElement("Refresh Ops Health"),
     adminSyncTestBtnEl: createElement("Test"),
     adminSyncPullBtnEl: createElement("Pull"),
     adminSyncPushBtnEl: createElement("Push"),

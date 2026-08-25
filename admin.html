@@ -24,9 +24,7 @@
     <p id="admin-source-status" data-ui="admin-source-status" class="source-status"></p>
 
     <section id="admin-action-center" data-ui="admin-action-center" class="action-center-panel">
-      <div class="action-center-header">
-        <h2 class="action-center-title">Action Center</h2>
-      </div>
+      <h2 class="admin-section-title">Action Center</h2>
       <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
         <div class="action-center-item action-center-item-neutral" data-state="checking">
           <div class="action-center-item-body">
@@ -36,7 +34,7 @@
         </div>
       </div>
       <div class="action-center-footer">
-        <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn action-center-copy-btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
+        <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
       </div>
     </section>
 
@@ -58,9 +56,6 @@
       <section id="admin-ops-section" class="admin-fetcher-panel admin-ops-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Operations Health</h3>
-          <div class="admin-fetcher-actions">
-            <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn" data-tooltip="Refresh operations health, run history, and alert summaries.">Refresh Ops Health</button>
-          </div>
         </div>
         <h4 class="admin-section-title">Operations Activity</h4>
         <div id="admin-ops-history" data-ui="admin-ops-history" class="jobs-list"></div>

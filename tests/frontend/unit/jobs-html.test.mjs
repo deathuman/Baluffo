@@ -32,7 +32,6 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
     [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current local jobs data without checking sources\."/],
     [savedHtml, /id="history-panel-toggle-btn"[\s\S]*<svg viewBox="0 0 24 24"/],
     [savedHtml, /class="activity-toggle-label">Activity timeline<\/span>/],
-    [adminHtml, /id="admin-refresh-ops-btn"[^>]+data-tooltip="Refresh operations health, run history, and alert summaries\."/],
     [adminHtml, /id="admin-run-discovery-btn"[^>]+data-tooltip="Run source discovery with the default bridge preset\."/],
     [adminHtml, /id="admin-load-discovery-btn"[^>]+data-tooltip="Load the latest source discovery report\."/],
     [adminHtml, /id="admin-add-manual-source-btn"[^>]+data-tooltip="Add the entered source URL to the review queue\."/],
@@ -48,7 +47,7 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
   assert.doesNotMatch(savedHtml, /id="activity-refresh-btn"[^>]+data-tooltip=/);
   assert.doesNotMatch(savedHtml, /id="activity-close-btn"[^>]+data-tooltip=/);
   assert.doesNotMatch(adminHtml, /id="admin-refresh-btn"/);
-  assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-refresh-ops-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
+  assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
 });
 
 test("saved html exposes compact grouping controls and group header styling", () => {

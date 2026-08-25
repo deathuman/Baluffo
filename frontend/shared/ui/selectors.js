@@ -193,7 +193,6 @@ export const UI_TOKENS = Object.freeze({
     discoveryLogDetails: "admin-discovery-log-details",
     bridgeStatusBadge: "admin-bridge-status-badge",
     showZeroJobsToggle: "admin-show-zero-jobs-toggle",
-    refreshOpsBtn: "admin-refresh-ops-btn",
     syncPullBtn: "admin-sync-pull-btn",
     syncPushBtn: "admin-sync-push-btn",
     syncTestBtn: "admin-sync-test-btn",

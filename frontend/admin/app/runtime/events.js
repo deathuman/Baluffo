@@ -68,7 +68,6 @@ export function bindAdminRuntimeEvents({
     [refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources()],
     [refs.adminDemoteActiveBtnEl, () => registryController.demoteActiveSources()],
     [refs.adminAddManualSourceBtnEl, () => registryController.addManualSource()],
-    [refs.adminRefreshOpsBtnEl, () => opsController.loadOpsHealthData()],
     [refs.adminSyncTestBtnEl, () => syncController.testSyncConfig()],
     [refs.adminSyncPullBtnEl, () => syncController.pullSourcesSync()],
     [refs.adminSyncPushBtnEl, () => syncController.pushSourcesSync()]
