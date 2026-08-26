@@ -1,3 +1,27 @@
+## [0.2.139] - 2026-08-26
+
+> Container Jobs boot performance fix: no full-feed or diagnostics downloads
+> at boot, container runtime gates actually hold, and boot layout shifts are
+> gone.
+
+### Fixed
+
+- Container runtime flag forwarding repaired so Jobs boot skips the full
+  IndexedDB feed read, idle diagnostics polling, and browser-only sync
+  behavior inside containers.
+
+### Changed
+
+- Container Jobs boot renders the bounded startup snapshot directly; the
+  full public feed loads through the existing Reload control instead of
+  downloading automatically (~37 MB saved per boot at current feed sizes).
+- An unapplied Admin auto-refresh signal now surfaces as a Reload-needed
+  badge during initial container boot instead of forcing a full download;
+  signals arriving after the page is interactive still auto-refresh.
+- Guest sign-in notice swaps copy instead of collapsing, and auth/quick
+  filter areas reserve their heights, removing the remaining Jobs-boot
+  layout shifts (measured CLS ~0.007 warm locally).
+
 ## [0.2.138] - 2026-08-25
 
 > Follow-up patch restoring status-chip severity coloring and fixing the Ops

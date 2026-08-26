@@ -10,6 +10,39 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.139] - 2026-08-26
+
+> Container Jobs boot performance fix: stop downloading the full public feed
+> and diagnostics on boot, honor the container runtime gates that were
+> silently inert, and remove the remaining boot layout shifts.
+
+### Fixed
+
+- Container runtime flag forwarding repaired: `isContainerRuntimeMode` was
+  never forwarded into `composeJobsRuntime` or the Jobs feed initializer, so
+  every dep-based container gate (task-state polling, dashboard-health,
+  cache skip, browser full-feed sync) silently ran browser behavior in
+  containers. The flag now flows through composition, boot, and feed init.
+
+### Changed
+
+- Container Jobs boot no longer requests `jobs-unified-light.json`
+  (~37 MB decoded at current feed sizes), `jobs-fetch-report.json`,
+  `/ops/task-state?view=summary`, or `/ops/dashboard-health?view=summary`.
+  Boot renders the bounded startup snapshot directly; the full feed stays
+  available through the existing Reload control.
+- An unapplied Admin auto-refresh signal discovered during initial container
+  boot is acknowledged once and surfaces as a Reload-needed badge with status
+  text instead of triggering an immediate full-feed download. Signals arriving
+  after the page is interactive still auto-refresh as before, and signal ID
+  deduplication is preserved.
+- Guest sign-in notice swaps copy between guest/profile states instead of
+  hiding the element, eliminating the largest Jobs-boot layout shift.
+- Auth meta area and quick actions reserve their populated heights so label
+  swaps and data-driven filter chips can no longer reflow the page during
+  boot. Measured local-container CLS dropped from ~0.10 to 0.007 warm.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.138] - 2026-08-25
 
 > Follow-up patch restoring status-chip severity coloring and fixing the Ops
