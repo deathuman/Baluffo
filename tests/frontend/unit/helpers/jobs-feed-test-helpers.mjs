@@ -42,7 +42,7 @@ export function createBaseDeps(overrides = {}) {
       updateLastUpdatedText: () => {},
       fetchJobsReport: async () => null,
       startJobsBootstrap: async () => ({ started: true }),
-      windowObject: { localStorage: new Map() },
+      windowObject: { localStorage: new Map(), setTimeout: () => 0 },
       setJobsStartupState: (state, detail = "") => calls.startupStates.push({
         state: String(state || ""),
         detail: String(detail || "")
