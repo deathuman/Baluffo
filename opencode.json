@@ -9,7 +9,7 @@
         "-p",
         "3.13",
         "--from",
-        "serena-agent",
+        "serena-agent@latest",
         "serena",
         "start-mcp-server",
         "--context",
@@ -21,7 +21,8 @@
     "basic-memory": {
       "type": "local",
       "command": [
-        "basic-memory",
+        "uvx",
+        "basic-memory@latest",
         "mcp",
         "--project",
         "baluffo-memory"
