@@ -117,11 +117,11 @@ def _truncate_reason(reason: object, *, limit: int = 120) -> str:
     return _truncate_diagnostic_text(reason, limit=limit)
 
 
-def _pids_listening_on_tcp_port_via_proc(port: int) -> set[int]:
-    pids: set[int] = set()
-    if int(port or 0) <= 0:
-        return pids
+def _listening_socket_inodes_for_port(port: int) -> set[int]:
+    """Return socket inodes in /proc/net/tcp{,6} that are LISTENing on `port`."""
     inodes: set[int] = set()
+    if int(port or 0) <= 0:
+        return inodes
     for table in ("/proc/net/tcp", "/proc/net/tcp6"):
         try:
             text = Path(table).read_text(encoding="utf-8", errors="replace")
@@ -143,31 +143,51 @@ def _pids_listening_on_tcp_port_via_proc(port: int) -> set[int]:
                 inodes.add(int(parts[9]))
             except ValueError:
                 continue
+    return inodes
+
+
+def _fd_socket_inode(link: Path) -> int | None:
+    """Return the socket inode an fd symlink resolves to, or None if not a socket."""
+    try:
+        target = str(link.readlink())
+    except OSError:
+        return None
+    if not (target.startswith("socket:[") and target.endswith("]")):
+        return None
+    try:
+        return int(target[len("socket:[") : -1])
+    except ValueError:
+        return None
+
+
+def _fd_links_for_pid(pid_dir: Path) -> list[Path]:
+    """List a pid's fd symlinks, tolerating the pid vanishing mid-scan."""
+    try:
+        return list((pid_dir / "fd").iterdir())
+    except OSError:
+        return []
+
+
+def _pids_for_socket_inodes(inodes: set[int]) -> set[int]:
+    """Return PIDs whose open fds reference any of the given socket inodes."""
+    pids: set[int] = set()
     if not inodes:
         return pids
     try:
         for pid_dir in Path("/proc").iterdir():
-            if not pid_dir.name.isdigit():
-                continue
-            try:
-                for link in (pid_dir / "fd").iterdir():
-                    try:
-                        target = link.readlink()
-                    except OSError:
-                        continue
-                    if target.startswith("socket:[") and target.endswith("]"):
-                        try:
-                            inode = int(target[len("socket:[") : -1])
-                        except ValueError:
-                            continue
-                        if inode in inodes:
-                            pids.add(int(pid_dir.name))
-                            break
-            except OSError:
-                continue
+            if pid_dir.name.isdigit():
+                for link in _fd_links_for_pid(pid_dir):
+                    if _fd_socket_inode(link) in inodes:
+                        pids.add(int(pid_dir.name))
+                        break
     except OSError:
         pass
     return pids
+
+
+def _pids_listening_on_tcp_port_via_proc(port: int) -> set[int]:
+    """Find PIDs listening on `port` by peeking /proc/net/* and /proc/*/fd."""
+    return _pids_for_socket_inodes(_listening_socket_inodes_for_port(port))
 
 
 def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
