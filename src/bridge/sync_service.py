@@ -122,17 +122,6 @@ class SummarizeStateFunc(Protocol):
     def __call__(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, int]: ...
 
 
-class RunHistoryFuncs(Protocol):
-    """Compatibility protocol for legacy run history helpers."""
-
-    def append(self, row: dict[str, Any]) -> dict[str, Any]: ...
-    def upsert(
-        self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]
-    ) -> dict[str, Any]: ...
-    def load(self) -> list[dict[str, Any]]: ...
-    def prune_started_rows_for_type(self, entry_type: str, *, finished_at: str) -> None: ...
-
-
 class SyncService:
     """Service for managing source synchronization with GitHub.
 
@@ -817,15 +806,6 @@ class SyncService:
 
     # === Task Management ===
 
-    def _reconcile_sync_history(self) -> None:
-        """Reconcile sync history.
-
-        Note: Run history persistence is owned by the bridge runtime. This service
-        treats in-memory active run/thread tracking as canonical for whether a
-        sync task is actually running, even if stale 'started' rows exist.
-        """
-        return
-
     def sync_task_running(self) -> bool:
         """Check if a sync task is currently running.
 
@@ -833,7 +813,6 @@ class SyncService:
             True if a sync task is running
         """
         with self._ops_state_lock:
-            self._reconcile_sync_history()
             threads = self._sync_state.get_active_sync_threads()
             if any(getattr(worker, "is_alive", lambda: False)() for worker in threads.values()):
                 return True
@@ -1014,5 +993,4 @@ __all__ = [
     "LoadStateFunc",
     "PersistStateFunc",
     "SummarizeStateFunc",
-    "RunHistoryFuncs",
 ]

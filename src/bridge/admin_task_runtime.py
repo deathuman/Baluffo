@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -388,7 +389,7 @@ def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0, *, root_mod:
                 or status in {"ok", "warning", "error", "succeeded", "failed", "canceled"}
             ) and str(row.get("finishedAt") or "").strip():
                 return cast(JsonObject, row)
-        root_mod.threading.Event().wait(1.0)
+        time.sleep(1.0)
     raise TimeoutError("sync task did not finish within timeout")
 
 

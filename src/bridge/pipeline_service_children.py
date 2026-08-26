@@ -10,6 +10,7 @@ by ``PipelineService``.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
@@ -181,9 +182,7 @@ class _PipelineServiceChildCoordinationMixin(PipelineServiceState):
 
     @staticmethod
     def _report_wait_sleep(seconds: float) -> None:
-        from threading import Event
-
-        Event().wait(seconds)
+        time.sleep(seconds)
 
     def _wait_for_sync_push_row(self, run_id: str) -> dict[str, Any]:
         try:

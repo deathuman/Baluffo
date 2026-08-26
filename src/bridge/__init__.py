@@ -12,7 +12,6 @@ from src.bridge.sync_service import (
     BridgeLogFunc,
     LoadStateFunc,
     PersistStateFunc,
-    RunHistoryFuncs,
     SourceSyncModule,
     SummarizeStateFunc,
     SyncService,
@@ -50,5 +49,4 @@ __all__ = [
     "LoadStateFunc",
     "PersistStateFunc",
     "SummarizeStateFunc",
-    "RunHistoryFuncs",
 ]

@@ -10,6 +10,7 @@ child coordination, and status reconciliation stay in sibling mixin leaves consu
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -82,7 +83,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         if not auto_approval_running and not registry_finalization_running:
             return
         from datetime import UTC, datetime, timedelta
-        from threading import Event
 
         started_wait = datetime.now(UTC)
         while True:
@@ -134,7 +134,7 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     "Discovery registry finalization did not settle within the timeout; "
                     "refusing to run fetch against an unfinalized registry."
                 )
-            Event().wait(1.0)
+            time.sleep(1.0)
 
     def _run_fetch_stage(self, run_id: str) -> None:
         self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")

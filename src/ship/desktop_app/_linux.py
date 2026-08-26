@@ -117,6 +117,59 @@ def _truncate_reason(reason: object, *, limit: int = 120) -> str:
     return _truncate_diagnostic_text(reason, limit=limit)
 
 
+def _pids_listening_on_tcp_port_via_proc(port: int) -> set[int]:
+    pids: set[int] = set()
+    if int(port or 0) <= 0:
+        return pids
+    inodes: set[int] = set()
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            text = Path(table).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            if str(parts[3]).upper() != "0A":
+                continue
+            local = str(parts[1])
+            if ":" not in local:
+                continue
+            port_hex = local.split(":", 1)[1]
+            try:
+                if int(port_hex, 16) != int(port):
+                    continue
+                inodes.add(int(parts[9]))
+            except ValueError:
+                continue
+    if not inodes:
+        return pids
+    try:
+        for pid_dir in Path("/proc").iterdir():
+            if not pid_dir.name.isdigit():
+                continue
+            try:
+                for link in (pid_dir / "fd").iterdir():
+                    try:
+                        target = link.readlink()
+                    except OSError:
+                        continue
+                    if target.startswith("socket:[") and target.endswith("]"):
+                        try:
+                            inode = int(target[len("socket:[") : -1])
+                        except ValueError:
+                            continue
+                        if inode in inodes:
+                            pids.add(int(pid_dir.name))
+                            break
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return pids
+
+
 def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
     pids: set[int] = set()
     if int(port or 0) <= 0:
@@ -124,13 +177,15 @@ def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
     try:
         import psutil
     except ImportError:
-        return pids
+        # ponytail: psutil optional; /proc/net/* is the native fallback on Linux
+        return _pids_listening_on_tcp_port_via_proc(port)
     try:
         for conn in psutil.net_connections(kind="tcp"):
             if conn.status == "LISTEN" and conn.laddr and conn.laddr.port == port and conn.pid:
                 pids.add(int(conn.pid))
     except (psutil.AccessDenied, OSError):
-        return pids
+        # ponytail: partially fall back to /proc when psutil cannot enumerate
+        pids |= _pids_listening_on_tcp_port_via_proc(port)
     return pids
 
 
@@ -144,6 +199,10 @@ def _poll_process_exit_until_timeout(pid: int, *, timeout_s: float = 5.0) -> boo
         except OSError:
             return True
         time.sleep(0.05)
+    try:
+        os.kill(int(pid), 0)
+    except OSError:
+        return True
     return False
 
 

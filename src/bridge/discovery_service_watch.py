@@ -8,7 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery servic
 
 from __future__ import annotations
 
-import threading
+import time
 from typing import Any
 
 from src.bridge.active_task_snapshot import upsert_snapshot_rows
@@ -134,7 +134,7 @@ class DiscoveryServiceWatchMixin(DiscoveryServiceState):
                 started_at=started_at,
                 report=report,
             )
-            threading.Event().wait(0.8)
+            time.sleep(0.8)
 
     def _handle_discovery_completion_auto_sync(
         self,

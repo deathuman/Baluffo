@@ -254,7 +254,10 @@ class _PipelineServiceStatusMixin(PipelineServiceState):
                 sync_warning=warning,
             )
             return
-        if self._abort_requested(str(self._status.get("runId") or "")):
+        run_id = ""
+        with self._lock:
+            run_id = str(self._status.get("runId") or "")
+        if self._abort_requested(run_id):
             self._set_completed(
                 status="canceled", final_output_count=self._current_fetch_output_count()
             )

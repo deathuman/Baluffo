@@ -114,15 +114,16 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
         }
 
     def _append_terminal_stage_ledger_entry(self, finished_at: str) -> None:
-        terminal_stage = str(self._status.get("stage") or "")
-        ledger = self._status.get("_stageLedger")
-        if not isinstance(ledger, list) or not terminal_stage:
-            return
-        if ledger and str(ledger[-1].get("stage") or "") == terminal_stage:
-            return
-        ledger.append({"stage": terminal_stage, "enteredAt": finished_at, "label": ""})
-        if len(ledger) > 64:
-            del ledger[:-64]
+        with self._lock:
+            terminal_stage = str(self._status.get("stage") or "")
+            ledger = self._status.get("_stageLedger")
+            if not isinstance(ledger, list) or not terminal_stage:
+                return
+            if ledger and str(ledger[-1].get("stage") or "") == terminal_stage:
+                return
+            ledger.append({"stage": terminal_stage, "enteredAt": finished_at, "label": ""})
+            if len(ledger) > 64:
+                del ledger[:-64]
 
     def _snapshot_stage_ledger(self) -> list[dict[str, Any]]:
         # ponytail: snapshot ledger once; shared by all 3 terminal summaries

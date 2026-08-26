@@ -23,8 +23,6 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
         "bridge_log": lambda *args, **kwargs: None,
         "now_iso": lambda: "2026-05-06T19:00:00Z",
         "parse_iso": _parse_iso,
-        "append_run_history": lambda row: row,
-        "upsert_run_history": lambda entry, **_kwargs: entry,
         "sync_task_running": lambda: False,
         "current_fetch_output_count": lambda: 0,
         "load_json_object": lambda _path, default: default,

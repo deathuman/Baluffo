@@ -22,8 +22,6 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
         "bridge_log": lambda *args, **kwargs: None,
         "now_iso": lambda: "2026-05-06T19:00:00Z",
         "parse_iso": lambda _value: None,
-        "append_run_history": lambda row: row,
-        "upsert_run_history": lambda entry, **_kwargs: entry,
         "sync_task_running": lambda: False,
         "current_fetch_output_count": lambda: 0,
         "load_json_object": lambda _path, default: default,
@@ -246,7 +244,13 @@ def test_pipeline_service_writes_active_child_control_snapshot(tmp_path: Path) -
 def test_pipeline_service_refreshes_control_snapshot_during_child_heartbeat(
     tmp_path: Path,
 ) -> None:
-    timestamps = iter(["2026-05-06T19:00:00Z", "2026-05-06T19:00:15Z"])
+    timestamps = iter(
+        [
+            "2026-05-06T19:00:00Z",  # child-attach control write
+            "2026-05-06T19:00:15Z",  # heartbeatAt
+            "2026-05-06T19:00:30Z",  # snapshotAt
+        ]
+    )
     service = _make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
         control_data_dir=tmp_path,
@@ -264,7 +268,7 @@ def test_pipeline_service_refreshes_control_snapshot_during_child_heartbeat(
     payload = read_pipeline_status(tmp_path)
     assert payload["active"] is True
     assert payload["stage"] == "fetch"
-    assert payload["snapshotAt"] == "2026-05-06T19:00:15Z"
+    assert payload["snapshotAt"] == "2026-05-06T19:00:30Z"
     assert payload["activeChildren"][0]["runId"] == "fetch_1"
 
 

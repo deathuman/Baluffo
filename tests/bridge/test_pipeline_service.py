@@ -23,8 +23,6 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
         "bridge_log": lambda *args, **kwargs: None,
         "now_iso": lambda: "2026-05-06T19:00:00Z",
         "parse_iso": _parse_iso,
-        "append_run_history": lambda row: row,
-        "upsert_run_history": lambda entry, **_kwargs: entry,
         "sync_task_running": lambda: False,
         "current_fetch_output_count": lambda: 0,
         "load_json_object": lambda _path, default: default,
@@ -430,7 +428,6 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
     }
     finished_children: list[dict[str, Any]] = []
     failed_runs: list[dict[str, Any]] = []
-    cleared: list[str] = []
 
     service = _make_pipeline_service(
         pipeline_status=status,
@@ -462,7 +459,6 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
         fail_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
             failed_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
         ),
-        clear_task_state=lambda task_type: cleared.append(task_type),
     )
 
     payload = service.get_status_payload()
@@ -491,7 +487,6 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
     assert failed_runs[-1]["taskType"] == "pipeline"
     assert failed_runs[-1]["terminal_reason"] == "failed"
     assert failed_runs[-1]["summary"]["error"] == "pipeline_worker_inactive_after_fetch_completed"
-    assert cleared == []
 
 
 def test_status_payload_warns_after_inactive_pipeline_worker_terminal_sync_failure() -> None:
