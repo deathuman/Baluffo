@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createAdminBridgeButtonWatcher } from "../../../frontend/shared/admin-bridge-button.js";
+import {
+  createAdminBridgeButtonWatcher,
+  createAdminBridgeButtonWatcherForPage
+} from "../../../frontend/shared/admin-bridge-button.js";
 
 function createButton() {
   return { disabled: false };
@@ -276,6 +279,94 @@ test("admin bridge button watcher accepts a lightweight custom status path", asy
     await new Promise(resolve => setImmediate(resolve));
     watcher.stopAdminBridgeButtonWatch();
 
+    assert.deepEqual(paths, ["/tasks/run-jobs-pipeline-status"]);
+    assert.equal(states.at(-1)?.state, "online");
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("admin bridge page watcher derives desktop status path and delegates bootstrap", async () => {
+  const originalWindow = globalThis.window;
+  const states = [];
+  const paths = [];
+  let bootstrapCalled = false;
+  globalThis.window = {
+    location: { href: "http://127.0.0.1:8877/jobs.html" },
+    sessionStorage: { getItem() { return ""; } },
+    setInterval() { return 1; },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcherForPage({
+      buttonEl: createButton(),
+      baseUrl: "http://127.0.0.1:8877",
+      fetchJson: async (_base, path) => {
+        paths.push(path);
+        return { summary: { activeAlertCount: 0 } };
+      },
+      applyState: state => states.push(state),
+      isDesktopRuntimeMode: () => true,
+      awaitDesktopBootstrap: async () => {
+        bootstrapCalled = true;
+        return true;
+      }
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.equal(bootstrapCalled, true);
+    assert.deepEqual(paths, ["/ops/health?view=ready"]);
+    assert.equal(states.at(-1)?.state, "online");
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("admin bridge page watcher uses non-desktop status path without bootstrap gate", async () => {
+  const originalWindow = globalThis.window;
+  const states = [];
+  const paths = [];
+  let bootstrapCalled = false;
+  globalThis.window = {
+    location: { href: "http://192.168.50.61:8877/jobs.html" },
+    sessionStorage: { getItem() { return ""; } },
+    setInterval() { return 1; },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcherForPage({
+      buttonEl: createButton(),
+      baseUrl: "",
+      fetchJson: async (_base, path) => {
+        paths.push(path);
+        return { summary: { activeAlertCount: 0 } };
+      },
+      applyState: state => states.push(state),
+      isDesktopRuntimeMode: () => false,
+      awaitDesktopBootstrap: async () => {
+        bootstrapCalled = true;
+        return true;
+      }
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.equal(bootstrapCalled, false);
     assert.deepEqual(paths, ["/tasks/run-jobs-pipeline-status"]);
     assert.equal(states.at(-1)?.state, "online");
   } finally {

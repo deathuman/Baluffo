@@ -184,3 +184,37 @@ export function createAdminBridgeButtonWatcher({
     stopAdminBridgeButtonWatch
   };
 }
+
+/**
+ * Creates the standard admin bridge button watcher shared by the Jobs and Saved pages.
+ * Encapsulates the duplicated bridge-readiness / degrade / status-path config so each
+ * page only supplies its own button element and presentation callback.
+ * @param {Object} options
+ * @param {HTMLElement} options.buttonEl
+ * @param {string} options.baseUrl
+ * @param {Function} options.fetchJson
+ * @param {Function} options.applyState
+ * @param {Function} [options.isDesktopRuntimeMode] - Returns true when running as the desktop app
+ * @param {Function} [options.awaitDesktopBootstrap] - Desktop startup gate
+ * @returns same watcher shape as createAdminBridgeButtonWatcher
+ */
+export function createAdminBridgeButtonWatcherForPage({
+  buttonEl,
+  baseUrl,
+  fetchJson,
+  applyState,
+  isDesktopRuntimeMode,
+  awaitDesktopBootstrap = async () => true
+}) {
+  const isDesktop = () => Boolean(isDesktopRuntimeMode && isDesktopRuntimeMode());
+  return createAdminBridgeButtonWatcher({
+    buttonEl,
+    baseUrl,
+    fetchJson,
+    applyState,
+    awaitBridgeReady: isDesktop() ? awaitDesktopBootstrap : async () => true,
+    degradeOnFailure: true,
+    degradeWhenBridgeNotReady: !isDesktop(),
+    statusPath: isDesktop() ? "/ops/health?view=ready" : "/tasks/run-jobs-pipeline-status"
+  });
+}

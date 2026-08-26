@@ -1,6 +1,6 @@
 import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boot.js";
 import { fetchJson } from "../../../shared/api-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
+import { createAdminBridgeButtonWatcherForPage } from "../../../shared/admin-bridge-button.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { availabilityCheckResultLabel, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
@@ -258,15 +258,13 @@ export function createSavedBoot(deps) {
     cacheSavedDomState(deps.dom, cacheSavedDom(deps.documentObject));
     markSavedStep("saved_dom_cache_end");
     measureSavedStep("saved_dom_cache", "saved_dom_cache_start", "saved_dom_cache_end");
-    deps.viewState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
+    deps.viewState.adminBridgeWatcher = createAdminBridgeButtonWatcherForPage({
       buttonEl: deps.dom.adminPageBtnEl,
       baseUrl: deps.adminBridgeBase,
       fetchJson,
       applyState: applySavedAdminBridgeState,
-      awaitBridgeReady: deps.isDesktopRuntimeMode?.() ? awaitDesktopBootstrap : async () => true,
-      degradeOnFailure: true,
-      degradeWhenBridgeNotReady: !deps.isDesktopRuntimeMode?.(),
-      statusPath: deps.isDesktopRuntimeMode?.() ? "/ops/health?view=ready" : "/tasks/run-jobs-pipeline-status"
+      isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
+      awaitDesktopBootstrap,
     });
     deps.viewState.adminBridgeWatcher?.startAdminBridgeButtonWatch();
     bindSavedJobsListDelegation({

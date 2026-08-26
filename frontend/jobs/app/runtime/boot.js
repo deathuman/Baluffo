@@ -1,7 +1,7 @@
 import { bindAsyncClick, showToast } from "../../../shared/ui/index.js";
 import { fetchJson, postJson } from "../../../shared/api-client.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
+import { createAdminBridgeButtonWatcherForPage } from "../../../shared/admin-bridge-button.js";
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
@@ -121,15 +121,13 @@ export function createJobsBoot(deps) {
 
   function bootJobsPage() {
     cacheDom();
-    deps.runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
+    deps.runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcherForPage({
       buttonEl: deps.dom.adminPageBtn,
       baseUrl: deps.adminBridgeBase,
       fetchJson,
       applyState: deps.applyJobsAdminBridgeState,
-      awaitBridgeReady: deps.isDesktopRuntimeMode() ? awaitDesktopBootstrap : async () => true,
-      degradeOnFailure: true,
-      degradeWhenBridgeNotReady: !deps.isDesktopRuntimeMode(),
-      statusPath: deps.isDesktopRuntimeMode() ? "/ops/health?view=ready" : "/tasks/run-jobs-pipeline-status"
+      isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
+      awaitDesktopBootstrap,
     });
     deps.runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
       refs: deps.dom,
