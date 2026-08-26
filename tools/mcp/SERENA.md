@@ -67,7 +67,7 @@ The profile lives at `$env:CODEX_HOME\baluffo.config.toml` and resolves the late
 ```toml
 [mcp_servers.serena]
 command = "uvx"
-args = ["-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"]
+args = ["-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"]
 ```
 
 Do not run `codex mcp add serena` from this repo: that command writes the user-global Codex configuration and would restore unwanted startup in other workspaces. Starting Codex with `--profile baluffo` loads this profile's Serena registration, while the unpinned package reference resolves the latest available Serena release. The profile must contain the `mcp_servers.serena` block above and use `--project-from-cwd`, so Codex and OpenCode both activate the current workspace instead of relying on a stale registered project.
@@ -85,7 +85,7 @@ Current repo launch shape:
   "mcp": {
     "serena": {
       "type": "local",
-      "command": ["uvx", "-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
+      "command": ["uvx", "-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
       "enabled": true
     }
   }
