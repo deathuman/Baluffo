@@ -161,7 +161,12 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
                     row["progress"] = dict(progress)
                 if summary is not None:
                     row["summary"] = {**dict(row.get("summary") or {}), **dict(summary)}
-                self._save_rows_locked(rows)
+                only_heartbeat = not stage and progress is None and summary is None
+                if only_heartbeat:
+                    self._write_rows_json_locked(rows)
+                    self._mirror_row_to_storage(row)
+                else:
+                    self._save_rows_locked(rows)
                 return self._normalize_row(row)
         return None
 

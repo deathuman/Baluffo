@@ -475,37 +475,37 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             if self._runtime.abort_requests is not None:
                 self._runtime.abort_requests.pop(run_id, None)
             status_snapshot = dict(self._status)
-            self._write_control_status(status_snapshot)
-            if callable(self._start_lifecycle_run):
-                self._start_lifecycle_run(
-                    run_id=run_id,
-                    task_type="pipeline",
-                    started_at=started_at,
-                    stage="starting",
-                    owner_kind="pipeline",
-                    progress=self._pipeline_lifecycle_progress(status_snapshot),
-                    summary={
-                        "baselineOutputCount": int(baseline_output_count),
-                        "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
-                        "stage": "starting",
-                    },
-                )
-            worker = threading.Thread(
-                target=self._run_worker,
-                args=(run_id,),
-                name=f"jobs-pipeline-{run_id}",
-                daemon=True,
+        self._write_control_status(status_snapshot)
+        if callable(self._start_lifecycle_run):
+            self._start_lifecycle_run(
+                run_id=run_id,
+                task_type="pipeline",
+                started_at=started_at,
+                stage="starting",
+                owner_kind="pipeline",
+                progress=self._pipeline_lifecycle_progress(status_snapshot),
+                summary={
+                    "baselineOutputCount": int(baseline_output_count),
+                    "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+                    "stage": "starting",
+                },
             )
-            self._runtime.active_run_id = run_id
-            self._runtime.active_thread = worker
-            worker.start()
-            self._bridge_log(
-                "info",
-                "jobs_pipeline_started",
-                runId=run_id,
-                baseline=baseline_output_count,
-                jobsPageLoadedCount=jobs_page_loaded_count,
-            )
+        worker = threading.Thread(
+            target=self._run_worker,
+            args=(run_id,),
+            name=f"jobs-pipeline-{run_id}",
+            daemon=True,
+        )
+        self._runtime.active_run_id = run_id
+        self._runtime.active_thread = worker
+        worker.start()
+        self._bridge_log(
+            "info",
+            "jobs_pipeline_started",
+            runId=run_id,
+            baseline=baseline_output_count,
+            jobsPageLoadedCount=jobs_page_loaded_count,
+        )
         return {
             "started": True,
             "runId": run_id,

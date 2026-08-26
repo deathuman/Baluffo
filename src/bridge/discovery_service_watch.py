@@ -20,9 +20,12 @@ _DISCOVERY_WATCH_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
 
 
 class DiscoveryServiceWatchMixin(DiscoveryServiceState):
-    def _refresh_discovery_task_heartbeat(self, *, run_id: str, pid: int, started_at: str) -> None:
+    def _refresh_discovery_task_heartbeat(
+        self, *, run_id: str, pid: int, started_at: str, report: dict[str, Any] | None = None
+    ) -> None:
         now = self._deps.now_iso()
-        report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
+        if report is None:
+            report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
         report_run_id = str(report.get("runId") or "").strip()
         report_started_at = str(report.get("startedAt") or "").strip()
         report_started_dt = self._deps.parse_iso(report_started_at)
@@ -129,6 +132,7 @@ class DiscoveryServiceWatchMixin(DiscoveryServiceState):
                 run_id=run_id,
                 pid=pid,
                 started_at=started_at,
+                report=report,
             )
             threading.Event().wait(0.8)
 

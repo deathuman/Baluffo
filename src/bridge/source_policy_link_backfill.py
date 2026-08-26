@@ -115,12 +115,30 @@ def _row_identity_tokens(row: dict[str, Any]) -> set[str]:
     }
 
 
+def _build_state_identity_index(
+    state: dict[str, list[dict[str, Any]]],
+) -> dict[str, tuple[str, dict[str, Any]]]:
+    index: dict[str, tuple[str, dict[str, Any]]] = {}
+    for bucket in ("active", "pending"):
+        for row in state.get(bucket) or []:
+            if not isinstance(row, dict):
+                continue
+            for token in _row_identity_tokens(row):
+                if token and token not in index:
+                    index[token] = (bucket, row)
+    return index
+
+
 def _find_state_row_by_id(
-    state: dict[str, list[dict[str, Any]]], source_id: str
+    state: dict[str, list[dict[str, Any]]],
+    source_id: str,
+    index: dict[str, tuple[str, dict[str, Any]]] | None = None,
 ) -> tuple[str, dict[str, Any]] | None:
     target = _clean_text(source_id).lower()
     if not target:
         return None
+    if index is not None:
+        return index.get(target)
     for bucket in ("active", "pending"):
         for row in state.get(bucket) or []:
             if isinstance(row, dict) and target in _row_identity_tokens(row):
@@ -139,8 +157,10 @@ def _source_id(api: Any, row: dict[str, Any]) -> str:
         return ""
 
 
-def _find_static_row_name(state: dict[str, list[dict[str, Any]]], static_source_id: str) -> str:
-    match = _find_state_row_by_id(state, static_source_id)
+def _find_static_row_name(
+    state: dict[str, list[dict[str, Any]]], static_source_id: str, index=None
+) -> str:
+    match = _find_state_row_by_id(state, static_source_id, index=index)
     if not match:
         return ""
     _bucket, static_row = match
@@ -197,6 +217,7 @@ def _linked_candidate_from_provider_row(
     *,
     bucket: str,
     provider_row: dict[str, Any],
+    index=None,
 ) -> dict[str, Any] | None:
     static_source_id = _clean_text(provider_row.get("migrationSourceIdentity"))
     linked_by = _clean_text(provider_row.get("migrationLinkedBy"))
@@ -204,7 +225,7 @@ def _linked_candidate_from_provider_row(
         return None
     provider_id = _source_id(api, provider_row)
     static_name = _clean_text(provider_row.get("migrationSourceName")) or _find_static_row_name(
-        state, static_source_id
+        state, static_source_id, index=index
     )
     coverage = _provider_coverage_for_link(
         coverage_rows,
@@ -240,6 +261,7 @@ def _linked_candidate_from_soak_row(
     state: dict[str, list[dict[str, Any]]],
     coverage_rows: list[dict[str, Any]],
     row: dict[str, Any],
+    index=None,
 ) -> dict[str, Any] | None:
     provider_id = _clean_text(row.get("providerSourceId"))
     static_source_id = _clean_text(row.get("staticSourceId")) or _clean_text(
@@ -247,7 +269,7 @@ def _linked_candidate_from_soak_row(
     )
     if not provider_id or not static_source_id:
         return None
-    match = _find_state_row_by_id(state, provider_id)
+    match = _find_state_row_by_id(state, provider_id, index=index)
     bucket = ""
     provider_row: dict[str, Any] = {}
     if match:
@@ -266,7 +288,7 @@ def _linked_candidate_from_soak_row(
     static_name = (
         _clean_text(provider_row.get("migrationSourceName"))
         or _clean_text(row.get("staticSourceName"))
-        or _find_static_row_name(state, static_source_id)
+        or _find_static_row_name(state, static_source_id, index=index)
     )
     return {
         "providerBucket": bucket,
@@ -306,9 +328,9 @@ def _linked_candidate_key(row: dict[str, Any]) -> str:
 
 
 def _provider_link_state(
-    state: dict[str, list[dict[str, Any]]], provider_id: str
+    state: dict[str, list[dict[str, Any]]], provider_id: str, index=None
 ) -> dict[str, Any]:
-    match = _find_state_row_by_id(state, provider_id)
+    match = _find_state_row_by_id(state, provider_id, index=index)
     if not match:
         return {
             "providerBucket": "",
@@ -330,15 +352,17 @@ def _provider_link_state(
 
 
 def _enrich_review_candidates(
-    state: dict[str, list[dict[str, Any]]], payload: dict[str, Any]
+    state: dict[str, list[dict[str, Any]]], payload: dict[str, Any], index=None
 ) -> list[dict[str, Any]]:
+    if index is None:
+        index = _build_state_identity_index(state)
     candidates: list[dict[str, Any]] = []
     for row in _as_list(payload.get("reviewCandidates")):
         if not isinstance(row, dict):
             continue
         candidate = dict(row)
         candidate["currentProviderLinkState"] = _provider_link_state(
-            state, _clean_text(candidate.get("providerSourceId"))
+            state, _clean_text(candidate.get("providerSourceId")), index=index
         )
         candidates.append(candidate)
     return candidates
@@ -348,7 +372,10 @@ def _registry_linked_candidates(
     api: Any,
     state: dict[str, list[dict[str, Any]]],
     coverage_rows: list[dict[str, Any]],
+    index=None,
 ) -> dict[str, dict[str, Any]]:
+    if index is None:
+        index = _build_state_identity_index(state)
     linked_candidates_by_key: dict[str, dict[str, Any]] = {}
     for bucket in ("active", "pending"):
         for provider_row in state.get(bucket) or []:
@@ -360,6 +387,7 @@ def _registry_linked_candidates(
                 coverage_rows,
                 bucket=bucket,
                 provider_row=provider_row,
+                index=index,
             )
             if not linked_candidate:
                 continue
@@ -375,10 +403,11 @@ def _merge_soak_linked_candidates(
     coverage_rows: list[dict[str, Any]],
     linked_candidates_by_key: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    index = _build_state_identity_index(state)
     for row in _as_list(payload.get("linkedCandidates")):
         if not isinstance(row, dict):
             continue
-        linked_candidate = _linked_candidate_from_soak_row(state, coverage_rows, row)
+        linked_candidate = _linked_candidate_from_soak_row(state, coverage_rows, row, index=index)
         if not linked_candidate:
             continue
         key = _linked_candidate_key(linked_candidate)

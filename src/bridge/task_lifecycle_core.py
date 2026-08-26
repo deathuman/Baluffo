@@ -64,18 +64,39 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
         return rows[-self._max_rows :]
 
     def _save_rows_locked(self, rows: list[dict[str, Any]]) -> None:
+        trimmed = self._write_rows_json_locked(rows)
+        self._mirror_rows_to_storage(trimmed)
+
+    def _write_rows_json_locked(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows = [self._normalize_row(row) for row in rows if isinstance(row, dict)]
         rows.sort(key=lambda row: _clean_text(row.get("startedAt") or row.get("finishedAt")))
+        trimmed = rows[-self._max_rows :]
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._save_json_atomic(
             self._path,
             {
                 "schemaVersion": SCHEMA_VERSION,
                 "updatedAt": self._now_iso(),
-                "rows": rows[-self._max_rows :],
+                "rows": trimmed,
             },
         )
-        self._mirror_rows_to_storage(rows[-self._max_rows :])
+        return trimmed
+
+    def _mirror_row_to_storage(self, row: dict[str, Any]) -> None:
+        runtime_store = self._runtime_store()
+        if runtime_store is None:
+            return
+        mode = self._storage_mode(runtime_store)
+        if mode not in {"shadow", "sqlite"}:
+            return
+        try:
+            runtime_store.upsert_task_run(row)
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._rollback_task_runs_to_json(
+                runtime_store,
+                code="task_runs_shadow_write_failed",
+                message=str(exc),
+            )
 
     def _record_storage_parity(
         self,

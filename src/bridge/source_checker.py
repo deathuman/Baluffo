@@ -23,6 +23,10 @@ _EXPECTED_EMBEDDED_FETCH_RUNTIME_ERROR_TOKENS = (
     "Timeout",
 )
 
+# ponytail: cap per-page detail fetches; outer page loop is bounded but a single
+# page can yield many job-like links and each is a network fetch.
+_MAX_DETAIL_FETCHES_PER_PAGE = 30
+
 
 def _is_expected_embedded_fetch_error(exc: Exception) -> bool:
     if isinstance(exc, OSError):
@@ -248,7 +252,7 @@ def check_static_source(
 
         # _collect_detail_page_structured_links
         detail_links = html_extractor.extract_job_like_links(html, page_url)
-        for link in detail_links:
+        for link in list(detail_links)[:_MAX_DETAIL_FETCHES_PER_PAGE]:
             weak_links.add(link)
             detail_html, detail_error, detail_attempted, detail_used = fetch_page(link, timeout_s)
             browser_fallback_attempted = browser_fallback_attempted or detail_attempted

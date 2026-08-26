@@ -80,6 +80,7 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         ):
             return
         with self._lock:
+            self._status["heartbeatAt"] = self._now_iso()
             status_snapshot = dict(self._status)
             if not bool(status_snapshot.get("active")):
                 return
@@ -231,6 +232,7 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = ""
     ) -> None:
         with self._lock:
+            self._status["heartbeatAt"] = self._now_iso()
             prev_stage = str(self._status.get("stage") or "").strip()
             new_stage = str(stage or "unknown")
             self._status["stage"] = new_stage

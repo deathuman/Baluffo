@@ -378,8 +378,8 @@ class RegistryService:
         seen_rows: dict[str, dict[str, Any]] = {}
         auto_heal_report = self._empty_auto_heal_report()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
+        tombstones = self.load_tombstones()
         for bucket in ("active", "pending", "rejected"):
-            tombstones = self.load_tombstones()
             bucket_rows = filter_tombstoned_rows(
                 [dict(row) for row in state.get(bucket, []) if isinstance(row, dict)],
                 tombstones,
