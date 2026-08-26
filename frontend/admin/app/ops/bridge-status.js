@@ -1,4 +1,5 @@
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
+import { createVisibilityPausedInterval } from "../../../shared/visibility-poll.js?v=1";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -44,9 +45,9 @@ export function createOpsBridgeStatusController({
     const deferInitial = Boolean(options?.deferInitial);
     const startInterval = () => {
       if (state.bridgeStatusPollTimer) return;
-      state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
+      state.bridgeStatusPollTimer = createVisibilityPausedInterval(() => {
         pollBridgeStatus().catch(() => {});
-      }, bridgeStatusPollIntervalMs));
+      }, bridgeStatusPollIntervalMs);
     };
     if (deferInitial) {
       lastBridgeStatus = "checking";
@@ -68,7 +69,7 @@ export function createOpsBridgeStatusController({
       bridgeStatusInitialPollTimer = null;
     }
     if (!state.bridgeStatusPollTimer) return;
-    clearInterval(state.bridgeStatusPollTimer);
+    state.bridgeStatusPollTimer.stop();
     state.bridgeStatusPollTimer = null;
   }
 

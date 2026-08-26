@@ -4,6 +4,8 @@
  * Keeps poll logic shared while allowing page-specific presentation via applyState callback.
  */
 
+import { createVisibilityPausedInterval } from "./visibility-poll.js?v=1";
+
 /**
  * Creates an admin bridge button watcher.
  * @param {Object} options
@@ -159,9 +161,11 @@ export function createAdminBridgeButtonWatcher({
       setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
     }
     pollAdminBridgeButtonState().catch(() => { });
-    pollTimer = window.setInterval(() => {
-      pollAdminBridgeButtonState().catch(() => { });
-    }, intervalMs);
+    pollTimer = createVisibilityPausedInterval(
+      () => { pollAdminBridgeButtonState().catch(() => { }); },
+      intervalMs,
+      window
+    );
   }
 
   /**
@@ -169,7 +173,7 @@ export function createAdminBridgeButtonWatcher({
    */
   function stopAdminBridgeButtonWatch() {
     if (!pollTimer) return;
-    clearInterval(pollTimer);
+    pollTimer.stop();
     pollTimer = null;
   }
 

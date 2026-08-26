@@ -1,3 +1,5 @@
+import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js?v=1";
+
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;
 const POLL_INTERVAL_MS = 30000;
@@ -567,7 +569,7 @@ export function createActionCenterController({
       pollActionCenter({ includeStorage: true }).catch(() => {});
       fullPollTimer = null;
     }, fullPollDelayMs);
-    pollTimer = setInterval(() => {
+    pollTimer = createVisibilityPausedInterval(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
     }, POLL_INTERVAL_MS);
   }
@@ -578,7 +580,7 @@ export function createActionCenterController({
       fullPollTimer = null;
     }
     if (pollTimer) {
-      clearInterval(pollTimer);
+      pollTimer.stop();
       pollTimer = null;
     }
   }
