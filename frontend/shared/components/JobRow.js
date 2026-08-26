@@ -4,7 +4,7 @@
  * @param {{ fullCountryName: function, sanitizeUrl: function, getJobKeyForJob: function, savedJobKeys: Set, isSeen?: boolean, isNew?: boolean, isJobsApiReady: function, toContractClass: function, capitalizeFirst: function }} options
  * @returns {string} HTML string for the row
  */
-import { escapeHtml, tooltipAttrs } from "../ui/index.js?v=5";
+import { escapeHtml, tooltipAttrs } from "../ui/index.js";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 import { formatJobLocationColumns } from "../location-display.js";
 

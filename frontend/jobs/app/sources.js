@@ -3,7 +3,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromData,
   parseUnifiedJobsPayload,
   parseCSVLarge as parseCSVLargeFromData
-} from "../data-source.js?v=2";
+} from "../data-source.js";
 import { resolveContainerRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import { renderDataSourcesPanel } from "../render.js";
 

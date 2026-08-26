@@ -148,6 +148,16 @@ def _send_json_response(
         raise
 
 
+def _etag_matches(handler: Any, etag: str) -> bool:
+    try:
+        incoming = handler.headers.get("If-None-Match")
+    except AttributeError:
+        return False
+    if not incoming:
+        return False
+    return incoming.strip() == etag.strip()
+
+
 def _send_bytes_response(
     handler: Any,
     api: ServerHandlerApi,
@@ -159,15 +169,24 @@ def _send_bytes_response(
     status: int = 200,
     cache_control: str = "no-store",
     content_encoding: str = "",
+    etag: str | None = None,
 ) -> None:
     try:
         try:
             handler._baluffo_last_response_status = int(status)
         except _EXPECTED_HANDLER_STATUS_EXCEPTIONS:
             pass
+        if etag and status == 200 and _etag_matches(handler, etag):
+            handler.send_response(304)
+            handler.send_header("ETag", etag)
+            handler.send_header("Cache-Control", str(cache_control or "no-store"))
+            handler.end_headers()
+            return
         handler.send_response(status)
         handler.send_header("Content-Type", content_type)
         handler.send_header("Cache-Control", str(cache_control or "no-store"))
+        if etag:
+            handler.send_header("ETag", etag)
         if not is_container_runtime(api):
             handler.send_header("Access-Control-Allow-Origin", "*")
         if content_encoding:
@@ -414,6 +433,7 @@ def make_handler(
             status: int = 200,
             cache_control: str = "no-store",
             content_encoding: str = "",
+            etag: str | None = None,
         ) -> None:
             _send_bytes_response(
                 self,
@@ -425,6 +445,7 @@ def make_handler(
                 status=status,
                 cache_control=cache_control,
                 content_encoding=content_encoding,
+                etag=etag,
             )
 
         def _send_bytes(
@@ -437,6 +458,7 @@ def make_handler(
             status: int = 200,
             cache_control: str = "no-store",
             content_encoding: str = "",
+            etag: str | None = None,
         ) -> None:
             self.send_bytes(
                 body,
@@ -446,6 +468,7 @@ def make_handler(
                 status=status,
                 cache_control=cache_control,
                 content_encoding=content_encoding,
+                etag=etag,
             )
 
         def log_message(self, format: str, *args: Any) -> None:

@@ -1,5 +1,5 @@
 import { formatTaskProgressDetail } from "../../shared/task-progress.js";
-import { setTooltip } from "../../shared/ui/index.js?v=6";
+import { setTooltip } from "../../shared/ui/index.js";
 
 export function createAdminSyncController({
   state,

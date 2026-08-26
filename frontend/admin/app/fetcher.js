@@ -1,5 +1,5 @@
 import { applyAdminTaskProgress } from "./progress-ui.js";
-import { createAdminFetcherLogController } from "./fetcher/logs.js?v=1";
+import { createAdminFetcherLogController } from "./fetcher/logs.js";
 import {
   applyFetcherPresetMetadata as applyFetcherPresetMetadataFromModule,
   FETCHER_FALLBACK_MESSAGES,
@@ -7,7 +7,7 @@ import {
   getFetcherPresetMeta
 } from "./fetcher/presets.js";
 import { createAdminFetcherReportController } from "./fetcher/report.js";
-import { createAdminFetcherWatchController } from "./fetcher/watch.js?v=1";
+import { createAdminFetcherWatchController } from "./fetcher/watch.js";
 
 export { FETCHER_PRESET_META } from "./fetcher/presets.js";
 

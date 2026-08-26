@@ -1,4 +1,4 @@
-import { setTooltip } from "../../../shared/ui/index.js?v=6";
+import { setTooltip } from "../../../shared/ui/index.js";
 
 export const FETCHER_FALLBACK_MESSAGES = {
   bridgeUnavailable: "Bridge is offline; using VS Code task fallback for this run.",

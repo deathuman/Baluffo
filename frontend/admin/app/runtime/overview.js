@@ -1,4 +1,4 @@
-import { bindAsyncClick } from "../../../shared/ui/index.js?v=6";
+import { bindAsyncClick } from "../../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
 
 const ADMIN_WIPE_BUTTON_SELECTOR = ui(UI_TOKENS.admin.wipeBtn);

@@ -1,9 +1,9 @@
-import { setTooltip } from "../../../shared/ui/index.js?v=6";
+import { setTooltip } from "../../../shared/ui/index.js";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
   getMigrationLinkReviewActions
-} from "../../render/source-policy-review.js?v=6";
+} from "../../render/source-policy-review.js";
 import { getObjectValue } from "../../domain/ops-shape-utils.js";
 import { ACTIVE_PIPELINE_KPI_DELAYED_LABEL } from "../../domain/ops-fetch-kpi-model.js";
 

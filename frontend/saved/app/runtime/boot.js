@@ -1,6 +1,6 @@
 import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boot.js";
 import { fetchJson } from "../../../shared/api-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
+import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { availabilityCheckResultLabel, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";

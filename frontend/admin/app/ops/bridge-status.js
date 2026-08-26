@@ -1,5 +1,5 @@
-import { setTooltip } from "../../../shared/ui/index.js?v=6";
-import { createVisibilityPausedInterval } from "../../../shared/visibility-poll.js?v=1";
+import { setTooltip } from "../../../shared/ui/index.js";
+import { createVisibilityPausedInterval } from "../../../shared/visibility-poll.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();

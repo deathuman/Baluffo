@@ -1,9 +1,9 @@
-import { escapeHtml, setTooltip, tooltipAttrs } from "../../shared/ui/index.js?v=6";
+import { escapeHtml, setTooltip, tooltipAttrs } from "../../shared/ui/index.js";
 import {
   buildTaskRunAnalysis,
   buildTaskRunDiagnostics,
   buildTaskRunView
-} from "../../shared/task-run-view-model.js?v=11";
+} from "../../shared/task-run-view-model.js";
 import {
   formatDiscoverySubtaskProgress,
   formatScrapyStaticSourcesTailBadge,

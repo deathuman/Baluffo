@@ -5,7 +5,7 @@ import {
 import {
   CITY_NOISE_CONTRACT,
   normalizeCityNoiseText
-} from "../../shared/data/city-noise.js?v=1";
+} from "../../shared/data/city-noise.js";
 
 export function detectWorkType(text) {
   if (!text) return "Onsite";

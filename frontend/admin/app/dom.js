@@ -1,4 +1,4 @@
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js?v=12";
+import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 
 const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminSourceStatusEl: { token: "sourceStatus" },

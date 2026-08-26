@@ -11,7 +11,7 @@ export {
   normalizeCountryToken,
   sanitizeLocationField,
   sanitizePublicText
-} from "./domain/query.js?v=1";
+} from "./domain/query.js";
 export {
   classifyCompanyType,
   getJobKeyForJob,
@@ -26,4 +26,4 @@ export {
   getJobLocationCities,
   getJobLocationCountries,
   mapFreshnessAgeToScore
-} from "./domain/view.js?v=1";
+} from "./domain/view.js";

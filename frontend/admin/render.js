@@ -2,8 +2,8 @@ export {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "./render/overview.js?v=6";
-export { renderDiscoveryCandidateReviewHtml, renderSourcesTableHtml } from "./render/sources.js?v=8";
+} from "./render/overview.js";
+export { renderDiscoveryCandidateReviewHtml, renderSourcesTableHtml } from "./render/sources.js";
 export { appendAdminLogRow } from "./render/logs.js";
 export {
   renderAdminOpsAlerts,
@@ -13,4 +13,4 @@ export {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "./render/ops.js?v=28";
+} from "./render/ops.js";

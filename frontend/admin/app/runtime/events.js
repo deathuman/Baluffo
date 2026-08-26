@@ -1,4 +1,4 @@
-import { bindAsyncClick, bindUi } from "../../../shared/ui/index.js?v=6";
+import { bindAsyncClick, bindUi } from "../../../shared/ui/index.js";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { createAdminSectionLoadCoordinator } from "./section-loader.js";
 

@@ -1,9 +1,9 @@
-import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js?v=2";
+import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import {
   canManageAvailability as resolveCanManageAvailability,
   resolveContainerRuntimeMode
 } from "../../shared/local-data/runtime-context.js";
-import { JobsStateModule as jobsStateModule } from "../state.js?v=4";
+import { JobsStateModule as jobsStateModule } from "../state.js";
 import { postStartupMetricToBridge, resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
   BaluffoJobsParsing as jobsParsing,
@@ -23,10 +23,10 @@ import {
   normalizeJobs,
   getJobKeyForJob,
   toJobSnapshot
-} from "../domain.js?v=1";
+} from "../domain.js";
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
-import { renderJobRowHtml, showJobsError } from "../render.js?v=5";
+import { renderJobRowHtml, showJobsError } from "../render.js";
 import { sanitizeUrl } from "./runtime-utils.js";
 import {
   readAutoRefreshAppliedId,
@@ -37,9 +37,9 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=11";
-import { openFirstRunJobsNotice } from "./first-run-notice.js?v=1";
-import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
+import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
+import { openFirstRunJobsNotice } from "./first-run-notice.js";
+import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js";
 import {
   buildSeenRowKey,
   openJobsCacheDb as openJobsCacheDbFromModule,
@@ -49,7 +49,7 @@ import {
   markSeenJob,
   isJobsCacheStale
 } from "./cache.js";
-import { normalizeLifecycleStatus } from "./filters.js?v=6";
+import { normalizeLifecycleStatus } from "./filters.js";
 import {
   isDesktopRuntimeMode as isDesktopRuntimeModeFromStartup,
   buildJobsPageUrl,
@@ -61,8 +61,8 @@ import {
   compareJobsForSort,
   createFilterOptionsAccumulator,
   finalizeFilterOptions
-} from "./runtime/query.js?v=6";
-import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=10";
+} from "./runtime/query.js";
+import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
   fullCountryName as fullCountryNameForJobs,
@@ -76,9 +76,9 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=16";
-import { createJobsBoot } from "./runtime/boot.js?v=6";
-import { createJobsPageFlow } from "./runtime/page-flow.js?v=6";
+import { composeJobsRuntime } from "./runtime/composition.js";
+import { createJobsBoot } from "./runtime/boot.js";
+import { createJobsPageFlow } from "./runtime/page-flow.js";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",

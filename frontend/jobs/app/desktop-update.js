@@ -5,4 +5,4 @@ export {
   shouldPollDesktopUpdateStatus
 } from "./desktop-update-model.js";
 
-export { createJobsDesktopUpdateController } from "./desktop-update-controller.js?v=2";
+export { createJobsDesktopUpdateController } from "./desktop-update-controller.js";

@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../../shared/ui/index.js?v=6";
+import { escapeHtml } from "../../../shared/ui/index.js";
 import { createAdminDispatcher, ADMIN_ACTIONS } from "../../actions.js";
 import {
   applySourceFilter as applySourceFilterFromDomain,
@@ -15,19 +15,19 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js?v=25";
+} from "../../render.js";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=8";
-import { createAdminDiscoveryController } from "../discovery.js?v=2";
+import { createAdminAuthController } from "../auth.js";
+import { createAdminDiscoveryController } from "../discovery.js";
 import {
   createAdminFetcherController
-} from "../fetcher.js?v=15";
+} from "../fetcher.js";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=35";
-import { createAdminRegistryController } from "../registry.js?v=22";
-import { createAdminSyncController } from "../sync.js?v=14";
-import { createAdminOverviewController } from "./overview.js?v=15";
-import { createActionCenterController } from "../action-center.js?v=3";
+import { createAdminOpsController, formatBytes } from "../ops.js";
+import { createAdminRegistryController } from "../registry.js";
+import { createAdminSyncController } from "../sync.js";
+import { createAdminOverviewController } from "./overview.js";
+import { createActionCenterController } from "../action-center.js";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 import {

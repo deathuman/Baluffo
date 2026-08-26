@@ -6,7 +6,7 @@ import {
   JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js?v=11";
+} from "../pipeline.js";
 import { isActiveTaskStateRow } from "../../../shared/live-task.js";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);

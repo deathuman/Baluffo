@@ -8,7 +8,7 @@
  * @module ops-summary-dedup
  */
 
-import { escapeHtml } from "../../shared/ui/index.js?v=6";
+import { escapeHtml } from "../../shared/ui/index.js";
 import { formatDuration } from "./ops-shared.js";
 import { formatDedupSourceClasses } from "./ops-summary-source-policy.js";
 import {

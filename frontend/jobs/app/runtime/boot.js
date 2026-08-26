@@ -1,11 +1,11 @@
 import { bindAsyncClick, showToast } from "../../../shared/ui/index.js";
 import { fetchJson, postJson } from "../../../shared/api-client.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
+import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
-import { createJobsDesktopUpdateController } from "../desktop-update.js?v=2";
-import { initJobsFeed } from "../feed.js?v=10";
+import { createJobsDesktopUpdateController } from "../desktop-update.js";
+import { initJobsFeed } from "../feed.js";
 import { scheduleNonCriticalStartup } from "../startup.js";
 import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
 

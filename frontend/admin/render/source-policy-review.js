@@ -1,4 +1,4 @@
-import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js?v=6";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 

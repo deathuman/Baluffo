@@ -2,7 +2,7 @@ import {
   parseTimestampMs,
   getCityFilterOptionValues,
   sanitizeLocationField
-} from "./query.js?v=1";
+} from "./query.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

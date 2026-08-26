@@ -1,4 +1,4 @@
-import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js?v=1";
+import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js";
 
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;

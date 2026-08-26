@@ -12,7 +12,7 @@ import {
   renderQuickFilterOptionsHtml,
   renderQuickFiltersHtml,
   sanitizeQuickFilterKeys
-} from "../filters.js?v=6";
+} from "../filters.js";
 import { fullCountryName as fullCountryNameForJobs, getAvailableRegionOptions as getAvailableRegionOptionsForJobs, getCountryFilterOptionLabel as getCountryFilterOptionLabelForJobs, resolveCountryCode as resolveCountryCodeForJobs } from "../countries.js";
 import { capitalizeFirst } from "../runtime-utils.js";
 

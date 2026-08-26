@@ -8,7 +8,7 @@
  * @module ops-summary-source-policy
  */
 
-import { escapeHtml } from "../../shared/ui/index.js?v=6";
+import { escapeHtml } from "../../shared/ui/index.js";
 import { formatDuration, sanitizeSlowSourceName } from "./ops-shared.js";
 
 function formatSourceHealthRows(rows, emptyText, { includeDuration = false } = {}) {

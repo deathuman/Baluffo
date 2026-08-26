@@ -10,12 +10,12 @@
  * generic section builders.  No leaf module imports from here.
  */
 
-import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js?v=6";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import {
   buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,
   buildOpsTaskLaneRows
-} from "../domain/ops-health-view-model.js?v=2";
+} from "../domain/ops-health-view-model.js";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,

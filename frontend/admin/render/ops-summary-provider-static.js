@@ -7,7 +7,7 @@
  * @module ops-summary-provider-static
  */
 
-import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js?v=6";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 
 function humanizeProviderStaticValue(value, fallback = "unknown") {
   const text = String(value || "").trim();

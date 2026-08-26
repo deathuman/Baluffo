@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import time
@@ -51,7 +52,7 @@ PUBLIC_DATA_FILE_NAMES = frozenset(
     }
 )
 
-STATIC_CACHE_CONTROL = "public, max-age=3600"
+STATIC_CACHE_CONTROL = "public, no-cache"
 CONTAINER_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
 
@@ -144,6 +145,11 @@ def _cache_control_for_path(normalized: str) -> str:
     if suffix in {".html", ""}:
         return NO_STORE_CACHE_CONTROL
     return STATIC_CACHE_CONTROL
+
+
+def _etag_for_bytes(body: bytes) -> str:
+    digest = hashlib.sha1(body).hexdigest()
+    return f'"sha1:{digest}"'
 
 
 def _content_type_for_path(path: Path, *, gzip_json: bool = False) -> str:
@@ -361,14 +367,16 @@ class StaticFileService:
                 if gzip_path.is_file():
                     read_path = gzip_path
                     content_encoding = "gzip"
+            body = read_path.read_bytes()
             handler.send_bytes(
-                read_path.read_bytes(),
+                body,
                 content_type=_content_type_for_path(container_path),
                 status=200,
                 cache_control=CONTAINER_ASSET_CACHE_CONTROL
                 if is_container_asset
                 else NO_STORE_CACHE_CONTROL,
                 content_encoding=content_encoding,
+                etag=None if is_container_asset else _etag_for_bytes(body),
             )
             return True
 
@@ -428,11 +436,14 @@ class StaticFileService:
                     data_dir=self.data_dir,
                 )
                 record_operation_duration(f"storage.read.{surface}", elapsed_ms, error=failed)
+        cache_control = _cache_control_for_path(normalized)
+        etag = _etag_for_bytes(body) if cache_control == STATIC_CACHE_CONTROL else None
         handler.send_bytes(
             body,
             content_type=_content_type_for_path(candidate, gzip_json=gzip_json),
             status=200,
-            cache_control=_cache_control_for_path(normalized),
+            cache_control=cache_control,
             content_encoding="gzip" if gzip_json else "",
+            etag=etag,
         )
         return True

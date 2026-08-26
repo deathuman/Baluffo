@@ -1,12 +1,12 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import { awaitDesktopBootstrap } from "../../shared/local-data/desktop-client.js";
 import { resolveBridgeLocalDataMode, resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
-import { showToast, setText } from "../../shared/ui/index.js?v=6";
+import { showToast, setText } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=28";
+} from "../render.js";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -29,7 +29,7 @@ import {
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { cacheAdminDom } from "./dom.js?v=12";
+import { cacheAdminDom } from "./dom.js";
 import {
   isSyncBusy as isSyncBusyFromModule,
   syncAdminBusyUi as syncAdminBusyUiFromModule,
@@ -41,21 +41,21 @@ import {
   isDiscoveryMobileViewport as isDiscoveryMobileViewportFromModule,
   setDiscoveryLogOpen as setDiscoveryLogOpenFromModule,
   syncDiscoveryLogDisclosure as syncDiscoveryLogDisclosureFromModule
-} from "./discovery.js?v=2";
+} from "./discovery.js";
 import {
   normalizeSourceFilter as normalizeSourceFilterFromModule,
   setSourceFilterValue
 } from "./sources.js";
 import {
   FETCHER_PRESET_META
-} from "./fetcher.js?v=15";
+} from "./fetcher.js";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=44";
+import { composeAdminControllers } from "./runtime/composition.js";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
-import { bindAdminRuntimeEvents } from "./runtime/events.js?v=15";
+import { bindAdminRuntimeEvents } from "./runtime/events.js";
 import { applyAdminAdvancedBulkLayout } from "./bulk-actions.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";

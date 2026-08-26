@@ -1,5 +1,5 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
-import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=21";
+import { renderDiscoveryCandidateReviewHtml } from "../../render.js";
 import {
   deriveAdminActiveWorkContext,
   pipelineStatusIndicatesActive,

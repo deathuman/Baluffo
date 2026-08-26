@@ -8,9 +8,9 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=25";
-import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js?v=6";
-import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js?v=6";
+} from "../../render.js";
+import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
+import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js";
 import {
   ACTIVE_ADMIN_TASK_TYPES,
   ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES,

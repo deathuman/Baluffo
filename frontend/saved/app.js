@@ -1,4 +1,4 @@
-export { boot, needsInterviewTimestamp, toPromptLocalDateTime, parseScheduledTimestampInput } from "./app/runtime.js?v=1";
+export { boot, needsInterviewTimestamp, toPromptLocalDateTime, parseScheduledTimestampInput } from "./app/runtime.js";
 export { isEditingNotesFieldFromElement, shouldDeferSavedJobsRerender } from "./app/notes.js";
 export { computeAnchorScrollDelta } from "./app/render-cycle.js";
 export {
@@ -7,4 +7,4 @@ export {
   filterActivityEntriesForScope,
   countRecentActivityEntries
 } from "./app/activity.js";
-export { buildTimelinePrefsKey } from "./app/runtime.js?v=1";
+export { buildTimelinePrefsKey } from "./app/runtime.js";

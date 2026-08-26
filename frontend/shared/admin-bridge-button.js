@@ -4,7 +4,7 @@
  * Keeps poll logic shared while allowing page-specific presentation via applyState callback.
  */
 
-import { createVisibilityPausedInterval } from "./visibility-poll.js?v=1";
+import { createVisibilityPausedInterval } from "./visibility-poll.js";
 
 /**
  * Creates an admin bridge button watcher.
