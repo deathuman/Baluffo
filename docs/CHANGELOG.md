@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Changed
+
+- Jobs page auto-hydrates the complete feed right after the startup snapshot
+  renders (idle-deferred, off the boot critical path) in all runtimes, so the
+  full list no longer requires pressing Reload. Boot stays bounded: the
+  snapshot renders first, the full feed syncs in the background, and explicit
+  Reload continues to work as before.
+
 ## [0.2.139] - 2026-08-26
 
 > Container Jobs boot performance fix: stop downloading the full public feed
