@@ -29,6 +29,25 @@ export function createJobsPageFlow(deps) {
     deps.writeAutoRefreshAppliedId(deps.jobsAutoRefreshAppliedKey, signalId);
   }
 
+  // ponytail: container boot acknowledges an unapplied admin signal as
+  // "reload needed" instead of downloading/normalizing the full feed mid-boot.
+  const AUTO_REFRESH_ACK_STATUS_TEXT = "New jobs are available from the latest fetcher run. Use Reload to load them.";
+
+  function resolveUnappliedAutoRefreshSignal() {
+    const pendingSignal = deps.runtimeState.pendingAutoRefreshSignal;
+    deps.runtimeState.pendingAutoRefreshSignal = null;
+    return pendingSignal
+      || parseAutoRefreshSignalFromStartup(deps.readAutoRefreshSignal(deps.jobsAutoRefreshSignalKey));
+  }
+
+  function acknowledgeUnappliedAutoRefreshSignal() {
+    const signal = resolveUnappliedAutoRefreshSignal();
+    if (!signal?.id || signal.id === deps.runtimeState.lastHandledAutoRefreshSignalId) return;
+    deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_STATUS_TEXT);
+    deps.feedController.setRefreshJobsNeedsAttention(true);
+    markAutoRefreshSignalHandled(signal.id);
+  }
+
   function handleAutoRefreshSignalValue(rawValue) {
     return handleJobsAutoRefreshSignalValue(rawValue, {
       parseAutoRefreshSignal: parseAutoRefreshSignalFromStartup,
@@ -42,7 +61,11 @@ export function createJobsPageFlow(deps) {
     });
   }
 
-  async function applyPendingAutoRefreshSignal() {
+  async function applyPendingAutoRefreshSignal(options = {}) {
+    if (options.acknowledgeOnly) {
+      acknowledgeUnappliedAutoRefreshSignal();
+      return;
+    }
     return applyPendingJobsAutoRefreshSignal({
       getPendingAutoRefreshSignal: () => deps.runtimeState.pendingAutoRefreshSignal,
       setPendingAutoRefreshSignal: value => {

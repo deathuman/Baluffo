@@ -62,6 +62,7 @@ export function createJobsBoot(deps) {
       emitMetric: deps.emitDesktopStartupMetric,
       initAuth: () => deps.authController.initAuth(),
       isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
+      isContainerRuntimeMode: deps.isContainerRuntimeMode,
       readCachedJobs: () => deps.feedController.readCachedJobs(),
       normalizeRows: rows => {
         deps.runtimeState.allJobs = deps.normalizeJobs(rows, {

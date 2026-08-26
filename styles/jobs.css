@@ -91,6 +91,9 @@
   align-items: center;
   gap: 0.56rem 0.72rem;
   padding: 0.56rem 0.64rem;
+  /* ponytail: reserve populated chip-row height so data-driven quick filters
+     can't reflow the page after boot (CLS). */
+  min-height: 4.25rem;
   border-color: color-mix(in srgb, var(--accent) 34%, var(--surface-15));
   border-radius: 10px;
   background:

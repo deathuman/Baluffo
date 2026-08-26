@@ -899,6 +899,9 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.14rem;
+  /* ponytail: reserve two-line height so auth label/hint swaps during
+     resolution can't resize the header and register as CLS. */
+  min-height: 2.3125rem;
 }
 
 .auth-actions {

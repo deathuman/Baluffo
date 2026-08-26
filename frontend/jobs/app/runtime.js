@@ -69,9 +69,9 @@ import {
   getAvailableRegionOptions as getAvailableRegionOptionsForJobs
 } from "./countries.js";
 import {
-  JOBS_FETCH_REPORT_URLS,
   JOBS_AVAILABILITY_HISTORY_URLS,
   getStartupPreviewJsonUrlsForRuntime,
+  getJobsFetchReportUrlsForRuntime,
   fetchUnifiedJobs as fetchUnifiedJobsFromSources,
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
@@ -136,6 +136,7 @@ const jobsRuntime = composeJobsRuntime({
   isDesktopRuntimeModeFromStartup,
   postStartupMetricToBridge,
   callJobsBridgeFromModule,
+  isContainerRuntimeMode: () => resolveContainerRuntimeMode(),
   jobsAuthService,
   jobsSavedJobsService,
   jobsPageService,
@@ -178,7 +179,7 @@ const jobsRuntime = composeJobsRuntime({
   displayJobs: (...args) => jobsPageFlow.displayJobs(...args),
   jobsParsing,
   startupPreviewJsonUrls: getStartupPreviewJsonUrlsForRuntime(),
-  jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
+  jobsFetchReportUrls: getJobsFetchReportUrlsForRuntime(),
   availabilityHistoryUrls: JOBS_AVAILABILITY_HISTORY_URLS,
   parseUnifiedJobsPayload,
   openJobsCacheDbFromModule,

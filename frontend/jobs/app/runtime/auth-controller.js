@@ -47,8 +47,13 @@ export function createJobsAuthController({
   }
 
   function setGuestNoticeVisible(visible) {
-    if (!refs.guestNoticeEl) return;
-    refs.guestNoticeEl.hidden = !visible;
+    const { guestNoticeEl, guestNoticeGuestCopyEl, guestNoticeProfileCopyEl } = refs;
+    if (!guestNoticeEl || !guestNoticeGuestCopyEl || !guestNoticeProfileCopyEl) return;
+    // ponytail: copy swap keeps the notice footprint stable so auth resolution
+    // cannot collapse layout and register as CLS.
+    guestNoticeEl.hidden = false;
+    guestNoticeGuestCopyEl.hidden = !visible;
+    guestNoticeProfileCopyEl.hidden = visible;
   }
 
   function focusSavedJobsButton() {

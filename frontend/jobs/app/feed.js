@@ -395,7 +395,9 @@ export async function initJobsFeed(deps) {
       renderFirstRunBootstrapState();
     }
 
-    const cached = desktopMode ? null : await readCachedJobs();
+    // ponytail: container boots on the bounded startup snapshot; normalizing a
+    // full IndexedDB feed here blocks boot for seconds. Full feed via explicit Reload.
+    const cached = (desktopMode || isContainerRuntimeMode()) ? null : await readCachedJobs();
     emitMetric("jobs_cache_checked", {
       desktopMode,
       hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
@@ -424,7 +426,7 @@ export async function initJobsFeed(deps) {
       updateLastUpdatedText(cached.savedAt);
       setHasInitializedJobsFeed(true);
       scheduleNonCriticalStartupWork();
-      await applyPendingAutoRefreshSignal();
+      await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
       return;
     }
 
@@ -642,7 +644,7 @@ export async function initJobsFeed(deps) {
       );
       setHasInitializedJobsFeed(true);
       scheduleNonCriticalStartupWork();
-      await applyPendingAutoRefreshSignal();
+      await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
       if (!isContainerRuntimeMode()) {
         refreshJobsNow({ manual: false }).catch(() => {});
       }
@@ -652,7 +654,7 @@ export async function initJobsFeed(deps) {
     const ok = await refreshJobsNow({ manual: false, firstLoad: true });
     setHasInitializedJobsFeed(true);
     scheduleNonCriticalStartupWork();
-    await applyPendingAutoRefreshSignal();
+    await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
     if (!ok) {
       if (isDesktopRuntimeMode() && isSuccessfulJobsFetchReport(localReport)) {
         try {

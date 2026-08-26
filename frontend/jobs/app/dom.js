@@ -25,6 +25,8 @@ export function cacheJobsDom(doc = document) {
     sourceStatus: doc.querySelector(ui(t.sourceStatus)),
     fetchProgress: doc.querySelector(ui(t.fetchProgress)),
     guestNoticeEl: doc.querySelector(ui(t.guestNotice)),
+    guestNoticeGuestCopyEl: doc.querySelector(ui(t.guestNoticeGuestCopy)),
+    guestNoticeProfileCopyEl: doc.querySelector(ui(t.guestNoticeProfileCopy)),
     pagination: doc.querySelector(ui(t.pagination)),
     refreshJobsBtn: doc.querySelector(ui(t.refreshJobsBtn)),
     desktopUpdateToggleBtn: doc.querySelector(ui(t.desktopUpdateToggleBtn)),

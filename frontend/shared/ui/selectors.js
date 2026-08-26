@@ -59,6 +59,8 @@ export const UI_TOKENS = Object.freeze({
     fetchProgress: "fetch-progress",
     pagination: "pagination",
     guestNotice: "guest-signin-notice",
+    guestNoticeGuestCopy: "guest-signin-notice-guest",
+    guestNoticeProfileCopy: "guest-signin-notice-profile",
     activeFiltersSummary: "active-filters-summary",
     quickActions: "quick-actions",
     customizeQuickFiltersBtn: "customize-quick-filters-btn",

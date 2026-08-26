@@ -718,7 +718,9 @@ export function createJobsPipelineController({
         handlePipelineCompletionStatus(payload);
       } else {
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
-        if (!jobsPipelineUiState.updateTooltipFirstRunKnown) {
+        // ponytail: keep /ops/dashboard-health out of the initial idle container
+        // waterfall; tooltip first-run state is resolved on demand after that.
+        if (!jobsPipelineUiState.updateTooltipFirstRunKnown && !isContainerRuntimeMode?.()) {
           refreshJobsUpdateTooltipFromHealth()
             .then(() => {
               if (
