@@ -26,7 +26,7 @@ test("container runtime flag is forwarded through compose, boot, and composition
   );
   assert.match(
     bootJs,
-    /initJobsFeed\(\{[\s\S]*?isContainerRuntimeMode:\s*deps\.isContainerRuntimeMode/,
+    /initJobsFeed\)?\s*\(\{[\s\S]*?isContainerRuntimeMode:\s*deps\.isContainerRuntimeMode/,
     "boot.js init() must forward isContainerRuntimeMode into initJobsFeed"
   );
   const forwardingCount = compositionJs.match(/isContainerRuntimeMode:\s*\(\)\s*=>\s*Boolean\(deps\.isContainerRuntimeMode\?\.\(\)\)/g)?.length ?? 0;

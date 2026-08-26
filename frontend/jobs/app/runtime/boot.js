@@ -57,7 +57,7 @@ export function createJobsBoot(deps) {
   }
 
   async function init() {
-    return initJobsFeed({
+    return (deps.initJobsFeed ?? initJobsFeed)({
       hasJobsList: Boolean(deps.dom.jobsList),
       emitMetric: deps.emitDesktopStartupMetric,
       initAuth: () => deps.authController.initAuth(),
