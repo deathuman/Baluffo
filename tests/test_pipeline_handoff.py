@@ -52,8 +52,14 @@ def install_fake_wait_clock(
             waits.append(float(delay))
             clock["now"] = clock["now"] + datetime_module.timedelta(seconds=float(delay))
 
+    def fake_sleep(delay: float) -> None:
+        waits.append(float(delay))
+        clock["now"] = clock["now"] + datetime_module.timedelta(seconds=float(delay))
+
     monkeypatch.setattr(datetime_module, "datetime", FakeDateTime)
     monkeypatch.setattr(threading, "Event", FakeEvent)
+    # Pipeline wait loops now sleep via time.sleep (pipeline_service_children._report_wait_sleep).
+    monkeypatch.setattr("src.bridge.pipeline_service_children.time.sleep", fake_sleep)
     return clock, waits
 
 
@@ -93,8 +99,6 @@ def make_service(
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: "2026-03-22T12:00:04Z",
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: x,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 5,
         load_json_object=load_json_object,

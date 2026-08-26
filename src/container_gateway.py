@@ -753,10 +753,21 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         status: int = 200,
         cache_control: str = "no-store",
         content_encoding: str = "",
+        etag: str | None = None,
     ) -> None:
+        if etag and int(status or 200) == 200:
+            incoming = self.headers.get("If-None-Match")
+            if incoming and incoming.strip() == etag.strip():
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", str(cache_control or "no-store"))
+                self.end_headers()
+                return
         self.send_response(int(status or 200))
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache_control)
+        if etag:
+            self.send_header("ETag", etag)
         if content_encoding:
             self.send_header("Content-Encoding", content_encoding)
         if filename:

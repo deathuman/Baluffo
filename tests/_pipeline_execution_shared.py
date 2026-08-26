@@ -142,6 +142,12 @@ def _install_fake_wait_clock(
             waits.append(float(delay))
             clock["now"] = clock["now"] + datetime_module.timedelta(seconds=float(delay))
 
+    def fake_sleep(delay: float) -> None:
+        waits.append(float(delay))
+        clock["now"] = clock["now"] + datetime_module.timedelta(seconds=float(delay))
+
     monkeypatch.setattr(datetime_module, "datetime", FakeDateTime)
     monkeypatch.setattr(threading, "Event", FakeEvent)
+    # Pipeline wait loops now sleep via time.sleep (pipeline_service_children._report_wait_sleep).
+    monkeypatch.setattr("src.bridge.pipeline_service_children.time.sleep", fake_sleep)
     return clock, waits

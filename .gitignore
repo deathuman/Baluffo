@@ -29,6 +29,7 @@ coverage-report/
 tmp-manual-check/
 tmp-pytest-bridge/
 release-notes.md
+.container-frontend/
 
 # Local runtime/generated data (keep local, do not track)
 data/*.json

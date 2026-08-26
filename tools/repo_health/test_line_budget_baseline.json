@@ -51,7 +51,7 @@
     "tests/source_discovery/test_coverage_targets.py": "404",
     "tests/source_discovery/test_active_audit_runtime.py": "966",
     "tests/source_discovery/test_directory_sources.py": "800",
-    "tests/test_build_ship_bundle.py": 574,
+    "tests/test_build_ship_bundle.py": 575,
     "tests/test_desktop_updater.py": 640,
     "tests/test_jobs_fetcher_google_sheets.py": 474,
     "tests/test_jobs_fetcher_parsing.py": "787",
@@ -70,7 +70,7 @@
     "tests/test_source_sync.py": 991,
     "tests/source_discovery/test_web_search_directory_audit.py": "816",
     "tests/source_discovery/test_gamedevmap_active_dry_run.py": "801",
-    "tests/test_container_gateway.py": "401",
+    "tests/test_container_gateway.py": "451",
     "tests/test_local_data_store.py": "401",
     "tests/test_repo_guardrails.py": "401"
   }

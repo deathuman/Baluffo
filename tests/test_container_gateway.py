@@ -399,3 +399,53 @@ def test_gateway_serves_startup_feed_without_bridge_proxy(tmp_path: Path) -> Non
     rows = payload if isinstance(payload, list) else payload.get("jobs")
     assert isinstance(rows, list)
     assert rows
+
+
+def _get_url(base_url: str, path: str, *, headers: dict[str, str] | None = None):
+    from urllib.error import HTTPError
+
+    request = Request(f"{base_url}{path}", headers=headers or {})
+    try:
+        response = urlopen(request, timeout=5)
+    except HTTPError as exc:
+        # 304 and other non-2xx statuses are surfaced as HTTPError by urllib.
+        return exc.code, dict(exc.headers), exc.read()
+    try:
+        return response.status, dict(response.headers), response.read()
+    finally:
+        response.close()
+
+
+def test_gateway_static_files_send_etag_and_304_on_match(tmp_path: Path) -> None:
+    """The container gateway serves etagged static files and answers a matching
+    If-None-Match with 304, mirroring the bridge handler contract.
+    """
+    server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        status, headers, body = _get_url(base_url, "/frontend/shared/visibility-poll.js")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert status == 200
+    assert headers.get("Cache-Control") == "public, no-cache"
+    etag = headers.get("ETag")
+    assert etag
+    assert body
+
+    # A matching If-None-Match must be answered with 304 and no body.
+    server2, base_url2 = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        status2, headers2, body2 = _get_url(
+            base_url2,
+            "/frontend/shared/visibility-poll.js",
+            headers={"If-None-Match": etag},
+        )
+    finally:
+        server2.shutdown()
+        server2.server_close()
+
+    assert status2 == 304
+    assert body2 == b""
+    assert headers2.get("ETag") == etag
+    assert headers2.get("Cache-Control") == "public, no-cache"

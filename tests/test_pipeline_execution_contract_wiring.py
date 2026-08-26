@@ -115,8 +115,6 @@ def test_pipeline_worker_completes_without_error_and_uses_report_loader(tmp_path
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: "2026-03-22T12:00:00Z",
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: x,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,

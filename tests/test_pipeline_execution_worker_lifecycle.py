@@ -13,7 +13,6 @@ from tests._pipeline_execution_shared import (
     make_parse_iso,
 )
 from tests.admin.conftest import admin_bridge_entrypoint_root  # noqa: F401
-from tests.helpers.mutation import append_and_return
 
 
 def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path: Path) -> None:
@@ -90,8 +89,6 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -170,8 +167,6 @@ def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path)
         bridge_log=bridge_log,
         now_iso=lambda: "2026-03-22T12:00:00Z",
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: x,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -283,8 +278,6 @@ def test_run_worker_keeps_waiting_for_attached_fetch_child_while_live_evidence_r
         bridge_log=bridge_log,
         now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
@@ -395,8 +388,6 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: append_and_return(upserts, x, x),
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 0,
         load_json_object=load_json_object,
@@ -451,8 +442,6 @@ def test_pipeline_start_allows_live_fetch_to_attach_later(tmp_path: Path) -> Non
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: "2026-03-22T12:00:00Z",
         parse_iso=make_parse_iso(),
-        append_run_history=lambda x: x,
-        upsert_run_history=lambda x, **kw: x,
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 0,
         load_json_object=load_json_object_stub,
