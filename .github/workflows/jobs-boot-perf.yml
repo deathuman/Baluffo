@@ -1,0 +1,60 @@
+name: Jobs Container Boot Perf
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  measure:
+    name: Container Jobs boot performance gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "25.8.0"
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build container image (local)
+        run: docker build -t baluffo-perf:local --build-arg BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false .
+
+      - name: Run container
+        run: docker run -d --name baluffo-perf -p 8877:8080 baluffo-perf:local
+
+      - name: Wait for container readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8877/app/ready; then
+              echo "container ready"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Measure bounded Jobs boot (cold / warm / nav)
+        run: npm run measure:container-jobs-boot -- --base-url http://127.0.0.1:8877
+
+      - name: Container logs on failure
+        if: always()
+        run: docker logs baluffo-perf || true
+
+      - name: Tear down container
+        if: always()
+        run: docker rm -f baluffo-perf || true

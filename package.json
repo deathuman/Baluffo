@@ -97,6 +97,7 @@
     "perf:startup:pair": "npm run probe:desktop:startup:pair",
     "perf:startup:warm": "npm run probe:desktop:startup:warm",
     "perf:startup:jobs:cold": "npm run probe:desktop:startup:jobs:cold",
+    "measure:container-jobs-boot": "node scripts/measure_container_jobs_boot.mjs --mode cold && node scripts/measure_container_jobs_boot.mjs --mode warm && node scripts/measure_container_jobs_boot.mjs --mode nav",
     "perf:startup:jobs:pair": "npm run probe:desktop:startup:jobs:pair",
     "perf:startup:jobs:warm": "npm run probe:desktop:startup:jobs:warm",
     "perf:startup:admin:cold": "npm run probe:desktop:startup:admin:cold",
