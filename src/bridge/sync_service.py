@@ -946,15 +946,17 @@ class SyncService:
         if normalized_action not in {"pull", "push"}:
             raise ValueError("Invalid sync action")
 
-        if self.sync_task_running():
-            return {
-                "started": False,
-                "task": "source_sync",
-                "action": normalized_action,
-                "error": "Sync task already running",
-            }
+        with self._ops_state_lock:
+            if self.sync_task_running():
+                return {
+                    "started": False,
+                    "task": "source_sync",
+                    "action": normalized_action,
+                    "error": "Sync task already running",
+                }
+            run_id = f"sync_{uuid.uuid4().hex[:10]}"
+            self._sync_state.add_active_sync_run(run_id)
 
-        run_id = f"sync_{uuid.uuid4().hex[:10]}"
         started_at = now_iso()
         if self._task_lifecycle is not None:
             self._task_lifecycle.start_run(
@@ -969,9 +971,6 @@ class SyncService:
                     "automatic": bool(automatic),
                 },
             )
-
-        with self._ops_state_lock:
-            self._sync_state.add_active_sync_run(run_id)
 
         worker = threading.Thread(
             target=self._run_sync_task_worker,

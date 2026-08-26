@@ -55,11 +55,12 @@ def _run_sync_action_with_optional_progress(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
         )
-        if accepts_var_kwargs or "progress_callback" in signature.parameters:
-            return action_func(progress_callback=progress_callback)
-        return action_func()
+        use_progress = accepts_var_kwargs or "progress_callback" in signature.parameters
     except (TypeError, ValueError):
+        use_progress = True
+    if use_progress:
         return action_func(progress_callback=progress_callback)
+    return action_func()
 
 
 def _sync_size_fields(payload: Any) -> dict[str, Any]:
@@ -334,35 +335,35 @@ def run_sync_task_worker(
     )
 
     try:
-        if action == "pull":
-            result = _run_sync_action_with_optional_progress(
-                run_sync_pull, progress_callback=progress_callback
+        try:
+            if action == "pull":
+                result = _run_sync_action_with_optional_progress(
+                    run_sync_pull, progress_callback=progress_callback
+                )
+                status = _apply_pull_result_summary(result, summary)
+            else:
+                result = _run_sync_action_with_optional_progress(
+                    run_sync_push, progress_callback=progress_callback
+                )
+                status = _apply_push_result_summary(result, summary)
+        except _EXPECTED_SYNC_TASK_FAILURE_EXCEPTIONS as exc:
+            status = "error"
+            summary["error"] = str(exc)
+            error_code = str(getattr(exc, "code", "") or "").strip()
+            if error_code:
+                summary["errorCode"] = error_code
+            summary.update(_sync_observability_fields(getattr(exc, "fields", {})))
+            set_sync_status(action=action, result="error", error=str(exc))
+            write_live_task(
+                phase_key="error",
+                phase_label=f"Sync {action} failed",
+                counts={"action": action},
+                level="error",
+                message=f"Sync {action} failed: {exc}",
             )
-            status = _apply_pull_result_summary(result, summary)
-        else:
-            result = _run_sync_action_with_optional_progress(
-                run_sync_push, progress_callback=progress_callback
-            )
-            status = _apply_push_result_summary(result, summary)
-    except _EXPECTED_SYNC_TASK_FAILURE_EXCEPTIONS as exc:
-        status = "error"
-        summary["error"] = str(exc)
-        error_code = str(getattr(exc, "code", "") or "").strip()
-        if error_code:
-            summary["errorCode"] = error_code
-        summary.update(_sync_observability_fields(getattr(exc, "fields", {})))
-        set_sync_status(action=action, result="error", error=str(exc))
-        write_live_task(
-            phase_key="error",
-            phase_label=f"Sync {action} failed",
-            counts={"action": action},
-            level="error",
-            message=f"Sync {action} failed: {exc}",
-        )
 
-    finished_dt = now_utc()
-    duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
-    try:
+        finished_dt = now_utc()
+        duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
         write_live_task(
             phase_key=_sync_finished_phase_key(status),
             phase_label=_sync_finished_phase_label(action, status),

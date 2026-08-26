@@ -130,7 +130,10 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     autoApprovalStatus=status or "running",
                     registryFinalizationStatus=registry_status or "running",
                 )
-                return
+                raise RuntimeError(
+                    "Discovery registry finalization did not settle within the timeout; "
+                    "refusing to run fetch against an unfinalized registry."
+                )
             Event().wait(1.0)
 
     def _run_fetch_stage(self, run_id: str) -> None:
@@ -409,6 +412,14 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                 final_output_count=self._current_fetch_output_count(),
                 error=str(exc),
             )
+        except Exception as exc:
+            self._bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
+            self._set_completed(
+                status="error",
+                final_output_count=self._current_fetch_output_count(),
+                error=str(exc),
+            )
+            raise
 
     def start_task(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
