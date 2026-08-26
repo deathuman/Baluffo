@@ -159,6 +159,40 @@ test("container pipeline polling does not wait on task-state enrichment for acti
   }
 });
 
+test("initial idle container poll requests only the lightweight status route", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+    const paths = [];
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        paths.push(path);
+        if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50,
+      isContainerRuntimeMode: () => true
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.deepEqual(paths, ["/tasks/run-jobs-pipeline-status"]);
+    assert.equal(uiState.active, false);
+    assert.equal(uiState.bridgeOnline, true);
+  } finally {
+    restoreTimers();
+  }
+});
+
 test("idle first-run tooltip refresh does not repaint button after pipeline becomes active", async () => {
   const restoreTimers = installFakeTimers();
   try {

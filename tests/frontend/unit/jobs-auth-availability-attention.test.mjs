@@ -15,7 +15,9 @@ test("signed-in Jobs navigation shows Saved availability attention", async () =>
       authStatus: createElement(),
       authStatusHint: createElement(),
       authAvatar: createElement(),
-      guestNoticeEl: createElement({ hidden: true })
+      guestNoticeEl: createElement({ hidden: true }),
+      guestNoticeGuestCopyEl: createElement(),
+      guestNoticeProfileCopyEl: createElement({ hidden: true })
     },
     userState: {
       currentUser: null,

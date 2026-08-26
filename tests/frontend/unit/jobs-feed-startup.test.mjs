@@ -1002,8 +1002,15 @@ test("jobs auth controller skips the initial guest rerender after startup previe
     authStatus: createElement(),
     authStatusHint: createElement(),
     authAvatar: createElement(),
-    guestNoticeEl: createElement({ hidden: true })
+    guestNoticeEl: createElement(),
+    guestNoticeGuestCopyEl: createElement(),
+    guestNoticeProfileCopyEl: createElement({ hidden: true })
   };
+  const noticeState = () => [
+    refs.guestNoticeEl.hidden,
+    refs.guestNoticeGuestCopyEl.hidden,
+    refs.guestNoticeProfileCopyEl.hidden
+  ];
   const controller = createJobsAuthController({
     refs,
     userState,
@@ -1074,13 +1081,11 @@ test("jobs auth controller skips the initial guest rerender after startup previe
   await authStateChanged(null);
   assert.equal(renderCount, 0);
   assert.equal(skipDecisions.at(-1), false);
-  assert.equal(refs.guestNoticeEl.hidden, false);
-
+  assert.deepEqual(noticeState(), [false, false, true]);
   await authStateChanged({ uid: "user-1", displayName: "Warm User" });
   assert.equal(renderCount, 1);
-  assert.equal(refs.guestNoticeEl.hidden, true);
-
+  assert.deepEqual(noticeState(), [false, true, false]);
   await authStateChanged(null);
   assert.equal(renderCount, 2);
-  assert.equal(refs.guestNoticeEl.hidden, false);
+  assert.deepEqual(noticeState(), [false, false, true]);
 });
