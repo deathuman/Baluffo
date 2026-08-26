@@ -103,7 +103,8 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
     assert b"<html>index</html>" in page_body
     assert page_response.headers["Cache-Control"].startswith("no-store")
     _assert_no_cors(page_response)
-    assert css_response.headers["Cache-Control"] == "public, max-age=3600"
+    assert css_response.headers["Cache-Control"] == "public, no-cache"
+    assert css_response.headers.get("ETag")
     _assert_no_cors(css_response)
     config_text = config_body.decode("utf-8")
     assert "BALUFFO_FRONTEND_RUNTIME_CONFIG" in config_text
