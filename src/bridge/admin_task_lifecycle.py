@@ -90,72 +90,6 @@ class AdminTaskLifecycle:
             message=f"{surface} read authority rolled back to JSON",
         )
 
-    @staticmethod
-    def _route_key(row: dict[str, Any]) -> tuple[str, str]:
-        return (
-            str(row.get("taskType") or row.get("type") or "").strip().lower(),
-            str(row.get("runId") or row.get("id") or "").strip(),
-        )
-
-    def _compare_route_projection(
-        self,
-        *,
-        surface: str,
-        json_rows: list[dict[str, Any]],
-        sqlite_rows: list[dict[str, Any]],
-    ) -> bool:
-        selected_fields = (
-            "runId",
-            "taskType",
-            "status",
-            "lifecycleStatus",
-            "active",
-            "startedAt",
-            "heartbeatAt",
-            "finishedAt",
-            "durationMs",
-            "terminalReason",
-            "parentRunId",
-            "parentTaskType",
-            "ownerKind",
-            "ownerPid",
-            "stage",
-            "taskProgress",
-            "summary",
-        )
-        json_keys = {self._route_key(row) for row in json_rows}
-        sqlite_filtered = [row for row in sqlite_rows if self._route_key(row) in json_keys]
-        json_projection = [
-            {field: row.get(field) for field in selected_fields}
-            for row in json_rows
-            if self._route_key(row)[1]
-        ]
-        sqlite_projection = [
-            {field: row.get(field) for field in selected_fields}
-            for row in sqlite_filtered
-            if self._route_key(row)[1]
-        ]
-        json_projection.sort(key=lambda row: (str(row.get("taskType")), str(row.get("runId"))))
-        sqlite_projection.sort(key=lambda row: (str(row.get("taskType")), str(row.get("runId"))))
-        if json_projection != sqlite_projection:
-            self._record_diagnostic(
-                surface=surface,
-                code=f"{surface}_read_projection_mismatch",
-                ok=False,
-                details={
-                    "jsonCount": len(json_projection),
-                    "sqliteCount": len(sqlite_projection),
-                },
-            )
-            return False
-        self._record_diagnostic(
-            surface=surface,
-            code=f"{surface}_read_projection_match",
-            ok=True,
-            details={"rowCount": len(json_projection)},
-        )
-        return True
-
     def _read_task_rows(
         self,
         *,
@@ -189,14 +123,6 @@ class AdminTaskLifecycle:
                 message=str(exc),
             )
             return json_rows()
-        if mode == "shadow":
-            fallback_rows = json_rows()
-            self._compare_route_projection(
-                surface=surface,
-                json_rows=fallback_rows,
-                sqlite_rows=sqlite_rows,
-            )
-            return fallback_rows
         return sqlite_rows
 
     def _get_service(self) -> TaskLifecycleService:
