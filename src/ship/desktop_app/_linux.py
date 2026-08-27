@@ -168,26 +168,45 @@ def _fd_links_for_pid(pid_dir: Path) -> list[Path]:
         return []
 
 
-def _pids_for_socket_inodes(inodes: set[int]) -> set[int]:
-    """Return PIDs whose open fds reference any of the given socket inodes."""
-    pids: set[int] = set()
+def _socket_inode_holders(inodes: set[int]) -> dict[int, int]:
+    """Map pid -> socket inode for /proc/*/fd entries referencing `inodes`."""
+    holders: dict[int, int] = {}
     if not inodes:
-        return pids
+        return holders
     try:
         for pid_dir in Path("/proc").iterdir():
             if pid_dir.name.isdigit():
                 for link in _fd_links_for_pid(pid_dir):
-                    if _fd_socket_inode(link) in inodes:
-                        pids.add(int(pid_dir.name))
+                    inode = _fd_socket_inode(link)
+                    if inode in inodes:
+                        holders[int(pid_dir.name)] = inode
                         break
     except OSError:
         pass
-    return pids
+    return holders
 
 
 def _pids_listening_on_tcp_port_via_proc(port: int) -> set[int]:
-    """Find PIDs listening on `port` by peeking /proc/net/* and /proc/*/fd."""
-    return _pids_for_socket_inodes(_listening_socket_inodes_for_port(port))
+    """Find PIDs listening on `port` by peeking /proc/net/* and /proc/*/fd.
+
+    Candidates are re-validated against fresh /proc/net reads on both sides of
+    the /proc/*/fd walk: a pid is only reported while its matched socket inode
+    is still a LISTENing socket on `port`, so a listener that exited (or whose
+    inode the kernel recycled into an unrelated socket) cannot pin a stale or
+    reused pid. The pre-walk re-read is also an escape hatch: when the listener
+    vanished during the window between reads, the expensive per-process fd scan
+    is skipped entirely instead of proving nothing afterwards.
+    """
+    port_inodes = _listening_socket_inodes_for_port(port)
+    if not port_inodes:
+        return set()
+    if not _listening_socket_inodes_for_port(port):
+        return set()
+    holders = _socket_inode_holders(port_inodes)
+    if not holders:
+        return set()
+    current_inodes = _listening_socket_inodes_for_port(port)
+    return {pid for pid, inode in holders.items() if inode in current_inodes}
 
 
 def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:

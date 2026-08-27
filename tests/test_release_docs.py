@@ -59,45 +59,52 @@ def test_changelog_unreleased_guardrail_accepts_current_tree(repo_root: Path) ->
 def test_changelog_unreleased_guardrail_rejects_missing_unreleased(repo_root: Path) -> None:
     """A changelog with no `[Unreleased]` heading must fail the docs guardrail."""
     changelog_path = repo_root / "docs" / "CHANGELOG.md"
-    original = changelog_path.read_text(encoding="utf-8")
+    original = changelog_path.read_bytes()
     app_version = get_app_version()
     try:
-        changelog_path.write_text(
-            f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n",
-            encoding="utf-8",
+        payload = (
+            f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n"
         )
+        changelog_path.write_bytes(payload.encode("utf-8"))
         with pytest.raises(AssertionError, match="missing the `## \\[Unreleased\\]` section"):
             test_changelog_keeps_unreleased_above_versioned_rollup(repo_root)
     finally:
-        changelog_path.write_text(original, encoding="utf-8")
+        changelog_path.write_bytes(original)
 
 
 def test_changelog_unreleased_guardrail_rejects_unreleased_below_rollup(repo_root: Path) -> None:
     """An `[Unreleased]` heading below the versioned rollup must fail the docs guardrail."""
     changelog_path = repo_root / "docs" / "CHANGELOG.md"
-    original = changelog_path.read_text(encoding="utf-8")
+    original = changelog_path.read_bytes()
     app_version = get_app_version()
     try:
-        changelog_path.write_text(
-            f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n\n---\n\n## [Unreleased]\n\n",
-            encoding="utf-8",
-        )
+        payload = f"# Changelog\n\n---\n\n## [{app_version}] - 2026-08-18\n\n### Added\n\n- nothing\n\n---\n\n## [Unreleased]\n\n"
+        changelog_path.write_bytes(payload.encode("utf-8"))
         with pytest.raises(AssertionError, match="must sit above the versioned rollup"):
             test_changelog_keeps_unreleased_above_versioned_rollup(repo_root)
     finally:
-        changelog_path.write_text(original, encoding="utf-8")
+        changelog_path.write_bytes(original)
 
 
 def test_release_notes_guardrail_rejects_stale_version(repo_root: Path, tmp_path: Path) -> None:
     """A version bump without regenerating release-notes.md must fail the docs guardrail."""
     release_notes_path = repo_root / "release-notes.md"
-    original = release_notes_path.read_text(encoding="utf-8")
+    original = release_notes_path.read_bytes()
     try:
-        release_notes_path.write_text(
-            "## [0.0.0] - 1970-01-01\n\n> stale placeholder\n",
-            encoding="utf-8",
-        )
+        release_notes_path.write_bytes(b"## [0.0.0] - 1970-01-01\n\n> stale placeholder\n")
         with pytest.raises(AssertionError, match="release-notes.md is stale"):
             test_release_notes_artifact_matches_current_version(repo_root)
     finally:
-        release_notes_path.write_text(original, encoding="utf-8")
+        release_notes_path.write_bytes(original)
+
+
+def test_tracked_docs_restore_is_byte_identical(repo_root: Path) -> None:
+    """Rewriting and restoring tracked docs must preserve on-disk bytes exactly."""
+    for rel_path in ("docs/CHANGELOG.md", "release-notes.md"):
+        path = repo_root / rel_path
+        before = path.read_bytes()
+        try:
+            path.write_bytes(b"## [0.0.0] - 1970-01-01\n\n> stale placeholder\n")
+        finally:
+            path.write_bytes(before)
+        assert path.read_bytes() == before
