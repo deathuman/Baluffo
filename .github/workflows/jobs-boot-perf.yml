@@ -35,8 +35,15 @@ jobs:
       - name: Build container image (local)
         run: docker build -t baluffo-perf:local --build-arg BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false .
 
-      - name: Run container
-        run: docker run -d --name baluffo-perf -p 8877:8080 baluffo-perf:local
+      - name: Seed fixture feeds for bounded-boot measurement
+        run: node scripts/build_boot_perf_seed.mjs .tmp/boot-perf-seed
+
+      - name: Run container with seeded data directory
+        run: |
+          sudo chown -R 1000:1000 .tmp/boot-perf-seed
+          docker run -d --name baluffo-perf -p 8877:8080 \
+            -v "$PWD/.tmp/boot-perf-seed:/data" \
+            baluffo-perf:local
 
       - name: Wait for container readiness
         run: |
@@ -47,9 +54,13 @@ jobs:
             fi
             sleep 2
           done
+          curl -fsS http://127.0.0.1:8877/app/ready
 
       - name: Measure bounded Jobs boot (cold / warm / nav)
-        run: npm run measure:container-jobs-boot -- --base-url http://127.0.0.1:8877
+        run: |
+          node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode cold
+          node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode warm
+          node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode nav
 
       - name: Container logs on failure
         if: always()
