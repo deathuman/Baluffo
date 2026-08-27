@@ -1,6 +1,6 @@
 # Availability Direct-Enforcement Promotion — 2026-08-27
 
-> - **Status:** Promotion approved and applied to the private Umbrel raw-LAN container (`192.168.50.61`)
+> - **Status:** Promotion applied — **live and enforced on 0.2.140** as of 2026-08-28 (container `192.168.50.61` updated via the private app store; `appVersion 0.2.140`, `health healthy`, `startupReady true`); direct-enforcement behavioral confirmation pending the next auto pipeline run (scheduled `2026-08-28T03:17:28+02:00`)
 > - **Basis:** live HTTP evidence from the Umbrel bridge + operator review of a 100-job stratified sample (2026-08-27); working evidence and reproducible artifacts in `_out/availability-promotion-2026-08-27/`
 > - **Canonical for:** the promotion decision record for `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`; not canonical for runtime contracts or endpoint shapes
 > - **Then inspect:** `docs/plans/reliable-job-availability-plan.md`, `docs/admin-bridge-api.md`, `docs/storage-contract.md`
@@ -47,3 +47,20 @@
 - LinkedIn-sourced rows remain ambiguous to any HTTP checker (always 200); the classifier's structured-evidence rules already treat generic roots and non-posting pages as ambiguous rather than definitive.
 - Desktop runtime is not covered by this promotion; it stays in shadow mode until a separate operator decision.
 - **Observation field caveat:** `sweepCoverage.mode` is hardcoded to `"shadow"` (`src/jobs/availability_schedule.py`) and `availabilityHealth.shadowClassifier` is hardcoded to `true` (`src/jobs/pipeline_finalize.py`) — neither reflects `BALUFFO_AVAILABILITY_DIRECT_ENFORCE`. Live verification must use the container env check plus behavioral signals (direct 7-day coverage climbing from the 4.2% baseline after the next scheduled run). A follow-up could make these fields reflect the enforce state.
+
+## Post-update live verification (2026-08-28, after app-store update to 0.2.140)
+
+- `/ops/health`: `appVersion 0.2.140`, `status healthy`.
+- `/ops/dashboard-health`: `startupReady true`, `status healthy`, `bridgeAlive`;
+  pipeline scheduler configured (enabled, `intervalHours 11`, next run `2026-08-28T03:17:28+02:00`);
+  registry sync healthy (`lastSyncStatus ok`, active 2305 / pending 866, conflict 0).
+- `/tasks/run-jobs-pipeline-status`: idle, `appVersion 0.2.140`, `gatewayReady true`.
+- Capture artifacts: `ops-health-post-02140.json`, `dashboard-post-02140.json`,
+  `pipeline-status-post-02140.json`, `ops-history-post-02140.json`, `fetch-report-post-02140.json`
+  (the fetch report still shows pre-update run `fetch_946c8f4b9c`, mode `shadow`, direct7d 1,774 —
+  **expected**: the report only updates on the next pipeline generation after the update).
+- Flag verification note: the availability-enforcement env (`BALUFFO_AVAILABILITY_DIRECT_ENFORCE`)
+  is not observable over the public HTTP surface (all `jobs-availability-*` artifacts are private/404
+  by design). The compose applied by the 0.2.140 app-store update carries `"1"`, and the service reads
+  it at construction. Decisive behavioral confirmation = next run's `directCheckedWithinSevenDaysCount`
+  climbing from 1,774 and availability counts adjusting without a false mass-unavailable wave.
