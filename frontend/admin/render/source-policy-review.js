@@ -264,7 +264,7 @@ function getSelectedStaticIds(reviewEl) {
   }
 }
 
-export function renderSourcePolicyBulkToolbar(selectedCount = 0) {
+function renderSourcePolicyBulkToolbar(selectedCount = 0) {
   return `
     <div class="admin-source-policy-bulk-bar" role="group" aria-label="Bulk review actions">
       <span class="muted" data-source-policy-bulk-count>${selectedCount.toLocaleString()} selected</span>

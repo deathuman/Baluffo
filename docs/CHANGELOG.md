@@ -17,6 +17,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   full list no longer requires pressing Reload. Boot stays bounded: the
   snapshot renders first, the full feed syncs in the background, and explicit
   Reload continues to work as before.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.139] - 2026-08-26
 

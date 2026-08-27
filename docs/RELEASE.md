@@ -483,6 +483,18 @@ For the canonical startup measurement architecture and the preferred `perf:start
    - The Jobs-page smoke should not be considered passed if the backend pipeline enters `stage=error` or reports a non-empty `error` after startup.
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.
 
+### Local Preflight vs CI Gate Coverage
+
+`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
+
+- `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) run on every push and pull request in `.github/workflows/lint.yml`; mypy runs again at tag time in `build-linux.yml` together with the Linux AppImage build and AppImage smoke, which have no local preflight lane.
+- The container Jobs boot performance gate (`jobs-boot-perf.yml`) builds and runs the real container; it is deliberately not part of local preflight because preflight has no live container.
+- `npm run lint:js` (eslint) is currently a local-only/manual lane and is not wired into CI or preflight.
+
+Do not read "preflight passed" as "all gates passed"; the tag-push workflows run the remaining lanes.
+
+Before running `python scripts/bump_version.py <version>`, author the release compatibility sentence (same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, desktop localhost bridge compatibility) into the `[Unreleased]` changelog section: `repo_guardrails` requires it in the new top release section, and bumping prose-free `[Unreleased]` content fails `release:preflight` on the docs guardrail.
+
 ### Container / Umbrel Verification
 
 Container builds use the checked-in `Dockerfile` and run:

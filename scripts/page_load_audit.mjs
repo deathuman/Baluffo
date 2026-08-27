@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { writeFile } from "node:fs/promises";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 function parseArgs(argv) {
   const options = {

@@ -86,3 +86,22 @@ against the code before fixing (this caught two false positives).
 bridge 628 + admin 246 tests pass; ruff + repo guardrails green. One pre-existing unrelated failure
 remains: `tests/bridge/test_container_runtime.py::test_container_handler_serves_static_data_and_runtime_config`
 (CSS Cache-Control expected `public, max-age=3600`, got `public, no-cache`) — outside P0–P3 scope.
+
+### Follow-up batch (2026-08-27): CI gate alignment — mypy + knip wired into the lint workflow
+- `.github/workflows/lint.yml` now runs `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js`
+  (knip) on every push/PR.
+- Findings cleared so the new gates land green: mypy interface stubs in `src/bridge/task_lifecycle_core.py`
+  (`_write_rows_json_locked`, `_mirror_row_to_storage`), `str | None` annotation in `server/handler.py`
+  `_etag_matches`, and `cast(Path, ...)` in the /proc port-detection tests; knip unused-export fix in
+  `frontend/admin/render/source-policy-review.js` (`renderSourcePolicyBulkToolbar` un-exported — internal
+  call site and the bulk-bar render test preserved); `measure_container_jobs_boot.mjs` and
+  `page_load_audit.mjs` import chromium from `@playwright/test` (declared devDependency) instead of the
+  transitively-hoisted `playwright`.
+- `docs/RELEASE.md`: new "Local Preflight vs CI Gate Coverage" section (preflight passed ≠ all gates;
+  the container Jobs boot-perf gate and eslint stay outside local preflight) plus the rule to author the
+  `[Unreleased]` compatibility sentence BEFORE running `scripts/bump_version.py`.
+- `docs/CHANGELOG.md`: compatibility sentence authored in `[Unreleased]` — 0.2.140 bump prep for the
+  auto-hydrate full-feed change (`61084862` + `fb05d1c0`, still unreleased).
+- Gates at closeout: mypy 1210 source files clean; knip clean; eslint clean on touched file; frontend
+  unit suite exit 0; targeted pytest 21 passed (proc port detection, static-file cache headers, shadow
+  retire); repo guardrails all groups green. Extended suite runs at pre-push.

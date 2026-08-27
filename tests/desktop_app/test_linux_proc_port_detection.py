@@ -8,6 +8,8 @@ filesystem and no symlink privileges (Windows-safe).
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -140,20 +142,20 @@ def test_fd_socket_inode_parses_socket_targets_and_rejects_others(proc_fs: _Fake
     proc_fs.links["/proc/1/fd/2"] = "socket:[abc]"
     proc_fs.broken_links.add("/proc/1/fd/4")
 
-    assert _linux._fd_socket_inode(_FakePath("/proc/1/fd/3")) == 63684
-    assert _linux._fd_socket_inode(_FakePath("/proc/1/fd/0")) is None
-    assert _linux._fd_socket_inode(_FakePath("/proc/1/fd/1")) is None
-    assert _linux._fd_socket_inode(_FakePath("/proc/1/fd/2")) is None
-    assert _linux._fd_socket_inode(_FakePath("/proc/1/fd/4")) is None
+    assert _linux._fd_socket_inode(cast(Path, _FakePath("/proc/1/fd/3"))) == 63684
+    assert _linux._fd_socket_inode(cast(Path, _FakePath("/proc/1/fd/0"))) is None
+    assert _linux._fd_socket_inode(cast(Path, _FakePath("/proc/1/fd/1"))) is None
+    assert _linux._fd_socket_inode(cast(Path, _FakePath("/proc/1/fd/2"))) is None
+    assert _linux._fd_socket_inode(cast(Path, _FakePath("/proc/1/fd/4"))) is None
 
 
 def test_fd_links_for_pid_lists_fds_and_tolerates_vanished_pid(proc_fs: _FakeProcFs) -> None:
     proc_fs.dirs["/proc/100/fd"] = ["0", "3"]
     proc_fs.flaky_dirs.add("/proc/999/fd")
 
-    links = _linux._fd_links_for_pid(_FakePath("/proc/100"))
+    links = _linux._fd_links_for_pid(cast(Path, _FakePath("/proc/100")))
     assert [str(link) for link in links] == ["/proc/100/fd/0", "/proc/100/fd/3"]
-    assert _linux._fd_links_for_pid(_FakePath("/proc/999")) == []
+    assert _linux._fd_links_for_pid(cast(Path, _FakePath("/proc/999"))) == []
 
 
 def test_socket_inode_holders_maps_inodes_to_pids(proc_fs: _FakeProcFs) -> None:

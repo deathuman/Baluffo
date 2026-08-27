@@ -46,6 +46,12 @@ class TaskLifecycleState:
     def _save_rows_locked(self, rows: list[dict[str, Any]]) -> None:
         raise NotImplementedError
 
+    def _write_rows_json_locked(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def _mirror_row_to_storage(self, row: dict[str, Any]) -> None:
+        raise NotImplementedError
+
     def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 

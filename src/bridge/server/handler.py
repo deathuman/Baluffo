@@ -150,7 +150,7 @@ def _send_json_response(
 
 def _etag_matches(handler: Any, etag: str) -> bool:
     try:
-        incoming = handler.headers.get("If-None-Match")
+        incoming: str | None = handler.headers.get("If-None-Match")
     except AttributeError:
         return False
     if not incoming:

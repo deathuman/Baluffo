@@ -52,5 +52,11 @@ jobs:
       - name: Run pre-commit guardrails
         run: npm run lint:precommit:ci
 
+      - name: Run Python typecheck
+        run: npm run typecheck:py
+
+      - name: Run JavaScript dead-code scan
+        run: npm run lint:deadcode:js
+
       - name: Run Python dependency security audit
         run: npm run security:python

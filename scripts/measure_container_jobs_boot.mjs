@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 // ponytail: single-purpose measurement driver; promote into perf_complete only
 // if container Jobs boot needs recurring benchmarking beyond acceptance runs.
