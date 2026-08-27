@@ -1,6 +1,6 @@
 # Reliable Job Availability and Saved-Job Alerts
 
-> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); container enforcement flag applied to the private Umbrel raw-LAN install
+> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); enforcement flag set in `deathuman-baluffo/docker-compose.yml` and scheduled to ship in the pending **0.2.140** container release (standard Umbrel app update; live runtime stays shadow until then)
 > - **Use this when:** operating, reviewing, or extending job availability lifecycle, direct validation, or Saved attention
 > - **Canonical for:** rollout gates and remaining promotion/reconciliation operations
 > - **Not canonical for:** row fields or endpoint shapes; use the contract docs
@@ -22,10 +22,12 @@
 
 ## Promotion gate
 
-**Promoted 2026-08-27 for the private Umbrel raw-LAN container** — evidence snapshot:
+**Promoted 2026-08-27 for the private Umbrel raw-LAN container (ships in the pending 0.2.140 release)** —
+evidence snapshot:
 [`../snapshots/availability-direct-promotion-2026-08-27.md`](../snapshots/availability-direct-promotion-2026-08-27.md).
 `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` is set in `deathuman-baluffo/docker-compose.yml` (container
-runtime only; desktop stays shadow until separately promoted). The gate that was satisfied:
+runtime only; desktop stays shadow until separately promoted); it goes live when 0.2.140 is bumped,
+published, and installed via the standard Umbrel app-store update. The gate that was satisfied:
 
 - One healthy seven-day sweep: 17 consecutive successful pipelines 2026-08-20 → 2026-08-27.
 - Zero confirmed false-unavailable among saved jobs: operator-confirmed clean Saved page 2026-08-27.

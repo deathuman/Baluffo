@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-08-27 (availability direct-enforcement promotion snapshot added; reliable-job-availability plan promoted for the Umbrel container)
+> - **Last updated:** 2026-08-27 (availability direct-enforcement promotion snapshot added; reliable-job-availability plan's container enforcement promoted and scheduled to ship in the pending 0.2.140 release)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
