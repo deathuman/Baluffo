@@ -1,11 +1,11 @@
 # Reliable Job Availability and Saved-Job Alerts
 
-> - **Status:** Active rollout
+> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); container enforcement flag applied to the private Umbrel raw-LAN install
 > - **Use this when:** operating, reviewing, or extending job availability lifecycle, direct validation, or Saved attention
 > - **Canonical for:** rollout gates and remaining promotion/reconciliation operations
 > - **Not canonical for:** row fields or endpoint shapes; use the contract docs
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../storage-contract.md`](../storage-contract.md), [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-07-17
+> - **Last updated:** 2026-08-27
 
 ## Implemented baseline
 
@@ -22,12 +22,19 @@
 
 ## Promotion gate
 
-Keep direct enforcement disabled during one healthy seven-day sweep. Promotion requires zero confirmed
-false-unavailable classifications among saved jobs, a reviewed stratified sample of at least 100
-ordinary jobs, and no unresolved high-risk classifier family. Record review evidence outside raw page
-content, then enable `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` for the runtime.
+**Promoted 2026-08-27 for the private Umbrel raw-LAN container** — evidence snapshot:
+[`../snapshots/availability-direct-promotion-2026-08-27.md`](../snapshots/availability-direct-promotion-2026-08-27.md).
+`BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` is set in `deathuman-baluffo/docker-compose.yml` (container
+runtime only; desktop stays shadow until separately promoted). The gate that was satisfied:
 
-After promotion, preserve a reversible pre-reconciliation snapshot and run source-health-aware
+- One healthy seven-day sweep: 17 consecutive successful pipelines 2026-08-20 → 2026-08-27.
+- Zero confirmed false-unavailable among saved jobs: operator-confirmed clean Saved page 2026-08-27.
+- Reviewed stratified sample of ≥100 ordinary jobs: 100-row sample reviewed with automated HEAD +
+  title-presence verification; 3 confirmed false-unavailable rows were all `source_absent` residuals
+  (no verdict-classifier errors), recorded in the snapshot.
+- No unresolved high-risk classifier family: shadow counts benign; identity clean.
+
+Post-promotion: preserve a reversible pre-reconciliation snapshot and run source-health-aware
 reconciliation. Automatic rollback is limited to schema, identity, write, or feed-integrity failures.
 Saved users receive per-job records presented as one digest. Clear the global freshness warning only
 after a completed scheduled run, daily trustworthy saved/active-application evidence, and at least 95%

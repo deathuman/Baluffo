@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-08-20 (reporting_dedup_evidence 1,133→12 + state_lifecycle 1,121→38 splits; initial_findings archived)
+> - **Last updated:** 2026-08-27 (availability direct-enforcement promotion snapshot added; reliable-job-availability plan promoted for the Umbrel container)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -86,6 +86,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`snapshots/static-regression-triage-2026-08-12.md`](snapshots/static-regression-triage-2026-08-12.md) | Snapshots / Evidence | You are triaging the 53 `site_changed` static regressions — ATS-migrated, dead-404, live-layout-change, or redirect sources |
 | [`snapshots/provider-coverage-closure-2026-08-12.md`](snapshots/provider-coverage-closure-2026-08-12.md) | Snapshots / Evidence | You are checking Track 2 provider coverage closure — migration links applied, provider rows approved, dead provider rows rejected |
 | [`snapshots/widget-board-recovery-2026-08-13.md`](snapshots/widget-board-recovery-2026-08-13.md) | Snapshots / Evidence | You are checking Track 3 browser-fallback/widget-board recovery, Ubisoft link ambiguity, or provider zero-yield triage |
+ | [`snapshots/availability-direct-promotion-2026-08-27.md`](snapshots/availability-direct-promotion-2026-08-27.md) | Snapshots / Evidence | You are checking why/when availability direct enforcement was promoted for the Umbrel container, the gate evidence, or the 100-job sample findings |
+
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the 2026-04-29 first physical deletion batch for dead or unsupported jobs sources |
 | [`snapshots/admin-health-dashboard-console-closeout-2026-05-04.md`](snapshots/admin-health-dashboard-console-closeout-2026-05-04.md) | Snapshots / Evidence | You are checking why the Admin health dashboard tracker was retired and how overview signals split from detailed task evidence |
