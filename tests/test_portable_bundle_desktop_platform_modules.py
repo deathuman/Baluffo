@@ -129,6 +129,9 @@ def test_frozen_portable_exe_pyz_contains_both_desktop_platform_modules() -> Non
             "`npm run verify` or scripts/build_portable_exe.py) first"
         )
 
+    # Explicit narrowing: Linux mypy (the new lint CI lane) does not treat
+    # pytest.skip as NoReturn here and keeps `Path | None` without this assert.
+    assert exe_path is not None
     validate_frozen_desktop_platform_modules(exe_path)
 
 
