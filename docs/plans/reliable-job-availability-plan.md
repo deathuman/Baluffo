@@ -1,6 +1,6 @@
 # Reliable Job Availability and Saved-Job Alerts
 
-> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); enforcement flag set in `deathuman-baluffo/docker-compose.yml` and scheduled to ship in the pending **0.2.140** container release (standard Umbrel app update; live runtime stays shadow until then)
+> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); enforcement flag set in `deathuman-baluffo/docker-compose.yml` and **shipped in the 0.2.140 container release** (image `ghcr.io/deathuman/baluffo:0.2.140` built & published 2026-08-27, digest `sha256:926817f5c85ede3e23c6a97ae2ce01358376f768f499008e61e5371974405462`); goes live once the standard Umbrel app-store update is installed (live runtime still shadow until then)
 > - **Use this when:** operating, reviewing, or extending job availability lifecycle, direct validation, or Saved attention
 > - **Canonical for:** rollout gates and remaining promotion/reconciliation operations
 > - **Not canonical for:** row fields or endpoint shapes; use the contract docs

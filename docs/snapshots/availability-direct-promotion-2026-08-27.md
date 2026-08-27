@@ -34,7 +34,7 @@
 ## Change applied
 
 - `deathuman-baluffo/docker-compose.yml`: added `BALUFFO_AVAILABILITY_DIRECT_ENFORCE: "1"` to the `web` service environment (container-only; desktop runtime stays shadow until separately promoted).
-- **Deployment approach: shipped in the pending 0.2.140 container release**, not hand-applied to the live host. The flag rides the next versioned update (bumped via `scripts/bump_version.py`, which also syncs `umbrel-app.yml` and the `image:` tag to `0.2.140`); the operator applies it through the standard private app-store update on the Umbrel. This keeps the enforcement change store-managed and versioned instead of a one-off compose edit that future app updates could overwrite. Until 0.2.140 is published and the app updated, the live container remains in shadow mode (flag unset) — no behavior change is live yet.
+- **Deployment approach: shipped in the 0.2.140 container release**, not hand-applied to the live host. The flag rode the versioned update — `scripts/bump_version.py 0.2.140` (commit `f46baa4c`, 2026-08-27) synced `src/app_version.py`, `umbrel-app.yml`, and the compose `image:` tag to `0.2.140`; the GitHub `Build Container` workflow published `ghcr.io/deathuman/baluffo:0.2.140` + `latest` (multi-arch linux/amd64 + linux/arm64; digest `sha256:926817f5c85ede3e23c6a97ae2ce01358376f768f499008e61e5371974405462`, run #201). This keeps the enforcement change store-managed and versioned instead of a one-off compose edit that future app updates could overwrite. Remaining operator step: standard private app-store update on the Umbrel applies the new compose carrying the flag. Until the update is installed the live container stays in shadow mode (flag unset) — no behavior change is live yet.
 
 ## Post-promotion reconciliation
 
