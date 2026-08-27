@@ -46,3 +46,4 @@
 - Direct enforcement increases outbound direct-check traffic (bounded by the existing sweep caps: 1,000 checks/run, 25/domain).
 - LinkedIn-sourced rows remain ambiguous to any HTTP checker (always 200); the classifier's structured-evidence rules already treat generic roots and non-posting pages as ambiguous rather than definitive.
 - Desktop runtime is not covered by this promotion; it stays in shadow mode until a separate operator decision.
+- **Observation field caveat:** `sweepCoverage.mode` is hardcoded to `"shadow"` (`src/jobs/availability_schedule.py`) and `availabilityHealth.shadowClassifier` is hardcoded to `true` (`src/jobs/pipeline_finalize.py`) — neither reflects `BALUFFO_AVAILABILITY_DIRECT_ENFORCE`. Live verification must use the container env check plus behavioral signals (direct 7-day coverage climbing from the 4.2% baseline after the next scheduled run). A follow-up could make these fields reflect the enforce state.
