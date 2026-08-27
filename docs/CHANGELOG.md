@@ -10,6 +10,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.140] - 2026-08-27
 ### Changed
 
 - Availability direct enforcement is promoted for the container runtime: the Umbrel
