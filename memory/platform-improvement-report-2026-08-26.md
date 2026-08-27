@@ -105,3 +105,16 @@ remains: `tests/bridge/test_container_runtime.py::test_container_handler_serves_
 - Gates at closeout: mypy 1210 source files clean; knip clean; eslint clean on touched file; frontend
   unit suite exit 0; targeted pytest 21 passed (proc port detection, static-file cache headers, shadow
   retire); repo guardrails all groups green. Extended suite runs at pre-push.
+
+### CI check follow-up (2026-08-27): first CI run on 8e40379a
+- The new Linux mypy lane did its job immediately: caught a Windows-hidden `Path | None` narrowing in
+  `tests/test_portable_bundle_desktop_platform_modules.py` — fixed with an explicit assert and verified
+  against pinned mypy 1.20.2 in a Linux container (the 8 `no-any-return` findings there are
+  cryptography-package-absence artifacts of the lean container; CI installs deps and does not see them).
+- `jobs-boot-perf.yml` was red on EVERY main run since it landed: the gated container booted with an
+  empty `BALUFFO_DATA_DIR` (no feed artifacts are committed under `data/`), so the bounded-boot checks
+  could never pass. Root-caused via local Docker repro (empty mount reproduced the CI failure
+  byte-for-byte); fixed by `scripts/build_boot_perf_seed.mjs` plus workflow seeding/mounting a 24-row
+  fixture data dir at `/data` (chown 1000), a hard readiness assertion, and per-mode `--base-url`
+  forwarding (the `npm run ... -- --base-url` form only reached the nav leg). Local seeded run:
+  cold/warm/nav ALL CHECKS PASSED.
