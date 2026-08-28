@@ -20,6 +20,7 @@ from typing import Any
 from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.contracts import SCHEMA_VERSION
 from src.jobs.availability_identity import AvailabilityIdentityPreflightError
+from src.jobs.availability_schedule import direct_enforcement_enabled
 from src.jobs.canonicalize import snapshot_sector_quality_audit
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS, OUTPUT_FIELDS
 from src.jobs.contamination_audit import build_public_text_quality_report
@@ -352,7 +353,7 @@ def write_failed_pipeline_report(
             "availabilityHealth": {
                 "status": "failed",
                 "degradedCoverage": True,
-                "shadowClassifier": True,
+                "shadowClassifier": not direct_enforcement_enabled(),
                 "identity": identity_summary,
             },
             "sources": source_rows,

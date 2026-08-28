@@ -1443,7 +1443,10 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 Fetch reports, both report normalizers, the compact fetch-report sidecar, and
 `/ops/fetch-report?view=summary` preserve the bounded top-level `availabilitySummary`,
 `availabilityHealth`, `sourceDirectConflicts` (at most 100 rows), row-free `sweepCoverage`, and
-`shadowClassifierCounts` fields. `availabilitySummary` includes candidate and accepted monitorable
+`shadowClassifierCounts` fields. `sweepCoverage.mode` is `"enforced"` when
+`BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy (`1`/`true`/`yes`/`on`) at report-build time and
+`"shadow"` otherwise; `availabilityHealth.shadowClassifier` is `true` only while that flag is
+unset. `availabilitySummary` includes candidate and accepted monitorable
 counts, repaired and contaminated identity counts, rejected-row and rejection-reason counts,
 quarantine size/truncation counts, and post-filter unresolved identity counts. Rejected candidates
 degrade coverage; an unresolved accepted-set identity violation fails publication.

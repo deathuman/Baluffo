@@ -1,6 +1,6 @@
 # Availability Direct-Enforcement Promotion — 2026-08-27
 
-> - **Status:** Promotion applied — **live and enforced on 0.2.140** as of 2026-08-28 (container `192.168.50.61` updated via the private app store; `appVersion 0.2.140`, `health healthy`, `startupReady true`); direct-enforcement behavioral confirmation pending the next auto pipeline run (scheduled `2026-08-28T03:17:28+02:00`)
+> - **Status:** Promotion applied — **live and enforced on 0.2.140** as of 2026-08-28; enforcement flag verified in the running container via `docker exec printenv` (`BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`, ~21:00 +02:00, operator-run on the Umbrel host); two post-update scheduled pipeline runs completed cleanly with no false mass-unavailable wave; bounded monitoring window through ~2026-08-31 (canary rechecks + saved-page digest) remains before archiving the rollout plan
 > - **Basis:** live HTTP evidence from the Umbrel bridge + operator review of a 100-job stratified sample (2026-08-27); working evidence and reproducible artifacts in `_out/availability-promotion-2026-08-27/`
 > - **Canonical for:** the promotion decision record for `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`; not canonical for runtime contracts or endpoint shapes
 > - **Then inspect:** `docs/plans/reliable-job-availability-plan.md`, `docs/admin-bridge-api.md`, `docs/storage-contract.md`
@@ -64,3 +64,12 @@
   by design). The compose applied by the 0.2.140 app-store update carries `"1"`, and the service reads
   it at construction. Decisive behavioral confirmation = next run's `directCheckedWithinSevenDaysCount`
   climbing from 1,774 and availability counts adjusting without a false mass-unavailable wave.
+
+## Enforcement flag verification (2026-08-28, ~21:00 +02:00)
+
+- Operator ran on the Umbrel host: `sudo docker exec deathuman-baluffo_web_1 printenv BALUFFO_AVAILABILITY_DIRECT_ENFORCE` → **`1`**. Decisive: the running container has direct enforcement active.
+- Container identity: `deathuman-baluffo_web_1`, image `ghcr.io/deathuman/baluffo:0.2.140`, bridge restart `2026-08-28T00:28:15+02:00` (app-store update applied). `/ops/health` live: `appVersion 0.2.140`, healthy, `startupReady true`, pipeline scheduler `intervalHours 11`, last pipeline `pipeline_925dd4cb4e` finished `2026-08-28T16:20:34+02:00`, next run `2026-08-29T03:20:34+02:00`.
+- Two post-update scheduled runs completed cleanly. Latest report `fetch_c6157430d7` (finished `2026-08-28T16:14:42+02:00`): unavailable 20,028 → 20,371 (+343 on 41,785 active — normal churn, no mass-unavailable wave), available 40,007 → 39,792, reappeared 518 → 348, preserved-failed 0 → 43, identity clean (0 rejected rows, 0 unresolved conflicts, quarantine 93 → 94 bounded).
+- **Interpretation correction:** `directCheckedWithinSevenDaysCount` 1,774 → 1,768 (flat) is **expected steady-state, not a failed-promotion signal**. The shadow-mode rotation already consumed the same 1,000-checks/run budget for days, and saved-first rechecks repeat recent rows, so the 7-day direct count plateaus near ~1,770 regardless of mode. The snapshot's earlier "climbing from 1,774" expectation was too strict.
+- Canary note: the six operator-confirmed false-unavailable rows (Shoreline Games ×2, Red Thread Games ×1, Wildcore ×4, last checked 2026-08-15 → 2026-08-19) are all `preserved` rows from `source_skipped`/`source_failed` sources; conservative aging means their recheck may span several further runs or arrive via source-health-aware reconciliation rather than immediately.
+- Observation-field caveat unchanged: `sweepCoverage.mode` is hardcoded to `"shadow"` (`src/jobs/availability_schedule.py`) and `availabilityHealth.shadowClassifier` to `true` (`src/jobs/pipeline_finalize.py`) — both still read `shadow`/`true` on the live 0.2.140 report despite enforcement. Direct verification therefore remains the SSH env check until the observability follow-up (fields reflecting the enforce flag) ships.

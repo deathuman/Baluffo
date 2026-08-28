@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
@@ -9,6 +10,22 @@ from urllib.parse import urlparse
 
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.text_utils import clean_text
+
+_DIRECT_ENFORCE_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def direct_enforcement_enabled() -> bool:
+    """Whether ``BALUFFO_AVAILABILITY_DIRECT_ENFORCE`` enables direct-check enforcement.
+
+    Mirrors the bridge-side flag parsing (``src/bridge/api.py`` and
+    ``src/bridge/admin_entrypoint_services.py``) so pipeline observation fields
+    (``sweepCoverage.mode``, ``availabilityHealth.shadowClassifier``) reflect the
+    same rollout state instead of a hardcoded shadow value.
+    """
+    return (
+        str(os.environ.get("BALUFFO_AVAILABILITY_DIRECT_ENFORCE") or "").strip().lower()
+        in _DIRECT_ENFORCE_TRUTHY
+    )
 
 
 def _priority_by_availability_id(
@@ -160,7 +177,7 @@ def build_availability_sweep_plan(
     return {
         "schemaVersion": 1,
         "createdAt": finished_at,
-        "mode": "shadow",
+        "mode": "enforced" if direct_enforcement_enabled() else "shadow",
         "selectedCount": len(selected),
         "deferredCount": deferred,
         "degradedCoverage": deferred > 0,

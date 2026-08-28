@@ -35,6 +35,7 @@ from src.jobs.availability_identity import (
     validate_published_availability_rows,
     write_identity_quarantine,
 )
+from src.jobs.availability_schedule import direct_enforcement_enabled
 from src.jobs.availability_tombstones import (
     TOMBSTONE_ARTIFACT_NAME,
     read_availability_tombstones,
@@ -569,7 +570,7 @@ def finalize_pipeline_run(
                     availability_sweep_plan.get("degradedCoverage")
                     or int(identity_preparation.summary.get("rejectedRowCount") or 0)
                 ),
-                "shadowClassifier": True,
+                "shadowClassifier": not direct_enforcement_enabled(),
                 "identity": dict(identity_preparation.summary),
             },
             "sourceDirectConflicts": source_direct_conflicts[-100:],

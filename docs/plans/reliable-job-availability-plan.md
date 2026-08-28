@@ -1,11 +1,11 @@
 # Reliable Job Availability and Saved-Job Alerts
 
-> - **Status:** Active rollout — direct-enforcement promotion gate satisfied and approved 2026-08-27 (evidence snapshot: `docs/snapshots/availability-direct-promotion-2026-08-27.md`); enforcement flag set in `deathuman-baluffo/docker-compose.yml` and **shipped in the 0.2.140 container release** (image `ghcr.io/deathuman/baluffo:0.2.140` built & published 2026-08-27, digest `sha256:926817f5c85ede3e23c6a97ae2ce01358376f768f499008e61e5371974405462`); goes live once the standard Umbrel app-store update is installed (live runtime still shadow until then)
+> - **Status:** Live and enforced on the container — `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` verified in the running 0.2.140 container via `docker exec printenv` on 2026-08-28 (evidence: [`../snapshots/availability-direct-promotion-2026-08-27.md`](../snapshots/availability-direct-promotion-2026-08-27.md)); two post-update scheduled runs clean, no false mass-unavailable wave. Remaining: bounded monitoring window through ~2026-08-31 — canary rechecks of the operator-confirmed false-unavailable rows and a clean saved-page digest — then archive this plan (desktop runtime stays shadow until separately promoted)
 > - **Use this when:** operating, reviewing, or extending job availability lifecycle, direct validation, or Saved attention
 > - **Canonical for:** rollout gates and remaining promotion/reconciliation operations
 > - **Not canonical for:** row fields or endpoint shapes; use the contract docs
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../storage-contract.md`](../storage-contract.md), [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-08-27
+> - **Last updated:** 2026-08-28 (enforcement flag verified live in the running container; monitoring window opened through ~2026-08-31 before plan archival)
 
 ## Implemented baseline
 

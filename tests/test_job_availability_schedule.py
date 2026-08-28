@@ -1,4 +1,11 @@
+import pytest
+
 from src.jobs.availability_schedule import build_availability_sweep_plan
+
+
+@pytest.fixture(autouse=True)
+def _clear_direct_enforce_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BALUFFO_AVAILABILITY_DIRECT_ENFORCE", raising=False)
 
 
 def test_sweep_prioritizes_saved_and_degrades_instead_of_exceeding_safe_limits() -> None:
@@ -133,3 +140,64 @@ def test_sweep_rotates_from_durable_direct_checkpoints() -> None:
     ]
     assert plan["directCheckedWithinSevenDaysCount"] == 1
     assert plan["directCheckedWithinSevenDaysCoverage"] == 0.5
+
+
+def test_sweep_mode_defaults_to_shadow_without_the_enforce_flag() -> None:
+    plan = build_availability_sweep_plan(
+        {
+            "row": {
+                "availabilityId": "availability_row",
+                "availabilityStatus": "available",
+                "availabilityVerifiedAt": "2026-07-14T00:00:00+00:00",
+                "jobLink": "https://one.example/jobs/1",
+            }
+        },
+        None,
+        finished_at="2026-07-14T00:00:00+00:00",
+    )
+
+    assert plan["mode"] == "shadow"
+
+
+@pytest.mark.parametrize("flag_value", ["1", "true", "YES", " on "])
+def test_sweep_mode_reflects_direct_enforcement_flag(
+    monkeypatch: pytest.MonkeyPatch, flag_value: str
+) -> None:
+    monkeypatch.setenv("BALUFFO_AVAILABILITY_DIRECT_ENFORCE", flag_value)
+
+    plan = build_availability_sweep_plan(
+        {
+            "row": {
+                "availabilityId": "availability_row",
+                "availabilityStatus": "available",
+                "availabilityVerifiedAt": "2026-07-14T00:00:00+00:00",
+                "jobLink": "https://one.example/jobs/1",
+            }
+        },
+        None,
+        finished_at="2026-07-14T00:00:00+00:00",
+    )
+
+    assert plan["mode"] == "enforced"
+
+
+def test_sweep_mode_stays_shadow_for_non_truthy_flag_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for flag_value in ["", "0", "false", "off"]:
+        monkeypatch.setenv("BALUFFO_AVAILABILITY_DIRECT_ENFORCE", flag_value)
+
+        plan = build_availability_sweep_plan(
+            {
+                "row": {
+                    "availabilityId": "availability_row",
+                    "availabilityStatus": "available",
+                    "availabilityVerifiedAt": "2026-07-14T00:00:00+00:00",
+                    "jobLink": "https://one.example/jobs/1",
+                }
+            },
+            None,
+            finished_at="2026-07-14T00:00:00+00:00",
+        )
+
+        assert plan["mode"] == "shadow", flag_value

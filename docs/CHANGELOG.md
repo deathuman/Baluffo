@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Changed
+
+- Availability observation fields now reflect the enforcement state instead of a
+  hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
+  `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and
+  `availabilityHealth.shadowClassifier` (including the failed-report path) reads
+  `false` while enforcing. Payload shape is unchanged; this removes the need for
+  SSH env checks when verifying live enforcement on the container.
+
 ## [0.2.140] - 2026-08-27
 ### Changed
 
@@ -377,7 +388,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Browser fallback now pools a single Chromium per fetch stage (`BrowserFallbackPool`) instead of launching a fresh browser per call: measured 43 fallback acquisitions on one browser (559 ms startup, 0 relaunches) vs 43 launches in the subset-50 bench. Fresh `BrowserContext` per call preserves session isolation; `BALUFFO_BROWSER_POOL=0` restores the legacy launch-per-call path; crash recovery stays with the existing circuit-breaker cooldown.
 - Fixed an O(N·K) alias-index rebuild in carried lifecycle initialization: `_initialize_carried_lifecycle_rows` rebuilt the full ~71k-entry index after every initialized row (~2 s each), stalling `applying_lifecycle` for ~36 min on ~1,000 fresh-identity rows; incremental index updates make it ~12 s end-to-end with identical output.
 - Fetch stage bounds the live future set during source execution (windowed submission instead of all 2k+ loaders at once) and adds stall detection with task-state throttling for long-running child stages.
-- `BALUFFO_PROFILE_ALLOC=1` gates per-source tracemalloc capture (`run_profiled_alloc`, `scripts/perf_alloc_top.py`) for allocation-profile diagnostics; findings recorded in `docs/plans/jobs-pipeline-memory-reduction-plan.md` (H1: fetch concurrency count, not per-source body size, drives pi4-tight pressure; mw=10 OOMs at 293/500 sources, mw=4 holds peak).
+- `BALUFFO_PROFILE_ALLOC=1` gates per-source tracemalloc capture (`run_profiled_alloc`, `scripts/perf_alloc_top.py`) for allocation-profile diagnostics; findings recorded in the archived `jobs-pipeline-memory-reduction-plan.md` (H1: fetch concurrency count, not per-source body size, drives pi4-tight pressure; mw=10 OOMs at 293/500 sources, mw=4 holds peak).
 - Fetch response bodies are now capped at `BALUFFO_FETCH_MAX_BYTES` (default 20 MiB, 1 MiB floor) on both transport paths — urllib read and the httpx async stream — instead of fully materializing unbounded pages. Bounds the H2-class amplification measured for the ~37 MiB playsimple-class peak (`httpx/_models.py` 119.7 MiB cumulative in the allocation profile); a truncated page simply parses fewer rows and is retried on the next run.
 
 ### Fixed
@@ -390,7 +401,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Changed
 
-- Bench harness `scripts/perf_pipeline_stages.py` gains `--only-sources-file` (env-file staged `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` to avoid the Windows 32k command-line cap), `--fetch-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS`), `--browser-fallback-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS`, service-capped at 6), and `--profile-alloc`; the pipeline completion timeout default rises to one hour for full-seed runs. Bench evidence and root-cause write-ups live in `docs/plans/jobs-pipeline-memory-reduction-plan.md` and `docs/plans/browser-fallback-pool-plan.md`.
+- Bench harness `scripts/perf_pipeline_stages.py` gains `--only-sources-file` (env-file staged `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` to avoid the Windows 32k command-line cap), `--fetch-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS`), `--browser-fallback-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS`, service-capped at 6), and `--profile-alloc`; the pipeline completion timeout default rises to one hour for full-seed runs. Bench evidence and root-cause write-ups live in the archived `jobs-pipeline-memory-reduction-plan.md` and `browser-fallback-pool-plan.md`.
 
 ### Tooling
 
