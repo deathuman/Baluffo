@@ -1,11 +1,11 @@
 # Optional Playwright Browser Download Plan
 
-> - **Status:** Active plan, deferred post-v0.2.01
+> - **Status:** Parked — deferred until the next desktop portable release; recent release work is container/Umbrel-side and unaffected by this plan
 > - **Use this when:** moving Playwright browser binaries out of the portable ZIP, changing packaged browser fallback install behavior, or revisiting first-start browser-support UX
 > - **Canonical for:** proposed optional browser payload download behavior, packaging invariants, user-facing tradeoffs, and validation plan
 > - **Not canonical for:** current v0.2.01 portable ZIP contents, released updater behavior, or implemented browser fallback runtime state
 > - **Then inspect:** [`../RELEASE.md`](../RELEASE.md), [`../testing.md`](../testing.md), [`../TROUBLESHOOTING.md`](../TROUBLESHOOTING.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and [`../../scripts/build_portable_exe.py`](../../scripts/build_portable_exe.py)
-> - **Last updated:** 2026-05-16
+> - **Last updated:** 2026-08-28 (status review — parked until the next desktop portable release)
 
 ## Summary
 

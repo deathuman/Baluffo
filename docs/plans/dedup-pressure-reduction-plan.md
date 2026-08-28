@@ -1,11 +1,11 @@
 # Dedup Pressure Reduction Plan
 
-> - **Status:** Active plan, lifecycle gate unblocked; monitor debt remains
+> - **Status:** Stale — validate-then-decide (reviewed 2026-08-28): confirm whether the monitor debt still exists against a fresh fetch report; if not, archive this plan; otherwise fold the remainder into [`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md)
 > - **Use this when:** reducing dedup gate pressure without chasing individual static source failures
 > - **Canonical for:** next-step dedup pressure strategy and latest measured evidence
 > - **Not canonical for:** data payload contracts or source registry policy
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and the latest fresh `data/jobs-fetch-report.json` from `npm run dev:pipeline`
-> - **Last updated:** 2026-05-11
+> - **Last updated:** 2026-08-28 (status review — needs fresh-run validation before further work)
 
 ## Summary
 

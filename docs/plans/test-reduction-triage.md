@@ -1,11 +1,11 @@
 # Test Reduction Triage
 
-> - **Status:** Active
+> - **Status:** Parked closeout baseline — the May 2026 reduction campaign closed 2026-05-31; revive only for a new coverage-backed sweep using the recorded prerequisites
 > - **Use this when:** checking the completed May 2026 test-reduction campaign, explaining retained tests, or deciding whether a new coverage-backed sweep is warranted
 > - **Canonical for:** completed reduction slices, retained-test rationale, and prerequisites for future merge/delete work
 > - **Not canonical for:** verification command ownership or product/runtime contracts
 > - **Then inspect:** [`../testing.md`](../testing.md), the candidate test file, and the owning source or contract doc
-> - **Last updated:** 2026-05-31
+> - **Last updated:** 2026-08-28 (status review — campaign closed; parked baseline)
 
 This triage records the safe-reduction path from the May 2026 broad test sweep.
 The high-confidence reduction campaign is closed out as of 2026-05-31. Coverage

@@ -1,5 +1,8 @@
 # Registry Summary And Desktop Performance Cleanup Report
 
+> - **Status:** Archived cleanup report (no active follow-up); retained for June 2026 registry-summary diagnostics and desktop performance benchmark evidence
+> - **Last updated:** 2026-08-28 (archived from `docs/plans/` — it is a closeout record, not a plan)
+
 Date: 2026-06-05T00:09:40+02:00
 
 ## Summary

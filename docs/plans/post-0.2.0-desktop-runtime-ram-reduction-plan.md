@@ -1,11 +1,11 @@
 # Post-0.2.0 Desktop Runtime RAM Reduction Plan
 
-> - **Status:** Active plan, deferred post-v0.2.0
+> - **Status:** Parked — revisit together with `optional-playwright-browser-download-plan.md` before any next desktop runtime effort
 > - **Use this when:** revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation
 > - **Canonical for:** deferred proposal, risks, validation plan, and known loopholes
 > - **Not canonical for:** current runtime behavior, release requirements, or benchmark baselines
 > - **Then inspect:** [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../testing.md`](../testing.md), [`../../src/ship/desktop_app/`](../../src/ship/desktop_app/), and [`../../src/ship/runtime_launcher.py`](../../src/ship/runtime_launcher.py)
-> - **Last updated:** 2026-05-14
+> - **Last updated:** 2026-08-28 (status review — parked until desktop runtime work resumes)
 
 ## Summary
 

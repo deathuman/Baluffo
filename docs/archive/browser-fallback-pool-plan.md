@@ -1,9 +1,9 @@
 # Browser Fallback Pool (single Chromium per pipeline run)
 
-> - **Status:** Implemented 2026-08-11, commit `025b4522`
+> - **Status:** Archived — implemented 2026-08-11, commit `025b4522`; current browser fallback runtime behavior is owned by `docs/scraping-pipeline.md`
 > - **Problem:** every browser fallback launched a fresh Chromium (`try_fetch_with_playwright`); measured 41–44 launches per 50-source bench, 2–5 s each on constrained containers
 > - **Fix:** one lazy Chromium per fetch stage; fresh `BrowserContext` per call
-> - **Working draft:** `.opencode/plans/browser-fallback-pool-2026-08-11.md` (superseded)
+> - **Working draft:** superseded and removed (was `.opencode/plans/browser-fallback-pool-2026-08-11.md`)
 
 ## Design (as implemented)
 

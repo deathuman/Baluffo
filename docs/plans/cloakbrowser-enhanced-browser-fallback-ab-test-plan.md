@@ -1,11 +1,11 @@
 # CloakBrowser Enhanced Browser Fallback A/B Test Plan
 
-> - **Status:** Active plan, deferred experiment
+> - **Status:** Parked deferred experiment — revisit only if the pooled browser fallback (implemented 2026-08-11) proves insufficient on blocked/challenged career pages; otherwise a removal candidate. Vendor licensing/packaging constraints still apply.
 > - **Use this when:** evaluating CloakBrowser as an optional enhanced browser fallback for blocked, challenged, or JavaScript-heavy career pages
 > - **Canonical for:** proposed A/B test design, adoption guardrails, measurement criteria, and packaging/licensing constraints for CloakBrowser evaluation
 > - **Not canonical for:** current browser fallback runtime behavior, implemented portable packaging, approved vendor licensing, or default scraping policy
 > - **Then inspect:** [`../scraping-pipeline.md`](../scraping-pipeline.md), [`optional-playwright-browser-download-plan.md`](optional-playwright-browser-download-plan.md), [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-16
+> - **Last updated:** 2026-08-28 (status review — parked; measure browser fallback pool recovery before reviving)
 
 ## Summary
 

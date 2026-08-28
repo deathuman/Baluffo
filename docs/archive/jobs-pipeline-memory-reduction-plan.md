@@ -1,11 +1,11 @@
 # Jobs Pipeline Memory Reduction Plan
 
-> - **Status:** Completed (P1–P3 + profiling) 2026-08-09; validated 2026-08-11 with subset-500 pi4-tight bench; **2026-08-21 streaming + memory-lever pass landed — frozen 2,125-key full run completes under 2.5 GiB with browser fallback ON (see "Streaming + Memory Levers")**
+> - **Status:** Archived closeout. Completed (P1–P3 + profiling) 2026-08-09; validated 2026-08-11 with subset-500 pi4-tight bench; **2026-08-21 streaming + memory-lever pass landed — frozen 2,125-key full run completes under 2.5 GiB with browser fallback ON (see "Streaming + Memory Levers")**
 > - **Use this when:** revisiting jobs-pipeline peak-RSS pressure, evaluating the next fetch-side lever, or running the alloc profiler
 > - **Canonical for:** measured peaks, landed phases, bench methodology, and deferred next steps
 > - **Not canonical for:** runtime contract changes — data formats, payload keys, and API surfaces are in [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Then inspect:** [`../fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`../testing.md`](../testing.md), [`../../src/pipeline_io.py`](../../src/pipeline_io.py), [`../../src/jobs/state_lifecycle.py`](../../src/jobs/state_lifecycle.py)
-> - **Last updated:** 2026-08-21
+> - **Last updated:** 2026-08-28 (archived from `docs/plans/` after completion; retained as the reference for bench methodology and deferred next fetch-side levers)
 
 ## Summary
 

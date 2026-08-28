@@ -1,11 +1,11 @@
 # Cross-Cutting Tech Debt Follow-Up Tracker
 
-> - **Status:** Complete for the current cleanup tranche
+> - **Status:** Archived closeout — complete for the June 2026 P0 cleanup tranche
 > - **Use this when:** checking what closed after the June 2026 P0 refactor pass
 > - **Canonical for:** current cleanup priorities and explicit non-goals after the P0 work closed
 > - **Not canonical for:** detailed P0 implementation history, API contracts, route ownership, or release behavior
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../testing.md`](../testing.md), [`../DOCS_WORKFLOW.md`](../DOCS_WORKFLOW.md)
-> - **Last updated:** 2026-06-20
+> - **Last updated:** 2026-08-28 (archived from `docs/plans/` after completion)
 
 ## Current State
 
