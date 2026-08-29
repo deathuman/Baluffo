@@ -31,6 +31,62 @@ def visible_text_len(html: str) -> int:
     return len(clean_text(text))
 
 
+# Legacy (jQuery-era) JS shells are missed by the SPA-token detector below:
+# these are real app shells (Ember/AngularJS/Backbone/jQuery SPA) whose listings
+# are JS-rendered but which emit no React/Next/Angular-2 boot tokens. Detect them
+# only when the hydration evidence is *corroborated* (a template/hydration marker
+# plus a careers/job context, or a client-rendered href placeholder, or an
+# AngularJS/legacy-SPA boot), so plain server-rendered pages that merely ship
+# jQuery/handlebars are NOT misclassified.
+_LegacyHydrationTemplateTokens = (
+    "x-handlebars",
+    "text/x-handlebars",
+    "ember-application",
+    "{{#each",
+    "{{#if",
+    "data-bind",  # knockout
+)
+# Standalone placeholder href emitted by client-hydrated loops (jobs/careers cards).
+_HYDRATED_HREF_PLACEHOLDERS = ("data-href=", "data-url=", "data-joburl=")
+
+_LegacySpaBootTokens = (
+    "ng-app",
+    "ng-controller",
+    "ng-view",
+    "ng-repeat",
+    "backbone",
+    "requirejs",
+)
+
+_LegacyJobListingHintTokens = (
+    "job-listing",
+    "job-card",
+    "job-list",
+    "open-positions",
+    "career-list",
+    "career-card",
+    "jobopenings",
+    "current-opening",
+    "position-card",
+    "join-our-team",
+    "vacancy",
+    "opening",
+)
+
+_LegacyCareerContextTokens = (
+    "career",
+    "careers",
+    "job",
+    "jobs",
+    "position",
+    "positions",
+    "opening",
+    "openings",
+    "vacanc",
+    "roles",
+)
+
+
 def detect_js_shell(html: str) -> bool:
     """Best-effort detection for JS-rendered app shells.
 
@@ -38,6 +94,13 @@ def detect_js_shell(html: str) -> bool:
     cookie banners, and footers can produce >180 chars of visible text
     while the actual job listings are still JS-rendered.
     Very short text with SPA-related tokens is also evidence.
+
+    Also detects jQuery-era / legacy-hydration shells (Ember, AngularJS,
+    Backbone, jQuery SPA) that emit no modern SPA boot tokens, but only
+    when the hydration evidence is corroborated by a job/career context
+    (template markers, client-hydrated href placeholders, or a legacy-SPA
+    boot) — so ordinary server-rendered pages that merely bundle
+    jQuery/handlebars stay negative.
     """
     s = normalize_html(html)
     lower = s.lower()
@@ -55,6 +118,29 @@ def detect_js_shell(html: str) -> bool:
     has_spa_framework = any(tok in lower for tok in _spa_framework_tokens)
 
     if has_spa_div or has_spa_framework:
+        return True
+
+    career_context = any(tok in lower for tok in _LegacyCareerContextTokens)
+    listing_hint = any(tok in lower for tok in _LegacyJobListingHintTokens)
+    legacy_template = sum(1 for tok in _LegacyHydrationTemplateTokens if tok in lower)
+    spa_boot = sum(1 for tok in _LegacySpaBootTokens if tok in lower)
+    href_placeholder = any(tok in lower for tok in _HYDRATED_HREF_PLACEHOLDERS)
+    jquery_present = lower.count("jquery") >= 2
+
+    # Two AngularJS / legacy-SPA boot directives are unambiguous app shells.
+    if spa_boot >= 2:
+        return True
+    # A handlebars/ember/knockout template marker corroborated by a careers
+    # or job-listing context indicates a client-rendered listing.
+    if legacy_template >= 1 and (listing_hint or career_context):
+        return True
+    # A client-hydrated href placeholder (loop-rendered job cards) inside a
+    # careers/job context is a strong shell signal.
+    if href_placeholder and (listing_hint or career_context):
+        return True
+    # jQuery rehydrating an explicit job-listing container is the classic
+    # jQuery-era shell pattern.
+    if jquery_present and listing_hint:
         return True
     return False
 

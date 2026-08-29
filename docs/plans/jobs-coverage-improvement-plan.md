@@ -4,8 +4,7 @@
 > - **Use this when:** improving jobs feed coverage — recovering zero-kept static sources, closing provider coverage gaps, promoting staged providers, or reducing sheet dominance
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
-> - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container)
+> - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section) >- **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, bounded measurement on the browser-fallback candidates recorded below)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -436,6 +435,45 @@ openings — correct classification, not a wall). Optillusion and Upsurge stay `
 from WP2 (JS modal / JS challenge).
 - **Standing blocker:** `detect_js_shell` classifier gap (jQuery-era JS shells never reach the
 browser pool; 0/3 pool measurement from 8/13). WP4 stays gated.
+
+### WP4 implementation — widened jQuery-era JS-shell classifier + pool measurement
+
+**Change:** `detect_js_shell` (`_heuristics.py`) now also recognizes jQuery-era / legacy-hydration
+shells (Ember, AngularJS, Backbone, jQuery SPA) that emit no modern React/Next/Angular-2 boot
+tokens. New corroborated signals — handlebars/ember/knockout template markers, client-hydrated
+`data-href` placeholders, a legacy-SPA boot (≥2 of ng-app/ng-controller/ng-view/ng-repeat/
+backbone/requirejs), or jQuery rehydrating an explicit job-listing container — only fire when a
+careers/job context is present. This keeps plain server-rendered pages that merely bundle
+jQuery/handlebars negative (validated negative: astrid, leia/immersity, appsoleut, dynamicnext,
+nomada, strangebeat, mergegames). Tests: `test_wp4_js_shell_detection.py` (10 cases); full static
+battery 387 passed; precommit gate green.
+
+**Effect on empty-parse classification** (verified against live captures):
+
+| Capture | Before | After |
+|---|---|---|
+| sandsoft | `needs_review` (browser-rec False) | `blocked_or_challenge`, browser-fallback rec **True** |
+| twitch | `blocked_or_challenge` (SPA already caught) | unchanged `blocked_or_challenge`, rec True |
+| konami main `/jobs/` | `dead_listing_page` | `empty_confirmed` (page has explicit "no open positions") — correct |
+| astrid / leia / appsoleut | `needs_review` | `needs_review` (server-rendered, not flagged) |
+
+**Pool recovery measurement** (bounded pipeline run, `--only-sources` on the 6 candidates,
+`--force-refresh-all`, browser fallback on; before/after reports in `_out/coverage-refresh-2026-08-28/wp4-{baseline,after}/`):
+
+| Source | Before | After | Note |
+|---|---|---|---|
+| **Konami Gaming** (`konamigaming.com/careers`) | 0 (needs_review) | **45 kept** | genuine browser-pool recovery |
+| konami main `/jobs/` | 0 dead_listing | 0 `empty_confirmed` | page explicitly says "no open positions" — correct |
+| sandsoft | 0 needs_review | 0, now `blocked_or_challenge` + browser-rec | empty board, classified as shell |
+| twitch | 0 site_changed | 0 site_changed | JS board behind the careers route; lexical `react` hits pre-existing |
+| upsurge / optillusion | 0 needs_review | 0 needs_review | jobs behind JS modal / challenge — remain browser-fallback candidates |
+
+**Outcome:** browser-fallback recovery is positive (45 jobs from Konami Gaming via the pool), and
+the general `detect_js_shell` classifier gap for jQuery-era shells is closed: plugin empty-parse
+now flags these as `blocked_or_challenge` + browser-recommended instead of silently `needs_review`,
+so they enter the browser fallback queue / stay escalation-eligible rather than being dropped as dead
+listings. Remaining WP4 candidates (upsurge, optillusion, twitch) are jobs genuinely behind JS
+modal/challenge routes, not classifier misses; they stay `needs_review`/browser-eligible by design.
 
 ### Track 2 / follow-up notes
 

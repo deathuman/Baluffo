@@ -21,6 +21,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   recover server-rendered listings the generic parser missed: Outerdawn (Webflow `careerrow`),
   Astrid Entertainment (WordPress `job-listing` blocks with Workable apply links), Immersity
   (Webflow `careers_cms_item`), and Perfect Garbage (Squarespace → Work With Indies postings).
+- Browser-fallback JS-shell classifier (WP4, jobs-coverage plan): `detect_js_shell` now also
+  recognizes jQuery-era / legacy-hydration shells (Ember, AngularJS, Backbone, jQuery SPA)
+  that emit no modern React/Next/Angular-2 boot tokens. Detection requires *corroborated*
+  evidence (a handlebars/ember/knockout template marker, a client-hydrated `data-href`
+  placeholder, or a legacy-SPA boot plus careers/job context), so plain server-rendered pages
+  that merely bundle jQuery/handlebars stay negative. Bounded live run on the browser-fallback
+  candidates (Twitch, Konami, Konami Gaming, Sandsoft, Upsurge, Optillusion): Konami Gaming
+  recovered **45 jobs** via the pool; sandsoft/twitch shell captures now classify
+  `blocked_or_challenge` + `browserFallbackRecommended=true` instead of `needs_review`/dead,
+  and konami main classifies `empty_confirmed` (genuinely empty today, correct behavior).
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and
