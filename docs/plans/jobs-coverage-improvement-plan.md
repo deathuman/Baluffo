@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -325,6 +325,29 @@ apex→www-with-port→trailing-slash chain that CDN-fronted studio sites emit.
   Namco JP, Cryptyd, Aden, Brainium, Media Vision, Voxel Agents, Bandai Namco Mobile — sources
   whose HTML was never reached by the parser. Cryptyd additionally verified as a contact-form page
   (no real listings — expect dead-listing classification, which is correct behavior).
+
+### Live verification (2026-08-29, bounded fetch of the recovery set)
+
+`python src/jobs_fetcher.py --only-sources <11 recovery ids> --ignore-circuit-breaker
+--force-refresh-all` → **0 failed sources** (previously 11/11 error/site_changed). Per-source:
+
+| Source | Before | After | Note |
+|---|---|---|---|
+| Bandai Namco JP (`bandainamcoent.co.jp/job/`) | 0 (301) | **35 kept** | biggest single recovery |
+| Outerdawn | 0 (network error) | **5 kept** | plugin extracts exactly the 5 probed roles |
+| Funovus | 0 (301 chain) | **5 kept** | 3 listing anchors + detail traversal |
+| The Voxel Agents | 0 (redirect loop) | **2 kept** | |
+| Aden Interactive | 0 (redirect loop) | **1 kept** | |
+| Brainium | 0 (redirect loop) | **1 kept** | Dayforce HCM apply link |
+| Media Vision | 0 (redirect loop) | **1 kept** | |
+| Bandai Namco Mobile | 0 | 0, `needs_review` | reaches parser now; genuinely thin page |
+| Cryptyd | 0 | 0, `needs_review` | contact-form page (no listings) — correct classification |
+| Optillusion | 0 | 0, `needs_review` | jobs behind JS modal — browser-fallback track |
+| Upsurge | 0 | 0, `needs_review` | JS challenge — browser-fallback track |
+
+**Net: ~50 jobs recovered** from 11 sources; all 11 now complete with `status=ok` instead of
+redirect errors. The 4 still-zero sources are correctly classified (`needs_review`), with the
+JS-shell ones belonging to the browser-fallback track.
 
 ## Out of Scope
 
