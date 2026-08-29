@@ -75,6 +75,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
   entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
   instead of two.
+- Standalone sub-studio scan (WP16, jobs-coverage plan): checked whether Undead Labs,
+  inXile, Compulsion, Smoking Gun, Next Games, Night School and Boss Fight link a
+  recoverable parent/ATS board. **None currently yields real jobs**: Undead Labs' Greenhouse
+  board (`undeadlabsllc`) holds only a "General Interest Application" catch-all; inXile's
+  and Compulsion's BambooHR `/careers/list` (repo adapter) return 0 postings / a
+  "Be Careful of Hiring Scams" warning — those three are **adapter-ready but empty today**,
+  documented for staging when openings appear. Next Games and Night School route to the
+  Netflix custom platform (covered by the WP15 `phApp` adapter decision); Smoking Gun and
+  Boss Fight expose no board. No provider staging worthwhile this pass.
 - Full-registry phApp platform scan (WP15, jobs-coverage plan): content-scanned the
   1,597 captured active static careers pages for the proprietary `phApp`/`vscdn.net`
   careers platform → **13 active static rows host it directly** (lower bound). **5 also
