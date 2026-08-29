@@ -31,7 +31,8 @@ _TITLE_RE = re.compile(
 
 def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
     # List-only board: the page emits no per-role links, so the shared helper anchors
-    # each row to the careers page with a title-derived #<slug> fragment.
+    # each row to the careers page with a title-derived ?static-role=<slug> query
+    # parameter (query params survive pipeline URL normalization; fragments do not).
     return static_list_only_job_rows(ctx, block_sep=_BLOCK_SEP, title_re=_TITLE_RE)
 
 

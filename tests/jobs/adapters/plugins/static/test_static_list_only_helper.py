@@ -1,4 +1,4 @@
-"""Tests for the shared list-only static-plugin helper (fragment-anchored roles)."""
+"""Tests for the shared list-only static-plugin helper (query-anchored roles)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from typing import Any, cast
 
 from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticContext,
-    static_fragment_link,
     static_list_only_job_rows,
+    static_listing_anchor_link,
 )
 
 
@@ -22,25 +22,40 @@ def _ctx(page_url: str, html: str) -> SimpleStaticContext:
     )
 
 
-def test_static_fragment_link_is_on_domain_and_distinct() -> None:
-    link_a = static_fragment_link("https://example.com/careers/", "Senior Game Designer")
-    link_b = static_fragment_link("https://example.com/careers/", "Character Artist")
-    assert link_a == "https://example.com/careers/#senior-game-designer"
-    assert link_b == "https://example.com/careers/#character-artist"
+def test_static_listing_anchor_link_is_on_domain_and_distinct() -> None:
+    link_a = static_listing_anchor_link("https://example.com/careers/", "Senior Game Designer")
+    link_b = static_listing_anchor_link("https://example.com/careers/", "Character Artist")
+    assert link_a == "https://example.com/careers/?static-role=senior-game-designer"
+    assert link_b == "https://example.com/careers/?static-role=character-artist"
     assert link_a != link_b
 
 
-def test_static_fragment_link_handles_ampersand_and_whitespace() -> None:
-    assert static_fragment_link("https://example.com/careers", "R&D Artists") == (
-        "https://example.com/careers#randd-artists"
+def test_static_listing_anchor_link_survives_normalize_url() -> None:
+    # The whole point of the query anchor: the pipeline normalizes URLs at several
+    # stages (plugin-row dedup, canonicalization, dedup fingerprinting) and strips
+    # fragments. A query parameter must survive so list-only roles stay distinct.
+    from src.jobs.text_utils import normalize_url
+
+    link = static_listing_anchor_link("https://example.com/careers/", "Senior Game Designer")
+    assert normalize_url(link) == "https://example.com/careers?static-role=senior-game-designer"
+    links = {
+        static_listing_anchor_link("https://example.com/careers/", title)
+        for title in ("Animators", "Rigging Artists", "Character Artists")
+    }
+    assert len({normalize_url(link) for link in links}) == 3
+
+
+def test_static_listing_anchor_link_handles_ampersand_and_whitespace() -> None:
+    assert static_listing_anchor_link("https://example.com/careers", "R&D Artists") == (
+        "https://example.com/careers?static-role=randd-artists"
     )
     # Internal whitespace is preserved in the slug (same as the original upsurge helper).
-    assert static_fragment_link("https://example.com/careers/", "  Tech  Director ") == (
-        "https://example.com/careers/#tech--director"
+    assert static_listing_anchor_link("https://example.com/careers/", "  Tech  Director ") == (
+        "https://example.com/careers/?static-role=tech--director"
     )
 
 
-def test_list_only_rows_extract_titles_and_anchor_fragments() -> None:
+def test_list_only_rows_extract_titles_and_anchor_queries() -> None:
     html = """
     <section class="CareerList">
       <section class="CareerSummary"><h3 class="CareerSummary__Title">Animators</h3>
@@ -60,10 +75,10 @@ def test_list_only_rows_extract_titles_and_anchor_fragments() -> None:
     )
     assert [r["title"] for r in rows] == ["Animators", "Rigging Artists"]
     assert [r["jobLink"] for r in rows] == [
-        "https://upsurgestudios.com/careers/#animators",
-        "https://upsurgestudios.com/careers/#rigging-artists",
+        "https://upsurgestudios.com/careers/?static-role=animators",
+        "https://upsurgestudios.com/careers/?static-role=rigging-artists",
     ]
-    # Distinct sourceJobIds despite the same base URL (fragment-linked rows).
+    # Distinct sourceJobIds despite the same base URL (query-anchored rows).
     assert len({r["sourceJobId"] for r in rows}) == 2
 
 
@@ -118,7 +133,7 @@ def test_list_only_rows_skip_blocks_without_titles_and_empty_titles() -> None:
 def test_list_only_rows_empty_html_yields_no_rows() -> None:
     rows = static_list_only_job_rows(
         _ctx("https://example.com/careers/", ""),
-        block_sep=re.compile(r"(?is)(?=class=\"role\")"),
+        block_sep=re.compile(r'(?is)(?=class="role")'),
         title_re=re.compile(r"(?is)<h3[^>]*>(.*?)</h3>"),
     )
     assert rows == []

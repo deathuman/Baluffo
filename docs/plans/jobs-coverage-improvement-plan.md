@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -518,7 +518,7 @@ or registry demotion based on what the rendered boards actually expose:
 
 | Source | Live probe | Reading | Disposition | Action |
 |---|---|---|---|---|
-| **upsurgestudios.com/careers/** | 200, server-rendered | 6 `CareerSummary` roles (title + Job Description / Requirements inline), **no per-role links** | **Plugin recovery** | New leaf plugin `upsurge` (6 fragment-anchored rows) |
+| **upsurgestudios.com/careers/** | 200, server-rendered | 6 `CareerSummary` roles (title + Job Description / Requirements inline), **no per-role links** | **Plugin recovery** | New leaf plugin `upsurge` (6 query-anchored rows; see WP9 for the fragment→query anchor fix) |
 | **sandsoft.com/careers/** | 200, jQuery-era shell; **`/careers/feed/` RSS** | **10 postings** in the server-rendered feed (each `<item>` = title + detail link); live check-source `jobsFound: 2, weakSignal: true` | **Plugin recovery** | New leaf plugin `sandsoft` (fetches `/careers/feed/`, parses 10 postings) |
 | **optillusion.games/job** | 200, server-rendered | Explicit "We are not actively hiring" / "Job Openings Currently Closed"; `/jobs` and `/careers` both 404; zero open-role headings domain-wide | **Genuinely empty → demote** | `/registry/demote-active` on live container — active 2303 → **2302**, pending 867 → **868** |
 
@@ -527,14 +527,15 @@ or registry demotion based on what the rendered boards actually expose:
 
 - **`upsurge.py`** (`upsurgestudios.com`): splits on `class=CareerSummary` blocks, title from
   `CareerSummary__Title`. The page emits no per-role links, so each row is anchored to the
-  careers page with a title-derived `#<slug>` fragment to keep `sourceJobId`s distinct and
-  on-domain. Extracts **6** live roles.
+  careers page with a title-derived `?static-role=<slug>` query parameter to keep
+  `sourceJobId`s distinct and on-domain (query params survive pipeline URL normalization,
+  unlike `#`-fragments — see WP9). Extracts **6** live roles.
 - **`sandsoft.py`** (`sandsoft.com`): custom `run` that derives the listing's server-rendered
   RSS feed URL (`/careers/feed/`) `_feed_url` and parses `<item>` title+link. The listing page
   itself is the jQuery-era shell the WP4 classifier now flags, so the feed is the reliable,
   non-browser source of truth. Extracts **10** postings (feed verified live).
 
-Verified: `test_wp5_leaf_plugins.py` (12 cases: multi-row extraction, fragment-link uniqueness,
+Verified: `test_wp5_leaf_plugins.py` (12 cases: multi-row extraction, anchor-link uniqueness,
 `_feed_url` slash forms, empty-feed, host dispatch) + static plugins battery **57 passed**
 + `tests/jobs_static` **282 passed**; precommit gate green. `docs/adapter-plugin-inventory.md`
 static-plugins table and CHANGELOG updated.
@@ -659,6 +660,42 @@ Recovery value is 1 job per board. Recommend: keep these boards `needs_review`; 
 studio starts posting jobs regularly (the feed URLs above are documented for a future leaf plugin
 using the sandsoft feed pattern + a conservative title filter). No registry or code changes on
 this pass.
+
+### WP9 measurement (2026-08-29) — WP5 plugins end-to-end pipeline recovery (before/after)
+
+Question: what do the two WP5 plugins actually keep on a bounded production pipeline pass, and
+does the measured recovery match the plugin unit tests? Answer: **yes, after one fix** — the
+list-only anchor scheme had to move from `#`-fragments to `?static-role=` query parameters.
+
+**Before (WP4/WP5 baseline):** both sources rendered empty through the browser pool — `kept 0`
+each (`dead_listing_page` / `needs_review`); the WP5 dispositions artifact recorded
+`kept_before_wp5: 0` for both.
+
+**After — bounded pipeline pass** (`--only-sources` on the two registry rows,
+`--force-refresh-all --no-seed-existing-output`, browser fallback on):
+
+| Source | kept before | plugin unit parse | pipeline run #1 | pipeline run #2 (post-fix) |
+|---|---|---|---|---|
+| upsurge (`www.upsurgestudios.com/careers/`) | 0 | 6 | **1** | **6** |
+| sandsoft (`sandsoft.com/careers/`) | 0 | 10 | **10** | **10** |
+
+Run #1 exposed a real bug: upsurge kept **1 of 6**. Root cause: the WP5 list-only helper anchored
+rows with `#<slug>` **fragments**, but pipeline URL normalization strips fragments at three
+stages — the plugin repair-row dedup (`_append_repaired_plugin_rows` in
+`static_listing_plugin.py`, keyed on `normalize_url(jobLink)`), canonicalization
+(`_resolve_job_link` in `canonicalize_locations.py`), and the finalize dedup fingerprint
+(`canonical_url_fingerprint_seed`). Every role on the page collapsed into the first surviving row.
+
+**Fix:** `static_fragment_link` → `static_listing_anchor_link` (shared helper in `_runner.py`);
+rows are now anchored with a `?static-role=<slug>` **query parameter**, which survives
+`normalize_url` (query params are preserved and sorted; fragments are dropped). No changes to the
+shared canonicalize/dedup code — the anchor simply no longer collides with the repo's URL
+semantics. `upsurge.py` and the helper/WP5 tests were updated (fragment expectations → query).
+
+**Verified:** run #2 keeps **upsurge 6/6** (all six `CareerSummary` roles distinct end-to-end,
+links `…/careers/?static-role=<slug>`) and **sandsoft 10/10** unchanged (real detail links) —
+**16 output jobs** vs 11 before the fix. The list-only pattern now works for future boards
+without per-role links.
 
 ### Track 2 / follow-up notes
 

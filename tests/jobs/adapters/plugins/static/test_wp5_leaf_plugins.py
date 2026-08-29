@@ -80,10 +80,10 @@ def test_upsurge_extracts_all_roles_as_distinct_rows() -> None:
     )
     assert [r["title"] for r in rows] == ["Real Time Effects Artists", "Character Artists"]
     assert [r["jobLink"] for r in rows] == [
-        "https://upsurgestudios.com/careers/#real-time-effects-artists",
-        "https://upsurgestudios.com/careers/#character-artists",
+        "https://upsurgestudios.com/careers/?static-role=real-time-effects-artists",
+        "https://upsurgestudios.com/careers/?static-role=character-artists",
     ]
-    # Distinct sourceJobIds despite same base URL (fragment-linked rows).
+    # Distinct sourceJobIds despite same base URL (query-anchored rows).
     assert len({r["sourceJobId"] for r in rows}) == 2
     assert rows[0]["adapter"] == "static"
     assert rows[0]["studio"] == "Upsurge Studio"

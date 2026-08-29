@@ -41,6 +41,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   "not actively hiring"; no openings anywhere) and was demoted on the live container
   to review (`/registry/demote-active`, active 2303→2302). Sandsoft's live check-source
   reports `jobsFound: 2` / `weakSignal`, corroborating the plugin recovery.
+- WP5-plugin pipeline measurement + list-only anchor fix (WP9, jobs-coverage plan): a
+  bounded pipeline pass showed the upsurge plugin kept only 1 of its 6 roles — the shared
+  list-only helper anchored rows with `#<slug>` fragments, which URL normalization strips at
+  the plugin repair-row dedup, canonicalization, and finalize-fingerprint stages. The helper
+  (`static_fragment_link` → `static_listing_anchor_link`) now anchors rows with a
+  `?static-role=<slug>` query parameter, which survives normalization end-to-end. Verified on
+  a fresh pass: upsurge **6/6** and sandsoft **10/10** roles kept (16 output jobs vs 11),
+  matching the plugin unit tests.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and
