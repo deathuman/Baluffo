@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from src.jobs.adapters.plugins.static import phapp as _phapp
 from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticContext,
     SimpleStaticPlugin,
@@ -105,7 +106,7 @@ def run(
                     return rows
         return _activision_anchor_rows(html=ctx.html, company=ctx.company, source_id=ctx.source_id)
 
-    return simple_static_run(
+    rows = simple_static_run(
         spec=SimpleStaticPlugin(
             source_id="activision",
             default_company="Activision",
@@ -124,5 +125,18 @@ def run(
         source_row=source_row,
         parse_jobpostings_from_html=parse_jobpostings_from_html,
         try_playwright=try_playwright,
+        **kwargs,
+    )
+    if rows:
+        return rows
+    # The production jobsite is a JS shell that exposes no server-rendered role
+    # links; recover via the shared phApp sitemap path instead.
+    return _phapp.run(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        pages=[page_url],
+        source_row=source_row,
         **kwargs,
     )

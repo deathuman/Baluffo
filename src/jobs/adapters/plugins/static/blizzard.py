@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.adapters.plugins.static import phapp as _phapp
 from src.jobs.adapters.plugins.static._runner import (
     fetch_static_plugin_html,
     first_static_page,
@@ -63,7 +64,17 @@ def run(
         page_url=page_url,
         source_row=source_row,
     ):
-        return []
+        # The production jobsite is a JS shell: the dedicated parse can't see the
+        # jobs, so fall back to the shared phApp sitemap recovery path.
+        return _phapp.run(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            pages=pages,
+            source_row=source_row,
+            **kwargs,
+        )
 
     rows = parse_jobpostings_from_html(
         html,
@@ -93,6 +104,17 @@ def run(
             )
     cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
     if not cleaned:
+        recovered = _phapp.run(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            pages=pages,
+            source_row=source_row,
+            **kwargs,
+        )
+        if recovered:
+            return recovered
         record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
     return cleaned
 

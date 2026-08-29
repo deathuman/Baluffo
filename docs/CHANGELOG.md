@@ -84,6 +84,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   documented for staging when openings appear. Next Games and Night School route to the
   Netflix custom platform (covered by the WP15 `phApp` adapter decision); Smoking Gun and
   Boss Fight expose no board. No provider staging worthwhile this pass.
+- Shared phApp careers-platform adapter (WP17, jobs-coverage plan): reverse-engineered the
+  open recovery path for the Phenom People "CareerConnect"/`phApp` platform that WP14/WP15
+  flagged as widget-only (the widget-API JSON is tenant+CSRF gated, but every phApp jobsite
+  publishes an open per-locale sitemap of `/job/{jobCode}/{slug-title}` URLs whose detail
+  pages are server-rendered). The shared plugin
+  (`src/jobs/adapters/plugins/static/phapp.py`) derives the sitemap URLs, extracts title /
+  location / company from the canonical `<title>` (both the Blizzard "{Title} | {Loc} job in
+  … | … jobs at {Co}" and King "{Title} in … | … at {Co}" shapes, plus URL-slug fallback),
+  is registered for the widget-only rows (King, Treyarch, Raven, Sledgehammer, WBD, Scopely,
+  …), and the dedicated blizzard/activision plugins now fall back to it when their
+  server-rendered-card parse yields nothing (the production JS-shell case). Bounded live
+  end-to-end pass recovers **103 jobs** (Activision 50, Blizzard 37, King 14, Treyarch 2),
+  all previously zero-kept.
 - Full-registry phApp platform scan (WP15, jobs-coverage plan): content-scanned the
   1,597 captured active static careers pages for the proprietary `phApp`/`vscdn.net`
   careers platform → **13 active static rows host it directly** (lower bound). **5 also

@@ -155,6 +155,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | outerdawn | www.outerdawn.com, outerdawn.com | Outerdawn careers (Webflow `careerrow` listing; title/location from `contentbox__*` cells) |
 | perfectgarbage | perfectgarbage.com, www.perfectgarbage.com | Perfect Garbage careers (Squarespace; extracts Work With Indies postings, strips `Hiring: ` prefix) |
 | petprojectgames | petprojectgames.com, www.petprojectgames.com | Pet Project Games site feed (`/feed/`); conservative role+news-filtered job postings |
+| phapp | careers.activision.com (fallback), careers.blizzard.com (fallback), careers.king.com, careers.treyarch.com, careers.ravensoftware.com, careers.sledgehammergames.com, careers.wbd.com, careers.beenox.com, careers.highmoonstudios.com, careers.infinityward.com, scopely.com, www.scopely.com | Shared Phenom "phApp" CareersConnect platform adapter (per-locale sitemap of `/job/{jobCode}/{slug}` + server-rendered `<title>` extractor); widget-only rows are primary; blizzard/activision fall back to it |
 | playstack | playstack.com, www.playstack.com | Playstack careers (Astro `dynamic-title` card grid; list-only rows, hero heading filtered, entity variants collapsed) |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
 | sandsoft | sandsoft.com, www.sandsoft.com | Sandsoft careers (jQuery-era listing; recovers postings from the server-rendered `/careers/feed/` RSS) |

@@ -50,6 +50,7 @@ from . import (
     outerdawn,
     perfectgarbage,
     petprojectgames,
+    phapp,
     playstack,
     remedy,
     riot,
@@ -99,6 +100,11 @@ def register_static_plugins() -> None:
         (outerdawn, "outerdawn", 90),
         (perfectgarbage, "perfectgarbage", 90),
         (petprojectgames, "petprojectgames", 90),
+        # Phenom "phApp" family covers the widget-only rows (King, Treyarch, Raven,
+        # Sledgehammer, WBD, Scopely, …). Blizzard/Activision keep their dedicated
+        # per-host plugins, which fall back to this shared sitemap path when their
+        # server-rendered-card parse yields nothing (as it does in production).
+        (phapp, "phapp", 90),
         (playstack, "playstack", 90),
         (sandsoft, "sandsoft", 90),
         (tatem, "tatem", 90),
