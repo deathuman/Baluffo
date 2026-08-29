@@ -75,6 +75,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
   entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
   instead of two.
+- Discovery sweep WordPress-feed probe (source_discovery): before a JS-shell discovery
+  candidate is escalated to the browser pool, the page-recovery sweep now probes for a
+  server-rendered feed — first the URL advertised via
+  `<link rel="alternate" type="application/rss+xml">`, then standard WordPress feed
+  paths (`/feed/`, `<page-path>/feed/`, `/feed`). A detected feed wins over the browser
+  pool and is emitted as a feed-recovered static candidate (`discoveryStage:
+  "wordpress_feed"`, tagged with `feedUrl`/`feedSource`/`feedItemCount`), surfaced under a
+  new `feedRecoveryCandidates` summary key. Non-JS-shell pages and pages without a feed
+  are unchanged (the latter still land in the browser pool). Shared helpers live in
+  `src/source_discovery/wordpress_feed_probe.py`.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and

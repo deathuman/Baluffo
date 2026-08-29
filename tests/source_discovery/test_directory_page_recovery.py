@@ -422,6 +422,7 @@ def test_default_recovery_summary_preserves_report_keys() -> None:
         "recoveredStaticCandidates": 0,
         "recoveryFailures": 0,
         "browserRecoveryCandidates": 0,
+        "feedRecoveryCandidates": 0,
     }
 
 

@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from src.shared.json_shapes import as_json_object, json_object_rows
 
-from . import audit_ledger
+from . import audit_ledger, wordpress_feed_probe
 from .browser_recovery import browser_recovery_candidate_row
 from .directory_fetch import fetch_directory_pages
 from .page_diagnostics import (
@@ -124,6 +124,7 @@ def default_recovery_summary() -> dict[str, int]:
         "recoveredStaticCandidates": 0,
         "recoveryFailures": 0,
         "browserRecoveryCandidates": 0,
+        "feedRecoveryCandidates": 0,
     }
 
 
@@ -769,15 +770,62 @@ def _dedupe_jobs(
     return jobs, request_by_url
 
 
-def _browser_candidates_for_requests(
+def _feed_static_candidate(
+    request: DirectoryRecoveryRequest,
+    probe_result: dict[str, Any],
+) -> dict[str, Any]:
+    feed_url = str(probe_result.get("feedUrl") or "").strip()
+    return {
+        "name": request.name,
+        "studio": request.studio,
+        "company": request.studio,
+        "adapter": "static",
+        "pages": [feed_url],
+        "listing_url": feed_url,
+        "careersUrl": request.page_url,
+        "discoveryMethod": request.discovery_method,
+        "discoveryStage": "wordpress_feed",
+        "evidenceSource": "wordpress_feed",
+        "evidenceTypes": ["server_rendered_feed"],
+        "feedUrl": feed_url,
+        "feedSource": str(probe_result.get("source") or ""),
+        "feedItemCount": int(probe_result.get("itemCount") or 0),
+        "enabledByDefault": False,
+        "weakSignal": True,
+    }
+
+
+def _browser_and_feed_candidates_for_requests(
     requests: list[DirectoryRecoveryRequest],
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+    *,
+    timeout_s: int,
+    fetcher: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Route recovery-eligible pages away from the browser pool when they expose a feed.
+
+    JS-shell pages that lack static evidence are escalated to the browser pool
+    today. Before that happens, probe for a server-rendered WordPress feed
+    (advertised ``<link rel=alternate type=application/rss+xml>`` first, then
+    ``/feed/``); a discovered feed wins over the browser pool and is emitted as a
+    feed-tagged static candidate instead.
+    """
+    browser_rows: list[dict[str, Any]] = []
+    feed_static_rows: list[dict[str, Any]] = []
     for request in requests:
         detail = no_candidate_reason_detail(request.page_url, request.html)
-        if detail == "js_shell":
-            rows.append(browser_recovery_candidate(request, reason_detail=detail))
-    return rows
+        if detail != "js_shell":
+            continue
+        probe_result = wordpress_feed_probe.probe_wordpress_feed(
+            request.page_url,
+            request.html,
+            fetch_text=fetcher,
+            timeout_s=timeout_s,
+        )
+        if probe_result.get("feedUrl"):
+            feed_static_rows.append(_feed_static_candidate(request, probe_result))
+            continue
+        browser_rows.append(browser_recovery_candidate(request, reason_detail=detail))
+    return browser_rows, feed_static_rows
 
 
 def _record_recovery_failure(
@@ -985,7 +1033,14 @@ def run_directory_page_recovery(
     if not requests:
         return output
 
-    output.browser_recovery_candidates.extend(_browser_candidates_for_requests(requests))
+    browser_rows, feed_static_rows = _browser_and_feed_candidates_for_requests(
+        requests,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
+    output.browser_recovery_candidates.extend(browser_rows)
+    output.static_candidates.extend(feed_static_rows)
+    output.summary["feedRecoveryCandidates"] = len(feed_static_rows)
     remaining_keys = {request.key for request in requests}
     fetch_started = time.perf_counter()
     for wave_index, (paths, include_jobish_links) in enumerate(
