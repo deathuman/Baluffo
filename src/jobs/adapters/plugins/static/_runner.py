@@ -12,6 +12,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -20,7 +21,12 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
-from src.jobs.page_gating import classify_job_page, dead_listing_page_meta
+from src.jobs.page_gating import (
+    classify_job_page,
+    dead_listing_page_meta,
+    looks_like_job_title_candidate,
+    looks_like_static_parser_noise_title,
+)
 from src.jobs.text_utils import clean_text
 
 _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
@@ -57,6 +63,51 @@ def static_identity_handler(*identities: str) -> Callable[[AdapterPluginContext]
         return clean_text(ctx.source_identity).lower() in normalized
 
     return can_handle
+
+
+# Section-header phrases that carry role-hint tokens ("Open Roles", "We're Hiring") but
+# are not postings; list-only extraction must not publish them as rows.
+_LIST_ONLY_SECTION_HEADER_PHRASES = (
+    "open role",
+    "open position",
+    "current opening",
+    "job opening",
+    "we are hiring",
+    "we're hiring",
+    "we re hiring",
+    "now hiring",
+    "join our team",
+    "join the team",
+    "join us",
+    "our team",
+    "work with us",
+    "work at",
+    "life at",
+    "careers at",
+    "vacancies",
+    "recruiting",
+    "apply now",
+    "available positions",
+    "see all roles",
+    "all roles",
+    "browse roles",
+    "explore roles",
+    "career opportunities",
+)
+
+
+def looks_like_listing_role_title(title: str) -> bool:
+    """Job-title-looking listing heading that is not noise or a section header.
+
+    Shared by the generic WP10 list-only fallback and leaf plugins that post-filter
+    extracted titles (e.g. pages where the hero heading shares the role-title markup).
+    """
+    if looks_like_static_parser_noise_title(title):
+        return False
+    if not looks_like_job_title_candidate(title):
+        return False
+    key = clean_text(title).casefold()
+    return not any(phrase in key for phrase in _LIST_ONLY_SECTION_HEADER_PHRASES)
 
 
 def static_job_row(
@@ -120,7 +171,7 @@ def static_list_only_job_rows(
         title_match = title_re.search(block)
         if not title_match:
             continue
-        title = clean_text(strip_html_text(title_match.group(1)))
+        title = clean_text(unescape(strip_html_text(title_match.group(1))))
         if not title:
             continue
         link = static_listing_anchor_link(ctx.page_url, title)

@@ -66,6 +66,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   expired TLS certificate so it stays zero until the cert is renewed. The duplicate
   `www.a4vr.com` active registry row was demoted to pending (kept the seeded `a4vr.com` row), so
   the feed now carries 3 a4vr jobs instead of 6.
+- Full-active-registry list-only sweep (WP12, jobs-coverage plan): extended the WP11 sweep
+  to all 2,110 active static URLs (1,961 captured) and converted three more non-heading
+  list-only boards to leaf plugins using the shared `static_list_only_job_rows` helper:
+  playstack (Astro `dynamic-title` card grid, 21 roles, hero heading filtered), twirlbound
+  (WordPress ub-content-toggle accordions, 4 roles), and tatem (Tilda `t-card__title` cards,
+  9 roles). Bounded pass recovers **34 jobs** (21+4+9, 0 failed). The shared list-only helper
+  (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
+  entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
+  instead of two.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and

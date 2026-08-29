@@ -48,11 +48,14 @@ from . import (
     nintendo_csod,
     outerdawn,
     perfectgarbage,
+    playstack,
     remedy,
     riot,
     sandsoft,
     sheet_studios,
     supercell,
+    tatem,
+    twirlbound,
     upsurge,
 )
 
@@ -92,7 +95,10 @@ def register_static_plugins() -> None:
         (nintendo_csod, "nintendo_csod", 90),
         (outerdawn, "outerdawn", 90),
         (perfectgarbage, "perfectgarbage", 90),
+        (playstack, "playstack", 90),
         (sandsoft, "sandsoft", 90),
+        (tatem, "tatem", 90),
+        (twirlbound, "twirlbound", 90),
         (sheet_studios, "sheet_studios", 90),
         (upsurge, "upsurge", 90),
     ]:

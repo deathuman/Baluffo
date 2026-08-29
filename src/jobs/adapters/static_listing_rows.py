@@ -10,12 +10,14 @@ call time so tests can patch them.
 from __future__ import annotations
 
 import re
+from html import unescape
 from typing import Any
 
 from src.jobs.adapters.html_parsers import (
     strip_html_text,
 )
 from src.jobs.adapters.plugins.static._runner import (
+    looks_like_listing_role_title,
     static_listing_anchor_link,
     static_listing_job_row,
 )
@@ -52,36 +54,6 @@ _LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(?:script|style)[^>]*>.*?</(?:sc
 _LIST_ONLY_MIN_JOB_LIKE_HEADINGS = 2
 _LIST_ONLY_MAX_ANCHORED_ROWS = 50
 
-# Section-header phrases that carry role-hint tokens ("Open Roles", "We're Hiring") but
-# are not postings; the generic fallback must not publish them as rows.
-_LIST_ONLY_SECTION_HEADER_PHRASES = (
-    "open role",
-    "open position",
-    "current opening",
-    "job opening",
-    "we are hiring",
-    "we're hiring",
-    "we re hiring",
-    "now hiring",
-    "join our team",
-    "join the team",
-    "join us",
-    "our team",
-    "work with us",
-    "work at",
-    "life at",
-    "careers at",
-    "vacancies",
-    "recruiting",
-    "apply now",
-    "available positions",
-    "see all roles",
-    "all roles",
-    "browse roles",
-    "explore roles",
-    "career opportunities",
-)
-
 
 # pure — heading scan
 def _job_like_heading_titles(listing_html: str) -> list[str]:
@@ -90,15 +62,11 @@ def _job_like_heading_titles(listing_html: str) -> list[str]:
     seen: set[str] = set()
     page_html = _LIST_ONLY_SCRIPT_STYLE_RE.sub(" ", listing_html or "")
     for match in _LIST_ONLY_HEADING_TAG_RE.finditer(page_html):
-        title = clean_text(strip_html_text(match.group(2) or ""))
+        title = clean_text(unescape(strip_html_text(match.group(2) or "")))
         key = title.casefold()
         if not title or key in seen:
             continue
-        if looks_like_static_parser_noise_title(title):
-            continue
-        if not looks_like_job_title_candidate(title):
-            continue
-        if any(phrase in key for phrase in _LIST_ONLY_SECTION_HEADER_PHRASES):
+        if not looks_like_listing_role_title(title):
             continue
         seen.add(key)
         titles.append(title)

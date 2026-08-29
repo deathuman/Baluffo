@@ -5,7 +5,7 @@
 > - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
 > - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
-> - **Last updated:** 2026-08-29 (WP11 leaf plugins added: a4vr, amrita, animvs)
+> - **Last updated:** 2026-08-29 (WP12 leaf plugins added: playstack, twirlbound, tatem)
 
 This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
@@ -153,12 +153,15 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
 | outerdawn | www.outerdawn.com, outerdawn.com | Outerdawn careers (Webflow `careerrow` listing; title/location from `contentbox__*` cells) |
 | perfectgarbage | perfectgarbage.com, www.perfectgarbage.com | Perfect Garbage careers (Squarespace; extracts Work With Indies postings, strips `Hiring: ` prefix) |
+| playstack | playstack.com, www.playstack.com | Playstack careers (Astro `dynamic-title` card grid; list-only rows, hero heading filtered, entity variants collapsed) |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
 | sandsoft | sandsoft.com, www.sandsoft.com | Sandsoft careers (jQuery-era listing; recovers postings from the server-rendered `/careers/feed/` RSS) |
 | rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Registered directly from `_rendered_cards.py`; shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |
 | sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
 | supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |
+| tatem | tatem.games, www.tatem.games | Tatem Games careers (Tilda `t-card__title` cards; list-only rows) |
+| twirlbound | twirlbound.com, www.twirlbound.com | Twirlbound jobs (WordPress ub-content-toggle accordions; list-only rows, details inline) |
 | upsurge | upsurgestudios.com, www.upsurgestudios.com | Upsurge Studios careers (server-rendered `CareerSummary` roles; list-only rows anchored to the careers page) |
 
 To add a new static plugin: (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(...))`. (3) See `docs/architecture-ai-map.md` § Static adapter and this file § Source loaders map.

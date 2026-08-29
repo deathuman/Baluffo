@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -767,6 +767,45 @@ parses, registered in `register.py`). Tests: `tests/jobs/adapters/plugins/static
 (15 cases — host dispatch, POSITION extraction + speculative exclusion, accordion aria-label
 titles, desktop-only tabs + nav-tab exclusion, empty pages). Static battery **372 passed**,
 precommit gate green. `docs/adapter-plugin-inventory.md` table + CHANGELOG updated.
+
+### WP12 implementation (2026-08-29) — full-active-registry list-only sweep (playstack / twirlbound / tatem)
+
+Follow-up to WP11: extend the list-only sweep from the 150 zero-kept sources to **all 2,110 active
+static URLs** to find more non-heading list-only boards worth plugins (the WP11-style patterns the
+WP10 generic heading fallback can't see).
+
+**Sweep:** reused the WP6 sweep machinery (unverified SSL, resumable, host-limited) over the full
+active static registry → **2,110 URLs, 1,961 captured, 149 failed** (7.5 min). The scanner required
+repeated structure (≥2 role-token titles in the same element type) to keep prose noise out → 304
+candidates; live-probed the structurally promising ones. Rejected: team-profile pages
+(curvature, punyastronaut), employee-testimonial lists (softgames, hypersonic), 403/404 walls
+(massiveblack, pixelmafia), transient-403 retry successes, and boards with real per-role detail
+links (heliogames). Three genuine list-only recoveries:
+
+| Source | Structure | Roles | Notes |
+|---|---|---|---|
+| **playstack.com/careers/** | Astro card grid `<span id="dynamic-title">Role</span>` | **21** | Page hero shares the `dynamic-title` markup ("Join Our Team") — post-filtered with the shared job-title / section-header checks. HTML-entity variants ("PC &amp; Console…" vs "PC and Console…") collapse to one row via the anchor slug after the entity-unescape fix (below). |
+| **twirlbound.com/jobs/** | WordPress ub-content-toggle accordions `<p class="wp-block-ub-content-toggle-accordion-title…"><strong>Role</strong></p>` | **4** | Class carries a random uuid suffix per accordion — matched on the stable `wp-block-ub-content-toggle-accordion-title` prefix. Details inline, no per-role link. |
+| **tatem.games/tatemjobs** | Tilda cards `<div class="t-card__title …" field="li_title__…">Role</div>` | **9** | Details inline; the only anchor is the page's own `/tatemjobs` link. |
+
+**Entity-unescape fix in the shared helper:** `static_list_only_job_rows` (and the WP10 heading
+fallback in `static_listing_rows.py`) now run titles through `html.unescape` before slugging, so
+`&amp;` / `&#8211;` render as real characters in titles and entity-variant duplicates collapse via
+the anchor slug (playstack's "PC &amp; Console Games Marketing Manager" and "PC and Console Games
+Marketing Manager" are the same role — previously two rows, now one). Benefit applies to every
+list-only plugin (upsurge, sandsoft, a4vr, amrita, animvs, playstack, twirlbound, tatem) and the
+generic fallback.
+
+**Bounded pipeline pass** (`--only-sources` on the 3 registry rows, browser fallback on):
+**34 output jobs, 0 failed** — playstack 21 + twirlbound 4 + tatem 9, all rows query-anchored
+(`?static-role=<slug>`) and distinct. Before (WP6): all three rows kept 0.
+
+Plugins: `playstack.py`, `twirlbound.py`, `tatem.py` (all priority 90, `parser_stale_hint` on
+empty parses, registered in `register.py`). Tests:
+`tests/jobs/adapters/plugins/static/test_wp12_leaf_plugins.py` (16 cases — host dispatch, card /
+accordion / Tilda extraction, hero-heading filter, entity-variant collapse, empty pages). Static
+battery **388 passed**, precommit gate green. `docs/adapter-plugin-inventory.md` table +
+CHANGELOG updated.
 
 ### Track 2 / follow-up notes
 
