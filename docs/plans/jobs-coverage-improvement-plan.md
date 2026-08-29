@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 provider validation passes, link-queue audit; WP2 zero-kept sample classification)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 zero-kept sample classification)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -223,6 +223,33 @@ Live HTTP probe (bounded, read-only) result:
 3. **Browser eligibility stays paused** (Twitch JS shell confirms the classifier gap; 0/3 from
    8/13).
 4. Sample artifacts are evidence in `_out/coverage-refresh-2026-08-28/`; they are not code changes.
+
+## Applied 2026-08-29 (WP1 operator decisions — D1 rejections applied to live container)
+
+Operator-approved on 2026-08-29. Applied via `POST /registry/reject` on the live container
+(`192.168.50.61:8877`) — the synced authority — after reconciling against the live registry table
+(the local 8/21 snapshot was stale; actions were taken where the current state lives, so no
+clobber of newer live-side rows).
+
+Rejected 4 confirmed-empty pending providers (8/12 empty-board triage + two clean WP1 fetch
+passes kept 0 each):
+
+| id | Studio | Evidence |
+|---|---|---|
+| `bamboohr:listing_url:https://beamdog.bamboohr.com/careers` | Beamdog | 8/12 verified empty board; 2× WP1 passes kept 0 |
+| `bamboohr:listing_url:https://eleventhhourgames.bamboohr.com/careers` | Eleventh Hour | 8/12 verified empty board; 2× WP1 passes kept 0 |
+| `bamboohr:listing_url:https://expressiongames.bamboohr.com/careers` | Expression | 8/12 verified empty board; 2× WP1 passes kept 0 |
+| `breezy:board_url:https://illfonic.breezy.hr/` | IllFonic | 8/12 verified empty (`/json` `[]`); 2× WP1 passes kept 0 |
+
+Result: `rejected: 4`, pending 866 → **862**, rejected 0 → **4**, active unchanged 2,305.
+Confirmed via `/registry/sources?view=table` read-back: all 4 now in the rejected bucket
+(will propagate to containers/desktop via the next source-sync push).
+
+Held pending (no action — needs fresh probe or adapter review, not rejection): Dino Polo Club,
+Reforged, Wolcen (bamboo, prior success history), InnoGames/Travian (personio — re-probed clean,
+kept 0 suggests feed parse review, not dead board), Lucky VR (breezy jobs=3, conflict-demoted),
+~16 stale ashby slugs (per-slug review deferred). Promotions: none actionable today. Suppression:
+deferred (needs linked-static validation evidence runs).
 
 ## Out of Scope
 
