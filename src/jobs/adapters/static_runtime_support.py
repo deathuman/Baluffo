@@ -29,6 +29,12 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 from ..common import config as common_config
 
+# Bounded multi-hop redirect chain for static fetches. Two-hop www/port + trailing-slash
+# chains (e.g. funovus.com/careers -> www.funovus.com:443/careers -> www.funovus.com/careers/)
+# are common on CDN-fronted studio sites; four hops covers those chains while keeping the
+# loop guard bounded.
+_MAX_STATIC_REDIRECT_HOPS = 4
+
 
 def classify_static_fetch_exception(
     exc: Exception | str,
@@ -164,26 +170,25 @@ class StaticHtmlFetcher:
         clean_location = clean_text(location)
         if not clean_location:
             raise RuntimeError(f"HTTP redirect missing Location for {source_url}")
-        target = normalize_url(urljoin(source_url, clean_location))
-        if not target:
-            raise RuntimeError(f"HTTP redirect target is invalid for {source_url}")
-        source = urlparse(normalize_url(source_url) or source_url)
-        parsed = urlparse(target)
+        raw_source = clean_text(source_url)
+        raw_target = urljoin(raw_source, clean_location)
+        parsed = urlparse(raw_target)
         if parsed.scheme not in {"http", "https"}:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
         if parsed.username or parsed.password:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
+        source = urlparse(normalize_url(source_url) or source_url)
         source_host = (source.hostname or "").lower()
         target_host = (parsed.hostname or "").lower()
         source_site = source_host[4:] if source_host.startswith("www.") else source_host
         target_site = target_host[4:] if target_host.startswith("www.") else target_host
         if not source_site or source_site != target_site:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
         if source.scheme == "https" and parsed.scheme != "https":
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
-        if target == (normalize_url(source_url) or source_url):
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
+        if raw_target == raw_source:
             raise RuntimeError(f"Static redirect loop for {source_url}")
-        return target
+        return raw_target
 
     def fetch_html_cached(
         self,
@@ -203,43 +208,40 @@ class StaticHtmlFetcher:
             cached = self._fetch_cache.get(request.normalized_url)
         if cached is not None:
             return cached, True
-        try:
-            text = fetch_with_retries(
-                request.fetch_url,
-                self._fetch_text,
-                request.timeout_s,
-                request.retries,
-                self._backoff_s,
-            )
-        except HttpStatusError as exc:
-            if int(exc.code) not in self._REDIRECT_STATUS_CODES:
-                raise
-            redirect_url = self._safe_redirect_url(request.fetch_url, exc.location)
-            with self._fetch_cache_lock:
-                cached_redirect = self._fetch_cache.get(redirect_url)
-            if cached_redirect is not None:
-                with self._fetch_cache_lock:
-                    self._fetch_cache[request.normalized_url] = cached_redirect
-                return cached_redirect, True
+        current_url = request.fetch_url
+        visited = {request.normalized_url}
+        text = ""
+        was_cached = False
+        for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
             try:
                 text = fetch_with_retries(
-                    redirect_url,
+                    current_url,
                     self._fetch_text,
                     request.timeout_s,
                     request.retries,
                     self._backoff_s,
                 )
-            except HttpStatusError as redirect_exc:
-                if int(redirect_exc.code) in self._REDIRECT_STATUS_CODES:
-                    raise RuntimeError(
-                        f"Static redirect chain exceeded for {request.fetch_url}"
-                    ) from redirect_exc
-                raise
-            with self._fetch_cache_lock:
-                self._fetch_cache[redirect_url] = text
+                break
+            except HttpStatusError as exc:
+                if int(exc.code) not in self._REDIRECT_STATUS_CODES:
+                    raise
+                redirect_url = self._safe_redirect_url(current_url, exc.location)
+                if redirect_url in visited:
+                    raise RuntimeError(f"Static redirect loop for {request.fetch_url}") from exc
+                visited.add(redirect_url)
+                with self._fetch_cache_lock:
+                    cached_redirect = self._fetch_cache.get(redirect_url)
+                if cached_redirect is not None:
+                    text = cached_redirect
+                    was_cached = True
+                    break
+                current_url = redirect_url
+        else:
+            raise RuntimeError(f"Static redirect chain exceeded for {request.fetch_url}")
         with self._fetch_cache_lock:
-            self._fetch_cache[request.normalized_url] = text
-        return text, False
+            for visited_url in visited:
+                self._fetch_cache.setdefault(visited_url, text)
+        return text, was_cached
 
 
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:

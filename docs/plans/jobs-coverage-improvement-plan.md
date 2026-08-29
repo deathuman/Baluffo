@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 zero-kept sample classification)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -283,6 +283,48 @@ Reforged, Wolcen (bamboo, prior success history), InnoGames/Travian (personio �
 kept 0 suggests feed parse review, not dead board), Lucky VR (breezy jobs=3, conflict-demoted),
 ~16 stale ashby slugs (per-slug review deferred). Promotions: none actionable today. Suppression:
 deferred (needs linked-static validation evidence runs).
+
+## Applied 2026-08-29 (WP2 follow-up: multi-hop static redirect fix — root-cause correction)
+
+Deeper analysis of the fresh fetch-report errors **corrected the WP2 diagnosis**: most of the 285
+genuinely-zero-kept statics never reached the parser at all. The static fetcher failed on
+**redirect handling**, not layout parsing:
+
+- **HTTP 301/307 treated as terminal**: Funovus (`funovus.com/careers` → 301 →
+  `www.funovus.com:443/careers` → 301 → `/careers/`), Optillusion, Upsurge, Bandai Namco JP.
+- **"Static redirect loop" false positives**: Cryptyd, Aden, Brainium, Media Vision, Voxel Agents,
+  Bandai Namco Mobile — `_safe_redirect_url` compared the **normalized** target against the
+  normalized source, and `normalize_url` strips trailing slashes, so a legitimate
+  `/careers` → `/careers/` canonicalization was flagged as a loop.
+- **"Unsafe static redirect"**: Leia, NAMCO BANDAI (cross-host, correctly rejected).
+- **HTTP 429**: Devolver Digital (transient). **Network error**: Outerdawn (transient; plugin now
+  in place for when the fetch succeeds).
+
+The single-hop redirect follow could not complete the common two-hop
+apex→www-with-port→trailing-slash chain that CDN-fronted studio sites emit.
+
+### Fix (bounded multi-hop redirect following)
+
+- `static_runtime_support.py` `fetch_html_cached`: bounded loop (`_MAX_STATIC_REDIRECT_HOPS = 4`)
+  with cross-hop raw-URL `visited` set, per-hop cache reuse, and cache fill for every visited hop.
+- `_safe_redirect_url`: resolves the **raw** redirect target (preserving trailing-slash
+  distinctions) instead of the normalized one; loop detection now compares raw URLs, so a
+  trailing-slash canonicalization is followed rather than falsely rejected. Scheme/credential/
+  cross-host/https-downgrade safety checks unchanged.
+- `static_listing_runner.py`: sync `_fetch_listing_html_sync` and the async listing fetch path
+  converted from single-hop to the same bounded loop (first hop keeps source retries; subsequent
+  hops retry-free).
+
+### Verified
+
+- `test_static_redirect_fetch.py`: 10 passed — 3 new tests (two-hop www/port/trailing-slash chain
+  with per-hop cache fill; hop-cap exhaustion after 4; cross-hop loop detection).
+- Full battery `tests/jobs_static + plugins/static + test_jobs_fetcher + finalize harness`:
+  **322 passed**.
+- Expected recovery set (pending pipeline confirmation): Funovus, Optillusion, Upsurge, Bandai
+  Namco JP, Cryptyd, Aden, Brainium, Media Vision, Voxel Agents, Bandai Namco Mobile — sources
+  whose HTML was never reached by the parser. Cryptyd additionally verified as a contact-form page
+  (no real listings — expect dead-listing classification, which is correct behavior).
 
 ## Out of Scope
 

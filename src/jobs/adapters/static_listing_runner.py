@@ -43,6 +43,7 @@ from src.jobs.adapters.static_listing_traversal import (
     _run_static_detail_traversal,
 )
 from src.jobs.adapters.static_runtime_support import (
+    _MAX_STATIC_REDIRECT_HOPS,
     effective_timeout_for_remaining_budget,
     static_source_budget_exhausted,
 )
@@ -134,25 +135,21 @@ class StaticFetchRunner:
 
     # network — makes HTTP requests
     def _fetch_listing_html_sync(self, url: str, *, effective_timeout_s: int) -> str:
-        try:
-            return fetch_with_retries(
-                url,
-                self.deps.fetch_text,
-                timeout_s=effective_timeout_s,
-                retries=self.deps.retries,
-                backoff_s=self.deps.backoff_s,
-            )
-        except HttpStatusError as exc:
-            if int(exc.code) not in {301, 302, 303, 307, 308}:
-                raise
-            redirect_url = self.ctx.html_fetcher._safe_redirect_url(url, exc.location)
-            return fetch_with_retries(
-                redirect_url,
-                self.deps.fetch_text,
-                timeout_s=effective_timeout_s,
-                retries=0,
-                backoff_s=self.deps.backoff_s,
-            )
+        current_url = url
+        for hop in range(_MAX_STATIC_REDIRECT_HOPS):
+            try:
+                return fetch_with_retries(
+                    current_url,
+                    self.deps.fetch_text,
+                    timeout_s=effective_timeout_s,
+                    retries=self.deps.retries if hop == 0 else 0,
+                    backoff_s=self.deps.backoff_s,
+                )
+            except HttpStatusError as exc:
+                if int(exc.code) not in {301, 302, 303, 307, 308}:
+                    raise
+                current_url = self.ctx.html_fetcher._safe_redirect_url(current_url, exc.location)
+        raise RuntimeError(f"Static redirect chain exceeded for {url}")
 
     # network — makes HTTP requests
     def _listing_fetch_timeout(self, batch_job: dict[str, Any]) -> int:
@@ -271,23 +268,25 @@ class StaticFetchRunner:
                     effective_timeout_s=effective_timeout_s,
                 )
             else:
-                try:
-                    html = await self.deps.listing_async_fetch(
-                        client,
-                        batch_job,
-                        url,
-                        effective_timeout_s,
-                    )
-                except HttpStatusError as exc:
-                    if int(exc.code) not in {301, 302, 303, 307, 308}:
-                        raise
-                    redirect_url = self.ctx.html_fetcher._safe_redirect_url(url, exc.location)
-                    html = await self.deps.listing_async_fetch(
-                        client,
-                        batch_job,
-                        redirect_url,
-                        effective_timeout_s,
-                    )
+                current_url = url
+                html = ""
+                for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
+                    try:
+                        html = await self.deps.listing_async_fetch(
+                            client,
+                            batch_job,
+                            current_url,
+                            effective_timeout_s,
+                        )
+                        break
+                    except HttpStatusError as exc:
+                        if int(exc.code) not in {301, 302, 303, 307, 308}:
+                            raise
+                        current_url = self.ctx.html_fetcher._safe_redirect_url(
+                            current_url, exc.location
+                        )
+                else:
+                    raise RuntimeError(f"Static redirect chain exceeded for {url}")
         except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
             if not _is_expected_static_listing_fetch_fallback(exc):
                 raise
