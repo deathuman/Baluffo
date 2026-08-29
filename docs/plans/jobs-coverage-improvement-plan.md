@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -624,6 +624,41 @@ standard across UltiPro boards and needs no browser. Until then the correct disp
 `konamigaming.com/careers` as an ATS-redirect careers page (external board, currently empty),
 not a listing with 45 jobs. Evidence in `_out/coverage-refresh-2026-08-28/kg-*` + `kg-run/`
 (not committed). Registry unchanged.
+
+### WP8 feed audit (2026-08-29) — server-rendered feed recoveries among the zero-kept jQuery-era shells
+
+Question: which of the 150 zero-kept jQuery-era shells expose a server-rendered RSS/feed URL
+recoverable without the browser pool, like Sandsoft's `/careers/feed/` (10 postings)? **Answer:
+none at Sandsoft scale. Only three genuine feed-hosted job postings exist across all 150, each a
+single blog post mixed into a site feed — not worth fragile feed-filter plugins today.**
+
+Method (all evidence in `_out/coverage-refresh-2026-08-28/feed-audit-*`):
+
+1. **Advertised feeds** — scanned every capture for `<link rel=alternate type=application/rss+xml>`
+   and feed-ish hrefs: 84/150 advertise a feed. Nearly all are WordPress site/news feeds (dev logs,
+   press releases, trailers); the `/jobs/feed/` variants are WordPress **comments** feeds
+   ("Comments on: Jobs"), i.e. the jobs pages are static pages, not post-type archives — empty.
+2. **WordPress probe** — the 48 WP zero-kept sources with no advertised feed were probed at
+   `/feed/`, `/jobs/feed/`, `/career/feed/`, `?feed=rss2`: all blog feeds, no job content.
+3. **Ghost/Tumblr `/rss/`** — aggrocrrab/throwback/thegoodevil expose `/rss/`; thegoodevil's is a
+   Tumblr feed with 1–2 job posts, the rest are studio news.
+
+Verified feed-hosted job postings (live detail pages fetched):
+
+| Source | Feed | Posting | Yield |
+|---|---|---|---|
+| arsanesia.com (career page is a WP page) | site `/feed/` | "Game Programmer: Full-Time & Intern" | **1** |
+| petprojectgames.com (careers page JS) | site `/feed/` | "Pet Project Games Is Looking for a 3D Animator" | **1** |
+| thegoodevil.com (Tumblr jobs page) | `/rss/` | "Pflichtpraktikum Game-Design od. Programmierung" + jobs roundup | **1–2** |
+
+**Decision: no plugins now.** Unlike Sandsoft (dedicated jobs feed, 10 structured postings with
+per-posting links), these are single blog posts inside news feeds; a leaf plugin would have to
+role-keyword-filter mixed feeds, which will false-positive on studio news ("Business Development
+Director" announcements, "Developer Blog" posts, awards posts) and risks publishing non-jobs.
+Recovery value is 1 job per board. Recommend: keep these boards `needs_review`; revisit only if a
+studio starts posting jobs regularly (the feed URLs above are documented for a future leaf plugin
+using the sandsoft feed pattern + a conservative title filter). No registry or code changes on
+this pass.
 
 ### Track 2 / follow-up notes
 
