@@ -63,7 +63,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   speculative INITIATIVBEWERBUNG block excluded), amrita (SP Page Builder accordion
   `aria-label` titles, 4 roles), and animvs (Elementor desktop tab titles, 5 roles). Bounded
   pass recovers **10 jobs** (a4vr 3 + www.a4vr.com 3 + amrita 4); animvs currently serves an
-  expired TLS certificate so it stays zero until the cert is renewed.
+  expired TLS certificate so it stays zero until the cert is renewed. The duplicate
+  `www.a4vr.com` active registry row was demoted to pending (kept the seeded `a4vr.com` row), so
+  the feed now carries 3 a4vr jobs instead of 6.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and
