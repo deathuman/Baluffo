@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh from live 0.2.140 artifacts; Track 2 gaps re-derived; WP1 validation passes run, link-backfill queue verified empty of applicable work)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 provider validation passes, link-queue audit; WP2 zero-kept sample classification)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -177,6 +177,52 @@ Caveat: local runtime registry is the 2026-08-21/22 snapshot; live container sta
 applying any future link/rejection through Admin, reconcile local registry state with the sync
 source so an apply does not clobber newer live-side changes. `migrationSourceIdentity` metadata
 applied locally reaches the container through source-sync (normal registry metadata per runbook).
+
+## Applied 2026-08-29 (WP2: zero-kept static sample classification)
+
+### Reframed zero-kept surface
+
+The 2,428 zero-kept baseline was inflated by `cache_within_freshness_window` skips. In run
+`fetch_bc784dfdf2` only **285 statics were genuinely fetched and kept 0**:
+
+| Bucket | Count | Reading |
+|---|---|---|
+| `site_changed` | 239 | treated as parser/redirect/dead candidates |
+| `needs_review` | 39 | unsupported layouts / new candidates |
+| `js_required` | 5 | browser-eligible (pool available) |
+| `seed_invalid` | 2 | seed/identity issues |
+
+All 239 `site_changed` rows have `lastSuccessAt` empty and zero-job streak 0 in the fresh
+artifacts — no confirmed former-yield history available, so they cannot be called regressions by
+saved evidence alone; live classification is required (done below).
+
+### Stratified sample + live probe (28 rows, generated `wp2-zero-kept-sample.{json,csv}` + `wp2-sample-probe.json`)
+
+Proportionate sample: 20 `site_changed`, 4 `needs_review`, 2 `js_required`, 2 `seed_invalid`.
+Live HTTP probe (bounded, read-only) result:
+
+- **15 `jobs_page`** (live page with job content — but Baluffo static parser kept 0): Cryptyd,
+  Astrid, Aden, EA Capital Games, Leia/immersity, Optillusion, Upsurge, Bandai Namco JP,
+  Media Vision, Funovus, Brainium; `needs_review` Outerdawn, Devolver; `seed_invalid`
+  bkomstudios (Zoho), playsimple (greenhouse) — **parser misses / layout changes, recoverable**.
+- **7 `has_tokens`** (live, thin/partial job tokens): Ubisoft Toronto, Perfect Garbage, Strange
+  Beat, Merge Games, Appsoleut, Nomada, Dynamic Next — likely parser misses too, needs per-page review.
+- **3 `http_404`** (dead): Fatshark Games, ASBO Interactive, Brightline Interactive —
+  **dead-source candidates** (demote via registry, evidence-first).
+- **2 `err_URLError`** (probe failed): Almedia, Marvelous USA — reprobe/verify.
+- **1 `empty_page`** (JS shell): Twitch — matches the `js_required`/`detect_js_shell` browser gap.
+
+### Revised Track 1 guidance (evidence-based)
+
+1. **Parser recovery is the primary lever, not deletion.** ~22/28 sampled rows have live
+   job pages that the static parser misses. Recommend a narrow leaf-parser/plugin trial on the
+   confirmed `jobs_page` subset (start with the 3 `needs_review`/`seed_invalid` ones that already
+   expose known careers URLs), not a dead-source sweep.
+2. **Dead-source demotion is small and bounded.** Only the confirmed 404s (3 sample + whatever a
+   full sweep confirms) are dead-source candidates; demote via registry, not deletion.
+3. **Browser eligibility stays paused** (Twitch JS shell confirms the classifier gap; 0/3 from
+   8/13).
+4. Sample artifacts are evidence in `_out/coverage-refresh-2026-08-28/`; they are not code changes.
 
 ## Out of Scope
 
