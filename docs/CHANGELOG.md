@@ -75,6 +75,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
   entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
   instead of two.
+- ATS-backed shell triage (WP14, jobs-coverage plan): the zero-kept King / Blizzard /
+  Microsoft / Netflix / Activision shells all run the proprietary `phApp`/`vscdn.net`
+  careers platform (no repo adapter) — jobs are fetched client-side. The one
+  existing-adapter path is **Activision**: its careers site delegates to a real Workday
+  board (`xboxgaming.wd1.myworkdayjobs.com/CentralTech`), whose CXS API the existing
+  `workday_sources` adapter can already pull (verified live, 3 current "Central
+  Technology" jobs) → documented as a provider-staging candidate (no registry mutation;
+  provider staging is operator-approved). Microsoft resolves to SAP SuccessFactors
+  (`position.system_id:successfactors`) and King / Blizzard / Netflix expose no standard
+  board — none are provider-staging candidates; a future SuccessFactors or `phApp`
+  adapter decision covers them (the `phApp` platform spans all five plus many sub-studios).
+  Kept `needs_review`.
 - Conservative feed-postings plugins (WP13, jobs-coverage plan): `arsanesia` and
   `petprojectgames` expose their only recoverable job posting as a single blog post mixed into
   the site WordPress news feed. Two leaf plugins (via a shared `_feed_postings` helper) fetch
