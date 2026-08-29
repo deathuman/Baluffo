@@ -71,6 +71,22 @@ def test_empty_or_trivial_html_returns_false() -> None:
     assert _heuristics.detect_js_shell("<html><body>Hello</body></html>") is False
 
 
+def test_outbound_ats_links_detect_ultipro_and_paycom() -> None:
+    # ATS-redirect careers pages (Konami Gaming class) must surface their external board links
+    # as outbound ATS evidence so they classify as ATS-redirect pages, not job listings.
+    html = (
+        '<a href="https://recruiting.ultipro.com/KON1000/JobBoard/abc123">Click Here</a>'
+        '<a href="https://www.paycomonline.net/v4/ats/web.php/jobs?clientkey=x">Apply</a>'
+        '<a href="/careers">Careers</a>'
+    )
+    links = _heuristics.detect_outbound_ats_links(
+        html, base_url="https://www.konamigaming.com/careers"
+    )
+    assert any("recruiting.ultipro.com" in link for link in links)
+    assert any("paycomonline.net" in link for link in links)
+    assert not any("konamigaming.com/careers" in link for link in links)
+
+
 def test_js_shell_classifies_as_browser_eligible_js_required() -> None:
     # A lineup hit as a JS shell should diagnose as js_required (browser escalation).
     ctx = ClassificationContext(

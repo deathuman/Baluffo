@@ -175,6 +175,8 @@ def detect_outbound_ats_links(html: str, *, base_url: str) -> list[str]:
                 "teamtailor.com",
                 "personio.de",
                 "jobvite.com",
+                "recruiting.ultipro.com",
+                "paycomonline.net",
             )
         ):
             links.append(absolute)

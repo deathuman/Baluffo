@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -463,7 +463,7 @@ battery 387 passed; precommit gate green.
 
 | Source | Before | After | Note |
 |---|---|---|---|
-| **Konami Gaming** (`konamigaming.com/careers`) | 0 (needs_review) | **45 kept** | genuine browser-pool recovery |
+| **Konami Gaming** (`konamigaming.com/careers`) | 0 (needs_review) | **45 kept (junk — see WP7)** | 45 raw anchors are nav links; real jobs on external UltiPro board (currently empty) |
 | konami main `/jobs/` | 0 dead_listing | 0 `empty_confirmed` | page explicitly says "no open positions" — correct |
 | sandsoft | 0 needs_review | 0, now `blocked_or_challenge` + browser-rec | empty board, classified as shell |
 | twitch | 0 site_changed | 0 site_changed | JS board behind the careers route; lexical `react` hits pre-existing |
@@ -487,7 +487,7 @@ modal/challenge routes, not classifier misses; they stay `needs_review`/browser-
 
 | Source | kept | pool fbs | elig | classification |
 |---|---|---|---|---|
-| **Konami Gaming** (`konamigaming.com/careers`) | **45** (all 3 runs) | 1 | — | ok |
+| **Konami Gaming** (`konamigaming.com/careers`) | **45** (all 3 runs, junk — see WP7) | 1 | — | ok |
 | konami main `/jobs/` | 0 | 1–2 | False | `empty_confirmed` (explicit "no open positions") |
 | sandsoft | 0 | 1–2 | False | `dead_listing_page` (rendered board empty) |
 | upsurge | 0 | 2 | False | `dead_listing_page` |
@@ -502,8 +502,9 @@ empty-parse now labels them `blocked_or_challenge` + browser-recommended instead
 `needs_review`/dead) and future-proofs non-careers-URL jQuery shells, but for these specific rows
 the pool was already being reached. They keep 0 because the rendered boards genuinely expose no
 job rows (empty boards / JS modal / challenge), so forcing `browserEscalationEligible=True` here
-would merely re-run an empty board — not a recovery. **Konami Gaming's 45 jobs is the whole
-browser-pool win; do not scale browser eligibility beyond it on this evidence.**
+would merely re-run an empty board — not a recovery. **Konami Gaming's 45 "jobs" were the only
+apparent pool win — and WP7 showed they are nav-link junk, not jobs (the browser-pool win count
+is 0). Do not scale browser eligibility beyond it on this evidence.**
 
 Remaining path to more browser recovery: re-classify the genuinely-empty dead boards
 (sandsoft, upsurge, optillusion) via registry demotion/review rather than browser escalation, and
@@ -585,6 +586,44 @@ positives) as a future item.
 
 Working artifacts: `_out/coverage-refresh-2026-08-28/wp6-{shell-sweep,run,measurement}*/`
 (evidence; not committed). Registry unchanged — no demote/promote on this pass.
+
+### WP7 investigation (2026-08-29) — Konami Gaming "45-job browser-pool recovery" is a false positive
+
+**Question:** is the WP4 headline browser-pool recovery (Konami Gaming, 45 kept) stable, and is it
+worth promoting or converting to a dedicated adapter? **Answer: the 45 is stable but it is not
+jobs — it is navigation-link noise; do not promote it, and a dedicated adapter is technically
+feasible but inert today (the real board is empty).**
+
+**The 45 is deterministic junk, stable across 4 runs.** Source-level `keptCount` is 45 in all three
+WP4 runs (`wp4-{baseline,after,scale}`) and a fresh 2026-08-29 run (`kg-run`); `loss` shows
+`dedupMerged 34 → finalOutput 11` in every run. The 11 unique rows are all menu/footer/nav anchors
+from the browser-rendered Sitefinity careers page — "Systems", "Sign Out", "Request Account",
+"My Account", "Log-In to Account", "Leadership Team", "JTEST-AI…", "HIRING THE BEST & BRIGHTEST",
+"DIVERSITY & INCLUSION", "OUR RECRUITMENT PHILOSOPHY", "Architecture" — **zero actual job
+postings**. The generic parser extracted the rendered page's anchors as "jobs"; the
+`staticNonJobUrlRejected` gate dropped 66 others but these 11 passed through. The earlier WP4/WP6
+claims that Konami Gaming's 45 is "the whole browser-pool win" are therefore **incorrect** — the
+browser-pool win count is effectively 0, and the WP4 `do not scale browser eligibility` guidance
+was right for the wrong reason (it was the only *apparent* win).
+
+**The real jobs live on an external UKG Pro (UltiPro) board, currently empty.** The careers page
+links out ("Click Here") to `https://recruiting.ultipro.com/KON1000/JobBoard/c70fc266-51c5-5296-2005-ff4f122ccc1c`
+and a Paycom ATS page. The UltiPro board is a React app whose XHR endpoint
+`/KON1000/JobBoard/<guid>/JobBoardView/LoadSearchResults` returns clean structured JSON
+(`{opportunities, totalCount, locations}`) with **no browser required** — verified `totalCount: 0`
+across four payload variants (the board has zero open positions right now). Paycom's page is a
+JS-only "Loading…" shell. Live `check-source` agrees: `jobsFound: 6, weakSignal: true`,
+browser attempted but not used.
+
+**Decision: no promotion, no adapter now.** Promoting would publish 11 junk nav rows as jobs.
+`recruiting.ultipro.com` is already a recognized ATS host in page-gating `_JOB_LISTING_HREF_HINTS`,
+but the repo has no UltiPro provider adapter and no other registry row references UltiPro/Paycom,
+so a full adapter has no surface. The low-cost path when the board starts posting: stage an
+UltiPro provider row (Track 2 style) or a leaf plugin hitting `LoadSearchResults` — the API is
+standard across UltiPro boards and needs no browser. Until then the correct disposition is to treat
+`konamigaming.com/careers` as an ATS-redirect careers page (external board, currently empty),
+not a listing with 45 jobs. Evidence in `_out/coverage-refresh-2026-08-28/kg-*` + `kg-run/`
+(not committed). Registry unchanged.
 
 ### Track 2 / follow-up notes
 
