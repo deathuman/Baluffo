@@ -75,6 +75,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
   entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
   instead of two.
+- Full-registry phApp platform scan (WP15, jobs-coverage plan): content-scanned the
+  1,597 captured active static careers pages for the proprietary `phApp`/`vscdn.net`
+  careers platform → **13 active static rows host it directly** (lower bound). **5 also
+  expose a real Workday board in their page HTML and are recoverable today via the
+  existing `workday_sources` adapter** — Activision, Beenox, High Moon, Infinity Ward
+  (all → `xboxgaming.wd1.myworkdayjobs.com`), and Warner Bros. Games
+  (→ the large `warnerbros.wd5.myworkdayjobs.com` board). **8 are widget-only** (jobs
+  served client-side, no board in HTML): Blizzard, King, Raven, Sledgehammer, Treyarch,
+  TT Games, and Scopely/Genjoy + Scopely/Omnidrone. A single shared `phApp` adapter
+  is the largest single zero-kept platform lever (13 rows / ~11 studios). No
+  code/registry change; evidence in the WP15 artifact.
 - ATS-backed shell triage (WP14, jobs-coverage plan): the zero-kept King / Blizzard /
   Microsoft / Netflix / Activision shells all run the proprietary `phApp`/`vscdn.net`
   careers platform (no repo adapter) — jobs are fetched client-side. The one

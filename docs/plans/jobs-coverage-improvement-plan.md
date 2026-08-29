@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row; WP13 follow-up to WP8 — conservative feed-filter leaf plugins for arsanesia + petprojectgames (role keyword + hiring signal + negative-news gate), 2 jobs recovered end-to-end (1 each) from mixed site news feeds; WP14 ATS-backed shell triage (King/Blizzard/Microsoft/Netflix/Activision) — all five run the proprietary phApp/vscdn careers platform (no repo adapter); Activision is the only one with an existing-adapter path (delegates to a Workday board `xboxgaming.wd1.myworkdayjobs.com/CentralTech`, CXS returns 3 live "Central Technology" jobs → provider-staging candidate), Microsoft resolves to SAP SuccessFactors (no adapter), King/Blizzard/Netflix expose no standard board (future phApp-adapter decision)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row; WP13 follow-up to WP8 — conservative feed-filter leaf plugins for arsanesia + petprojectgames (role keyword + hiring signal + negative-news gate), 2 jobs recovered end-to-end (1 each) from mixed site news feeds; WP14 ATS-backed shell triage (King/Blizzard/Microsoft/Netflix/Activision) — all five run the proprietary phApp/vscdn careers platform (no repo adapter); Activision is the only one with an existing-adapter path (delegates to a Workday board `xboxgaming.wd1.myworkdayjobs.com/CentralTech`, CXS returns 3 live "Central Technology" jobs → provider-staging candidate), Microsoft resolves to SAP SuccessFactors (no adapter), King/Blizzard/Netflix expose no standard board (future phApp-adapter decision); WP15 full-registry phApp scan — 13 active static rows host the phApp/vscdn platform directly (lower bound, 1,597 WP12 captures scanned); 5 already expose a Workday board recoverable today via the existing workday_sources adapter (Activision, Beenox, High Moon, Infinity Ward, Warner Bros. Games), 8 are widget-only (Blizzard, King, Raven, Sledgehammer, Treyarch, Scopely/Genjoy, Scopely/Omnidrone, TT Games) — one shared phApp/Workday adapter lever is the single largest zero-kept platform surface
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -727,6 +727,54 @@ adapter to cover all three (plus Microsoft) — the biggest single platform leve
 reverse-engineering effort, out of scope for "existing provider adapters or provider staging".
 No registry mutation on this pass (provider staging is operator-approved); the Activision
 staging candidate is documented for a future `workday` row if approved.
+
+### WP15 scan (2026-08-29) — every studio running the phApp/vscdn careers platform
+
+Follow-up to WP14 (which established that the named shells run a proprietary
+`phApp`/`vscdn.net` careers platform): scan the **whole active static registry** for
+**every** source whose careers page hosts that platform directly, and tally what one
+shared `phApp` adapter would recover.
+
+**Method:** content-scan of the 1,597 active static careers pages with WP12 sweep
+captures (deterministic filename-from-URL reused; ~303 of 1,901 static rows had no
+capture and are unmeasured, so the count below is a lower bound — the WP12 captures
+are today's). phApp shell markers: `var phApp = phApp`, `phw-unified`,
+`widgetApiEndpoint`, `ph-page-element`, `phGlobalDefOptions` (with `vscdn.net`
+corroboration).
+
+**Result — 13 active-static rows host the phApp platform directly:**
+
+**5 also expose a Workday board in the page HTML** → ALREADY recoverable today via the
+existing `workday_sources` CXS adapter (best near-term value, no new adapter):
+
+- **Activision** (`careers.activision.com`) → `xboxgaming.wd1.myworkdayjobs.com/CentralTech` (+`activision.wd1…`)
+- **Beenox** (`careers.beenox.com`) → `xboxgaming.wd1…/…Beenox…` posting links
+- **High Moon** (`careers.highmoonstudios.com`) → `xboxgaming.wd1…` posting links
+- **Infinity Ward** (`careers.infinityward.com`) → `xboxgaming.wd1…` posting links
+- **Warner Bros. Games** (`careers.wbd.com/global/en/wb-games-jobs`) → **`warnerbros.wd5.myworkdayjobs.com`** — a large WB board, with real posting links in the page (Rocksteady, WB Games Montreal, WB Games Boston, etc.)
+
+**8 are widget-only** (jobs served from the phApp widget API, no standard board in
+HTML) → covered only by a new `phApp` adapter:
+
+- **Blizzard** (`careers.blizzard.com`), **King** (`careers.king.com`), **Raven Software**, **Sledgehammer Games**, **Treyarch** (the 5 named sisters, all widget-only except Activision)
+- **Scopely / Genjoy** (`scopely.com/en/join-us`) + **Scopely / Omnidrone** (`www.scopely.com/en/join-us`) — Scopely runs the same platform (two registry rows, likely duplicate joinings to reconcile)
+- **TT Games** (`careers.wbd.com/tt-games-jobs`) — widget-only in its own capture (same careers.wbd.com host/platform as the Warner board above, but no Workday posting links in that page)
+
+**Tally / recovery potential of one shared `phApp` adapter:** covers **13 rows across
+~11 studios** that serve jobs only through the phApp widget API (Blizzard, King, Raven,
+Sledgehammer, Treyarch, Scopely/Genjoy+Omnidrone, TT Games, Warner, plus the 5
+Workday-backed boards would also stop depending on the browser pool). That is the
+single largest zero-kept platform lever in the registry — but job *counts* per source
+are not measurable until the widget-API payload format is reverse-engineered (WP14
+noted the API is client-side; `widgetApiEndpoint` is captured per row in the WP15
+artifact for future reverse-engineering).
+
+**Distinct from this set:** the standalone sub-studio sites (inXile, Undead Labs,
+Compulsion, Smoking Gun, Next Games, Night School, Boss Fight, Demonware, Activision
+Austin, Elsewhere…) do **not** host the phApp shell themselves — they are separate
+registrations that typically point at the parent board — so one phApp adapter does not
+cover those unless they also link a Workday/wb board (follow-up). No code/registry
+change on this pass; evidence in `_out/coverage-refresh-2026-08-28/wp15-phapp-platform.json`.
 
 ### WP9 measurement (2026-08-29) — WP5 plugins end-to-end pipeline recovery (before/after)
 
