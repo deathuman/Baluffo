@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -348,6 +348,106 @@ apex→www-with-port→trailing-slash chain that CDN-fronted studio sites emit.
 **Net: ~50 jobs recovered** from 11 sources; all 11 now complete with `status=ok` instead of
 redirect errors. The 4 still-zero sources are correctly classified (`needs_review`), with the
 JS-shell ones belonging to the browser-fallback track.
+
+## Applied 2026-08-29 (WP3: static zero-kept triage — full pass)
+
+### Scope
+
+Carried all 19 WP2-sample rows not dispositioned by the WP2 fix to a final outcome. Ground
+work: `_out/coverage-refresh-2026-08-28/wp3-probe-results.json` + `wp3-probes/` (HTML captures,
+read-only bounded probes), `wp3-sample-dispositions.json` (per-row disposition artifact),
+local bounded fetcher verification (`verify-wp3/jobs-fetch-report.json`), and live-container
+registry actions (`192.168.50.61:8877`, operator-approved per plan §3).
+
+### Dispositions (19 rows)
+
+| Row | Probe | Disposition | Evidence / action |
+|---|---|---|---|
+| Fatshark Games (`fatsharkgames.com/career`) | 404 | **Demoted** (stale alias) | Careers live at `jobs.fatsharkgames.com`, already covered by active provider row `teamtailor:listing_url:https://jobs.fatsharkgames.com`; live check-source found 5 jobs via alternate |
+| ASBO Interactive | 404 | **Demoted** (dead) | Two independent 404 probes + live check-source `not_found`, no working alternate |
+| Brightline Interactive | 404 (`careers.html`) | **Re-seeded** (page moved) | Live listing is `/careers` (2 BambooHR postings inline); row demoted, `/careers` appended as page variant, re-approved. Staged bamboo candidate `brightline.bamboohr.com/careers/65` is a detail URL, not the board — Track 2 item |
+| Almedia | TLS cert expired | `needs_review` (keep) | Site live (verify-disabled 200); page says apply via email; upstream expired cert is transient, not dead |
+| Marvelous USA | TLS cert expired | `needs_review` (identity issue) | Row points at homepage; careers content links to XSEED BambooHR board `xseedgames.bamboohr.com` (no provider row yet) — Track 2 provider-staging candidate |
+| Astrid Entertainment | jobs_page | **Recovered** (plugin `astrid`) | 4 server-rendered Workable links missed by generic parser (`/j/<id>` path); local fetch 4 kept |
+| EA Capital Games | jobs_page | `needs_review` | Careers link out to `jobs.ea.com` (SuccessFactors CSB, Vue SPA, no adapter); no on-page listings |
+| Leia (immersity) | jobs_page (cross-host) | **Re-seeded + recovered** (plugin `immersity`) | `leiainc.com/careers` cross-host redirect rejected; re-seeded to `immersity.ai/careers` + approved; 1 Webflow role; local fetch 1 kept |
+| Ubisoft Toronto | has_tokens | `needs_review` | JS shell; jobs live on already-linked Ubisoft SmartRecruiters board |
+| Perfect Garbage | has_tokens (cross-host) | **Re-seeded + recovered** (plugin `perfectgarbage`) | `perfectgarbagestudios.com` cross-host redirect rejected; re-seeded to `perfectgarbage.com/careers` + approved; 2 Work With Indies postings; local fetch 2 kept |
+| Strange Beat Games | has_tokens | `needs_review` (genuinely empty) | Explicit "no open positions" marker — correct zero-kept behavior |
+| Merge Games | has_tokens (redirect) | **Demoted** (absorbed) | Redirects to Silver Lining Interactive info page, no listings; already pending live-side |
+| Appsoleut Games | has_tokens | `needs_review` | `#open_positions` section is marketing text in served HTML; listings not server-rendered |
+| Nomada Studio | has_tokens | `needs_review` (genuinely empty) | Explicit "no open positions" marker |
+| Devolver Digital | jobs_page | `needs_review` (genuinely empty) — **removed from browser-fallback list** | Earlier 429 misread as Cloudflare wall; fresh probe 200 with explicit "No Open Positions" |
+| Twitch | empty_page | **Browser-fallback track (WP4)** | JS shell; jobs.twitch.tv redirects into a JS app; classifier-gap blocker stands |
+| Dynamic Next | has_tokens | `needs_review` | Careers pitch page; no structured listings in HTML |
+| bkomstudios (Zoho Recruit) | jobs_page | `needs_review` (unsupported ATS) | Zoho Lyte SPA shell, no embedded JSON; no Zoho adapter exists |
+| playsimple (Zoho Recruit) | jobs_page | `needs_review` (unsupported ATS) | Same Zoho SPA shell; no static recovery without an adapter |
+
+### WP3 implementation — three leaf static plugins
+
+All three follow the `outerdawn.py` shape (`can_handle` by host, priority 90 in
+`plugins/static/register.py`, `parser_stale_hint` on empty parses):
+
+- **`astrid.py`** (`astridentertainment.com`): WordPress `job-listing` blocks with `job-title`
+anchor → `apply.workable.com/j/<id>` + `job-location` cell. Generic parser rejected the Workable
+paths (no detail-path token). Recover **4** roles (Senior Gameplay Engineer ×3, Senior UI/UX Designer).
+- **`immersity.py`** (`immersity.ai`): Webflow `careers_cms_item` blocks; title/location from
+`u-text-style-h4` / `u-color-faded`, link from `/company-careers/<slug>`. Recover **1** role
+(IT Operations Specialist, Nashua NH).
+- **`perfectgarbage.py`** (`perfectgarbage.com`): Squarespace anchors to
+`workwithindies.com/careers/perfect-garbage-<slug>` with `Hiring: <title>` labels. Recover **2**
+roles (Senior Programmer, Technical Sound Designer).
+
+Tests: `_PLUGIN_CASES` rows in `test_standard_plugins.py` (success / fetch-fail / empty-listing
+meta) + focused `test_wp3_leaf_plugins.py` (multi-row extraction, location pass-through, host
+dispatch). Full static battery **337 passed** (baseline 322). `docs/adapter-plugin-inventory.md`
+static-plugins table updated.
+
+### Live verification (local bounded fetch, re-seeded identities)
+
+`python src/jobs_fetcher.py --only-sources <3 ids> --force-refresh-all --ignore-circuit-breaker`
+→ **0 failed sources, 7 kept**:
+
+| Source | Kept | Note |
+|---|---|---|
+| Astrid (`astridentertainment.com/careers`) | **4** | plugin extracts the 4 Workable roles |
+| Immersity (`immersity.ai/careers`) | **1** | plugin extracts the Webflow role |
+| Perfect Garbage (`perfectgarbage.com/careers`) | **2** | plugin extracts the 2 Work With Indies postings |
+
+(The local registry snapshot was temporarily re-seeded for the verification run and restored;
+the authoritative re-seeds live on the container registry.)
+
+### Registry actions applied to the live container (2026-08-29, operator-approved)
+
+- **Demoted to pending (5):** ASBO, Fatshark static alias, Brightline `careers.html`, Leia
+`leiainc.com/careers`, Perfect Garbage `perfectgarbagestudios.com/careers`. Merge Games was
+already pending live-side (absorbed).
+- **Added + approved (3):** `static:listing_url:https://immersity.ai/careers`,
+`static:listing_url:https://perfectgarbage.com/careers`, and the Brightline row (with
+`brightlineinteractive.com/careers` appended as a page variant). Summary after: active 2303 /
+pending 867 / rejected 4. Changes propagate via the normal source-sync push.
+- **Evidence recorded on live rows** via `POST /discovery/check-source` per source
+(`jobsFound` / `lastProbeError` / `lastProbedAt` updated, `source_check_updated` reasons).
+
+### WP4 handoff (browser-fallback track, no code in this pass)
+
+- **Candidates:** Twitch (`m.twitch.tv/careers`, JS shell). Devolver was removed (explicit no
+openings — correct classification, not a wall). Optillusion and Upsurge stay `needs_review`
+from WP2 (JS modal / JS challenge).
+- **Standing blocker:** `detect_js_shell` classifier gap (jQuery-era JS shells never reach the
+browser pool; 0/3 pool measurement from 8/13). WP4 stays gated.
+
+### Track 2 / follow-up notes
+
+- **Zoho Recruit** (bkomstudios, playsimple) and **SuccessFactors** (jobs.ea.com) have no
+adapter; a future provider-adapter decision (new adapter or acceptance of `needs_review`) is a
+separate scope item.
+- **XSEED/Marvelous USA** careers live on `xseedgames.bamboohr.com` — bamboo provider-staging
+candidate for the next Track 2 pass.
+- **Brightline bamboo candidate** was staged with a detail URL (`careers/65`) — correct to
+`brightline.bamboohr.com/careers` (board root) before any promotion.
+- **Reconciliation caveat:** the local `data/` registry snapshot is stale (8/21 vintage); all
+WP3 mutations were applied where current state lives (the live container) per the 8/29 caveat.
 
 ## Out of Scope
 

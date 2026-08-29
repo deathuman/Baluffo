@@ -14,6 +14,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Changed
 
+- Static coverage recovery (WP2/WP3, jobs-coverage plan): the static fetcher now follows
+  bounded multi-hop redirects (up to 4 hops with raw-URL loop detection), fixing the common
+  apex → www-with-port → trailing-slash chain that produced false "redirect loop" rejections
+  and recovered ~50 jobs across 11 previously zero-kept sources. Four new leaf static plugins
+  recover server-rendered listings the generic parser missed: Outerdawn (Webflow `careerrow`),
+  Astrid Entertainment (WordPress `job-listing` blocks with Workable apply links), Immersity
+  (Webflow `careers_cms_item`), and Perfect Garbage (Squarespace → Work With Indies postings).
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and

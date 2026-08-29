@@ -8,10 +8,13 @@ import pytest
 from src.jobs.adapters.plugins.static import (
     _heuristics,
     _runner,
+    astrid,
     climax,
     embark,
     globalstep,
+    immersity,
     outerdawn,
+    perfectgarbage,
 )
 
 _PLUGIN_CASES = [
@@ -78,6 +81,55 @@ _PLUGIN_CASES = [
         "https://globalstep.com/jobs/qa-tester",
         "globalstep_listing_present_but_plugin_empty",
         id="globalstep",
+    ),
+    pytest.param(
+        astrid,
+        "https://astridentertainment.com/careers",
+        """
+        <h3>Engineering</h3>
+        <div class="job-listing my-6">
+          <h5 class="job-title mb-2"><a href="https://apply.workable.com/j/BB8CA3C8D4" target="_blank">Senior Gameplay Engineer</a></h5>
+          <div class="job-location">United Kingdom</div>
+        </div>
+        """,
+        "Senior Gameplay Engineer",
+        "https://apply.workable.com/j/BB8CA3C8D4",
+        "astrid_listing_present_but_plugin_empty",
+        id="astrid",
+    ),
+    pytest.param(
+        immersity,
+        "https://immersity.ai/careers",
+        """
+        <section class="careers_wrap">
+          <div role="listitem" class="careers_cms_item w-dyn-item">
+            <div class="careers_item">
+              <div class="careers_title">
+                <h2 class="u-text-style-h4">IT Operations Specialist</h2>
+                <div class="u-text-style-h6 u-color-faded">Nashua NH</div>
+              </div>
+              <a href="/company-careers/it-operations-specialist" class="g_clickable_link w-inline-block">View Job</a>
+            </div>
+          </div>
+        </section>
+        """,
+        "IT Operations Specialist",
+        "https://immersity.ai/company-careers/it-operations-specialist",
+        "immersity_listing_present_but_plugin_empty",
+        id="immersity",
+    ),
+    pytest.param(
+        perfectgarbage,
+        "https://www.perfectgarbage.com/careers",
+        """
+        <p>
+          <a href="https://www.workwithindies.com/careers/perfect-garbage-senior-programmer" target="_blank">Hiring: Senior Programmer</a>
+        </p>
+        """,
+        "Senior Programmer",
+        "https://www.workwithindies.com/careers/perfect-garbage-senior-programmer",
+        "perfectgarbage_listing_present_but_plugin_empty",
+        id="perfectgarbage",
     ),
 ]
 

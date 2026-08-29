@@ -5,7 +5,7 @@
 > - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
 > - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
-> - **Last updated:** 2026-08-17 (removed facade entries corrected)
+> - **Last updated:** 2026-08-29 (WP3 leaf plugins added: astrid, immersity, perfectgarbage)
 
 This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
@@ -129,6 +129,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 |--------|--------|---------|
 | activision | careers.activision.com | Activision careers (HTML-first; browser escalation when needed) |
 | amanotes | careers.amanotes.com, www.careers.amanotes.com | Amanotes careers |
+| astrid | astridentertainment.com, www.astridentertainment.com | Astrid Entertainment careers (WordPress `job-listing` blocks with Workable apply links) |
 | ats_wrappers | naughtydog.com, www.naughtydog.com, jobs.zenimax.com | Thin careers pages that mainly point to ATS destinations |
 | blizzard | careers.blizzard.com, www.careers.blizzard.com | Blizzard Entertainment careers (HTML-first; browser escalation when needed) |
 | cdprojektred | cdprojektred.com, www.cdprojektred.com | CD Projekt RED careers (HTML-first; Playwright fallback when JS shell detected) |
@@ -138,6 +139,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | frontier | frontier.co.uk, www.frontier.co.uk | Frontier careers |
 | globalstep | globalstep.com | GlobalStep careers |
 | hrmos | hrmos.co | HRMOS-powered career pages |
+| immersity | immersity.ai, www.immersity.ai | Immersity (Leia) careers (Webflow `careers_cms_item` listing; title/location from `u-text-style-*` cells) |
 | jobvite | amberstudiocareers (partial) | Jobvite-based studio careers |
 | kojima | kojimaproductions.jp, www.kojimaproductions.jp | Kojima Productions careers (HTML-first; dynamic listing helper + browser escalation) |
 | lionbridge | careers.lionbridge.com | Lionbridge careers |
@@ -147,6 +149,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | naconstudiomilan | www.naconstudiomilan.com, naconstudiomilan.com | NACON Studio Milan careers |
 | nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
 | outerdawn | www.outerdawn.com, outerdawn.com | Outerdawn careers (Webflow `careerrow` listing; title/location from `contentbox__*` cells) |
+| perfectgarbage | perfectgarbage.com, www.perfectgarbage.com | Perfect Garbage careers (Squarespace; extracts Work With Indies postings, strips `Hiring: ` prefix) |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
 | rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Registered directly from `_rendered_cards.py`; shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |
