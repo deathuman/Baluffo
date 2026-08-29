@@ -57,6 +57,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   heading (min 2, section-header phrases like "Open Roles"/"We're Hiring" excluded). The
   fallback only fires on otherwise-empty sources, so it cannot change behavior for sources
   the pipeline already handles.
+- List-only board sweep (WP11, jobs-coverage plan): swept the 150 zero-kept WP6 sources for
+  boards that list roles with no per-role detail URLs and converted three to leaf plugins using
+  the shared `static_list_only_job_rows` helper: a4vr (Squarespace `POSITION:` blocks, 3 roles,
+  speculative INITIATIVBEWERBUNG block excluded), amrita (SP Page Builder accordion
+  `aria-label` titles, 4 roles), and animvs (Elementor desktop tab titles, 5 roles). Bounded
+  pass recovers **10 jobs** (a4vr 3 + www.a4vr.com 3 + amrita 4); animvs currently serves an
+  expired TLS certificate so it stays zero until the cert is renewed.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and

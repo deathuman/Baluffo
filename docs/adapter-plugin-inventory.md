@@ -5,7 +5,7 @@
 > - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
 > - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
-> - **Last updated:** 2026-08-29 (WP5 leaf plugins added: upsurge, sandsoft)
+> - **Last updated:** 2026-08-29 (WP11 leaf plugins added: a4vr, amrita, animvs)
 
 This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
@@ -127,8 +127,11 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 
 | Plugin | Host(s) | Purpose |
 |--------|--------|---------|
+| a4vr | a4vr.com, www.a4vr.com | A4VR careers (Squarespace `POSITION:` blocks; list-only rows, speculative INITIATIVBEWERBUNG block excluded) |
 | activision | careers.activision.com | Activision careers (HTML-first; browser escalation when needed) |
 | amanotes | careers.amanotes.com, www.careers.amanotes.com | Amanotes careers |
+| amrita | amrita.studio, www.amrita.studio | Amrita Studio career page (SP Page Builder accordion `sppb-panel-title` roles; list-only rows) |
+| animvs | animvs.com, www.animvs.com | Animus Game Studio work-with-us page (Elementor tab titles; list-only rows, desktop tabs only) |
 | astrid | astridentertainment.com, www.astridentertainment.com | Astrid Entertainment careers (WordPress `job-listing` blocks with Workable apply links) |
 | ats_wrappers | naughtydog.com, www.naughtydog.com, jobs.zenimax.com | Thin careers pages that mainly point to ATS destinations |
 | blizzard | careers.blizzard.com, www.careers.blizzard.com | Blizzard Entertainment careers (HTML-first; browser escalation when needed) |

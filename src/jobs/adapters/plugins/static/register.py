@@ -19,8 +19,11 @@ from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
 from . import (
     _rendered_cards,
+    a4vr,
     activision,
     amanotes,
+    amrita,
+    animvs,
     astrid,
     ats_wrappers,
     blizzard,
@@ -57,6 +60,9 @@ from . import (
 def register_static_plugins() -> None:
     """Register static adapter plugins. Call once at adapter load."""
     for mod, name, priority in [
+        (a4vr, "a4vr", 90),
+        (amrita, "amrita", 90),
+        (animvs, "animvs", 90),
         (supercell, "supercell", 90),
         (remedy, "remedy", 90),
         (hrmos, "hrmos", 90),

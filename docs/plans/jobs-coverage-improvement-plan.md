@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -725,6 +725,42 @@ the WP9 shared helpers from `_runner.py`. Tests: `tests/jobs_static/test_static_
 end-to-end recovery via `run_static_studio_pages_source`, single-heading no-fire, detail-link
 wins over fallback, query anchors survive `normalize_url`). Static battery **357 passed**,
 precommit gate green.
+
+### WP11 implementation (2026-08-29) — list-only boards converted to `static_list_only_job_rows` plugins
+
+Follow-up to WP10: sweep the 150 zero-kept WP6 sources for **list-only boards** (roles with no
+per-role detail URLs) whose titles sit in non-heading blocks (which the generic fallback misses)
+or need precision the fallback can't give, and convert them to leaf plugins using the shared
+`static_list_only_job_rows` helper.
+
+**Sweep:** scanned the WP6 sweep captures of all 150 zero-kept sources for repeated role-token
+titles with ≤1 detail link → 55 candidates, then live-probed the structured ones (reused the
+WP9/WP10 title filters to separate real role lists from prose noise). Three boards were genuine
+list-only recoveries:
+
+| Source | Structure | Roles | Notes |
+|---|---|---|---|
+| **a4vr.com/jobs** (+www row) | Squarespace `<h2><strong>POSITION: …</strong></h2>` blocks | **3** (TECHNICAL ARTIST, SENIOR 3D ARTIST, JUNIOR QA ENGINEER) | Trailing `INITIATIVBEWERBUNG - TALENTE FÜR VR/AR` is a speculative "send CV" block — excluded (never a split point + defensive filter). `POSITION: ` label stripped from titles. |
+| **amrita.studio/career** | SP Page Builder accordion `<span class="sppb-panel-title" aria-label="…">` | **4** (Middle/Senior Unity Developer, Golang Developer, Game Designer, QA Engineer) | Titles in non-heading spans → WP10 fallback misses; `aria-label` is the clean title source. |
+| **animvs.com/work-with-us/** | Elementor tabs `<div class="elementor-tab-title elementor-tab-desktop-title">` | **5** (ARTISTA 3D, GAME DEVELOPER, LEVEL DESIGNER, BACK-END DEV, BLOCKCHAIN DEVELOPER) | Non-heading → fallback misses. Desktop tabs only (mobile duplicates); page's own "work with us" tab excluded. |
+
+**Bounded pipeline pass** (`--only-sources` on the 4 registry rows, browser fallback on):
+**10 output jobs** — a4vr 3 + www.a4vr.com 3 + amrita 4; animvs kept 0 today because
+`https://animvs.com` currently serves an **expired TLS certificate** (pipeline transport
+`SSL: CERTIFICATE_VERIFY_FAILED`, classified `timeout` + `browserFallbackRecommended`). The
+animvs plugin is registered and capture-verified (5 roles); it recovers as soon as the cert is
+renewed (or via browser fallback). Before (WP6): all four rows kept 0.
+
+Note: `a4vr.com` and `www.a4vr.com` are two active registry rows for the same studio; both now
+keep the same 3 roles, so the unified feed carries 6 a4vr rows. That duplication is pre-existing
+registry data (both rows predate WP11) and a candidate for the next registry de-duplication
+review — left untouched here.
+
+Plugins: `a4vr.py`, `amrita.py`, `animvs.py` (all priority 90, `parser_stale_hint` on empty
+parses, registered in `register.py`). Tests: `tests/jobs/adapters/plugins/static/test_wp11_leaf_plugins.py`
+(15 cases — host dispatch, POSITION extraction + speculative exclusion, accordion aria-label
+titles, desktop-only tabs + nav-tab exclusion, empty pages). Static battery **372 passed**,
+precommit gate green. `docs/adapter-plugin-inventory.md` table + CHANGELOG updated.
 
 ### Track 2 / follow-up notes
 
