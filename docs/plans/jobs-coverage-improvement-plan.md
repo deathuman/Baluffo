@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -543,6 +543,48 @@ corroboration), upsurge kept active (6 server-rendered roles — a plugin miss, 
 and optillusion demoted (genuinely closed domain-wide, no alternate page or provider coverage).
 Changes propagate via the normal source-sync push; the new plugins recover the roles on the next
 default pipeline run without any browser escalation.
+
+### WP6 measurement (2026-08-29) — full active-static-registry jQuery-era shell sweep
+
+Question: among all **2,110 active static** listing URLs, which do the WP4-widened `detect_js_shell`
+now flag as jQuery-era shells, and do any actually hold recoverable jobs? Answer: the widening is
+classification-only — it flags hundreds of already-working server-rendered pages as shells and
+surfaces **0 net-new recoverable jobs**.
+
+**Sweep:** bounded concurrent fetch (16 workers, 2/host, 7 s timeout, 3 MiB body cap) of every
+unique active static URL → 1,963 fetched / 147 fetch-error. `detect_js_shell` flagged **942** total;
+split by detection tier (re-derivation against the modern-SPA tier vs the WP4 legacy/jQuery tier):
+
+| Tier | Sources |
+|---|---|
+| Modern SPA already caught pre-WP4 (`react`/`<div id=root>`/`window.__` …) | 346 |
+| **Legacy / jQuery-era widening only** (newly caught by WP4) | **347** |
+| Both tiers | 247 |
+| **Widening-addressed total** (legacy-only + both) | **594** |
+
+The loose `jquery>=2+listing` rule is by far the most common latest-sig, driving most of the 594.
+
+**Production pipeline pass** (`--only-sources` on the 347 legacy-only ids, `--force-refresh-all`,
+`--no-seed-existing-output`, browser fallback on, 3 browser workers) → 346 sources, **2,646 jobs kept**:
+
+| Outcome | Count | Reading |
+|---|---|---|
+| **Already keeps jobs** via the generic parser (no browser) | **196 / 346 (~57%)** | reaktor 140, immersivetouch 126, obsidian 106, wildbrain 630, valve 31+31, kojima 27, hrmos gamefreak 42, … — **false-positive shell flags**: server-rendered pages that merely bundle jQuery + a `job-listing`/`opening` token |
+| Keeps 0 | 150 | 128 `needs_review`, 22 `broken_extraction`; 19 also `status=error` |
+| Recovered by the browser pool | **0** | 40 pool acquisitions across the run, **0 net recovery** |
+
+**Conclusion (honest, matches WP4/WP5):** the jQuery-era widening does not surface recoverable jobs.
+The newly-flagged shells that *do* hold jobs (reaktor, obsidian, valve, immersivetouch, …) are
+server-rendered and already kept by the existing generic parser — their shell flag is a false
+positive that would trigger an unnecessary browser render. The genuinely-zero ones keep 0 even
+through browser (genuinely empty/dead or unsupported layouts). **Do not scale browser escalation on
+this set.** The widening's value is classification honesty (real jQuery shells label
+`blocked_or_challenge` instead of silently `needs_review`), not recovery. If browser-escalation
+volume matters, tighten the loose `jquery>=2+listing` corroboration (drives nearly all the false
+positives) as a future item.
+
+Working artifacts: `_out/coverage-refresh-2026-08-28/wp6-{shell-sweep,run,measurement}*/`
+(evidence; not committed). Registry unchanged — no demote/promote on this pass.
 
 ### Track 2 / follow-up notes
 
