@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row; WP13 follow-up to WP8 — conservative feed-filter leaf plugins for arsanesia + petprojectgames (role keyword + hiring signal + negative-news gate), 2 jobs recovered end-to-end (1 each) from mixed site news feeds
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -660,6 +660,42 @@ Recovery value is 1 job per board. Recommend: keep these boards `needs_review`; 
 studio starts posting jobs regularly (the feed URLs above are documented for a future leaf plugin
 using the sandsoft feed pattern + a conservative title filter). No registry or code changes on
 this pass.
+
+### WP13 implementation (2026-08-29) — conservative feed-filter plugins for arsanesia + petprojectgames
+
+Follow-up to the WP8 feed audit (which documented these two feed URLs and explicitly
+recommended a future leaf plugin *with a conservative title filter* but made no code
+change): build that now. Both studios expose their only recoverable job posting as a
+**single blog post mixed into the site WordPress news feed** — so unlike the dedicated
+sandsoft jobs feed, every item must pass a conservative role-keyword + negative-news gate.
+
+**Shared filter** (`src/jobs/adapters/plugins/static/_feed_postings.py`):
+`looks_like_feed_role_posting(title)` keeps an item only when its title: (1) carries a
+concrete **role keyword** (word-boundary role nouns like `programmer`, `animator`, `designer`, …,
+so `Developer` never matches inside `Development Log`), (2) contains a **hiring-context signal**
+(`looking for`, `hiring`, `full-time`, `intern`, `wanted`, `position available`, `apply`, …),
+and (3) has **no negative news term** (dev log, trailer, release, teaser, launch, introducing,
+blog, top list, facts, movies, awards, …). Requiring the hiring signal is the extra guard that
+keeps team-profile/news posts like "Spotlight on our 3D Artist" or "Meet the Art Director" from
+becoming false rows — false negatives are preferred over publishing a non-job.
+
+Two leaf plugins (`arsanesia.py`, `petprojectgames.py`, registered priority 90) reuse the shared
+`run_website_feed_postings` runner (sandsoft-style fetch/parse/fallback wiring, but on the site
+`/feed/`). Verified against the **live feeds**:
+
+| Source | Feed | Job posting recovered | Non-job items filtered |
+|---|---|---|---|
+| arsanesia.com | `/feed/` | "Game Programmer: Full-Time & Intern" | 9 dev logs (`Development Log: …`) |
+| petprojectgames.com | `/feed/` | "Pet Project Games Is Looking for a 3D Animator" | trailer/teaser/introducing/blog/top-list posts |
+
+**Bounded pipeline pass** (`--only-sources` on the 2 registry rows): **2 output jobs, 0 failed**
+— arsanesia 1, petprojectgames 1, both before kept 0 (WP6 zero-kept). Rows link to the real post
+detail pages (`…/career/game-programmer-full-time-intern/`, `…/looking-for-a-3d-animator`).
+
+Tests: `tests/jobs/adapters/plugins/static/test_feed_posting_plugins.py` (31 cases — the exact
+live feed titles, conservative guards, per-plugin extraction, empty/non-job feeds, host dispatch).
+Static battery **419 passed**, precommit gate green. `docs/adapter-plugin-inventory.md` +
+CHANGELOG updated.
 
 ### WP9 measurement (2026-08-29) — WP5 plugins end-to-end pipeline recovery (before/after)
 

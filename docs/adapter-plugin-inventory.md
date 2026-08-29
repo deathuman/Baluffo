@@ -5,7 +5,7 @@
 > - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
 > - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
-> - **Last updated:** 2026-08-29 (WP12 leaf plugins added: playstack, twirlbound, tatem)
+> - **Last updated:** 2026-08-29 (WP13 feed-postings plugins added: arsanesia, petprojectgames)
 
 This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
@@ -130,6 +130,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | a4vr | a4vr.com, www.a4vr.com | A4VR careers (Squarespace `POSITION:` blocks; list-only rows, speculative INITIATIVBEWERBUNG block excluded) |
 | activision | careers.activision.com | Activision careers (HTML-first; browser escalation when needed) |
 | amanotes | careers.amanotes.com, www.careers.amanotes.com | Amanotes careers |
+| arsanesia | arsanesia.com, www.arsanesia.com | Arsanesia site feed (`/feed/`); conservative role+news-filtered job postings |
 | amrita | amrita.studio, www.amrita.studio | Amrita Studio career page (SP Page Builder accordion `sppb-panel-title` roles; list-only rows) |
 | animvs | animvs.com, www.animvs.com | Animus Game Studio work-with-us page (Elementor tab titles; list-only rows, desktop tabs only) |
 | astrid | astridentertainment.com, www.astridentertainment.com | Astrid Entertainment careers (WordPress `job-listing` blocks with Workable apply links) |
@@ -153,6 +154,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
 | outerdawn | www.outerdawn.com, outerdawn.com | Outerdawn careers (Webflow `careerrow` listing; title/location from `contentbox__*` cells) |
 | perfectgarbage | perfectgarbage.com, www.perfectgarbage.com | Perfect Garbage careers (Squarespace; extracts Work With Indies postings, strips `Hiring: ` prefix) |
+| petprojectgames | petprojectgames.com, www.petprojectgames.com | Pet Project Games site feed (`/feed/`); conservative role+news-filtered job postings |
 | playstack | playstack.com, www.playstack.com | Playstack careers (Astro `dynamic-title` card grid; list-only rows, hero heading filtered, entity variants collapsed) |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
 | sandsoft | sandsoft.com, www.sandsoft.com | Sandsoft careers (jQuery-era listing; recovers postings from the server-rendered `/careers/feed/` RSS) |

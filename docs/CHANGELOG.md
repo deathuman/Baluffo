@@ -75,6 +75,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (and the WP10 heading fallback) now also unescape HTML entities before slugging, so
   entity-variant duplicate titles ("PC &amp; Console…" vs "PC and Console…") collapse to one row
   instead of two.
+- Conservative feed-postings plugins (WP13, jobs-coverage plan): `arsanesia` and
+  `petprojectgames` expose their only recoverable job posting as a single blog post mixed into
+  the site WordPress news feed. Two leaf plugins (via a shared `_feed_postings` helper) fetch
+  the site `/feed/` and gate every item with a conservative `looks_like_feed_role_posting`
+  filter — a concrete role keyword **and** a hiring-context signal (looking for / hiring /
+  full-time / intern / wanted) with any news term (dev log, trailer, release, teaser, launch,
+  introducing, blog) excluded. Requires the hiring signal so team-profile/news posts aren't
+  published; false negatives are preferred over non-jobs. Bounded pass recovers **2 jobs**
+  ("Game Programmer: Full-Time & Intern", "…Looking for a 3D Animator"), 0 failed.
 - Discovery sweep WordPress-feed probe (source_discovery): before a JS-shell discovery
   candidate is escalated to the browser pool, the page-recovery sweep now probes for a
   server-rendered feed — first the URL advertised via
