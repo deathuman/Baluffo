@@ -41,6 +41,7 @@ from . import (
     ncsoft,
     neobards,
     nintendo_csod,
+    outerdawn,
     remedy,
     riot,
     sheet_studios,
@@ -76,6 +77,7 @@ def register_static_plugins() -> None:
         (littlechicken, "littlechicken", 90),
         (ncsoft, "ncsoft", 90),
         (nintendo_csod, "nintendo_csod", 90),
+        (outerdawn, "outerdawn", 90),
         (sheet_studios, "sheet_studios", 90),
     ]:
         default_registry.register(

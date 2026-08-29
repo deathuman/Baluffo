@@ -146,6 +146,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | milestone | milestone.it, www.milestone.it | Milestone careers (HTML-first; browser escalation when needed) |
 | naconstudiomilan | www.naconstudiomilan.com, naconstudiomilan.com | NACON Studio Milan careers |
 | nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
+| outerdawn | www.outerdawn.com, outerdawn.com | Outerdawn careers (Webflow `careerrow` listing; title/location from `contentbox__*` cells) |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
 | rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Registered directly from `_rendered_cards.py`; shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |

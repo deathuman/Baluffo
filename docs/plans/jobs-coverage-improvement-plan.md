@@ -224,6 +224,39 @@ Live HTTP probe (bounded, read-only) result:
    8/13).
 4. Sample artifacts are evidence in `_out/coverage-refresh-2026-08-28/`; they are not code changes.
 
+### WP2 implementation — Outerdawn static plugin (first parser-recovery fix)
+
+Picked **Outerdawn** (`www.outerdawn.com/careers`) as the first recovery target: it is in the
+`needs_review` bucket, the page fetches clean (200, no JS/anti-bot), and all five live roles are
+plain Webflow `careerrow w-dyn-item` blocks. The generic parser missed it because the link text is
+always the generic "Read &amp; Apply" and the role title lives in a sibling `<h3
+class="contentbox__heading">` (link-text-based title extraction fails).
+
+Implemented `src/jobs/adapters/plugins/static/outerdawn.py`:
+- `can_handle` for `www.outerdawn.com` / `outerdawn.com` (registered in
+  `plugins/static/register.py`, priority 90).
+- Parses each `careerrow` block: title from `contentbox__heading`, location from
+  `contentbox__subheading` (normalized via `normalize_location_details`), link from the
+  `/careers/<slug>` button href; dedupes by absolute URL.
+- `parser_stale_hint="outerdawn_listing_present_but_plugin_empty"` so an empty parse still lands
+  in the parser-stale classification rather than silently passing.
+
+Verified:
+- Standard plugin tests: `test_standard_plugins.py` `_PLUGIN_CASES` row for outerdawn (success
+  tags rows + empty-listing stale meta + fetch-failure blocked meta).
+- Live-data check against the captured page: **5/5 roles extracted** with correct titles
+  (Data Analyst (Mid or Senior Level), Senior Unity Developer, Senior UI Artist, Senior Unity
+  Programmer, QA Lead), Auckland/New Zealand locations, and absolute job links.
+- `tests/jobs/adapters/plugins/static tests/jobs_static tests/test_jobs_fetcher.py`: 313 passed.
+- Registry dispatch resolves `outerdawn` for both hosts at priority 90; unrelated hosts still
+  raise `NoPluginFoundError`.
+- `docs/adapter-plugin-inventory.md` static-plugins table updated.
+
+Next candidates in the same leaf-plugin lane: Cryptyd (`/join-us/`, Webflow), Aden
+(`join.aden.pt` external ATS link detection), and re-probing the `has_tokens` group. Sources
+behind Cloudflare/Vercel walls (Devolver, Upsurge, Brainium) belong to the browser-fallback
+track, not the static parser.
+
 ## Applied 2026-08-29 (WP1 operator decisions — D1 rejections applied to live container)
 
 Operator-approved on 2026-08-29. Applied via `POST /registry/reject` on the live container

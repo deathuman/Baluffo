@@ -11,9 +11,27 @@ from src.jobs.adapters.plugins.static import (
     climax,
     embark,
     globalstep,
+    outerdawn,
 )
 
 _PLUGIN_CASES = [
+    pytest.param(
+        outerdawn,
+        "https://www.outerdawn.com/careers",
+        """
+        <div role="listitem" class="careerrow w-dyn-item">
+          <div class="contentbox">
+            <h3 class="contentbox__heading">Data Analyst (Mid or Senior Level)</h3>
+            <div class="contentbox__subheading textred">Auckland, New Zealand</div>
+            <a href="/careers/data-analyst-mid-or-senior-level" class="buttongeneric w-button">Read &amp; Apply</a>
+          </div>
+        </div>
+        """,
+        "Data Analyst (Mid or Senior Level)",
+        "https://www.outerdawn.com/careers/data-analyst-mid-or-senior-level",
+        "outerdawn_listing_present_but_plugin_empty",
+        id="outerdawn",
+    ),
     pytest.param(
         climax,
         "https://www.climaxstudios.com/careers/",
