@@ -97,6 +97,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   server-rendered-card parse yields nothing (the production JS-shell case). Bounded live
   end-to-end pass recovers **103 jobs** (Activision 50, Blizzard 37, King 14, Treyarch 2),
   all previously zero-kept.
+- Workday rows for the phApp families (WP18, jobs-coverage plan): measured what `workday_sources`
+  would recover from the five boards the phApp families link (xboxgaming.wd1 `/External` = 67 jobs
+  covering Beenox/High Moon/Infinity Ward/Sledgehammer, `/CentralTech` = 3 for Activision,
+  warnerbros.wd5 `/global` = 356 company-wide). The boards are **live** over verified `curl`, but the
+  WS adapter's CXS path uses verified *Python* TLS that rejects these hosts (cert valid through Oct
+  5 per `openssl`; WP14's unverified probe is the only working path today), so `workday_sources`
+  recovers **0** from all five today — they hard-error rather than return zero. Documented
+  ready-to-stage rows (Activision CentralTech + Beenox/High Moon/Infinity Ward External) with the
+  verified-TLS/CXS path as the gating fix; `warnerbros/global` set out of scope for a games feed
+  without a games filter. No registry mutation this pass.
 - Full-registry phApp platform scan (WP15, jobs-coverage plan): content-scanned the
   1,597 captured active static careers pages for the proprietary `phApp`/`vscdn.net`
   careers platform → **13 active static rows host it directly** (lower bound). **5 also
