@@ -106,7 +106,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   recovers **0** from all five today — they hard-error rather than return zero. Documented
   ready-to-stage rows (Activision CentralTech + Beenox/High Moon/Infinity Ward External) with the
   verified-TLS/CXS path as the gating fix; `warnerbros/global` set out of scope for a games feed
-  without a games filter. No registry mutation this pass.
+  without a games filter.  No registry mutation this pass.
+- Duplicate-Scopely reconciliation (WP19, jobs-coverage plan): the two GameDevMap rows on the
+  same phApp join-us board (`scopely.com/en/join-us` apex vs `www` twin, "Genjoy (Scopely)" and
+  "Omnidrone (Scopely)", both `jobsFound: 19` with identical evidence) are now one canonical
+  registration in the tracked seeds. Kept the apex row
+  (`static:listing_url:https://scopely.com/en/join-us`) per the WP11 a4vr precedent and demoted
+  the www twin to the pending seed with the repo's own `transition_registry_to_pending`
+  (active seed 2016 → 2015, pending 47 → 48), so a future WP17-phApp recovery of the board
+  cannot double-post. The live container still needs the equivalent runtime demotion
+  (`POST /registry/demote-active`, active 2301 → 2300) — the runtime registry grew beyond the
+  seed; reversible via `/registry/approve`.
 - Full-registry phApp platform scan (WP15, jobs-coverage plan): content-scanned the
   1,597 captured active static careers pages for the proprietary `phApp`/`vscdn.net`
   careers platform → **13 active static rows host it directly** (lower bound). **5 also
