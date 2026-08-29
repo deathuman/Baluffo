@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -508,6 +508,41 @@ browser-pool win; do not scale browser eligibility beyond it on this evidence.**
 Remaining path to more browser recovery: re-classify the genuinely-empty dead boards
 (sandsoft, upsurge, optillusion) via registry demotion/review rather than browser escalation, and
 keep twitch's JS board on the browser-eligible review list (its roles are not server-rendered).
+
+### WP5 triage (2026-08-29) — rendered-empty WP4 boards: Upsurge / Sandsoft plugin recovery, Optillusion demotion
+
+Follow-up to the WP4 measurement, which showed the three shells (sandsoft, upsurge, optillusion)
+yielding **0 recovery** via the browser pool. Triage targeted each toward either plugin recovery
+or registry demotion based on what the rendered boards actually expose:
+
+| Source | Live probe | Reading | Disposition | Action |
+|---|---|---|---|---|
+| **upsurgestudios.com/careers/** | 200, server-rendered | 6 `CareerSummary` roles (title + Job Description / Requirements inline), **no per-role links** | **Plugin recovery** | New leaf plugin `upsurge` (6 fragment-anchored rows) |
+| **sandsoft.com/careers/** | 200, jQuery-era shell; **`/careers/feed/` RSS** | **10 postings** in the server-rendered feed (each `<item>` = title + detail link); live check-source `jobsFound: 2, weakSignal: true` | **Plugin recovery** | New leaf plugin `sandsoft` (fetches `/careers/feed/`, parses 10 postings) |
+| **optillusion.games/job** | 200, server-rendered | Explicit "We are not actively hiring" / "Job Openings Currently Closed"; `/jobs` and `/careers` both 404; zero open-role headings domain-wide | **Genuinely empty → demote** | `/registry/demote-active` on live container — active 2303 → **2302**, pending 867 → **868** |
+
+**Implementation** (both follow the established leaf-plugin shape, priority 90,
+`parser_stale_hint` on empty parses):
+
+- **`upsurge.py`** (`upsurgestudios.com`): splits on `class=CareerSummary` blocks, title from
+  `CareerSummary__Title`. The page emits no per-role links, so each row is anchored to the
+  careers page with a title-derived `#<slug>` fragment to keep `sourceJobId`s distinct and
+  on-domain. Extracts **6** live roles.
+- **`sandsoft.py`** (`sandsoft.com`): custom `run` that derives the listing's server-rendered
+  RSS feed URL (`/careers/feed/`) `_feed_url` and parses `<item>` title+link. The listing page
+  itself is the jQuery-era shell the WP4 classifier now flags, so the feed is the reliable,
+  non-browser source of truth. Extracts **10** postings (feed verified live).
+
+Verified: `test_wp5_leaf_plugins.py` (12 cases: multi-row extraction, fragment-link uniqueness,
+`_feed_url` slash forms, empty-feed, host dispatch) + static plugins battery **57 passed**
++ `tests/jobs_static` **282 passed**; precommit gate green. `docs/adapter-plugin-inventory.md`
+static-plugins table and CHANGELOG updated.
+
+Live registry action was evidence-backed: sandsoft kept active (feed liveness + check-source
+corroboration), upsurge kept active (6 server-rendered roles — a plugin miss, not a dead board),
+and optillusion demoted (genuinely closed domain-wide, no alternate page or provider coverage).
+Changes propagate via the normal source-sync push; the new plugins recover the roles on the next
+default pipeline run without any browser escalation.
 
 ### Track 2 / follow-up notes
 

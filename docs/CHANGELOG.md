@@ -31,6 +31,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   recovered **45 jobs** via the pool; sandsoft/twitch shell captures now classify
   `blocked_or_challenge` + `browserFallbackRecommended=true` instead of `needs_review`/dead,
   and konami main classifies `empty_confirmed` (genuinely empty today, correct behavior).
+- Rendered-empty WP4 board triage (WP5, jobs-coverage plan): Upsurge and Sandsoft were
+  misclassified as dead because their listings never reach the generic runner cleanly —
+  Upsurge's `/careers/` page server-renders its roles but emits no per-job links, and
+  Sandsoft's `/careers/` is a jQuery-era shell while its full posting set lives at the
+  server-rendered `/careers/feed/` RSS. Two new leaf static plugins recover them: upsurge
+  (6 list-only `CareerSummary` roles) and sandsoft (10 postings from the feed). Optillusion
+  was confirmed genuinely closed (only `/job/` exists on the domain, explicitly
+  "not actively hiring"; no openings anywhere) and was demoted on the live container
+  to review (`/registry/demote-active`, active 2303→2302). Sandsoft's live check-source
+  reports `jobsFound: 2` / `weakSignal`, corroborating the plugin recovery.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and

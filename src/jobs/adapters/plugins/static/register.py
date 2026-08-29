@@ -47,8 +47,10 @@ from . import (
     perfectgarbage,
     remedy,
     riot,
+    sandsoft,
     sheet_studios,
     supercell,
+    upsurge,
 )
 
 
@@ -84,7 +86,9 @@ def register_static_plugins() -> None:
         (nintendo_csod, "nintendo_csod", 90),
         (outerdawn, "outerdawn", 90),
         (perfectgarbage, "perfectgarbage", 90),
+        (sandsoft, "sandsoft", 90),
         (sheet_studios, "sheet_studios", 90),
+        (upsurge, "upsurge", 90),
     ]:
         default_registry.register(
             SimpleAdapterPlugin(
