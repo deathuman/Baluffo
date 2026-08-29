@@ -4,8 +4,8 @@
 > - **Use this when:** improving jobs feed coverage — recovering zero-kept static sources, closing provider coverage gaps, promoting staged providers, or reducing sheet dominance
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
-> - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`
-> - **Last updated:** 2026-08-12
+> - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh from live 0.2.140 artifacts; Track 2 gaps re-derived; WP1 validation passes run, link-backfill queue verified empty of applicable work)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -103,6 +103,80 @@ Evidence snapshot: `docs/snapshots/widget-board-recovery-2026-08-13.md`.
 - **Widget-board recovery:** Coffee Stain teamtailor row added + approved (**2 jobs kept**); sandsoft URL fixed to `sandsoft.com/careers/`; bulkhead demoted+rejected (DNS dead).
 - **Browser-fallback measurement (0/3):** konami/sandsoft classify `dead_listing_page` → browser escalation hard-disabled (jQuery-era JS shells missed by `detect_js_shell`); yodo1 fires the pool but is a teamtailor widget with a dead CDN. Do NOT scale browser eligibility; classifier gap noted.
 - **Provider zero-yield triage (official Track 3):** ashby 8 boards promoted (k-ID slug fixed `kid`→`k-id`; 90 fetched/87 kept), 5 dead slugs + 5 `/jobs` duplicates rejected, 2 genuinely-empty kept pending; personio — Yager genuinely empty (kept), Welevel 429 transient, InnoGames/Travian pending re-probe after 429 clears; oracle already closed.
+
+## Evidence refresh 2026-08-29 (WP0, read-only)
+
+Re-derived from live 0.2.140 artifacts (run `fetch_bc784dfdf2`, finished 2026-08-29T02:51Z; registry
+snapshots local 2026-08-21/22 vintage) using `source_policy_soak_report.py` + dry-run
+`provider_migration_staging_refresh.py` against `_out/coverage-refresh-2026-08-28/`. No registry
+mutation performed.
+
+### Baseline deltas (2026-07-17 → 2026-08-29)
+
+| Lever | 2026-07-17 | 2026-08-29 | Reading |
+|---|---|---|---|
+| Provider coverage gaps | 24 | **49** (15 staged-not-fetched, **0 fetched-not-validated**, 31 validated-missing-identity, 3 active-static-despite-provider) | fetched-not-validated cleared by 8/12–8/13 work; missing-identity backlog nearly doubled and is now the main Track 2 surface |
+| Validated providers | 20 | **14** (+1 unstable-failed) | workday SSL + empty-board reclassifications; needs re-validation pass |
+| Registry active / pending | 2,268 / 163 | 2,301 / 850 (799 static + 51 provider) | pending ballooned — provider subset (51) is the promotion target |
+| Static zero-kept (last run) | 2,428 of 4,479 | **~285 genuinely zero-kept** of 2,101 fetched (1,488 more were `cache_within_freshness_window` skips, not failures) | freshness cache masks most of the old zero-kept surface; triage the ~285 real ones |
+| Feed composition (kept share) | sheets 78% / static 14% / provider 7.4% | **sheets (csv) 84% / static ~10% / provider ~5%** | sheet dominance grew — Track 4 product call is more relevant, still gated behind Track 2 |
+| Suppression readiness | — | 14 providers ready, 14 missing linked static | dynamic suppression has concrete candidates |
+| Staging refresh (dry-run) | — | 2 new stageable provider candidates, 140 skipped | small; fold into next Track 2 pass |
+
+### Revised work-track priorities
+
+1. **Track 2 (WP1) — missing-migration-identity backlog (31 rows).** Includes teamtailor/jazzhr
+   providers already keeping jobs (Tanglewood 2, Fatshark 5, Vivid 1, Lost Boys Interactive…) —
+   link closure via the Admin workflow unlocks identity links and future suppression. Then
+   suppression: 3 active statics with validated providers at 29–120 consecutive successes
+   (CDPR, Ubisoft, Bandai Namco) are ready for the suppression-eligibility review.
+2. **Track 3 (WP1b) — staged-not-fetched (15 bamboo/teamtailor boards).** Bounded
+   `--only-sources` fetch with `--include-pending-provider-migration`; expect most to be the
+   known-empty Beamdog/Eleventh Hour/Expression boards — that is a valid closure outcome.
+3. **Track 1 (WP2) — real zero-kept triage (~285).** The 2,428 baseline was inflated by
+   freshness-cache skips; sample the ~285 actually-fetched zero-kept statics
+   (reusing `jobs-parser-regression-queue.json`) before any sweep.
+4. **Track 4 (WP5) — sheet share now 84%.** Re-evaluate after Track 2 lands.
+
+Refresh artifacts (evidence): `_out/coverage-refresh-2026-08-28/` (soak report json+md, staging
+refresh audit, live `fetch-report-summary`/`fetcher-metrics`/`sync-status` payloads, staging
+data dir). Registry remains unmutated; `--apply-pending` stays an explicit operator step.
+
+## Applied 2026-08-29 (WP1: provider validation evidence + link-queue audit)
+
+Runbook-sanctioned bounded fetches against local runtime (no registry mutation, no link applies):
+
+- **Bounded validation fetches** (per the soak's `safeLocalCommands`, `--include-pending-provider-migration`):
+  `bamboohr_sources,breezy_sources,workday_sources` × 2 passes, then
+  `personio_sources,ashby_sources,pinpoint_sources,smartrecruiters_sources` × 1 pass. All clean
+  (0–1 failed sources per run; personio 429 cohort from 8/13 **cleared** — InnoGames/Travian/Welevel
+  now have current evidence with 0 fetch failures).
+- **Staged-not-fetched: 15 → 0.** `missingDetailEvidence` 15 → 0. Every pending provider-migration
+  candidate now has row-level fetch evidence (two real passes for the bamboo/breezy/workday cohort).
+- **Link-backfill queue audited: no applicable work.** 0 review candidates; 8 candidate links are
+  all `provider_shaped_self_link` (blocked by design, `apiEligible=false`); 15 identities already
+  linked; 6 disambiguation blockers are `source_state_not_ok`. The 8/12–8/13 link-closure line is
+  **done** — remaining "missing identity" rows lack the evidence threshold for reviewable
+  candidates, which is a valid closed state, not an action item.
+- **Provider validation statusCounts** (soak-computed): `validated_provider` 15, `unstable` 8,
+  `needs_review` 5, `failed` 2. Gap composition after the passes: 32 validated-missing-identity,
+  14 fetched-but-not-validated (empty boards), 3 active-static-despite-provider.
+
+### Operator decisions pending (explicit Admin actions, one at a time)
+
+1. **14 empty-board pending providers** (bamboo/teamtailor; kept 0 across two clean passes —
+   Beamdog, Dino Polo Club, Eleventh Hour, Expression, Reforged, …). Same class as the 8/12
+   `lemonskystudios` rejection. Recommend: reject the confirmed-dead ones via Admin, one at a time;
+   keep the ones with a plausible refresh story (e.g. Reforged/Wolcen had 1 job each in 8/12 triage).
+2. **Promotion review** of pending providers with jobs-keeping evidence among
+   `unstable`/`needs_review` (registry pending provider subset ~51 rows).
+3. **Suppression-eligibility review** for active statics with validated providers
+   (CDPR/Ubisoft/Bandai Namco class; requires the linked-static validation fetch passes when chosen).
+
+Caveat: local runtime registry is the 2026-08-21/22 snapshot; live container state is newer. Before
+applying any future link/rejection through Admin, reconcile local registry state with the sync
+source so an apply does not clobber newer live-side changes. `migrationSourceIdentity` metadata
+applied locally reaches the container through source-sync (normal registry metadata per runbook).
 
 ## Out of Scope
 
