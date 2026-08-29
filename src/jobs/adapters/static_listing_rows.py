@@ -15,6 +15,10 @@ from typing import Any
 from src.jobs.adapters.html_parsers import (
     strip_html_text,
 )
+from src.jobs.adapters.plugins.static._runner import (
+    static_listing_anchor_link,
+    static_listing_job_row,
+)
 from src.jobs.adapters.static_detail_heuristics import (
     add_detail_link,
 )
@@ -41,6 +45,110 @@ def _source_studio(ctx: StaticSourceContext) -> str:
 # pure — reads ctx field
 def _source_label(ctx: StaticSourceContext) -> str:
     return clean_text(ctx.source.get("name")) or ctx.company or ctx.source_name
+
+
+_LIST_ONLY_HEADING_TAG_RE = re.compile(r"(?is)<(h[2-4])[^>]*>(.*?)</\1>")
+_LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>")
+_LIST_ONLY_MIN_JOB_LIKE_HEADINGS = 2
+_LIST_ONLY_MAX_ANCHORED_ROWS = 50
+
+# Section-header phrases that carry role-hint tokens ("Open Roles", "We're Hiring") but
+# are not postings; the generic fallback must not publish them as rows.
+_LIST_ONLY_SECTION_HEADER_PHRASES = (
+    "open role",
+    "open position",
+    "current opening",
+    "job opening",
+    "we are hiring",
+    "we're hiring",
+    "we re hiring",
+    "now hiring",
+    "join our team",
+    "join the team",
+    "join us",
+    "our team",
+    "work with us",
+    "work at",
+    "life at",
+    "careers at",
+    "vacancies",
+    "recruiting",
+    "apply now",
+    "available positions",
+    "see all roles",
+    "all roles",
+    "browse roles",
+    "explore roles",
+    "career opportunities",
+)
+
+
+# pure — heading scan
+def _job_like_heading_titles(listing_html: str) -> list[str]:
+    """Distinct job-title-looking headings from a block-structured listing."""
+    titles: list[str] = []
+    seen: set[str] = set()
+    page_html = _LIST_ONLY_SCRIPT_STYLE_RE.sub(" ", listing_html or "")
+    for match in _LIST_ONLY_HEADING_TAG_RE.finditer(page_html):
+        title = clean_text(strip_html_text(match.group(2) or ""))
+        key = title.casefold()
+        if not title or key in seen:
+            continue
+        if looks_like_static_parser_noise_title(title):
+            continue
+        if not looks_like_job_title_candidate(title):
+            continue
+        if any(phrase in key for phrase in _LIST_ONLY_SECTION_HEADER_PHRASES):
+            continue
+        seen.add(key)
+        titles.append(title)
+    return titles
+
+
+# mutation — appends generic list-only rows
+def _append_block_title_fallback_rows(
+    ctx: StaticSourceContext,
+    listing_htmls: list[str],
+    page_url: str,
+) -> int:
+    """Generic list-only recovery for block-structured listings with no detail links.
+
+    When the listing page parses job-title-looking headings but exposes no per-role
+    links (and the generic JSON-LD / rendered-card / detail-link paths found nothing),
+    emit one query-anchored row per distinct job-like heading. This recovers boards
+    like Upsurge's without a per-host plugin; ``static_listing_anchor_link`` keeps the
+    rows distinct through URL normalization (see WP9 for why query anchors, not
+    fragments).
+    """
+    titles: list[str] = []
+    seen_titles: set[str] = set()
+    for listing_html in listing_htmls:
+        for title in _job_like_heading_titles(listing_html):
+            key = title.casefold()
+            if key in seen_titles:
+                continue
+            seen_titles.add(key)
+            titles.append(title)
+    if len(titles) < _LIST_ONLY_MIN_JOB_LIKE_HEADINGS:
+        return 0
+    source_id = clean_text(ctx.source.get("id")) or ctx.source_name
+    studio = _source_studio(ctx)
+    appended = 0
+    for title in titles[:_LIST_ONLY_MAX_ANCHORED_ROWS]:
+        link = static_listing_anchor_link(page_url, title)
+        if not link or link in ctx.seen_links:
+            continue
+        ctx.seen_links.add(link)
+        row = static_listing_job_row(
+            source_id=source_id,
+            link=link,
+            title=title,
+            company=studio,
+        )
+        row["source"] = _source_label(ctx)
+        ctx.jobs.append(row)
+        appended += 1
+    return appended
 
 
 # mutation — modifies in-place state
@@ -363,4 +471,17 @@ def _extract_listing_candidates(
             listing_html,
             page_url,
         )
+    if (
+        listing_jobs_found == 0
+        and not detail_links
+        and not provisional_rows_found
+        and int(ctx.link_rejections.get("dead_listing_page", 0)) <= 0
+    ):
+        # Generic list-only fallback: block-structured listing with job-like headings
+        # but no detail links (e.g. a server-rendered board with no per-role URLs).
+        fallback_count = _append_block_title_fallback_rows(ctx, listing_htmls, page_url)
+        if fallback_count:
+            listing_jobs_found += fallback_count
+            ctx.entry_report["classification"] = "ok_with_jobs"
+            ctx.entry_report["extractorHint"] = "block_title_fallback"
     return listing_jobs_found, detail_links, provisional_rows_found

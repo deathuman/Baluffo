@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence)
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -696,6 +696,35 @@ semantics. `upsurge.py` and the helper/WP5 tests were updated (fragment expectat
 links `…/careers/?static-role=<slug>`) and **sandsoft 10/10** unchanged (real detail links) —
 **16 output jobs** vs 11 before the fix. The list-only pattern now works for future boards
 without per-role links.
+
+### WP10 implementation (2026-08-29) — generic block-title list-only fallback (no per-host plugin)
+
+Follow-up to WP9: since the query-anchor pattern now survives the pipeline end-to-end, the same
+recovery was generalized into the **generic static listing runner**, so list-only boards recover
+without a per-host plugin at all.
+
+**Behavior:** when a listing page yields **zero** rows from every existing generic path (JSON-LD
+parse, rendered-card scan, detail-link collection) and has **no dead-listing evidence**, the
+runner scans the HTML for block-structured headings (`<h2>`–`<h4>`, script/style stripped). A
+heading becomes a row only when it is a distinct, job-title-looking title
+(`looks_like_job_title_candidate`, not `looks_like_static_parser_noise_title`) and is **not** a
+section-header phrase ("Open Roles", "We're Hiring", "Join Our Team", …). At least **2** distinct
+job-like headings are required (a single heading is treated as a page/hero header). Each title
+becomes a query-anchored row via `static_listing_anchor_link` (`?static-role=<slug>`) with a
+distinct `sourceJobId`, and the source classifies `ok_with_jobs` with
+`extractorHint=block_title_fallback`.
+
+**Safeguards:** the fallback can only *add* recovery to otherwise-empty sources — it never runs
+when any parsed row, provisional row, detail link, or dead-listing rejection exists, so it
+cannot change behavior for sources the pipeline already handles.
+
+Implemented in `static_listing_rows.py` (`_job_like_heading_titles` +
+`_append_block_title_fallback_rows`, hooked at the end of `_extract_listing_candidates`), reusing
+the WP9 shared helpers from `_runner.py`. Tests: `tests/jobs_static/test_static_listing_block_title_fallback.py`
+(8 cases — heading filtering incl. section-header exclusions and script/style stripping,
+end-to-end recovery via `run_static_studio_pages_source`, single-heading no-fire, detail-link
+wins over fallback, query anchors survive `normalize_url`). Static battery **357 passed**,
+precommit gate green.
 
 ### Track 2 / follow-up notes
 

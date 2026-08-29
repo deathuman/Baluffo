@@ -49,6 +49,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   `?static-role=<slug>` query parameter, which survives normalization end-to-end. Verified on
   a fresh pass: upsurge **6/6** and sandsoft **10/10** roles kept (16 output jobs vs 11),
   matching the plugin unit tests.
+- Generic block-title list-only fallback (WP10, jobs-coverage plan): the static listing
+  runner now recovers list-only boards without a per-host plugin. When a listing yields no
+  rows from the JSON-LD / rendered-card / detail-link paths and has no dead-listing
+  evidence, it scans for block-structured headings (`<h2>`–`<h4>`, script/style stripped)
+  and emits one query-anchored row (`?static-role=<slug>`) per distinct job-title-looking
+  heading (min 2, section-header phrases like "Open Roles"/"We're Hiring" excluded). The
+  fallback only fires on otherwise-empty sources, so it cannot change behavior for sources
+  the pipeline already handles.
 - Availability observation fields now reflect the enforcement state instead of a
   hardcoded shadow value: `sweepCoverage.mode` reads `"enforced"` when
   `BALUFFO_AVAILABILITY_DIRECT_ENFORCE` is truthy and `"shadow"` otherwise, and
