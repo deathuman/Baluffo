@@ -85,6 +85,47 @@ def static_job_row(
     }
 
 
+def static_fragment_link(page_url: str, title: str) -> str:
+    """On-page anchor for a list-only role that has no per-role detail URL.
+
+    Anchors the row to the careers page with a title-derived ``#<slug>`` fragment so
+    ``sourceJobId`` stays distinct per role and the link stays on-domain.
+    """
+    slug = clean_text(title).lower().replace("&", "and").replace(" ", "-")
+    return clean_text(urljoin(page_url, "#" + slug))
+
+
+def static_list_only_job_rows(
+    ctx: SimpleStaticContext,
+    *,
+    block_sep: re.Pattern[str],
+    title_re: re.Pattern[str],
+) -> list[RawJob]:
+    """Extract list-only roles from a server-rendered page with no per-role links.
+
+    ``block_sep`` must be a lookahead pattern that splits the HTML just before each role
+    block (e.g. ``(?=class="role")``); ``title_re`` must capture the role title in
+    group 1. Each title becomes a ``static_job_row`` anchored via
+    :func:`static_fragment_link` so rows are distinct and on-domain.
+    """
+    jobs: list[RawJob] = []
+    seen: set[str] = set()
+    blocks = block_sep.split(ctx.html or "")
+    for block in blocks[1:]:
+        title_match = title_re.search(block)
+        if not title_match:
+            continue
+        title = clean_text(strip_html_text(title_match.group(1)))
+        if not title:
+            continue
+        link = static_fragment_link(ctx.page_url, title)
+        if link in seen:
+            continue
+        seen.add(link)
+        jobs.append(static_job_row(ctx, link=link, title=title))
+    return jobs
+
+
 def static_listing_job_row(
     *,
     source_id: str,
