@@ -58,6 +58,7 @@ from . import (
     sheet_studios,
     supercell,
     tatem,
+    thegoodevil,
     twirlbound,
     upsurge,
 )
@@ -108,6 +109,7 @@ def register_static_plugins() -> None:
         (playstack, "playstack", 90),
         (sandsoft, "sandsoft", 90),
         (tatem, "tatem", 90),
+        (thegoodevil, "thegoodevil", 90),
         (twirlbound, "twirlbound", 90),
         (sheet_studios, "sheet_studios", 90),
         (upsurge, "upsurge", 90),

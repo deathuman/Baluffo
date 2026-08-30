@@ -25,7 +25,7 @@ import re
 from collections.abc import Callable
 from html import unescape
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static._runner import (
@@ -35,11 +35,21 @@ from src.jobs.adapters.plugins.static._runner import (
     stamp_static_plugin_rows,
     static_plugin_context_values,
 )
+from src.jobs.feed_urls import page_relative_feed_url, site_feed_url
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
+__all__ = [
+    "looks_like_feed_role_posting",
+    "page_relative_feed_url",
+    "run_website_feed_postings",
+    "site_feed_url",
+]
+
 # Concrete role keywords. Word-boundary-anchored role nouns so "Developer" does not
-# match inside "Development", "Programmer" inside "Programming", etc.
+# match inside "Development", "Programmer" inside "Programming", etc. The trailing
+# German group (added for the thegoodevil.com Tumblr feed) covers the studio's
+# German internship postings ("Game-Design", "Tech-Art", "Programmierung").
 _ROLE_KEYWORD_RE = re.compile(
     r"(?is)\b("
     r"3d artist|2d artist|environment artist|concept artist|character artist|"
@@ -52,17 +62,21 @@ _ROLE_KEYWORD_RE = re.compile(
     r"producer|game director|creative director|art director|technical designer|"
     r"narrative designer|game writer|writer|composer|"
     r"qa tester|game tester|qa|tester|"
-    r"community manager|game artist)\b"
+    r"community manager|game artist|game-design|tech-art|programmierung|"
+    r"spieldesign|spielentwickler)\b"
 )
 
 # Hiring-context signals. A genuine job posting title almost always carries at least
-# one of these; news items ("Introducing Ripout", "Top 5 Movies") do not.
+# one of these; news items ("Introducing Ripout", "Top 5 Movies") do not. The German
+# group (thegoodevil.com) adds internship/application vocabulary: "Pflichtpraktikum",
+# "Bewerbung", "wir suchen", "gesucht", "Stellenangebot", "zu besetzen".
 _HIRING_SIGNAL_RE = re.compile(
     r"(?is)\b("
     r"looking for|is looking for|are looking for|we look for|now hiring|we re hiring|"
     r"we're hiring|we hire|hiring|wanted|open position|open role|open positions|"
     r"job opening|position available|vacanc|full[- ]time|part[- ]time|"
-    r"internship|intern|join our|join us|joining|apply|candidate|recruit|opportunity)\b"
+    r"internship|intern|join our|join us|joining|apply|candidate|recruit|opportunity|"
+    r"pflichtpraktikum|praktikum|bewerbung|wir suchen|gesucht|stellenangebot|zu besetzen)\b"
 )
 
 # News / filler vocabulary that dominates mixed site feeds. Any hit rejects the item.
@@ -122,6 +136,14 @@ _NEGATIVE_NEWS_TERMS = (
     "now available",
     "tips with",
     "for the fans",
+    # German news/filler vocabulary (thegoodevil.com Tumblr feed is German news).
+    "gewonnen",
+    "nominiert",
+    "festival",
+    "messe",
+    "wettbewerb",
+    "ausgezeichnet",
+    "ankündigung",
 )
 
 _ITEM_SEP = re.compile(r"(?is)<item>")
@@ -145,33 +167,6 @@ def looks_like_feed_role_posting(title: Any) -> bool:
     if not _ROLE_KEYWORD_RE.search(text):
         return False
     return bool(_HIRING_SIGNAL_RE.search(text))
-
-
-def site_feed_url(page_url: str) -> str:
-    """WordPress site feed for a page's origin (``<scheme>://<host>/feed/``)."""
-    try:
-        parsed = urlparse(clean_text(page_url))
-    except ValueError:
-        return ""
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
-    return f"{parsed.scheme}://{parsed.netloc}/feed/"
-
-
-def page_relative_feed_url(page_url: str, *, feed_name: str = "feed") -> str:
-    """Feed rooted at the page's own path (e.g. ``<page>/careers/feed/``).
-
-    Handles the trailing-slash variants and the already-``/<feed>`` form so a
-    dedicated jobs feed living next to the careers page (like Sandsoft's
-    ``/careers/feed/``) reuses the same fetch/parse wiring.
-    """
-    base = clean_text(page_url).rstrip("/")
-    if not base:
-        return ""
-    feed = clean_text(feed_name).strip("/")
-    if base.endswith("/" + feed):
-        return base + "/"
-    return f"{base}/{feed}/"
 
 
 def _parse_items(

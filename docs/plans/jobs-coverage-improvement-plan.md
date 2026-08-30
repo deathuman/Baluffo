@@ -714,8 +714,21 @@ same WordPress **comments** feeds WP8 found ("Comments on: Jobs/Job Openings") o
 already-converted rows (arsanesia + petprojectgames ×2, site `/feed/`, 1 posting each).
 Conclusion unchanged from WP8: no Sandsoft-class dedicated feed exists among the WP candidates
 today; the spec-driven feed leaves (feed_url_builder + filter_feed_keywords) remain ready to
-claim any page-relative feed that appears later with a 3-line leaf. No code or registry
-changes on this pass.
+claim any page-relative feed that appears later with a 3-line leaf.
+
+**One exception decided and built (same pass): `thegoodevil.com`.** The studio's Tumblr
+`/rss/` feed genuinely holds its persistent, currently-open German internship
+("Pflichtpraktikum Game-Design od. Programmierung (d/w/m)" — the "Jobs, Jobs, Jobs" roundup,
+updated 2026-08-01, lists it as the current opening with an application form), which the
+English hiring-signal gate rejected on both axes (German role noun + German hiring word).
+Decision: small **localized German vocabulary extension** to the shared conservative gate
+(role nouns `game-design`/`tech-art`/`programmierung`, signals `pflichtpraktikum`/`bewerbung`/
+`wir suchen`/`gesucht`/`stellenangebot`, German news rejects `gewonnen`/`nominiert`/`festival`/
+`messe`/`wettbewerb`/`ausgezeichnet`/`ankündigung`) + a new spec-driven leaf `thegoodevil`
+(shared `site_rss_url` builder, filter on) recovering that 1 posting. Risk contained by the
+triple gate (role AND signal AND no news term) and by tests pinning the live German feed
+items plus all existing English titles. No registry changes (row already active-static:
+`static:listing_url:https://www.thegoodevil.com/jobs`).
 
 ### WP14 triage (2026-08-29) — ATS-backed zero-kept shells (King, Blizzard, Microsoft, Netflix, Activision)
 

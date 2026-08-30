@@ -201,6 +201,16 @@ ot twins under the probe: 4 true shared parent boards (amazongames, astragon,
   introducing, blog) excluded. Requires the hiring signal so team-profile/news posts aren't
   published; false negatives are preferred over non-jobs. Bounded pass recovers **2 jobs**
   ("Game Programmer: Full-Time & Intern", "…Looking for a 3D Animator"), 0 failed.
+- German-localized feed gate + `thegoodevil` leaf plugin: the shared
+  `looks_like_feed_role_posting` conservative gate gained a minimal German vocabulary
+  (`game-design`/`tech-art`/`programmierung` role nouns, `pflichtpraktikum`/`bewerbung`/
+  `wir suchen`/`gesucht`/`stellenangebot` hiring signals, plus German news rejects
+  `gewonnen`/`nominiert`/`festival`/`messe`/`wettbewerb`/`ausgezeichnet`/`ankündigung`) so
+  the persistent, currently-open ``Pflichtpraktikum Game-Design od. Programmierung``
+  posting in The Good Evil's mixed Tumblr `/rss/` feed passes while its German news items
+  stay rejected. New spec-driven leaf `thegoodevil` (site_rss_url builder, filter on)
+  recovers that 1 posting; the German tokens only add acceptance paths, so the English
+  arsanesia/petprojectgames pinned titles are unchanged.
 - Discovery sweep WordPress-feed probe (source_discovery): before a JS-shell discovery
   candidate is escalated to the browser pool, the page-recovery sweep now probes for a
   server-rendered feed — first the URL advertised via

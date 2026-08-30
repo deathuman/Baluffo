@@ -10,7 +10,9 @@ the (expensive, unreliable) browser pool, the sweep probes for such a feed:
    request, the ``html`` argument reuses the already-fetched document).
 2. **WordPress fallback** — otherwise probe the standard feeds at ``/feed/``,
    ``<page-path>/feed/`` and ``/feed`` and take the first that returns a feed
-   document.
+   document. The page-relative shape comes from the shared
+   ``src.jobs.feed_urls.page_relative_feed_url`` builder (the same one the static
+   feed plugins use), so discovery and the plugin layer can never drift apart.
 
 The probe is intentionally shallow: it answers *is there a server-rendered feed?*
 (and where), so the sweep can route the source to feed recovery instead of the
@@ -32,6 +34,8 @@ from collections.abc import Callable
 from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlparse
+
+from src.jobs.feed_urls import page_relative_feed_url
 
 FeedFetcher = Callable[[str, int], str]
 
@@ -93,7 +97,9 @@ def wordpress_feed_candidate_urls(page_url: str) -> list[str]:
     candidates = [f"{origin}/feed/"]
     page_path = (parsed.path or "").rstrip("/")
     if page_path:
-        candidates.append(f"{origin}{page_path}/feed/")
+        # Shared with the static feed plugins; handles the already-``/<feed>``
+        # path form (never ``/feed/feed/``) and the trailing-slash variants.
+        candidates.append(page_relative_feed_url(page_url))
     candidates.append(f"{origin}/feed")
     return list(dict.fromkeys(candidates))
 

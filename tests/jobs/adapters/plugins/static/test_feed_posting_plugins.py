@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import pytest
 
-from src.jobs.adapters.plugins.static import arsanesia, petprojectgames
+from src.jobs.adapters.plugins.static import arsanesia, petprojectgames, thegoodevil
 from src.jobs.adapters.plugins.static._feed_postings import (
     looks_like_feed_role_posting,
     page_relative_feed_url,
@@ -22,6 +22,7 @@ from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticPlugin,
     simple_static_run,
 )
+from src.jobs.feed_urls import site_rss_url
 
 _PLUGINS = (arsanesia, petprojectgames)
 
@@ -61,6 +62,17 @@ def test_title_filter_matches_live_feed_postings(title: str, expected: bool) -> 
         ("Now Hiring: Sound Designer", True),
         ("We Are Looking for a Level Designer", True),
         ("Junior Game Tester (Internship)", True),
+        # German thegoodevil.com live-feed titles: the open internship passes via the
+        # localized German role/signal vocabulary; every news item is rejected.
+        ("Pflichtpraktikum Game-Design od. Programmierung (d/w/m)", True),
+        ("Praktikum Game-Design (d/w/m)", True),
+        ("Wir suchen ein Praktikum im Game-Design", True),
+        ("Jobs, Jobs, Jobs", False),
+        ("Wir haben einen TOMMI gewonnen!", False),
+        ("Neues Projekt BEANS (AT)", False),
+        ("Er ist endlich hier!", False),
+        ("Wir suchen Menschen und Eichhörnchen", False),
+        ("Girls Day", False),
         # empty / non-title noise
         ("", False),
     ],
@@ -76,6 +88,13 @@ def test_site_feed_url_targets_wordpress_feed() -> None:
     )
     assert site_feed_url("") == ""
     assert site_feed_url("ftp://arsanesia.com/") == ""
+
+
+def test_site_rss_url_targets_tumblr_rss() -> None:
+    assert site_rss_url("https://www.thegoodevil.com/jobs") == "https://www.thegoodevil.com/rss"
+    assert site_rss_url("http://thegoodevil.com/jobs/") == "http://thegoodevil.com/rss"
+    assert site_rss_url("") == ""
+    assert site_rss_url("ftp://thegoodevil.com/") == ""
 
 
 def _source_row(plugin_name: str) -> dict[str, Any]:
@@ -176,6 +195,14 @@ def test_can_handle_own_hosts(plugin: Any, host: str) -> None:
     assert plugin.can_handle(ctx) is True
 
 
+def test_thegoodevil_can_handle_own_hosts() -> None:
+    for host in ("thegoodevil.com", "www.thegoodevil.com"):
+        ctx = cast(Any, type("Ctx", (), {"source_identity": host})())
+        assert thegoodevil.can_handle(ctx) is True
+    ctx = cast(Any, type("Ctx", (), {"source_identity": "arsanesia.com"})())
+    assert thegoodevil.can_handle(ctx) is False
+
+
 @pytest.mark.parametrize(
     ("plugin", "host"),
     [
@@ -223,6 +250,13 @@ _DEDICATED_JOBS_FEED = """<?xml version="1.0"?><rss version="2.0"><channel>
     <item><title>3D Marketing Animator</title><link>https://sandsoft.com/careers/3d-marketing-animator/</link></item>
 </channel></rss>"""
 
+_THEGOODEVIL_FEED = """<?xml version="1.0"?><rss version="2.0"><channel>
+    <item><title>Jobs, Jobs, Jobs</title><link>https://thegoodevil.com/post/182804305312</link></item>
+    <item><title>Pflichtpraktikum Game-Design od. Programmierung (d/w/m)</title><link>https://thegoodevil.com/post/182803319532</link></item>
+    <item><title>Wir haben einen TOMMI gewonnen!</title><link>https://thegoodevil.com/post/803014691746136064</link></item>
+    <item><title>Er ist endlich hier!</title><link>https://thegoodevil.com/post/806441769293234176</link></item>
+</channel></rss>"""
+
 
 def test_spec_site_feed_with_filter_recovers_only_job_post() -> None:
     spec = SimpleStaticPlugin(
@@ -240,6 +274,27 @@ def test_spec_site_feed_with_filter_recovers_only_job_post() -> None:
     assert [r["title"] for r in rows] == ["Game Programmer: Full-Time & Intern"]
     assert rows[0]["adapter"] == "static"
     assert rows[0]["studio"] == "Arsanesia Studio"
+
+
+def test_thegoodevil_spec_recovers_only_the_open_internship() -> None:
+    spec = SimpleStaticPlugin(
+        source_id="thegoodevil",
+        default_company="The Good Evil",
+        feed_url_builder=site_rss_url,
+        filter_feed_keywords=True,
+    )
+    rows = _run_spec_plugin(
+        spec,
+        page_url="https://www.thegoodevil.com/jobs",
+        feed_url="https://www.thegoodevil.com/rss",
+        feed_html=_THEGOODEVIL_FEED,
+    )
+    assert [r["title"] for r in rows] == ["Pflichtpraktikum Game-Design od. Programmierung (d/w/m)"]
+    assert rows[0]["jobLink"] == "https://thegoodevil.com/post/182803319532"
+    assert rows[0]["sourceJobId"] == (
+        "static:thegoodevil:https://thegoodevil.com/post/182803319532"
+    )
+    assert rows[0]["studio"] == "Thegoodevil Studio"
 
 
 def test_spec_dedicated_jobs_feed_without_filter_keeps_all_items() -> None:

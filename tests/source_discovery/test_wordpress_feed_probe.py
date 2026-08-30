@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.jobs.feed_urls import page_relative_feed_url
 from src.source_discovery import wordpress_feed_probe as wfp
 from src.source_discovery.directory_page_recovery import (
     DirectoryRecoveryRequest,
@@ -80,6 +81,28 @@ def test_wordpress_feed_candidate_urls_root_page_drops_page_path_variant() -> No
 def test_wordpress_feed_candidate_urls_rejects_non_http() -> None:
     assert wfp.wordpress_feed_candidate_urls("ftp://studio.example.com/") == []
     assert wfp.wordpress_feed_candidate_urls("") == []
+
+
+def test_wordpress_feed_candidate_urls_page_relative_matches_shared_builder() -> None:
+    # The discovery probe and the static feed plugins must agree on the
+    # page-relative feed shape (single shared rule via src.jobs.feed_urls).
+    page = "https://studio.example.com/careers"
+    candidates = wfp.wordpress_feed_candidate_urls(page)
+    assert candidates[1] == page_relative_feed_url(page)
+    assert candidates[1] == "https://studio.example.com/careers/feed/"
+
+
+def test_wordpress_feed_candidate_urls_feed_suffixed_path_is_not_doubled() -> None:
+    # A page path already ending in /feed must produce /feed/ (deduped against
+    # the origin feed), never a doubled /feed/feed/.
+    assert wfp.wordpress_feed_candidate_urls("https://studio.example.com/careers/feed") == [
+        "https://studio.example.com/feed/",
+        "https://studio.example.com/careers/feed/",
+        "https://studio.example.com/feed",
+    ]
+    assert page_relative_feed_url("https://studio.example.com/careers/feed") == (
+        "https://studio.example.com/careers/feed/"
+    )
 
 
 # ── looks_like_feed_document / feed_item_count ────────────────────────────────

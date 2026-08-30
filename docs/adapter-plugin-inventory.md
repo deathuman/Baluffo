@@ -164,6 +164,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
 | supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |
 | tatem | tatem.games, www.tatem.games | Tatem Games careers (Tilda `t-card__title` cards; list-only rows) |
+| thegoodevil | thegoodevil.com, www.thegoodevil.com | The Good Evil Tumblr `/rss/` feed; German-localized conservative role-posting gate recovers the open `Pflichtpraktikum Game-Design od. Programmierung` listing |
 | twirlbound | twirlbound.com, www.twirlbound.com | Twirlbound jobs (WordPress ub-content-toggle accordions; list-only rows, details inline) |
 | upsurge | upsurgestudios.com, www.upsurgestudios.com | Upsurge Studios careers (server-rendered `CareerSummary` roles; list-only rows anchored to the careers page) |
 
