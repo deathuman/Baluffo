@@ -10,7 +10,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
-## [Unreleased]
+## [0.2.140] - 2026-08-30
 
 ### Changed
 
@@ -227,10 +227,6 @@ ot twins under the probe: 4 true shared parent boards (amazongames, astragon,
   `availabilityHealth.shadowClassifier` (including the failed-report path) reads
   `false` while enforcing. Payload shape is unchanged; this removes the need for
   SSH env checks when verifying live enforcement on the container.
-
-## [0.2.140] - 2026-08-27
-### Changed
-
 - Availability direct enforcement is promoted for the container runtime: the Umbrel
   compose now sets `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`, so direct availability
   checks publish lifecycle transitions and reopen rows with definitive live evidence
