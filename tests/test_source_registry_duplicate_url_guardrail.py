@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 from tools.repo_health import source_registry_duplicate_url_policy as policy
 
@@ -155,7 +156,7 @@ def test_stale_plus_healthy_mix_reports_only_stale() -> None:
 
 def _active_seed() -> list[dict]:
     path = ROOT / "data" / "defaults" / "source-registry-active.seed.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(list[dict], json.loads(path.read_text(encoding="utf-8")))
 
 
 def test_guardrail_passes_on_committed_seed() -> None:

@@ -483,3 +483,5 @@ workItemId  # unused variable (src\shared\live_task.py)
 parse_jobposting_locations  # unused function (src\jobs\adapters\html_parsers.py:147) — retained API compatibility symbol, was re-exported through parsers.py
 _parse_remote_ok_payload_compat  # unused function (src\jobs_fetcher.py:71) — false positive: accessed via sys.modules[__name__] dynamic ref
 _parse_remotive_payload_compat  # unused function (src\jobs_fetcher.py:75) — false positive: accessed via sys.modules[__name__] dynamic ref
+KNOWN_TWIN_URLS_DEFAULT_RELATIVE_PATH  # unused variable (src\source_registry_data.py:30) — consumed by tools/repo_health/source_registry_duplicate_url_policy.py (guardrail), not scanned by vulture's src-only scope
+load_known_collision_urls  # unused function (src\source_registry_data.py:47) — consumed by tools/repo_health/source_registry_duplicate_url_policy.py (guardrail), not scanned by vulture's src-only scope
