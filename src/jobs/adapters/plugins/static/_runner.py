@@ -498,6 +498,7 @@ def run_simple_static_plugin(
             feed_url_builder=spec.feed_url_builder,
             filter_role_keywords=spec.filter_feed_keywords,
         )
+    assert parse_html is not None  # non-feed specs always supply a parser
     page_url = clean_text(pages[0])
     if not page_url:
         return []
@@ -548,7 +549,7 @@ def run_simple_static_plugin(
 
 def simple_static_run(
     spec: SimpleStaticPlugin,
-    parse_html: Callable[[SimpleStaticContext], list[RawJob]],
+    parse_html: Callable[[SimpleStaticContext], list[RawJob]] | None = None,
 ) -> Callable[..., list[RawJob]]:
     def run(
         *,
