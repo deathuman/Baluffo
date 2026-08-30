@@ -71,6 +71,7 @@ APP_RUNTIME_SCRIPTS = (
     "source_discovery.py",
     "source_registry_auto_approval.py",
     "source_registry_canonicalize.py",
+    "source_registry_data.py",
     "source_registry_identity.py",
     "source_registry_io.py",
     "source_registry_io_journal.py",

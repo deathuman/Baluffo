@@ -8,13 +8,13 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry 
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlparse
 
 from src.shared.utils import now_iso
+from src.source_registry_data import known_twin_career_urls
 from src.source_registry_identity import (
     _clean_family_token,
     ensure_source_id,
@@ -457,8 +457,6 @@ _URL_TWIN_FAMILY_PREFIX = "url-twin:"
 
 _ACTIVE_URL_TWIN_STATES = frozenset({"active", "live", "enabled", "approved"})
 
-_KNOWN_TWIN_URLS_FILENAME = "source-registry-known-url-collisions.json"
-
 
 def _row_is_active_for_url_twin(row: dict[str, Any]) -> bool:
     """Active check for URL-twin grouping (mirrors the guardrail's active scope).
@@ -473,35 +471,6 @@ def _row_is_active_for_url_twin(row: dict[str, Any]) -> bool:
     if not candidate_state:
         return True
     return candidate_state in _ACTIVE_URL_TWIN_STATES
-
-
-def known_twin_career_urls() -> set[str] | None:
-    """Load the reviewed-collision allowlist for the runtime twin rule.
-
-    Returns the set of canonical careers URLs that are known/reviewed collisions
-    (they must stay untouched by runtime automation), or ``None`` when the
-    baseline file is missing or unreadable — in which case callers must skip
-    URL-twin automation entirely rather than risk auto-demoting a reviewed
-    collision.
-
-    The path resolves through the storage layer at call time (``DEFAULTS_DIR``
-    is rebound at runtime by ``source_registry._sync_io_paths``), so this works
-    in dev and in the bundled app where the baseline ships under ``data/``.
-    """
-    from src.source_registry_io import DEFAULTS_DIR
-
-    path = DEFAULTS_DIR / _KNOWN_TWIN_URLS_FILENAME
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if isinstance(payload, dict):
-        return {str(key) for key in payload}
-    if isinstance(payload, list):
-        return {str(key) for key in payload}
-    return None
 
 
 def _duplicate_card_for_rows(
@@ -537,31 +506,54 @@ def _duplicate_card_for_rows(
     }
 
 
-def duplicate_family_conflict_cards(
+def _target_family_key_set(target_families: Iterable[str] | None) -> set[str]:
+    """Normalized set of studio-family target keys used to filter duplicate cards."""
+    items = target_families or []
+    keys = {token for token in (_clean_family_token(item) for item in items) if token}
+    keys |= {str(item).strip().lower() for item in items if str(item).strip()}
+    return keys
+
+
+def _group_studio_families(
     rows: Iterable[dict[str, Any]],
     *,
-    target_families: Iterable[str] | None = None,
-    source_state: Any = None,
-) -> list[dict[str, Any]]:
-    target_keys = {
-        token for token in (_clean_family_token(item) for item in (target_families or [])) if token
-    }
-    target_keys |= {
-        str(item).strip().lower() for item in (target_families or []) if str(item).strip()
-    }
-    source_state_by_key = _state_rows_by_key(source_state)
+    target_keys: set[str],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
+    """Studio-family buckets plus a per-row family key, for normalized active rows.
+
+    Mirrors the original single-pass scope: a row joins a studio bucket only when it
+    has a family and (when targeting) that family is requested; the per-row family key
+    is populated in lockstep so URL-twin suppression below sees the same picture.
+    """
     grouped: dict[str, list[dict[str, Any]]] = {}
-    url_grouped: dict[str, list[dict[str, Any]]] = {}
     row_family_key: dict[str, str] = {}
-    known_twin_urls = known_twin_career_urls()
-    for row in [ensure_source_id(dict(row)) for row in rows if isinstance(row, dict)]:
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        row = ensure_source_id(dict(raw))
         row_id = source_identity(row)
         family_key = source_family_key(row)
         if family_key and (not target_keys or family_key in target_keys):
             grouped.setdefault(family_key, []).append(row)
             row_family_key[row_id] = family_key
-        if known_twin_urls is None:
+    return grouped, row_family_key
+
+
+def _group_url_twins(
+    rows: Iterable[dict[str, Any]],
+    *,
+    target_keys: set[str],
+    known_twin_urls: set[str],
+    row_family_key: dict[str, str],
+) -> dict[str, list[dict[str, Any]]]:
+    """Active URL-twin buckets for non-allowlisted normalized URLs."""
+    url_grouped: dict[str, list[dict[str, Any]]] = {}
+    for raw in rows:
+        if not isinstance(raw, dict):
             continue
+        row = ensure_source_id(dict(raw))
+        row_id = source_identity(row)
+        family_key = source_family_key(row)
         url_key = source_careers_url_key(row)
         if not url_key or url_key in known_twin_urls:
             continue
@@ -572,23 +564,35 @@ def duplicate_family_conflict_cards(
             # URL-twin card is their only duplicate surface; it is never
             # suppressed by the all-in-one-family skip below.
             row_family_key.setdefault(row_id, "")
-        if target_keys and f"{_URL_TWIN_FAMILY_PREFIX}{url_key}" not in target_keys:
+        url_twin_key = f"{_URL_TWIN_FAMILY_PREFIX}{url_key}"
+        if target_keys and url_twin_key not in target_keys:
             continue
         url_grouped.setdefault(url_key, []).append(row)
+    return url_grouped
 
+
+def _rows_share_one_studio_family(
+    url_rows: list[dict[str, Any]],
+    row_family_key: dict[str, str],
+) -> bool:
+    """True when every URL-twin row belongs to the same single studio family."""
+    row_ids = [source_identity(row) for row in url_rows]
+    family_keys = {row_family_key.get(row_id) for row_id in row_ids if row_family_key.get(row_id)}
+    all_have_family = all(bool(row_family_key.get(row_id)) for row_id in row_ids)
+    return all_have_family and len(family_keys) == 1
+
+
+def _url_twin_cards(
+    url_grouped: dict[str, list[dict[str, Any]]],
+    row_family_key: dict[str, str],
+    source_state_by_key: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """A card for each multi-row URL twin not already folded into a studio-family card."""
     cards: list[dict[str, Any]] = []
-    for family_key, family_rows in sorted(grouped.items()):
-        if len(family_rows) >= 2:
-            cards.append(_duplicate_card_for_rows(family_key, family_rows, source_state_by_key))
     for url_key, url_rows in sorted(url_grouped.items()):
         if len(url_rows) < 2:
             continue
-        row_ids = [source_identity(row) for row in url_rows]
-        family_keys = {
-            row_family_key.get(row_id) for row_id in row_ids if row_family_key.get(row_id)
-        }
-        all_rows_have_family = all(bool(row_family_key.get(row_id)) for row_id in row_ids)
-        if all_rows_have_family and len(family_keys) == 1:
+        if _rows_share_one_studio_family(url_rows, row_family_key):
             # Already compared by the single studio-family card above.
             continue
         cards.append(
@@ -598,6 +602,34 @@ def duplicate_family_conflict_cards(
                 source_state_by_key,
             )
         )
+    return cards
+
+
+def duplicate_family_conflict_cards(
+    rows: Iterable[dict[str, Any]],
+    *,
+    target_families: Iterable[str] | None = None,
+    source_state: Any = None,
+) -> list[dict[str, Any]]:
+    """Studio-family and URL-twin duplicate cards for the active rows."""
+    target_keys = _target_family_key_set(target_families)
+    source_state_by_key = _state_rows_by_key(source_state)
+    known_twin_urls = known_twin_career_urls()
+    grouped, row_family_key = _group_studio_families(rows, target_keys=target_keys)
+    url_grouped: dict[str, list[dict[str, Any]]] = {}
+    if known_twin_urls is not None:
+        url_grouped = _group_url_twins(
+            rows,
+            target_keys=target_keys,
+            known_twin_urls=known_twin_urls,
+            row_family_key=row_family_key,
+        )
+    cards = [
+        _duplicate_card_for_rows(family_key, family_rows, source_state_by_key)
+        for family_key, family_rows in sorted(grouped.items())
+        if len(family_rows) >= 2
+    ]
+    cards += _url_twin_cards(url_grouped, row_family_key, source_state_by_key)
     return cards
 
 

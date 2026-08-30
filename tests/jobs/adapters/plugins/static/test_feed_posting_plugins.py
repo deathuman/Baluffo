@@ -15,7 +15,12 @@ import pytest
 from src.jobs.adapters.plugins.static import arsanesia, petprojectgames
 from src.jobs.adapters.plugins.static._feed_postings import (
     looks_like_feed_role_posting,
+    page_relative_feed_url,
     site_feed_url,
+)
+from src.jobs.adapters.plugins.static._runner import (
+    SimpleStaticPlugin,
+    simple_static_run,
 )
 
 _PLUGINS = (arsanesia, petprojectgames)
@@ -182,3 +187,109 @@ def test_can_handle_own_hosts(plugin: Any, host: str) -> None:
 def test_plugin_rejects_unrelated_hosts(plugin: Any, host: str) -> None:
     ctx = cast(Any, type("Ctx", (), {"source_identity": host})())
     assert plugin.can_handle(ctx) is False
+
+
+# spec-driven feed plugins -----------------------------------------------------
+
+
+def _run_spec_plugin(
+    spec: SimpleStaticPlugin,
+    *,
+    page_url: str,
+    feed_url: str,
+    feed_html: str,
+) -> list[dict[str, Any]]:
+    def fetch_text(url: str, timeout_s: int) -> str:
+        assert timeout_s == 10
+        assert url == feed_url
+        return feed_html
+
+    run = simple_static_run(spec, parse_html=None)
+    return cast(
+        list[dict[str, Any]],
+        run(
+            fetch_text=fetch_text,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=[page_url],
+            source_row=_source_row(spec.source_id),
+        ),
+    )
+
+
+_DEDICATED_JOBS_FEED = """<?xml version="1.0"?><rss version="2.0"><channel>
+    <item><title>Senior Game Designer</title><link>https://sandsoft.com/careers/senior-game-designer/</link></item>
+    <item><title>3D Marketing Animator</title><link>https://sandsoft.com/careers/3d-marketing-animator/</link></item>
+</channel></rss>"""
+
+
+def test_spec_site_feed_with_filter_recovers_only_job_post() -> None:
+    spec = SimpleStaticPlugin(
+        source_id="arsanesia",
+        default_company="Arsanesia",
+        feed_url_builder=site_feed_url,
+        filter_feed_keywords=True,
+    )
+    rows = _run_spec_plugin(
+        spec,
+        page_url="https://arsanesia.com/career/",
+        feed_url="https://arsanesia.com/feed/",
+        feed_html=_ARSANESIA_FEED,
+    )
+    assert [r["title"] for r in rows] == ["Game Programmer: Full-Time & Intern"]
+    assert rows[0]["adapter"] == "static"
+    assert rows[0]["studio"] == "Arsanesia Studio"
+
+
+def test_spec_dedicated_jobs_feed_without_filter_keeps_all_items() -> None:
+    spec = SimpleStaticPlugin(
+        source_id="sandsoft",
+        default_company="Sandsoft",
+        feed_url_builder=page_relative_feed_url,
+        filter_feed_keywords=False,
+    )
+    rows = _run_spec_plugin(
+        spec,
+        page_url="https://sandsoft.com/careers/",
+        feed_url="https://sandsoft.com/careers/feed/",
+        feed_html=_DEDICATED_JOBS_FEED,
+    )
+    assert [r["title"] for r in rows] == ["Senior Game Designer", "3D Marketing Animator"]
+    assert rows[0]["sourceJobId"] == (
+        "static:sandsoft:https://sandsoft.com/careers/senior-game-designer/"
+    )
+
+
+def test_spec_non_feed_plugin_ignores_feed_fields_and_parses_html() -> None:
+    spec = SimpleStaticPlugin(
+        source_id="html-only",
+        default_company="HTML Studio",
+        feed_url_builder=None,
+        filter_feed_keywords=False,
+    )
+    html = "<html><body><h3>Senior Programmer</h3></body></html>"
+
+    def fetch_text(url: str, timeout_s: int) -> str:
+        assert url == "https://html.example/careers"
+        return html
+
+    run = simple_static_run(
+        spec,
+        parse_html=lambda ctx: [
+            {"title": "Senior Programmer", "jobLink": ctx.page_url, "sourceJobId": "x"}
+        ],
+    )
+    rows = cast(
+        list[dict[str, Any]],
+        run(
+            fetch_text=fetch_text,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=["https://html.example/careers"],
+            source_row=_source_row("html-only"),
+        ),
+    )
+    assert [r["title"] for r in rows] == ["Senior Programmer"]
+    assert rows[0]["adapter"] == "static"

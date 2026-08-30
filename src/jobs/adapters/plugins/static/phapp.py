@@ -25,9 +25,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlparse
+
+_MAX_JOB_FETCH_WORKERS = 8
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
@@ -222,6 +226,91 @@ def can_handle(ctx: Any) -> bool:
     return host in PHA_HOSTS
 
 
+def _fetch_or_empty(fetch_text: Callable[[str, int], str], url: str, timeout_s: int) -> str:
+    """Fetch, returning empty text for a fallback-class exception and re-raising others."""
+    try:
+        return fetch_text(url, timeout_s)
+    except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
+        if is_static_fetch_fallback_exception(exc):
+            return ""
+        raise
+
+
+def _fetch_sitemap_xml(
+    page_url: str, *, fetch_text: Callable[[str, int], str], timeout_s: int
+) -> str:
+    """Probe the canonical sitemap candidates, returning the first sitemap document found."""
+    for candidate in sitemap_candidates(page_url)[:_MAX_SITEMAPS]:
+        body = _fetch_or_empty(fetch_text, candidate, timeout_s)
+        if "<urlset" in (body or "") or "<sitemapindex" in (body or ""):
+            return body
+    return ""
+
+
+def _job_row_from_meta(meta: dict[str, Any], fallback_company: str) -> dict[str, Any]:
+    """Raw-job payload built from a phApp job-detail meta dict."""
+    return {
+        "title": meta["title"],
+        "company": meta["company"] or fallback_company,
+        "jobLink": meta["jobLink"],
+        "sourceJobId": meta["sourceJobId"],
+        "city": meta["city"],
+        "country": meta["country"],
+        "workType": "",
+        "contractType": "",
+        "sector": "Game",
+        "postedAt": "",
+    }
+
+
+def _detail_meta(
+    job_url: str,
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    fallback_company: str,
+) -> dict[str, Any] | None:
+    """Fetch one phApp detail page and extract its job meta (or None when unparseable)."""
+    html = _fetch_or_empty(fetch_text, job_url, timeout_s)
+    return extract_phapp_job_meta(
+        html or "",
+        job_url=job_url,
+        fallback_company=fallback_company,
+    )
+
+
+def _rows_for_job_urls(
+    job_urls: list[str],
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    fallback_company: str,
+) -> list[dict[str, Any]]:
+    """Fetch each phApp job detail page and derive one row, skipping unparseable pages.
+
+    Detail fetches are network/IO-bound and safe to run concurrently against the runtime
+    fetch callable (its per-host gate is a ``BoundedSemaphore``). A bounded thread pool
+    caps concurrency at ``_MAX_JOB_FETCH_WORKERS`` so we never open 80 simultaneous
+    connections to one host; ``map`` preserves sitemap order so kept counts and row order
+    are identical to the sequential path below ``_MAX_JOB_FETCH_WORKERS == 1``.
+    """
+    if not job_urls:
+        return []
+    workers = max(1, int(_MAX_JOB_FETCH_WORKERS or 1))
+    run_job = partial(
+        _detail_meta,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        fallback_company=fallback_company,
+    )
+    if workers == 1:
+        metas = [run_job(url) for url in job_urls]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            metas = list(pool.map(run_job, job_urls))
+    return [_job_row_from_meta(meta, fallback_company) for meta in metas if meta]
+
+
 def run(
     *,
     fetch_text: Callable[[str, int], str],
@@ -232,6 +321,7 @@ def run(
     source_row: dict[str, Any],
     **kwargs: Any,
 ) -> list[RawJob]:
+    """Recover phApp jobs via the public per-locale sitemap and server-rendered details."""
     _ = (retries, backoff_s, kwargs)
     page_url = first_static_page(pages)
     if not page_url:
@@ -243,47 +333,17 @@ def run(
         default_source_name="phapp",
     )
 
-    sitemap_xml = ""
-    for candidate in sitemap_candidates(page_url)[:_MAX_SITEMAPS]:
-        try:
-            body = fetch_text(candidate, timeout_s)
-        except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
-            if not is_static_fetch_fallback_exception(exc):
-                raise
-            body = ""
-        if "<urlset" in (body or "") or "<sitemapindex" in (body or ""):
-            sitemap_xml = body
-            break
-
+    sitemap_xml = _fetch_sitemap_xml(page_url, fetch_text=fetch_text, timeout_s=timeout_s)
     job_urls = collect_job_urls(sitemap_xml, page_url)[:_MAX_JOBS_PER_SOURCE]
     if not job_urls:
         return []
 
-    rows: list[RawJob] = []
-    for job_url in job_urls:
-        try:
-            html = fetch_text(job_url, timeout_s)
-        except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
-            if not is_static_fetch_fallback_exception(exc):
-                raise
-            html = ""
-        meta = extract_phapp_job_meta(html or "", job_url=job_url, fallback_company=company)
-        if not meta:
-            continue
-        rows.append(
-            {
-                "title": meta["title"],
-                "company": meta["company"] or company,
-                "jobLink": meta["jobLink"],
-                "sourceJobId": meta["sourceJobId"],
-                "city": meta["city"],
-                "country": meta["country"],
-                "workType": "",
-                "contractType": "",
-                "sector": "Game",
-                "postedAt": "",
-            }
-        )
+    rows = _rows_for_job_urls(
+        job_urls,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        fallback_company=company,
+    )
     if not rows:
         return []
     return stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)

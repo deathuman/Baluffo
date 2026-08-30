@@ -697,6 +697,26 @@ live feed titles, conservative guards, per-plugin extraction, empty/non-job feed
 Static battery **419 passed**, precommit gate green. `docs/adapter-plugin-inventory.md` +
 CHANGELOG updated.
 
+### WP13 follow-up audit (2026-08-30) — page-relative feed lens over the WP feed candidates
+
+Re-audited all 84 WP8 feed-capable candidates against the new **`page_relative_feed_url`**
+builder (page-path-rooted ``<page>/feed/`` — the Sandsoft dedicated-jobs-feed shape) once the
+shared feed machinery became spec-driven (no new parsing code needed for any winner). Bounded
+live probe (`_out/.../feed_page_relative_audit.py` → `feed-page-relative-audit.json`): 78
+candidates not already covered by a plugin (phApp platform hosts excluded) probed at
+`<page>/feed/`, plus origin `/feed/` fallback, scoring items with the production
+`looks_like_feed_role_posting` gate.
+
+**Result: zero dedicated page-relative jobs feeds.** No candidate recovered a single role
+posting via `page_relative_feed_url`; spot-checks confirm the `<page>/feed/` variants are the
+same WordPress **comments** feeds WP8 found ("Comments on: Jobs/Job Openings") or 404s
+(pariahinteractive, chucklefish, telltale). The only production-gate recoveries are the three
+already-converted rows (arsanesia + petprojectgames ×2, site `/feed/`, 1 posting each).
+Conclusion unchanged from WP8: no Sandsoft-class dedicated feed exists among the WP candidates
+today; the spec-driven feed leaves (feed_url_builder + filter_feed_keywords) remain ready to
+claim any page-relative feed that appears later with a 3-line leaf. No code or registry
+changes on this pass.
+
 ### WP14 triage (2026-08-29) — ATS-backed zero-kept shells (King, Blizzard, Microsoft, Netflix, Activision)
 
 Feed recovery (WP8/WP13) does not apply to these five — they are large ATS-backed boards, not

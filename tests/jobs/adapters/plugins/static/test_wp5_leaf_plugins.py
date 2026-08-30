@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 
 from src.jobs.adapters.plugins.static import sandsoft, upsurge
+from src.jobs.adapters.plugins.static._feed_postings import page_relative_feed_url
 
 
 def _source_row(plugin_name: str) -> dict[str, Any]:
@@ -144,13 +145,15 @@ def test_sandsoft_fetches_feed_and_recovers_postings() -> None:
 
 def test_sandsoft_feed_url_handles_both_slash_forms() -> None:
     assert (
-        sandsoft._feed_url("https://sandsoft.com/careers") == "https://sandsoft.com/careers/feed/"
+        page_relative_feed_url("https://sandsoft.com/careers")
+        == "https://sandsoft.com/careers/feed/"
     )
     assert (
-        sandsoft._feed_url("https://sandsoft.com/careers/") == "https://sandsoft.com/careers/feed/"
+        page_relative_feed_url("https://sandsoft.com/careers/")
+        == "https://sandsoft.com/careers/feed/"
     )
     assert (
-        sandsoft._feed_url("https://sandsoft.com/careers/feed")
+        page_relative_feed_url("https://sandsoft.com/careers/feed")
         == "https://sandsoft.com/careers/feed/"
     )
 

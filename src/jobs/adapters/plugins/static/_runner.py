@@ -44,6 +44,12 @@ class SimpleStaticPlugin:
     require_generic_parser: bool = False
     empty_detail_fetch_required: bool | None = False
     empty_detail_traversal_mode: str = "listing_only"
+    # Feed mode: when set, the plugin recovers rows from a server-rendered RSS feed
+    # instead of parsing the page HTML (see ``_feed_postings``); ``filter_feed_keywords``
+    # applies the conservative role-keyword gate for mixed news feeds, and should be
+    # disabled for dedicated jobs-only feeds.
+    feed_url_builder: Callable[[str], str] | None = None
+    filter_feed_keywords: bool = True
 
 
 @dataclass(frozen=True)
@@ -467,7 +473,7 @@ def run_simple_static_plugin(
     pages: list[str],
     source_row: dict[str, Any],
     spec: SimpleStaticPlugin,
-    parse_html: Callable[[SimpleStaticContext], list[RawJob]],
+    parse_html: Callable[[SimpleStaticContext], list[RawJob]] | None = None,
     parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     company_override: str = "",
@@ -477,6 +483,21 @@ def run_simple_static_plugin(
     _ = (retries, backoff_s, kwargs)
     if not pages or (spec.require_generic_parser and not callable(parse_jobpostings_from_html)):
         return []
+    if spec.feed_url_builder is not None:
+        from ._feed_postings import run_website_feed_postings
+
+        return run_website_feed_postings(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            pages=pages,
+            source_row=source_row,
+            source_id=spec.source_id,
+            default_company=spec.default_company,
+            feed_url_builder=spec.feed_url_builder,
+            filter_role_keywords=spec.filter_feed_keywords,
+        )
     page_url = clean_text(pages[0])
     if not page_url:
         return []

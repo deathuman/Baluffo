@@ -50,7 +50,6 @@
     "src/jobs/adapters/plugins/static/frontier.py::_pick_location_and_terms": 13,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_from_li_blocks": 18,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_jobs": 12,
-    "src/jobs/adapters/plugins/static/phapp.py::run": 12,
     "src/jobs/adapters/provider_personio.py::run_personio_sources_source": 11,
     "src/jobs/adapters/social.py::run_social_mastodon_source": 11,
     "src/jobs/adapters/social.py::run_social_reddit_source": 12,
@@ -88,7 +87,6 @@
     "src/source_audit_sweep.py::_classify_source": 13,
     "src/source_discovery/stage_control.py::apply_discovery_cli_args_to_config": 11,
     "src/source_registry_auto_approval.py::apply_discovery_auto_approval": 14,
-    "src/source_registry_policy.py::duplicate_family_conflict_cards": 13,
     "src/source_sync_config.py::config_status": 12,
     "src/source_sync_config.py::load_packaged_sync_config": 16,
     "src/storage/evidence_archive.py::enforce_retention": 13

@@ -2,8 +2,9 @@
 
 WP8 found that some studios' only recoverable job signal is a **single job posting
 mixed into the site's WordPress news feed** (dev logs, press releases, trailers).
-Unlike a dedicated jobs feed (see ``sandsoft.py``), these board's postings share a
-feed with unrelated news, so every item must be filtered before it can become a row.
+Unlike a dedicated jobs feed (see ``sandsoft.py``, which passes its own feed-URL
+builder and disables the filter below), these board's postings share a feed with
+unrelated news, so every item must be filtered before it can become a row.
 
 This module provides a deliberately **conservative** title filter
 (:func:`looks_like_feed_role_posting`) that keeps an item only when the title *both*
@@ -12,9 +13,10 @@ news/filler vocabulary these site feeds are dominated by. False negatives are
 preferred over publishing a non-job: the filter will silently skip an ambiguous
 posting rather than emit a false row.
 
-Shared by the ``arsanesia`` and ``petprojectgames`` leaf plugins (and any future
-WordPress site feed). AI boundary owns: website-feed item parsing and the conservative
-role-posting title filter shared by these leaf post-feed plugins.
+Shared by the ``arsanesia``, ``petprojectgames``, and ``sandsoft`` leaf plugins
+(and any future website feed). AI boundary owns: website-feed item parsing, the
+conservative role-posting title filter, and the feed-URL builders shared by these
+leaf post-feed plugins.
 """
 
 from __future__ import annotations
@@ -156,11 +158,29 @@ def site_feed_url(page_url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}/feed/"
 
 
+def page_relative_feed_url(page_url: str, *, feed_name: str = "feed") -> str:
+    """Feed rooted at the page's own path (e.g. ``<page>/careers/feed/``).
+
+    Handles the trailing-slash variants and the already-``/<feed>`` form so a
+    dedicated jobs feed living next to the careers page (like Sandsoft's
+    ``/careers/feed/``) reuses the same fetch/parse wiring.
+    """
+    base = clean_text(page_url).rstrip("/")
+    if not base:
+        return ""
+    feed = clean_text(feed_name).strip("/")
+    if base.endswith("/" + feed):
+        return base + "/"
+    return f"{base}/{feed}/"
+
+
 def _parse_items(
     feed_text: str,
     ctx_company: str,
     ctx_source_id: str,
     page_url: str,
+    *,
+    filter_keywords: bool = True,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -170,10 +190,12 @@ def _parse_items(
         if not title_match or not link_match:
             continue
         title = clean_text(strip_html_text(unescape(title_match.group(1))))
-        if not looks_like_feed_role_posting(title):
-            continue
         link = clean_text(urljoin(page_url, unescape(link_match.group(1))))
-        if not link or link in seen:
+        if not title or not link:
+            continue
+        if filter_keywords and not looks_like_feed_role_posting(title):
+            continue
+        if link in seen:
             continue
         seen.add(link)
         rows.append(
@@ -203,12 +225,16 @@ def run_website_feed_postings(
     source_row: dict[str, Any],
     source_id: str,
     default_company: str,
+    feed_url_builder: Callable[[str], str] | None = None,
+    filter_role_keywords: bool = True,
     **kwargs: Any,
 ) -> list[RawJob]:
-    """Fetch the site blog/feed and emit rows for job-post items only.
+    """Fetch a website/jobs feed and emit rows for job-post items.
 
-    Mirrors ``sandsoft.py``'s fetch/parse/fallback wiring but works on the site-wide
-    feed (rather than a dedicated jobs feed) and filters items to role postings.
+    By default this fetches the site-wide feed (``site_feed_url``) and filters items
+    to role postings; a leaf plugin with a dedicated jobs feed can pass its own
+    ``feed_url_builder`` (e.g. ``page_relative_feed_url`` for Sandsoft's
+    ``/careers/feed/``) and disable the keyword filter for a feed that is jobs-only.
     """
     _ = (retries, backoff_s, kwargs)
     page_url = first_static_page(pages)
@@ -220,7 +246,8 @@ def run_website_feed_postings(
         default_source_id=source_id,
         default_source_name=source_id,
     )
-    feed_url = site_feed_url(page_url)
+    feed_url_builder = feed_url_builder or site_feed_url
+    feed_url = feed_url_builder(page_url)
     feed_text = ""
     if feed_url:
         try:
@@ -228,7 +255,13 @@ def run_website_feed_postings(
         except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
             if not is_static_fetch_fallback_exception(exc):
                 raise
-    rows = _parse_items(feed_text, company, ctx_source_id, page_url)
+    rows = _parse_items(
+        feed_text,
+        company,
+        ctx_source_id,
+        page_url,
+        filter_keywords=filter_role_keywords,
+    )
     if not rows:
         return []
     return stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)

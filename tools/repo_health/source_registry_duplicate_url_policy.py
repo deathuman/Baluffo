@@ -41,9 +41,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from src.source_registry_data import (
+    KNOWN_TWIN_URLS_DEFAULT_RELATIVE_PATH,
+    load_known_collision_urls,
+)
 from src.source_registry_identity import canonicalize_careers_url  # noqa: F401
 
-KNOWN_COLLISIONS_RELATIVE_PATH = Path("data/defaults/source-registry-known-url-collisions.json")
+KNOWN_COLLISIONS_RELATIVE_PATH = KNOWN_TWIN_URLS_DEFAULT_RELATIVE_PATH
 
 
 def _row_careers_url(row: dict[str, Any]) -> str:
@@ -118,18 +122,12 @@ def list_stale_known_collisions(
 
 
 def _load_known_collisions(repo_root: Path) -> set[str]:
-    path = repo_root / KNOWN_COLLISIONS_RELATIVE_PATH
-    if not path.exists():
-        return set()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return set()
-    if isinstance(payload, dict):
-        return {str(key) for key in payload}
-    if isinstance(payload, list):
-        return {str(key) for key in payload}
-    return set()
+    """Reviewed-collision allowlist for the repo seeds (empty when unavailable).
+
+    Delegates to the shared leaf loader so the commit-time guardrail and the
+    runtime twin rule can never parse the baseline differently.
+    """
+    return load_known_collision_urls(repo_root / KNOWN_COLLISIONS_RELATIVE_PATH)
 
 
 def _active_seed_path(repo_root: Path) -> Path:
