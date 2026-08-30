@@ -95,6 +95,29 @@ def test_committed_security_inputs_close_python_security_caveats(repo_root: Path
     assert advisory_ids == []
 
 
+def test_missing_pip_audit_fails_with_install_guidance(monkeypatch) -> None:
+    def fake_find_spec(name: str) -> None:
+        return None
+
+    monkeypatch.setattr(security_audit.importlib.util, "find_spec", fake_find_spec)
+
+    try:
+        security_audit._ensure_pip_audit_available()
+    except security_audit.SecurityAuditConfigError as exc:
+        assert "pip install pip-audit" in str(exc)
+    else:
+        raise AssertionError("Missing pip-audit should fail with install guidance.")
+
+
+def test_precommit_config_registers_pip_audit_hook(repo_root: Path) -> None:
+    config = (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "id: pip-audit" in config
+    assert "python scripts/security_audit.py" in config
+    assert "requirements-lock" in config
+    assert "pip-audit-allowlist" in config
+
+
 def test_run_audit_propagates_pip_audit_exit_code(tmp_path: Path, monkeypatch) -> None:
     requirements = tmp_path / "requirements-lock.txt"
     report = tmp_path / ".tmp" / "security" / "pip-audit.json"

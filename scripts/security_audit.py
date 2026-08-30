@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -107,11 +108,22 @@ def run_audit(ignored_advisories: list[str]) -> int:
     return completed.returncode
 
 
+def _ensure_pip_audit_available() -> None:
+    """Fail fast with install guidance when pip-audit is missing (e.g. local gate)."""
+    if importlib.util.find_spec("pip_audit") is None:
+        raise SecurityAuditConfigError(
+            "pip-audit is not installed. Install it with "
+            "`python -m pip install pip-audit==2.10.0` to run the "
+            "dependency security audit."
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Baluffo Python dependency security audit.")
     parser.parse_args(argv)
 
     try:
+        _ensure_pip_audit_available()
         ignored_advisories = load_allowlist()
         return run_audit(ignored_advisories)
     except SecurityAuditConfigError as exc:

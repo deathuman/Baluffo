@@ -59,6 +59,13 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: pip-audit
+        name: pip-audit (dependency security audit)
+        entry: python scripts/security_audit.py
+        language: system
+        pass_filenames: false
+        files: ^(requirements-lock\.txt|tools/security/pip-audit-allowlist\.json)$
+
   - repo: https://github.com/jendrikseipp/vulture
     rev: v2.14
     hooks:

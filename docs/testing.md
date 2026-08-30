@@ -159,6 +159,8 @@ npm run security:python
 
 The audit scans the checked-in `requirements-lock.txt` with `pip-audit`, writes a JSON report to `.tmp/security/pip-audit.json`, and fails on any unallowlisted advisory. CI runs this lane after the pre-commit guardrails in the lint workflow.
 
+The same audit runs locally through the pre-commit gate: a `pip-audit` local hook fires on commit whenever `requirements-lock.txt` or `tools/security/pip-audit-allowlist.json` changes, and on every push via the full-repo gate (which always includes the lock file, so a new advisory against unchanged pins is caught before it reaches CI). If `pip-audit` is not installed locally, the gate fails with install guidance (`python -m pip install pip-audit==2.10.0`).
+
 Known non-actionable findings must be listed in `tools/security/pip-audit-allowlist.json` with an advisory id, package, reason, owner, and `review_by` date. Expired or malformed allowlist entries are failures. Ownership defaults to the matching code owner; for repository-wide dependency findings, use the default owner from `CODEOWNERS`.
 
 ## Secret scanning
