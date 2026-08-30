@@ -56,10 +56,12 @@ canonicalize_registry_row = _canonicalize.canonicalize_registry_row
 sort_sources_by_identity = _canonicalize.sort_sources_by_identity
 
 _clean_family_token = _identity._clean_family_token
+canonicalize_careers_url = _identity.canonicalize_careers_url
 ensure_source_id = _identity.ensure_source_id
 normalize_source_url = _identity.normalize_source_url
 provider_fields_from_row_identity = _identity.provider_fields_from_row_identity
 provider_fields_from_source_id = _identity.provider_fields_from_source_id
+source_careers_url_key = _identity.source_careers_url_key
 source_endpoint_url = _identity.source_endpoint_url
 source_family_key = _identity.source_family_key
 source_identity = _identity.source_identity
@@ -75,6 +77,7 @@ _metadata_score = _policy._metadata_score
 _source_state_for_row = _policy._source_state_for_row
 _state_rows_by_key = _policy._state_rows_by_key
 demote_duplicate_active_variants = _policy.demote_duplicate_active_variants
+known_twin_career_urls = _policy.known_twin_career_urls
 
 REGISTRY_MIGRATION_V2 = _state.REGISTRY_MIGRATION_V2
 REGISTRY_REASON_APPROVE = _state.REGISTRY_REASON_APPROVE

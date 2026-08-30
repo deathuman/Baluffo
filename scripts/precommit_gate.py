@@ -169,6 +169,8 @@ def should_run_repo_guardrails(files: list[str]) -> bool:
         ".pre-commit-config.yaml",
         "ruff.toml",
         "mypy.ini",
+        "data/defaults/source-registry-active.seed.json",
+        "data/defaults/source-registry-pending.seed.json",
     }
     return any(path in watched_exact or path.startswith(watched_roots) for path in files)
 

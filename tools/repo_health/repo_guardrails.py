@@ -46,6 +46,10 @@ from release_artifacts_policy import (
     check_portable_zip_embedded_version,
     check_ship_bundle_embedded_version,
 )
+from source_registry_duplicate_url_policy import (
+    check_active_seed_stale_baseline,
+    check_active_seed_twin_career_urls,
+)
 from update_manager_facade_inventory import check_update_manager_facade_inventory
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
@@ -62,6 +66,7 @@ GROUPS = (
     "fixtures",
     "line-budget",
     "release",
+    "registry",
 )
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
@@ -789,6 +794,24 @@ def run_line_budget_group() -> list[GuardFailure]:
     return failures
 
 
+def run_registry_group() -> list[GuardFailure]:
+    failures: list[GuardFailure] = []
+    uncovered = _failure_from_messages(
+        "registry",
+        "check_active_seed_twin_career_urls",
+        check_active_seed_twin_career_urls(repo_root=ROOT),
+    )
+    stale = _failure_from_messages(
+        "registry",
+        "check_active_seed_stale_baseline",
+        check_active_seed_stale_baseline(repo_root=ROOT),
+    )
+    for failure in (uncovered, stale):
+        if failure is not None:
+            failures.append(failure)
+    return failures
+
+
 GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "docs": run_docs_group,
     "workflow": run_workflow_group,
@@ -800,6 +823,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
     "release": run_release_group,
+    "registry": run_registry_group,
 }
 
 

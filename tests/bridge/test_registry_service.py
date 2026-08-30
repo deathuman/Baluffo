@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from src import source_registry as sr
 from src.bridge import registry_service as registry_service_module
 from src.bridge.registry_service import RegistryPaths, RegistryService
@@ -138,6 +140,250 @@ def test_registry_service_auto_demotes_safe_static_url_alias_on_load(tmp_path: P
             "action": "auto_demote_static_normalized_url_alias",
         }
     ]
+
+
+# ── shared base + journal-overlay scenarios ───────────────────────────────────
+# Each scenario is a fresh URL twin delivered the way live discovery lands a
+# new row: a seed base holding only the winner, then a jsonl delta appended to
+# the journal. One parametrized test drives the full ``RegistryService`` load
+# path for every analyzer shape, so future analyzer paths get the same
+# base+journal coverage by adding one scenario row.
+
+_OVERLAY_SCENARIOS = (
+    "cross-family-url-twin",
+    "protected-cross-family-url-twin",
+    "same-family-static-alias",
+    "protected-discovery-approve",
+)
+
+_OVERLAY_EXPECT: dict[str, dict[str, Any]] = {
+    # Cross-family twins raise a canonicalize_careers_url ``url-twin:`` card.
+    "cross-family-url-twin": {
+        "demote": True,
+        "family_prefix": "url-twin:",
+        "clear_allowlist": True,
+    },
+    # Discovery-auto-approved wins over the url-twin demote path too.
+    "protected-cross-family-url-twin": {
+        "demote": False,
+        "family_prefix": "url-twin:",
+        "clear_allowlist": True,
+    },
+    # Same-family www/apex aliases heal via the normalized-alias analyzer.
+    "same-family-static-alias": {
+        "demote": True,
+        "family_prefix": "",
+        "clear_allowlist": False,
+    },
+    # Discovery-auto-approved rows are protected from load-time auto-demotion.
+    "protected-discovery-approve": {
+        "demote": False,
+        "family_prefix": "",
+        "clear_allowlist": False,
+    },
+}
+
+
+@pytest.mark.parametrize("scenario_id", _OVERLAY_SCENARIOS)
+def test_journal_overlay_twin_heals_on_load(
+    tmp_path: Path, monkeypatch: Any, scenario_id: str
+) -> None:
+    """End-to-end: a plain registry load over a seed base + jsonl delta overlay
+    resolves whichever twin shape discovery delivered and heals it with no
+    operator action -- cross-family ``url-twin:`` pairs and same-family
+    normalized-alias pairs are auto-demoted, while discovery-auto-approved
+    twins are kept untouched (even when the demote path would otherwise fire,
+    proving the protected_ids guard wins over url-twin automation).
+    """
+    winner, twin = _overlay_twin_rows(scenario_id)
+    expected = _OVERLAY_EXPECT[scenario_id]
+    if expected.get("clear_allowlist"):
+        # The canonical-URL allowlist must not suppress this fresh collision.
+        monkeypatch.setattr("src.source_registry_policy.known_twin_career_urls", lambda: set())
+    active_path, pending_path, rejected_path = _registry_with_journal_overlay(
+        tmp_path, winner, twin
+    )
+    service = RegistryService(
+        paths=RegistryPaths(
+            active=active_path,
+            pending=pending_path,
+            rejected=rejected_path,
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+    )
+    state = service.load_state()
+    report = service.get_auto_heal_report()
+
+    if expected["demote"]:
+        assert [row["id"] for row in state["active"]] == [winner["id"]]
+        assert [row["id"] for row in state["pending"]] == [twin["id"]]
+        assert state["pending"][0]["pendingReason"] == "registry_conflict_safe_auto_demote"
+        assert state["pending"][0]["stateChangedBy"] == "registry_conflict_safe_auto_demote"
+        assert report["safeAutomation"]["autoDemoted"] is True
+        applied = report["safeAutomation"]["applied"]
+        assert applied and applied[0]["id"] == twin["id"]
+        assert applied[0]["action"] == "auto_demote_static_normalized_url_alias"
+        family_key = str(applied[0].get("familyKey") or "")
+        if expected["family_prefix"]:
+            assert family_key.startswith(expected["family_prefix"])
+        else:
+            assert not family_key.startswith("url-twin:")
+        # The persisted store converged too -- only the ordinary load acted.
+        assert [row["id"] for row in sr.load_json_array(active_path, [])] == [winner["id"]]
+        assert [row["id"] for row in sr.load_json_array(pending_path, [])] == [twin["id"]]
+    else:
+        # Protected: the discovery-auto-approved twin survives the load.
+        assert [row["id"] for row in state["active"]] == [winner["id"], twin["id"]]
+        assert state["pending"] == []
+        assert report["safeAutomation"]["autoDemoted"] is False
+        assert report["safeAutomation"]["skippedRows"] == [
+            {"id": twin["id"], "reason": "protected_from_load_time_safe_auto_demote"}
+        ]
+
+
+def test_overlay_auto_demote_compacts_journal_to_single_record(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """After an overlay auto-demote, long-running registries must not grow
+    unbounded: repeated converged writes with a compact threshold that a single
+    record fits under keep each journal to exactly one folded record (never an
+    accumulating delta tail), and the folded base stays loadable with the
+    auto-demoted state preserved.
+    """
+    from src.source_registry_io_journal import _registry_journal_record_text
+    from src.source_registry_io_load import _load_json_array_from_storage
+
+    winner, twin = _overlay_twin_rows("same-family-static-alias")
+    active_path, pending_path, rejected_path = _registry_with_journal_overlay(
+        tmp_path, winner, twin
+    )
+    service = RegistryService(
+        paths=RegistryPaths(
+            active=active_path,
+            pending=pending_path,
+            rejected=rejected_path,
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+    )
+    service.load_state()  # converge: auto-demote the twin
+
+    active_journal = active_path.with_suffix(".jsonl")
+    pending_journal = pending_path.with_suffix(".jsonl")
+    active_image = len(_registry_journal_record_text(active_path, [winner]).encode("utf-8"))
+    pending_image = len(_registry_journal_record_text(pending_path, [twin]).encode("utf-8"))
+    compact_threshold = max(active_image, pending_image) + 1
+    monkeypatch.setattr("src.source_registry_io._JSON_JOURNAL_COMPACT_MAX_BYTES", compact_threshold)
+    converged = {"active": [winner], "pending": [twin], "rejected": []}
+    for _ in range(5):
+        sr.save_registry_state_atomic(active_path, pending_path, rejected_path, converged)
+
+    for journal in (active_journal, pending_journal):
+        lines = journal.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1, f"journal accumulated {len(lines)} records"
+        record = json.loads(lines[0])
+        assert record["kind"] == "array_delta"  # single folded snapshot record
+        assert journal.stat().st_size <= compact_threshold
+
+    # The compacted journal + folded base still load the converged state, and
+    # the folded base file itself parses as a valid row array.
+    assert [row["id"] for row in sr.load_json_array(active_path, [])] == [winner["id"]]
+    assert [row["id"] for row in sr.load_json_array(pending_path, [])] == [twin["id"]]
+    base_active = _load_json_array_from_storage(active_path, [])
+    assert base_active is not None
+    assert [row["id"] for row in base_active] == [winner["id"]]
+
+
+def _static_overlay_row(
+    row_id: str,
+    *,
+    studio: str,
+    rank_score: int,
+    protected: bool = False,
+    listing_url: str | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": row_id,
+        "name": studio,
+        "studio": studio,
+        "adapter": "static",
+        "registryState": "active",
+        "jobsFound": 3,
+        "rankScore": rank_score,
+        "score": rank_score // 2,
+    }
+    if listing_url is not None:
+        row["listing_url"] = listing_url
+    if protected:
+        row["stateChangedBy"] = "discovery_auto_approve"
+        row["approvedBy"] = "registry_migration_v2"
+    return row
+
+
+def _overlay_twin_rows(scenario_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    winner_id = "static:listing_url:https://studio.example/careers"
+    twin_id = "static:listing_url:https://www.studio.example/careers"
+    if scenario_id == "cross-family-url-twin":
+        winner = _static_overlay_row(
+            winner_id,
+            studio="Studio Example",
+            rank_score=40,
+            listing_url="https://studio.example/careers",
+        )
+        twin = _static_overlay_row(
+            twin_id,
+            studio="Studio Example Twin",
+            rank_score=20,
+            listing_url="https://www.studio.example/careers",
+        )
+    elif scenario_id == "protected-cross-family-url-twin":
+        winner = _static_overlay_row(
+            winner_id,
+            studio="Studio Example",
+            rank_score=40,
+            listing_url="https://studio.example/careers",
+        )
+        twin = _static_overlay_row(
+            twin_id,
+            studio="Studio Example Twin",
+            rank_score=20,
+            listing_url="https://www.studio.example/careers",
+            protected=True,
+        )
+    elif scenario_id == "protected-discovery-approve":
+        winner = _static_overlay_row(winner_id, studio="Static Studio", rank_score=40)
+        twin = _static_overlay_row(twin_id, studio="Static Studio", rank_score=20, protected=True)
+    else:  # same-family-static-alias
+        winner = _static_overlay_row(winner_id, studio="Static Studio", rank_score=40)
+        twin = _static_overlay_row(twin_id, studio="Static Studio", rank_score=20)
+    return winner, twin
+
+
+def _registry_with_journal_overlay(
+    tmp_path: Path, winner: dict[str, Any], twin: dict[str, Any]
+) -> tuple[Path, Path, Path]:
+    """Seed base with only the winner, then the twin appended via the jsonl
+    delta overlay (exactly how live discovery lands a new row); asserts the
+    overlay is live before returning the registry paths."""
+    from src import source_registry_io as _srio
+
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    sr.save_registry_state_atomic(
+        active_path,
+        pending_path,
+        rejected_path,
+        {"active": [winner], "pending": [], "rejected": []},
+    )
+    assert [row["id"] for row in sr.load_json_array(active_path, [])] == [winner["id"]]
+    _srio._append_json_journal_record(active_path, [winner, twin])
+    assert [row["id"] for row in sr.load_json_array(active_path, [])] == [
+        winner["id"],
+        twin["id"],
+    ]
+    return active_path, pending_path, rejected_path
 
 
 def test_registry_service_load_does_not_auto_demote_discovery_auto_approved_row(

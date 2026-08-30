@@ -9,6 +9,60 @@ from collections.abc import Iterable
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunsplit
 
+# Matches an optional leading ``www.`` directly after the https scheme.
+_WWW_PREFIX_RE = re.compile(r"^(https://)www\.(.*)$", re.IGNORECASE)
+
+
+def canonicalize_careers_url(url: str | None) -> str:
+    """Collapse a careers URL to a canonical identity for twin detection.
+
+    Normalizations applied, in order:
+      * ``http://`` => ``https://``
+      * drop a single leading ``www.``
+      * drop the URL fragment (``#...``)
+      * lowercase host and path, strip any trailing ``/``
+
+    The query string is preserved (unnormalized) so that distinct
+    parameterized pages (e.g. two different job-search queries) do not
+    accidentally merge into a false twin; the real twins in this dataset
+    differ only by scheme/www/slash/fragment and have no query.
+
+    Returns ``""`` for blank/unsupported URLs so callers can skip them.
+
+    This is the single authoritative rule shared by the commit-time repo
+    guardrail (``tools/repo_health/source_registry_duplicate_url_policy.py``)
+    and the runtime registry conflict automations: both must agree on what
+    counts as the "same" careers URL so a twin demoted at commit time is also
+    demoted automatically when live discovery re-introduces it.
+    """
+    if not url:
+        return ""
+    collapsed = url.strip().rstrip("/")
+    if collapsed.lower().startswith("http://"):
+        collapsed = "https://" + collapsed[len("http://") :]
+    collapsed = collapsed.split("#", 1)[0]
+    match = _WWW_PREFIX_RE.match(collapsed)
+    if match:
+        collapsed = match.group(1) + match.group(2)
+    parsed = urlparse(collapsed)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return ""
+    path = (parsed.path or "").lower().rstrip("/")
+    query = parsed.query
+    return f"{host}{path}?{query}" if query else f"{host}{path}"
+
+
+def source_careers_url_key(row: dict[str, Any]) -> str:
+    """Canonical twin identity for a registry row.
+
+    Mirrors the guardrail's row URL preference: ``board_url`` first, then
+    ``listing_url``, then ``url``. Returns ``""`` when the row has no usable
+    careers URL.
+    """
+    url = str(row.get("board_url") or row.get("listing_url") or row.get("url") or "").strip()
+    return canonicalize_careers_url(url)
+
 
 def source_identity(row: dict[str, Any]) -> str:
     adapter = str(row.get("adapter") or "").strip().lower()

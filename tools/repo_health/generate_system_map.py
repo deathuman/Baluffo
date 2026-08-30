@@ -263,6 +263,10 @@ EVIDENCE_FILES = [
     {"name": "source-discovery-report.json", "role": "Latest discovery run report"},
     {"name": "source-registry-active.seed.json", "role": "Active source registry seed"},
     {"name": "source-registry-pending.seed.json", "role": "Pending source registry seed"},
+    {
+        "name": "source-registry-known-url-collisions.json",
+        "role": "Reviewed registry twin-URL collisions (shared commit-time/runtime allowlist)",
+    },
     {"name": "baluffo.db", "role": "SQLite runtime storage (source runs, jobs feed mirror)"},
     {"name": "system-map.json", "role": "This file — generated system map data"},
 ]

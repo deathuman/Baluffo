@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry 
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from typing import Any
@@ -17,6 +18,7 @@ from src.shared.utils import now_iso
 from src.source_registry_identity import (
     _clean_family_token,
     ensure_source_id,
+    source_careers_url_key,
     source_family_key,
     source_identity,
     unique_sources,
@@ -304,12 +306,42 @@ def _duplicate_winner_score(
     )
 
 
+def _canonical_url_preference(row: dict[str, Any]) -> int:
+    """Prefer the row whose careers URL is already in canonical form.
+
+    When two rows tie on every evidence signal, the one that needs no
+    www/scheme/slash normalization is the direct registration (e.g. the apex
+    ``scopely.com/en/join-us`` over ``www.scopely.com/en/join-us``), matching
+    the commit-time guardrail's keep-the-canonical-form intent.
+    """
+    url = str(row.get("board_url") or row.get("listing_url") or row.get("url") or "").strip()
+    if not url:
+        return 0
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return 0
+    host = parsed.hostname or ""
+    if not host:
+        return 0
+    if parsed.scheme.lower() != "https":
+        return 0
+    if host.lower() != host or host.lower().startswith("www."):
+        return 0
+    path = parsed.path or ""
+    if path.lower() != path or (path and path != "/" and path.endswith("/")):
+        return 0
+    if parsed.fragment:
+        return 0
+    return 1
+
+
 def _duplicate_winner_order_score(
     row: dict[str, Any],
     source_state_by_key: dict[str, dict[str, Any]],
     family_rows: list[dict[str, Any]],
     family_key: str,
-) -> tuple[int, int, int, int, int, int, int, str]:
+) -> tuple[int, int, int, int, int, int, int, int, str]:
     base = _duplicate_winner_score(row, source_state_by_key)
     return (
         base[0],
@@ -319,6 +351,7 @@ def _duplicate_winner_order_score(
         base[3],
         base[4],
         base[5],
+        _canonical_url_preference(row),
         base[6],
     )
 
@@ -420,6 +453,90 @@ def _duplicate_winner_rationale(
     ]
 
 
+_URL_TWIN_FAMILY_PREFIX = "url-twin:"
+
+_ACTIVE_URL_TWIN_STATES = frozenset({"active", "live", "enabled", "approved"})
+
+_KNOWN_TWIN_URLS_FILENAME = "source-registry-known-url-collisions.json"
+
+
+def _row_is_active_for_url_twin(row: dict[str, Any]) -> bool:
+    """Active check for URL-twin grouping (mirrors the guardrail's active scope).
+
+    Rows without an explicit state field (raw seeds/test rows) are treated as
+    active; otherwise ``registryState`` wins over ``candidateState``.
+    """
+    registry_state = str(row.get("registryState") or "").strip().lower()
+    if registry_state:
+        return registry_state in _ACTIVE_URL_TWIN_STATES
+    candidate_state = str(row.get("candidateState") or "").strip().lower()
+    if not candidate_state:
+        return True
+    return candidate_state in _ACTIVE_URL_TWIN_STATES
+
+
+def known_twin_career_urls() -> set[str] | None:
+    """Load the reviewed-collision allowlist for the runtime twin rule.
+
+    Returns the set of canonical careers URLs that are known/reviewed collisions
+    (they must stay untouched by runtime automation), or ``None`` when the
+    baseline file is missing or unreadable — in which case callers must skip
+    URL-twin automation entirely rather than risk auto-demoting a reviewed
+    collision.
+
+    The path resolves through the storage layer at call time (``DEFAULTS_DIR``
+    is rebound at runtime by ``source_registry._sync_io_paths``), so this works
+    in dev and in the bundled app where the baseline ships under ``data/``.
+    """
+    from src.source_registry_io import DEFAULTS_DIR
+
+    path = DEFAULTS_DIR / _KNOWN_TWIN_URLS_FILENAME
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(payload, dict):
+        return {str(key) for key in payload}
+    if isinstance(payload, list):
+        return {str(key) for key in payload}
+    return None
+
+
+def _duplicate_card_for_rows(
+    family_key: str,
+    family_rows: list[dict[str, Any]],
+    source_state_by_key: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    ordered_rows = sorted(
+        family_rows,
+        key=lambda row: _duplicate_winner_order_score(
+            row,
+            source_state_by_key,
+            family_rows,
+            family_key,
+        ),
+        reverse=True,
+    )
+    winner = ordered_rows[0]
+    winner_score = _duplicate_winner_score(winner, source_state_by_key)
+    losers = ordered_rows[1:]
+    return {
+        "familyKey": family_key,
+        "rowCount": len(ordered_rows),
+        "winner": winner,
+        "winnerScore": _duplicate_winner_score_payload(winner_score),
+        "winnerRationale": _duplicate_winner_rationale(
+            winner,
+            source_state_by_key,
+            score=winner_score,
+        ),
+        "losers": losers,
+        "rows": ordered_rows,
+    }
+
+
 def duplicate_family_conflict_cards(
     rows: Iterable[dict[str, Any]],
     *,
@@ -429,47 +546,57 @@ def duplicate_family_conflict_cards(
     target_keys = {
         token for token in (_clean_family_token(item) for item in (target_families or [])) if token
     }
+    target_keys |= {
+        str(item).strip().lower() for item in (target_families or []) if str(item).strip()
+    }
     source_state_by_key = _state_rows_by_key(source_state)
     grouped: dict[str, list[dict[str, Any]]] = {}
+    url_grouped: dict[str, list[dict[str, Any]]] = {}
+    row_family_key: dict[str, str] = {}
+    known_twin_urls = known_twin_career_urls()
     for row in [ensure_source_id(dict(row)) for row in rows if isinstance(row, dict)]:
+        row_id = source_identity(row)
         family_key = source_family_key(row)
+        if family_key and (not target_keys or family_key in target_keys):
+            grouped.setdefault(family_key, []).append(row)
+            row_family_key[row_id] = family_key
+        if known_twin_urls is None:
+            continue
+        url_key = source_careers_url_key(row)
+        if not url_key or url_key in known_twin_urls:
+            continue
+        if not _row_is_active_for_url_twin(row):
+            continue
         if not family_key:
+            # Rows without a studio family can never form a studio card, so the
+            # URL-twin card is their only duplicate surface; it is never
+            # suppressed by the all-in-one-family skip below.
+            row_family_key.setdefault(row_id, "")
+        if target_keys and f"{_URL_TWIN_FAMILY_PREFIX}{url_key}" not in target_keys:
             continue
-        if target_keys and family_key not in target_keys:
-            continue
-        grouped.setdefault(family_key, []).append(row)
+        url_grouped.setdefault(url_key, []).append(row)
 
     cards: list[dict[str, Any]] = []
     for family_key, family_rows in sorted(grouped.items()):
-        if len(family_rows) < 2:
+        if len(family_rows) >= 2:
+            cards.append(_duplicate_card_for_rows(family_key, family_rows, source_state_by_key))
+    for url_key, url_rows in sorted(url_grouped.items()):
+        if len(url_rows) < 2:
             continue
-        ordered_rows = sorted(
-            family_rows,
-            key=lambda row: _duplicate_winner_order_score(
-                row,
-                source_state_by_key,
-                family_rows,
-                family_key,
-            ),
-            reverse=True,
-        )
-        winner = ordered_rows[0]
-        winner_score = _duplicate_winner_score(winner, source_state_by_key)
-        losers = ordered_rows[1:]
+        row_ids = [source_identity(row) for row in url_rows]
+        family_keys = {
+            row_family_key.get(row_id) for row_id in row_ids if row_family_key.get(row_id)
+        }
+        all_rows_have_family = all(bool(row_family_key.get(row_id)) for row_id in row_ids)
+        if all_rows_have_family and len(family_keys) == 1:
+            # Already compared by the single studio-family card above.
+            continue
         cards.append(
-            {
-                "familyKey": family_key,
-                "rowCount": len(ordered_rows),
-                "winner": winner,
-                "winnerScore": _duplicate_winner_score_payload(winner_score),
-                "winnerRationale": _duplicate_winner_rationale(
-                    winner,
-                    source_state_by_key,
-                    score=winner_score,
-                ),
-                "losers": losers,
-                "rows": ordered_rows,
-            }
+            _duplicate_card_for_rows(
+                f"{_URL_TWIN_FAMILY_PREFIX}{url_key}",
+                url_rows,
+                source_state_by_key,
+            )
         )
     return cards
 

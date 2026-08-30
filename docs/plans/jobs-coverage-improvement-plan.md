@@ -5,7 +5,7 @@
 > - **Canonical for:** coverage-improvement prioritization and evidence thresholds; not canonical for adapter internals or source-policy approval authority
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/adapter-plugin-inventory.md`, `docs/scraping-pipeline.md`, `docs/archive/provider-discovery-coverage-gap-plan.md`, `docs/archive/browser-fallback-pool-plan.md`
 > - **Evidence basis:** 2026-07-17 full-run artifacts (`data/jobs-source-state.json.gz`, `data/jobs-fetch-report-summary.json`, `data/registry-conflicts-summary.json`, `_out/source-policy-soak-report.json`), audit snapshot `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`; refreshed 2026-08-29 against live-run artifacts (`_out/coverage-refresh-2026-08-28/` — see "Evidence refresh" section)
-> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row; WP13 follow-up to WP8 — conservative feed-filter leaf plugins for arsanesia + petprojectgames (role keyword + hiring signal + negative-news gate), 2 jobs recovered end-to-end (1 each) from mixed site news feeds; WP14 ATS-backed shell triage (King/Blizzard/Microsoft/Netflix/Activision) — all five run the proprietary phApp/vscdn careers platform (no repo adapter); Activision is the only one with an existing-adapter path (delegates to a Workday board `xboxgaming.wd1.myworkdayjobs.com/CentralTech`, CXS returns 3 live "Central Technology" jobs → provider-staging candidate), Microsoft resolves to SAP SuccessFactors (no adapter), King/Blizzard/Netflix expose no standard board (future phApp-adapter decision); WP15 full-registry phApp scan — 13 active static rows host the phApp/vscdn platform directly (lower bound, 1,597 WP12 captures scanned); 5 already expose a Workday board recoverable today via the existing workday_sources adapter (Activision, Beenox, High Moon, Infinity Ward, Warner Bros. Games), 8 are widget-only (Blizzard, King, Raven, Sledgehammer, Treyarch, Scopely/Genjoy, Scopely/Omnidrone, TT Games) — one shared phApp/Workday adapter lever is the single largest zero-kept platform surface; WP16 sub-studio scan (Undead Labs, inXile, Compulsion, Smoking Gun, Next Games, Night School, Boss Fight) — none currently yields real recoverable jobs: 3 are on ATS boards the existing adapters can parse but are empty today (Undead Labs Greenhouse undeadlabsllc = general-interest only; inXile/Compulsion BambooHR /careers/list = 0/scam-warning only) → adapter-ready, wait-for-openings; 2 (Next Games, Night School) route to the Netflix custom platform (WP15 phApp decision); 2 (Smoking Gun, Boss Fight) expose no board; WP17 shared phApp adapter — reverse-engineered the open recovery path (per-locale sitemap of /job/{jobCode}/{slug} URLs + server-rendered <title> extractor for both the Blizzard "job in | jobs at" and King "in | at" title shapes), registered for the widget-only rows with the dedicated blizzard/activision plugins now falling back to it, and recovered 103 jobs end-to-end on a bounded live pass (Activision 50, Blizzard 37, King 14, Treyarch 2); WP18 Workday rows for the 5 phApp families — measured what workday_sources recovers today: the boards are live (xboxgaming/External=67 for Beenox/HighMoon/InfinityWard/Sledgehammer, xboxgaming/CentralTech=3 for Activision, warnerbros/global=356 company-wide) but the adapter recovers 0 today because its CXS path uses verified Python TLS that rejects these hosts (cert valid per system store; unverified works) → documented ready-to-stage rows + TLS-gating blocker, no registry mutation; WP19 duplicate-Scopely reconciliation — the two GameDevMap join-us rows (Genjoy apex + Omnidrone www, same phApp board, both jobsFound 19) are now one canonical registration in the tracked seeds: kept static:listing_url:https://scopely.com/en/join-us (apex, per the a4vr precedent), demoted the www twin to the pending seed via transition_registry_to_pending (active seed 2016→2015, pending 47→48); live container still needs the equivalent /registry/demote-active runtime step (active 2301→2300)
+> - **Last updated:** 2026-08-29 (WP0 evidence refresh; WP1 validation passes, link-queue audit, D1 rejections applied to live container; WP2 sample classification + Outerdawn plugin + multi-hop static redirect fix — live-verified, ~50 jobs recovered; WP3 full triage of the 19 remaining sample rows — 3 leaf plugins (astrid/immersity/perfectgarbage) + 7 jobs live-verified locally, registry re-seeds/demotions applied to the live container; WP4 browser-fallback JS-shell classifier widened to catch jQuery-era shells — Konami Gaming recovered 45 jobs via the pool, full production pipeline measurement on the browser-fallback candidates recorded below; WP5 triage of the rendered-empty boards — upsurge + sandsoft plugins recover 6 + 10 roles, optillusion demoted as genuinely closed; WP6 full active-static-registry jQuery-era shell sweep — the widening is classification-only, over-flags ~57% server-rendered sources, and recovers 0 net-new jobs; WP7 Konami Gaming investigation — the "45-job browser-pool recovery" is a false positive (11 nav-link junk rows), the real jobs live on an external UKG Pro/UltiPro board that is currently empty, no promotion or adapter justified now; WP8 feed audit of the zero-kept jQuery-era shells — no Sandsoft-class dedicated jobs feeds exist, only 3 blog-feed job postings (arsanesia, petprojectgames, thegoodevil), not worth fragile feed-filter plugins; WP9 WP5-plugin pipeline measurement — upsurge 6/6 + sandsoft 10/10 recovered end-to-end (16 output jobs) after switching the list-only anchor from #-fragments (which normalize_url strips at the repair-dedup, canonicalize, and fingerprint stages) to ?static-role= query params; WP10 generic block-title list-only fallback in the static runner — heading-based, query-anchored rows recover list-only boards with no per-host plugin (fires only on otherwise-empty sources: zero parsed rows, detail links, or dead-listing evidence); WP11 list-only board sweep of the zero-kept set — a4vr (3 roles), amrita (4), animvs (5) converted to static_list_only_job_rows plugins, 10 jobs recovered end-to-end (animvs currently blocked by an expired TLS cert; recovers when renewed); WP11 de-dup — duplicate www.a4vr.com active row demoted to pending on the live container (kept the seeded a4vr.com row), feed now carries 3 a4vr jobs instead of 6; WP12 full-active-registry list-only sweep (all 2,110 static URLs, not just zero-kept) — playstack (21 roles), twirlbound (4), tatem (9) converted to static_list_only_job_rows plugins, 34 jobs recovered end-to-end; shared list-only helper now unescapes HTML entities so entity-variant duplicate titles ("PC &amp; Console" vs "PC and Console") collapse to one row; WP13 follow-up to WP8 — conservative feed-filter leaf plugins for arsanesia + petprojectgames (role keyword + hiring signal + negative-news gate), 2 jobs recovered end-to-end (1 each) from mixed site news feeds; WP14 ATS-backed shell triage (King/Blizzard/Microsoft/Netflix/Activision) — all five run the proprietary phApp/vscdn careers platform (no repo adapter); Activision is the only one with an existing-adapter path (delegates to a Workday board `xboxgaming.wd1.myworkdayjobs.com/CentralTech`, CXS returns 3 live "Central Technology" jobs → provider-staging candidate), Microsoft resolves to SAP SuccessFactors (no adapter), King/Blizzard/Netflix expose no standard board (future phApp-adapter decision); WP15 full-registry phApp scan — 13 active static rows host the phApp/vscdn platform directly (lower bound, 1,597 WP12 captures scanned); 5 already expose a Workday board recoverable today via the existing workday_sources adapter (Activision, Beenox, High Moon, Infinity Ward, Warner Bros. Games), 8 are widget-only (Blizzard, King, Raven, Sledgehammer, Treyarch, Scopely/Genjoy, Scopely/Omnidrone, TT Games) — one shared phApp/Workday adapter lever is the single largest zero-kept platform surface; WP16 sub-studio scan (Undead Labs, inXile, Compulsion, Smoking Gun, Next Games, Night School, Boss Fight) — none currently yields real recoverable jobs: 3 are on ATS boards the existing adapters can parse but are empty today (Undead Labs Greenhouse undeadlabsllc = general-interest only; inXile/Compulsion BambooHR /careers/list = 0/scam-warning only) → adapter-ready, wait-for-openings; 2 (Next Games, Night School) route to the Netflix custom platform (WP15 phApp decision); 2 (Smoking Gun, Boss Fight) expose no board; WP17 shared phApp adapter — reverse-engineered the open recovery path (per-locale sitemap of /job/{jobCode}/{slug} URLs + server-rendered <title> extractor for both the Blizzard "job in | jobs at" and King "in | at" title shapes), registered for the widget-only rows with the dedicated blizzard/activision plugins now falling back to it, and recovered 103 jobs end-to-end on a bounded live pass (Activision 50, Blizzard 37, King 14, Treyarch 2); WP18 Workday rows for the 5 phApp families — measured what workday_sources recovers today: the boards are live (xboxgaming/External=67 for Beenox/HighMoon/InfinityWard/Sledgehammer, xboxgaming/CentralTech=3 for Activision, warnerbros/global=356 company-wide) but the adapter recovers 0 today because its CXS path uses verified Python TLS that rejects these hosts (cert valid per system store; unverified works) → documented ready-to-stage rows + TLS-gating blocker, no registry mutation; WP19 duplicate-Scopely reconciliation — the two GameDevMap join-us rows (Genjoy apex + Omnidrone www, same phApp board, both jobsFound 19) are now one canonical registration in the tracked seeds: kept static:listing_url:https://scopely.com/en/join-us (apex, per the a4vr precedent), demoted the www twin to the pending seed via transition_registry_to_pending (active seed 2016→2015, pending 47→48); live container still needs the equivalent /registry/demote-active runtime step (active 2301→2300); WP20 registry twin-URL guardrail — new `registry` repo-guardrail group (source_registry_duplicate_url_policy) fails when two active seed rows share a canonicalized careers URL (www/apex, scheme, slash, fragment; query-preserving) so twins like Scopely are caught at commit time; 34 reviewed collisions grandfathered in source_registry_known_url_collisions.json pending reconciliation; seed edits now also trigger the guardrails in precommit changed-file mode; WP21 runtime twin auto-demotion — conflict automations now gate on the same canonicalize_careers_url rule (shared from src.source_registry_identity): duplicate_family_conflict_cards raises `url-twin:` cards for active rows sharing a canonicalized careers URL across studio families (skipping reviewed collisions), and a safe-automation analyzer auto-demotes the non-canonical twin to pending with registry_conflict_safe_auto_demote on registry load (winner prefers the canonical apex form), so duplicates introduced by live discovery demote automatically; baseline moved to data/defaults/source-registry-known-url-collisions.json so both commit-time and runtime consumers read one allowlist; WP22 first baseline shrink — the careers.activision.com trailing-slash twin reconciled (kept the stronger "Activision (Sheet)" row, demoted the no-slash "Manual Website" twin to the pending seed, active 2015→2014 / pending 48→49, baseline 34→33), so the phApp adapter no longer double-posts Activision jobs; WP23 all remaining Tier-1 twins reconciled — the 14 www/apex/slash/scheme pairs collapsed to one registration each via the runtime winner logic (active 2014→2000, pending 49→63), baseline 33→19 (only genuine Tier-2 page variants and Tier-3 shared parent boards remain baselined), guardrail green with the smaller baseline; WP24 live-probe triage of all 19 remaining baseline entries — 11 same-studio pairs provably serve the same page (redirect checks confirm `/positions`→`/en/open-positions/`, bytedance volley amazon.jobs redirects, gohire zenostechnology→zenosinteractive domain rebrand, etc.) and were reconciled (active seed 2000→1989, pending 63→74), baseline 19→8 (only the 4 true shared parent boards + 4 same-studio distinct-page rows remain, none being a twin under the probe), guardrail + runtime url-twin cards both green at 0
 
 ## Coverage Baseline (2026-07-17 run, 40,586 rows)
 
@@ -932,6 +932,191 @@ container still needs the equivalent runtime demotion** (`POST /registry/demote-
 Verification: `tests/test_source_registry_storage_and_seed.py`,
 `tests/test_source_registry_seed_runtime.py`, `tests/test_build_ship_bundle_registry_seeds.py`,
 `tests/test_source_policy_soak_report.py`, `tests/bridge` **710 passed**; precommit gate green.
+
+
+### WP20 (2026-08-29) — registry twin-URL guardrail (prevent future duplicates at commit time)
+
+Made the twin problem WP19 fixed unrepeatable at the source. `npm run lint:repo-guardrails` now
+runs a new **`registry` group** (`tools/repo_health/source_registry_duplicate_url_policy.py`) that
+fails when two **active** rows share a canonicalized careers URL. Canonicalization collapses
+`http`→`https`, strips one leading `www.`, drops the `#fragment`, strips the trailing `/`, and
+lower-cases host+path, while **preserving the query** so genuinely-parameterized pages (e.g. two
+Microsoft job searches) never merge into a false twin.
+
+Reviewed collisions are grandfathered in `data/defaults/source-registry-known-url-collisions.json`
+— **34 entries today**, each the exact Tier-1/Tier-2 case from the twin scan (Activision phApp slash
+pair, IO, Sybo, Hello, Lightfury, Jyamma, CDPR, Singularity, Joinplay, Roshka, Nine Rocks, Lil Snack,
+No Code, Hugecalf, Skybound, plus shared-parent-board rows like `careers.microsoft.com/.../home.html`
+carried by Halo/Microsoft/Xbox and `ea.com/careers` by Chillingo/Bucharest). Removing an entry
+requires that canonical URL to drop to one active row, so the baseline shrinks as the twins are
+reconciled and any **new** twin fails immediately.
+
+`scripts/precommit_gate.py` now watches the two seed files, so editing a seed runs the guardrails in
+changed-file mode too. Tests: `tests/test_source_registry_duplicate_url_guardrail.py` **12 passed**
+(canonicalizer unit tests, twin-flagging, allowlist grandfather, plus an integration assertion that
+the baseline covers every current active-seed collision). `npm run lint:repo-guardrails` **all 11
+groups green**; the twin check provably reds (returns the 34 collisions) if the baseline is removed.
+
+The canonicalization rule and the baseline allowlist were then **moved to shared homes**: the rule
+now lives in `src/source_registry_identity.py` (`canonicalize_careers_url` +
+`source_careers_url_key`, single authoritative implementation re-exported by the guardrail) and the
+baseline JSON lives in `data/defaults/source-registry-known-url-collisions.json` (next to the seeds
+it constrains, shipped with the app, read at call time through the storage layer).
+
+
+### WP21 (2026-08-29) — runtime twin auto-demotion (same rule, live discovery)
+
+Closed the runtime half of the twin problem: WP20 stopped twins reaching the **tracked seeds**, but
+a twin introduced by live discovery (e.g. a fresh GameDevMap row for `www.scopely.com/en/join-us`
+landing next to the active apex row) would still double-emit until an operator noticed. The
+conflict automations now gate on the **same** `canonicalize_careers_url` rule:
+
+- `duplicate_family_conflict_cards` (the runtime conflict engine behind `/registry/conflicts`, the
+auto-demote-safe route, and load-time auto-heal) now also groups **active** rows by canonical
+careers URL and raises `url-twin:` cards when two rows share a URL **across different studio
+families** — exactly the Scopely Genjoy/Omnidrone case WP19 reconciled by hand. Rows already
+compared by a single studio-family card are not duplicated; pending/rejected rows are never URL
+twins; reviewed collisions from the baseline allowlist never raise cards; and if the baseline file
+is missing the URL-twin grouping disables entirely (fail-safe, no auto-demotion without the
+reviewed allowlist).
+- New safe automation `_analyze_url_twin_automation` demotes the non-winner rows of a `url-twin:`
+card to pending with `registry_conflict_safe_auto_demote` when all rows are active statics — so a
+discovered twin auto-heals on the next registry load. Winner selection now also prefers the row
+already in canonical URL form (apex https over www/scheme/slash variants), matching the seed
+reconciliation precedent.
+
+**Verified end-to-end** on the exact Scopely pair (different studios, same board, equal evidence):
+`duplicate_family_conflict_cards` raises one `url-twin:scopely.com/en/join-us` card, the queue
+marks it safe-eligible, and `apply_registry_conflict_safe_demotions` demotes the www twin to
+pending (`registry_conflict_safe_auto_demote`) while keeping the apex row — 1 demoted, active
+[apex], pending [www]. The committed active seed raises **zero** `url-twin:` cards (the baseline
+covers every current collision, invariant asserted in tests).
+
+Tests: `tests/test_source_registry_twin_url_automation.py` **15 passed** (shared-rule contract,
+card-raising for cross-family/query-distinct/no-studio twins, baseline + missing-baseline gating,
+pending-row exclusion, noise-cleanup demotion, safe-automation eligibility, load-time auto-heal,
+non-static blocker, seed invariant). **Full suite 4,608 passed, 2 skipped**; precommit gate green
+(all 12 groups including `registry`).
+
+
+### WP22 (2026-08-29) — reconcile the careers.activision.com trailing-slash twin
+
+First baseline shrink: the Activision phApp double-post the WP20 twin scan flagged as urgent.
+The two active rows (`static:listing_url:https://careers.activision.com/` "Activision (Sheet)",
+30 jobsFound / evidence 46, and `static:listing_url:https://careers.activision.com` "Activision
+(Manual Website)", 6 jobsFound / no evidence score) both live in `PHA_HOSTS`, so the WP17 phApp
+adapter gates both and each row emitted the same ~50-board jobs separately (live probe: both URL
+forms serve the same page, HTTP 200, no redirect).
+
+**Kept the stronger Sheet row** (`careers.activision.com/`, 30 jobs) and demoted the weaker
+Manual no-slash twin to the pending seed via `transition_registry_to_pending` — the exact row the
+runtime duplicate winner also keeps (jobs evidence outranks the canonical-form tiebreak by design,
+and the load-time auto-heal had already marked the Manual row as the alias loser). Active seed
+2015 → 2014, pending 48 → 49, one row each way (surgical 47-line diff). Removed the
+`careers.activision.com` entry from the baseline allowlist (34 → **33**) — the guardrail's own
+rule: an entry may be removed only once the canonical URL drops to one active row, which this
+reconciliation achieves. The runtime side needs no further change: WP21's automations already
+keep the same winner, so seed and runtime now agree on one canonical Activision phApp row.
+
+Verification: seed/bridge/guardrail batteries **84 passed** (incl. baseline-coverage and
+seed-invariant tests), full suite **4,608 passed, 2 skipped**, precommit gate green
+(`registry` group green with the shrunk baseline).
+
+
+### WP23 (2026-08-29) — reconcile all remaining Tier-1 twins (baseline 33 → 19)
+
+Reconciled every remaining ``true twin`` baseline entry to one registration each — the 14
+www/apex, trailing-slash, and scheme pairs that double-post the same careers page (Activision
+was already done in WP22). For each pair the winner is the row the **runtime duplicate-winner
+logic** ranks first (evidence-based: Sheet/curated rows win on jobs/evidence where they differ;
+canonical-form preference only breaks ties), so seed and runtime agree on the same row and the
+WP21 auto-heal has nothing left to re-demote. Kept rows include a few intentionally
+non-canonical forms where evidence demands it (e.g. `www.cdprojektred.com/en/jobs` Sheet 5 jobs
+over the apex Manual row 1 job; `http://jyammagames.com/...` over https on rank evidence;
+`www.sybogames.com/careers/` Sheet over apex SYBO).
+
+Applied with the repo's own `transition_registry_to_pending` (candidateState validated,
+`enabledByDefault: false`, duplicate-of reason + `lastDemotedAt` stamped): **active seed 2014 →
+2000, pending 49 → 63**, surgical 1013-line diff (14 rows each way). Pruned all 14 canonical
+URLs from the baseline allowlist (33 → **19**) — verified no stale entries remain (every
+baselined URL still has ≥2 active rows) and no collision is left uncovered (every 2+-row
+canonical URL is baselined), so the guardrail stays green with the smaller baseline. The 19
+remaining entries are the genuine Tier-2 same-studio page variants (need live redirect/equivalence
+checks) and Tier-3 shared parent boards (different studios on one board — not duplicates).
+
+Verification: registry guardrail green; seed/guardrail batteries **52 passed** (baseline-coverage
++ seed-invariant); full suite **4,608 passed, 2 skipped**; precommit gate green (all 11 groups).
+
+
+### WP24 (2026-08-29) — live-probe the remaining baseline entries (baseline 19 → 8)
+
+Triaged every one of the 19 remaining baseline allowlist entries with **live redirect probes**
+(2026-08-29: GET both row URLs, follow redirects, compare resolved canonical URL + served
+page). 11 entries are same-studio row pairs that provably serve **the same careers page** and
+were reconciled; 8 are genuinely *not* twins and stay baselined.
+
+**Reconciled (11, provably same page)** — the two URLs resolve to one careers page (`/positions`
+→ `/en/open-positions/`, `jobs.bytedance.com/en/position` → `joinbytedance.com/search`,
+`volleygames.com/careers` → `weekend.com/careers`, `mighty-bear-games-...` →
+`wearemighty-...` gohire slug, `zenostechnology.com/careers` → `zenosinteractive.com`,
+`www.dsdambuster.com/careers`/`www.overwolf.com/careers`/`playstation.com/...careers` each
+redirect to their dedicated careers host, `/careers/#openings` → `/en-us/careers`, `/careers`
+→ `/en-us/careers`, and the Bandai `#join` fragment alias). Kept the evidence-strongest row
+(apart from identical Sheet pairs, where the canonical resolved form won), demoted the other to
+pending. Applied with `transition_registry_to_pending`: **active seed 2000 → 1989, pending 63 →
+74**, baseline pruned 19 → **8**.
+
+**Remaining baselined (8, not twins under the probe):**
+- *Shared parent boards (different studios on one board)* — `amazongames.com/en-us/careers`
+  (Relentless + Amazon Game Publishing), `astragon.com/company/vacancies` (Development +
+  Entertainment), `careers.microsoft.com/v2/global/en/home.html` (Halo/MS/Xbox — 3 rows),
+  `ea.com/careers` (Chillingo + Bucharest).
+- *Same studio, genuinely distinct pages* — `amazongamestudios.com/en-us/careers` (amazon.jobs
+  team page vs the studio careers page), `careers.nintendo.com` (landing `/` vs
+  `/job-openings/` list), `romerogames.com/home` (`romerogames.com/careers` vs
+  `/home/`), `waterproofstudios.com/careers` (`jobs.php` vs `/careers`). These serve distinct
+  pages, so demotion would drop a real registration; they stay in the allowlist so the guardrail
+  does not flag a false twin.
+
+Verification: registry guardrail green; invariant holds both ways (no uncovered collision, no
+stale baseline entry); runtime `duplicate_family_conflict_cards` raises **0 url-twin cards**
+(down from seed collisions), so commit-time and runtime agree; full suite **4,608 passed, 2
+skipped**; precommit gate green (all 11 groups). Starting point for the live-container `/registry
+/demote-active` batch align step (same caveat as WP19/WP22/WP23).
+
+### WP24 runbook — live-container runtime demote batch (verified, operator-ready)
+
+The tracked seeds are the source of truth; the live container's runtime registry
+(`data/source-registry-active.json.gz` + journal; resolved 2301 active / 850 pending) still
+holds the pre-reconcile twins and must be converged via `POST /registry/demote-active`. A
+read-only pass over the **runtime** active set found the request's "~29 rows → 2272" premise
+does not hold: most of the 27 seed-reconciled canonical keys already have a single runtime row
+(the runtime self-dedupes by identity differently than the seeds), so only **10** rows are real
+runtime twins ready to demote → **active 2301 → 2291, pending 850 → 860**. Rows to demote
+(all present in runtime, none already pending, each leaving its key's seed winner in place):
+
+```
+POST /registry/demote-active  {"ids": [
+  "static:listing_url:https://www.scopely.com/en/join-us",
+  "static:listing_url:https://www.hugecalf.com/careers",
+  "static:listing_url:https://bandainamcoent.com/careers",
+  "static:listing_url:https://www.roshkastudios.com/jobs.html",
+  "static:listing_url:https://www.joinplaygames.com/jobs.php",
+  "static:listing_url:https://www.ninerocksgames.com/careers",
+  "static:listing_url:https://www.skybound.com/careers",
+  "static:listing_url:https://sybogames.com/careers/",
+  "static:listing_url:https://www.nocodestudio.com/jobs",
+  "static:listing_url:https://www.volleygames.com/careers"
+]}
+```
+
+Deliberately **not** demoted: `careers.playstation.com` keeps both its runtime rows (the
+`.../playstation-careers/#listings` marketing redirect and a distinct `playstation.com/jobs`
+Global-website board, 50 jobs — not a twin), and the 16 single-row reconcile keys (e.g.
+bytedance holding `jobs.bytedance.com/en/position`; CDPR holding the apex form) are already
+non-double-emitting and are left untouched to avoid emptying a board. Every demote is
+reversible via `POST /registry/approve`. (Recorded as runbook only — no local runtime mutation
+performed; the container is not reachable from this workspace.)
 
 
 ### WP9 measurement (2026-08-29) — WP5 plugins end-to-end pipeline recovery (before/after)

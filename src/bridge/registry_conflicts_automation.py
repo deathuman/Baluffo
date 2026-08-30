@@ -38,6 +38,9 @@ from src.bridge.registry_conflicts_automation_static import (
     _analyze_static_url_alias_automation as _analyze_static_url_alias_automation,
 )
 from src.bridge.registry_conflicts_automation_static import (
+    _analyze_url_twin_automation as _analyze_url_twin_automation,
+)
+from src.bridge.registry_conflicts_automation_static import (
     _pending_static_fragment_alias_pair_for_target as _pending_static_fragment_alias_pair_for_target,
 )
 from src.bridge.registry_conflicts_automation_triage import (
@@ -109,6 +112,14 @@ def _analyze_safe_automation(
     losers: list[dict[str, Any]],
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    url_twin_result = _analyze_url_twin_automation(
+        family_key=family_key,
+        winner=winner,
+        losers=losers,
+        rows=rows,
+    )
+    if url_twin_result.get("eligible"):
+        return url_twin_result
     pending_provider_result = _analyze_pending_provider_replacement_automation(
         family_key=family_key,
         rows=rows,

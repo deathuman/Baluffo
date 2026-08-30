@@ -452,3 +452,63 @@ def _analyze_static_listing_variant_automation(
         action=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
         label=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL,
     )
+
+
+_URL_TWIN_FAMILY_PREFIX = "url-twin:"
+
+
+def _analyze_url_twin_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Safe auto-demotion for canonical-URL twins (``url-twin:`` family cards).
+
+    Fires only for cards raised by the canonicalize_careers_url twin rule (the
+    same rule as the commit-time guardrail): two or more active static rows
+    resolve to the same canonicalized careers URL while their studio families
+    differ (e.g. GameDevMap apex/www twins like Scopely's ``join-us`` pair).
+    The winner is the row the duplicate policy already ranked first; every
+    other row is a duplicate registration of the same page and is demoted.
+    Reviewed collisions are never raised as url-twin cards (the policy skips
+    baselined URLs), so this path only touches genuine new twins.
+    """
+    if not family_key.startswith(_URL_TWIN_FAMILY_PREFIX):
+        return _blocked_automation(
+            "Not eligible for safe URL-twin auto-demotion.",
+            ["requires_url_twin_family"],
+        )
+    if len(rows) < 2:
+        return _blocked_automation(
+            "Not eligible for safe URL-twin auto-demotion.",
+            ["requires_two_rows"],
+        )
+    if not all(_is_static_row(row) and _row_state(row) == "active" for row in rows):
+        return _blocked_automation(
+            "Not eligible for safe URL-twin auto-demotion.",
+            ["requires_active_static_rows"],
+        )
+    target_ids = [_row_identity(row) for row in losers if _row_identity(row)]
+    blocked: list[str] = []
+    if not target_ids:
+        blocked.append("requires_loser_rows")
+    for target_id in target_ids:
+        blocked.extend(_target_identity_blocker(target_id))
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe URL-twin auto-demotion.",
+            sorted(set(blocked)),
+        )
+    canonical = family_key[len(_URL_TWIN_FAMILY_PREFIX) :]
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} has {len(rows)} active static rows sharing the canonicalized "
+            f"careers URL ({canonical}); keeping the strongest registration and "
+            "auto-demoting the duplicate twin(s)."
+        ),
+        action=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
+        label=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL,
+    )

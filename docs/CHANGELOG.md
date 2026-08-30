@@ -14,6 +14,58 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Changed
 
+- Registry duplicate-careers-URL guardrail (WP20, jobs-coverage plan): `npm run lint:repo-guardrails`
+  gained a `registry` group (`source_registry_duplicate_url_policy`) that fails when two
+  **active** seed rows share a canonicalized careers URL (www/apex, http/https, trailing-slash,
+  fragment), so twin sources like the Scopely `join-us` pair are caught in the tracked seeds
+  before they reach the published registry. Known collisions are grandfathered in
+  `data/defaults/source-registry-known-url-collisions.json` (34 reviewed entries today) and
+  shrink as they are reconciled. `scripts/precommit_gate.py` now watches the two seed files, so
+  editing a seed runs the guardrails in changed-file mode. The canonicalization rule now lives in
+  `src/source_registry_identity.py` (single authoritative implementation shared with the runtime).
+- Runtime URL-twin auto-demotion (WP21, jobs-coverage plan): the source-registry conflict
+  automations are gated on the same `canonicalize_careers_url` rule as the commit-time guardrail.
+  `duplicate_family_conflict_cards` now also raises `url-twin:` cards for **active** rows that
+  share a canonicalized careers URL across different studio families (the Scopely Genjoy/Omnidrone
+  class), skipping reviewed collisions from the baseline allowlist, and a safe-automation analyzer
+  auto-demotes the non-canonical twin to pending with `registry_conflict_safe_auto_demote` on
+  registry load. Winner selection prefers the already-canonical URL form (apex https), matching the
+  seed reconciliation precedent. Duplicates introduced by live discovery now demote automatically
+  instead of double-emitting jobs.
+- First baseline shrink: Activision phApp twin reconciled (WP22, jobs-coverage plan): the two
+  active `careers.activision.com` rows (Sheet, trailing slash, 30 jobs vs Manual Website, no
+  slash, 6 jobs) both gate the WP17 phApp adapter and double-posted the same board; kept the
+  stronger Sheet row in the active seed (2015 → 2014) and demoted the Manual twin to the pending
+  seed (48 → 49), removing the `careers.activision.com` entry from the twin-URL baseline
+  (34 → 33) — the first shrink of the allowlist, so the phApp adapter now emits Activision jobs
+  once.
+- All remaining Tier-1 twins reconciled (WP23, jobs-coverage plan): the 14 other www/apex,
+  trailing-slash, and http/https true-twin pairs (IO, Sybo, Hello Games, Lightfury, Jyamma,
+  CDPR, Singularity 6, Joinplay, Roshka, Nine Rocks, Lil Snack, No Code, Hugecalf, Skybound)
+  collapsed to one registration each, keeping the row the runtime duplicate-winner logic ranks
+  first (evidence-based; canonical-form preference only on ties) — active seed 2014 → 2000,
+  pending 49 → 63. The 14 canonical URLs were pruned from the twin-URL baseline (33 → 19), which
+  now holds only genuine same-studio page variants and shared parent boards, and the guardrail
+  stays green with the smaller allowlist (no stale entries, no uncovered collisions).
+- Live-probe triage of the remaining twin-URL baseline (WP24, jobs-coverage plan): each of the
+  19 remaining allowlist entries was redirect-probed live (2026-08-29). 11 same-studio pairs
+  provably serve the same careers page (`/positions` → `/en/open-positions/`,
+  `jobs.bytedance.com/en/position` → `joinbytedance.com/search`, `volleygames.com/careers` →
+  `weekend.com/careers`, gohire `mighty-bear-games-` → `wearemighty-` slug,
+  `zenostechnology.com/careers` → `zenosinteractive.com`, and the overwolf/playstation/dsdambuster
+  dedicated-hosts redirects) and were reconciled via `transition_registry_to_pending` — active
+  seed 2000 → 1989, pending 63 → 74 — pruning the baseline 19 → 8. The 8 remaining entries are
+ot twins under the probe: 4 true shared parent boards (amazongames, astragon,
+  careers.microsoft, ea.com) and 4 same-studio distinct-page rows (amazongamestudios amazon.jobs
+  vs studio careers, Nintendo landing vs list, Romero careers vs home, Waterproof jobs.php vs
+  careers). Guardrail and runtime `url-twin` cards both green at 0.
+- Stale-baseline guardrail invariant (WP20+, jobs-coverage plan): the `registry` repo guardrail
+  now enforces the dual of the existing twin check — every entry in
+  `data/defaults/source-registry-known-url-collisions.json` must still be backed by at least two
+  active seed rows, or precommit fails. Thus pruning (removing a baseline entry) and
+  reconciliation (demoting a twin so its URL drops back to a single active row) stay in
+  lockstep: a change that resolves a collision can no longer silently leave a stale allowlist
+  entry that would mask future drift for that URL.
 - Static coverage recovery (WP2/WP3, jobs-coverage plan): the static fetcher now follows
   bounded multi-hop redirects (up to 4 hops with raw-URL loop detection), fixing the common
   apex → www-with-port → trailing-slash chain that produced false "redirect loop" rejections
