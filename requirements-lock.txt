@@ -111,7 +111,7 @@ pathspec==1.1.1
     # via mypy
 playwright==1.58.0
     # via scrapy-playwright
-protego==0.6.0
+protego==0.6.2
     # via scrapy
 psutil==7.0.0
     # via -r requirements.txt
