@@ -730,6 +730,28 @@ triple gate (role AND signal AND no news term) and by tests pinning the live Ger
 items plus all existing English titles. No registry changes (row already active-static:
 `static:listing_url:https://www.thegoodevil.com/jobs`).
 
+### WP13 follow-up audit #2 (2026-08-30) — adjacent German-feed candidates probe
+
+Checked the three remaining active-static WordPress candidates flagged alongside thegoodevil
+for a German-language role posting, probing each live at `site_feed_url`, `page_relative_feed_url`,
+and `/rss` and scoring every item with the **production** `looks_like_feed_role_posting` gate
+(including the German vocabulary). **None is a German-language feed and none holds a role
+posting — evidence supports no further gate extension:**
+
+- **`jumpgategames.se`** (Swedish). Multilingual WP. The `en/feed/` locale feed is **empty (0
+  items)**; the root `/feed/` holds only IR/financial reports and game release announcements
+  (FATE: Reawakened). No roles, no German jobs.
+- **`tarsier.se`** (Swedish). English news feed, 10 items — all game/PR/discount slot (REANIMAL,
+  Little Nightmares, an award win). `keep=False` on every item. No roles.
+- **`funwavestudio.com`** (Mumbai, India). Feed/careers page unpullable by the production
+  transport — **TLS certificate has expired** (no cert bypass in `fetch_text`; `feed/`,
+  `career/`, `/` all fail handshake). Cert aside, the historical feed was all Indian-gaming
+  blog posts, `best_role_items: 0`.
+
+Verdict: the localized German vocabulary stays scoped to `thegoodevil` (its Tumblr feed); no
+leaf plugin or gate change for these three. Are left `needs_review` / unrecoverable until their
+careers pages change real content (jumpgate/tarsier) or the TLS cert is renewed (funwave).
+
 ### WP14 triage (2026-08-29) — ATS-backed zero-kept shells (King, Blizzard, Microsoft, Netflix, Activision)
 
 Feed recovery (WP8/WP13) does not apply to these five — they are large ATS-backed boards, not

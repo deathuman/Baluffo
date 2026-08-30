@@ -55,6 +55,13 @@ from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
 )
 
+from scripts.ship_bundle_manifest import (
+    APP_RUNTIME_SCRIPTS as SHIP_BUNDLE_APP_RUNTIME_SCRIPTS,
+)
+from scripts.ship_bundle_manifest import (
+    NON_SHIPPING_TOP_LEVEL_MODULES as SHIP_BUNDLE_NON_SHIPPING_MODULES,
+)
+
 GROUPS = (
     "docs",
     "workflow",
@@ -67,6 +74,7 @@ GROUPS = (
     "line-budget",
     "release",
     "registry",
+    "bundle",
 )
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
@@ -578,6 +586,52 @@ def check_fixture_references() -> list[str]:
     return failures
 
 
+def check_bundle_manifest_completeness(
+    repo_root: Path = ROOT,
+    *,
+    ship_filenames: Iterable[str] | None = None,
+    non_shipping_filenames: Iterable[str] | None = None,
+) -> list[str]:
+    """Every top-level src module is shipped or explicitly declared, and none stale.
+
+    A top-level ``src/*.py|*.json`` file must appear in the ship-bundle manifest
+    (``APP_RUNTIME_SCRIPTS``) or be listed as intentional build/container/dev tooling
+    (``NON_SHIPPING_TOP_LEVEL_MODULES``). Every manifest entry must still exist on disk.
+    """
+    root = Path(repo_root)
+    src_root = root / "src"
+    if not src_root.is_dir():
+        return [f"source directory is missing: {src_root.relative_to(root)}"]
+    shipped = (
+        set(ship_filenames) if ship_filenames is not None else set(SHIP_BUNDLE_APP_RUNTIME_SCRIPTS)
+    )
+    non_shipping = (
+        set(non_shipping_filenames)
+        if non_shipping_filenames is not None
+        else set(SHIP_BUNDLE_NON_SHIPPING_MODULES)
+    )
+    relevant_suffixes = {".py", ".json"}
+    on_disk = {
+        entry.name
+        for entry in src_root.iterdir()
+        if entry.is_file() and entry.suffix in relevant_suffixes
+    }
+    failures: list[str] = []
+    for filename in sorted(on_disk - shipped - non_shipping):
+        failures.append(
+            f"{filename} is in src/ but missing from the ship-bundle manifest "
+            "(scripts/ship_bundle_manifest.py): add it to APP_RUNTIME_SCRIPTS if it is a "
+            "packaged runtime module, or to NON_SHIPPING_TOP_LEVEL_MODULES if it is "
+            "build/container/dev tooling."
+        )
+    for filename in sorted(shipped - on_disk):
+        failures.append(
+            f"ship-bundle manifest lists src/{filename} but it does not exist "
+            "(stale entry — remove it or add the file)."
+        )
+    return failures
+
+
 def _failure_from_messages(group: str, name: str, messages: list[str]) -> GuardFailure | None:
     if messages:
         return GuardFailure(group, name, "\n".join(messages))
@@ -794,6 +848,18 @@ def run_line_budget_group() -> list[GuardFailure]:
     return failures
 
 
+def run_bundle_group() -> list[GuardFailure]:
+    failures: list[GuardFailure] = []
+    completeness = _failure_from_messages(
+        "bundle",
+        "check_bundle_manifest_completeness",
+        check_bundle_manifest_completeness(repo_root=ROOT),
+    )
+    if completeness is not None:
+        failures.append(completeness)
+    return failures
+
+
 def run_registry_group() -> list[GuardFailure]:
     failures: list[GuardFailure] = []
     uncovered = _failure_from_messages(
@@ -824,6 +890,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "line-budget": run_line_budget_group,
     "release": run_release_group,
     "registry": run_registry_group,
+    "bundle": run_bundle_group,
 }
 
 
