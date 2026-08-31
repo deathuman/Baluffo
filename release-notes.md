@@ -1,17 +1,17 @@
-## [0.2.140] - 2026-08-27
+## [0.2.141] - 2026-08-31
 ### Changed
 
-- Availability direct enforcement is promoted for the container runtime: the Umbrel
-  compose now sets `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`, so direct availability
-  checks publish lifecycle transitions and reopen rows with definitive live evidence
-  instead of only recording shadow results. Promotion followed the reviewed gate
-  (healthy seven-day sweep, clean Saved page, reviewed 100-job stratified sample,
-  no unresolved high-risk classifier family) recorded in
-  `docs/snapshots/availability-direct-promotion-2026-08-27.md`. Desktop runtimes
-  stay in shadow mode until separately promoted.
-- Jobs page auto-hydrates the complete feed right after the startup snapshot
-  renders (idle-deferred, off the boot critical path) in all runtimes, so the
-  full list no longer requires pressing Reload. Boot stays bounded: the
-  snapshot renders first, the full feed syncs in the background, and explicit
-  Reload continues to work as before.
+- Runtime↔seed registry reconcile (WP24 runbook, jobs-coverage plan): converges the live
+  container's runtime registry (`data/source-registry-active.json.gz` + journal) with the
+  twin-reconciled tracked seeds, deferring to the seeds as the source of truth. Applies the
+  verified `POST /registry/demote-active` batch demoting **10** real runtime-only twins to
+  pending (`static:listing_url` rows for `www.scopely.com/en/join-us`, `www.hugecalf.com/careers`,
+  `bandainamcoent.com/careers`, `www.roshkastudios.com/jobs.html`, `www.joinplaygames.com/jobs.php`,
+  `www.ninerocksgames.com/careers`, `www.skybound.com/careers`, `sybogames.com/careers/`,
+  `www.nocodestudio.com/jobs`, `www.volleygames.com/careers`) — **active 2301 → 2291, pending
+  850 → 860**. Deliberately left
+  in place: `careers.playstation.com`'s two distinct rows (a marketing redirect + the
+  `playstation.com/jobs` Global-website board, 50 jobs — not a twin) and the 16 single-row
+  reconcile keys (e.g. bytedance holding `jobs.bytedance.com/en/position`). Every demote is
+  reversible via `POST /registry/approve`.
 - Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
