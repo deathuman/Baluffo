@@ -10,6 +10,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Changed
+
+- Container shipped-code version gate (`tools/repo_health/container_version_policy.py`): the `release` repo guardrail now fails when container-affecting commits land after the last version bump without either advancing the version or declaring explicit release-tag intent (`Release-tag: vX.Y.Z` line, or `release(vX.Y.Z):` / `chore(release):` subject, naming a version newer than the current one). This closes the 0.2.140 reuse trap — code shipped to the Umbrel container channel while the `umbrel-app.yml` version string stayed frozen, so Umbrel's app-store update detection never offered the newer build. The lint CI checkout now fetches full history so the gate evaluates the real commit window.
+
 ## [0.2.141] - 2026-08-31
 ### Changed
 

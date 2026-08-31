@@ -292,6 +292,17 @@ Container / Umbrel ship checklist:
 
 If live Umbrel smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
 
+#### Shipped-code version gate
+
+The `release` repo guardrail (`container_version_policy.py`) fails when container-affecting commits land on `main` after the most recent version bump without either advancing the version or declaring explicit release-tag intent. The `0.2.140` reuse trap it prevents: a version was bumped once and the Umbrel box updated to it, then container-affecting commits kept landing under the same version string — every `main` push republished the same `0.2.140`/`latest` tags with newer code, but Umbrel's app-store update detection keys purely on the `version:` string in `umbrel-app.yml`, so the box never re-pulled and silently ran an older build while the image tag drifted forward.
+
+How to satisfy the gate:
+
+- Bump the version in the same commit batch as the container-affecting code (`python scripts/bump_version.py <next>`), or
+- Declare release-tag intent in a commit message with a `Release-tag: vX.Y.Z` line (or a `release(vX.Y.Z):` / `chore(release):` subject) naming a version strictly newer than the current one.
+
+The window the gate evaluates is the commits after the last commit that changed `src/app_version.py` or `deathuman-baluffo/umbrel-app.yml`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
+
 ### Linux AppImage
 
 Prerequisites:

@@ -34,6 +34,7 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bridge_api_field_inventory import check_bridge_api_field_inventory
 from bridge_route_inventory import check_bridge_route_inventory
+from container_version_policy import check_container_shipped_code_version_gate
 from desktop_update_facade_inventory import check_desktop_update_facade_inventory
 from desktop_update_root_dependency_inventory import (
     check_desktop_update_root_dependency_inventory,
@@ -828,6 +829,10 @@ def run_release_group() -> list[GuardFailure]:
         ("check_ship_bundle_embedded_version", check_ship_bundle_embedded_version()),
         ("check_portable_zip_embedded_version", check_portable_zip_embedded_version()),
         ("check_desktop_update_manifest_version", check_desktop_update_manifest_version()),
+        (
+            "check_container_shipped_code_version_gate",
+            check_container_shipped_code_version_gate(),
+        ),
     ):
         failure = _failure_from_messages("release", name, messages)
         if failure:
