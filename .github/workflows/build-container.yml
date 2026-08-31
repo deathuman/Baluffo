@@ -5,26 +5,38 @@ on:
     branches: [main]
     tags: ["v*"]
     # Branch path filters do not apply to tag pushes. Version tags still publish.
+    # Keep this list equal to NON_SHIPPED_PATTERNS in
+    # tools/repo_health/container_version_policy.py so the repo-guardrail gate
+    # and the republish trigger stay aligned (see tests/test_container_version_policy.py).
     paths-ignore:
       - "docs/**"
       - "tests/**"
-      - "tools/mcp/**"
+      - "tools/**"
+      - ".github/**"
       - "README.md"
       - "CONTRIBUTING.md"
       - "SECURITY.md"
       - "AGENTS.md"
       - "LICENSE"
+      - "release-notes.md"
+      - "umbrel-app-store.yml"
   pull_request:
     branches: [main]
+    # Keep this list equal to NON_SHIPPED_PATTERNS in
+    # tools/repo_health/container_version_policy.py so the repo-guardrail gate
+    # and the republish trigger stay aligned (see tests/test_container_version_policy.py).
     paths-ignore:
       - "docs/**"
       - "tests/**"
-      - "tools/mcp/**"
+      - "tools/**"
+      - ".github/**"
       - "README.md"
       - "CONTRIBUTING.md"
       - "SECURITY.md"
       - "AGENTS.md"
       - "LICENSE"
+      - "release-notes.md"
+      - "umbrel-app-store.yml"
   workflow_dispatch:
 
 env:

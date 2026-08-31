@@ -3,7 +3,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from tools.repo_health.container_version_policy import (
+    NON_SHIPPED_PATTERNS,
+    ROOT,
     WindowCommit,
     _declared_release_tag_versions,
     _is_shipped_path,
@@ -185,3 +189,24 @@ def test_gate_ignores_docs_only_window(tmp_path: Path) -> None:
     _commit_all(repo, "docs: update release guide")
 
     assert check_container_shipped_code_version_gate(repo) == []
+
+
+def _workflow_paths_ignore_blocks() -> list[tuple[str, ...]]:
+    """Return the ``paths-ignore`` lists from the container workflow, per trigger."""
+    workflow = ROOT / ".github" / "workflows" / "build-container.yml"
+    data = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    # PyYAML parses the YAML 1.1 ``on:`` key as boolean True, not the string "on".
+    triggers = data.get("on") or data.get(True)
+    return [tuple(triggers[event]["paths-ignore"]) for event in ("push", "pull_request")]
+
+
+def test_container_workflow_paths_ignore_stays_aligned_with_guardrail() -> None:
+    """The workflow republish trigger and the guardrail shipped-path list must not drift."""
+    blocks = _workflow_paths_ignore_blocks()
+    assert blocks, "expected push + pull_request paths-ignore blocks in build-container.yml"
+    expected = tuple(NON_SHIPPED_PATTERNS)
+    for block in blocks:
+        assert len(block) == len(expected), "duplicate/missing pattern in paths-ignore"
+        assert set(block) == set(expected)
+        # Preserve order so reviewers can diff the two lists at a glance.
+        assert block == expected
