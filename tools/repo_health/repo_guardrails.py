@@ -55,6 +55,7 @@ from update_manager_facade_inventory import check_update_manager_facade_inventor
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
 )
+from workflow_syntax_policy import check_workflow_syntax
 
 from scripts.ship_bundle_manifest import (
     APP_RUNTIME_SCRIPTS as SHIP_BUNDLE_APP_RUNTIME_SCRIPTS,
@@ -692,7 +693,13 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_package_json_perf_scripts_reuse_existing_perf_entrypoints",
         )
     ]
-    return _run_python_checks("workflow", checks)
+    failures = _run_python_checks("workflow", checks)
+    workflow_syntax_failure = _failure_from_messages(
+        "workflow", "check_workflow_syntax", check_workflow_syntax()
+    )
+    if workflow_syntax_failure:
+        failures.append(workflow_syntax_failure)
+    return failures
 
 
 def run_compat_group() -> list[GuardFailure]:
