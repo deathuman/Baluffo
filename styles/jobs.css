@@ -109,9 +109,11 @@
     color-mix(in srgb, var(--surface-4) 86%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-18) 18%, transparent);
   /* ponytail: reserve the populated chip-row height so data-driven quick
-     filters can't reflow the page after boot (CLS). Slimmed to the real chip
-     height + padding — the old 4.25rem reserved dead space above and below. */
-  min-height: 2.9rem;
+     filters can't reflow the page after boot (CLS). The populated chips wrap
+     to two rows at common container widths/font metrics, so reserve two rows
+     + slim padding — a one-row reserve regressed boot CLS to 0.22 on the
+     container boot-perf gate (observed 2026-09-02). */
+  min-height: 4.05rem;
 }
 
 .jobs-page .quick-actions-label {

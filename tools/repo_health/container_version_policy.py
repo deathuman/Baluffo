@@ -156,8 +156,12 @@ def _declared_release_tag_versions(message: str) -> list[str]:
 
 
 def _has_valid_release_tag_intent(commit: WindowCommit, current_version: str) -> bool:
+    # "= current" counts as valid intent: the commit declaring it is the one
+    # carrying the release for the already-bumped version (e.g. a follow-up
+    # fix retagged into the same release channel). Only strictly older
+    # declarations are invalid.
     return any(
-        compare_baluffo_versions(version, current_version) > 0
+        compare_baluffo_versions(version, current_version) >= 0
         for version in _declared_release_tag_versions(commit.message)
     )
 

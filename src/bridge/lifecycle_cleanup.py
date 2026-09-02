@@ -237,7 +237,7 @@ def _pidless_row_is_heartbeat_stale(
     if last_seen is None:
         return False
     max_age = timedelta(hours=max_age_hours)
-    return (now_utc - last_seen) > max_age
+    return bool((now_utc - last_seen) > max_age)
 
 
 def _record_stale_row(

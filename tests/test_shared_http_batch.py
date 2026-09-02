@@ -193,7 +193,9 @@ def test_fetch_pages_batched_async_path_isolates_httpx_invalid_url_per_page() ->
 
     async def fake_async_fetch(_client, job: dict[str, object], url: str, _timeout_s: int) -> str:
         await __import__("asyncio").sleep(0)
-        if str(job.get("payload", {}).get("id")) == "b":
+        payload = job.get("payload")
+        payload_id = payload.get("id") if isinstance(payload, dict) else None
+        if str(payload_id) == "b":
             raise httpx.InvalidURL("For absolute URLs, path must be empty or begin with '/'")
         return f"<html>{url}</html>"
 

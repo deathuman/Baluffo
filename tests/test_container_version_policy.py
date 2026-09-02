@@ -132,16 +132,29 @@ def test_evaluate_window_passes_with_release_subject() -> None:
     assert evaluate_window(commits, "0.2.141") == []
 
 
-def test_evaluate_window_rejects_intent_not_newer_than_current() -> None:
+def test_evaluate_window_rejects_intent_older_than_current() -> None:
     commits = [
         _commit(
             "a1b2c3d4",
             "feat: adapter",
-            "feat: adapter\n\nRelease-tag: v0.2.141",
+            "feat: adapter\n\nRelease-tag: v0.2.140",
             ("src/jobs/x.py",),
         )
     ]
     assert len(evaluate_window(commits, "0.2.141")) == 1
+
+
+def test_evaluate_window_accepts_intent_equal_to_current() -> None:
+    """A post-bump fix retagged into the same release declares "= current"."""
+    commits = [
+        _commit(
+            "a1b2c3d4",
+            "fix: adapter",
+            "fix: adapter\n\nRelease-tag: v0.2.141",
+            ("src/jobs/x.py",),
+        )
+    ]
+    assert evaluate_window(commits, "0.2.141") == []
 
 
 def test_gate_fails_shipped_code_after_bump_without_bump_or_intent(tmp_path: Path) -> None:
