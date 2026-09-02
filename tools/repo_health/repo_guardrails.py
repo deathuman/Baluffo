@@ -51,6 +51,7 @@ from source_registry_duplicate_url_policy import (
     check_active_seed_stale_baseline,
     check_active_seed_twin_career_urls,
 )
+from task_run_owner_policy import check_task_run_start_owner_fields
 from update_manager_facade_inventory import check_update_manager_facade_inventory
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
@@ -719,6 +720,13 @@ def run_compat_group() -> list[GuardFailure]:
     )
     if bridge_api_failure:
         failures.append(bridge_api_failure)
+    task_run_owner_failure = _failure_from_messages(
+        "compat",
+        "check_task_run_start_owner_fields",
+        check_task_run_start_owner_fields(),
+    )
+    if task_run_owner_failure:
+        failures.append(task_run_owner_failure)
     bridge_production_failure = _failure_from_messages(
         "compat",
         "check_bridge_production_bridge_api_imports",
