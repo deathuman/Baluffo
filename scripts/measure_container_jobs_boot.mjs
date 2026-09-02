@@ -259,29 +259,9 @@ async function runBootMode(browser, args) {
       ok: metrics.badgeVisible || lightAfterInteractive,
       detail: metrics.badgeVisible ? "badge" : "auto-hydrated"
     });
-
-    const reloadStart = Date.now();
-    const lightDuringReload = new Promise(resolve => {
-      const handler = request => {
-        if (/\/data\/jobs-unified-light\.json/.test(request.url())) {
-          page.off("request", handler);
-          resolve(true);
-        }
-      };
-      page.on("request", handler);
-      setTimeout(() => {
-        page.off("request", handler);
-        resolve(false);
-      }, RELOAD_TIMEOUT_MS);
-    });
-    await page.click("#refresh-jobs-btn");
-    const lightFetched = await lightDuringReload;
-    await page.waitForTimeout(1500);
-    const afterReload = await collectMetrics(page);
-    checks.push(
-      { name: "explicit Reload fetches full feed", ok: lightFetched, detail: lightFetched ? `${Math.round(Date.now() - reloadStart)}ms` : "timeout" },
-      { name: "badge clears after Reload", ok: !afterReload.badgeVisible }
-    );
+    // The Reload button and Updates-found badge were removed with the density
+    // pass — full-feed hydration is automatic, so there is nothing to click.
+    // The auto-hydration check above covers the post-boot full-feed fetch.
   }
 
   const summary = {
