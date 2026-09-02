@@ -303,6 +303,18 @@ How to satisfy the gate:
 
 The window the gate evaluates is the commits after the last commit that changed `src/app_version.py` or `deathuman-baluffo/umbrel-app.yml`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
 
+#### Amending a version bump into an existing commit is a catch-22
+
+The gate reads committed history only. When you try to `git commit --amend` a version bump into the tip commit, HEAD at gate time is still the pre-amend commit (shipped code, no bump, no intent), so the gate fails inside the amend's own pre-commit hook and the amend silently aborts — while the git command itself may report success because the hook consumed the failure. Always verify the amended commit's tree actually contains the bump (`git show HEAD:src/app_version.py`) before assuming an amend landed.
+
+The clean pattern to add a version bump to already-made commits:
+
+1. `git reset --soft <last commit that carries a valid bump/intent>` — the tip before the shipped-code commits.
+2. Recommit the staged stack as one commit that carries the bump (`python scripts/bump_version.py <next>` before staging, or as part of the same staged set).
+3. At commit time the gate window is empty (HEAD already carries the previous bump), and at push time HEAD carries the new bump, so both gates pass.
+
+This collapses the intervening commits into one; only do it with unpushed commits. If the commits are already pushed, bump forward in a new commit instead of rewriting history.
+
 ### Linux AppImage
 
 Prerequisites:
