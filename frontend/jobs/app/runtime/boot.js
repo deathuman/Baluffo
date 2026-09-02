@@ -214,7 +214,7 @@ export function createJobsBoot(deps) {
       btn.className = "saved-view-save-btn";
       btn.textContent = "Save current";
       btn.addEventListener("click", () => {
-        const name = prompt("Name this view:");
+        const name = globalThis.prompt("Name this view:");
         if (!name || !String(name).trim()) return;
         const state = deps.runtimeState.pageState || { filters: {}, currentPage: 1 };
         saveFilterPreset(String(name).trim(), state, deps.defaultFilters || {});

@@ -297,7 +297,7 @@ export function createRegistryUi({
           return;
         }
         state.scrollTop = nextScrollTop;
-        if (state.renderFrame && typeof cancelAnimationFrame === "function") cancelAnimationFrame(state.renderFrame);
+        if (state.renderFrame && typeof globalThis.cancelAnimationFrame === "function") globalThis.cancelAnimationFrame(state.renderFrame);
         const render = () => {
           state.renderFrame = 0;
           renderBucketWindow(container, mode, { preserveScrollTop: state.scrollTop });

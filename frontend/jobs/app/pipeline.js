@@ -365,9 +365,10 @@ export function updateJobsPipelineUi(
     }
   }
   if (abortButton) {
-    abortButton.hidden = !Boolean(abortable && !aborting);
-    abortButton.disabled = !Boolean(abortable && !aborting);
-    abortButton.classList.toggle("visible", Boolean(abortable && !aborting));
+    const abortableState = Boolean(abortable && !aborting);
+    abortButton.hidden = !abortableState;
+    abortButton.disabled = !abortableState;
+    abortButton.classList.toggle("visible", abortableState);
   }
 }
 
