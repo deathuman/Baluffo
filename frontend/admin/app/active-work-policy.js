@@ -82,7 +82,7 @@ export function pipelineStatusIndicatesFetch(payload = {}) {
     && (pipelineStatusStage(payload) === "fetch" || pipelineStatusHasActiveChild(payload, "fetch"));
 }
 
-export function pipelineStatusIndicatesDiscovery(payload = {}) {
+function pipelineStatusIndicatesDiscovery(payload = {}) {
   return pipelineStatusIndicatesActive(payload)
     && (pipelineStatusStage(payload) === "discovery" || pipelineStatusHasActiveChild(payload, "discovery"));
 }
