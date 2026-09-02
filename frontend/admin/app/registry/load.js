@@ -3,7 +3,6 @@ import { renderDiscoveryCandidateReviewHtml } from "../../render.js";
 import {
   deriveAdminActiveWorkContext,
   pipelineStatusIndicatesActive,
-  pipelineStatusIndicatesDiscovery,
   pipelineStatusIndicatesFetch
 } from "../active-work-policy.js";
 
@@ -227,10 +226,6 @@ export function createRegistryLoadController({
       && sourcePayloadRowsAreEmpty(payload?.sources || {})
       && sourcePayloadSummaryHasRows(payload?.summary || {})
     );
-  }
-
-  function activeDiscoveryRunning() {
-    return deriveAdminActiveWorkContext({ state }).discoveryActive;
   }
 
   function activeFetchRunning() {

@@ -1474,12 +1474,6 @@ h1 {
 }
 
 .jobs-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
 }
 
 .toolbar-actions {
@@ -1657,36 +1651,6 @@ h1 {
   100% {
     transform: translateX(265%);
   }
-}
-
-.jobs-pipeline-progress.running::before {
-  content: "";
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-right: 0.35rem;
-  border-radius: 999px;
-  background-color: var(--accent);
-  animation: jobs-pipeline-pulse 1.2s ease-in-out infinite;
-}
-
-.refresh-jobs-needed-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--surface-11));
-  background: color-mix(in srgb, var(--accent-soft-bg) 64%, var(--surface-4));
-  color: var(--accent-soft-text);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  text-transform: uppercase;
-  padding: 0.15rem 0.45rem;
-}
-
-#refresh-jobs-btn.needs-refresh {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .btn:disabled,
@@ -1909,17 +1873,14 @@ h1 {
 }
 
 .job-new-badge {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 0.04rem 0.34rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--surface-11));
-  background: color-mix(in srgb, var(--accent-soft-bg) 64%, var(--surface-4));
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent-soft-text);
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: lowercase;
   letter-spacing: 0.22px;
 }
 
@@ -2313,19 +2274,18 @@ h1 {
 .toast.info {
   border-color: #48618a;
   color: #c7dbff;
-}
-
-.toast-action-btn {
-  margin: 0;
-  padding: 0.2rem 0.55rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font-size: 0.76rem;
-  font-weight: 700;
-  line-height: 1.2;
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--accent-soft-text);
+  font-size: 0.65rem;
+  font-weight:  600;
+  text-transform: lowercase;
+  letter-spacing: 0.08em;
 }
 
 .toast-action-btn:hover {

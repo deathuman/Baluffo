@@ -28,7 +28,16 @@ _EXPECTED_PAGE_FETCH_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ValueError,
 )
 if httpx is not None:
-    _EXPECTED_PAGE_FETCH_EXCEPTIONS = (*_EXPECTED_PAGE_FETCH_EXCEPTIONS, httpx.HTTPError)
+    # ponytail: httpx.InvalidURL subclasses Exception (not HTTPError) and escapes
+    # redirect handling (e.g. a redirect Location with an empty path raised
+    # "For absolute URLs, path must be empty or begin with '/'" mid-audit and
+    # killed the whole discovery worker). It is a per-page fetch failure, not a
+    # fetcher bug — isolate it to the row like other network errors.
+    _EXPECTED_PAGE_FETCH_EXCEPTIONS = (
+        *_EXPECTED_PAGE_FETCH_EXCEPTIONS,
+        httpx.HTTPError,
+        httpx.InvalidURL,
+    )
 _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
 
 

@@ -17,7 +17,6 @@ export function createJobsEventsController({
   rememberCurrentJobsUrl,
   navigateDesktopPage,
   openAdminPageFromJobs,
-  refreshJobsNow,
   triggerJobsPipelineRun,
   handleAutoRefreshSignalValue,
   renderDataSources,
@@ -60,7 +59,6 @@ export function createJobsEventsController({
     bindAsyncClick(dom.authSignInBtn, () => authController.signInUser());
     bindAsyncClick(dom.authSignOutBtn, () => authController.signOutUser());
     bindAsyncClick(dom.adminPageBtn, openAdminPageFromJobs);
-    bindAsyncClick(dom.refreshJobsBtn, () => refreshJobsNow({ manual: true }));
     bindAsyncClick(dom.jobsPipelineRunBtn, triggerJobsPipelineRun);
     if (dom.dataSourcesDetailsEl) {
       bindUi(dom.dataSourcesDetailsEl, "toggle", () => {

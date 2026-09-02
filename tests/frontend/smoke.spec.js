@@ -112,7 +112,7 @@ async function expectJobsPageReady(page, timeout = 90000, expectLoadedStatus = t
     return state === "interactive" || state === "error";
   }, null, { timeout });
   await expect(page.locator("body")).not.toHaveAttribute("data-jobs-startup-state", "loading");
-  await expect(page.locator("#refresh-jobs-btn")).toBeEnabled();
+  await expect(page.locator("#jobs-pipeline-run-btn")).toBeEnabled();
   await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
   await expect(page.locator("#jobs-list")).not.toContainText(/Loading jobs/i);
   if (expectLoadedStatus) await expect(page.locator("#source-status")).toContainText(/^Loaded \d[\d,]* jobs/i, { timeout });
@@ -277,11 +277,6 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
     page.locator("#jobs-pipeline-run-btn"),
     /(?:Find new openings|First update: find new openings) and rebuild the local job list\./i
   );
-  await expectTooltipText(
-    page,
-    page.locator("#refresh-jobs-btn"),
-    "Reload the current local jobs data without checking sources."
-  );
   await expectTooltipText(page, page.locator(".jobs-footer-admin[data-tooltip]"), /admin/i);
 
   const pageButtons = page.locator("#pagination .page-btn");
@@ -304,10 +299,6 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await saveBtn.click();
   await expect(page.locator(".toast").last()).toContainText("Sign in to save jobs");
   await cancelSignIn(page);
-
-  await page.click("#refresh-jobs-btn");
-  await expect(page.locator("#refresh-jobs-btn")).toBeDisabled({ timeout: 10000 });
-  await expect(page.locator("#source-status")).toContainText(/Fetching/i, { timeout: 10000 });
 
   await page.locator(".jobs-sources summary").click();
   await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");

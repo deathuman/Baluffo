@@ -176,14 +176,14 @@ function escapeHtml(text) {
 
 export function createAdminInspectorController({
   refs,
-  getBridge,
+  _getBridge,
   postBridge,
   showToast,
-  logAdminError
+  _logAdminError
 }) {
   let open = false;
-  let currentEntityType = null;
-  let currentEntityData = null;
+  let _currentEntityType = null;
+  let _currentEntityData = null;
   let clickDelegateBound = false;
 
   function showOverlay() {
@@ -200,8 +200,8 @@ export function createAdminInspectorController({
     if (overlay) overlay.classList.remove("inspector-overlay-visible");
     if (panel) panel.classList.remove("inspector-panel-visible");
     open = false;
-    currentEntityType = null;
-    currentEntityData = null;
+    _currentEntityType = null;
+    _currentEntityData = null;
   }
 
   function renderContent(entityType, entityData) {
@@ -229,8 +229,8 @@ export function createAdminInspectorController({
 
   function openInspector(entityType, entityData) {
     if (!entityData) return;
-    currentEntityType = entityType;
-    currentEntityData = entityData;
+    _currentEntityType = entityType;
+    _currentEntityData = entityData;
     renderContent(entityType, entityData);
     showOverlay();
   }

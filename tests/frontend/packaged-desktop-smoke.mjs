@@ -57,10 +57,10 @@ async function assertJobsPageReady(page) {
   await page.waitForFunction(() => ["interactive", "error"].includes(document.body?.getAttribute("data-jobs-startup-state") || "loading"), null, { timeout: 30_000 }).catch(error => throwJobsReadinessTimeout(page, "Timed out waiting for Jobs startup state", error));
   const startupState = await page.locator("body").getAttribute("data-jobs-startup-state");
   assert.notEqual(startupState, "loading", "jobs page should not stay in loading state");
-  await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator("#jobs-pipeline-run-btn").waitFor({ state: "visible", timeout: 20_000 });
   await page.locator("#auth-sign-in-btn").waitFor({ state: "visible", timeout: 20_000 });
   await page.waitForFunction(() => !document.querySelector("#auth-sign-in-btn")?.disabled, null, { timeout: 20_000 });
-  assert.equal(await page.locator("#refresh-jobs-btn").isEnabled(), true, "jobs refresh button should be enabled");
+  await page.waitForFunction(() => !document.querySelector("#jobs-pipeline-run-btn")?.disabled, null, { timeout: 20_000 });
   assert.equal(await page.locator("#auth-sign-in-btn").isEnabled(), true, "jobs sign-in button should be enabled");
   const jobsListText = await page.locator("#jobs-list").textContent();
   assert.doesNotMatch(String(jobsListText || ""), /loading jobs/i);

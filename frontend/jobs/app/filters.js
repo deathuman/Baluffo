@@ -157,12 +157,6 @@ export function normalizeSelectedCountries(countries, {
   );
 }
 
-export function getCountrySelectionBadgeText(countries) {
-  const count = Array.isArray(countries) ? countries.length : 0;
-  if (count === 0) return "All countries";
-  return count === 1 ? "1 country selected" : `${count} countries selected`;
-}
-
 export function renderCountryPickerOptionsHtml({
   availableCountryFilterValues,
   selectedCountries,

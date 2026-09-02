@@ -345,6 +345,11 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             # fetch/scraping_adapter) without an extra thread or extra I/O —
             # the report file was already loaded this iteration.
             self._record_child_phase_observation(task_type, normalized_report)
+            # ponytail: reuse the same report read to keep the active-child row's
+            # taskProgress (counters / ratio / ETA / updatedAt) live in the pipeline
+            # status payload, so the jobs CTA shows determinate sub-progress for the
+            # whole stage rather than a flat step fill.
+            self._refresh_live_child_task_progress(task_type, normalized_report)
             self._report_wait_sleep(1.0)
 
     def _record_child_phase_observation(

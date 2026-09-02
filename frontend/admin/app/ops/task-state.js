@@ -115,7 +115,7 @@ export function createOpsTaskStateController({
         announceStart: false,
         initialReport: discoveryRow
       });
-      loadLatestDiscoveryReport?.({ silent: true }).catch(() => {});
+      loadLatestDiscoveryReport?.({ silent: true, view: "summary" }).catch(() => {});
     }
   }
 

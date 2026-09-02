@@ -51,7 +51,6 @@ test("jobs events controller wires core actions to the existing runtime callback
     authSignInBtn: createElement(),
     authSignOutBtn: createElement(),
     adminPageBtn: createElement(),
-    refreshJobsBtn: createElement(),
     jobsPipelineRunBtn: createElement()
   };
   const pageState = { filters: { countries: ["IT"] } };
@@ -134,11 +133,10 @@ test("jobs events controller wires core actions to the existing runtime callback
   await dom.authSignInBtn.boundAsyncClick();
   await dom.authSignOutBtn.boundAsyncClick();
   await dom.adminPageBtn.boundAsyncClick();
-  await dom.refreshJobsBtn.boundAsyncClick();
   await dom.jobsPipelineRunBtn.boundAsyncClick();
 
   assert.equal(runtimeState.coreEventsBound, true);
-  assert.equal(asyncClicks.length, 5);
+  assert.equal(asyncClicks.length, 4);
   assert.equal(calls.remember, 1);
   assert.deepEqual(calls.navigate, ["saved.html"]);
   assert.deepEqual(pageState.filters.countries, []);
@@ -147,7 +145,7 @@ test("jobs events controller wires core actions to the existing runtime callback
   assert.equal(calls.signIn, 1);
   assert.equal(calls.signOut, 1);
   assert.equal(calls.admin, 1);
-  assert.deepEqual(calls.refresh, [{ manual: true }]);
+  assert.deepEqual(calls.refresh, []);
   assert.equal(calls.pipeline, 1);
 });
 

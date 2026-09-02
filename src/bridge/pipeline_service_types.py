@@ -262,6 +262,13 @@ class PipelineServiceState:
     def _heartbeat_pipeline_wait(self) -> None:
         raise NotImplementedError
 
+    def _refresh_live_child_task_progress(
+        self,
+        task_type: str,
+        report: dict[str, Any],
+    ) -> None:
+        raise NotImplementedError
+
     def _attach_lifecycle_child_row(
         self,
         *,

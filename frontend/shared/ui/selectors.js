@@ -27,7 +27,6 @@ export const UI_TOKENS = Object.freeze({
   jobs: {
     list: "jobs-list",
     resultsSummary: "results-summary",
-    refreshJobsBtn: "refresh-jobs-btn",
     jobsPipelineRunBtn: "jobs-pipeline-run-btn",
     desktopUpdateToggleBtn: "desktop-update-toggle-btn",
     desktopUpdatePanel: "desktop-update-panel",
@@ -38,7 +37,6 @@ export const UI_TOKENS = Object.freeze({
     desktopUpdatePrimaryBtn: "desktop-update-primary-btn",
     desktopUpdateSecondaryBtn: "desktop-update-secondary-btn",
     desktopUpdateReleaseNotes: "desktop-update-release-notes",
-    refreshJobsNeededBadge: "refresh-jobs-needed-badge",
     jobsLastUpdated: "jobs-last-updated",
     workTypeFilter: "work-type-filter",
     lifecycleStatusFilter: "lifecycle-status-filter",
@@ -54,7 +52,6 @@ export const UI_TOKENS = Object.freeze({
     professionSearchFilter: "profession-search-filter",
     searchFilter: "search-filter",
     sortFilter: "sort-filter",
-    countrySelectionBadge: "country-selection-badge",
     sourceStatus: "source-status",
     fetchProgress: "fetch-progress",
     pagination: "pagination",

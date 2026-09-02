@@ -20,6 +20,30 @@ test("jobs html update button uses user-facing update copy", () => {
   assert.doesNotMatch(html, /id="jobs-pipeline-run-btn"[^>]+title=/);
 });
 
+test("jobs toolbar keeps a fixed status row for pipeline progress and last-updated", () => {
+  // ponytail: the caption and the Last-updated timestamp must live in the
+  // always-rendered status row below the actions row — that is what keeps the
+  // toolbar height and button positions invariant while a run is active.
+  const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  const actionsStart = html.indexOf('<div class="toolbar-actions">');
+  const statusStart = html.indexOf('<div class="jobs-toolbar-status" data-ui="jobs-toolbar-status">');
+  const summaryAt = html.indexOf('id="results-summary"');
+  const captionAt = html.indexOf('id="jobs-pipeline-progress-caption"');
+  const lastUpdatedAt = html.indexOf('id="jobs-last-updated"');
+  const reloadBtnAt = html.indexOf('id="refresh-jobs-btn"');
+  const badgeAt = html.indexOf('id="refresh-jobs-needed-badge"');
+  assert.ok(actionsStart >= 0, "actions row must exist");
+  assert.ok(statusStart > actionsStart, "status row must follow the actions row");
+  assert.ok(
+    summaryAt > statusStart && summaryAt < captionAt,
+    "results summary must lead the status row so it sits directly above the table"
+  );
+  assert.ok(captionAt > summaryAt, "pipeline caption must live in the status row");
+  assert.ok(lastUpdatedAt > captionAt, "last-updated must live in the status row");
+  assert.equal(reloadBtnAt, -1, "Reload button is removed; updates load automatically");
+  assert.equal(badgeAt, -1, "Updates-found badge is removed with the Reload flow");
+});
+
 test("desktop html meaningful operational buttons expose polished tooltips", () => {
   const jobsHtml = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
   const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
@@ -29,7 +53,6 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
     [jobsHtml, /id="country-picker-clear-btn"[^>]+data-tooltip="Clear the current country selection\."/],
     [jobsHtml, /id="customize-quick-filters-btn"[^>]+data-tooltip="Choose which preset filters are shown\."/],
     [jobsHtml, /id="quick-filters-reset-btn"[^>]+data-tooltip="Restore the default quick filter presets\."/],
-    [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current local jobs data without checking sources\."/],
     [savedHtml, /id="history-panel-toggle-btn"[\s\S]*<svg viewBox="0 0 24 24"/],
     [savedHtml, /class="activity-toggle-label">Activity timeline<\/span>/],
     [adminHtml, /id="admin-run-discovery-btn"[^>]+data-tooltip="Run source discovery with the default bridge preset\."/],

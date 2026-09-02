@@ -2,7 +2,6 @@ import {
   applyQuickFilterToState,
   getActiveFilterSummaryItems,
   getCountryPickerTriggerText,
-  getCountrySelectionBadgeText,
   getDefaultQuickFilterKeys,
   getNextQuickFilterKeys,
   isQuickFilterActive,
@@ -43,11 +42,6 @@ export function createJobsFiltersController({
   let availableCities = [];
   let cityOptionsMaterialized = false;
   let visibleQuickFilterKeys = [];
-
-  function updateCountrySelectionBadge() {
-    if (!refs.countrySelectionBadge) return;
-    refs.countrySelectionBadge.textContent = getCountrySelectionBadgeText(state.filters.countries);
-  }
 
   function updateCountryPickerTrigger() {
     if (!refs.countryPickerBtn) return;
@@ -106,7 +100,7 @@ export function createJobsFiltersController({
     const active = getActiveFilterSummaryItems(state.filters, {
       professionLabels
     });
-    refs.activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";
+    refs.activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "";
   }
 
   function applyStateToStaticFilters() {
@@ -211,7 +205,6 @@ export function createJobsFiltersController({
       state.filters.profession = "";
     }
 
-    updateCountrySelectionBadge();
     updateCountryPickerTrigger();
     updateQuickChipStates();
     updateActiveFiltersSummary();
@@ -230,7 +223,6 @@ export function createJobsFiltersController({
     state.filters.excludeInternship = Boolean(state.filters.excludeInternship);
     state.filters.search = refs.searchFilter ? refs.searchFilter.value.trim() : "";
     state.filters.sort = refs.sortFilter ? refs.sortFilter.value : "relevance";
-    updateCountrySelectionBadge();
     updateCountryPickerTrigger();
     updateQuickChipStates();
     updateActiveFiltersSummary();
@@ -305,7 +297,6 @@ export function createJobsFiltersController({
 
     availableProfessions = nextAvailableProfessions;
     renderProfessionOptions(refs.professionSearchFilter ? refs.professionSearchFilter.value : "");
-    updateCountrySelectionBadge();
     updateCountryPickerTrigger();
   }
 
@@ -423,7 +414,6 @@ export function createJobsFiltersController({
     syncStateFromFilters,
     resetFilters,
     onFilterChange,
-    updateCountrySelectionBadge,
     toggleCountrySelection,
     resolveCountryCode,
     syncCountryPickerChecks,

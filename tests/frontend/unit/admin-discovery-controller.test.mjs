@@ -229,7 +229,7 @@ test("admin discovery controller emits summary-first live progress and updates p
             ]
           };
         }
-        if (path === "/discovery/report") {
+        if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
           return {
             startedAt: "2026-03-08T10:01:00.000Z",
             finishedAt: "",
@@ -378,7 +378,7 @@ test("admin discovery controller applies live progress when runId matches despit
             ]
           };
         }
-        if (path === "/discovery/report") {
+        if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
           return {
             runId: "discovery_skew_1",
             startedAt: "2026-03-08T10:05:00.000Z",
@@ -481,7 +481,7 @@ test("admin discovery controller syncs source tables once after completion", asy
         if (path === "/ops/task-live/discovery?view=summary") {
           return null;
         }
-        if (path === "/discovery/report") {
+        if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
           return {
             runId: "discovery_done_1",
             startedAt: "2026-03-08T10:00:00.000Z",
@@ -551,7 +551,7 @@ test("admin discovery controller waits for registry finalization before source t
         getBridge: async path => {
           fixture.calls.push(path);
           if (path === "/ops/task-live/discovery?view=summary") return null;
-          if (path === "/discovery/report") {
+          if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
             return {
               runId: "discovery_finalizing_1",
               startedAt: "2026-03-08T10:00:00.000Z",
@@ -601,7 +601,7 @@ test("admin discovery controller completes when finalization is terminal and aut
         getBridge: async path => {
           fixture.calls.push(path);
           if (path === "/ops/task-live/discovery?view=summary") return null;
-          if (path === "/discovery/report") {
+          if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
             return {
               runId: "discovery_done_failed_auto_approval",
               startedAt: "2026-03-08T10:00:00.000Z",
@@ -825,7 +825,7 @@ test("admin discovery controller recovers when launch response is lost but repor
       refs,
       getBridge: async path => {
         calls.push(path);
-        if (path === "/discovery/report") {
+        if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
           return {
             startedAt: new Date().toISOString(),
             finishedAt: "",
@@ -906,7 +906,7 @@ test("admin discovery controller still shows error when launch recovery finds no
     state,
     refs,
     getBridge: async path => {
-      if (path === "/discovery/report") {
+      if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
         return {
           startedAt: "2020-01-01T00:00:00.000Z",
           finishedAt: "",
@@ -976,7 +976,7 @@ test("admin discovery controller does not reattach when the fresh report is a la
     state,
     refs,
     getBridge: async path => {
-      if (path === "/discovery/report") {
+      if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
         return {
           startedAt: new Date().toISOString(),
           finishedAt: new Date().toISOString(),
@@ -1100,7 +1100,7 @@ test("admin discovery controller hydrates progress from the report when live pay
     });
     fixture.options.getBridge = async path => {
         if (path === "/ops/task-live/discovery?view=summary") return {};
-        if (path === "/discovery/report") {
+        if (path === "/discovery/report" || path === "/discovery/report?view=summary") {
           return {
             startedAt: "2026-03-08T10:01:00.000Z",
             finishedAt: "",
@@ -1169,7 +1169,7 @@ test("admin discovery controller skips overlapping live and log polls", async ()
           resolveLog = resolve;
         });
       }
-      if (path === "/discovery/report") return {};
+      if (path === "/discovery/report" || path === "/discovery/report?view=summary") return {};
       throw new Error(`unexpected path ${path}`);
     };
     const controller = createAdminDiscoveryController(fixture.options);
@@ -1215,7 +1215,7 @@ test("admin discovery controller backs off after transport failures and resets a
       if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/discovery/report") return {};
+      if (path === "/discovery/report" || path === "/discovery/report?view=summary") return {};
       throw new Error(`unexpected path ${path}`);
     };
     const controller = createAdminDiscoveryController(fixture.options);

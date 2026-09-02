@@ -6,13 +6,8 @@
 }
 
 .jobs-page .jobs-header {
-  padding: 0.85rem 1rem;
-  margin-bottom: 0.7rem;
-  border: 1px solid var(--surface-11);
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--accent-soft-bg) 34%, transparent), transparent 50%),
-    linear-gradient(180deg, var(--surface-4), var(--surface-2));
+  margin-bottom: 0.6rem;
+  padding: 0.1rem 0.2rem;
 }
 
 .jobs-page .jobs-header h1 {
@@ -21,14 +16,44 @@
   letter-spacing: 0.01em;
 }
 
-.jobs-page .source-status {
-  margin: 0 0 0.85rem;
-  padding: 0.52rem 0.72rem;
-  min-height: 2.2rem;
+.jobs-page .jobs-status-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap:  0.4rem 0.7rem;
+  margin:  0 0 0.7rem;
+  padding: 0.32rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--surface-15));
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
-  background: color-mix(in srgb, var(--surface-5) 72%, transparent);
-  font-size: 0.84rem;
+  background: color-mix(in srgb, var(--accent-soft-bg) 12%, transparent);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.jobs-page .source-status {
+  margin: 0;
+  padding: 0;
+  min-height: 1.1rem;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  line-height: 1.35;
+}
+
+.jobs-page .jobs-guest-notice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: inherit;
+  color: inherit;
+}
+
+.jobs-page .source-status:not(:empty) + .jobs-guest-notice::before {
+  content: "·";
+  margin-inline: 0.2rem 0.5rem;
+  color: var(--text-subtle);
 }
 
 .jobs-page .auth-profile-shell {
@@ -71,35 +96,22 @@
 }
 
 .jobs-page .quick-actions-wrap {
-  margin-bottom: 0.55rem;
-  padding: 0.62rem 0.72rem;
-  border: 1px solid var(--surface-11);
-  border-radius: 12px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-4) 70%, transparent), color-mix(in srgb, var(--surface-2) 70%, transparent));
-}
-
-.jobs-page .quick-btn {
-  padding: 0.43rem 0.78rem;
-  font-size: 0.8rem;
-  border-radius: 999px;
-  border-color: var(--surface-20);
-}
-
-.jobs-page .quick-actions-wrap {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 0.56rem 0.72rem;
-  padding: 0.56rem 0.64rem;
-  /* ponytail: reserve populated chip-row height so data-driven quick filters
-     can't reflow the page after boot (CLS). */
-  min-height: 4.25rem;
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--surface-15));
+  gap: 0.4rem 0.72rem;
+  margin-bottom: 0.45rem;
+  padding: 0.34rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--surface-15));
   border-radius: 10px;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent-soft-bg) 22%, transparent), transparent 45%),
     color-mix(in srgb, var(--surface-4) 86%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-18) 18%, transparent);
+  /* ponytail: reserve the populated chip-row height so data-driven quick
+     filters can't reflow the page after boot (CLS). Slimmed to the real chip
+     height + padding — the old 4.25rem reserved dead space above and below. */
+  min-height: 2.9rem;
 }
 
 .jobs-page .quick-actions-label {
@@ -121,12 +133,13 @@
 }
 
 .jobs-page .quick-chip {
-  min-height: 2rem;
-  padding: 0.34rem 0.68rem;
+  min-height: 1.85rem;
+  padding: 0.26rem 0.64rem;
   border-color: color-mix(in srgb, var(--surface-20) 78%, var(--accent));
   background: color-mix(in srgb, var(--surface-6) 86%, transparent);
   color: var(--text-secondary);
   font-weight: 650;
+  font-size: 0.78rem;
 }
 
 .jobs-page .quick-chip:hover {
@@ -142,16 +155,16 @@
 }
 
 .jobs-page .quick-clear {
-  min-height: 2rem;
+  min-height: 1.85rem;
   margin-left: 0.22rem;
-  padding: 0.34rem 0.68rem;
+  padding: 0.26rem 0.64rem;
   border-style: dashed;
   background: transparent;
 }
 
 .jobs-page .quick-customize-btn {
-  min-height: 2rem;
-  padding: 0.34rem 0.72rem;
+  min-height: 1.85rem;
+  padding: 0.26rem 0.66rem;
   border-color: color-mix(in srgb, var(--surface-20) 72%, var(--accent));
   background: color-mix(in srgb, var(--surface-6) 72%, transparent);
   color: var(--text-secondary);
@@ -164,19 +177,43 @@
 }
 
 .jobs-page .active-filters-summary {
-  margin: 0 0 0.95rem;
+  margin: 0 0 0.5rem;
   font-size: 0.79rem;
 }
 
+.jobs-page .active-filters-summary:empty {
+  display: none;
+}
+
 .jobs-page .jobs-toolbar {
-  margin-bottom: 0.9rem;
-  padding: 0.58rem 0.2rem;
+  margin-bottom: 0.35rem;
+  padding: 0.4rem 0.2rem 0.1rem;
+}
+
+/* ponytail: pin the actions group (Update-jobs button) to the right edge with
+   a stable width, so caption/status text changes can never reflow the grouped
+   buttons sideways. */
+.jobs-page .toolbar-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 
 .jobs-page .results-summary {
   font-size: 0.86rem;
   color: var(--text-secondary);
   min-height: 1.35rem;
+}
+
+/* ponytail: the results summary lives in the toolbar status row, pinned to
+   the left edge so it sits directly above the jobs table with no gap; the
+   caption and Last-updated timestamp stay right-aligned. */
+.jobs-page .jobs-toolbar-status .results-summary {
+  margin-right: auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .jobs-page .jobs-last-updated {
@@ -188,25 +225,36 @@
   inline-size: clamp(15.5rem, 22vw, 19rem);
   justify-content: center;
   text-align: center;
-  border-color: color-mix(in srgb, var(--accent) 54%, var(--btn-muted-border));
+  min-height: 2.25rem;
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--btn-muted-border));
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--accent-soft-bg) 42%, var(--btn-muted-bg)),
-    color-mix(in srgb, var(--accent-soft-bg) 24%, var(--btn-muted-bg))
+    color-mix(in srgb, var(--accent-soft-bg) 78%, var(--btn-muted-bg)),
+    color-mix(in srgb, var(--accent-soft-bg) 54%, var(--btn-muted-bg))
   );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* ponytail: idle buttons show a faint preview of the progress groove (the
+   live-signal green) so the background doesn't visibly "switch on" the moment
+   a run starts. Scoped to buttons without a progress mode; determinate /
+   indeterminate fills are driven inline by pipeline.js and keep winning. */
+.jobs-page .jobs-pipeline-btn:not([data-progress-mode]):not(.log-error) .jobs-pipeline-btn-fill {
+  width: 100% !important;
+  opacity: 0.1 !important;
 }
 
 .jobs-page .jobs-pipeline-btn:hover:not(:disabled):not([aria-disabled="true"]) {
-  border-color: color-mix(in srgb, var(--accent) 72%, var(--btn-muted-border));
+  border-color: color-mix(in srgb, var(--accent) 80%, var(--btn-muted-border));
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--accent-soft-bg) 52%, var(--btn-muted-bg-hover)),
-    color-mix(in srgb, var(--accent-soft-bg) 32%, var(--btn-muted-bg-hover))
+    color-mix(in srgb, var(--accent-soft-bg) 88%, var(--btn-muted-bg-hover)),
+    color-mix(in srgb, var(--accent-soft-bg) 62%, var(--btn-muted-bg-hover))
   );
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent),
-    0 5px 14px color-mix(in srgb, var(--accent) 14%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 5px 14px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .jobs-page .jobs-pipeline-btn-label {
@@ -215,7 +263,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* ponytail: tabular digits keep the per-second elapsed timer from jittering
+     the centered label text while a run is active. */
+  font-variant-numeric: tabular-nums;
   transition: opacity 0.12s ease;
+}
+
+.jobs-page .jobs-pipeline-btn:not([data-progress-mode]):not(.abortable) .jobs-pipeline-btn-label {
+  color: var(--accent-soft-text);
 }
 
 .jobs-page .jobs-pipeline-btn.abortable::after {
@@ -247,8 +302,15 @@
 }
 
 .jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-label,
-.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-label {
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-label,
+.jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-progress,
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-progress {
   opacity: 0;
+}
+
+.jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-fill,
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-fill {
+  opacity: 0 !important;
 }
 
 .jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"])::after,
@@ -258,6 +320,90 @@
 
 .jobs-page .jobs-pipeline-group {
   min-width: 280px;
+}
+
+/* ponytail: the toolbar is two structurally fixed rows — the actions row
+   (Reload + Update-jobs + badge) and this always-rendered status row. The
+   running caption and the Last-updated timestamp live here and swap via
+   hidden/opacity only, so starting a run can never reflow the buttons
+   sideways or change the toolbar height. */
+.jobs-page .jobs-toolbar-status {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  min-width: 0;
+  min-height: 1.35rem;
+  margin-top: 0;
+}
+
+/* ponytail: the live determinate sub-progress (counts/ETA) renders right-
+   aligned under the Update button, on a single ellipsized line so the row
+   height stays stable for the whole run. */
+.jobs-page .jobs-pipeline-progress-caption {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  line-height: 1.35;
+  padding-top: 0.1rem;
+}
+
+.jobs-page .jobs-pipeline-progress-caption[hidden] {
+  display: none;
+}
+
+.jobs-page .jobs-pipeline-progress-caption.running {
+  color: var(--text-secondary);
+}
+
+/* ponytail: animated liveness dot for the running caption — same deliberate
+   live-signal green as the fill stripe (--live-accent). */
+.jobs-page .jobs-pipeline-progress-caption.running::before {
+  content: "";
+  display: inline-block;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  margin-right: 0.42rem;
+  border-radius: 50%;
+  background: var(--live-accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--live-accent) 55%, transparent);
+  animation: jobsStatusDotPulse 1.6s ease-in-out infinite;
+}
+
+.jobs-page .jobs-last-updated {
+  transition: opacity 0.15s ease;
+}
+
+/* ponytail: while a run is active the previous run's timestamp stays visible
+   but clearly secondary — dimmed in place, never removed (no layout shift). */
+.jobs-page .jobs-toolbar-status.running .jobs-last-updated {
+  opacity: 0.55;
+}
+
+@keyframes jobsStatusDotPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jobs-page .jobs-pipeline-progress-caption.running::before {
+    animation: none;
+  }
+
+  /* !important beats the inline animation pipeline.js sets on the fill. */
+  .jobs-page .jobs-pipeline-btn .jobs-pipeline-btn-fill {
+    animation: none !important;
+  }
 }
 
 .jobs-page .jobs-list {
@@ -543,14 +689,17 @@
 }
 
 .jobs-page .pagination {
-  margin-top: 1.25rem;
-  margin-bottom: 1.25rem;
-  min-height: 2.75rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  min-height: 2.4rem;
 }
 
 .jobs-page .page-btn {
   border-radius: 10px;
   border-color: var(--surface-20);
+  padding: 0.36rem 0.66rem;
+  min-width: 2rem;
+  font-size: 0.8rem;
 }
 
 .jobs-page .page-nav-btn,
@@ -634,7 +783,7 @@
   }
 
   .jobs-page .jobs-header {
-    padding: 0.72rem 0.75rem;
+    padding: 0.1rem 0.2rem;
   }
 
   .jobs-page .filters {
@@ -643,10 +792,7 @@
   }
 
   .jobs-page .quick-actions-wrap {
-    padding: 0.52rem 0.55rem;
-  }
-
-  .jobs-page .quick-actions-wrap {
+    padding: 0.3rem 0.5rem;
     grid-template-columns: 1fr;
     align-items: stretch;
   }

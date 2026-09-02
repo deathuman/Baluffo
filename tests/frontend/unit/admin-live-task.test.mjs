@@ -297,7 +297,7 @@ test("admin live-task restore helper reattaches fetch watch from an active cold-
 
   const restoreActiveRunWatches = createRestoreActiveRunWatches({
     loadFetcherLivePayload: async () => null,
-    loadLatestFetcherReport: async () => ({
+    loadLatestFetcherSummary: async () => ({
       runId: "fetch_restore_cold_1",
       startedAt: "2026-03-29T11:49:22+02:00",
       finishedAt: "",

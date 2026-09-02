@@ -99,7 +99,7 @@ export function createAdminDiscoveryController({
         logController.appendDiscoveryLog("Discovery already running; attached to the active bridge-managed run.", "info");
         showToast("Source discovery already running. Attached to active run.", "info");
         loadOpsHealthData().catch(() => {});
-        progressController.loadLatestDiscoveryReport({ silent: true }).catch(() => {});
+        progressController.loadLatestDiscoveryReport({ silent: true, view: "summary" }).catch(() => {});
         scheduleOpsHealthPolling(250);
         return;
       }

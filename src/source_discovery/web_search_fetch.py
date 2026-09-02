@@ -20,7 +20,13 @@ from .config import (
     RETRYABLE_HTTP_CODES,
 )
 
-_EXPECTED_FETCH_RETRY_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, httpx.HTTPError)
+_EXPECTED_FETCH_RETRY_EXCEPTIONS = (
+    OSError,
+    TimeoutError,
+    RuntimeError,
+    httpx.HTTPError,
+    httpx.InvalidURL,
+)
 _EXPECTED_RUNTIME_FETCH_TOKENS = (
     "HTTP ",
     "HTTP Error ",
@@ -71,6 +77,11 @@ def _is_retryable_error(exc: Exception) -> bool:
     code = _http_code_from_error(exc)
     if code in RETRYABLE_HTTP_CODES:
         return True
+    if isinstance(exc, httpx.InvalidURL):
+        # ponytail: malformed redirect targets are usually transient upstream
+        # garbage (placeholder "http://" hops, empty-path Locations); a retry
+        # with the next attempt's URL shape is often enough.
+        return True
     message = str(exc).lower()
     return "timed out" in message or "temporary failure" in message
 
@@ -103,7 +114,7 @@ async def _async_sleep_adapter_initial_delay(adapter: str) -> None:
 
 
 def is_expected_web_search_fetch_failure(exc: Exception) -> bool:
-    if isinstance(exc, (OSError, TimeoutError, httpx.HTTPError)):
+    if isinstance(exc, (OSError, TimeoutError, httpx.HTTPError, httpx.InvalidURL)):
         return True
     if not isinstance(exc, RuntimeError):
         return False

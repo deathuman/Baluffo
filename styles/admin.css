@@ -1591,12 +1591,6 @@ body::-webkit-scrollbar-thumb:hover,
   }
 }
 
-@keyframes jobs-pipeline-pulse {
-  0% { opacity: 0.5; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 0.5; transform: scale(0.9); }
-}
-
 .admin-pipeline-locked .admin-fetcher-actions .clear-filters-btn {
   opacity: 0.86;
 }

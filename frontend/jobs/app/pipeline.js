@@ -1,6 +1,19 @@
 import { fetchBridge } from "../../shared/api-client.js";
-import { formatTaskProgressDetail } from "../../shared/task-progress.js";
 import { normalizeToken } from "../../shared/text-utils.js";
+import { formatDiscoverySubtaskProgress } from "../../shared/task-progress.js";
+
+// ponytail: helpers shared across the remaining formatters below.
+function compactCount(value) {
+  return Number(value || 0).toLocaleString("en-US");
+}
+
+function formatShortDuration(ms) {
+  const value = Math.max(0, Number(ms || 0));
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 90_000) return `${Math.max(1, Math.round(value / 1000))}s`;
+  if (value < 3_600_000) return `${Math.max(1, Math.round(value / 60_000))}m`;
+  return `${Math.max(1, Math.round(value / 3_600_000))}h`;
+}
 
 export const JOBS_UPDATE_COPY = Object.freeze({
   idleLabel: "Update jobs",
@@ -19,7 +32,11 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   abortingLabel: "Aborting...",
   // ponytail: separate from updatingLabel so stall copy can append "(no progress
   // for 1m 30s)" without replacing the running label itself.
-  stalledSuffixLabel: "No progress"
+  stalledSuffixLabel: "No progress",
+  // ponytail: distinct from stalledSuffixLabel — this is a *reassuring* cue for a
+  // stage that is still alive (heartbeating) but whose shown counters have not
+  // moved for a while, e.g. discovery grinding one slow probe.
+  stillWorkingSuffixLabel: "Still working — counts unchanged"
 });
 
 function getJobsUpdateUnavailableTooltip(error) {
@@ -154,6 +171,29 @@ function ensureJobsPipelineAbortButton(button) {
   return abortButton;
 }
 
+// ponytail: the live determinate sub-progress (counts/ETA) lives in a full-width
+// caption below the toolbar, not inside the fixed-width button — in-button the
+// text had to be nowrap/ellipsized and got clamped to a few tokens. The caption
+// wraps and keeps the button compact (stage + elapsed + fill groove).
+function ensureJobsPipelineProgressCaption(button) {
+  if (!button?.parentElement) return null;
+  // ponytail: the caption lives in the dedicated toolbar status row (a sibling
+  // of the actions group), so search the whole toolbar for it before falling
+  // back to the button's immediate parent (dynamic-creation path in tests).
+  const scope = (typeof button.closest === "function" && button.closest(".jobs-toolbar"))
+    || button.parentElement;
+  const existing = scope?.querySelector?.('[data-ui="jobs-pipeline-progress-caption"]');
+  if (existing) return existing;
+  const ownerDocument = button.ownerDocument || (typeof document !== "undefined" ? document : null);
+  if (!ownerDocument?.createElement) return null;
+  const caption = ownerDocument.createElement("span");
+  caption.className = "jobs-pipeline-progress jobs-pipeline-progress-caption";
+  caption.dataset.ui = "jobs-pipeline-progress-caption";
+  caption.hidden = true;
+  button.insertAdjacentElement?.("afterend", caption);
+  return caption;
+}
+
 function buildPipelineFillState(payload, { running = false } = {}) {
   const active = Boolean(running || payload?.active);
   if (!active) return { mode: "", fill: 0 };
@@ -207,13 +247,106 @@ export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
   return elapsed ? `${stage}... ${elapsed}` : `${stage}...`;
 }
 
+function numericOrZero(value) {
+  return Math.max(0, Number(value || 0));
+}
+
+function formatFetchCaption(progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
+  const resolved = numericOrZero(counts?.resolvedSources);
+  const perMinute = numericOrZero(counts?.completedSourcesPerMinute);
+  const aggPerMinute = String(counts?.etaBasis || "").trim() === "aggregate"
+    ? numericOrZero(counts?.activeAggregateRatePerMinute)
+    : 0;
+  const rate = aggPerMinute > 0 ? `fallback rate ${aggPerMinute}/min`
+    : perMinute > 0 ? `rate ${perMinute}/min`
+    : "";
+  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate"
+    && numericOrZero(counts?.sourceCount) > 0;
+  const resolvedLabel = showTotal
+    ? `${compactCount(resolved)}/${compactCount(counts?.sourceCount)} sources resolved`
+    : resolved > 0 ? `${compactCount(resolved)} sources resolved`
+    : "";
+  const etaLabel = formatShortDuration(counts?.estimatedRemainingMs);
+  const parts = [
+    phaseLabel,
+    resolvedLabel,
+    rate,
+    etaLabel ? `ETA ${etaLabel}` : ""
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function formatDiscoveryStageLabel(counts) {
+  const stageIndex = numericOrZero(counts?.stageIndex);
+  const stageTotal = numericOrZero(counts?.stageTotal);
+  if (stageIndex > 0 && stageTotal > 0) return `stage ${compactCount(stageIndex)}/${compactCount(stageTotal)}`;
+  if (stageIndex > 0) return `stage ${compactCount(stageIndex)}`;
+  return "";
+}
+
+function formatDiscoveryTargetLabel(counts, progress) {
+  const target = String(counts?.currentAdapter || counts?.targetLabel || progress?.targetLabel || "").trim();
+  return target ? `probing ${target}` : "";
+}
+
+function formatDiscoveryCaption(progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
+  const probed = numericOrZero(counts?.probedCandidates);
+  const probeTotal = numericOrZero(counts?.probeTotal);
+  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate" && probeTotal > 0;
+  const probedLabel = showTotal
+    ? `${compactCount(probed)}/${compactCount(probeTotal)} candidates probed`
+    : probed > 0 ? `${compactCount(probed)} candidates probed`
+    : "";
+  // ponytail: mirror the admin live page's richer detail — the GameDevMap audit
+  // subtask ticks (batch/URL/fetch-phase) via the shared formatter, plus compact
+  // stage/target/counter segments so long grinding phases keep showing motion.
+  const subtaskLabel = formatDiscoverySubtaskProgress(counts);
+  const counters = [];
+  const generated = numericOrZero(counts?.generatedCandidates);
+  const found = numericOrZero(counts?.foundEndpoints);
+  const queued = numericOrZero(counts?.queuedCandidates);
+  if (generated > 0) counters.push(`generated ${compactCount(generated)}`);
+  if (found > 0) counters.push(`endpoints ${compactCount(found)}`);
+  if (queued > 0) counters.push(`queued ${compactCount(queued)}`);
+  const parts = [
+    phaseLabel,
+    subtaskLabel,
+    formatDiscoveryStageLabel(counts),
+    formatDiscoveryTargetLabel(counts, progress),
+    probedLabel,
+    ...counters
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function formatPipelineCaption(progress) {
+  // Fallback for indeterminate/silent phases: surface the phase name and, when
+  // the pipeline is grinding (no determinate target yet), the step marker so the
+  // user sees it is still progressing rather than a frozen counts line.
+  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
+  const step = String(counts?.currentStep || "").trim();
+  const total = String(counts?.totalSteps || "").trim();
+  let stepLabel = "";
+  if (total && step) stepLabel = `step ${step}/${total}`;
+  else if (step) stepLabel = `step ${step}`;
+  return [phaseLabel, stepLabel].filter(Boolean).join(" · ");
+}
+
 export function formatBlockingTaskProgressLabel(task) {
   const taskType = String(task?.taskType || task?.type || "").trim().toLowerCase();
-  return formatTaskProgressDetail(
-    taskType,
-    task?.taskProgress || {},
-    task?.summary || {}
-  );
+  const progress = task?.taskProgress && typeof task.taskProgress === "object"
+    ? task.taskProgress
+    : {};
+  if (taskType === "fetch") return formatFetchCaption(progress);
+  if (taskType === "discovery") return formatDiscoveryCaption(progress);
+  // sync + generic fallback: concise phase name, plus the pipeline step marker
+  // when present, and no verbose shard/lifecycle counts in the button caption.
+  return formatPipelineCaption(progress);
 }
 
 export function buildJobsPipelineButtonView(
@@ -283,9 +416,9 @@ export function updateJobsPipelineUi(
   const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || JOBS_UPDATE_COPY.idleLabel);
   const chrome = ensureJobsPipelineButtonChrome(jobsPipelineRunBtn, idleLabel);
   const abortButton = ensureJobsPipelineAbortButton(jobsPipelineRunBtn);
+  const progressCaption = ensureJobsPipelineProgressCaption(jobsPipelineRunBtn);
   const fillEl = chrome?.fillEl || null;
   const labelEl = chrome?.labelEl || null;
-  const progressEl = chrome?.progressEl || null;
   const view = buildJobsPipelineButtonView(pipelinePayload, {
     running,
     disabled,
@@ -303,10 +436,15 @@ export function updateJobsPipelineUi(
   } else {
     jobsPipelineRunBtn.textContent = nextLabel;
   }
-  if (progressEl) {
-    const progressText = view.active ? String(view.progressLabel || "").trim() : "";
-    progressEl.textContent = progressText;
-    progressEl.hidden = !progressText;
+  const progressText = view.active ? String(view.progressLabel || "").trim() : "";
+  if (progressCaption) {
+    progressCaption.textContent = progressText;
+    progressCaption.hidden = !progressText;
+    progressCaption.classList?.toggle?.("running", view.active && Boolean(progressText));
+    // ponytail: the status row carries the run state so the Last-updated
+    // timestamp dims while a run is active via CSS — the slot itself never
+    // collapses, so the toolbar height stays invariant.
+    progressCaption.parentElement?.classList?.toggle?.("running", Boolean(view.active));
   }
   jobsPipelineRunBtn.disabled = Boolean(view.disabled);
   jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");

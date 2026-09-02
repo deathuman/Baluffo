@@ -683,7 +683,6 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     getRefreshInFlight,
     setRefreshInFlight,
     dispatchRefreshRequested,
-    setRefreshButtonDisabled,
     setProgress,
     setSourceStatus,
     firstLoadRequestTimeoutMs,
@@ -694,7 +693,6 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     getAllJobs,
     setAllJobs,
     normalizeRows,
-    setRefreshJobsNeedsAttention,
     isDesktopRuntimeMode,
     writeCachedJobs,
     fetchJobsReport,
@@ -717,12 +715,7 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
   dispatchRefreshRequested();
 
   // Keep the page interactive while noncritical background refreshes run after
-  // startup-preview/cache boot. Only blocking/manual refresh flows should lock
-  // the refresh control.
-  const disableRefreshButton = Boolean(manual || firstLoad);
-  if (disableRefreshButton) {
-    setRefreshButtonDisabled(true);
-  }
+  // startup-preview/cache boot. Manual and first-load refreshes show progress.
   if (manual || firstLoad) setProgress(true);
   if (manual) setSourceStatus("Reloading jobs...");
 
@@ -763,17 +756,14 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
       return false;
     }
     setAllJobs(normalizedJobs);
-    setRefreshJobsNeedsAttention(false);
-    const now = Date.now();
     const latestReport = typeof fetchJobsReport === "function"
       ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
       : null;
     const reportTimestamp = reportFinishedTimestamp(latestReport);
-    const lastUpdated = reportTimestamp || (!isDesktopRuntimeMode() ? now : null);
     if (!isDesktopRuntimeMode()) {
       await writeCachedJobs(getAllJobs());
     }
-    updateLastUpdatedText(lastUpdated);
+    updateLastUpdatedText(reportTimestamp);
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
@@ -830,9 +820,6 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     return false;
   } finally {
     setRefreshInFlight(false);
-    if (disableRefreshButton) {
-      setRefreshButtonDisabled(false);
-    }
     setProgress(false);
   }
 }

@@ -66,6 +66,39 @@ def test_fetch_text_with_retry_skips_adapter_delay_for_regular_adapters() -> Non
     assert sleeps == []
 
 
+def test_fetch_text_with_retry_retries_httpx_invalid_url() -> None:
+    # Regression: a malformed redirect Location raised httpx.InvalidURL, which is
+    # not an httpx.HTTPError subclass; it must be treated as an expected,
+    # retryable network error instead of escaping the retry wrapper.
+    import httpx
+
+    calls: list[str] = []
+
+    def fetcher(url: str, _timeout_s: int) -> str:
+        calls.append(url)
+        if len(calls) == 1:
+            raise httpx.InvalidURL("For absolute URLs, path must be empty or begin with '/'")
+        return "ok"
+
+    result = web_search_fetch.fetch_text_with_retry(
+        "https://studio.example/jobs",
+        5,
+        adapter="static",
+        fetcher=fetcher,
+    )
+
+    assert result == "ok"
+    assert calls == ["https://studio.example/jobs", "https://studio.example/jobs"]
+
+
+def test_is_expected_web_search_fetch_failure_accepts_httpx_invalid_url() -> None:
+    import httpx
+
+    assert web_search_fetch.is_expected_web_search_fetch_failure(
+        httpx.InvalidURL("For absolute URLs, path must be empty or begin with '/'")
+    )
+
+
 def test_fetch_text_with_retry_does_not_swallow_unexpected_bug() -> None:
     def fetcher(_url: str, _timeout_s: int) -> str:
         raise AssertionError("fetch shim bug")

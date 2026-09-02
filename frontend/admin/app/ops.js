@@ -30,7 +30,7 @@ export function createAdminOpsController({
   onBridgeStatusChange,
   attachToActiveFetchRun,
   loadLatestFetcherSummary,
-  loadLatestFetcherReport,
+  _loadLatestFetcherReport,
   attachToActiveDiscoveryRun,
   loadLatestDiscoveryReport,
   onActivePipelineIdle,

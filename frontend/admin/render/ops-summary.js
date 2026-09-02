@@ -89,8 +89,6 @@ function formatPipelineScheduleStatus(entry) {
   const nextRaw = String(entry?.nextRunAt || "").trim();
   const next = formatDateTime(nextRaw);
   const hasNext = Boolean(nextRaw) && next !== "unknown";
-  const nextMs = Date.parse(nextRaw);
-  const hasFutureNext = hasNext && Number.isFinite(nextMs) && nextMs > Date.now();
   const error = String(entry?.lastTriggerError || "").trim();
   if (!entry || Object.keys(entry).length === 0 || entry.scheduleLoading) {
     return entry?.scheduleRetrying ? "schedule delayed; retrying" : "loading schedule...";

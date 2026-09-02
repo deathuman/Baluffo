@@ -39,7 +39,6 @@ test("container runtime flag is forwarded through compose, boot, and composition
 function createDeps(overrides = {}) {
   const recorded = {
     statusTexts: [],
-    needsAttention: [],
     appliedIds: [],
     triggered: []
   };
@@ -75,12 +74,12 @@ function createDeps(overrides = {}) {
     feedController: {
       setSourceStatus: text => recorded.statusTexts.push(String(text || "")),
       setProgress: () => {},
-      setRefreshJobsNeedsAttention: value => recorded.needsAttention.push(Boolean(value)),
       refreshJobsNow: async () => {
         recorded.triggered.push("refresh");
-        return false;
+        return true;
       }
     },
+    autoRefreshAckDelayMs: 0,
     emitDesktopStartupMetric: () => {},
     normalizeLifecycleStatus: value => value,
     writeAutoRefreshAppliedId: (_key, id) => recorded.appliedIds.push(id),
@@ -106,7 +105,7 @@ function signalRaw(id = "sig-container-1") {
   return JSON.stringify({ id, source: "admin_fetcher", finishedAt: "2026-08-26T08:00:00.000Z" });
 }
 
-test("container boot acknowledges a stored admin signal as reload-needed without fetching the feed", async () => {
+test("container boot schedules an automatic refresh for a stored admin signal without fetching mid-boot", async () => {
   const { deps, recorded } = createDeps({
     readAutoRefreshSignal: () => signalRaw()
   });
@@ -114,15 +113,21 @@ test("container boot acknowledges a stored admin signal as reload-needed without
 
   await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
 
+  // ponytail: the ack itself stays cheap — the refresh is deferred, never run
+  // synchronously mid-boot.
   assert.deepEqual(recorded.triggered, []);
-  assert.deepEqual(recorded.needsAttention, [true]);
   assert.deepEqual(recorded.appliedIds, ["sig-container-1"]);
-  assert.match(recorded.statusTexts.at(-1), /reload/i);
+  assert.match(recorded.statusTexts.at(-1), /Loading new jobs/i);
   assert.equal(deps.runtimeState.pendingAutoRefreshSignal, null);
+
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(recorded.triggered, ["refresh"]);
+  assert.match(recorded.statusTexts.at(-1), /Loading new jobs/i);
 
   await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
 
-  assert.deepEqual(recorded.needsAttention, [true]);
+  assert.deepEqual(recorded.triggered, ["refresh"]);
   assert.deepEqual(recorded.appliedIds, ["sig-container-1"]);
 });
 
@@ -146,8 +151,8 @@ test("container boot acknowledges an in-memory pending signal without another st
   await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
 
   assert.equal(storageReads, 0);
-  assert.deepEqual(recorded.triggered, []);
-  assert.deepEqual(recorded.needsAttention, [true]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(recorded.triggered, ["refresh"]);
   assert.deepEqual(recorded.appliedIds, ["sig-pending-1"]);
   assert.equal(deps.runtimeState.pendingAutoRefreshSignal, null);
 });
@@ -157,9 +162,9 @@ test("container boot with no pending signal leaves the boot path untouched", asy
   const flow = createJobsPageFlow(deps);
 
   await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
+  await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.deepEqual(recorded.triggered, []);
-  assert.deepEqual(recorded.needsAttention, []);
   assert.deepEqual(recorded.appliedIds, []);
 });
 

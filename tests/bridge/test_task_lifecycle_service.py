@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -575,3 +575,82 @@ def test_admin_lifecycle_reads_task_events_from_sqlite_when_authoritative(
         assert len(events) == 1
         assert events[0]["event"] == "sync_push"
         assert events[0]["message"] == "Pushing sources."
+
+
+def test_mirror_history_row_running_entry_carries_owner_fields(tmp_path: Path) -> None:
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        lifecycle = AdminTaskLifecycle(
+            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
+            max_rows=lambda: 240,
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+        )
+
+        lifecycle.mirror_history_row(
+            {
+                "runId": "sync_mirrored",
+                "type": "sync",
+                "status": "running",
+                "startedAt": "2026-05-06T18:00:00+00:00",
+                "summary": {"stage": "pull"},
+            }
+        )
+
+        rows = lifecycle.rows()
+        mirrored = next((row for row in rows if row.get("runId") == "sync_mirrored"), None)
+        assert mirrored is not None
+        assert mirrored["status"] == "running"
+        # The mirror must never create an owner-less active row: such rows are
+        # unreapable zombies once their heartbeat goes cold.
+        assert mirrored["ownerKind"] == "bridge_thread"
+
+
+def test_mirror_history_row_without_finished_at_is_reaped_as_stale_after_restart(
+    tmp_path: Path,
+) -> None:
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        lifecycle = AdminTaskLifecycle(
+            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
+            max_rows=lambda: 240,
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+        )
+        lifecycle.mirror_history_row(
+            {
+                "runId": "sync_mirrored",
+                "type": "sync",
+                "status": "running",
+                "startedAt": "2026-05-06T18:00:00+00:00",
+            }
+        )
+
+        # bridge_thread owner rows are always stale after a restart, so the
+        # startup reaper terminalizes them instead of leaving a zombie behind.
+        from src.bridge.lifecycle_cleanup import _row_is_stale_after_restart
+
+        row = next(
+            (
+                {**item, "ownerKind": item.get("ownerKind", ""), "ownerPid": 0}
+                for item in lifecycle.rows()
+                if item.get("runId") == "sync_mirrored"
+            ),
+            None,
+        )
+        assert row is not None
+        assert _row_is_stale_after_restart(
+            row,
+            lambda pid: False,
+            now_utc=datetime(2026, 5, 6, 19, 5, tzinfo=UTC),
+        )

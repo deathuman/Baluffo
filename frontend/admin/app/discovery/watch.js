@@ -191,6 +191,8 @@ export function createAdminDiscoveryWatchController({
         serverLogSignatures: createBoundedSignatureSet(),
         lastHeartbeatAtMs: 0,
         lastActivityAtMs: Date.now(),
+        lastCountsSignature: "",
+        lastCountsChangedAtMs: Date.now(),
         livePollGuard: createLiveTaskPollGuard({
           baseDelayMs: activeProgressPollIntervalMs,
           maxDelayMs: DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS
@@ -270,7 +272,7 @@ export function createAdminDiscoveryWatchController({
       return;
     }
 
-    const report = await getBridge("/discovery/report").catch(() => null);
+    const report = await getBridge("/discovery/report?view=summary").catch(() => null);
     if (!meaningfulLivePayload && report) {
       if (!String(report?.finishedAt || "").trim()) {
         updateDiscoveryProgressFromReport(report, { running: true });

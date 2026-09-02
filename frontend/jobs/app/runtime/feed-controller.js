@@ -39,7 +39,7 @@ export function createJobsFeedController({
   classifyCompanyType,
   detectWorkType,
   setProgressVisibility,
-  setStatusText,
+  _setStatusText,
   setText,
   jobsCacheDb,
   jobsCacheDbVersion,
@@ -81,7 +81,17 @@ export function createJobsFeedController({
 
   function updateLastUpdatedText(timestamp) {
     if (!dom.jobsLastUpdatedEl) return;
-    dom.jobsLastUpdatedEl.textContent = getJobsLastUpdatedText(timestamp);
+    const text = getJobsLastUpdatedText(timestamp);
+    if (!text) {
+      // ponytail: keep the last completed run's timestamp visible while a new
+      // run is active — the toolbar status row dims it via CSS instead of
+      // collapsing the slot (zero layout shift). Only a page that has never
+      // had a completed report stays blank.
+      dom.jobsLastUpdatedEl.hidden = !String(dom.jobsLastUpdatedEl.textContent || "").trim();
+      return;
+    }
+    dom.jobsLastUpdatedEl.textContent = text;
+    dom.jobsLastUpdatedEl.hidden = false;
   }
 
   async function writeCachedJobs(jobs) {
@@ -91,17 +101,6 @@ export function createJobsFeedController({
       cacheKey: jobsCacheKey,
       now: now()
     });
-  }
-
-  function setRefreshJobsNeedsAttention(needsRefresh) {
-    const needs = Boolean(needsRefresh);
-    if (dom.refreshJobsBtn) {
-      dom.refreshJobsBtn.classList.toggle("needs-refresh", needs);
-      dom.refreshJobsBtn.setAttribute("aria-live", "polite");
-    }
-    if (dom.refreshJobsNeededBadgeEl) {
-      dom.refreshJobsNeededBadgeEl.classList.toggle("hidden", !needs);
-    }
   }
 
   function setProgress(visible) {
@@ -200,9 +199,6 @@ export function createJobsFeedController({
       dispatchRefreshRequested: () => {
         jobsDispatch.dispatch({ type: jobsActions.REFRESH_REQUESTED });
       },
-      setRefreshButtonDisabled: disabled => {
-        if (dom.refreshJobsBtn) dom.refreshJobsBtn.disabled = disabled;
-      },
       setProgress,
       setSourceStatus,
       firstLoadRequestTimeoutMs: jobsFirstLoadRequestTimeoutMs,
@@ -220,7 +216,6 @@ export function createJobsFeedController({
         runtimeState.allJobs = jobs;
       },
       normalizeRows,
-      setRefreshJobsNeedsAttention,
       isDesktopRuntimeMode,
       isContainerRuntimeMode,
       writeCachedJobs,
@@ -286,7 +281,6 @@ export function createJobsFeedController({
     writeCachedJobs,
     loadStartupPreviewJobs,
     fetchJobsReport,
-    setRefreshJobsNeedsAttention,
     fetchUnifiedJobs,
     fetchJsonFromCandidates,
     renderDataSources,

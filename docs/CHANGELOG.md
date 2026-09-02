@@ -10,6 +10,22 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.143] - 2026-09-02
+### Changed
+
+- Jobs page density pass: slim presets row and pagination, merged duplicate quick-actions CSS, active-filters summary hidden when idle, single merged status/sign-in banner, de-chromed NEW badge, de-carded header, accent-styled Update-jobs button. Pipeline CTA caption now shows live GameDevMap audit subtask ticks and stage/target/counter segments, matching the admin page. Bridge hardening: httpx.InvalidURL from malformed redirects is an expected per-page failure instead of crashing the discovery worker; two new pipeline helpers refactored under the C901 threshold.
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
+### Fixed
+
+- Bridge task lifecycle: history mirror no longer creates owner-less active rows.
+  `mirror_history_row` mirrored an unfinished history entry via `start_run` without
+  owner fields; if the real worker never terminalized it (crash between history write
+  and lifecycle finish), the mirrored row was an unreapable zombie of the same shape
+  as the event-only stubs. Mirrored running rows now carry `owner_kind='bridge_thread'`,
+  which the startup reaper already treats as stale after restart.
+
 ## [0.2.142] - 2026-09-02
 ### Fixed
 

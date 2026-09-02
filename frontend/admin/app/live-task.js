@@ -475,7 +475,6 @@ export function resetLiveTaskPlaceholder({
 export function createRestoreActiveRunWatches({
   loadFetcherLivePayload,
   loadLatestFetcherSummary,
-  loadLatestFetcherReport,
   fetcherController,
   loadDiscoveryLivePayload,
   loadLatestDiscoveryReport,
@@ -504,7 +503,7 @@ export function createRestoreActiveRunWatches({
         });
         await hydrateActiveFetcherProgress();
       } else {
-        const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
+        const fetchReport = await loadLatestFetcherSummary({ silent: true }).catch(() => null);
         const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
         if (fetchMeta) {
           fetcherController?.attachToActiveFetchRun?.(fetchMeta, {
@@ -531,7 +530,7 @@ export function createRestoreActiveRunWatches({
           announceStart: false
         });
       } else {
-        const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);
+        const discoveryReport = await loadLatestDiscoveryReport({ silent: true, view: "summary" }).catch(() => null);
         if (isRestorableLiveTaskRun(discoveryReport)) {
           discoveryController?.attachToActiveDiscoveryRun?.({
             runId: discoveryReport?.runId,

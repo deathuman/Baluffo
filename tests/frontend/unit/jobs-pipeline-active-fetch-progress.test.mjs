@@ -5,6 +5,7 @@ import {
   createButtonMock,
   createJobsPipelineController,
   createJobsPipelineUiState,
+  getJobsPipelineProgressCaption,
   installFakeTimers
 } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
@@ -73,10 +74,95 @@ test("pollJobsPipelineStatus shows bounded active fetch progress while pipeline 
     await controller.pollJobsPipelineStatus();
 
     assert.equal(uiState.active, true);
+    const caption = getJobsPipelineProgressCaption(button);
+    assert.ok(caption, "sub-progress caption should be created");
+    assert.equal(caption.hidden, false);
+    assert.equal(caption.classList.contains("running"), true);
     assert.match(String(button.textContent || ""), /Fetching job listings/i);
-    assert.match(String(button.textContent || ""), /51\/1,154 sources resolved/i);
-    assert.match(String(button.textContent || ""), /rate 12\/min/i);
-    assert.match(String(button.textContent || ""), /current Studio A, Studio B, \+more/i);
+    // ponytail: the compact caption keeps the phase + high-signal counts/ETA and
+    // drops the verbose running-source detail, so the caption reads cleanly.
+    assert.match(String(caption.textContent || ""), /51\/1,154 sources resolved/i);
+    assert.match(String(caption.textContent || ""), /rate 12\/min/i);
+    assert.match(String(caption.textContent || ""), /ETA 1h/i);
+    assert.doesNotMatch(String(caption.textContent || ""), /current Studio A, Studio B/);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("pollJobsPipelineStatus uses the live active child from the pipeline status payload for sub-progress", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+    uiState.active = true;
+    uiState.runId = "pipeline_livechild";
+    uiState.startedAt = "2026-03-12T12:00:00.000Z";
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return {
+            active: true,
+            runId: "pipeline_livechild",
+            stage: "fetch",
+            startedAt: "2026-03-12T12:00:00.000Z",
+            activeChildren: [
+              {
+                runId: "fetch_live",
+                taskType: "fetch",
+                type: "fetch",
+                active: true,
+                startedAt: "2026-03-12T12:00:05.000Z",
+                taskProgress: {
+                  active: true,
+                  phaseKey: "executing_sources",
+                  phaseLabel: "Executing sources",
+                  mode: "determinate",
+                  ratio: 0.25,
+                  counts: {
+                    resolvedSources: 100,
+                    sourceCount: 400,
+                    runningTasks: 8,
+                    queuedTasks: 300,
+                    outputCount: 500,
+                    failedSources: 2,
+                    completedSourcesPerMinute: 10,
+                    estimatedRemainingMs: 900000
+                  }
+                }
+              }
+            ]
+          };
+        }
+        if (path === "/ops/task-state?view=summary") {
+          return { tasks: [] };
+        }
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(uiState.active, true);
+    // live active child drives the fill (child determinate ratio) even with no
+    // task-state blocking row present.
+    assert.equal(button.dataset.progressMode, "determinate");
+    assert.equal(button.dataset.progressFill, "25");
+    const caption = getJobsPipelineProgressCaption(button);
+    assert.ok(caption, "sub-progress caption should be created");
+    assert.match(String(button.textContent || ""), /Fetching job listings/i);
+    assert.match(String(caption.textContent || ""), /Executing sources/i);
+    assert.match(String(caption.textContent || ""), /100\/400 sources resolved/i);
+    assert.match(String(caption.textContent || ""), /ETA 15m/i);
   } finally {
     restoreTimers();
   }
@@ -155,10 +241,15 @@ test("pollJobsPipelineStatus shows aggregate fetch tail ETA without extra routes
 
     await controller.pollJobsPipelineStatus();
 
-    assert.match(String(button.textContent || ""), /333\/334 sources resolved/i);
-    assert.match(String(button.textContent || ""), /fallback 212\/551/i);
-    assert.match(String(button.textContent || ""), /fallback rate 18\/min/i);
-    assert.match(String(button.textContent || ""), /ETA 18m/i);
+    const aggregateCaption = getJobsPipelineProgressCaption(button);
+    assert.ok(aggregateCaption, "sub-progress caption should be created");
+    // ponytail: aggregate detail is compacted to the resolved count + fallback
+    // rate + ETA; the per-phase aggregate completed/total detail is not surfaced
+    // in the button caption.
+    assert.match(String(aggregateCaption.textContent || ""), /333\/334 sources resolved/i);
+    assert.match(String(aggregateCaption.textContent || ""), /fallback rate 18\/min/i);
+    assert.match(String(aggregateCaption.textContent || ""), /ETA 18m/i);
+    assert.doesNotMatch(String(aggregateCaption.textContent || ""), /fallback 212\/551/i);
     assert.deepEqual(paths, [
       "/tasks/run-jobs-pipeline-status",
       "/ops/task-state?view=summary"

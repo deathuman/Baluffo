@@ -59,6 +59,66 @@ class _DiscoveryRouteApi(Protocol):
     def get_discovery_config_payload(self) -> dict[str, Any]: ...
 
 
+def _discovery_summary_task_progress(
+    task_progress: dict[str, Any],
+    summary: dict[str, Any],
+    finished_at: str,
+) -> dict[str, Any]:
+    """Bounded discovery taskProgress for the summary view.
+
+    Prefers the report's own top-level taskProgress (the count-rich phase
+    shape) when it is present and meaningful, so live run-time surfaces that
+    swap to `view=summary` keep showing real phase labels and counters. Falls
+    back to a derivation from the summary counters so the payload stays
+    degraded-empty-safe even when the full report body is too large to decode.
+    """
+    task_progress = _as_dict(task_progress)
+    summary = _as_dict(summary)
+    counts = task_progress.get("counts")
+    has_rich_progress = bool(
+        counts
+        and isinstance(counts, dict)
+        or _clean_text(task_progress.get("phaseKey") or task_progress.get("phase"))
+        or _clean_text(task_progress.get("phaseLabel") or task_progress.get("label"))
+    )
+    if has_rich_progress:
+        return {
+            "active": bool(task_progress.get("active")),
+            "phaseKey": _clean_text(task_progress.get("phaseKey") or task_progress.get("phase")),
+            "phaseLabel": _clean_text(
+                task_progress.get("phaseLabel") or task_progress.get("label")
+            ),
+            "mode": _clean_text(task_progress.get("mode")) or "indeterminate",
+            "ratio": task_progress.get("ratio", 0),
+            "counts": counts if isinstance(counts, dict) else {},
+        }
+    finished = bool(str(finished_at or "").strip())
+    phase_key = _clean_text(summary.get("phaseKey") or summary.get("phase"))
+    if not phase_key:
+        phase_key = "completed" if finished else "starting"
+    phase_label = _clean_text(summary.get("phaseLabel") or summary.get("phase"))
+    if not phase_label:
+        phase_label = "Discovery completed" if finished else "Initializing scan"
+    return {
+        "active": not finished,
+        "phaseKey": phase_key,
+        "phaseLabel": phase_label,
+        "mode": "determinate" if finished else "indeterminate",
+        "ratio": 1.0 if finished else 0,
+        "counts": {
+            "foundEndpoints": summary.get("foundEndpointCount", 0),
+            "generatedCandidates": summary.get("generatedCandidateCount", 0),
+            "survivedDedupeCandidates": summary.get("survivedDedupeCandidateCount", 0),
+            "probedCandidates": summary.get("probedCandidateCount")
+            or summary.get("probedCount")
+            or 0,
+            "queuedCandidates": summary.get("queuedCandidateCount", 0),
+            "deferredCandidates": summary.get("discoverableButDeferredCount", 0),
+            "failedProbes": summary.get("failedProbeCount", 0),
+        },
+    }
+
+
 def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
     summary = _as_dict(report.get("summary"))
     runtime = _as_dict(report.get("runtime"))
@@ -78,12 +138,11 @@ def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
         "status": _clean_text(report.get("status")),
         "startedAt": _clean_text(report.get("startedAt")),
         "finishedAt": _clean_text(report.get("finishedAt")),
-        "taskProgress": {
-            "active": bool(task_progress.get("active")),
-            "phase": _clean_text(task_progress.get("phase")),
-            "label": _clean_text(task_progress.get("label")),
-            "percent": task_progress.get("percent", 0),
-        },
+        "taskProgress": _discovery_summary_task_progress(
+            task_progress,
+            summary,
+            _clean_text(report.get("finishedAt")),
+        ),
         "summary": {
             key: summary.get(key)
             for key in (

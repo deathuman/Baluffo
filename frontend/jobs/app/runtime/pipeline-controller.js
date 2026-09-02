@@ -120,7 +120,23 @@ function buildBlockingTaskPayload(task) {
     if (phaseLabel) {
       payload.progress = { label: phaseLabel };
     }
+    return payload;
   }
+  // ponytail: surface the child's own determinate ratio so the Update-jobs button
+  // shows a real fill (e.g. "probing 128/431") for the whole stage instead of a
+  // frozen 1/3-step bar. Indeterminate phases (no countable target yet) keep a
+  // sweeping fill so the button still visibly moves while the stage is genuinely
+  // silent. The frame deliberately has *no* label so the primary stage copy
+  // (e.g. "Fetching job listings...") is unaffected — sub-progress text lives in
+  // progressLabel via formatBlockingTaskProgressLabel.
+  const determinate = String(taskProgress.mode || "").trim().toLowerCase() === "determinate";
+  const ratio = Number(taskProgress.ratio);
+  payload.progress = {
+    mode: determinate ? "determinate" : "indeterminate",
+    percent: determinate && Number.isFinite(ratio)
+      ? Math.round(Math.max(0, Math.min(1, ratio)) * 100)
+      : undefined
+  };
   return payload;
 }
 
@@ -270,7 +286,6 @@ export function createJobsPipelineController({
   callJobsBridge,
   getAllJobs,
   showToast,
-  setRefreshJobsNeedsAttention,
   refreshJobsAfterPipelineCompletion = null,
   isErrorStage,
   pollDelayMs,
@@ -307,8 +322,15 @@ export function createJobsPipelineController({
       firstRun: jobsPipelineUiState.updateTooltipFirstRun,
       firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
     });
+    // ponytail: distinguish a true stall (heartbeat silent, stage exceeded its
+    // window — "no progress") from a quiet-but-alive stage (still heartbeating,
+    // counters just frozen while it grinds a long step — "still working").
+    const quietInfo = pipelinePayload?.childQuiet && typeof pipelinePayload.childQuiet === "object"
+      ? pipelinePayload.childQuiet
+      : null;
+    const stalled = Boolean(stallInfo && running && !jobsPipelineUiState.updateTooltipBridgeError);
     let stallSuffix = "";
-    if (stallInfo && running && !jobsPipelineUiState.updateTooltipBridgeError) {
+    if (stalled) {
       const silent = Number(stallInfo.silentSeconds || 0);
       if (Number.isFinite(silent) && silent >= 1) {
         // ponytail: compact "1m 30s" style duration; keeps tooltip readable
@@ -317,13 +339,21 @@ export function createJobsPipelineController({
         stallSuffix = `\n${JOBS_UPDATE_COPY.stalledSuffixLabel} for ${totalMin}m.`;
       }
     }
+    let quietSuffix = "";
+    if (!stalled && quietInfo && running && !jobsPipelineUiState.updateTooltipBridgeError) {
+      const quietSeconds = Number(quietInfo.quietSeconds || 0);
+      if (Number.isFinite(quietSeconds) && quietSeconds >= 1) {
+        const totalMin = Math.max(1, Math.round(quietSeconds / 60));
+        quietSuffix = `\n${JOBS_UPDATE_COPY.stillWorkingSuffixLabel} for ${totalMin}m.`;
+      }
+    }
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
       disabled,
       buttonLabel: aborting ? JOBS_UPDATE_COPY.abortingLabel : buttonLabel,
       progressLabel,
-      buttonTooltip: baseTooltip + stallSuffix,
+      buttonTooltip: baseTooltip + stallSuffix + quietSuffix,
       isError,
       abortable,
       aborting
@@ -515,10 +545,30 @@ export function createJobsPipelineController({
     }
   }
 
+  function activeChildFromPipelinePayload(payload) {
+    const children = Array.isArray(payload?.activeChildren) ? payload.activeChildren : [];
+    const child = children[0];
+    if (!child || typeof child !== "object") return null;
+    const taskType = normalizeTaskType(child);
+    if (!taskType || !taskRunId(child)) return null;
+    return {
+      ...child,
+      taskType,
+      type: taskType,
+      active: true,
+      startedAt: String(child?.startedAt || payload?.startedAt || "")
+    };
+  }
+
   function attachActivePipelinePayload(payload, { toastMessage = "", blockingTask = null } = {}) {
     const runId = String(payload?.runId || jobsPipelineUiState.runId || "");
     const startedAt = String(payload?.startedAt || jobsPipelineUiState.startedAt || "");
     const activePayload = { ...payload, active: true, runId, startedAt };
+    // ponytail: prefer the live active child carried directly by the pipeline
+    // status payload (refreshed every poll) so the button shows real sub-progress
+    // without waiting on the throttled 15s /ops/task-state refresh. task-state
+    // is still consulted for first-run/bootstrap detection.
+    const liveChildRow = activeChildFromPipelinePayload(activePayload);
     jobsPipelineUiState.bridgeOnline = true;
     jobsPipelineUiState.updateTooltipBridgeError = "";
     jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
@@ -532,20 +582,28 @@ export function createJobsPipelineController({
     // Backend emits stageTransitions as an append-only list via
     // /tasks/run-jobs-pipeline-status; we track how many we've already seen.
     maybeToastStageTransitions(jobsPipelineUiState, activePayload, showToast);
-    const childTaskType = normalizeTaskType(blockingTask);
-    if (blockingTask && childTaskType && childTaskType !== "pipeline") {
-      const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask);
+    const childTaskType = normalizeTaskType(liveChildRow) || normalizeTaskType(blockingTask);
+    if (childTaskType && childTaskType !== "pipeline") {
+      const primaryRow = liveChildRow || blockingTask;
+      const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask || primaryRow);
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
-      const blockingPayload = buildBlockingTaskPayload(blockingTask);
-      const blockingProgressLabel = formatBlockingTaskProgressLabel(blockingTask);
+      const blockingPayload = buildBlockingTaskPayload(primaryRow);
+      const blockingProgressLabel = formatBlockingTaskProgressLabel(primaryRow);
+      // ponytail: the child payload carries the determinate fill (child ratio),
+      // while stall/shutdown state still comes from the pipeline payload itself.
+      const mergedPayload = {
+        ...blockingPayload,
+        stallInfo: activePayload?.stallInfo,
+        childQuiet: activePayload?.childQuiet
+      };
       updateJobsPipelineUi({
         running: true,
         disabled: true,
         buttonLabel: getPipelineRunningLabel(blockingPayload),
-        progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
+        progressLabel: blockingProgressLabel || String(primaryRow?.taskProgress?.phaseLabel || "").trim(),
         firstRunBootstrapActive,
-        pipelinePayload: blockingPayload,
-        abortTask: isAbortableTask(blockingTask) ? blockingTask : {
+        pipelinePayload: mergedPayload,
+        abortTask: isAbortableTask(primaryRow) ? primaryRow : {
           active: true,
           taskType: "pipeline",
           runId
@@ -594,7 +652,6 @@ export function createJobsPipelineController({
       resetJobsPipelineAbortState();
     }
     const hasError = !userAbortCompletion && Boolean(isErrorStage(payload));
-    setRefreshJobsNeedsAttention(updatesFound);
     jobsPipelineUiState.active = false;
     jobsPipelineUiState.pendingStart = false;
     jobsPipelineUiState.runId = "";

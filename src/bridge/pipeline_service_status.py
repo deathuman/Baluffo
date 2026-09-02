@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.bridge.pipeline_stall import compute_pipeline_stall_info
+from src.bridge.pipeline_stall import (
+    compute_pipeline_child_quiet_info,
+    compute_pipeline_stall_info,
+)
 
 from .pipeline_service_types import PipelineAbortRequested, PipelineServiceState
 
@@ -39,6 +42,13 @@ class _PipelineServiceStatusMixin(PipelineServiceState):
             stall = compute_pipeline_stall_info(payload, parse_iso=self._parse_iso)
             if stall:
                 payload["stallInfo"] = stall
+            else:
+                # ponytail: a heartbeating-but-slow stage is a different state than
+                # a stall; report it separately so the UI can show "still working —
+                # counts unchanged for Xm" instead of a false alarm.
+                quiet = compute_pipeline_child_quiet_info(payload, parse_iso=self._parse_iso)
+                if quiet:
+                    payload["childQuiet"] = quiet
             return payload
 
     def _refresh_child_lifecycle_evidence(

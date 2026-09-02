@@ -96,10 +96,18 @@ function mapDiscoveryHybridRatio(progress) {
   }
 }
 
+function formatQuietElapsedMs(quietMs) {
+  const value = Math.max(0, Number(quietMs || 0));
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 60_000) return "1m";
+  return `${Math.max(1, Math.round(value / 60_000))}m`;
+}
+
 function deriveDiscoveryHybridProgressView(progress, {
   taskLabel,
   fallbackPhaseLabel = "",
-  formatCountsLabel
+  formatCountsLabel,
+  quietMs = 0
 } = {}) {
   const normalized = normalizeTaskProgressContract(progress);
   if (!normalized || !normalized.active) {
@@ -116,11 +124,16 @@ function deriveDiscoveryHybridProgressView(progress, {
     : "";
   const hybridRatio = mapDiscoveryHybridRatio(normalized);
   const determinate = Number.isFinite(hybridRatio) && hybridRatio !== null;
+  // ponytail: when the stage is alive (heartbeating / counting) but the shown
+  // counters have not moved for a while (e.g. grinding one slow probe), reassure
+  // the user it is still working rather than leaving a frozen-looking label.
+  const quietElapsed = formatQuietElapsedMs(quietMs);
+  const quietSuffix = quietElapsed ? ` | still working - counts unchanged ${quietElapsed}` : "";
   return {
     active: true,
     determinate,
     ratio: determinate ? hybridRatio : 0,
-    label: `${taskLabel}: ${phaseLabel}${countsLabel ? ` | ${countsLabel}` : ""}`
+    label: `${taskLabel}: ${phaseLabel}${countsLabel ? ` | ${countsLabel}` : ""}${quietSuffix}`
   };
 }
 
@@ -288,13 +301,14 @@ export function deriveFetcherProgressModel(report, { running = false } = {}) {
   );
 }
 
-export function deriveDiscoveryProgressModel(report, { running = false, phaseHint = "" } = {}) {
+export function deriveDiscoveryProgressModel(report, { running = false, phaseHint = "", quietMs = 0 } = {}) {
   return deriveDiscoveryHybridProgressView(
     deriveDiscoveryTaskProgress(report, { running, phaseHint }),
     {
       taskLabel: "Discovery",
       fallbackPhaseLabel: "Initializing scan",
-      formatCountsLabel: formatDiscoveryCountsLabel
+      formatCountsLabel: formatDiscoveryCountsLabel,
+      quietMs
     }
   );
 }

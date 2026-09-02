@@ -43,13 +43,14 @@
       </div>
     </div>
 
-    <div data-ui="guest-signin-notice" class="jobs-guest-notice">
-      <span data-ui="guest-signin-notice-guest"><strong>Browsing as guest.</strong> Opened and saved jobs are only preserved after you sign in to a local profile on this device.</span>
-      <span data-ui="guest-signin-notice-profile" hidden>Signed in locally. Opened and saved jobs stay preserved on this device.</span>
+    <div class="jobs-status-banner">
+      <div id="fetch-progress" data-ui="fetch-progress" class="fetch-progress hidden"></div>
+      <p id="source-status" data-ui="source-status" class="source-status" aria-live="polite"></p>
+      <div data-ui="guest-signin-notice" class="jobs-guest-notice">
+        <span data-ui="guest-signin-notice-guest"><strong>Browsing as guest.</strong> Opened and saved jobs are only preserved after you sign in to a local profile on this device.</span>
+        <span data-ui="guest-signin-notice-profile" hidden>Signed in locally. Opened and saved jobs stay preserved on this device.</span>
+      </div>
     </div>
-
-    <div id="fetch-progress" data-ui="fetch-progress" class="fetch-progress hidden"></div>
-    <p id="source-status" data-ui="source-status" class="source-status" aria-live="polite"></p>
     <div id="saved-views-bar" data-ui="saved-views-bar" class="saved-views-bar hidden" aria-label="Saved filter presets">
       <span class="saved-views-label">Saved views:</span>
       <select id="saved-views-dropdown" data-ui="saved-views-dropdown" class="saved-view-dropdown hidden" aria-label="Load saved view">
@@ -137,7 +138,6 @@
           <button id="country-picker-clear-btn" data-ui="country-picker-clear-btn" type="button" class="country-picker-clear-btn" data-tooltip="Clear the current country selection.">Clear</button>
         </div>
         <select id="country-filter" data-ui="country-filter" multiple size="5" class="country-filter-multi hidden" aria-hidden="true"></select>
-        <span id="country-selection-badge" data-ui="country-selection-badge" class="country-selection-badge">All countries</span>
       </div>
 
       <div class="filter-group">
@@ -202,15 +202,20 @@
         </div>
       </div>
     </div>
-    <div id="active-filters-summary" data-ui="active-filters-summary" class="active-filters-summary">No active filters</div>
+    <div id="active-filters-summary" data-ui="active-filters-summary" class="active-filters-summary"></div>
 
     <div class="jobs-toolbar">
-      <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
       <div class="toolbar-actions">
-        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn" data-tooltip="Reload the current local jobs data without checking sources.">Reload</button>
         <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Find new openings and rebuild the local job list. This usually takes a few minutes; first updates can take up to 1 hour.">Update jobs</button>
-        <span id="refresh-jobs-needed-badge" data-ui="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
-        <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
+      </div>
+      <!-- ponytail: fixed-height status row — the results summary, the running
+           caption, and the Last-updated timestamp swap here without ever
+           resizing the toolbar or reflowing the buttons above. The summary
+           hugs the left edge so it sits directly above the jobs table. -->
+      <div class="jobs-toolbar-status" data-ui="jobs-toolbar-status">
+        <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
+        <span id="jobs-pipeline-progress-caption" data-ui="jobs-pipeline-progress-caption" class="jobs-pipeline-progress jobs-pipeline-progress-caption" aria-live="polite" hidden></span>
+        <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite" hidden></span>
       </div>
     </div>
 

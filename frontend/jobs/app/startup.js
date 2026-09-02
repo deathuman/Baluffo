@@ -76,9 +76,23 @@ export function getJobsLastUpdatedText(timestamp, now = Date.now()) {
     return "";
   }
 
-  const mins = Math.max(0, Math.floor((now - dt.getTime()) / 60000));
-  const relative = mins < 1 ? "just now" : mins === 1 ? "1 min ago" : `${mins} mins ago`;
-  return `Last updated: ${relative}`;
+  const time = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const reference = new Date(now);
+  const startOfToday = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+  const startOfYear = new Date(reference.getFullYear(), 0, 1);
+
+  let dayPart = "";
+  if (dt >= startOfToday) {
+    dayPart = "";
+  } else if (dt >= startOfYesterday) {
+    dayPart = "Yesterday ";
+  } else if (dt >= startOfYear) {
+    dayPart = `${dt.toLocaleDateString([], { month: "short", day: "numeric" })} `;
+  } else {
+    dayPart = `${dt.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })} `;
+  }
+  return `Last updated: ${dayPart}${time}`;
 }
 
 export function parseAutoRefreshSignal(rawValue) {

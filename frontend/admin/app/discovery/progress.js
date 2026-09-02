@@ -52,8 +52,9 @@ export function createAdminDiscoveryProgressController({
 
   async function loadLatestDiscoveryReport(options = {}) {
     const silent = Boolean(options.silent);
+    const path = options?.view === "summary" ? "/discovery/report?view=summary" : "/discovery/report";
     try {
-      const report = await getBridge("/discovery/report");
+      const report = await getBridge(path);
       if (report && typeof report === "object" && !Array.isArray(report)) {
         state.latestDiscoveryReportCache = report;
       }
@@ -100,16 +101,49 @@ export function createAdminDiscoveryProgressController({
     return String(state.discoveryLiveProgressState?.serverPhaseLabel || "").trim();
   }
 
-  function updateDiscoveryProgressFromReport(report, { running = false } = {}) {
+  function discoveryLiveQuietMs(nowMs) {
+    const liveState = state.discoveryLiveProgressState;
+    if (!liveState) return 0;
+    const changedAtMs = Number(liveState.lastCountsChangedAtMs || 0);
+    if (changedAtMs <= 0) return 0;
+    return Math.max(0, Number(nowMs) - changedAtMs);
+  }
+
+  function updateDiscoveryProgressFromReport(report, { running = false, quietSeconds = 0 } = {}) {
+    const quietMs = Number(quietSeconds) > 0
+      ? Number(quietSeconds) * 1000
+      : discoveryLiveQuietMs(Date.now());
     setDiscoveryProgress(deriveDiscoveryProgressModel(report, {
       running,
-      phaseHint: getDiscoveryProgressPhaseHint()
+      phaseHint: getDiscoveryProgressPhaseHint(),
+      quietMs
     }));
   }
 
   function runProgressAppend(report, nowMs) {
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
+    const summaryForStamp = report?.summary || {};
+    const progressForStamp = deriveDiscoveryTaskProgress(report, {
+      running: true,
+      phaseHint: getDiscoveryProgressPhaseHint()
+    });
+    const countsForStamp = progressForStamp?.counts && typeof progressForStamp.counts === "object"
+      ? progressForStamp.counts
+      : {};
+    const stampSignature = [
+      Number(countsForStamp.foundEndpoints ?? summaryForStamp.foundEndpointCount ?? 0),
+      Number(countsForStamp.probedCandidates ?? summaryForStamp.probedCandidateCount ?? summaryForStamp.probedCount ?? 0),
+      Number(countsForStamp.queuedCandidates ?? deriveDiscoveryQueuedCount(report)),
+      Number(countsForStamp.deferredCandidates ?? summaryForStamp.discoverableButDeferredCount ?? 0),
+      Number(countsForStamp.failedProbes ?? summaryForStamp.failedProbeCount ?? 0)
+    ].join("|");
+    // ponytail: stamp when the shown counters last moved so a quiet-but-alive
+    // stage can reassure the user it is still working instead of looking frozen.
+    if (!("lastCountsSignature" in liveState) || liveState.lastCountsSignature !== stampSignature) {
+      liveState.lastCountsSignature = stampSignature;
+      liveState.lastCountsChangedAtMs = Number(nowMs);
+    }
     updateDiscoveryProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
     const progress = deriveDiscoveryTaskProgress(report, {

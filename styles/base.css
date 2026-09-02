@@ -41,6 +41,9 @@ html {
   --accent-hover: #9f6dfd;
   --accent-soft-bg: var(--surface-12);
   --accent-soft-text: #f0e2ff;
+  /* ponytail: deliberate "live/in-progress" signal color (matches admin's
+     --tint-ok severity green) for the Update-jobs fill stripe and status dot. */
+  --live-accent: #61aa77;
   --text-primary: #eeeeee;
   --text-secondary: #d9d9d9;
   --text-muted: #bbbbbb;
@@ -137,6 +140,7 @@ html {
   --accent-hover: #5b44d1;
   --accent-soft-bg: #ece8ff;
   --accent-soft-text: #382970;
+  --live-accent: #2e7d4f;
   --text-primary: #1a1f2b;
   --text-secondary: #2a3242;
   --text-muted: #4f5a6f;
@@ -292,19 +296,6 @@ html {
 [data-theme="light"] #saved-auth-sign-in-btn:hover {
   background: linear-gradient(180deg, #6d56f4, #5a43d1);
   border-color: #4f3abf;
-}
-
-[data-theme="light"] #refresh-jobs-btn.clear-filters-btn {
-  background: linear-gradient(180deg, #deebff, #cddff8);
-  border-color: #9db5dd;
-  color: #1f3559;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65), 0 4px 12px rgba(43, 78, 126, 0.1);
-}
-
-[data-theme="light"] #refresh-jobs-btn.clear-filters-btn:hover {
-  background: linear-gradient(180deg, #cddff8, #bfd3f2);
-  border-color: #88a3d3;
-  color: #172d4f;
 }
 
 body {

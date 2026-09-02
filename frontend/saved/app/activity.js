@@ -134,7 +134,7 @@ export function clearExpiredPulse(lastActivityPulse) {
   return lastActivityPulse;
 }
 
-export function renderSelectedJobHint(activitySelectedJobEl, selectedJobKey, lastSavedJobsByKey) {
+export function renderSelectedJobHint(activitySelectedJobEl, selectedJobKey, _lastSavedJobsByKey) {
   if (!activitySelectedJobEl) return;
   if (!selectedJobKey) {
     activitySelectedJobEl.textContent = "Showing all saved-job activity.";

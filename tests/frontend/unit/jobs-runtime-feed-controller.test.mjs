@@ -13,8 +13,6 @@ function createFeedController(overrides = {}) {
     skipInitialGuestAuthRerender: false
   };
   const dom = overrides.dom || {
-    refreshJobsBtn: createElement(),
-    refreshJobsNeededBadgeEl: createElement({ classList: createElement().classList }),
     fetchProgress: createElement(),
     sourceStatus: createElement(),
     jobsLastUpdatedEl: createElement(),
@@ -60,18 +58,16 @@ function createFeedController(overrides = {}) {
       isDesktopRuntimeMode: () => false,
       logJobsError: () => {},
       logJobsInfo: () => {},
-      getJobsLastUpdatedText: timestamp => `updated:${timestamp}`,
+      getJobsLastUpdatedText: timestamp => (timestamp == null ? "" : `updated:${timestamp}`),
       normalizeJobs: rows => rows.map(row => ({ ...row, normalized: true })),
       parseUnifiedJobsPayload: payload => payload,
       openJobsCacheDbFromModule: options => options,
       readJobsCache: async options => options,
       writeJobsCache: async (jobs, options) => ({ jobs, options }),
       refreshJobsFeed: async (_request, deps) => {
-        deps.setRefreshButtonDisabled(true);
         deps.setProgress(true);
         deps.setSourceStatus("Refreshing feed");
         deps.dispatchRefreshRequested();
-        deps.setRefreshJobsNeedsAttention(true);
         deps.dispatchRefreshCompleted();
         return true;
       },
@@ -132,12 +128,8 @@ test("jobs feed controller refresh wiring updates bridge state and dispatches co
   const ok = await controller.refreshJobsNow({ manual: true, firstLoad: true });
 
   assert.equal(ok, true);
-  assert.equal(dom.refreshJobsBtn.disabled, true);
   assert.equal(dom.fetchProgress.visible, true);
   assert.equal(dom.sourceStatus.textContent, "Refreshing feed");
-  assert.equal(dom.refreshJobsBtn.classList.contains("needs-refresh"), true);
-  assert.equal(dom.refreshJobsBtn.getAttribute("aria-live"), "polite");
-  assert.equal(dom.refreshJobsNeededBadgeEl.classList.contains("hidden"), false);
   assert.deepEqual(dispatches, [
     { type: "REFRESH_REQUESTED" },
     {
@@ -187,6 +179,12 @@ test("jobs feed controller preview wiring normalizes rows and forwards startup p
     filteredCount: 1
   });
   assert.equal(dom.jobsLastUpdatedEl.textContent, "updated:1234");
+  assert.equal(dom.jobsLastUpdatedEl.hidden, false);
+  // ponytail: a missing report no longer blanks the slot — the last completed
+  // run's timestamp stays visible (the status row dims it during active runs).
+  controller.updateLastUpdatedText(null);
+  assert.equal(dom.jobsLastUpdatedEl.textContent, "updated:1234");
+  assert.equal(dom.jobsLastUpdatedEl.hidden, false);
   assert.deepEqual(perfCalls.map(item => `${item.type}:${item.name}`), [
     "mark:jobs_forwarded_preview_start",
     "measure:jobs_forwarded_preview"

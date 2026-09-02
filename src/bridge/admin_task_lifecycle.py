@@ -249,11 +249,21 @@ class AdminTaskLifecycle:
             else:
                 self.finish_run(run_id, task_type, terminal_reason="completed", **kwargs)
             return
+        # Unfinished history entries mirror as ACTIVE rows, so they must carry
+        # owner fields: an owner-less running row can never be reaped by the
+        # pid/owner checks in lifecycle_cleanup and once its heartbeat goes cold
+        # it blocks task launches like any zombie (same failure shape as the
+        # append_task_event "event_only" stubs). History rows have no owner
+        # metadata of their own, so mark them as being watched in-process —
+        # lifecycle_cleanup reaps owner_kind="bridge_thread" rows on every
+        # restart, which is correct because a mirrored history entry without a
+        # finishedAt only represents a worker the current process spawned.
         self.start_run(
             run_id=run_id,
             task_type=task_type,
             started_at=started_at,
             stage=str(summary.get("stage") or status or "running"),
+            owner_kind="bridge_thread",
             summary=dict(summary),
         )
 

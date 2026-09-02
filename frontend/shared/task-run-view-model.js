@@ -380,7 +380,7 @@ function fallbackProgressLabel(taskType, summary, progress) {
   return "";
 }
 
-function derivePrimaryLabel(taskType, summary, progress) {
+function derivePrimaryLabel(taskType, summary, _progress) {
   if (taskType === "fetch") return `${compactNumber(summary?.outputCount)} jobs`;
   if (taskType === "discovery") return `${compactNumber(summary?.queuedCandidateCount)} queued`;
   if (taskType === "sync") {
@@ -580,7 +580,7 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const heartbeatStaleness = Boolean(safeRow?.active || safeRow?.isLive || progress?.active) && heartbeatMs > 0
     ? Math.min(1, Math.max(0, (nowValue - heartbeatMs) / STALLED_AFTER_MS))
     : 0;
-  const stallProximity = Boolean(heartbeatStaleness >= 0.75 && ["running", "finishing"].includes(status))
+  const stallProximity = heartbeatStaleness >= 0.75 && ["running", "finishing"].includes(status)
     ? "approaching"
     : null;
   const progressUpdatedAt = String(progress?.updatedAt || "").trim();

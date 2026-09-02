@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from src.bridge.active_task_snapshot import (
@@ -191,6 +192,144 @@ class _PipelineServiceControlMixin(PipelineServiceState):
                 "controlPlane": True,
             },
         }
+
+    def _normalize_child_progress_for_refresh(
+        self,
+        clean_task_type: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Resolve and normalize the child's taskProgress before locking.
+
+        ponytail: the fetch report is intentionally sparse during
+        executing_sources (0.2.114 Umbrel pressure fix — the report only gets
+        written at phase changes), so its taskProgress counts freeze at the
+        phase-entry snapshot while the run grinds on. The live counts live in
+        the sibling task-state file (jobs-fetch-tasks.json) — the same surface
+        the admin ops live page reads — so prefer it for the fetch child and
+        the jobs caption tracks real resolved/total/rate/ETA during the run.
+        """
+        progress = report.get("taskProgress")
+        if not isinstance(progress, dict):
+            return None
+        if clean_task_type == "fetch":
+            live_progress = self._load_live_fetch_task_progress(
+                report_run_id=str(report.get("runId") or "").strip()
+            )
+            if live_progress is not None:
+                progress = live_progress
+        progress = {**progress, "active": True}
+        if not str(progress.get("updatedAt") or "").strip():
+            progress["updatedAt"] = self._now_iso()
+        counts = progress.get("counts")
+        progress["counts"] = dict(counts) if isinstance(counts, dict) else {}
+        return progress
+
+    @staticmethod
+    def _project_child_progress_counts(
+        child: dict[str, Any],
+        progress: dict[str, Any],
+        *,
+        now_iso: str,
+    ) -> dict[str, Any]:
+        """Stamp countsUpdatedAt onto progress for an already-locked child row."""
+        previous = child.get("taskProgress")
+        if not isinstance(previous, dict):
+            previous = {}
+        previous_counts_value = previous.get("counts")
+        previous_counts: dict[str, Any] = (
+            dict(previous_counts_value) if isinstance(previous_counts_value, dict) else {}
+        )
+        # ponytail: the child report's taskProgress.updatedAt is its *heartbeat*
+        # stamp, which is refreshed even when counters are frozen. Track the last
+        # moment the counters actually moved so the UI can reassure the user a
+        # quiet-but-alive stage is still working.
+        if (
+            previous_counts != progress["counts"]
+            or not str(previous.get("countsUpdatedAt") or "").strip()
+        ):
+            progress["countsUpdatedAt"] = now_iso
+        else:
+            progress["countsUpdatedAt"] = str(previous.get("countsUpdatedAt") or now_iso)
+        return progress
+
+    def _refresh_live_child_task_progress(
+        self,
+        task_type: str,
+        report: dict[str, Any],
+    ) -> None:
+        """Project the child's live taskProgress onto the active-child row.
+
+        The pipeline wait loops already load the child report (discovery/fetch/sync)
+        on every iteration, so this reuses that read to keep the pipeline status
+        payload's active child carrying real counters / ratio / ETA without extra
+        I/O. For fetch, the report stays sparse during source execution (Umbrel
+        pressure fix), so the live task-state sibling is preferred — the same
+        surface the admin ops live page reads. The update is in-memory only; the
+        control-status file is written on the existing bounded heartbeat cadence.
+        This is what lets the jobs CTA render determinate sub-progress
+        ("128/431 sources · ETA 4m") for the whole stage instead of a flat 2/3
+        fill.
+        """
+        clean_task_type = str(task_type or "").strip().lower()
+        if clean_task_type not in {"discovery", "fetch", "sync"}:
+            return
+        progress = self._normalize_child_progress_for_refresh(clean_task_type, report)
+        if progress is None:
+            return
+        now_iso = self._now_iso()
+        with self._lock:
+            if not bool(self._status.get("active")):
+                return
+            children = self._status.get("activeChildren")
+            if not isinstance(children, list) or not children:
+                return
+            child = children[0]
+            if not isinstance(child, dict):
+                return
+            existing_type = str(child.get("taskType") or child.get("type") or "").strip().lower()
+            if existing_type != clean_task_type:
+                return
+            progress = self._project_child_progress_counts(child, progress, now_iso=now_iso)
+            child["taskProgress"] = progress
+            phase_label = str(progress.get("phaseLabel") or "").strip()
+            self._status["activeChildPhaseLabel"] = phase_label
+            self._status["activeChildDisplayLabel"] = (
+                f"{clean_task_type.title()}: {phase_label}" if phase_label else ""
+            )
+
+    def _load_live_fetch_task_progress(
+        self,
+        *,
+        report_run_id: str = "",
+    ) -> dict[str, Any] | None:
+        """Return the live fetch task-state taskProgress, or None when unavailable.
+
+        The task-state file (``jobs-fetch-tasks.json``, sibling of the fetch
+        report) is written on a 5 s cadence by the running fetch stage, while the
+        report itself stays sparse during source execution. Returns None when the
+        file is missing, empty, carries no counts, or belongs to a different run
+        (stale file from a previous fetch).
+        """
+        try:
+            report_path = self._fetch_report_path
+            if not report_path:
+                return None
+            task_state_path = Path(report_path).with_name("jobs-fetch-tasks.json")
+            payload = self._load_runtime_evidence(task_state_path, {})
+        except (OSError, TypeError, ValueError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        task_run_id = str(payload.get("runId") or "").strip()
+        if report_run_id and task_run_id and report_run_id != task_run_id:
+            return None
+        progress = payload.get("taskProgress")
+        if not isinstance(progress, dict):
+            return None
+        counts = progress.get("counts")
+        if not isinstance(counts, dict) or not counts:
+            return None
+        return {**progress, "active": True}
 
     def _set_control_child_task(
         self,

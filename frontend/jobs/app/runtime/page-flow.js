@@ -29,9 +29,14 @@ export function createJobsPageFlow(deps) {
     deps.writeAutoRefreshAppliedId(deps.jobsAutoRefreshAppliedKey, signalId);
   }
 
-  // ponytail: container boot acknowledges an unapplied admin signal as
-  // "reload needed" instead of downloading/normalizing the full feed mid-boot.
-  const AUTO_REFRESH_ACK_STATUS_TEXT = "New jobs are available from the latest fetcher run. Use Reload to load them.";
+  // ponytail: container boot used to acknowledge an unapplied admin fetcher
+  // signal as "reload needed" and rely on the (now removed) Reload button.
+  // Boot still keeps its cheap ack-only path — no feed download mid-boot —
+  // but the refresh is now scheduled automatically right after boot instead
+  // of asking the user; the Last-updated line is the only signal.
+  const AUTO_REFRESH_ACK_STATUS_TEXT = "Loading new jobs from the latest fetcher run...";
+  const AUTO_REFRESH_ACK_FAILURE_STATUS_TEXT = "Could not load new jobs from the latest fetcher run. Use Update jobs to retry.";
+  const AUTO_REFRESH_ACK_DELAY_MS = 1500;
 
   function resolveUnappliedAutoRefreshSignal() {
     const pendingSignal = deps.runtimeState.pendingAutoRefreshSignal;
@@ -44,8 +49,16 @@ export function createJobsPageFlow(deps) {
     const signal = resolveUnappliedAutoRefreshSignal();
     if (!signal?.id || signal.id === deps.runtimeState.lastHandledAutoRefreshSignalId) return;
     deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_STATUS_TEXT);
-    deps.feedController.setRefreshJobsNeedsAttention(true);
     markAutoRefreshSignalHandled(signal.id);
+    const delayMs = Math.max(0, Number(deps.autoRefreshAckDelayMs ?? AUTO_REFRESH_ACK_DELAY_MS));
+    setTimeout(() => {
+      Promise.resolve()
+        .then(() => deps.feedController.refreshJobsNow({ manual: false }))
+        .then(loaded => {
+          if (!loaded) deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_FAILURE_STATUS_TEXT);
+        })
+        .catch(() => deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_FAILURE_STATUS_TEXT));
+    }, delayMs);
   }
 
   function handleAutoRefreshSignalValue(rawValue) {

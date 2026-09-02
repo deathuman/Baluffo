@@ -46,6 +46,8 @@ function createElementMock(tagName) {
     style: createStyle(),
     className: "",
     textContent: "",
+    hidden: false,
+    classList: createClassList(),
     setAttribute(name, value) {
       this[name] = value;
     },

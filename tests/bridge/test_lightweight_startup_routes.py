@@ -71,6 +71,80 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
     assert "failures" not in payload
 
 
+def test_discovery_report_summary_derives_task_progress_when_body_too_large(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    # summary/runtime land inside the 512 KB read prefix; the top-level
+    # taskProgress (and the huge candidates/failures arrays) sit beyond it, so
+    # the summary view cannot decode the report's own taskProgress and must
+    # derive a count-rich one from the summary counters instead.
+    report = {
+        "runId": "discovery_oversized",
+        "status": "running",
+        "startedAt": "2026-08-31T08:00:00Z",
+        "finishedAt": "",
+        "summary": {
+            "phaseKey": "probing_candidates",
+            "phaseLabel": "Probing candidates",
+            "foundEndpointCount": 100,
+            "generatedCandidateCount": 400,
+            "survivedDedupeCandidateCount": 350,
+            "probedCandidateCount": 120,
+            "probedCount": 90,
+            "queuedCandidateCount": 60,
+            "discoverableButDeferredCount": 5,
+            "failedProbeCount": 9,
+        },
+        "runtime": {
+            "registryFinalization": {"status": "running", "activeCount": 2, "pendingCount": 1},
+            "autoApproval": {"enabled": True, "status": "running", "approvedCount": 0},
+        },
+        "largePadding": "x" * (1024 * 1024 + 16),
+        "taskProgress": {
+            "active": True,
+            "phaseKey": "decoration_leak",
+            "phaseLabel": "This must never be returned",
+            "counts": {"probedCandidates": 99999},
+        },
+        "candidates": [{"id": str(index)} for index in range(6000)],
+        "failures": [{"id": str(index)} for index in range(4000)],
+    }
+    api.DISCOVERY_REPORT_PATH.write_text(json.dumps(report), encoding="utf-8")
+    api.normalize_discovery_report_contract = lambda _payload: (_ for _ in ()).throw(
+        AssertionError("summary view must not normalize the full discovery report")
+    )
+    api.reconcile_terminal_discovery_report_from_state = lambda: (_ for _ in ()).throw(
+        AssertionError("summary view must not reconcile the full discovery report")
+    )
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/discovery/report", query={"view": ["summary"]})
+
+    assert result is True
+    assert handler.bytes_sent[-1]["status"] == 200
+    payload = json.loads(handler.bytes_sent[-1]["body"].decode("utf-8"))
+    task_progress = payload["taskProgress"]
+    assert task_progress["active"] is True
+    assert task_progress["phaseKey"] == "probing_candidates"
+    assert task_progress["phaseLabel"] == "Probing candidates"
+    assert task_progress["phaseKey"] != "decoration_leak"
+    assert task_progress["counts"] == {
+        "foundEndpoints": 100,
+        "generatedCandidates": 400,
+        "survivedDedupeCandidates": 350,
+        "probedCandidates": 120,
+        "queuedCandidates": 60,
+        "deferredCandidates": 5,
+        "failedProbes": 9,
+    }
+    assert payload["runtime"]["registryFinalization"]["status"] == "running"
+    assert payload["runtime"]["autoApproval"]["enabled"] is True
+    assert "candidates" not in payload
+    assert "failures" not in payload
+
+
 def test_fetch_report_summary_returns_bounded_payload(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)

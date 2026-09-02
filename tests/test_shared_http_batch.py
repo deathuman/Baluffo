@@ -178,6 +178,38 @@ def test_fetch_pages_batched_does_not_hide_unexpected_progress_callback_bug() ->
         )
 
 
+def test_fetch_pages_batched_async_path_isolates_httpx_invalid_url_per_page() -> None:
+    # Regression: a redirect with a malformed Location raised httpx.InvalidURL
+    # (an Exception subclass, not HTTPError) outside the expected-exceptions
+    # tuple and killed the whole discovery worker mid-audit. It must degrade to
+    # a per-row failure instead.
+    import httpx
+
+    jobs = [
+        {"url": "https://ok.example/a", "payload": {"id": "a"}},
+        {"url": "https://bad.example/redirect", "payload": {"id": "b"}},
+        {"url": "https://ok.example/c", "payload": {"id": "c"}},
+    ]
+
+    async def fake_async_fetch(_client, job: dict[str, object], url: str, _timeout_s: int) -> str:
+        await __import__("asyncio").sleep(0)
+        if str(job.get("payload", {}).get("id")) == "b":
+            raise httpx.InvalidURL("For absolute URLs, path must be empty or begin with '/'")
+        return f"<html>{url}</html>"
+
+    results = fetch_pages_batched(
+        5,
+        jobs,
+        sync_fetch=lambda _job, _url, _t: (_ for _ in ()).throw(AssertionError("sync path unused")),
+        async_fetch=fake_async_fetch,
+        total_concurrency=2,
+        per_host_concurrency=2,
+    )
+
+    assert [bool(row.get("ok")) for row in results] == [True, False, True]
+    assert "For absolute URLs" in str(results[1].get("error") or "")
+
+
 def test_fetch_pages_batched_uses_async_fetch_when_provided() -> None:
     jobs = [
         {"url": "https://async.example/a", "payload": {"id": "a"}},

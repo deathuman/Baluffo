@@ -38,6 +38,8 @@ function createElementMock(tagName) {
     style: createStyle(),
     className: "",
     textContent: "",
+    hidden: false,
+    classList: createClassList(),
     setAttribute(name, value) {
       this[name] = value;
     },
@@ -49,7 +51,8 @@ function createElementMock(tagName) {
 
 export function createButtonMock(textContent = "Update jobs") {
   const listeners = new Map();
-  return {
+  const siblings = [];
+  const button = {
     dataset: {},
     style: createStyle(),
     disabled: false,
@@ -90,6 +93,27 @@ export function createButtonMock(textContent = "Update jobs") {
       }
     }
   };
+  // ponytail: sibling elements created by the pipeline UI (the abort affordance
+  // and the sub-progress caption) land in parentElement.children, mirroring how
+  // the real toolbar DOM collects them after the button.
+  button.parentElement = {
+    querySelector(selector) {
+      const match = /^\[data-ui="([^"]+)"\]$/.exec(String(selector || ""));
+      if (!match) return null;
+      return siblings.find(child => String(child?.dataset?.ui || "") === match[1]) || null;
+    }
+  };
+  button.insertAdjacentElement = (_position, element) => {
+    siblings.push(element);
+  };
+  return button;
+}
+
+// Returns the sub-progress caption rendered as a sibling of the Update-jobs
+// button, or null if none has been created. Tests assert the live counts/ETA
+// live here (full-width, wrapping) rather than in the clamped in-button span.
+export function getJobsPipelineProgressCaption(button) {
+  return button?.parentElement?.querySelector?.('[data-ui="jobs-pipeline-progress-caption"]') || null;
 }
 
 export function installFakeTimers() {

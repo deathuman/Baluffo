@@ -110,7 +110,6 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
     uiState.runId = "pipeline_1";
     uiState.startedAt = "2026-03-12T12:00:00.000Z";
     const toasts = [];
-    let refreshNeedsAttention = false;
 
     const controller = createJobsPipelineController({
       refs: { jobsPipelineRunBtn: button },
@@ -142,9 +141,6 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
       showToast: (message, kind) => {
         toasts.push({ message, kind });
       },
-      setRefreshJobsNeedsAttention: value => {
-        refreshNeedsAttention = Boolean(value);
-      },
       isErrorStage: payload => Boolean(payload?.error),
       pollDelayMs: 25,
       idlePollDelayMs: 50
@@ -155,7 +151,6 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
     assert.equal(uiState.active, true);
     assert.equal(button.disabled, true);
     assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
-    assert.equal(refreshNeedsAttention, false);
     assert.deepEqual(toasts, []);
   } finally {
     restoreTimers();
@@ -227,7 +222,6 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
     uiState.startedAt = "2026-03-12T12:00:00.000Z";
     const toasts = [];
     const refreshCalls = [];
-    let refreshNeedsAttention = false;
 
     const controller = createJobsPipelineController({
       refs: { jobsPipelineRunBtn: button },
@@ -254,9 +248,6 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
       showToast: (message, kind) => {
         toasts.push({ message, kind });
       },
-      setRefreshJobsNeedsAttention: value => {
-        refreshNeedsAttention = Boolean(value);
-      },
       refreshJobsAfterPipelineCompletion: async payload => {
         refreshCalls.push(payload);
       },
@@ -269,7 +260,6 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
 
     assert.equal(uiState.active, false);
     assert.equal(button.disabled, false);
-    assert.equal(refreshNeedsAttention, true);
     assert.deepEqual(toasts, [{ message: "Job update completed. Loading updated listings.", kind: "success" }]);
     assert.deepEqual(refreshCalls.map(payload => payload.runId), ["pipeline_1"]);
   } finally {

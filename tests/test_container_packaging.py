@@ -57,7 +57,8 @@ def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
     for ignored_path in (
         "docs/**",
         "tests/**",
-        "tools/mcp/**",
+        "tools/**",
+        ".github/**",
         "README.md",
         "CONTRIBUTING.md",
         "SECURITY.md",
