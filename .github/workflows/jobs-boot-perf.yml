@@ -62,6 +62,15 @@ jobs:
           node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode warm
           node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode nav
 
+      - name: Upload perf traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: boot-perf-traces
+          path: _out/perf-traces/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Container logs on failure
         if: always()
         run: docker logs baluffo-perf || true
