@@ -17,10 +17,15 @@
 }
 
 .jobs-page .jobs-status-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap:  0.4rem 0.7rem;
+  /* ponytail: stacked full-width rows, NOT an inline flex-wrap row. When the
+     status text lands mid-boot the two children must not re-wrap around each
+     other — a flex-wrap row reflows the notice (and everything below it) and
+     regressed container boot CLS to 0.22 (observed 2026-09-02). One child per
+     row keeps every width fixed; the ::before separator only appears when the
+     status is empty, so no reflow either way. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.1rem 0;
   margin:  0 0 0.7rem;
   padding: 0.32rem 0.65rem;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--surface-15));
