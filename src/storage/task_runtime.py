@@ -455,14 +455,25 @@ class TaskRuntimeStore:
         }
 
         def write(conn: Any) -> None:
+            # The task_events FK (task_events.run_id REFERENCES task_runs.run_id,
+            # enforced via PRAGMA foreign_keys=ON) requires a parent task_runs row,
+            # so event-only runs get a placeholder here. It must be TERMINAL:
+            # an active placeholder with no owner_pid/owner_kind is unreapable by
+            # the pid/owner checks in lifecycle_cleanup and once its heartbeat
+            # goes cold it blocks task launches like any zombie (observed live:
+            # two orphaned sync "running" stubs disabled the Update-jobs button
+            # for hours). A real start_run/upsert_task_run later flips the row
+            # to running through the ON CONFLICT update path.
             conn.execute(
                 """
-                INSERT OR IGNORE INTO task_runs(
-                    run_id, task_type, status, started_at, updated_at, heartbeat_at
+                INSERT INTO task_runs(
+                    run_id, task_type, status, started_at, updated_at, heartbeat_at,
+                    finished_at, terminal_reason
                 )
-                VALUES (?, ?, 'running', ?, ?, ?)
+                VALUES (?, ?, 'succeeded', ?, ?, ?, ?, 'event_only')
+                ON CONFLICT(run_id) DO NOTHING
                 """,
-                (run_id, task_type, created_at, created_at, created_at),
+                (run_id, task_type, created_at, created_at, created_at, created_at),
             )
             conn.execute(
                 """

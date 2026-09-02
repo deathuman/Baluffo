@@ -388,6 +388,64 @@ def test_cleanup_orphaned_startup_tasks_keeps_running_process_owned_task(
     assert lifecycle["rows"][0]["status"] == "running"
 
 
+def test_cleanup_orphaned_startup_tasks_reaps_pidless_sqlite_row_with_cold_heartbeat(
+    tmp_path: Path,
+) -> None:
+    """A pid-less, owner-less running row with a frozen heartbeat is reaped.
+
+    Regression: two sync rows in the SQLite task_runs projection carried no
+    ownerPid and no ownerKind, so neither the pid check nor the owner-kind
+    allowlist could ever stale them; they blocked every later pipeline run.
+    """
+
+    fixed_now = "2026-09-02T13:00:00+00:00"
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    with BaluffoStore(tmp_path / "storage") as store:
+        store.set_authority_mode("taskRuns", "sqlite", reason="seed")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: fixed_now)
+        runtime.upsert_task_run(
+            {
+                "runId": "sync_zombie_old",
+                "taskType": "sync",
+                "status": "running",
+                "ownerPid": 0,
+                "startedAt": "2026-08-27T17:50:12+00:00",
+                "heartbeatAt": "2026-08-27T17:50:12+00:00",
+            }
+        )
+        runtime.upsert_task_run(
+            {
+                "runId": "sync_zombie_recent",
+                "taskType": "sync",
+                "status": "running",
+                "ownerPid": 0,
+                "startedAt": "2026-09-02T12:50:00+00:00",
+                "heartbeatAt": "2026-09-02T12:50:00+00:00",
+            }
+        )
+        _save_json(
+            lifecycle_path,
+            {"schemaVersion": 1, "updatedAt": fixed_now, "rows": []},
+        )
+
+        result = cleanup_orphaned_startup_tasks(
+            tmp_path,
+            pid_is_running=lambda _pid: True,
+            now_iso=lambda: fixed_now,
+            current_runs=runtime.current_task_runs,
+            orphan_run=lambda run_id, task_type, **kwargs: runtime.terminalize_task_run(
+                run_id, task_type, status="orphaned", **kwargs
+            ),
+        )
+
+        assert result["ok"] is True
+        assert int(result["orphaned"] or 0) == 1
+        remaining_ids = {row["runId"] for row in runtime.current_task_runs()}
+        assert remaining_ids == {"sync_zombie_recent"}  # fresh heartbeat survives
+        recent_ids = {row["runId"] for row in runtime.recent_task_runs()}
+        assert "sync_zombie_old" in recent_ids
+
+
 def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_keeps_runid_history_only(
     tmp_path: Path,
 ) -> None:

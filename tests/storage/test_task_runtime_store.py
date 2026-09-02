@@ -88,6 +88,55 @@ def test_task_runtime_store_bounds_live_events_per_run() -> None:
             assert events[-1]["phaseKey"] == "executing_sources"
 
 
+def test_task_runtime_store_event_only_run_never_becomes_active_task_row() -> None:
+    """Event-only runs get a TERMINAL placeholder row, never a running one.
+
+    Regression: the task_events FK forced a placeholder task_runs row, but it
+    was inserted with status='running' and no owner_pid/owner_kind, so a run
+    whose real lifecycle row only ever lived in JSON left an unreapable zombie
+    in the SQLite projection (it blocked task launches for hours).
+    """
+
+    with workspace_tmpdir("task-runtime-store-event-only") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00+00:00")
+
+            runtime.append_task_event(
+                {
+                    "timestamp": "2026-05-12T09:00:00+00:00",
+                    "level": "info",
+                    "event": "sync_started",
+                    "taskType": "sync",
+                    "runId": "sync_event_only",
+                    "message": "Starting sync pull.",
+                }
+            )
+
+            # Events are persisted and readable.
+            events = runtime.task_events(run_id="sync_event_only", task_type="sync")
+            assert [event["message"] for event in events] == ["Starting sync pull."]
+
+            # The FK placeholder must not read as an active task.
+            assert runtime.current_task_runs() == []
+            recent = runtime.recent_task_runs()
+            assert [row["runId"] for row in recent] == ["sync_event_only"]
+            assert recent[0]["lifecycleStatus"] == "succeeded"
+            assert recent[0]["active"] is False
+
+            # A real lifecycle start still flips the row to running.
+            started = runtime.upsert_task_run(
+                {
+                    "runId": "sync_event_only",
+                    "taskType": "sync",
+                    "status": "running",
+                    "startedAt": "2026-05-12T09:30:00+00:00",
+                    "ownerKind": "bridge_thread",
+                }
+            )
+            assert started["active"] is True
+            assert started["ownerKind"] == "bridge_thread"
+
+
 def test_task_runtime_store_persists_sync_run_metrics_and_history_shape() -> None:
     with workspace_tmpdir("task-runtime-store-sync") as data_dir:
         with BaluffoStore(data_dir) as store:

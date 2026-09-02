@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -200,9 +201,43 @@ def _terminalize_fetch_tasks(
     return True
 
 
-def _row_is_stale_after_restart(row: dict[str, Any], pid_is_running: Callable[[int], bool]) -> bool:
+def _row_is_stale_after_restart(
+    row: dict[str, Any], pid_is_running: Callable[[int], bool], *, now_utc: datetime
+) -> bool:
     owner_kind = str(row.get("ownerKind") or "").strip().lower()
-    return owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running)
+    if owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running):
+        return True
+    return _pidless_row_is_heartbeat_stale(row, now_utc=now_utc)
+
+
+def _pidless_row_is_heartbeat_stale(
+    row: dict[str, Any], *, now_utc: datetime, max_age_hours: float = 1.0
+) -> bool:
+    """Treat pid-less running rows as stale once their heartbeat goes cold.
+
+    Rows written by older bridges (or pre-migration data) can carry no
+    ownerKind and no ownerPid, so neither the owner-kind allowlist nor the
+    pid check can ever reap them; such rows block task launches forever.
+    If such a row has not heartbeated within max_age_hours, no living
+    worker can still own it: sync workers finish in minutes and only
+    heartbeat at start/end, pipeline wait gates declare children dead
+    after 15-20 minutes of quiet, and control-status heartbeats run on a
+    ~10s cadence. One hour is far above every real cadence while still
+    unblocking the queue within an hour of a crash.
+    """
+
+    if int(row.get("ownerPid") or row.get("pid") or 0) > 0:
+        return False  # pid-bearing rows are the pid check's responsibility
+    started_at = str(row.get("startedAt") or row.get("started_at") or "").strip()
+    heartbeat_at = str(row.get("heartbeatAt") or row.get("heartbeat_at") or "").strip()
+    last_seen_text = heartbeat_at or started_at
+    if not last_seen_text:
+        return False
+    last_seen = _parse_iso(last_seen_text)
+    if last_seen is None:
+        return False
+    max_age = timedelta(hours=max_age_hours)
+    return (now_utc - last_seen) > max_age
 
 
 def _record_stale_row(
@@ -227,6 +262,7 @@ def _collect_stale_lifecycle_rows(
     running_rows: list[dict[str, Any]],
     *,
     pid_is_running: Callable[[int], bool],
+    now_utc: datetime,
 ) -> tuple[
     set[tuple[str, str]],
     set[tuple[str, str]],
@@ -238,7 +274,7 @@ def _collect_stale_lifecycle_rows(
     stale_parent_run_ids: set[str] = set()
 
     for row in running_rows:
-        if not _row_is_stale_after_restart(row, pid_is_running):
+        if not _row_is_stale_after_restart(row, pid_is_running, now_utc=now_utc):
             continue
         key = _record_stale_row(
             row,
@@ -518,9 +554,11 @@ def cleanup_orphaned_startup_tasks(
     running_rows = _running_lifecycle_rows(lifecycle_payload)
     if current_runs is not None:
         running_rows.extend(_running_lifecycle_rows({"rows": current_runs()}))
+    now_utc = _parse_iso(finished_at) or datetime.now(UTC)
     stale_keys, aborted_keys, stale_rows_by_key = _collect_stale_lifecycle_rows(
         running_rows,
         pid_is_running=pid_is_running,
+        now_utc=now_utc,
     )
 
     if not stale_keys:
