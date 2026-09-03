@@ -61,6 +61,10 @@ def _child_env_for(
         "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
         "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
         "BALUFFO_DESKTOP_SESSION_ROOT": str(session_root),
+        # Apply direct availability evidence immediately (matches the Umbrel
+        # container compose), so manual "Check availability now" results take
+        # effect without waiting for the next pipeline run.
+        "BALUFFO_AVAILABILITY_DIRECT_ENFORCE": "1",
     }
     if bool(current_config.startup_probe):
         env["BALUFFO_STARTUP_PROBE"] = "1"

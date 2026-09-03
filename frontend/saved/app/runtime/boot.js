@@ -2,9 +2,10 @@ import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boo
 import { fetchJson } from "../../../shared/api-client.js";
 import { createAdminBridgeButtonWatcherForPage } from "../../../shared/admin-bridge-button.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
-import { availabilityCheckResultLabel, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
+import { availabilityCheckVerdict, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
+import { sanitizeUrl } from "../../../shared/data/index.js";
 import { runExportBackup as runExportBackupFromModule, runImportBackup as runImportBackupFromModule } from "../backup.js";
 import { cacheSavedDom } from "../dom.js";
 import { isEditingNotesField, shouldDeferSavedJobsRerender } from "../notes.js";
@@ -286,15 +287,33 @@ export function createSavedBoot(deps) {
       uploadAttachments: deps.uploadAttachments,
       checkAvailability: async availabilityId => {
         if (!deps.canManageAvailability?.()) return;
+        const savedJob = Array.from(deps.viewState.lastSavedJobsByKey.values())
+          .find(job => String(job?.availabilityId || "") === String(availabilityId || "")) || null;
+        const jobLink = sanitizeUrl(String(savedJob?.jobLink || ""));
+        const progress = showToast("Checking availability…", "info", { durationMs: 0 });
         const result = await runJobAvailabilityCheck(
           deps.savedPageService,
           availabilityId,
-          { onProgress: () => showToast("Checking availability…", "info") }
+          {
+            onProgress: ({ elapsedS }) => progress.update({
+              message: `Checking availability… ${Number(elapsedS) || 1}s`
+            })
+          }
         );
-        showToast(
-          result.ok ? availabilityCheckResultLabel(result.data) : result.error,
-          result.ok && result.data?.status !== "failed" ? "success" : "error"
-        );
+        progress.dismiss();
+        if (!result.ok) {
+          showToast(String(result.error || "The availability check failed — try again."), "error");
+          return;
+        }
+        const verdict = availabilityCheckVerdict(result.data);
+        const options = verdict.conclusive || !jobLink
+          ? {}
+          : {
+              actionLabel: "Open job page",
+              onAction: () => window.open(jobLink, "_blank", "noopener,noreferrer"),
+              durationMs: 7000
+            };
+        showToast(verdict.message, verdict.tone, options);
         if (result.ok) {
           const overlay = await deps.loadSavedLifecycleOverlay();
           deps.viewState.savedLifecycleOverlayByJobKey = overlay instanceof Map

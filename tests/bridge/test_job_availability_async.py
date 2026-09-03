@@ -1,9 +1,11 @@
+import json
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
+import src.bridge.job_availability_service as availability_service_module
 from src.bridge.job_availability_service import JobAvailabilityService
 from src.jobs.state_lifecycle import write_job_lifecycle_state
 
@@ -135,3 +137,158 @@ def test_start_and_status_stay_responsive_while_apply_is_blocked(
 
     release_apply.set()
     assert _wait_for_terminal_status(service, first["runId"])["status"] == "succeeded"
+
+
+def test_repeat_check_reuses_cached_identity_without_reparse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    entry = {
+        "availabilityId": "availability_cached",
+        "jobLink": "https://example.com/jobs/cached",
+        "availabilityStatus": "available",
+    }
+    write_job_lifecycle_state(data_dir / "jobs-lifecycle-state.json", {"job-1": entry})
+
+    class Validator:
+        def check(self, _url: str) -> dict:
+            return {
+                "kind": "direct_live",
+                "confidence": "definitive",
+                "checkedAt": "2026-07-18T10:00:00+00:00",
+                "source": "example.com",
+            }
+
+    service = JobAvailabilityService(
+        data_dir=data_dir,
+        local_store_factory=lambda: None,
+        validator=Validator(),
+        enforce_direct=False,
+    )
+    real_read = availability_service_module.read_job_lifecycle_state
+    read_calls = []
+
+    def counting_read(path):
+        read_calls.append(Path(path))
+        return real_read(path)
+
+    monkeypatch.setattr(availability_service_module, "read_job_lifecycle_state", counting_read)
+
+    first = service.start({"availabilityId": "availability_cached"})
+    assert _wait_for_terminal_status(service, first["runId"])["status"] == "succeeded"
+    reads_after_first = len(read_calls)
+    assert reads_after_first == 1
+
+    second = service.start({"availabilityId": "availability_cached"})
+    assert _wait_for_terminal_status(service, second["runId"])["status"] == "succeeded"
+    assert len(read_calls) == reads_after_first
+
+
+def test_cache_invalidates_when_lifecycle_file_changes(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    state_path = data_dir / "jobs-lifecycle-state.json"
+    write_job_lifecycle_state(
+        state_path,
+        {
+            "job-1": {
+                "availabilityId": "availability_moved",
+                "jobLink": "https://example.com/jobs/old-link",
+                "availabilityStatus": "available",
+            }
+        },
+    )
+    seen_urls = []
+
+    class Validator:
+        def check(self, url: str) -> dict:
+            seen_urls.append(url)
+            return {
+                "kind": "direct_live",
+                "confidence": "definitive",
+                "checkedAt": "2026-07-18T10:00:00+00:00",
+                "source": "example.com",
+            }
+
+    service = JobAvailabilityService(
+        data_dir=data_dir,
+        local_store_factory=lambda: None,
+        validator=Validator(),
+        enforce_direct=False,
+    )
+    first = service.start({"availabilityId": "availability_moved"})
+    assert _wait_for_terminal_status(service, first["runId"])["status"] == "succeeded"
+
+    write_job_lifecycle_state(
+        state_path,
+        {
+            "job-1": {
+                "availabilityId": "availability_moved",
+                "jobLink": "https://example.com/jobs/new-link",
+                "availabilityStatus": "available",
+            }
+        },
+    )
+
+    second = service.start({"availabilityId": "availability_moved"})
+    assert _wait_for_terminal_status(service, second["runId"])["status"] == "succeeded"
+    assert seen_urls == [
+        "https://example.com/jobs/old-link",
+        "https://example.com/jobs/new-link",
+    ]
+
+
+def test_custom_saved_target_resolves_from_existing_manifest_without_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    manifest_path = data_dir / "jobs-availability-priority.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "rows": [
+                    {
+                        "availabilityId": "custom_availability_1",
+                        "scope": "custom_saved",
+                        "jobLink": "https://example.com/custom/1",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen_urls = []
+
+    class Validator:
+        def check(self, url: str) -> dict:
+            seen_urls.append(url)
+            return {
+                "kind": "direct_live",
+                "confidence": "definitive",
+                "checkedAt": "2026-07-18T10:00:00+00:00",
+                "source": "example.com",
+            }
+
+    service = JobAvailabilityService(
+        data_dir=data_dir,
+        local_store_factory=lambda: None,
+        validator=Validator(),
+        enforce_direct=False,
+    )
+
+    def fail_rebuild():
+        raise AssertionError(
+            "priority manifest rebuild must not run when the file already resolves the identity"
+        )
+
+    monkeypatch.setattr(service, "prepare_priority_manifest", fail_rebuild)
+
+    started = service.start({"availabilityId": "custom_availability_1"})
+    status = _wait_for_terminal_status(service, started["runId"])
+    assert status["status"] == "succeeded"
+    assert seen_urls == ["https://example.com/custom/1"]

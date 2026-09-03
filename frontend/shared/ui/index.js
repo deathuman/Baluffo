@@ -41,6 +41,8 @@ export function clearTooltip(el) {
   setTooltip(el, "");
 }
 
+const TOAST_TONES = ["success", "error", "info"];
+
 export function showToast(message, type = "info", options = {}) {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
@@ -49,31 +51,74 @@ export function showToast(message, type = "info", options = {}) {
   messageSpan.textContent = String(message || "");
   toast.appendChild(messageSpan);
 
-  const hasAction = typeof options?.onAction === "function" && options?.actionLabel;
-  if (hasAction) {
-    const actionBtn = document.createElement("button");
-    actionBtn.type = "button";
-    actionBtn.className = "toast-action-btn";
-    actionBtn.textContent = String(options.actionLabel);
-    actionBtn.addEventListener("click", async () => {
-      try {
-        await options.onAction();
-      } finally {
-        toast.classList.remove("visible");
-        setTimeout(() => toast.remove(), 220);
-      }
-    });
-    toast.appendChild(actionBtn);
-  }
+  let actionBtn = null;
+  let dismissTimer;
 
+  const clearDismissTimer = () => {
+    if (dismissTimer) {
+      clearTimeout(dismissTimer);
+      dismissTimer = undefined;
+    }
+  };
+
+  const dismiss = () => {
+    clearDismissTimer();
+    toast.classList.remove("visible");
+    setTimeout(() => toast.remove(), 220);
+  };
+
+  const scheduleDismiss = durationMs => {
+    clearDismissTimer();
+    dismissTimer = setTimeout(() => dismiss(), durationMs);
+  };
+
+  const applyTone = tone => {
+    const nextTone = TOAST_TONES.includes(tone) ? tone : "info";
+    toast.classList.remove(...TOAST_TONES);
+    toast.classList.add(nextTone);
+  };
+
+  const applyAction = nextOptions => {
+    actionBtn?.remove();
+    actionBtn = null;
+    if (typeof nextOptions?.onAction === "function" && nextOptions?.actionLabel) {
+      actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "toast-action-btn";
+      actionBtn.textContent = String(nextOptions.actionLabel);
+      actionBtn.addEventListener("click", async () => {
+        try {
+          await nextOptions.onAction();
+        } finally {
+          dismiss();
+        }
+      });
+      toast.appendChild(actionBtn);
+    }
+  };
+
+  const controller = {
+    update(next = {}) {
+      if (next.message !== undefined) {
+        messageSpan.textContent = String(next.message || "");
+      }
+      if (next.tone !== undefined) applyTone(next.tone);
+      if (next.actionLabel !== undefined || next.onAction !== undefined) {
+        applyAction(next);
+      }
+      const durationMs = Number(next.durationMs);
+      if (durationMs > 0) scheduleDismiss(durationMs);
+    },
+    dismiss
+  };
+
+  applyAction(options);
   document.body.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("visible"));
 
   const durationMs = Number(options?.durationMs) > 0 ? Number(options.durationMs) : 2600;
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 220);
-  }, durationMs);
+  scheduleDismiss(durationMs);
+  return controller;
 }
 
 export function setText(el, text) {

@@ -21,6 +21,7 @@ from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.state_lifecycle import (
     apply_direct_availability_evidence,
     build_availability_history_payload,
+    lifecycle_state_fingerprint,
     read_job_lifecycle_state,
     write_job_lifecycle_state,
 )
@@ -49,6 +50,12 @@ class JobAvailabilityService:
         self._apply_lock = threading.Lock()
         self._runs: dict[str, dict[str, Any]] = {}
         self._active_by_availability_id: dict[str, str] = {}
+        # Resolved canonical identity cache: availability_id -> stamp/entry so
+        # repeated checks skip re-parsing the (routinely tens-of-megabytes)
+        # lifecycle state file. Validated against the file stamp and evicted
+        # FIFO; only canonical resolutions are cached.
+        self._identity_cache: dict[str, dict[str, Any]] = {}
+        self._identity_cache_limit = 256
         self._sweep_lock = threading.Lock()
         self._sweep_thread: threading.Thread | None = None
         self._sweep_wakeup = threading.Event()
@@ -127,22 +134,6 @@ class JobAvailabilityService:
             if retained_custom != existing_custom:
                 write_job_lifecycle_state(self.custom_lifecycle_path, retained_custom)
         return dict(payload or {})
-
-    @staticmethod
-    def _custom_manifest_entry(
-        manifest: dict[str, Any], availability_id: str
-    ) -> dict[str, Any] | None:
-        rows = manifest.get("rows") if isinstance(manifest, dict) else []
-        return next(
-            (
-                dict(row)
-                for row in (rows if isinstance(rows, list) else [])
-                if isinstance(row, dict)
-                and str(row.get("availabilityId") or "") == availability_id
-                and str(row.get("scope") or "") == "custom_saved"
-            ),
-            None,
-        )
 
     def start_overdue_catchup(self, *, limit: int = 10) -> dict[str, Any]:
         lifecycle = read_job_lifecycle_state(self.lifecycle_path)
@@ -350,13 +341,41 @@ class JobAvailabilityService:
                 ),
             )
 
+    @staticmethod
+    def _custom_manifest_entry(
+        manifest: dict[str, Any], availability_id: str
+    ) -> dict[str, Any] | None:
+        rows = manifest.get("rows") if isinstance(manifest, dict) else []
+        return next(
+            (
+                dict(row)
+                for row in (rows if isinstance(rows, list) else [])
+                if isinstance(row, dict)
+                and str(row.get("availabilityId") or "") == availability_id
+                and str(row.get("scope") or "") == "custom_saved"
+            ),
+            None,
+        )
+
     def _prepare_target(self, availability_id: str) -> tuple[str, str, Path, dict[str, Any]]:
         """Resolve the lifecycle target inside the worker thread.
 
         Lifecycle artifacts can be large (the canonical state is routinely tens
-        of megabytes), so this lookup must not block the bridge POST route.
+        of megabytes), so this lookup must not block the bridge POST route and
+        must not re-parse the file for repeated checks of the same identity.
         """
-        lifecycle = read_job_lifecycle_state(self.lifecycle_path)
+        state_path = self.lifecycle_path
+        cached = self._identity_cache.get(availability_id)
+        if cached and str(cached.get("scope") or "") == "canonical":
+            stamp = lifecycle_state_fingerprint(state_path)
+            if stamp is not None and stamp == cached.get("stamp"):
+                return (
+                    str(cached.get("lifecycleKey") or ""),
+                    "canonical",
+                    state_path,
+                    dict(cached.get("entry") or {}),
+                )
+        lifecycle = read_job_lifecycle_state(state_path)
         match = next(
             (
                 (key, entry)
@@ -365,17 +384,34 @@ class JobAvailabilityService:
             ),
             None,
         )
-        scope = "canonical"
-        state_path = self.lifecycle_path
         if match:
             lifecycle_key, entry = match
+            scope = "canonical"
+            resolution = {
+                "lifecycleKey": str(lifecycle_key),
+                "scope": "canonical",
+                "entry": dict(entry),
+                "stamp": lifecycle_state_fingerprint(state_path),
+            }
+            with self._lock:
+                if len(self._identity_cache) >= self._identity_cache_limit:
+                    for stale_id in list(self._identity_cache)[: -self._identity_cache_limit]:
+                        self._identity_cache.pop(stale_id, None)
+                self._identity_cache[availability_id] = resolution
         else:
-            try:
-                custom = self._custom_manifest_entry(
-                    self.prepare_priority_manifest(), availability_id
-                )
-            except (OSError, RuntimeError, TypeError, ValueError):
-                custom = None
+            # Cheap manifest-file read first; only rebuild the manifest via the
+            # reconciliation transaction when the identity is genuinely absent.
+            manifest = read_json(self.priority_manifest_path, {})
+            custom = self._custom_manifest_entry(
+                manifest if isinstance(manifest, dict) else {}, availability_id
+            )
+            if not custom:
+                try:
+                    custom = self._custom_manifest_entry(
+                        self.prepare_priority_manifest(), availability_id
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    custom = None
             if not custom:
                 raise ValueError("availability_id_not_found")
             scope = "custom_saved"
@@ -588,9 +624,14 @@ class JobAvailabilityService:
             entry = dict(initial_entry)
             availability_id = str(entry.get("availabilityId") or availability_id)
             evidence = self.validator.check(str(entry.get("jobLink") or ""))
-            # Refresh outside the lock before the minimal synchronized mutation.
-            latest = read_job_lifecycle_state(state_path)
-            current_entry = dict(latest.get(lifecycle_key) or entry)
+            # Re-read the lifecycle state only when it changed since the
+            # authoritative prepare capture; otherwise reuse the entry to avoid
+            # a second parse of the large artifact while not holding the lock.
+            current_entry = dict(entry)
+            cached_stamp = (self._identity_cache.get(availability_id) or {}).get("stamp")
+            if cached_stamp is None or lifecycle_state_fingerprint(state_path) != cached_stamp:
+                latest = read_job_lifecycle_state(state_path)
+                current_entry = dict(latest.get(lifecycle_key) or entry)
             with self._apply_lock:
                 next_entry, applied = self._apply_checked_evidence(
                     lifecycle_key=lifecycle_key,

@@ -3,7 +3,7 @@ import { createAuthReadyPoller } from "../../../shared/auth-ready-poll.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import {
-  availabilityCheckResultLabel,
+  availabilityCheckVerdict,
   availabilityCheckWasApplied,
   runJobAvailabilityCheck
 } from "../../../shared/job-availability-check.js";
@@ -216,16 +216,35 @@ export function composeJobsRuntime(deps) {
       onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey),
       onCheckAvailability: async availabilityId => {
         if (!deps.canManageAvailability?.()) return;
+        const jobLink = String(
+          runtimeState.allJobs.find(job => String(job.availabilityId || "") === String(availabilityId || ""))
+            ?.jobLink || ""
+        );
+        const progress = showToast("Checking availability…", "info", { durationMs: 0 });
         const result = await runJobAvailabilityCheck(
           deps.jobsSavedJobsService,
           availabilityId,
-          { onProgress: () => showToast("Checking availability…", "info") }
+          {
+            onProgress: ({ elapsedS }) => progress.update({
+              message: `Checking availability… ${Number(elapsedS) || 1}s`
+            })
+          }
         );
-        showToast(
-          result.ok ? availabilityCheckResultLabel(result.data) : result.error,
-          result.ok && result.data?.status !== "failed" ? "success" : "error"
-        );
-        if (result.ok && availabilityCheckWasApplied(result.data)) {
+        progress.dismiss();
+        if (!result.ok) {
+          showToast(String(result.error || "The availability check failed — try again."), "error");
+          return;
+        }
+        const verdict = availabilityCheckVerdict(result.data);
+        const options = verdict.conclusive || !jobLink
+          ? {}
+          : {
+              actionLabel: "Open job page",
+              onAction: () => deps.openJobLinkInDefaultBrowser(jobLink),
+              durationMs: 7000
+            };
+        showToast(verdict.message, verdict.tone, options);
+        if (availabilityCheckWasApplied(result.data)) {
           await feedController.refreshJobsNow({ manual: false });
         }
       }
