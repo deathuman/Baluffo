@@ -1,11 +1,3 @@
 {
-  "allowlist": [
-    {
-      "id": "CVE-2026-84366",
-      "package": "scrapy",
-      "reason": "Non-applicable: advisory targets Scrapy's S3DownloadHandler sending signed S3 requests over plaintext HTTP. Baluffo never uses s3:// URLs or S3 storage (no s3download/boto references in src/ or tests/), so the vulnerable code path is unreachable. Revisit at review_by: either upgrade scrapy>=2.17 (scrapy-playwright supports scrapy>=2.7) or extend this entry.",
-      "owner": "DeathUman",
-      "review_by": "2026-10-03"
-    }
-  ]
+  "allowlist": []
 }
