@@ -7,7 +7,7 @@ import {
   getDesktopBootstrapStats,
   initDesktopLocalDataClient
 } from "./desktop-client.js";
-import { hydrateDesktopVersionLabels } from "../app-version.js";
+import { hydrateAppVersionLabels } from "../app-version.js";
 import {
   resolveBridgeLocalDataMode,
   resolveDesktopRuntimeMode,
@@ -47,9 +47,7 @@ if (window.__baluffoBridgeLocalDataMode) {
       }
       window.__baluffoLocalDataLoaded = true;
       console.log("[baluffo] Bridge local data initialized successfully");
-      if (enableDesktopLifecycle) {
-        hydrateDesktopVersionLabels().catch(() => {});
-      }
+      hydrateAppVersionLabels().catch(() => {});
       const desktopBootstrapReadyAt =
         typeof performance !== "undefined" && typeof performance.now === "function"
           ? performance.now()

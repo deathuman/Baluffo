@@ -124,6 +124,70 @@ test("container navigation skips desktop runtime query params", async () => {
   }
 });
 
+test("container app client hydrates the version label from same-origin app ready", async () => {
+  const versionLabel = { hidden: true, textContent: "" };
+  const {
+    fetchCalls,
+    intervalHandlers,
+    beaconCalls,
+    eventListeners
+  } = setupContainerGlobals();
+  global.document = {
+    querySelectorAll(selector) {
+      return String(selector).includes("app-version") ? [versionLabel] : [];
+    }
+  };
+  try {
+    global.fetch = async (url, options = {}) => {
+      const normalizedUrl = String(url);
+      fetchCalls.push({ url: normalizedUrl, options });
+      if (normalizedUrl.includes("/desktop-local-data/session")) {
+        return createJsonResponse({
+          ok: true,
+          user: null,
+          desktopSession: {
+            sessionId: "container-session-1",
+            ownerToken: "container-owner-1",
+            lastActivityAt: "2026-06-01T10:00:00Z"
+          }
+        });
+      }
+      if (normalizedUrl.includes("/app/ready")) {
+        return createJsonResponse({
+          ok: true,
+          appVersion: "0.2.146",
+          status: "healthy"
+        });
+      }
+      throw new Error(`unexpected fetch: ${normalizedUrl}`);
+    };
+    await importFresh("../../../frontend/shared/local-data/app-client.js", {
+      relativeTo: import.meta.url
+    });
+    for (let index = 0; index < 30 && !window.__baluffoLocalDataLoaded; index += 1) {
+      await flushMicrotasks(5);
+    }
+    for (
+      let index = 0;
+      index < 30 && !String(versionLabel.textContent || "").includes("0.2.146");
+      index += 1
+    ) {
+      await flushMicrotasks(5);
+    }
+
+    assert.equal(String(versionLabel.textContent), "Version 0.2.146");
+    assert.equal(versionLabel.hidden, false);
+    assert.ok(fetchCalls.some(call => call.url.includes("/app/ready")));
+    assert.equal(fetchCalls.some(call => call.url.includes("/app/update-status")), false);
+    assert.equal(fetchCalls.some(call => call.url.includes("/app/desktop-session-lifecycle")), false);
+    assert.equal(intervalHandlers.length, 0);
+    assert.equal(beaconCalls.length, 0);
+    assert.equal(eventListeners.size, 0);
+  } finally {
+    delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+  }
+});
+
 test("container app client uses bridge local data without desktop lifecycle", async () => {
   const { beaconCalls, eventListeners, fetchCalls, intervalHandlers } = setupContainerGlobals();
   try {
