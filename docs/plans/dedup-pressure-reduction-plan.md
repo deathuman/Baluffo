@@ -1,11 +1,11 @@
 # Dedup Pressure Reduction Plan
 
-> - **Status:** Stale — validate-then-decide (reviewed 2026-08-28): confirm whether the monitor debt still exists against a fresh fetch report; if not, archive this plan; otherwise fold the remainder into [`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md)
+> - **Status:** Folded (2026-09-04) — the validate-then-decide review was executed against a fresh fetch: the confidence-gate strategy holds (0 blocking non-primary merges, 0 blocking review rows) but the gate returned `blocked` with 2 new provider/static disagreement rows, so the archive criterion failed; the remainder (provider/static blocked-row review) is folded into **T4b** of [`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md) — see "Validation record 2026-09-04" below
 > - **Use this when:** reducing dedup gate pressure without chasing individual static source failures
 > - **Canonical for:** next-step dedup pressure strategy and latest measured evidence
 > - **Not canonical for:** data payload contracts or source registry policy
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and the latest fresh `data/jobs-fetch-report.json` from `npm run dev:pipeline`
-> - **Last updated:** 2026-08-28 (status review — needs fresh-run validation before further work)
+> - **Last updated:** 2026-09-04 (validate-then-decide executed; plan folded into jobs-coverage-improvement-plan.md T4b)
 
 ## Summary
 
@@ -92,3 +92,26 @@ Conclusion: the confidence gate achieved the intended strategic shift and the li
 - Lifecycle readiness should block only on high-confidence identity risks.
 - Weak non-provider/static/parser pressure is accepted monitor debt.
 - Registry state, tombstones, provider adapters, and source-policy automation remain unchanged by this strategy.
+
+## Validation record 2026-09-04 (validate-then-decide executed → folded)
+
+Evidence: fresh full pipeline run (`python -m src.jobs.pipeline --force-refresh-all`, 2,115
+sources, fetch 2026-09-04T17:05:45→17:42:08 UTC) + `tools/measurements/pipeline/dedup_pressure_report.py --json`
+against `data/jobs-fetch-report.json` + the focused battery (39 tests passed).
+
+| Metric | 2026-05-11 baseline | 2026-09-04 fresh run |
+|---|---|---|
+| Non-primary merges blocking / monitor | 0 / 3,714 | **0** / 3,904 |
+| Review queue blocking / monitor | 0 / 2,665 | **0** / 2,839 |
+| Provider/static blocked / warning-only disagreements | 0 / 13 | **2** / 15 |
+| Gate | warning, lifecycleUxReady=true | **blocked**, lifecycleUxReady=false |
+
+The strategy held — monitor debt is alive in exactly the designed shape (secondaryKey 3,584 +
+sparseIdentity 320, blocking both 0) — but the gate is `blocked` because the fresh run introduced
+2 current-run blocked `provider_static_disagreement` rows (greenhouse/smartrecruiters pairs:
+31st Union, Guerrilla, People Can Fly, PlayStation Global class), which is this plan's own reopen
+trigger. Archiving on a blocked gate would strand those rows with no owner, so the plan is
+**folded** instead: the blocked-row review is now T4b in
+[`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md). Once both rows are
+reviewed (`reviewed_safe`) and a re-run returns the gate to `warning`, the original archive
+criteria are satisfied.
