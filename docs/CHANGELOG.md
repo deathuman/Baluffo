@@ -10,6 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.147] - 2026-09-04
+### Changed
+
+- Source discovery now remembers repeated probe failures per candidate: after three consecutive failures of the same deterministic class (DNS resolution, TLS certificate verification), a candidate is quarantined and skipped on subsequent discovery runs instead of being re-probed every cycle. Quarantines expire with the failure-memory retention window and revive on the next failure, transient failure classes (timeouts, 5xx, connection resets) keep probing as before, and a successful probe clears the record. Failure counters are kept in memory during a run and flushed once at finalize.
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.146] - 2026-09-03
 ### Changed
 
