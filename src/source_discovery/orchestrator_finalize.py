@@ -292,6 +292,14 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     )
     summary["gamedevmapAudit"] = dict(state.gamedevmap_audit_summary)
     summary["directoryAudits"] = dict(state.directory_audit_summaries)
+    if state.probe_failure_memory is not None:
+        flush_stats = state.probe_failure_memory.flush()
+        orchestrator.emit_log(
+            "Probe failure memory: "
+            f"quarantinedThisRun={state.probe_quarantine_started_count}, "
+            f"storeEntries={flush_stats.get('entries', 0)}, "
+            f"droppedOverQuota={flush_stats.get('droppedOverQuota', 0)}."
+        )
     task_progress = build_discovery_task_progress(summary=summary, finished=True)
 
     failure_counter = _build_failure_counter(state.failures)
@@ -302,6 +310,9 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         "suppressedStaticCount": int(state.suppressed_static_count),
         "suppressedStaticByReason": dict(state.suppressed_static_by_reason),
         "suppressedStaticByStage": dict(state.suppressed_static_by_stage),
+        "probeQuarantinedCount": int(state.probe_quarantined_count),
+        "probeQuarantinedByClass": dict(state.probe_quarantined_by_class),
+        "probeQuarantineStartedCount": int(state.probe_quarantine_started_count),
     }
 
     sheet_directory_summary = _build_sheet_directory_summary(

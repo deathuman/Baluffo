@@ -901,6 +901,32 @@ def _blocked_static_url(raw: dict[str, Any]) -> str:
     return ""
 
 
+def _record_quarantined_probe_candidate(
+    *,
+    state: DiscoveryRunState,
+    raw: dict[str, Any],
+    record: dict[str, Any],
+) -> None:
+    failure_class = str(record.get("failureClass") or "other")
+    state.probe_quarantined_count += 1
+    state.probe_quarantined_by_class[failure_class] += 1
+    state.failures.append(
+        {
+            "name": raw.get("name"),
+            "adapter": raw.get("adapter"),
+            "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+            "error": (
+                f"probe quarantine active for {failure_class} failures "
+                f"(consecutive={int(record.get('consecutiveCount') or 0)}, "
+                f"lastError={str(record.get('lastError') or '')[:160]})"
+            ),
+            "stage": "probe_quarantined",
+            "dropStage": "probe_quarantined",
+            "dropReason": failure_class,
+        }
+    )
+
+
 def _route_probe_candidate(
     *,
     raw: dict[str, Any],
@@ -909,6 +935,11 @@ def _route_probe_candidate(
     stage: str,
     low_evidence_probes_used: int,
 ) -> tuple[bool, int]:
+    quarantine_record = state.probe_quarantine_index.get(str(source_identity(raw) or "").strip())
+    if quarantine_record is not None:
+        _record_quarantined_probe_candidate(state=state, raw=raw, record=quarantine_record)
+        return True, low_evidence_probes_used
+
     blocked_url = _blocked_static_url(raw)
     if blocked_url:
         _record_static_suppression(

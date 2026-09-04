@@ -44,6 +44,7 @@ from src.source_registry import (
 from . import orchestrator_finalize as orchestrator_finalize_mod
 from . import orchestrator_generation as orchestrator_generation_mod
 from . import orchestrator_probe as orchestrator_probe_mod
+from . import probe_failure_memory
 from .bootstrap import discovery_report_write_path, prime_bridge_discovery_report
 from .config import (
     ADAPTER_QUEUE_CAPS,
@@ -393,6 +394,15 @@ def _run_discovery_impl(
         url_patch_manifest_enabled=url_patch_manifest_enabled,
     )
     state = DiscoveryRunState()
+    state.probe_failure_memory = probe_failure_memory.ProbeFailureMemory(
+        probe_failure_memory.store_path(Path(source_registry_module.ACTIVE_PATH).parent)
+    )
+    state.probe_quarantine_index = state.probe_failure_memory.quarantine_index()
+    if state.probe_quarantine_index:
+        print(
+            "Probe failure memory: "
+            f"{len(state.probe_quarantine_index)} candidate(s) quarantined this run."
+        )
     state.write_progress_report(
         [],
         phase="starting",

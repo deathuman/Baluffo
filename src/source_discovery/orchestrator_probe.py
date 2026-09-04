@@ -181,6 +181,12 @@ def _record_failed_probe(raw: dict[str, Any], error: str, *, state: DiscoveryRun
     failure_row = _probe_failure_row(raw, error)
     state.failures.append(failure_row)
     state.failed_probe_records.append({"candidate": dict(raw), "failure": failure_row})
+    memory = state.probe_failure_memory
+    if memory is None:
+        return
+    record = memory.record_failure(identity=source_identity(raw), error=error, at=now_iso())
+    if record is not None:
+        state.probe_quarantine_started_count += 1
 
 
 def _record_queue_filtered_probe(
@@ -221,6 +227,9 @@ def _record_probe_result(
     if not ok:
         _record_failed_probe(raw, error, state=state)
         return
+    memory = state.probe_failure_memory
+    if memory is not None:
+        memory.clear_identity(source_identity(raw))
     if not should_queue_candidate(raw, jobs_found, deps.thresholds):
         _record_queue_filtered_probe(raw, jobs_found=jobs_found, state=state)
         return

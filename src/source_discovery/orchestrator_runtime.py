@@ -95,6 +95,11 @@ class DiscoveryRunState:
     probe_inputs: list[dict[str, Any]] = field(default_factory=list)
     prevalidated_probe_inputs: list[dict[str, Any]] = field(default_factory=list)
     failed_probe_records: list[dict[str, Any]] = field(default_factory=list)
+    probe_failure_memory: Any = field(default=None)
+    probe_quarantine_index: dict[str, dict[str, Any]] = field(default_factory=dict)
+    probe_quarantined_count: int = 0
+    probe_quarantine_started_count: int = 0
+    probe_quarantined_by_class: Counter[str] = field(default_factory=Counter)
     gamedevmap_audit_summary: dict[str, Any] = field(default_factory=dict)
     directory_audit_summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
     subtask_progress_last_written_mono: float = 0.0
