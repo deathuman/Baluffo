@@ -9,6 +9,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ---
 
 ## [Unreleased]
+### Fixed
+
+- Dedup provider/static auto-safe no longer miscounts digit-bearing studio slugs (e.g. `31stunion` in greenhouse board URLs) as a second concrete job identity: `concreteSharedIdentifierTokens` is now narrowed to job-ID-shaped tokens (numeric identifiers dominated by digits), so bundles whose static parser emits legacy `boards.greenhouse.io` links while the provider uses canonical `job-boards.greenhouse.io` auto-safe to warning instead of blocking the dedup gate. This resolves the 2 current-run blockers from the 2026-09-04 fresh fetch (31st Union), restoring the gate to `warning` / `lifecycleUxReady=true`; regression tests cover the 31st Union shapes and a differing-job-ID negative control that stays blocked.
 
 ## [0.2.147] - 2026-09-04
 ### Changed

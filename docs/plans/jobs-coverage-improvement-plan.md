@@ -1443,6 +1443,24 @@ second step that can ride the same change or follow separately. After the fix, r
 pressure report and expect the gate back at `warning` / `lifecycleUxReady=true`, which also
 satisfies the dedup plan's original archive criteria.
 
+**T4b implementation (2026-09-04): the auto-safe precision bug (defect 2) is fixed; defect 1
+(classifier host-family) left as optional refinement.** `dedup_evidence_bundle.py` now narrows
+`_concrete_shared_identifier_tokens` to job-ID-shaped tokens via
+`_looks_like_job_identifier_token` (digit run ≥ half the token: greenhouse `7668112003`,
+smartrecruiters `7839485` count; slugs like `31stunion`, `wargaming1970` do not). Token identity
+is computed on the intersection of both sides' concrete tokens, so the digit-bearing slug stays
+shared evidence but is no longer a second job identity; differing-job-ID pairs (both IDs shared
+by both sides) remain blocked. Verified three ways: 25/25 disagreement-gate tests including 5 new
+(31st Union single-job, two-static-URL, differing-ID negative control, plus predicate unit
+tests); the full 29-file dedup battery 151/151; and a live replay of the fresh report's rows
+through the real gate — both blocked rows recompute to one shared job-ID token and disposition
+`warning` (`auto_safe_current_static_parser_url_variant`), all 15 warnings unchanged. Next
+full-fetch `dedup_pressure_report.py` run should return the gate to `warning` /
+`lifecycleUxReady=true`, closing T4b and the dedup plan's archive criteria. The classifier
+host-family recognition (defect 1) would relabel these rows
+`provider_redirect_or_canonical_url` — a truer label but no longer gate-relevant — and can ride
+a future greenhouse identity change if wanted.
+
 ### P1 — Highest-yield code fix
 
 **T5. Workday CXS TLS-gating fix, then stage the five phApp-family Workday rows (WP18) —

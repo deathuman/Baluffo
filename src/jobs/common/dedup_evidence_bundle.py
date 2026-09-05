@@ -11,6 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup evidence t
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -391,6 +392,23 @@ def _concrete_identifier_tokens(values: Sequence[str]) -> set[str]:
     return tokens
 
 
+def _looks_like_job_identifier_token(token: str) -> bool:
+    """True for tokens shaped like a job identifier, not a studio slug.
+
+    Studio slugs may contain digits (numeronyms such as ``31stunion``), so the
+    digit-bearing-token heuristic in ``_concrete_identifier_tokens`` counts them
+    as concrete identifiers. Job identity evidence must come from tokens whose
+    digit run looks like a job ID: a numeric identifier dominated by digits
+    (greenhouse ``7668112003``, smartrecruiters ``7839485``), not a slug with an
+    incidental digit run (``31stunion``, ``wargaming1970``).
+    """
+
+    digit_run = re.search(r"\d+", token)
+    if not digit_run:
+        return False
+    return len(digit_run.group()) * 2 >= len(token)
+
+
 def _concrete_shared_identifier_tokens(
     *,
     provider_ids: Sequence[str],
@@ -398,13 +416,27 @@ def _concrete_shared_identifier_tokens(
     static_ids: Sequence[str],
     static_urls: Sequence[str],
 ) -> list[str]:
+    """Shared tokens that plausibly identify one specific job on both sides.
+
+    Token identity is computed on the intersection of both sides' concrete
+    tokens, then narrowed to job-ID-shaped tokens (see
+    ``_looks_like_job_identifier_token``): a digit-bearing studio slug shared by
+    both URL families (e.g. the ``31stunion`` slug in greenhouse board URLs) is
+    evidence of the same board, not of the same job. The single-job auto-safe
+    gate requires exactly one such token.
+    """
+
     provider_tokens = _concrete_identifier_tokens(
         [*provider_ids, *(_url_path(url) for url in provider_urls)]
     )
     static_tokens = _concrete_identifier_tokens(
         [*static_ids, *(_url_path(url) for url in static_urls)]
     )
-    return sorted(provider_tokens & static_tokens)
+    return sorted(
+        token
+        for token in provider_tokens & static_tokens
+        if _looks_like_job_identifier_token(token)
+    )
 
 
 def _non_provider_items(bundle: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:

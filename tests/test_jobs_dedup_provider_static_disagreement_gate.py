@@ -389,4 +389,5 @@ def test_dedup_evidence_confirmed_blocking_preserves_blocker_metadata() -> None:
     assert row["dedupReviewStatus"] == "confirmed_blocking"
     assert row["disagreementGateDisposition"] == "blocked"
     assert "manual_review_confirmed_blocking" in row["disagreementGateEvidence"]
+    assert evidence["providerStaticDisagreementGateCounts"]["blocked"] == 1
     assert evidence["providerStaticDisagreementGateCounts"]["confirmedBlocking"] == 1
