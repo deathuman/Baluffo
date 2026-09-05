@@ -127,25 +127,32 @@ def test_workday_provider_uses_cxs_api_when_html_listing_has_no_jobs(
         def read(self) -> bytes:
             return self._payload
 
-    def fake_urlopen(request: Any, timeout: int) -> _Response:
-        _ = timeout
-        requests.append((request.full_url, json.loads(request.data.decode("utf-8"))))
-        return _Response(
-            {
-                "total": 1,
-                "jobPostings": [
-                    {
-                        "title": "Gameplay Programmer",
-                        "externalPath": "/job/Remote/Gameplay-Programmer_JR100",
-                        "locationsText": "Remote, United States",
-                        "postedOn": "Posted 2 Days Ago",
-                        "timeType": "Full time",
-                    }
-                ],
-            }
-        )
+    captured_contexts: list[object] = []
 
-    monkeypatch.setattr(provider_structured_listing_runner, "urlopen", fake_urlopen)
+    class _FakeOpener:
+        def open(self, request: Any, timeout: int) -> _Response:
+            _ = timeout
+            requests.append((request.full_url, json.loads(request.data.decode("utf-8"))))
+            return _Response(
+                {
+                    "total": 1,
+                    "jobPostings": [
+                        {
+                            "title": "Gameplay Programmer",
+                            "externalPath": "/job/Remote/Gameplay-Programmer_JR100",
+                            "locationsText": "Remote, United States",
+                            "postedOn": "Posted 2 Days Ago",
+                            "timeType": "Full time",
+                        }
+                    ],
+                }
+            )
+
+    def fake_build_opener(tls_context: object) -> _FakeOpener:
+        captured_contexts.append(tls_context)
+        return _FakeOpener()
+
+    monkeypatch.setattr(provider_structured_listing_runner, "_build_cxs_opener", fake_build_opener)
 
     rows = provider_api.run_workday_sources_source(
         fetch_text=lambda _url, _timeout: "<html><main id='root'></main></html>",
@@ -167,6 +174,7 @@ def test_workday_provider_uses_cxs_api_when_html_listing_has_no_jobs(
         )
     ]
     assert rows[0]["title"] == "Gameplay Programmer"
+    assert captured_contexts and captured_contexts[0] is not None
     assert rows[0]["adapter"] == "workday"
     assert rows[0]["studio"] == "Example Studio"
     assert rows[0]["jobLink"] == (

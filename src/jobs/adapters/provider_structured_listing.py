@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ssl
 import time
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, urlopen
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
@@ -27,9 +31,66 @@ from src.jobs.adapters.plugins.provider_api.source_errors import (
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common.http import HttpStatusError
 from src.jobs.registry import registry_entries
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text, normalize_url
+
+certifi: ModuleType | None
+try:
+    import certifi as _certifi
+except ImportError:  # pragma: no cover - optional dependency at runtime
+    certifi = None
+else:
+    certifi = _certifi
+
+# ponytail (T5/WP18): verified Python TLS rejects *.myworkdayjobs.com while curl/openssl
+# accept the same endpoints. Root cause (reproduced 2026-09-05): the served chain is valid
+# (leaf re-issued daily under a 90-day rotation), but the OS cert store can hold a stale
+# Workday-chain intermediate that poisons chain building during verification with
+# "certificate has expired". Python only calls load_default_certs() (the OS store) when no
+# cafile is passed, so anchoring verification on certifi alone sidesteps the polluted store
+# while staying fully verified (CERT_REQUIRED + hostname check). Browsers/curl do exactly
+# this class of chain resolution, which is why they never saw the failure.
+_WORKDAY_TLS_HOST_SUFFIX = ".myworkdayjobs.com"
+
+
+def _is_workday_tls_host(endpoint: str) -> bool:
+    host = (urlparse(str(endpoint or "")).hostname or "").lower()
+    return host.endswith(_WORKDAY_TLS_HOST_SUFFIX)
+
+
+def _workday_tls_context() -> ssl.SSLContext | None:
+    """Certifi-anchored verified TLS context for *.myworkdayjobs.com CXS endpoints.
+
+    Returns None when certifi is unavailable or the context cannot be built, in which
+    case the caller falls back to urlopen's default verified context (strictly no
+    verification downgrade anywhere).
+    """
+    if certifi is None:
+        return None
+    try:
+        return ssl.create_default_context(cafile=certifi.where())
+    except (OSError, ssl.SSLError):
+        return None
+
+
+class _WorkdayCxsNoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """CXS POSTs must never be silently followed: a 303 carries no re-POSTable body,
+    and Workday's maintenance redirect lands on an HTML page that would surface as a
+    confusing JSON decode error instead of the upstream status."""
+
+    def redirect_request(
+        self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any
+    ) -> None:
+        return None
+
+
+def _build_cxs_opener(tls_context: ssl.SSLContext | None) -> urllib.request.OpenerDirector:
+    handlers: list[Any] = [_WorkdayCxsNoRedirectHandler()]
+    if tls_context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=tls_context))
+    return build_opener(*handlers)
 
 
 @dataclass
@@ -212,6 +273,10 @@ def _fetch_workday_cxs_page(
     retries: int,
     backoff_s: float,
 ) -> dict[str, Any]:
+    # ponytail (T5): certifi-anchored context for Workday CXS hosts (see module note);
+    # redirects are surfaced as errors instead of followed (see _WorkdayCxsNoRedirectHandler).
+    tls_context = _workday_tls_context() if _is_workday_tls_host(endpoint) else None
+    opener = _build_cxs_opener(tls_context)
     attempt = 0
     last_error: Exception | None = None
     while attempt <= max(0, retries):
@@ -226,10 +291,25 @@ def _fetch_workday_cxs_page(
                 },
                 method="POST",
             )
-            with urlopen(request, timeout=timeout_s) as response:
+            with opener.open(request, timeout=timeout_s) as response:
                 text = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(text) if clean_text(text) else {}
             return parsed if isinstance(parsed, dict) else {}
+        except HTTPError as exc:
+            location = str(exc.headers.get("Location") or "") if exc.headers else ""
+            # ponytail (T5): Workday 303s CXS to its maintenance page during tenant
+            # maintenance. urlopen cannot follow it (no body to re-POST) and retries
+            # cannot help; surface it as a classified HTTP status error instead of a
+            # generic JSON decode failure.
+            if "maintenance" in location.lower():
+                raise HttpStatusError(int(exc.code or 0), endpoint, location=location) from exc
+            last_error = exc
+            if attempt >= max(0, retries):
+                break
+            sleep_s = max(0.0, float(backoff_s)) * (attempt + 1)
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+            attempt += 1
         except (OSError, ValueError) as exc:
             last_error = exc
             if attempt >= max(0, retries):
