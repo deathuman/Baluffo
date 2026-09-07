@@ -264,27 +264,50 @@ def run_gamesindustry_source(
     return []
 
 
+_GAMEJOBS_CARD_PATTERN = re.compile(
+    r'(?is)<div[^>]+class=["\']job["\'][^>]*>\s*'
+    r'<a[^>]+class=["\']title["\'][^>]+href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>(?P<rest>.*?)</div>'
+)
+_GAMEJOBS_COMPANY_PATTERN = re.compile(r'(?is)<a[^>]+class=["\']c["\'][^>]*>(?P<company>.*?)</a>')
+_GAMEJOBS_LOCATION_PATTERN = re.compile(r'(?is)<a[^>]+class=["\']w["\'][^>]*>(?P<location>.*?)</a>')
+_GAMEJOBS_SKIPPED_TITLE_TOKENS = {"gamejobs.co", "hire", "alerts", "track", "profile", "next"}
+
+
 def parse_gamejobs_html(
     html_text: str,
     *,
     base_url: str,
 ) -> list[RawJob]:
+    """Parse real gamejobs.co job cards.
+
+    Only ``<div class="job">`` cards with a class-``title`` anchor count as
+    postings; the directory/facet ``/search?c=`` links and nav text that the
+    previous whole-page anchor-chain regex swept into rows (``Apple 50`` /
+    ``Wargaming 51``-class pagination artifacts) never match. Cards without a
+    company anchor are skipped defensively: every observed listing page
+    (homepage and ``/search?page=N``) carries company anchors, so a card
+    missing one is a page-shape change, not a posting.
+    """
     jobs: list[RawJob] = []
     seen_links = set()
-    pattern = re.compile(
-        r'(?is)<a[^>]+href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>\s*'
-        r'(?:</[^>]+>\s*)*<a[^>]+href=["\'][^"\']+["\'][^>]*>(?P<company>.*?)</a>\s*'
-        r'(?:</[^>]+>\s*)*<a[^>]+href=["\'][^"\']+["\'][^>]*>(?P<location>.*?)</a>'
-    )
-    for match in pattern.finditer(html_text):
-        link = urljoin(base_url, clean_text(match.group("href")))
+    for match in _GAMEJOBS_CARD_PATTERN.finditer(html_text):
+        href = clean_text(match.group("href"))
         title = clean_text(re.sub(r"\s+", " ", match.group("title")))
-        company = clean_text(match.group("company"))
-        location = clean_text(match.group("location"))
-        if not title or not company or not link or link in seen_links:
+        if not title or not href:
             continue
-        if title.lower() in {"gamejobs.co", "hire", "alerts", "track", "profile", "next"}:
+        link = urljoin(base_url, href)
+        if link in seen_links:
             continue
+        if title.lower() in _GAMEJOBS_SKIPPED_TITLE_TOKENS:
+            continue
+        company_match = _GAMEJOBS_COMPANY_PATTERN.search(match.group("rest"))
+        if not company_match:
+            continue
+        company = clean_text(company_match.group("company"))
+        if not company:
+            continue
+        location_match = _GAMEJOBS_LOCATION_PATTERN.search(match.group("rest"))
+        location = clean_text(location_match.group("location")) if location_match else ""
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
         jobs.append(
@@ -540,6 +563,9 @@ def run_gamejobs_source(
     gamejobs_urls.extend(
         [f"{GAMEJOBS_SEARCH_URL}?page={page}" for page in range(2, GAMEJOBS_MAX_PAGES + 1)]
     )
+    # No in-page "next" links are followed: those anchors are nav text that a
+    # page-1 (or page-2) card carries in its trailing content, and hrefs on
+    # gamejobs.co point at /search (directory/facet) URLs, not detail pages.
     for index, url in enumerate(gamejobs_urls):
 
         def _attempt(url: str = url) -> int:

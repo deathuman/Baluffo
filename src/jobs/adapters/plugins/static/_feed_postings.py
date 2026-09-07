@@ -25,7 +25,6 @@ import re
 from collections.abc import Callable
 from html import unescape
 from typing import Any
-from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static._runner import (
@@ -35,6 +34,7 @@ from src.jobs.adapters.plugins.static._runner import (
     stamp_static_plugin_rows,
     static_plugin_context_values,
 )
+from src.jobs.adapters.static_runtime_support import safe_page_urljoin
 from src.jobs.feed_urls import page_relative_feed_url, site_feed_url
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
@@ -185,7 +185,7 @@ def _parse_items(
         if not title_match or not link_match:
             continue
         title = clean_text(strip_html_text(unescape(title_match.group(1))))
-        link = clean_text(urljoin(page_url, unescape(link_match.group(1))))
+        link = clean_text(safe_page_urljoin(page_url, unescape(link_match.group(1))))
         if not title or not link:
             continue
         if filter_keywords and not looks_like_feed_role_posting(title):

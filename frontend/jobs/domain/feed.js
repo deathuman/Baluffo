@@ -18,73 +18,126 @@ const GAME_SOURCE_FAMILY_HINTS = [
   "workwithindies"
 ];
 
-const GAME_ROLE_KEYWORDS = [
-  "artist",
-  "designer",
-  "engineer",
-  "programmer",
-  "animator",
-  "technical artist",
-  "concept artist",
-  "environment artist",
-  "character artist",
-  "gameplay",
-  "level design"
+// Curated games-industry employer identities, matched against the row's
+// COMPANY field only. These names carry employer-scope evidence the
+// keyword/provenance branches cannot (no game token in the name, no dedicated
+// board source) and short-name employers use multi-token hints so unrelated
+// look-alikes ("EACH1", "Eataly") stay unmatched. Recovers the
+// URL-keyword-carried employers lost to the 2026-09-06 keyword scoping:
+// docs/snapshots/sector-signal-contamination-2026-09-06.md.
+const GAME_EMPLOYER_NAME_HINTS = [
+  "playrix",
+  "daybreak",
+  "metacore",
+  "avalanche",
+  "square enix",
+  "lightbulb crew",
+  "electronic arts",
+  "ea sports",
+  "ea create"
 ];
 
 function normalizeBundleList(sourceBundle) {
   return Array.isArray(sourceBundle) ? sourceBundle.filter(item => item && typeof item === "object") : [];
 }
 
-function hasGameSourceProvenance(source = "", sourceBundle = []) {
+const STATIC_ADAPTERS = ["csv", "static", "scrapy_static"];
+
+// Tokens too generic to tie two employer names together.
+const GENERIC_EMPLOYER_TOKENS = new Set([
+  "games", "game", "gaming", "entertainment", "interactive", "studios", "studio",
+  "inc", "llc", "ltd", "the", "and", "co", "corp", "company", "group", "holdings"
+]);
+
+function employerTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter(token => !GENERIC_EMPLOYER_TOKENS.has(token)) || [];
+}
+
+function studioConsistentWithCompany(studio, company) {
+  const studioNorm = String(studio || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const companyNorm = String(company || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!studioNorm || !companyNorm) return false;
+  if (studioNorm.includes(companyNorm) || companyNorm.includes(studioNorm)) return true;
+  const studioSet = new Set(employerTokens(studio));
+  return employerTokens(company).some(token => studioSet.has(token));
+}
+
+// Provider provenance is scoped for multi-board static rows: when the bundle
+// mixes provider-adapter items with static-adapter items, provider provenance
+// only counts if every provider item's studio is employer-consistent with the
+// row's company — one employer's board must not certify a row belonging to a
+// different employer on the same aggregated site.
+function hasGameSourceProvenance(source = "", sourceBundle = [], company = "") {
   const sourceText = String(source || "").toLowerCase();
   if (sourceText && GAME_SOURCE_FAMILY_HINTS.some(hint => sourceText.includes(hint))) {
     return true;
   }
 
+  let sawProviderItem = false;
+  let sawStaticItem = false;
+  let providerInconsistent = false;
   for (const item of normalizeBundleList(sourceBundle)) {
     const bundleSource = String(item.source || "").toLowerCase();
     if (bundleSource && GAME_SOURCE_FAMILY_HINTS.some(hint => bundleSource.includes(hint))) {
       return true;
     }
-    const studio = String(item.studio || "").trim().toLowerCase();
     const adapter = String(item.adapter || "").trim().toLowerCase();
-    if (studio && adapter && !["csv", "static", "scrapy_static"].includes(adapter)) {
-      return true;
+    if (!adapter) continue;
+    if (STATIC_ADAPTERS.includes(adapter)) {
+      sawStaticItem = true;
+      continue;
+    }
+    const studio = String(item.studio || "").trim().toLowerCase();
+    if (!studio) continue;
+    sawProviderItem = true;
+    if (!studioConsistentWithCompany(studio, company)) {
+      providerInconsistent = true;
     }
   }
-  return false;
+  if (!sawProviderItem) return false;
+  if (!sawStaticItem) return true;
+  return !providerInconsistent;
 }
 
+// Company name tokens are deliberately NOT positive game evidence: ATS hosts
+// (greenhouse/lever/workable/ashby/bamboohr) and own-domain careers sites embed
+// the company slug for every employer, so "company appears in its own job URL"
+// carries no employer-specific information (it misclassified Apple/NVIDIA-class
+// non-games rows as Game). GAME_KEYWORDS equally do not count in source/jobLink:
+// board URLs like careers.wbd.com/.../wb-games-jobs or
+// disneycareers.com/en/search-jobs/game/... carry a games-flavored path for a
+// whole-company site and misattributed every employer's rows (WBD, CNN, HBO
+// Max, Disney, SciGames) as Game. Evidence:
+// docs/snapshots/sector-signal-contamination-2026-09-06.md.
 function hasPositiveGameEvidence(company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
   const text = `${company} ${title} ${source} ${jobLink}`.toLowerCase();
-  if (hasGameSourceProvenance(source, sourceBundle)) {
+  if (hasGameSourceProvenance(source, sourceBundle, company)) {
     return true;
   }
+  const companyText = String(company || "").trim().toLowerCase();
+  if (companyText && GAME_EMPLOYER_NAME_HINTS.some(hint => companyText.includes(hint))) {
+    return true;
+  }
+  const employerText = `${company} ${title}`.toLowerCase();
   if (
-    /\b(game|gaming|games|esports|gameplay|gamedev|unity|unreal|technical artist|tech artist|shader|material artist|world artist|terrain artist|environment art|environment artist|character artist|engine programmer|graphics programmer|level design|animator)\b/.test(text) ||
-    /\b(studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
-    text.includes("game")
+    /\b(game|gaming|games|esports|gameplay|gamedev|unity|unreal|technical artist|tech artist|shader|material artist|world artist|terrain artist|environment art|environment artist|character artist|engine programmer|graphics programmer|level design|animator)\b/.test(employerText) ||
+    /\b(studio|studios|interactive|publisher|entertainment)\b/.test(employerText) ||
+    employerText.includes("game")
   ) {
     return true;
-  }
-  const titleText = String(title || "").toLowerCase();
-  const companyToken = String(company || "").toLowerCase().replace(/\s+/g, "");
-  if (companyToken && GAME_ROLE_KEYWORDS.some(keyword => titleText.includes(keyword))) {
-    const joined = `${source} ${jobLink}`.toLowerCase().replace(/\s+/g, "");
-    if (joined.includes(companyToken)) {
-      return true;
-    }
   }
   return false;
 }
 
 export function classifyCompanyType(company, title = "", source = "", jobLink = "", sourceBundle = []) {
-  const text = `${company} ${title} ${source} ${jobLink}`.toLowerCase();
+  const employerText = `${company || ""} ${title || ""}`.toLowerCase();
   const isGame =
     hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ||
-    /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
-    /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(text);
+    /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(employerText) ||
+    /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(employerText);
   return isGame ? "Game" : "Tech";
 }
 

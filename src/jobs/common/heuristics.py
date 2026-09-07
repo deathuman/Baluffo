@@ -57,9 +57,14 @@ def classify_company_type(
     job_link: Any = "",
     source_bundle: Any = None,
 ) -> str:
-    text = f"{norm_text(company)} {norm_text(title)} {norm_text(source)} {norm_text(job_link)}"
+    # Employer corroboration tokens are scoped to company/title like the
+    # GAME_KEYWORDS branch: board URLs must not label a whole-company site's
+    # rows as game companies (WBD/Disney class — see
+    # docs/snapshots/sector-signal-contamination-2026-09-06.md).
+    employer_text = f"{norm_text(company)} {norm_text(title)}"
     if has_positive_game_evidence(company, title, source, job_link, source_bundle) or re.search(
-        r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b", text
+        r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b",
+        employer_text,
     ):
         return "Game"
     return "Tech"

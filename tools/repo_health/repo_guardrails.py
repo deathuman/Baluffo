@@ -48,6 +48,8 @@ from release_artifacts_policy import (
     check_ship_bundle_embedded_version,
 )
 from source_registry_duplicate_url_policy import (
+    check_active_seed_definitions,
+    check_active_seed_no_inline_asset_urls,
     check_active_seed_stale_baseline,
     check_active_seed_twin_career_urls,
 )
@@ -892,7 +894,17 @@ def run_registry_group() -> list[GuardFailure]:
         "check_active_seed_stale_baseline",
         check_active_seed_stale_baseline(repo_root=ROOT),
     )
-    for failure in (uncovered, stale):
+    definitions = _failure_from_messages(
+        "registry",
+        "check_active_seed_definitions",
+        check_active_seed_definitions(repo_root=ROOT),
+    )
+    inline_assets = _failure_from_messages(
+        "registry",
+        "check_active_seed_no_inline_asset_urls",
+        check_active_seed_no_inline_asset_urls(repo_root=ROOT),
+    )
+    for failure in (uncovered, stale, definitions, inline_assets):
         if failure is not None:
             failures.append(failure)
     return failures

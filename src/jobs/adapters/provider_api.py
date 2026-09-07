@@ -310,6 +310,26 @@ def run_personio_sources_source(
     )
 
 
+def run_phenom_sources_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
+) -> list[RawJob]:
+    return _dispatch_provider_api(
+        "phenom_sources",
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
+    )
+
+
 def run_bamboohr_sources_source(
     *,
     fetch_text: Callable[[str, int], str],

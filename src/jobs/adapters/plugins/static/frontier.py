@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import html_fragment_lines, strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
@@ -15,7 +14,10 @@ from src.jobs.adapters.provider_parsers import (
     normalize_location_details,
     parse_generic_location_fields,
 )
-from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
+from src.jobs.adapters.static_runtime_support import (
+    is_static_fetch_fallback_exception,
+    safe_page_urljoin,
+)
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -186,7 +188,7 @@ def _extract_from_li_blocks(
         href = _frontier_li_detail_href(li_html)
         if not href:
             continue
-        link = normalize_url(urljoin(page_url, href))
+        link = normalize_url(safe_page_urljoin(page_url, href))
         if not link or link in seen_links:
             continue
         detail_html = _frontier_li_detail_html(li_html)
@@ -220,7 +222,7 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
             continue
         if "/careers/jobs" not in href.lower():
             continue
-        link = normalize_url(urljoin(page_url, href))
+        link = normalize_url(safe_page_urljoin(page_url, href))
         if not link or link in seen_links:
             continue
         window = _window(html, match.start(), match.end())

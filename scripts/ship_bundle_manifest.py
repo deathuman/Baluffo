@@ -32,6 +32,7 @@ APP_RUNTIME_SCRIPTS: tuple[str, ...] = (
     "jobs_fetcher.py",
     "jobs_fetcher_registry.py",
     "pipeline_io.py",
+    "report_history_slots.py",
     "source_discovery.py",
     "source_registry_auto_approval.py",
     "source_registry_canonicalize.py",

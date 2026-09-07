@@ -13,12 +13,23 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
+from src import report_history_slots as report_slots
 from src.shared.json_io import gzip_backed_json_storage_path
 from src.storage_json_metrics import record_json_text_write
 
 RawJob = dict[str, Any]
 
 _STALE_TMP_AGE_SECONDS = 60 * 60
+
+# Fetch-report evidence preservation: jobs-fetch-report.json is a single-slot
+# artifact, so any run — including a targeted --only-sources pass — overwrites
+# the previous run's per-source failure evidence. Terminal reports are snapshotted
+# per-run (jobs-fetch-report-<runId>-<UTC-timestamp>.json.gz) so a targeted run's
+# snapshot can never displace a full pass's snapshot; the invariant and slot
+# mechanics live in src/report_history_slots.py (shared with the discovery report).
+FETCH_REPORT_HISTORY_DIR_NAME = "fetch-report-history"
+_FETCH_REPORT_NAMES = {"jobs-fetch-report.json", "jobs-fetch-report.json.gz"}
+_FETCH_REPORT_HISTORY_LOCK = threading.Lock()
 
 
 def _trusted_local_path(path: Path | str) -> Path:
@@ -371,12 +382,46 @@ def cleanup_fetched_rows_sidecar(output_dir: Path) -> None:
         pass
 
 
+def _is_fetch_report_path(path: Path) -> bool:
+    return Path(path).name in _FETCH_REPORT_NAMES
+
+
+def _looks_like_terminal_fetch_report(text: str) -> bool:
+    """Terminal reports carry finishedAt; progress/start shells never do."""
+    return report_slots.looks_like_terminal_report_text(text)
+
+
+def _write_fetch_report_history_backup(target: Path, text: str) -> None:
+    """Snapshot a terminal report into its per-run history slot (shared leaf)."""
+    report_slots.upsert_history_slot(
+        text,
+        history_dir=Path(target).parent / report_slots.FETCH_REPORT_HISTORY_DIR_NAME,
+        file_stem="jobs-fetch-report",
+    )
+
+
+def _backup_fetch_report_before_overwrite(
+    path: Path, target: Path, existing: str, incoming: str
+) -> None:
+    """Upsert terminal-report evidence into per-run slots (invariant in report_history_slots)."""
+    del target  # history dir derives from the report path
+    report_slots.upsert_terminal_report_history_slots(
+        path=path,
+        existing_text=existing,
+        incoming_text=incoming,
+        report_names=_FETCH_REPORT_NAMES,
+        history_dir_name=report_slots.FETCH_REPORT_HISTORY_DIR_NAME,
+        file_stem="jobs-fetch-report",
+    )
+
+
 def write_text_if_changed(path: Path, text: str) -> bool:
     target = _storage_target_path(path)
     try:
         existing = _read_text_path(target)
         if existing == text:
             return False
+        _backup_fetch_report_before_overwrite(path, target, existing, text)
     except OSError:
         pass
     write_started_at = time.perf_counter()
@@ -473,6 +518,7 @@ def write_hot_text_if_changed(path: Path, text: str) -> bool:
         existing = path.read_text(encoding="utf-8")
         if existing == text:
             return False
+        _backup_fetch_report_before_overwrite(path, path, existing, text)
     except OSError:
         pass
     write_started_at = time.perf_counter()

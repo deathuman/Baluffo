@@ -185,3 +185,58 @@ def test_every_current_baseline_entry_backed_by_two_rows() -> None:
     known = policy._load_known_collisions(ROOT)
     stale = policy.list_stale_known_collisions(known, _active_seed())
     assert stale == [], f"stale baseline entries: {stale}"
+
+
+# definition consistency (batch-3 lean-registry trap) -------------------------
+
+
+def _static_row(source_id: str, **fields: object) -> dict:
+    row: dict = {"id": source_id, "adapter": "static", "name": "X", "studio": "X"}
+    row.update(fields)
+    return row
+
+
+def test_definitionless_static_rows_flags_missing_listing_and_pages() -> None:
+    rows = [_static_row("static:listing_url:https://a.example/jobs")]
+    failures = policy.list_definitionless_static_rows(rows)
+    assert len(failures) == 1
+    assert "static:listing_url:https://a.example/jobs" in failures[0]
+    assert "definition-less" in failures[0]
+
+
+def test_definitionless_static_rows_accepts_listing_url() -> None:
+    rows = [
+        _static_row(
+            "static:listing_url:https://a.example/jobs", listing_url="https://a.example/jobs"
+        )
+    ]
+    assert policy.list_definitionless_static_rows(rows) == []
+
+
+def test_definitionless_static_rows_accepts_pages() -> None:
+    rows = [_static_row("static:name:little chicken", pages=["https://a.example/jobs/"])]
+    assert policy.list_definitionless_static_rows(rows) == []
+
+
+def test_definitionless_static_rows_rejects_empty_pages_list() -> None:
+    rows = [_static_row("static:listing_url:https://a.example/jobs", pages=[])]
+    assert len(policy.list_definitionless_static_rows(rows)) == 1
+
+
+def test_definitionless_static_rows_ignores_provider_rows() -> None:
+    rows = [{"id": "lever:account:aofl", "adapter": "lever", "account": "aofl"}]
+    assert policy.list_definitionless_static_rows(rows) == []
+
+
+def test_definitionless_static_rows_ignores_careers_url_only() -> None:
+    """careersUrl alone is advisory metadata — it must NOT satisfy the check."""
+    rows = [
+        _static_row(
+            "static:listing_url:https://a.example/jobs", careersUrl="https://a.example/jobs"
+        )
+    ]
+    assert len(policy.list_definitionless_static_rows(rows)) == 1
+
+
+def test_definition_guardrail_passes_on_committed_seed() -> None:
+    assert policy.check_active_seed_definitions(ROOT) == []

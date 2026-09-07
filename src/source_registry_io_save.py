@@ -16,6 +16,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.report_history_slots import (
+    DISCOVERY_REPORT_HISTORY_DIR_NAME,
+    upsert_terminal_report_history_payloads,
+)
 from src.source_registry_io_journal import (
     _compact_json_journal_if_needed,
     _json_journal_image_payload,
@@ -42,6 +46,37 @@ from src.source_registry_io_paths import (
     ensure_data_dir,
 )
 from src.storage_metrics import duration_ms, record_json_write
+
+# Discovery-report evidence preservation: source-discovery-report.json is a
+# single-slot runtime-evidence artifact, so a new run overwrites the previous
+# run's terminal evidence. Terminal payloads are snapshotted per-run into
+# data/discovery-report-history/ (shared invariant: src/report_history_slots.py).
+_DISCOVERY_REPORT_HISTORY_NAMES = {"source-discovery-report.json"}
+
+
+def _snapshot_discovery_report_history(path: Path, payload: Any) -> None:
+    if Path(path).name not in _DISCOVERY_REPORT_HISTORY_NAMES:
+        return
+    existing = next(
+        (candidate for candidate in _json_storage_candidates(path) if candidate.exists()), None
+    )
+    existing_payload: Any = None
+    if existing is not None:
+        try:
+            existing_payload = _load_json_payload_from_file(existing)
+        except (OSError, json.JSONDecodeError):
+            existing_payload = None
+    try:
+        upsert_terminal_report_history_payloads(
+            path=path,
+            existing_payload=existing_payload,
+            incoming_payload=payload,
+            report_names=_DISCOVERY_REPORT_HISTORY_NAMES,
+            history_dir_name=DISCOVERY_REPORT_HISTORY_DIR_NAME,
+            file_stem="source-discovery-report",
+        )
+    except OSError:
+        pass
 
 
 def _write_json_payload_atomic(
@@ -153,6 +188,7 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     if _is_runtime_evidence_file(path):
         if _canonical_json_payload_matches_existing(path, payload):
             return
+        _snapshot_discovery_report_history(path, payload)
         _srio._write_json_payload_atomic(path, _json_journal_image_payload(payload))
         return
     if not _uses_json_journal(path):

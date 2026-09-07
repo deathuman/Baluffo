@@ -15,7 +15,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters.parsers.personio import parse_personio_feed_xml
+from src.jobs.adapters.parsers.personio import (
+    looks_like_personio_marketing_html,
+    parse_personio_feed_xml,
+)
 from src.jobs.adapters.plugins.provider_api.source_errors import (
     EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
     reraise_unexpected_provider_api_source_exception,
@@ -171,15 +174,7 @@ def _run_personio_registry_source(
         entry_report["fetchedCount"] = len(parsed)
         entry_report["keptCount"] = len(parsed)
         if not parsed:
-            lower = clean_text(text).lower()
-            is_marketing = any(
-                needle in lower
-                for needle in (
-                    "<html",
-                    "hr und lohnbuchhaltung endlich vereint",
-                    "personio homepage",
-                )
-            )
+            is_marketing = looks_like_personio_marketing_html(clean_text(text))
             entry_report.update(
                 status="error",
                 classification="site_changed" if is_marketing else "parser_stale",

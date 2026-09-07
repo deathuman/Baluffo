@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from src import source_registry_io as _registry_io
 from src.jobs.adapters import community
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.registry import registry_entries as common_registry_entries
@@ -37,7 +38,72 @@ SOURCE_REGISTRY_ACTIVE_PATH = common_config.SOURCE_REGISTRY_ACTIVE_PATH
 SOURCE_REGISTRY_PENDING_PATH = common_config.SOURCE_REGISTRY_PENDING_PATH
 SOURCE_APPROVAL_STATE_PATH = common_config.SOURCE_APPROVAL_STATE_PATH
 STUDIO_SOURCE_REGISTRY = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
+
+
+def reload_studio_source_registry() -> list[dict[str, Any]]:
+    """Refresh the in-process registry after a manual promotion outside the running pipeline.
+
+    persist_state_and_auto_sync writes through to the active file, but the module-level
+    STUDIO_SOURCE_REGISTRY global is populated once at import time, so a manual promotion
+    leaves the in-process registry stale until this is called.
+    """
+    global STUDIO_SOURCE_REGISTRY
+    refreshed = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
+    STUDIO_SOURCE_REGISTRY[:] = [dict(row) for row in refreshed if isinstance(row, dict)]
+    return list(STUDIO_SOURCE_REGISTRY)
+
+
 PENDING_PROVIDER_MIGRATION_REASON = "provider_migration_candidate"
+
+
+def _normalized_studio_source_registry_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a persisted active row into the shape the fetch runtime expects.
+
+    Manual promotions outside the running pipeline go through
+    transition_registry_to_active, which sets registryState=active but leaves
+    enabledByDefault and candidateState in their pre-promotion shapes
+    (enabledByDefault=False, candidateState=staged_provider_candidate). The
+    fetch runtime treats those as gated, so a manual promotion needs an explicit
+    normalization pass before it can feed jobs through the pipeline.
+    """
+    normalized = dict(row)
+    normalized["enabledByDefault"] = True
+    normalized["candidateState"] = "live"
+    return normalized
+
+
+def normalize_manual_promotion_rows(row_ids: set[str]) -> int:
+    """Normalize the manual-promotion surface for the given active row ids.
+
+    Reads/writes the current persisted active registry in place. Returns the
+    number of rows normalized. Idempotent: already-normalized rows are skipped.
+    """
+    active_path = SOURCE_REGISTRY_ACTIVE_PATH
+    active_rows = _registry_io.load_json_array(active_path, [])
+    normalized = 0
+    for row in active_rows:
+        if not isinstance(row, dict):
+            continue
+        rid = str(row.get("id") or "")
+        if rid not in row_ids:
+            continue
+        candidate_state = str(row.get("candidateState") or "").strip().lower()
+        enabled_by_default = bool(row.get("enabledByDefault", False))
+        if candidate_state == "live" and enabled_by_default:
+            normalized += 1
+            continue
+        row.update(_normalized_studio_source_registry_row(row))
+        normalized += 1
+    active_rows_deduped: list[dict[str, Any]] = [
+        dict(row) for row in active_rows if isinstance(row, dict)
+    ]
+    _registry_io.save_json_atomic(
+        active_path,
+        active_rows_deduped,
+    )
+    return normalized
+
+
 PROVIDER_REGISTRY_ADAPTERS = frozenset(
     {
         "ashby",
@@ -48,6 +114,7 @@ PROVIDER_REGISTRY_ADAPTERS = frozenset(
         "lever",
         "oracle_hcm",
         "personio",
+        "phenom",
         "pinpoint",
         "recruitee",
         "smartrecruiters",

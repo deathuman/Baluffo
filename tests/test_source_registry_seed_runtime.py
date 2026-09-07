@@ -516,25 +516,20 @@ def test_jobs_registry_loader_uses_seed_when_runtime_file_is_missing() -> None:
         assert rows == [{"id": "jobs-seed", "adapter": "static"}]
 
 
-def test_default_super_lucky_seed_stays_on_listing_host() -> None:
+def test_default_super_lucky_seed_row_retired() -> None:
+    """The Super Lucky Casino seed row was retired 2026-09-06 (chronic dead-board
+    sweep): superluckycasino.com now lapsed to stillfront.com and the target is
+    covered by active Stillfront-family rows. It must not be re-seeded and must
+    stay tombstoned (docs/snapshots/chronic-dead-board-decisions-2026-09-06.md).
+    """
+
     seed_path = Path("data/defaults/source-registry-active.seed.json")
     rows = json.loads(seed_path.read_text(encoding="utf-8"))
-    super_lucky = next(
-        row
-        for row in rows
-        if row.get("id") == "static:listing_url:https://www.superluckycasino.com"
-    )
-    listing_host = _normalized_host(super_lucky.get("listing_url"))
-    page_hosts = {_normalized_host(page) for page in super_lucky.get("pages", [])}
-    detail_page_hosts = {
-        _normalized_host(page) for page in super_lucky.get("detailPagesSample", [])
-    }
+    retired_id = "static:listing_url:https://www.superluckycasino.com"
+    assert all(row.get("id") != retired_id for row in rows)
 
-    assert super_lucky["listing_url"] == "https://www.superluckycasino.com"
-    assert super_lucky["careersUrl"] == "https://www.superluckycasino.com"
-    assert super_lucky["pages"] == ["https://www.superluckycasino.com"]
-    assert super_lucky["id"] == "static:listing_url:https://www.superluckycasino.com"
-    assert page_hosts == {listing_host}
-    assert detail_page_hosts <= {listing_host}
-    assert super_lucky["detailPageCount"] == 0
-    assert super_lucky["detailPagesSample"] == []
+    from src.bridge.registry_tombstones import load_tombstones
+
+    record = load_tombstones().get(retired_id)
+    assert isinstance(record, dict)
+    assert record.get("reason", "").startswith("absorbed_rebrand_target_covered")

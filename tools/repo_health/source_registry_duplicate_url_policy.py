@@ -144,6 +144,86 @@ def check_active_seed_twin_career_urls(repo_root: Path) -> list[str]:
     return rows
 
 
+def list_definitionless_static_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Return static seed rows that would fetch nothing.
+
+    A static registry row needs a definition: at least one of ``listing_url``
+    or a non-empty ``pages`` list (``careersUrl`` alone is advisory metadata —
+    the pipeline's page set comes from ``pages``/``listing_url``). A row whose
+    id was renamed without its definition (the batch-3 lean-registry trap:
+    direct ``.json.gz`` writes bypassing ``save_json_atomic``) loads with zero
+    pages and the pipeline silently fetches nothing while reporting status ok.
+    """
+    failures: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or "").strip()
+        if not row_id.startswith("static:"):
+            continue
+        listing_url = str(row.get("listing_url") or "").strip()
+        pages = row.get("pages")
+        pages_ok = isinstance(pages, list) and any(str(p or "").strip() for p in pages)
+        if listing_url or pages_ok:
+            continue
+        failures.append(
+            f"{row_id} has no listing_url and no pages — definition-less static row "
+            f"(fetches nothing; likely an id rename that bypassed save_json_atomic)"
+        )
+    return failures
+
+
+def check_active_seed_definitions(repo_root: Path) -> list[str]:
+    """Guardrail entrypoint: fail when an active seed static row is definition-less."""
+    seed_path = _active_seed_path(repo_root)
+    rows = _load_active_seed(seed_path)
+    if isinstance(rows, list):
+        return list_definitionless_static_rows(rows)
+    return rows
+
+
+def list_rows_with_inline_asset_urls(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Return active seed rows whose page lists carry non-http(s) URIs.
+
+    Discovery probes must only ever harvest http(s) detail links. A
+    ``data:image/...`` href inside ``pages``/``detailPagesSample`` (the CarX
+    Technologies 2026-09-07 contamination: a 6.5 MB base64 logo whose base64
+    path noise matched the detail-path regex) is fetched as a listing page
+    every pipeline pass and fails with ``URL too long``, failing the whole
+    source. Inline-asset URIs are page content, not pages.
+    """
+    failures: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or "").strip()
+        offending: list[str] = []
+        for field in ("pages", "detailPagesSample"):
+            values = row.get(field)
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                text = str(value or "").strip()
+                if text.lower().startswith("data:"):
+                    offending.append(f"{field}[{text[:24]}...]")
+        if offending:
+            failures.append(
+                f"{row_id} carries inline-asset URI(s) in its page lists "
+                f"({'; '.join(offending[:3])}) — data:/blob: URIs are page content, "
+                "not fetchable pages; purge them from the row"
+            )
+    return failures
+
+
+def check_active_seed_no_inline_asset_urls(repo_root: Path) -> list[str]:
+    """Guardrail entrypoint: fail when an active seed row embeds data: URIs."""
+    seed_path = _active_seed_path(repo_root)
+    rows = _load_active_seed(seed_path)
+    if isinstance(rows, list):
+        return list_rows_with_inline_asset_urls(rows)
+    return rows
+
+
 def check_active_seed_stale_baseline(repo_root: Path) -> list[str]:
     """Guardrail entrypoint: fail when any baseline entry is backed by < 2 rows."""
     seed_path = _active_seed_path(repo_root)

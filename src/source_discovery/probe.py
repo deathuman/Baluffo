@@ -23,6 +23,7 @@ import httpx
 
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
+from src.jobs.adapters.parsers.personio import looks_like_personio_marketing_html
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
 from src.jobs.common.no_openings import contains_no_openings_marker, visible_text_from_html
 from src.url_hosts import host_matches_domain_pattern, host_matches_subdomain
@@ -218,10 +219,18 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
             or value.startswith("#")
             or value.startswith("mailto:")
             or value.startswith("javascript:")
+            or value.startswith("data:")
         ):
             continue
         absolute = urljoin(base_url, value) if base_url else value
         parsed = urlparse(absolute)
+        if parsed.scheme not in {"http", "https"}:
+            # Inline-asset URIs (data:, blob:, tel:, ...) are page content, not
+            # detail links. The CarX Technologies 2026-09-07 contamination
+            # traced to a 6.5 MB data:image href whose base64 path noise
+            # matched _STATIC_DETAIL_PATH_RE; a data: URI must never enter
+            # detail samples or registry pages.
+            continue
         page = (parsed.scheme, parsed.netloc, parsed.path.rstrip("/") or "/")
         same_listing_query_detail = _is_same_listing_query_detail_link(base_url, absolute, label)
         if page == base_page and not same_listing_query_detail:
@@ -473,6 +482,12 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
     if provider_count is not None:
         return provider_count
     if adapter == "personio":
+        if looks_like_personio_marketing_html(text):
+            # Dead board slugs serve Personio's marketing page instead of the
+            # XML feed; report the real story instead of a raw expat offset
+            # from deep inside minified page CSS, and keep the failure
+            # distinct from a genuinely empty board.
+            raise ValueError("personio feed redirected to marketing site")
         if text.lstrip().startswith("<"):
             try:
                 return len(ET.fromstring(text).findall(".//position"))

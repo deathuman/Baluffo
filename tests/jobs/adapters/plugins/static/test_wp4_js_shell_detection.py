@@ -66,6 +66,40 @@ def test_handlebars_lib_only_without_templates_stays_negative() -> None:
     assert _heuristics.detect_js_shell(html) is False
 
 
+def test_cupid_cookie_challenge_interstitial_detects_shell() -> None:
+    # CUPID-class cookie challenge: tiny page, script src + inline slowAES
+    # decrypt that sets the cookie and reloads with ?ckattempt=1 (DoubleU class).
+    html = (
+        '<html><body><script type="text/javascript" src="/cupid.js"></script>'
+        '<script>var a=toNumbers("5d744f5e"),b=toNumbers("ab6fe153");'
+        'document.cookie="CUPID="+toHex(slowAES.decrypt(c,2,a,b));'
+        'location.href="https://www.example.com/careers?ckattempt=1";</script>'
+        "</body></html>"
+    )
+    assert _heuristics.detect_js_shell(html) is True
+
+
+def test_inline_cookie_challenge_without_script_src_detects_shell() -> None:
+    # Same challenge family with no cupid.js script tag — inline decrypt +
+    # cookie set + reload is still an unambiguous challenge interstitial.
+    html = (
+        '<script>document.cookie=" clearance="+toHex(slowAES.decrypt(c,2,a,b));'
+        "location.reload(true);</script>"
+    )
+    assert _heuristics.detect_js_shell(html) is True
+
+
+def test_server_rendered_page_mentioning_cookie_apis_stays_negative() -> None:
+    # A real careers page that merely bundles a similarly-named helper script
+    # and discusses cookie APIs in prose must NOT classify as a challenge.
+    html = (
+        '<script src="/cupid-helpers.js"></script>'
+        "<p>We set cookies via document.cookie= for preferences only.</p>"
+        '<a class="job-listing" href="/careers/engineer">Engineer</a>'
+    )
+    assert _heuristics.detect_js_shell(html) is False
+
+
 def test_empty_or_trivial_html_returns_false() -> None:
     assert _heuristics.detect_js_shell("") is False
     assert _heuristics.detect_js_shell("<html><body>Hello</body></html>") is False

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import phapp as _phapp
@@ -19,7 +19,10 @@ from src.jobs.adapters.plugins.static._runner import (
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
-from src.jobs.adapters.static_runtime_support import fetch_static_html_or_none
+from src.jobs.adapters.static_runtime_support import (
+    fetch_static_html_or_none,
+    safe_page_urljoin,
+)
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -123,7 +126,7 @@ def _extract_blizzard_role_links(html: str, page_url: str) -> list[str]:
     out: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
-        absolute = normalize_url(urljoin(page_url, clean_text(href)))
+        absolute = normalize_url(safe_page_urljoin(page_url, clean_text(href)))
         if not absolute or absolute in seen:
             continue
         parsed = urlparse(absolute)
@@ -150,7 +153,7 @@ def _extract_blizzard_search_results_links(html: str, page_url: str) -> list[str
     out: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']*search-results[^"\']*)["\']', html):
-        absolute = normalize_url(urljoin(page_url, clean_text(href)))
+        absolute = normalize_url(safe_page_urljoin(page_url, clean_text(href)))
         if not absolute or absolute in seen:
             continue
         seen.add(absolute)

@@ -106,6 +106,12 @@ def _default_listing_url(source: dict[str, Any]) -> str:
         return listing_url
     if pages:
         return clean_text(pages[0])
+    # Pending provider-migration rows from this checkout's snapshot have
+    # listing_url null but id = workday:listing_url:<url>. Fall back to that so
+    # the adapter can still probe these rows without a first-class listing_url field.
+    row_id = clean_text(source.get("id"))
+    if row_id and row_id.startswith("workday:listing_url:"):
+        return row_id.split(":", 2)[-1].strip()
     return ""
 
 

@@ -407,11 +407,28 @@ def _job_link_slug_words(candidate_url: str) -> set[str]:
 
 
 def _itch_noise(source_lower: str, title: str, job_link: str, host: str) -> bool:
-    if "itch.io/jobs" not in source_lower or host != "itch.io":
+    if "itch.io/jobs" not in source_lower:
         return False
+    if not host_matches_domain(host, "itch.io"):
+        return False
+    # Structural rule for the itch.io jobs board: individual job postings live
+    # only at itch.io/j/<numeric-id>/<slug>. Everything else the parser picks
+    # up on itch.io hosts is board navigation or game-directory pollution:
+    # /jobs/<skill>/<type> filter pages ("Unity", "Windows", "Remote friendly"),
+    # /games/... directory rows ("With Webcam support", CC-license links),
+    # near-* location filters (place names, street addresses), site pages
+    # (/directory, /devlogs), and <studio>.itch.io game/devlog pages.
+    path = urlparse(clean_text(job_link) or "").path.lower()
+    if host != "itch.io":
+        return True
+    if _ITCH_JOB_DETAILS_PATH_RE.match(path) is None:
+        return True
     title_words = _source_specific_words(title)
     slug_words = _job_link_slug_words(job_link)
     return bool(title_words and slug_words and not title_words.issubset(slug_words))
+
+
+_ITCH_JOB_DETAILS_PATH_RE = re.compile(r"^/j/\d+/[^/]+/?$")
 
 
 def _source_url_text(source_url: str) -> str:

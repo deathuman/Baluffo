@@ -6,13 +6,15 @@ import hashlib
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
+from src.jobs.adapters.static_runtime_support import (
+    is_static_fetch_fallback_exception,
+    safe_page_urljoin,
+)
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -98,7 +100,7 @@ def _job_links(html: str, page_url: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
     for href, body in _JOB_LINK_RE.findall(html or ""):
-        link = normalize_url(urljoin(page_url, clean_text(href))) or ""
+        link = normalize_url(safe_page_urljoin(page_url, clean_text(href))) or ""
         if not link or link in seen:
             continue
         seen.add(link)

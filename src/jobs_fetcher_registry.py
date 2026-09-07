@@ -29,6 +29,7 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "oracle_hcm_sources",
     "workday_sources",
     "personio_sources",
+    "phenom_sources",
     "scrapy_static_sources",
     "social_x",
     "social_mastodon",
@@ -76,6 +77,7 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     },
     "workday_sources": {"adapter": "workday", "studio": "multiple", "fetchStrategy": "http"},
     "personio_sources": {"adapter": "personio", "studio": "multiple", "fetchStrategy": "http"},
+    "phenom_sources": {"adapter": "phenom", "studio": "multiple", "fetchStrategy": "http"},
     "scrapy_static_sources": {
         "adapter": "scrapy_static",
         "studio": "multiple",

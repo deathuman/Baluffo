@@ -36,6 +36,25 @@ from ..common import config as common_config
 _MAX_STATIC_REDIRECT_HOPS = 4
 
 
+def safe_page_urljoin(base: str, url: str) -> str:
+    """Join a page-controlled href against the page URL without raising.
+
+    Careers pages embed unrendered CMS/ATS template hrefs (e.g. Zoho's
+    ``https://'+$ESAPI.encoder()...data['website']+'`` or Wix's bracket-host
+    ``http://[cdn_template_directory]/...``). A bare ``urljoin`` raises ValueError
+    on those shapes and, in listing/detail extraction, the exception is recorded
+    as the source's entire failure — destroying the board's real yield. Page-
+    controlled URLs that cannot be parsed are simply not links; return "" so the
+    caller's ``normalize_url(...) or ""`` / falsy checks skip them like any other
+    non-link text.
+    """
+
+    try:
+        return urljoin(base, url)
+    except ValueError:
+        return ""
+
+
 def classify_static_fetch_exception(
     exc: Exception | str,
     *,
@@ -141,10 +160,25 @@ class StaticHtmlFetcher:
         remaining_budget_s: float | None = None,
         retries_override: int | None = None,
     ) -> StaticHtmlFetchRequest | None:
-        normalized = normalize_url(url) or clean_text(url)
+        normalized = normalize_url(url)
+        if not normalized:
+            raw = clean_text(url)
+            scheme = ""
+            if raw:
+                try:
+                    scheme = (urlparse(raw).scheme or "").lower()
+                except ValueError:
+                    scheme = ""
+            if scheme and scheme not in {"http", "https"}:
+                # Inline-asset URIs (data:, blob:, tel:, ...) are page content,
+                # never fetchable listing pages. A data:image href that leaked
+                # into registry pages (CarX, 2026-09-07) cost a 'URL too long'
+                # fetch error every pass; refuse instead of fetching.
+                return None
+            normalized = raw
         if not normalized:
             return None
-        fetch_url = clean_text(url) or normalized
+        fetch_url = normalized
         effective_timeout_s = self._timeout_s
         effective_retries = max(
             0, int(retries_override if retries_override is not None else self._retries)

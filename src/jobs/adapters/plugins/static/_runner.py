@@ -19,7 +19,10 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
+from src.jobs.adapters.static_runtime_support import (
+    is_static_fetch_fallback_exception,
+    safe_page_urljoin,
+)
 from src.jobs.models import RawJob
 from src.jobs.page_gating import (
     classify_job_page,
@@ -348,7 +351,7 @@ def static_detail_link_rows(
         href = clean_text(match.group(1))
         if not href:
             continue
-        absolute = urljoin(page_url, href)
+        absolute = safe_page_urljoin(page_url, href)
         if (urlparse(absolute).netloc or "").lower() != base_host:
             continue
         if not is_probable_detail_url(absolute):

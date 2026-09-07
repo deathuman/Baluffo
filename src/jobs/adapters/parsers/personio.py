@@ -17,9 +17,32 @@ from src.jobs.text_utils import clean_text
 
 from .location import normalize_location_details, parse_generic_location_fields
 
+# Same needle set the personio provider runner uses for its site_changed
+# classification, so probe evidence and pipeline diagnostics agree on the
+# same payload. Dead board slugs (e.g. innogames.jobs.personio.de) serve
+# Personio's marketing HTML page instead of the workzag XML feed.
+_PERSONIO_MARKETING_MARKERS = (
+    "<html",
+    "hr und lohnbuchhaltung endlich vereint",
+    "personio homepage",
+)
+
+
+def looks_like_personio_marketing_html(xml_text: str) -> bool:
+    """True when the payload is Personio's marketing HTML page, not a jobs XML feed."""
+
+    text = (xml_text or "").lstrip().lower()
+    if text.startswith("<!doctype html"):
+        return True
+    return any(marker in text for marker in _PERSONIO_MARKETING_MARKERS)
+
 
 def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob]:
     jobs: list[RawJob] = []
+    if looks_like_personio_marketing_html(xml_text):
+        # Marketing payload, not XML: return no rows and let the runner's
+        # site_changed classification handle the error story.
+        return jobs
     root: ET.Element | None = None
     try:
         root = ET.fromstring(xml_text)

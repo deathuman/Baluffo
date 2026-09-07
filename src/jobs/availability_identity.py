@@ -386,6 +386,66 @@ def _build_rejected_quarantine_additions(
     return additions
 
 
+def _dump_preflight_diagnostics(rows: Sequence[CanonicalJob], missing: int, conflicts: int) -> None:
+    """Best-effort dump of the offending rows when the post-filter invariant fails.
+
+    Without this the raise hides which rows are missing identities or which
+    availabilityIds map to multiple identity tokens, making the failure
+    undiagnosable from the log alone.
+    """
+    try:
+        out_path = Path("tmp") / "availability-preflight-diagnostics.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        ids_to_tokens: dict[str, set[str]] = defaultdict(set)
+        missing_rows: list[dict[str, Any]] = []
+        for canonical_row in rows:
+            row = canonical_row.to_dict()
+            token = _row_identity_token(row)
+            if not token:
+                continue
+            availability_id = clean_text(row.get("availabilityId"))
+            if availability_id:
+                ids_to_tokens[availability_id].add(token)
+            elif len(missing_rows) < 50:
+                missing_rows.append(
+                    {
+                        "sourceId": row.get("sourceId") or row.get("source"),
+                        "url": row.get("url") or row.get("jobUrl"),
+                        "title": row.get("title"),
+                        "identityTokenEmpty": True,
+                    }
+                )
+        conflict_rows = [
+            {
+                "availabilityId": aid,
+                "tokens": sorted(tokens),
+            }
+            for aid, tokens in ids_to_tokens.items()
+            if len(tokens) > 1
+        ][:50]
+        out_path.write_text(
+            json.dumps(
+                {
+                    "missingCount": missing,
+                    "conflictCount": conflicts,
+                    "missingSample": missing_rows,
+                    "conflicts": conflict_rows,
+                },
+                indent=1,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print(
+            f"[availability_identity] preflight diagnostics written to {out_path} "
+            f"(missing={missing}, conflicts={conflicts})",
+            flush=True,
+        )
+    except OSError as exc:
+        # Diagnostics must never mask the real preflight error.
+        print(f"[availability_identity] preflight diagnostics dump failed: {exc}", flush=True)
+
+
 def _identity_audit(rows: Sequence[CanonicalJob]) -> tuple[int, int, int]:
     monitorable = 0
     missing = 0
@@ -492,6 +552,7 @@ def prepare_availability_identities(
     )
     monitorable, missing, conflicts = _identity_audit(prepared_rows)
     if missing or conflicts:
+        _dump_preflight_diagnostics(prepared_rows, missing, conflicts)
         raise AvailabilityIdentityPreflightError(
             reason="post_filter_identity_invariant_failed",
             summary={

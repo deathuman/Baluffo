@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import (
     extract_tag_texts,
@@ -31,7 +30,10 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._runner import static_listing_job_row
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
-from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
+from src.jobs.adapters.static_runtime_support import (
+    is_static_fetch_fallback_exception,
+    safe_page_urljoin,
+)
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page
 from src.jobs.text_utils import clean_text, normalize_url
@@ -751,7 +753,7 @@ def _append_rendered_anchor_candidate(
     href = clean_text(anchor.get("href"))
     if not href:
         return
-    link = normalize_url(urljoin(page_url, href))
+    link = normalize_url(safe_page_urljoin(page_url, href))
     if not link or link in seen_links:
         return
     anchor_body = anchor.get("body") or anchor.get("text") or ""

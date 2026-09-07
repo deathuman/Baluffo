@@ -45,6 +45,8 @@ data/*.json.gz
 data/local-user-data/
 data/updater/
 data/runtime/
+data/fetch-report-history/
+data/discovery-report-history/
 !data/.gitkeep
 !data/source-discovery-config.json
 !data/contracts/

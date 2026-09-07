@@ -29,6 +29,10 @@ from src.jobs.adapters.parsers.location import (
     parse_greenhouse_location,
 )
 from src.jobs.adapters.parsers.personio import parse_personio_feed_xml
+from src.jobs.adapters.parsers.phenom import (
+    parse_phenom_jobs_html,
+    phenom_detail_fields,
+)
 from src.jobs.adapters.parsers.provider_html import (
     parse_ashby_jobs_from_html,
     parse_breezy_jobs_html,
@@ -52,6 +56,8 @@ __all__ = [
     "parse_lever_jobs_payload",
     "parse_oracle_hcm_requisitions_payload",
     "parse_personio_feed_xml",
+    "parse_phenom_jobs_html",
+    "phenom_detail_fields",
     "parse_pinpoint_jobs_payload",
     "parse_recruitee_jobs_payload",
     "parse_smartrecruiters_jobs_payload",

@@ -1908,9 +1908,9 @@
     "demotionNote": "Hidden by registry cleanup policy."
   },
   {
-    "name": "Ahoiii Entertainment UG (haftungsbeschränkt) (Gamesmap)",
-    "studio": "Ahoiii Entertainment UG (haftungsbeschränkt)",
-    "company": "Ahoiii Entertainment UG (haftungsbeschränkt)",
+    "name": "Ahoiii Entertainment UG (haftungsbeschr\u00e4nkt) (Gamesmap)",
+    "studio": "Ahoiii Entertainment UG (haftungsbeschr\u00e4nkt)",
+    "company": "Ahoiii Entertainment UG (haftungsbeschr\u00e4nkt)",
     "adapter": "static",
     "pages": [
       "http://www.ahoiii.com/jobs"
@@ -3606,7 +3606,7 @@
     "prevalidatedDiscovery": true,
     "gamedevmapAuditValidated": true,
     "registryState": "pending",
-    "pendingReason": "duplicate of static:listing_url:https://lilsnack.co/company/jobs (Lil’ Snack (GameDevMap)): same page served via www variant; keep the stronger registration",
+    "pendingReason": "duplicate of static:listing_url:https://lilsnack.co/company/jobs (Lil\u2019 Snack (GameDevMap)): same page served via www variant; keep the stronger registration",
     "stateChangedAt": "2026-08-29T23:24:49.784685+00:00",
     "stateChangedBy": "registry_dedup_ops",
     "lastPromotedAt": "2026-04-26T21:02:05.868745+00:00",

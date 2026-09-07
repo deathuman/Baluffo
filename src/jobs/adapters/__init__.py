@@ -100,6 +100,7 @@ def default_source_loaders(
         "oracle_hcm_sources": provider_api.run_oracle_hcm_sources_source,
         "workday_sources": provider_api.run_workday_sources_source,
         "personio_sources": provider_api.run_personio_sources_source,
+        "phenom_sources": provider_api.run_phenom_sources_source,
         "scrapy_static_sources": static.run_scrapy_static_source,
         "social_reddit": _run_social_reddit,
         "social_x": _run_social_x,

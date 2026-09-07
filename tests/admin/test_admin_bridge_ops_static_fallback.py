@@ -516,11 +516,11 @@ SOURCE_CHECK_SUCCESS_CASES = [
     pytest.param(
         _SourceCheckCase(
             name="alternate-on-404",
-            source_url="https://www.fatsharkgames.com/career",
+            source_url="https://www.example-fallback-studio.com/career",
             fetch_handler=_fetch_404_then_alternate(
-                "https://www.fatsharkgames.com/career",
-                "https://jobs.fatsharkgames.com",
-                '<a href="https://jobs.fatsharkgames.com/jobs/senior-programmer">Role</a>',
+                "https://www.example-fallback-studio.com/career",
+                "https://jobs.example-fallback-studio.com",
+                '<a href="https://jobs.example-fallback-studio.com/jobs/senior-programmer">Role</a>',
             ),
             minimum_jobs_found=1,
         ),
@@ -530,11 +530,11 @@ SOURCE_CHECK_SUCCESS_CASES = [
     pytest.param(
         _SourceCheckCase(
             name="parent-redirect-candidates-on-404",
-            source_url="https://www.fatsharkgames.com/career",
+            source_url="https://www.example-fallback-studio.com/career",
             fetch_handler=_fetch_404_then_alternate(
-                "https://www.fatsharkgames.com/career",
-                "https://jobs.fatsharkgames.com",
-                '<a href="https://jobs.fatsharkgames.com/jobs/network-programmer">Role</a>',
+                "https://www.example-fallback-studio.com/career",
+                "https://jobs.example-fallback-studio.com",
+                '<a href="https://jobs.example-fallback-studio.com/jobs/network-programmer">Role</a>',
             ),
             redirect_candidates=("https://jobs.fatsharkgames.com",),
             minimum_jobs_found=1,

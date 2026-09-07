@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from typing import Any
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 from src.jobs.adapters.html_parsers import (
     strip_html_text,
@@ -97,11 +97,32 @@ MALFORMED_DETAIL_URL_TOKENS = (
 MAX_DETAIL_URL_LENGTH = 4096
 
 
+from src.jobs.adapters.static_runtime_support import safe_page_urljoin
+
+
+def _urlparse_or_none(url: str) -> ParseResult | None:
+    """urlparse that survives unparseable URLs instead of raising ValueError.
+
+    Page-harvested candidates can carry bracket-host URLs (e.g. an unrendered
+    CMS template like ``http://[cdn_template_directory]/images/x.jpg``), which
+    ``urlparse`` rejects with ``Invalid IPv6 URL`` / ``does not appear to be an
+    IPv4 or IPv6 address``. These are page-content defects, not job candidates;
+    callers classify them as malformed/non-detail rather than crashing the
+    whole static source (2026-09-06 'Invalid IPv6 URL' failure class).
+    """
+    try:
+        return urlparse(url)
+    except ValueError:
+        return None
+
+
 def is_known_non_job_detail_url(url: str) -> bool:
     absolute = normalize_url(url) or clean_text(url)
     if not absolute:
         return True
-    parsed = urlparse(absolute)
+    parsed = _urlparse_or_none(absolute)
+    if parsed is None:
+        return True
     host = (parsed.netloc or "").strip().lower()
     if not host:
         return True
@@ -122,12 +143,21 @@ def is_malformed_or_self_detail_url(url: str, *, page_url: str = "") -> bool:
     if not candidate:
         return True
     lowered = candidate.lower()
-    raw_parsed = urlparse(candidate)
+    raw_parsed = _urlparse_or_none(candidate)
+    if raw_parsed is None:
+        return True
     if raw_parsed.scheme and raw_parsed.scheme not in {"http", "https"}:
         return True
     if any(token in lowered for token in MALFORMED_DETAIL_URL_TOKENS):
         return True
-    absolute = normalize_url(urljoin(page_url, candidate)) if page_url else normalize_url(candidate)
+    try:
+        absolute = (
+            normalize_url(safe_page_urljoin(page_url, candidate))
+            if page_url
+            else normalize_url(candidate)
+        )
+    except ValueError:
+        return True
     if not absolute:
         return True
     if len(absolute) > MAX_DETAIL_URL_LENGTH:
@@ -137,7 +167,9 @@ def is_malformed_or_self_detail_url(url: str, *, page_url: str = "") -> bool:
         return True
     if page_url:
         current = normalize_url(page_url) or clean_text(page_url)
-        current_parsed = urlparse(current)
+        current_parsed = _urlparse_or_none(current)
+        if current_parsed is None:
+            return True
         if (
             current_parsed.scheme == parsed.scheme
             and current_parsed.netloc.lower() == parsed.netloc.lower()
@@ -154,7 +186,11 @@ def _greenhouse_apply_target_url(detail_html: str, *, base_url: str) -> str:
         r'(?is)<a\b(?P<attrs>[^>]*)href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<body>.*?)</a>',
         detail_html or "",
     ):
-        absolute = normalize_url(urljoin(base_url, clean_text(match.group("href")))) or ""
+        try:
+            joined = safe_page_urljoin(base_url, clean_text(match.group("href")))
+        except ValueError:
+            continue
+        absolute = normalize_url(joined) or ""
         identity = greenhouse_job_identity_from_url(absolute)
         if not identity:
             continue
@@ -178,7 +214,9 @@ def is_probable_job_detail_url(
     default_path_tokens: list[str],
     default_query_keys: list[str],
 ) -> bool:
-    parsed = urlparse(candidate_url)
+    parsed = _urlparse_or_none(candidate_url)
+    if parsed is None:
+        return False
     host = (parsed.hostname or "").lower()
     path = parsed.path.lower()
     query = parsed.query.lower()
@@ -235,7 +273,7 @@ def add_detail_link(
     if is_malformed_or_self_detail_url(candidate, page_url=page_url):
         link_rejections["dead_listing_page"] += 1
         return
-    absolute = normalize_url(urljoin(page_url, candidate))
+    absolute = normalize_url(safe_page_urljoin(page_url, candidate))
     if not absolute:
         link_rejections["non_job_url"] += 1
         return

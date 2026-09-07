@@ -58,6 +58,15 @@ _LegacySpaBootTokens = (
     "requirejs",
 )
 
+# Cookie-challenge interstitials (CUPID class): a tiny page whose only content
+# is a script that decrypts a cookie (slowAES), sets it, and reloads the page.
+# A real browser executes the challenge and lands on the actual board, so these
+# pages must classify as JS shells to trigger the browser fallback instead of
+# being reported as empty listings. The tokens are specific to challenge
+# generators; ordinary server-rendered pages never inline them.
+_ChallengeScriptSrcTokens = ("cupid.js",)
+_ChallengeInlineMarkers = ("slowaes.decrypt", "document.cookie=")
+
 _LegacyJobListingHintTokens = (
     "job-listing",
     "job-card",
@@ -114,6 +123,9 @@ def detect_js_shell(html: str) -> bool:
     )
     _spa_framework_tokens = ("window.__", "webpackjsonp", "react", "next.js")
 
+    if _detect_cookie_challenge_shell(lower):
+        return True
+
     has_spa_div = any(tok in lower for tok in _spa_div_tokens)
     has_spa_framework = any(tok in lower for tok in _spa_framework_tokens)
 
@@ -143,6 +155,13 @@ def detect_js_shell(html: str) -> bool:
     if jquery_present and listing_hint:
         return True
     return False
+
+
+def _detect_cookie_challenge_shell(lower: str) -> bool:
+    """Detect cookie-challenge interstitial pages (CUPID/slowAES class)."""
+    if any(tok in lower for tok in _ChallengeScriptSrcTokens):
+        return True
+    return all(tok in lower for tok in _ChallengeInlineMarkers)
 
 
 def detect_no_openings(html: str) -> bool:
