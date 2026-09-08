@@ -136,6 +136,7 @@ def _apply_missing_lifecycle_rows(
     skipped_sources: set[str],
     summary: dict[str, int],
     remove_to_archive_days: int,
+    known_missing_evidence_sources: set[str] | None = None,
 ) -> datetime | None:
     now_dt = parse_datetime(finished_at) or datetime.now(UTC)
     applied_missing = False
@@ -160,6 +161,28 @@ def _apply_missing_lifecycle_rows(
                         reason="source_failed",
                         now_dt=now_dt,
                     )
+                elif (
+                    known_missing_evidence_sources is not None
+                    and source_name not in skipped_sources
+                ):
+                    # The evidence payload is authoritative (built from the
+                    # full registered-run universe) and the source is absent
+                    # from eligible/failed/skipped, so it belongs to a
+                    # retired, tombstoned, repointed, or pending registry row
+                    # that no loader can ever re-observe. Drain it through
+                    # the missing path (unavailable, then archived after the
+                    # remove-to-archive window) instead of preserving it
+                    # forever — preservation stranded these rows as
+                    # verification_overdue and hid them from the feed even
+                    # when the underlying job was still live elsewhere.
+                    next_rows[key] = _apply_missing_lifecycle_entry(
+                        dict(entry),
+                        now_dt=now_dt,
+                        finished_at=finished_at,
+                        remove_to_archive_days=remove_to_archive_days,
+                    )
+                    summary["retiredSourceDrained"] += 1
+                    applied_missing = True
                 else:
                     summary["preservedBecauseSourceSkipped"] += 1
                     entry["lifecycleEvent"] = "preserved"
@@ -172,6 +195,9 @@ def _apply_missing_lifecycle_rows(
                     # job verification_overdue, hiding live jobs whose sources
                     # just weren't selected. Failed sources still decay via
                     # the branch above; skipped entries keep their status.
+                    # With an authoritative universe (known_missing_evidence_sources)
+                    # this branch also covers known skipped sources and the
+                    # legacy no-universe path; only universe-absent sources drain.
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
             dict(entry),
@@ -242,6 +268,7 @@ def apply_job_lifecycle_state(
     allow_mark_missing: bool,
     eligible_missing_sources: set[str] | None = None,
     source_evidence: dict[str, Any] | None = None,
+    known_missing_evidence_sources: set[str] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
     observed_rows: list[CanonicalJob] | None = None,
@@ -303,6 +330,7 @@ def apply_job_lifecycle_state(
         skipped_sources=skipped_sources,
         summary=summary,
         remove_to_archive_days=remove_to_archive_days,
+        known_missing_evidence_sources=known_missing_evidence_sources,
     )
     if now_dt or prune_now_dt:
         _prune_archived_lifecycle_rows(

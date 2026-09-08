@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -12,6 +13,121 @@ from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.text_utils import clean_text
 
 _DIRECT_ENFORCE_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+# Hysteresis band for run-over-run overdue growth: small churn around the
+# steady state (a source flipping between fail/preserve) is not an alarm; a
+# material rise means newly stranded rows and degrades the verdict.
+OVERDUE_RISE_ABSOLUTE = 10
+
+# Per-source overdue attribution is bounded: the health payload carries the
+# top-N sources by overdue count (plus their run-over-run delta) — enough to
+# point at the failing board without inlining a 100+ source breakdown.
+OVERDUE_BY_SOURCE_LIMIT = 20
+
+
+def _overdue_by_source_counts(
+    overdue_rows: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Count overdue lifecycle rows per task source key (unbounded input)."""
+
+    counts: Counter[str] = Counter()
+    for entry in overdue_rows:
+        if not isinstance(entry, Mapping):
+            continue
+        source = clean_text(entry.get("source"))
+        if source:
+            counts[source] += 1
+    return dict(counts)
+
+
+def evaluate_availability_health(
+    *,
+    verified_within_seven_days_coverage: float,
+    overdue_count: int,
+    previous_overdue_count: int | None = None,
+    overdue_rows: Iterable[Mapping[str, Any]] | None = None,
+    previous_availability_health: Mapping[str, Any] | None = None,
+    coverage_target: float = 0.95,
+    identity_summary: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Pure availability-health verdict with per-source overdue attribution.
+
+    ``degraded`` means something actionable: the verified-within-7-days
+    coverage target was missed, identity invariants are unresolved, or the
+    overdue count rose materially versus the previous terminal run. A large
+    but stable (or falling) overdue population with healthy coverage is
+    ``healthy`` — the deferral counter alone (``degradedCoverage``) is a
+    capacity diagnostic, not a health verdict, because the 1,000-check sweep
+    budget defers most of a ~46k-row registry on every pass by construction.
+
+    Attribution: ``overdueBySource`` carries the top ``OVERDUE_BY_SOURCE_LIMIT``
+    sources by overdue count (``overdueSourceCount`` reports the full source
+    population), and ``overdueBySourceDelta`` their run-over-run change derived
+    from ``previous_availability_health.overdueBySource``. The returned payload
+    is self-contained (it includes ``overdueCount``), so a verdict can be fed
+    back in as ``previous_availability_health`` on the next run.
+    """
+
+    coverage = max(0.0, min(1.0, float(verified_within_seven_days_coverage or 0.0)))
+    target = float(coverage_target if coverage_target > 0 else 0.95)
+    coverage_target_missed = coverage < target
+    overdue = max(0, int(overdue_count or 0))
+    source_counts = _overdue_by_source_counts(overdue_rows or [])
+    previous_health: Mapping[str, Any] = (
+        previous_availability_health if isinstance(previous_availability_health, Mapping) else {}
+    )
+    if previous_overdue_count is None and previous_health:
+        previous_overdue_count = previous_health.get("overdueCount")
+    if previous_overdue_count is None:
+        overdue_rising = False
+        overdue_delta: int | None = None
+    else:
+        previous = max(0, int(previous_overdue_count or 0))
+        overdue_delta = overdue - previous
+        overdue_rising = overdue_delta > OVERDUE_RISE_ABSOLUTE
+    previous_source_counts = previous_health.get("overdueBySource")
+    per_source_delta: dict[str, int] = {}
+    if isinstance(previous_source_counts, Mapping):
+        # Sources absent from the previous top-N baseline count as new: their
+        # arrival (the degradation signal) shows up in the delta, not just in
+        # the current counts. Long-tail churn below the previous cutoff is
+        # therefore approximate by construction — the baseline map is capped.
+        per_source_delta = {
+            source: count - int(previous_source_counts.get(source) or 0)
+            for source, count in source_counts.items()
+        }
+    identity = dict(identity_summary or {})
+    identity_clean = not (
+        int(identity.get("rejectedRowCount") or 0)
+        or int(identity.get("unresolvedMissingIdentityCount") or 0)
+        or int(identity.get("unresolvedIdentityConflictCount") or 0)
+    )
+    reasons: list[str] = []
+    if coverage_target_missed:
+        reasons.append("coverage_target_missed")
+    if overdue_rising:
+        reasons.append("overdue_rising")
+    if not identity_clean:
+        reasons.append("identity_unresolved")
+    return {
+        "status": "degraded" if reasons else "healthy",
+        "overdueCount": overdue,
+        "coverageTargetMissed": coverage_target_missed,
+        "overdueRising": overdue_rising,
+        "overdueDelta": overdue_delta,
+        "overdueBySource": dict(
+            sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))[
+                :OVERDUE_BY_SOURCE_LIMIT
+            ]
+        ),
+        "overdueSourceCount": len(source_counts),
+        "overdueBySourceDelta": dict(
+            sorted(per_source_delta.items(), key=lambda item: (-abs(item[1]), item[0]))[
+                :OVERDUE_BY_SOURCE_LIMIT
+            ]
+        ),
+        "healthReasons": reasons,
+    }
 
 
 def direct_enforcement_enabled() -> bool:

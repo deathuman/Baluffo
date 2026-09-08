@@ -105,6 +105,26 @@ def _apply_lifecycle_state(
         using_default_loaders=using_default_loaders,
         effective_seed_from_existing_output=effective_seed_from_existing_output,
     )
+    # The evidence payload enumerates the full registered-run universe
+    # (eligible ran fine, failed ran and errored, skipped covers exclusion
+    # reports from registry/cadence/circuit-breaker filtering). Only when it
+    # carries that universe do lifecycle rows of sources absent from all
+    # three sets provably belong to retired/tombstoned/repointed/pending
+    # registry rows that no loader can re-observe; the orchestrator then
+    # drains them through the missing path instead of preserving them
+    # forever as verification_overdue. An empty-shape payload (custom
+    # loaders, missing marking disallowed) keeps the legacy behavior.
+    known_missing_evidence_sources: set[str] | None = None
+    if (
+        source_evidence.get("eligibleMissingSources")
+        or source_evidence.get("failedMissingSources")
+        or source_evidence.get("skippedMissingSources")
+    ):
+        known_missing_evidence_sources = (
+            set(source_evidence.get("eligibleMissingSources") or set())
+            | set(source_evidence.get("failedMissingSources") or set())
+            | set(source_evidence.get("skippedMissingSources") or set())
+        )
     return apply_job_lifecycle_state(
         deduped_rows=deduped_rows,
         observed_rows=observed_rows,
@@ -113,6 +133,7 @@ def _apply_lifecycle_state(
         allow_mark_missing=False,
         eligible_missing_sources=source_evidence.get("eligibleMissingSources", set()),
         source_evidence=source_evidence,
+        known_missing_evidence_sources=known_missing_evidence_sources,
     )
 
 
@@ -159,6 +180,7 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
         "preservedBecauseSourceSkippedCount": int(
             lifecycle_counts_map.get("preservedBecauseSourceSkipped") or 0
         ),
+        "retiredSourceDrainedCount": int(lifecycle_counts_map.get("retiredSourceDrained") or 0),
         "eligibleMissingSourceCount": int(
             lifecycle_counts_map.get("eligibleMissingSourceCount") or 0
         ),

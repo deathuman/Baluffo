@@ -35,7 +35,10 @@ from src.jobs.availability_identity import (
     validate_published_availability_rows,
     write_identity_quarantine,
 )
-from src.jobs.availability_schedule import direct_enforcement_enabled
+from src.jobs.availability_schedule import (
+    direct_enforcement_enabled,
+    evaluate_availability_health,
+)
 from src.jobs.availability_tombstones import (
     TOMBSTONE_ARTIFACT_NAME,
     read_availability_tombstones,
@@ -98,6 +101,9 @@ from .common import health as health_module
 from .common import sources as common_sources
 from .finalize_availability import (
     _merge_concurrent_direct_live_rows as _merge_concurrent_direct_live_rows,
+)
+from .finalize_availability import (
+    _previous_availability_health as _previous_availability_health,
 )
 from .finalize_availability import (
     _serialize_jobs_feed_reconciliation as _serialize_jobs_feed_reconciliation,
@@ -466,6 +472,9 @@ def finalize_pipeline_run(
         availability_sweep_plan = availability["sweep"]
         source_direct_conflicts = availability["conflicts"]
         shadow_classifier_counts = availability["shadowCounts"]
+        # Read the previous terminal run's health baseline before the summary
+        # artifact below is overwritten with this run's own health payload.
+        previous_availability_health = availability["previousAvailabilityHealth"]
         wrote_availability_history = availability["wroteHistory"]
         wrote_availability_sweep_plan = availability["wroteSweep"]
         _log_rss("after availability artifacts")
@@ -549,16 +558,18 @@ def finalize_pipeline_run(
                 "shadowClassifierCounts": shadow_classifier_counts,
             },
             "availabilityHealth": {
-                "status": "healthy"
-                if bool(availability_sweep_plan.get("healthTargetMet"))
-                and not bool(availability_sweep_plan.get("degradedCoverage"))
-                and not int(identity_preparation.summary.get("rejectedRowCount") or 0)
-                and not int(identity_preparation.summary.get("unresolvedMissingIdentityCount") or 0)
-                and not int(
-                    identity_preparation.summary.get("unresolvedIdentityConflictCount") or 0
-                )
-                else "degraded",
-                "overdueCount": int(lifecycle_counts_map.get("availabilityOverdue") or 0),
+                **evaluate_availability_health(
+                    verified_within_seven_days_coverage=float(
+                        availability_sweep_plan.get("verifiedWithinSevenDaysCoverage") or 0
+                    ),
+                    overdue_count=int(lifecycle_counts_map.get("availabilityOverdue") or 0),
+                    overdue_rows=lifecycle_rows.values(),
+                    previous_availability_health=previous_availability_health,
+                    coverage_target=float(
+                        availability_sweep_plan.get("verifiedCoverageTarget") or 0.95
+                    ),
+                    identity_summary=identity_preparation.summary,
+                ),
                 "verifiedWithinDaysTarget": 7,
                 "verifiedCoverageTarget": 0.95,
                 "verifiedWithinSevenDaysCoverage": float(
@@ -566,10 +577,10 @@ def finalize_pipeline_run(
                 ),
                 "sweepSelectedCount": int(availability_sweep_plan.get("selectedCount") or 0),
                 "sweepDeferredCount": int(availability_sweep_plan.get("deferredCount") or 0),
-                "degradedCoverage": bool(
-                    availability_sweep_plan.get("degradedCoverage")
-                    or int(identity_preparation.summary.get("rejectedRowCount") or 0)
-                ),
+                # Capacity diagnostic only — the 1,000-check sweep budget defers
+                # most of the registry on every pass by construction, so this no
+                # longer feeds the health verdict.
+                "degradedCoverage": bool(availability_sweep_plan.get("degradedCoverage")),
                 "shadowClassifier": not direct_enforcement_enabled(),
                 "identity": dict(identity_preparation.summary),
             },

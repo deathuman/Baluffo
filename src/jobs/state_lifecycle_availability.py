@@ -27,6 +27,7 @@ def _empty_lifecycle_summary() -> dict[str, int]:
         "reappeared": 0,
         "preservedBecauseSourceFailed": 0,
         "preservedBecauseSourceSkipped": 0,
+        "retiredSourceDrained": 0,
         "eligibleMissingSourceCount": 0,
         "ineligibleMissingSourceCount": 0,
         "availabilityAvailable": 0,

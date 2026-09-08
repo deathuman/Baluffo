@@ -22,6 +22,30 @@ def _count_map(value: Any) -> dict[str, int]:
     }
 
 
+def _int_map(value: Any) -> dict[str, int]:
+    """Bounded map of signed ints (per-source deltas may be negative)."""
+
+    result: dict[str, int] = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            try:
+                result[str(key).strip()] = int(item)
+            except (TypeError, ValueError):
+                continue
+    return {key: item for key, item in result.items() if key}
+
+
+def _signed_int(value: Any) -> int | None:
+    """Signed int or None (run-level overdue deltas may be negative or unknown)."""
+
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _ratio(value: Any) -> float:
     try:
         return max(0.0, min(1.0, float(value or 0)))
@@ -47,6 +71,17 @@ def normalize_availability_health(value: Any) -> dict[str, Any]:
     return {
         "status": str(source.get("status") or "").strip(),
         "overdueCount": _count(source.get("overdueCount")),
+        "overdueBySource": _count_map(source.get("overdueBySource")),
+        "overdueSourceCount": _count(source.get("overdueSourceCount")),
+        "overdueBySourceDelta": _int_map(source.get("overdueBySourceDelta")),
+        "overdueDelta": _signed_int(source.get("overdueDelta")),
+        "overdueRising": bool(source.get("overdueRising")),
+        "coverageTargetMissed": bool(source.get("coverageTargetMissed")),
+        "healthReasons": [
+            str(reason).strip()
+            for reason in (source.get("healthReasons") or [])
+            if str(reason).strip()
+        ],
         "verifiedWithinDaysTarget": _count(source.get("verifiedWithinDaysTarget")),
         "verifiedCoverageTarget": _ratio(source.get("verifiedCoverageTarget")),
         "verifiedWithinSevenDaysCoverage": _ratio(source.get("verifiedWithinSevenDaysCoverage")),

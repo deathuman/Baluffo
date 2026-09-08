@@ -17,6 +17,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from src.bridge.fetch_report_summary import load_fetch_report_summary_artifact
 from src.jobs.availability_schedule import build_availability_sweep_plan
 from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.models import CanonicalJob
@@ -28,6 +29,30 @@ from src.jobs.state_lifecycle import (
 from src.jobs.text_utils import clean_text
 from src.pipeline_io import read_existing_output
 from src.shared.json_io import existing_json_candidate
+
+
+def _previous_availability_health(paths: Any) -> dict[str, Any] | None:
+    """Previous terminal run's availabilityHealth payload, for run-over-run deltas.
+
+    Reads the compact fetch-report summary artifact, which persists the full
+    ``availabilityHealth`` payload of the last terminal run. Failed runs never
+    observed the lifecycle, so their payload carries no ``overdueCount`` — that
+    is no baseline at all. Any read/shape failure returns ``None`` so the
+    health verdict simply skips the run-over-run signals instead of blocking
+    finalization.
+    """
+
+    try:
+        summary = load_fetch_report_summary_artifact(paths.report_path)
+    except (OSError, ValueError):
+        return None
+    health = summary.get("availabilityHealth")
+    if not isinstance(health, dict):
+        return None
+    raw = health.get("overdueCount")
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+        return None
+    return dict(health)
 
 
 def _write_availability_artifacts(
@@ -104,6 +129,7 @@ def _write_availability_artifacts(
         "sweep": sweep,
         "conflicts": conflicts,
         "shadowCounts": counts,
+        "previousAvailabilityHealth": _previous_availability_health(paths),
         "wroteHistory": wrote_history,
         "wroteSweep": wrote_sweep,
     }
