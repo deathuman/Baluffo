@@ -340,6 +340,19 @@ def _partition_prepared_rows(
     return accepted, rejected
 
 
+def _rejection_key(row: CanonicalJob, reason: str) -> tuple[str, ...]:
+    payload = row.to_dict()
+    identity = _source_alias(payload) or _row_identity_token(payload)
+    if identity:
+        return (reason, identity)
+    return (
+        reason,
+        clean_text(payload.get("jobLink")),
+        clean_text(payload.get("title")),
+        clean_text(payload.get("company")),
+    )
+
+
 def _build_rejected_quarantine_additions(
     *,
     prepared_rows: Sequence[CanonicalJob],
@@ -415,10 +428,29 @@ def _dump_preflight_diagnostics(rows: Sequence[CanonicalJob], missing: int, conf
                         "identityTokenEmpty": True,
                     }
                 )
+        conflict_ids = {aid for aid, tokens in ids_to_tokens.items() if len(tokens) > 1}
+        rows_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        if conflict_ids:
+            for canonical_row in rows:
+                row = canonical_row.to_dict()
+                availability_id = clean_text(row.get("availabilityId"))
+                if availability_id not in conflict_ids:
+                    continue
+                rows_by_id[availability_id].append(
+                    {
+                        "source": row.get("source"),
+                        "sourceJobId": row.get("sourceJobId"),
+                        "jobLink": row.get("jobLink"),
+                        "title": row.get("title"),
+                        "company": row.get("company"),
+                        "token": _row_identity_token(row),
+                    }
+                )
         conflict_rows = [
             {
                 "availabilityId": aid,
                 "tokens": sorted(tokens),
+                "rows": rows_by_id.get(aid, [])[:10],
             }
             for aid, tokens in ids_to_tokens.items()
             if len(tokens) > 1
@@ -463,6 +495,62 @@ def _identity_audit(rows: Sequence[CanonicalJob]) -> tuple[int, int, int]:
             missing += 1
     conflicts = sum(1 for tokens in ids_to_tokens.values() if len(tokens) > 1)
     return monitorable, missing, conflicts
+
+
+def _resolve_residual_identity_conflicts(
+    rows: Sequence[CanonicalJob],
+) -> tuple[list[CanonicalJob], dict[str, dict[str, set[str]]], list[tuple[CanonicalJob, str]]]:
+    """Deterministic terminal disambiguation of id -> multi-token conflicts.
+
+    Called after the regular repair nets so their output is never tripped by a
+    Google-Sheets positional reindex residue: two distinct sheet rows can inherit
+    the same lifecycle availabilityId (one via its source alias, one via its URL
+    alias) and the assignment/repair stages can leave both carrying it. Here the
+    row whose token *derives* the id (``_availability_id(token) == id``) keeps it;
+    every other row with that id moves to its own URL-derived id. Rows that carry
+    a conflicted id but have no public URL are returned in the rejected channel
+    (no distinct replacement id can be minted), mirroring the existing quarantine
+    reasoning.
+
+    Returns (resolved_rows, tracked, rejected) where tracked maps each superseded
+    availability_id -> {replacement_id -> {url_fingerprints}}, for stable
+    quarantine/reporting continuity.
+    """
+    ids_to_tokens: dict[str, set[str]] = defaultdict(set)
+    for canonical_row in rows:
+        row = canonical_row.to_dict()
+        token = _row_identity_token(row)
+        availability_id = clean_text(row.get("availabilityId"))
+        if token and availability_id:
+            ids_to_tokens[availability_id].add(token)
+    conflicted_ids = {aid for aid, tokens in ids_to_tokens.items() if len(tokens) > 1}
+    if not conflicted_ids:
+        return list(rows), {}, []
+
+    tracked: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    resolved: list[CanonicalJob] = []
+    rejected: list[tuple[CanonicalJob, str]] = []
+    for canonical_row in rows:
+        payload = canonical_row.to_dict()
+        availability_id = clean_text(payload.get("availabilityId"))
+        token = _row_identity_token(payload)
+        url_alias = _url_alias(payload)
+        if availability_id not in conflicted_ids:
+            resolved.append(canonical_row)
+            continue
+        if token and url_alias and _availability_id(token) == availability_id:
+            # The URL-owner keeps its id; it is the canonical identity owner.
+            resolved.append(canonical_row)
+            continue
+        if token and url_alias:
+            replacement_id = _availability_id(token)
+            tracked[availability_id][replacement_id].add(url_alias.removeprefix("url:"))
+            payload["availabilityId"] = replacement_id
+            resolved.append(CanonicalJob.from_mapping(payload))
+            continue
+        # No public URL -> cannot mint a distinct replacement id; reject it.
+        rejected.append((canonical_row, "post_assignment_identity_conflict_without_public_url"))
+    return resolved, dict(tracked), rejected
 
 
 def prepare_availability_identities(
@@ -522,16 +610,60 @@ def prepare_availability_identities(
         conflicting_source_aliases=conflicting_source_aliases,
         forced_rejection_reasons=post_rejected_tokens,
     )
-    prepared_observed, _rejected_observed = _partition_prepared_rows(
+    prepared_observed, observed_rejected = _partition_prepared_rows(
         all_prepared_observed,
         conflicting_source_aliases=conflicting_source_aliases,
         forced_rejection_reasons=post_rejected_tokens,
     )
+    prepared_rows, residual_tracked, residual_rejected = _resolve_residual_identity_conflicts(
+        prepared_rows
+    )
+    prepared_observed, observed_residual_tracked, observed_residual_rejected = (
+        _resolve_residual_identity_conflicts(prepared_observed)
+    )
+    for tracked in (residual_tracked, observed_residual_tracked):
+        for superseded_id, merged in tracked.items():
+            for replacement_id, url_fingerprints in merged.items():
+                replacement_ids[superseded_id].add(replacement_id)
+                replacement_urls[superseded_id][replacement_id].update(url_fingerprints)
+            contaminated_ids.add(superseded_id)
+
+    # The fetched-only observed segment can contain rows removed by deduplication,
+    # so retain residual-only rejections for quarantine/lifecycle reporting too.
+    # Deduplicate against the primary rejection list because the same canonical
+    # candidate is commonly present in both segments.
+    rejected_rows = list(rejected_rows) + list(observed_rejected)
+    rejected_rows.extend(residual_rejected)
+    rejected_rows.extend(observed_residual_rejected)
+    deduplicated_rejected_rows: list[tuple[CanonicalJob, str]] = []
+    rejected_keys: set[tuple[str, ...]] = set()
+    for row, reason in rejected_rows:
+        key = _rejection_key(row, reason)
+        if key in rejected_keys:
+            continue
+        deduplicated_rejected_rows.append((row, reason))
+        rejected_keys.add(key)
+    rejected_rows = deduplicated_rejected_rows
     sanitized_lifecycle = {
         clean_text(key): dict(entry)
         for key, entry in lifecycle_rows.items()
         if clean_text(key) and clean_text(entry.get("availabilityId")) not in contaminated_ids
     }
+    resolved_id_by_token = {
+        _row_identity_token(row.to_dict()): clean_text(row.availabilityId)
+        for row in [*prepared_rows, *prepared_observed]
+        if _row_identity_token(row.to_dict()) and clean_text(row.availabilityId)
+    }
+    quarantine_context_by_identity: dict[tuple[str, str], CanonicalJob] = {}
+    for row in [*all_prepared_rows, *all_prepared_observed]:
+        payload = row.to_dict()
+        replacement_id = resolved_id_by_token.get(_row_identity_token(payload), "")
+        if replacement_id and replacement_id != clean_text(payload.get("availabilityId")):
+            payload["availabilityId"] = replacement_id
+            row = CanonicalJob.from_mapping(payload)
+        context_key = (_source_alias(payload), _row_identity_token(payload))
+        quarantine_context_by_identity.setdefault(context_key, row)
+    quarantine_context_rows = list(quarantine_context_by_identity.values())
     quarantine = _build_quarantine_additions(
         contaminated_ids=contaminated_ids,
         lifecycle_rows=lifecycle_rows,
@@ -541,7 +673,7 @@ def prepare_availability_identities(
     )
     quarantine.update(
         _build_rejected_quarantine_additions(
-            prepared_rows=all_prepared_rows,
+            prepared_rows=quarantine_context_rows,
             rejected_rows=rejected_rows,
             detected_at=detected_at,
         )

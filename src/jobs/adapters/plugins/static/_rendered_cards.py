@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused rendered-card te
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from typing import Any
@@ -89,6 +90,7 @@ _RENDERED_CARD_HOSTS = frozenset(
         "www.ultra-factory.com",
         "rollicgames.com",
         "www.rollicgames.com",
+        "gameberry.keka.com",
     }
 )
 
@@ -360,7 +362,14 @@ def _record_rendered_card_empty_result(
         )
         return
 
-    likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+    likely_js = (
+        _heuristics.detect_js_shell(html)
+        or _heuristics.visible_text_len(html) < 400
+        or bool(re.search(r"(?is)(?:fetch|axios)\s*\([^)]*(?:career|job|position)", html))
+        or bool(
+            re.search(r"(?is)(?:career|job|position)[^<]{0,80}(?:api|json|graphql|document)", html)
+        )
+    )
     source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
         _heuristics.CLASSIFICATION_JS_REQUIRED
         if likely_js
@@ -918,6 +927,69 @@ def extract_rendered_card_jobs(
     return jobs
 
 
+def _embedded_rendered_document_urls(html: str, page_url: str) -> list[str]:
+    candidates = re.findall(r"(?is)fetch\(\s*['\"]([^'\"]+)['\"]", html or "")
+    return list(dict.fromkeys(safe_page_urljoin(page_url, candidate) for candidate in candidates))
+
+
+def _keka_api_urls(html: str, page_url: str) -> list[str]:
+    match = re.search(
+        r"(?is)(?:identifier\s*:\s*|embedjobs/|ats/documents/)(['\"]?)([0-9a-f-]{20,})(?:\1)",
+        html or "",
+    )
+    if not match:
+        return []
+    identifier = match.group(2)
+    base = safe_page_urljoin(page_url, "/careers/")
+    return [safe_page_urljoin(base, f"api/embedjobs/default/active/{identifier}")]
+
+
+def _keka_api_rows(
+    payload: str,
+    *,
+    page_url: str,
+    company: str,
+    source_id: str,
+) -> list[RawJob]:
+    try:
+        data = json.loads(payload)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    rows: list[RawJob] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        job_id = clean_text(item.get("id"))
+        title = clean_text(item.get("title"))
+        if not job_id or not title:
+            continue
+        locations = []
+        for location in item.get("jobLocations") or []:
+            if not isinstance(location, dict):
+                continue
+            city = clean_text(location.get("city") or location.get("name"))
+            country = clean_text(location.get("country"))
+            if city or country:
+                locations.append({"city": city, "country": country})
+        city = locations[0]["city"] if locations else ""
+        rows.append(
+            static_listing_job_row(
+                source_id=source_id,
+                link=safe_page_urljoin(page_url, f"careers/jobdetails/{job_id}"),
+                title=title,
+                company=company,
+                city=city,
+                locations=locations,
+                location_summary=", ".join(
+                    dict.fromkeys(item.get("city", "") for item in locations if item.get("city"))
+                ),
+            )
+        )
+    return rows
+
+
 def run_rendered_cards_plugin(
     *,
     fetch_text: Callable[[str, int], str],
@@ -958,6 +1030,36 @@ def run_rendered_cards_plugin(
         source_id=source_id,
         allow_any_anchor=True,
     )
+    if not rows:
+        for embedded_url in _embedded_rendered_document_urls(html, page_url):
+            try:
+                embedded_html = fetch_text(embedded_url, timeout_s)
+            except _EXPECTED_RENDERED_CARD_FETCH_EXCEPTIONS:
+                continue
+            rows = extract_rendered_card_jobs(
+                embedded_html,
+                page_url=page_url,
+                company=company,
+                source_id=source_id,
+                allow_any_anchor=True,
+            )
+            if rows:
+                html = embedded_html
+                break
+    if not rows:
+        for api_url in _keka_api_urls(html, page_url):
+            try:
+                api_payload = fetch_text(api_url, timeout_s)
+            except _EXPECTED_RENDERED_CARD_FETCH_EXCEPTIONS:
+                continue
+            rows = _keka_api_rows(
+                api_payload,
+                page_url=page_url,
+                company=company,
+                source_id=source_id,
+            )
+            if rows:
+                break
     if not rows and callable(try_playwright):
         browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
         if browser_html:

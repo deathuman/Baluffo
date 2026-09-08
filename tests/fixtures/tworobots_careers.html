@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TWO ROBOTS // CAREERS: OPEN ROLES</title>
+<meta name="description" content="Two Robots Studios: open positions. Join a small, focused team building a competitive action game.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0a0a;
+    --bg-2:      #0e0e10;
+    --panel:     #111113;
+    --panel-2:   #16161a;
+    --orange:    #ff4d00;
+    --amber:     #ffb347;
+    --text:      #f5f2ee;
+    --muted:     #666;
+    --muted-2:   #888;
+    --border:    #1e1e1e;
+    --border-2:  #2a2a2a;
+    --green:     #4caf78;
+    --green-dim: #1e4a32;
+    --blue:      #5b8dee;
+    --purple:    #9b7fcc;
+    --teal:      #3dcfcf;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  ::selection { background: var(--orange); color: #000; }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9998;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+  }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 40px;
+    background: rgba(10,10,10,0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 0.12em;
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .nav-logo span { color: var(--orange); }
+
+  .nav-back {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted-2);
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .nav-back:hover { color: var(--orange); }
+
+  /* MAIN */
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 120px 40px 80px;
+  }
+
+  .page-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--orange);
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(40px, 7vw, 64px);
+    letter-spacing: 0.05em;
+    line-height: 1;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  .subtitle {
+    color: var(--muted-2);
+    font-size: 14px;
+    margin-bottom: 12px;
+    max-width: 560px;
+    line-height: 1.7;
+  }
+
+  .studio-line {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 56px;
+  }
+
+  /* SECTION DIVIDERS */
+  .section-header {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    margin-top: 48px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-header::before {
+    content: '//';
+    color: var(--orange);
+    font-size: 12px;
+  }
+
+  .section-header:first-of-type {
+    margin-top: 0;
+  }
+
+  /* JOB CARDS */
+  .roles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .role-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px 32px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .role-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+
+  .role-card.localization::before { background: var(--teal); }
+  .role-card.voice::before        { background: var(--purple); }
+  .role-card.qa::before           { background: var(--green); }
+  .role-card.art::before          { background: var(--amber); }
+
+  .role-card:hover {
+    border-color: var(--border-2);
+    background: var(--panel-2);
+  }
+
+  /* Card top row */
+  .role-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .role-meta {
+    flex: 1;
+  }
+
+  .role-dept {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .role-dept.localization { color: var(--teal); }
+  .role-dept.voice        { color: var(--purple); }
+  .role-dept.qa           { color: var(--green); }
+  .role-dept.art          { color: var(--amber); }
+
+  .role-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+
+  .role-sub {
+    font-size: 13px;
+    color: var(--muted-2);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  /* Badges */
+  .badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    line-height: 1.5;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+
+  .badge.remote       { border-color: var(--green);  color: var(--green); }
+  .badge.contract     { border-color: var(--amber);  color: var(--amber); }
+  .badge.paid         { border-color: var(--orange); color: var(--orange); }
+  .badge.unpaid       { border-color: var(--muted);  color: var(--muted); }
+  .badge.intern       { border-color: var(--blue);   color: var(--blue); }
+  .badge.equity       { border-color: var(--purple); color: var(--purple); }
+
+  /* Divider */
+  .role-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
+
+  /* Body */
+  .role-body {
+    font-size: 14px;
+    color: var(--muted-2);
+    line-height: 1.7;
+    margin-bottom: 16px;
+  }
+
+  /* Languages / skills tags */
+  .lang-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .lang-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-2);
+    border-radius: 3px;
+    color: var(--text);
+  }
+
+  /* Requirements */
+  .req-list {
+    list-style: none;
+    margin-bottom: 20px;
+  }
+
+  .req-list li {
+    font-size: 13px;
+    color: var(--muted-2);
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+    line-height: 1.5;
+  }
+
+  .req-list li::before {
+    content: '-';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+
+  /* Footer row */
+  .role-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  .role-comp {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .role-comp strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .apply-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: none;
+    border: 1px solid var(--orange);
+    color: var(--orange);
+    padding: 9px 22px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+  }
+
+  .apply-btn:hover {
+    background: rgba(255, 77, 0, 0.1);
+    box-shadow: 0 0 14px rgba(255, 77, 0, 0.2);
+  }
+
+  /* APPLY CTA */
+  .apply-cta {
+    margin-top: 56px;
+    padding: 32px 36px;
+    background: var(--panel);
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    border-left: 4px solid var(--orange);
+  }
+
+  .apply-cta h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+
+  .apply-cta p {
+    font-size: 14px;
+    color: var(--muted-2);
+    line-height: 1.7;
+    margin-bottom: 20px;
+    max-width: 560px;
+  }
+
+  .apply-links { display: flex; flex-direction: column; gap: 10px; }
+
+  .apply-main-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--orange);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: rgba(255,77,0,0.08);
+    border: 1px solid rgba(255,77,0,0.3);
+    border-radius: 4px;
+    transition: background 0.15s, border-color 0.15s;
+    width: fit-content;
+  }
+  .apply-main-btn:hover { background: rgba(255,77,0,0.15); border-color: var(--orange); }
+
+  .learn-more-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--muted-2);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.15s;
+  }
+  .learn-more-link:hover { color: var(--text); }
+
+  /* FOOTER */
+  footer {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 40px 60px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  footer span {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  /* MOBILE */
+  @media (max-width: 600px) {
+    nav { padding: 14px 20px; }
+
+    main { padding: 96px 20px 48px; }
+
+    h1 { font-size: clamp(34px, 9vw, 44px); }
+
+    .role-card { padding: 22px 20px; }
+
+    .role-title { font-size: 17px; }
+
+    .role-top { flex-direction: column; gap: 10px; }
+
+    .badges { flex-direction: row; }
+
+    .role-footer { flex-direction: column; align-items: flex-start; gap: 12px; }
+
+    footer { padding: 24px 20px 40px; flex-direction: column; gap: 8px; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/intro" class="nav-logo">TWO <span>ROBOTS</span></a>
+  <a href="/intro" class="nav-back">← Back</a>
+</nav>
+
+<main>
+  <p class="page-label">Join the Team</p>
+  <h1>Open Roles</h1>
+  <p class="subtitle">We're a small, focused studio building a competitive action game from the ground up. Every hire matters. We're looking for people who care about the details.</p>
+  <p class="studio-line">Two Robots Studios / Remote-first · Independent</p>
+
+  <!-- ── LOCALIZATION ── -->
+  <div class="section-header">Localization</div>
+  <div class="roles-list">
+
+    <div class="role-card localization">
+      <div class="role-top">
+        <div class="role-meta">
+          <div class="role-dept localization">Localization</div>
+          <div class="role-title">Translator / Localization Specialist</div>
+          <div class="role-sub">Multi-Language · Remote · Contract</div>
+        </div>
+        <div class="badges">
+          <span class="badge remote">Remote</span>
+          <span class="badge contract">Contract</span>
+          <span class="badge paid">Paid</span>
+        </div>
+      </div>
+      <div class="role-divider"></div>
+      <p class="role-body">
+        We need fluent translators to localize Two Robots: Unleashed — UI strings, in-game dialogue, menus, patch notes, and marketing copy. You'll work from a shared glossary and style guide to keep tone consistent across all markets. Native or near-native fluency required. Bonus if you can also double as a voice actor in your language.
+      </p>
+      <div class="lang-row">
+        <span class="lang-tag">🇰🇷 Korean</span>
+        <span class="lang-tag">🇷🇺 Russian</span>
+        <span class="lang-tag">🇨🇳 Chinese (Simplified)</span>
+        <span class="lang-tag">🇪🇸 Spanish (LatAm)</span>
+        <span class="lang-tag">🇫🇷 French</span>
+        <span class="lang-tag">🇯🇵 Japanese</span>
+        <span class="lang-tag">🇩🇪 German</span>
+      </div>
+      <ul class="req-list">
+        <li>Native or C2-level fluency in one or more of the listed languages</li>
+        <li>Comfortable with spreadsheet-based workflows and version control notes</li>
+        <li>Able to preserve tone — we're irreverent, not corporate</li>
+        <li>Bonus: prior experience localizing games, software, or interactive media</li>
+        <li>Bonus: familiarity with gaming culture and competitive FPS vocabulary in your language</li>
+        <li>Bonus: able to also voice act in your language</li>
+      </ul>
+      <div class="role-footer">
+        <span class="role-comp">Compensation: <strong>Per-word rate · Negotiable based on experience</strong></span>
+        <a href="https://airtable.com/appdgbcpjKsZq2xTi/pagGGFDsTTPO2y3lR/form" class="apply-btn" target="_blank" rel="noopener">Apply Now</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── VOICE ACTING ── -->
+  <div class="section-header">Voice Acting</div>
+  <div class="roles-list">
+
+    <div class="role-card voice">
+      <div class="role-top">
+        <div class="role-meta">
+          <div class="role-dept voice">Voice Acting</div>
+          <div class="role-title">Voice Actors — Multiple Languages</div>
+          <div class="role-sub">5 Female · 3 Male · Remote · Contract</div>
+        </div>
+        <div class="badges">
+          <span class="badge remote">Remote</span>
+          <span class="badge contract">Contract</span>
+          <span class="badge paid">Paid</span>
+        </div>
+      </div>
+      <div class="role-divider"></div>
+      <p class="role-body">
+        We're casting 5 female and 3 male voice actors in multiple languages for in-game characters, combat callouts, and story dialogue. <strong>Professional experience is not required</strong> — we're looking for people with naturally expressive, distinctive voices who can take direction well. Sessions are fully remote; you'll record from your own setup and submit audio files. If you're also a fluent translator in your language, that's a significant bonus.
+      </p>
+      <div class="lang-row">
+        <span class="lang-tag">🇰🇷 Korean</span>
+        <span class="lang-tag">🇷🇺 Russian</span>
+        <span class="lang-tag">🇨🇳 Chinese (Simplified)</span>
+        <span class="lang-tag">🇪🇸 Spanish (LatAm)</span>
+        <span class="lang-tag">🇫🇷 French</span>
+        <span class="lang-tag">🇯🇵 Japanese</span>
+        <span class="lang-tag">🇩🇪 German</span>
+      </div>
+      <ul class="req-list">
+        <li>Native speaker of one of the listed languages</li>
+        <li>Expressive, natural delivery — we want it to feel real, not performed</li>
+        <li>Access to a quiet recording space with minimal background noise</li>
+        <li>Can deliver WAV or FLAC files at 48kHz / 24-bit minimum</li>
+        <li>Comfortable taking written direction and iterating across a few recording rounds</li>
+        <li>No prior professional voice acting experience needed; a short self-recorded sample is enough</li>
+        <li>Bonus: willing and able to double as a translator for your language</li>
+      </ul>
+      <div class="role-footer">
+        <span class="role-comp">Compensation: <strong>Per-session rate · Details on inquiry</strong></span>
+        <a href="https://airtable.com/appdgbcpjKsZq2xTi/pagGGFDsTTPO2y3lR/form" class="apply-btn" target="_blank" rel="noopener">Apply Now</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── QA ── -->
+  <div class="section-header">Quality Assurance</div>
+  <div class="roles-list">
+
+    <div class="role-card qa">
+      <div class="role-top">
+        <div class="role-meta">
+          <div class="role-dept qa">Quality Assurance</div>
+          <div class="role-title">QA Intern</div>
+          <div class="role-sub">Game Testing · Remote · Internship</div>
+        </div>
+        <div class="badges">
+          <span class="badge remote">Remote</span>
+          <span class="badge intern">Internship</span>
+          <span class="badge equity">Rev Share</span>
+        </div>
+      </div>
+      <div class="role-divider"></div>
+      <p class="role-body">
+        Join the core team as a QA Intern and get hands-on experience testing a live game in active development. You'll play builds, file detailed bug reports, verify fixes, run regression tests, and help us hit polish milestones before launch. This is a real internship. You'll have a direct line to the developers and your reports will shape the final product.
+      </p>
+      <div class="lang-row">
+        <span class="lang-tag">Bug Reporting</span>
+        <span class="lang-tag">Regression Testing</span>
+        <span class="lang-tag">PC Gaming</span>
+        <span class="lang-tag">Steam</span>
+      </div>
+      <ul class="req-list">
+        <li>PC with specs capable of running the game at medium settings minimum</li>
+        <li>Able to commit at least 8–10 hours per week during active test cycles</li>
+        <li>Strong written English. Bug reports need to be reproducible, not just "it broke".</li>
+        <li>Experience with any bug tracker (Jira, Linear, GitHub Issues, or even a shared sheet) a plus</li>
+        <li>Genuine interest in game development. Bonus if you play competitive games regularly.</li>
+        <li>Portfolio or examples of past QA / testing work welcome but not required</li>
+      </ul>
+      <div class="role-footer">
+        <span class="role-comp">Compensation: <strong>Unpaid · Revenue share discussed upon launch</strong></span>
+        <a href="https://airtable.com/appdgbcpjKsZq2xTi/pagGGFDsTTPO2y3lR/form" class="apply-btn" target="_blank" rel="noopener">Apply Now</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── ART ── -->
+  <div class="section-header">Art</div>
+  <div class="roles-list">
+
+    <div class="role-card art">
+      <div class="role-top">
+        <div class="role-meta">
+          <div class="role-dept art">Art</div>
+          <div class="role-title">Card Artist</div>
+          <div class="role-sub">2D Illustration · Remote · Contract</div>
+        </div>
+        <div class="badges">
+          <span class="badge remote">Remote</span>
+          <span class="badge contract">Contract</span>
+          <span class="badge paid">Paid</span>
+        </div>
+      </div>
+      <div class="role-divider"></div>
+      <p class="role-body">
+        We're looking for a 2D illustrator to expand the card library for Two Robots: Unleashed. Cards are a core part of the Rennova universe - each one needs to read clearly at small sizes while holding up as a full piece of art. The visual bar is set by Darihana's existing card work. We want someone who can match that energy and build on it: dynamic compositions, bold color, and a style that feels grounded in the world we're building.
+      </p>
+      <div class="lang-row">
+        <span class="lang-tag">2D Illustration</span>
+        <span class="lang-tag">Character Art</span>
+        <span class="lang-tag">Sci-Fi / Action</span>
+        <span class="lang-tag">Card Game</span>
+        <span class="lang-tag">Photoshop / Procreate</span>
+      </div>
+      <ul class="req-list">
+        <li>Strong portfolio in 2D character or action illustration</li>
+        <li>Able to work within an established visual style - not just adjacent to it</li>
+        <li>Comfortable with feedback rounds and iteration on tight briefs</li>
+        <li>Delivers clean layered files (PSD or equivalent) with full bleed at print-ready resolution</li>
+        <li>Bonus: experience with card game art, game UI assets, or collectible formats</li>
+        <li>Bonus: familiarity with the existing Rennova card set at tworobots.com/cards</li>
+      </ul>
+      <div class="role-footer">
+        <span class="role-comp">Compensation: <strong>Per-card rate · Negotiable based on experience</strong></span>
+        <a href="https://airtable.com/appdgbcpjKsZq2xTi/pagGGFDsTTPO2y3lR/form" class="apply-btn" target="_blank" rel="noopener">Apply Now</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── HOW TO APPLY ── -->
+  <div class="section-header">How to Apply</div>
+  <div class="apply-cta">
+    <h2>Ready to Apply?</h2>
+    <p>To be considered, you must complete our candidate survey. We use it to filter applicants who pay attention to detail and genuinely care about the role — applications without it will not be reviewed.</p>
+    <div class="apply-links">
+      <a href="https://airtable.com/appdgbcpjKsZq2xTi/pagGGFDsTTPO2y3lR/form" class="apply-main-btn" target="_blank" rel="noopener">👉 Application Form</a>
+      <a href="https://tworobots.com" class="learn-more-link" target="_blank" rel="noopener">🌐 Learn more about us: tworobots.com</a>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <span>TWO ROBOTS STUDIOS</span>
+  <span id="today-label"></span>
+</footer>
+
+<script>
+  const today = new Date();
+  document.getElementById('today-label').textContent =
+    'Hiring as of ' + today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+</script>
+
+</body>
+</html>
