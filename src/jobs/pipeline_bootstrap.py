@@ -17,6 +17,7 @@ class PipelinePaths:
     lifecycle_state_path: Path
     availability_history_path: Path
     availability_sweep_plan_path: Path
+    availability_health_baseline_path: Path
     browser_fallback_queue_path: Path
     parser_regression_queue_path: Path
     source_policy_recommendations_path: Path
@@ -42,6 +43,7 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
         lifecycle_state_path=root / "jobs-lifecycle-state.json",
         availability_history_path=root / "jobs-availability-history.json",
         availability_sweep_plan_path=root / "jobs-availability-sweep-plan.json",
+        availability_health_baseline_path=root / "jobs-availability-health-baseline.json",
         browser_fallback_queue_path=root / "jobs-browser-fallback-queue.json",
         parser_regression_queue_path=root / "jobs-parser-regression-queue.json",
         source_policy_recommendations_path=root / "source-policy-recommendations.json",

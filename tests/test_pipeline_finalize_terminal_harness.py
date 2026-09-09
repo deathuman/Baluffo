@@ -10,6 +10,7 @@ import pytest
 
 from src.jobs import pipeline_finalize
 from src.jobs.availability_identity import AvailabilityIdentityPreflightError
+from src.jobs.finalize_availability import _previous_availability_health
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 
@@ -419,6 +420,26 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert calls["source_policy_exports"][0]["finished_at"] == report["finishedAt"]
 
 
+def test_finalize_pipeline_run_writes_dedicated_health_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Terminal finalize persists the run's health payload to the dedicated
+    baseline artifact — the next run's preferred baseline read — so mid-run
+    progress overwrites of the summary artifact can no longer poison
+    overdueDelta with a normalizer-default overdueCount=0."""
+
+    report, _calls, paths, _progress_phase = _run_finalize(tmp_path, monkeypatch)
+
+    baseline = json.loads(paths.availability_health_baseline_path.read_text(encoding="utf-8"))
+    assert report["availabilityHealth"]["status"] in {"healthy", "degraded"}
+    assert baseline["status"] == report["availabilityHealth"]["status"]
+    assert baseline["overdueCount"] == report["availabilityHealth"]["overdueCount"]
+    assert baseline["capturedAt"] == report["finishedAt"]
+    # The dedicated baseline is the next run's preferred read, even though the
+    # summary artifact now carries this run's own (identical) payload.
+    assert _previous_availability_health(paths) == baseline
+
+
 def test_failed_finalization_writes_terminal_report_and_bounded_identity_counts(
     tmp_path: Path,
 ) -> None:
@@ -482,6 +503,8 @@ def test_failed_finalization_writes_terminal_report_and_bounded_identity_counts(
     assert sidecar["status"] == "error"
     assert sidecar["summary"]["errorCode"] == "availability_identity_preflight_failed"
     assert sidecar["availabilitySummary"]["rejectedRowCount"] == 2
+    # Failed runs observe no lifecycle, so they must not seed a baseline.
+    assert not paths.availability_health_baseline_path.exists()
     assert task_state_calls == [
         {
             "finished_at": report["finishedAt"],

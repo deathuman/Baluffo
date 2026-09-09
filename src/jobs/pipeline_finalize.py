@@ -111,6 +111,9 @@ from .finalize_availability import (
 from .finalize_availability import (
     _write_availability_artifacts as _write_availability_artifacts,
 )
+from .finalize_availability import (
+    write_availability_health_baseline as write_availability_health_baseline,
+)
 from .finalize_lifecycle import (
     _apply_lifecycle_state as _apply_lifecycle_state,
 )
@@ -563,7 +566,15 @@ def finalize_pipeline_run(
                         availability_sweep_plan.get("verifiedWithinSevenDaysCoverage") or 0
                     ),
                     overdue_count=int(lifecycle_counts_map.get("availabilityOverdue") or 0),
-                    overdue_rows=lifecycle_rows.values(),
+                    # Attribution contract: overdue rows only — the builder
+                    # counts whatever it is handed, so passing the full
+                    # lifecycle map attributed ~46k available/unavailable rows
+                    # as overdue (google_sheets=61,472 vs overdueCount=101).
+                    overdue_rows=(
+                        row
+                        for row in lifecycle_rows.values()
+                        if row.get("availabilityStatus") == "verification_overdue"
+                    ),
                     previous_availability_health=previous_availability_health,
                     coverage_target=float(
                         availability_sweep_plan.get("verifiedCoverageTarget") or 0.95
@@ -714,6 +725,14 @@ def finalize_pipeline_run(
         write_text_if_changed=write_hot_text_if_changed,
         include_sources=True,
     )
+    # Dedicated health baseline: written ONLY here at terminal finalize, so
+    # mid-run progress overwrites of the summary artifact (which normalize the
+    # payload and can carry overdueCount=0 defaults) can never poison the next
+    # run's overdueDelta baseline. _previous_availability_health prefers it.
+    if isinstance(report_payload.get("availabilityHealth"), dict):
+        write_availability_health_baseline(
+            paths, report_payload["availabilityHealth"], finished_at=finished_at
+        )
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)

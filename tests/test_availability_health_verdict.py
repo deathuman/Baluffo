@@ -5,12 +5,12 @@ healthy coverage is not degraded, and the structural sweep deferral (the
 1,000-check budget defers most of a ~46k-row registry every pass) must never
 drive the verdict by itself. Per-source attribution (``overdueBySource`` +
 run-over-run deltas) makes any overdue change instantly attributable.
+
+Baseline-IO tests (the dedicated terminal-only baseline artifact and the
+summary fallback) live in ``test_availability_health_baseline_io.py``.
 """
 
-import json
 from typing import Any
-
-import pytest
 
 from src.jobs.availability_schedule import (
     OVERDUE_BY_SOURCE_LIMIT,
@@ -18,7 +18,6 @@ from src.jobs.availability_schedule import (
     _overdue_by_source_counts,
     evaluate_availability_health,
 )
-from src.jobs.finalize_availability import _previous_availability_health
 from src.shared.availability_report import normalize_availability_health
 
 
@@ -246,58 +245,34 @@ def test_run5_shape_with_attribution_uses_source_keys() -> None:
     )
 
 
-class _Paths:
-    def __init__(self, report_path: Any) -> None:
-        self.report_path = report_path
+def test_overdue_rows_attribution_requires_overdue_status() -> None:
+    """Attribution contract: the builder counts whatever it is handed, so the
+    caller must pass overdue rows only. The old wiring passed the full
+    lifecycle map, attributing ~46k available/unavailable rows as overdue
+    (google_sheets=61,472 vs overdueCount=101)."""
 
+    rows = [
+        {"source": "google_sheets", "availabilityStatus": "available"},
+        {"source": "google_sheets", "availabilityStatus": "unavailable"},
+        {"source": "grand", "availabilityStatus": "verification_overdue"},
+        {"source": "grand", "availabilityStatus": "verification_overdue"},
+        {"availabilityStatus": "verification_overdue"},  # no source: dropped
+    ]
+    # The builder itself cannot distinguish: it counts all sourced rows.
+    assert _overdue_by_source_counts(rows) == {"google_sheets": 2, "grand": 2}
 
-def _write_summary(directory: Any, health: Any) -> Any:
-    report_path = directory / "jobs-fetch-report.json"
-    summary_path = directory / "jobs-fetch-report-summary.json"
-    summary_path.write_text(
-        json.dumps({"runId": "r1", "availabilityHealth": health}),
-        encoding="utf-8",
+    # The corrected caller-side filter (see pipeline_finalize) restores the
+    # scalar/attribution consistency the payload contract promises.
+    overdue_only = (row for row in rows if row.get("availabilityStatus") == "verification_overdue")
+    verdict = evaluate_availability_health(
+        verified_within_seven_days_coverage=0.98,
+        overdue_count=2,
+        overdue_rows=overdue_only,
     )
-    return _Paths(report_path)
-
-
-def test_previous_availability_health_reads_full_payload(tmp_path: Any) -> None:
-    paths = _write_summary(
-        tmp_path,
-        {
-            "status": "healthy",
-            "overdueCount": 289,
-            "overdueBySource": {"src_a": 53},
-            "overdueDelta": -3,
-        },
-    )
-    health = _previous_availability_health(paths)
-    assert health == {
-        "status": "healthy",
-        "overdueCount": 289,
-        "overdueBySource": {"src_a": 53},
-        "overdueDelta": -3,
-    }
-
-
-def test_previous_availability_health_ignores_failed_run_payload(tmp_path: Any) -> None:
-    """Failed-run reports carry ``availabilityHealth`` without ``overdueCount``."""
-
-    paths = _write_summary(tmp_path, {"status": "failed", "degradedCoverage": True})
-    assert _previous_availability_health(paths) is None
-
-
-def test_previous_availability_health_ignores_malformed_and_missing(tmp_path: Any) -> None:
-    paths = _write_summary(tmp_path, {"status": "degraded", "overdueCount": "lots"})
-    assert _previous_availability_health(paths) is None
-    missing = _Paths(tmp_path / "jobs-fetch-report.json")
-    assert _previous_availability_health(missing) is None
-
-
-def test_previous_availability_health_survives_broken_json(tmp_path: Any) -> None:
-    (tmp_path / "jobs-fetch-report-summary.json").write_text("{broken", encoding="utf-8")
-    paths = _Paths(tmp_path / "jobs-fetch-report.json")
-    assert _previous_availability_health(paths) is None
+    assert verdict["overdueCount"] == 2
+    assert verdict["overdueBySource"] == {"grand": 2}
+    assert verdict["overdueSourceCount"] == 1
+    assert sum(verdict["overdueBySource"].values()) == verdict["overdueCount"]
 
 
 def test_normalized_health_preserves_signed_delta_and_reasons() -> None:
@@ -327,18 +302,3 @@ def test_normalized_health_preserves_signed_delta_and_reasons() -> None:
     assert degraded["status"] == "degraded"
     assert degraded["healthReasons"] == ["coverage_target_missed", "overdue_rising"]
     assert degraded["overdueDelta"] == 108
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        (True, None),
-        (False, None),
-        (-1, None),
-        (0, {"overdueCount": 0}),
-        (289, {"overdueCount": 289}),
-    ],
-)
-def test_previous_availability_health_type_guards(raw: Any, expected: Any, tmp_path: Any) -> None:
-    paths = _write_summary(tmp_path, {"overdueCount": raw})
-    assert _previous_availability_health(paths) == expected

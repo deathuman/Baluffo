@@ -15,6 +15,7 @@ import json
 from collections import Counter
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 from typing import Any
 
 from src.bridge.fetch_report_summary import load_fetch_report_summary_artifact
@@ -34,14 +35,24 @@ from src.shared.json_io import existing_json_candidate
 def _previous_availability_health(paths: Any) -> dict[str, Any] | None:
     """Previous terminal run's availabilityHealth payload, for run-over-run deltas.
 
-    Reads the compact fetch-report summary artifact, which persists the full
-    ``availabilityHealth`` payload of the last terminal run. Failed runs never
+    Reads the dedicated terminal-only baseline artifact when it exists — it is
+    written only next to the terminal report, so mid-run progress overwrites of
+    the summary artifact can never poison it. Falls back to the compact
+    fetch-report summary artifact for pre-baseline continuity. Failed runs never
     observed the lifecycle, so their payload carries no ``overdueCount`` — that
     is no baseline at all. Any read/shape failure returns ``None`` so the
     health verdict simply skips the run-over-run signals instead of blocking
     finalization.
     """
 
+    baseline_path = getattr(paths, "availability_health_baseline_path", None)
+    if baseline_path is not None:
+        try:
+            baseline = json.loads(Path(baseline_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            baseline = None
+        if isinstance(baseline, dict) and _is_terminal_health_baseline(baseline):
+            return dict(baseline)
     try:
         summary = load_fetch_report_summary_artifact(paths.report_path)
     except (OSError, ValueError):
@@ -49,10 +60,50 @@ def _previous_availability_health(paths: Any) -> dict[str, Any] | None:
     health = summary.get("availabilityHealth")
     if not isinstance(health, dict):
         return None
-    raw = health.get("overdueCount")
-    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+    if not _is_terminal_health_baseline(health):
         return None
     return dict(health)
+
+
+def _is_terminal_health_baseline(health: dict[str, Any]) -> bool:
+    """True only for payloads a terminal finalize could have produced.
+
+    Failed runs never observed the lifecycle, so their payload carries no
+    ``overdueCount`` — that is no baseline at all. Mid-run progress overwrites
+    of the summary artifact carry a normalizer-default availabilityHealth
+    (empty status, overdueCount=0), which would read as a real "0 overdue"
+    baseline and fake a full overdue rise on the next terminal run. The builder
+    emits exactly "healthy" or "degraded"; progress overwrites carry
+    "running"-class statuses, failed runs "failed", defaults "" — none is a
+    baseline.
+    """
+
+    if not isinstance(health, dict):
+        return False
+    raw = health.get("overdueCount")
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+        return False
+    return str(health.get("status") or "").strip() in {"healthy", "degraded"}
+
+
+def write_availability_health_baseline(
+    paths: Any, health: dict[str, Any], *, finished_at: str
+) -> bool:
+    """Persist this terminal run's health payload as the next run's baseline.
+
+    Called only from the terminal finalize path after the report payload is
+    complete — mid-run progress writers never touch this artifact, closing the
+    baseline-poisoning channel for good. Returns whether bytes changed.
+    """
+
+    payload = dict(health)
+    payload["capturedAt"] = clean_text(finished_at) or None
+    from src.jobs import pipeline_finalize as _pf
+
+    return _pf.write_atomic_if_changed(
+        Path(paths.availability_health_baseline_path),
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+    )
 
 
 def _write_availability_artifacts(
