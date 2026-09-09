@@ -2,6 +2,7 @@ from src.jobs.common.contracts_source_health import (
     derive_source_health,
     normalize_source_health_payload,
 )
+from src.jobs.state_source_records import derive_source_health_fields
 
 
 def test_derive_source_health_ranks_mixed_source_rows() -> None:
@@ -193,3 +194,93 @@ def test_derive_source_health_ranks_mixed_source_rows() -> None:
     )
     assert normalized["sourcesNeedingAttention"][0]["failureCount"] == 2
     assert normalized["sourcesNeedingAttention"][0]["zeroJobStreak"] == 0
+
+
+def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
+    """phApp-family regression: fresh run counters beat stale legacy aliases.
+
+    A row that just kept 70 jobs (keptCount/lastKeptCount) but still carries the
+    stale legacy aliases (lastJobsKept: 0, zeroJobStreak: 45) must classify as
+    healthy, and the normalized row must report the refreshed aliases.
+    """
+
+    row = {
+        "name": "activision_phapp",
+        "adapter": "static",
+        "status": "ok",
+        "fetchedCount": 79,
+        "keptCount": 70,
+        "durationMs": 15000,
+        "lastKeptCount": 70,
+        "lastJobsKept": 0,
+        "failureCount": 0,
+        "consecutiveFailures": 0,
+        "zeroJobStreak": 45,
+        "consecutiveZeroKept": 0,
+        "healthScore": 100,
+        "lastStatus": "ok",
+        "lastRunAt": "2026-09-08T23:30:00+00:00",
+        "lastSuccessAt": "2026-09-08T23:30:00+00:00",
+    }
+
+    health = derive_source_health([row])
+    normalized = normalize_source_health_payload(health, [row])
+    merged = normalized["topProductiveSources"][0]
+
+    assert merged["health"] == "healthy"
+    assert merged["healthReason"] == "last fetch kept jobs"
+    assert merged["lastJobsKept"] == 70
+    assert merged["zeroJobStreak"] == 0
+    assert merged["consecutiveZeroKept"] == 0
+
+
+def test_state_derive_refreshes_stale_aliases_for_persistence() -> None:
+    """The state-side write-back must heal stale aliases, not perpetuate them."""
+
+    entry = {
+        "lastStatus": "ok",
+        "lastKeptCount": 36,
+        "lastJobsKept": 0,
+        "consecutiveFailures": 0,
+        "failureCount": 3,
+        "consecutiveZeroKept": 0,
+        "zeroJobStreak": 10,
+    }
+
+    derived = derive_source_health_fields(entry)
+
+    assert derived["health"] == "healthy"
+    assert derived["healthReason"] == "last fetch kept jobs"
+    assert derived["lastJobsKept"] == 36
+    assert derived["failureCount"] == 0
+    assert derived["zeroJobStreak"] == 0
+
+
+def test_stale_healthy_alias_cannot_mask_real_zero_streak() -> None:
+    """Reverse guard: canonical-first must not hide genuine staleness either."""
+
+    masked = {
+        "name": "genuinely_stale",
+        "adapter": "static",
+        "status": "ok",
+        "keptCount": 0,
+        "fetchedCount": 0,
+        "lastKeptCount": 0,
+        "lastJobsKept": 99,
+        "consecutiveFailures": 0,
+        "failureCount": 0,
+        "consecutiveZeroKept": 3,
+        "zeroJobStreak": 0,
+        "lastStatus": "ok",
+        "lastRunAt": "2026-09-08T23:30:00+00:00",
+        "lastSuccessAt": "2026-09-08T23:30:00+00:00",
+    }
+
+    health = derive_source_health([masked])
+    normalized = normalize_source_health_payload(health, [masked])
+    merged = normalized["zeroKeptNeedsReview"][0]
+
+    assert merged["health"] == "broken"
+    assert merged["healthReason"] == "repeated zero-job fetches"
+    assert merged["zeroJobStreak"] == 3
+    assert merged["lastJobsKept"] == 0

@@ -274,9 +274,15 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
     last_run_at = _source_health_text(
         src.get("lastRunAt"), src.get("lastCheckedAt"), src.get("lastSeenInFetchAt")
     )
-    last_jobs_kept = _source_health_int(src.get("lastJobsKept"), src.get("lastKeptCount"))
-    failure_count = _source_health_int(src.get("failureCount"), src.get("consecutiveFailures"))
-    zero_job_streak = _source_health_int(src.get("zeroJobStreak"), src.get("consecutiveZeroKept"))
+    # Canonical counters first: the maintained fields (lastKeptCount,
+    # consecutiveZeroKept, consecutiveFailures) are updated fresh each run by the
+    # apply_*_source_state appliers, while the legacy aliases (lastJobsKept,
+    # zeroJobStreak, failureCount) only exist because this derive wrote them back.
+    # Reading aliases first let a stale alias override the fresh counter forever
+    # (self-perpetuating split brain: healthy rows labeled warning/broken).
+    last_jobs_kept = _source_health_int(src.get("lastKeptCount"), src.get("lastJobsKept"))
+    failure_count = _source_health_int(src.get("consecutiveFailures"), src.get("failureCount"))
+    zero_job_streak = _source_health_int(src.get("consecutiveZeroKept"), src.get("zeroJobStreak"))
     health_score = _clamped_int(src.get("healthScore"), 0, 100)
     if last_status == "excluded":
         health = "unknown"

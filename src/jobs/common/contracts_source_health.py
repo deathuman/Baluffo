@@ -29,11 +29,14 @@ _TRIAGE_ROW_LIMIT = 10
 def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
     status = norm_text(row.get("status")) or "error"
     kept_count = _clamped_int(row.get("keptCount"), 0, 0)
+    # Canonical counters first (see derive_source_health_fields): the run-applied
+    # consecutiveZeroKept/consecutiveFailures are fresh, the legacy aliases are
+    # derived write-backs that can be stale.
     failure_count = _clamped_int(
-        row.get("failureCount"), _clamped_int(row.get("consecutiveFailures"), 0, 0), 0
+        row.get("consecutiveFailures"), _clamped_int(row.get("failureCount"), 0, 0), 0
     )
     zero_job_streak = _clamped_int(
-        row.get("zeroJobStreak"), _clamped_int(row.get("consecutiveZeroKept"), 0, 0), 0
+        row.get("consecutiveZeroKept"), _clamped_int(row.get("zeroJobStreak"), 0, 0), 0
     )
     last_success = clean_text(row.get("lastSuccessfulFetchAt")) or clean_text(
         row.get("lastSuccessAt")
@@ -44,7 +47,7 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         or clean_text(row.get("lastRunAt"))
     )
     last_jobs_kept = _clamped_int(
-        row.get("lastJobsKept"), _clamped_int(row.get("lastKeptCount"), 0, 0), 0
+        row.get("lastKeptCount"), _clamped_int(row.get("lastJobsKept"), 0, 0), 0
     )
     health_score = _clamped_int(row.get("healthScore"), 100, 0)
     if status == "excluded":
