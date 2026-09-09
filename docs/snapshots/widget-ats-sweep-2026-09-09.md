@@ -24,11 +24,11 @@
 | `tornbanner.com/careers/` (ok/0) | bamboohr ×3 | `tornbanner.bamboohr.com/careers` live (JS shell) | `bamboohr:listing_url:https://tornbanner.bamboohr.com/careers` |
 | `voldex.com/careers/#jobs` (ok/0) | ashby ×4 | `jobs.ashbyhq.com/voldex` live (SPA) | `ashby:board_url:https://jobs.ashbyhq.com/voldex` |
 
-### Adapter-gap — live embeds, no matching adapter (2 rows, 2 families)
+### Adapter-gap — live embeds, no matching adapter (3 rows, 2 families)
 
-- **careers.amd.com** ×2 → iCIMS SPA board — no icims adapter (games-adjacent employer; sector-gate question first).
+- **careers.amd.com** ×2 → iCIMS SPA board — no icims adapter (iCIMS exists only as a discovery-advisory detection family; games-adjacent employer, sector-gate question first).
 - **playstudios.com/careers** → Dayforce embed — no dayforce adapter (Reflector hold precedent).
-- **Axes in Motion** was originally classified here as "no workable adapter" — **superseded post-sweep**: the repo does have a `workable` adapter (in `PROVIDER_REGISTRY_ADAPTERS`, with August-advisory pending rows); Axes in Motion is a live sixth repair candidate via the same staging path.
+- **Axes in Motion** was flagged as a possible sixth repair after the sweep because the repo **does** have a workable adapter (`workable` in `PROVIDER_REGISTRY_ADAPTERS`, `account` field → `apply.workable.com/api/v1/widget/accounts/{value}?details=true`). Re-adjudicated 2026-09-09 **against staging**: the `axesinmotion` account is live (200) but the board holds exactly **1 job — "Speculative Application"** (talent-pool pseudo-entry, the GSC "Submit your CV" / a4vr INITIATIVBEWERBUNG class), and the page's second workable link (`/j/3E383EBEC0`) is a stale posting absent from the API. Staging would add pseudo-entry contamination, not coverage; the correct disposition is record-only. The audit's adapter-gap *outcome* was right, its *reason* ("no workable adapter") was wrong.
 
 ### Dead/stale embeds — no rescue possible (4)
 
@@ -54,4 +54,4 @@ Corrections vs. the audit's projections:
 - **RiftGaming tenant family corrected: Teamtailor, not Lever.** The lever-account sweep (`api.lever.co/v0/postings/{riftgaming,rift,rift-gaming}`) is 404 across the board; the custom-domain board `jobs.riftgaming.gg/jobs` is a Teamtailor tenant with 2 server-rendered job links (yodo1 precedent).
 - **Weta's widget API key** is no longer re-derivable from the rewritten marketing page; the direct tenant board itself is live, which is the registration target anyway.
 - **TornBanner** fetched 4 (bamboo pagination) → 2 unique after dedup; net feed +2.
-- **Axes in Motion** adapter-gap classification corrected (workable adapter exists — see above).
+- **Axes in Motion re-adjudicated: not a sixth repair.** Workable adapter exists and the `axesinmotion` account is live, but the board's only posting is a "Speculative Application" talent-pool pseudo-entry (plus one stale page link not in the API) — staging would trade zero-yield for pseudo-entry contamination. Record-only.
