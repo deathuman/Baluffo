@@ -278,6 +278,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "availabilitySummary": normalize_availability_summary(src.get("availabilitySummary")),
+        # Absent input normalizes to None: progress/failed payloads emit no
+        # health field instead of a fabricated overdueCount=0 default that
+        # could read as a real baseline downstream.
         "availabilityHealth": normalize_availability_health(src.get("availabilityHealth")),
         "sourceDirectConflicts": normalize_source_direct_conflicts(
             src.get("sourceDirectConflicts")

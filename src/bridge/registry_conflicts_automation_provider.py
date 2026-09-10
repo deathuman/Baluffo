@@ -41,6 +41,7 @@ from src.bridge.registry_conflicts_row import (
     _static_url_host_paths,
     source_identity,
 )
+from src.shared.source_counter_aliases import read_counter
 
 
 def _analyze_static_generated_listing_variants_automation(
@@ -283,7 +284,9 @@ def _canonical_redirect_provider_row(provider_rows: list[dict[str, Any]]) -> dic
         key=lambda row: (
             _normalized_url_for_comparison(_row_primary_url(row))
             == _normalized_url_for_comparison(_row_live_final_url(row)),
-            _int_value(row.get("lastJobsKept") or row.get("lastKeptCount")),
+            # Canonical-first counter read via the shared policy leaf (Phase 3
+            # of the counter collapse).
+            _int_value(read_counter(row, "lastKeptCount")),
             _row_jobs_evidence(row),
             _positive_evidence_score(row),
         ),

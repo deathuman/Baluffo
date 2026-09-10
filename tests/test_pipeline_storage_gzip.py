@@ -176,9 +176,12 @@ def test_source_state_helpers_round_trip_gzip_storage() -> None:
         legacy = source_state["legacy_source"]
         assert legacy["lastSuccessfulFetchAt"] == "2026-05-04T10:00:00Z"
         assert legacy["lastSeenInFetchAt"] == "2026-05-04T10:00:00Z"
-        assert legacy["lastJobsKept"] == 4
-        assert legacy["failureCount"] == 0
-        assert legacy["zeroJobStreak"] == 0
+        assert legacy["lastKeptCount"] == 4
+        assert legacy["consecutiveFailures"] == 0
+        assert legacy["consecutiveZeroKept"] == 0
+        assert "lastJobsKept" not in legacy
+        assert "failureCount" not in legacy
+        assert "zeroJobStreak" not in legacy
         assert legacy["healthScore"] == 100
         assert legacy["health"] == "healthy"
         assert legacy["healthReason"] == "last fetch kept jobs"
@@ -186,9 +189,12 @@ def test_source_state_helpers_round_trip_gzip_storage() -> None:
         alias = source_state["alias_source"]
         assert alias["lastSuccessfulFetchAt"] == "2026-05-04T12:00:00Z"
         assert alias["lastSeenInFetchAt"] == "2026-05-04T12:00:00Z"
-        assert alias["lastJobsKept"] == 2
-        assert alias["failureCount"] == 0
-        assert alias["zeroJobStreak"] == 0
+        assert alias["lastKeptCount"] == 2
+        assert alias["consecutiveFailures"] == 0
+        assert alias["consecutiveZeroKept"] == 0
+        assert "lastJobsKept" not in alias
+        assert "failureCount" not in alias
+        assert "zeroJobStreak" not in alias
         assert alias["healthScore"] == 100
         assert alias["health"] == "healthy"
         assert alias["healthReason"] == "last fetch kept jobs"
@@ -211,6 +217,38 @@ def test_lifecycle_state_helpers_round_trip_gzip_storage() -> None:
         lifecycle_state = read_job_lifecycle_state(path)
         assert lifecycle_state["job-1"]["status"] == "active"
         assert lifecycle_state["job-1"]["title"] == "Game Designer"
+
+
+def test_source_state_stale_alias_converges_through_normalize_and_save() -> None:
+    """Phase 2/4 of the counter collapse (docs/plans/source-health-counter-collapse-plan.md):
+    heal, don't rewrite — and never re-emit. A legacy payload storing counters
+    only under alias names converges onto the canonical counters with their
+    VALUES preserved after the normal read-modify-write cycle, and alias keys
+    are absent from the persisted payload (alias spellings are a wire-side
+    surface only; the earlier "convergence" assertion passed vacuously on
+    all-zero rows because the whitelist stripped aliases before the heal)."""
+
+    canonical_values = {
+        "src_a": {"lastKeptCount": 7, "consecutiveZeroKept": 0, "consecutiveFailures": 2},
+        "src_b": {"lastKeptCount": 3, "consecutiveZeroKept": 0, "consecutiveFailures": 0},
+    }
+    legacy_rows = {
+        "src_a": {"lastStatus": "ok", "lastJobsKept": 7, "zeroJobStreak": 0, "failureCount": 2},
+        "src_b": {"lastStatus": "ok", "lastJobsKept": 3},
+    }
+    with workspace_tmpdir("source-state-heal") as tmp:
+        state_path = Path(tmp) / "jobs-source-state.json"
+        write_source_state(state_path, legacy_rows)
+        with gzip.open(_gzip_path(state_path), mode="rt", encoding="utf-8") as handle:
+            persisted = handle.read()
+        reread = read_source_state(state_path)
+    for name, row in reread.items():
+        for canonical, value in canonical_values[name].items():
+            assert row.get(canonical) == value, (name, canonical, row.get(canonical))
+        for alias in ("lastJobsKept", "zeroJobStreak", "failureCount"):
+            assert alias not in row, (name, alias)
+    for alias in ("lastJobsKept", "zeroJobStreak", "failureCount"):
+        assert f'"{alias}"' not in persisted, alias
 
 
 def test_lifecycle_state_reader_accepts_legacy_plain_json() -> None:

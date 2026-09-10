@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.source_counter_aliases import read_counter
 from src.shared.utils import now_iso
 from src.source_registry_data import known_twin_career_urls
 from src.source_registry_identity import (
@@ -111,11 +112,14 @@ def _latest_fetch_failed(row: dict[str, Any], state: dict[str, Any]) -> bool:
 def _fresh_jobs_found_count(row: dict[str, Any], state: dict[str, Any]) -> int | None:
     if _latest_fetch_failed(row, state):
         return None
-    for key in ("lastJobsFound", "lastJobsKept", "lastKeptCount"):
-        if key in state:
-            return max(0, _coerce_int(state.get(key), 0))
-        if key in row:
-            return max(0, _coerce_int(row.get(key), 0))
+    # Counter read via the shared policy leaf: canonical-first with alias
+    # fallback (docs/plans/source-health-counter-collapse-plan.md, Phase 3).
+    for source in (state, row):
+        if "lastJobsFound" in source:
+            return max(0, _coerce_int(source.get("lastJobsFound"), 0))
+        counter = read_counter(source, "lastKeptCount")
+        if counter is not None:
+            return max(0, _coerce_int(counter, 0))
     return None
 
 
@@ -130,10 +134,8 @@ def _row_jobs_evidence(row: dict[str, Any], state: dict[str, Any]) -> int:
             return max(0, _coerce_int(row.get("lastReliableJobsFound"), 0))
         return 0
     return max(
-        _coerce_int(state.get("lastKeptCount"), 0),
-        _coerce_int(state.get("lastJobsKept"), 0),
-        _coerce_int(row.get("lastKeptCount"), 0),
-        _coerce_int(row.get("lastJobsKept"), 0),
+        _coerce_int(read_counter(state, "lastKeptCount"), 0),
+        _coerce_int(read_counter(row, "lastKeptCount"), 0),
         _coerce_int(row.get("jobsFound"), 0),
         _coerce_int(row.get("sampleCount"), 0),
     )
@@ -387,26 +389,18 @@ def _duplicate_winner_rationale(
         in {"quarantined", "rejected"}
         or str(row.get("quarantineReason") or state.get("quarantineReason") or "").strip()
     )
+    # Canonical-first counter reads via the shared policy leaf (Phase 3 of the
+    # counter collapse): the alias-first spellings here predate the uniform
+    # precedence and could let a stale alias outrank the fresh counter.
     source_jobs_kept = str(
-        state.get("lastJobsKept")
-        or state.get("lastKeptCount")
-        or row.get("lastJobsKept")
-        or row.get("lastKeptCount")
-        or 0
+        read_counter(state, "lastKeptCount") or read_counter(row, "lastKeptCount") or 0
     )
     jobs_found = str(row.get("jobsFound") or row.get("sampleCount") or 0)
     failure_count = str(
-        state.get("failureCount")
-        or state.get("consecutiveFailures")
-        or row.get("failureCount")
-        or 0
+        read_counter(state, "consecutiveFailures") or read_counter(row, "consecutiveFailures") or 0
     )
     zero_job_streak = str(
-        state.get("zeroJobStreak")
-        or state.get("consecutiveZeroKept")
-        or row.get("zeroJobStreak")
-        or row.get("consecutiveZeroKept")
-        or 0
+        read_counter(state, "consecutiveZeroKept") or read_counter(row, "consecutiveZeroKept") or 0
     )
     adapter = str(row.get("adapter") or "").strip().lower() or "unknown"
     return [

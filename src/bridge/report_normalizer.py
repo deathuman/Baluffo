@@ -325,6 +325,8 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "sourcePolicyRecommendationExport": source_policy_recommendation_export,
         "lifecycleSummary": _as_dict(src.get("lifecycleSummary")),
         "availabilitySummary": normalize_availability_summary(src.get("availabilitySummary")),
+        # Absent input normalizes to None: display payloads for progress/failed
+        # runs omit the health field instead of a fabricated overdueCount=0.
         "availabilityHealth": normalize_availability_health(src.get("availabilityHealth")),
         "sourceDirectConflicts": normalize_source_direct_conflicts(
             src.get("sourceDirectConflicts")

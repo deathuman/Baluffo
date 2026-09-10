@@ -19,6 +19,7 @@ from src.jobs.state_source_records import (
     build_excluded_source_report as build_excluded_source_report,
 )
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.source_counter_aliases import read_counter
 from src.shared.utils import env_flag
 
 BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS = {
@@ -57,7 +58,9 @@ def _positive_int(*values: Any) -> int:
 def _source_state_proves_feed_output(entry: dict[str, Any] | None) -> bool:
     if not isinstance(entry, dict):
         return False
-    return _positive_int(entry.get("lastKeptCount"), entry.get("lastJobsKept")) > 0
+    # Canonical-first counter read via the shared policy leaf (Phase 3 of the
+    # counter collapse): alias fallback stays for legacy state rows.
+    return _positive_int(read_counter(entry, "lastKeptCount")) > 0
 
 
 def select_pipeline_loaders(

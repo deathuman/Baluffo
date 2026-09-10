@@ -1,11 +1,36 @@
 # Source Health Counter Collapse Plan
 
-> - **Status:** Proposed (awaiting operator approval for Phases 5–6; Phases 1–4 are persistence-internal)
-> - **Use this when:** touching `lastJobsKept`/`zeroJobStreak`/`failureCount` (aliases) or `lastKeptCount`/`consecutiveZeroKept`/`consecutiveFailures` (canonical) read/write precedence, extending source-health fields, or executing the alias collapse
+> - **Status:** Executed through Phase 4 + Phase 6 (2026-09-10) and live-audited on the 2026-09-09 forced full pass (two persistence-funnel defects found and fixed in place — see acceptance audit below). Phase 5 (bridge contract change) remains **awaiting operator approval**; the guardrail test `tests/test_source_counter_alias_guardrails.py` pins the executed invariants.
+> - **Use this when:** touching `lastJobsKept`/`zeroJobStreak`/`failureCount` (aliases) or `lastKeptCount`/`consecutiveZeroKept`/`consecutiveFailures` (canonical) read/write precedence, extending source-health fields, or executing the remaining phase
 > - **Canonical for:** the phased migration design, site inventory, and phase acceptance criteria for collapsing the three counter alias pairs
 > - **Not canonical for:** the split-brain root cause (recorded in commit `ca778258` and the changelog) or the availability health payload contract
-> - **Then inspect:** `src/jobs/state_source_records.py`, `src/jobs/common/contracts_source_health.py`, `src/shared/fetch_report_normalization.py`, `docs/DATA_CONTRACT.md`
-> - **Last updated:** 2026-09-09
+> - **Then inspect:** `src/shared/source_counter_aliases.py` (the policy leaf), `src/jobs/state_source_records.py`, `src/jobs/common/contracts_source_health.py`, `src/shared/fetch_report_normalization.py`, `docs/DATA_CONTRACT.md`
+> - **Last updated:** 2026-09-10
+
+## Execution state (2026-09-10)
+
+- **Phase 1** — policy leaf `src/shared/source_counter_aliases.py` (`COUNTER_ALIASES`, `CANONICAL_COUNTERS`, `read_counter`, `emit_with_aliases`, `heal_counter_aliases`); derive readers refactored; behavior identical to `ca778258`.
+- **Phase 2** — heal-assertion test in `test_pipeline_storage_gzip.py`: legacy alias-only rows converge through the normal read-modify-write cycle (no bulk rewrite). The divergence audit against real state (`data/jobs-source-state.json.gz`, 4,988 rows) found **zero divergence and zero alias-only rows** pre-migration.
+- **Phase 3** — `source_registry_policy`, `registry_conflicts_row_core` (`_fresh_jobs_found_count`), `registry_conflicts_automation_provider`, `pipeline_loader_selection`, and `state_incremental` (including retiring the defensive third spelling `zeroKeptStreak` from the reader — zero occurrences in real state) all read via `read_counter`; `registry_conflicts_row_audit._join_source_health_aliases` fills aliases via `heal_counter_aliases`.
+- **Phase 4** — `derive_source_health_fields` emits **canonical counters only** (no alias keys into persisted state); the state normalizer heals legacy alias-only rows on load through the leaf; `normalize_fetch_report_source_row_base` option defaults flipped canonical-preferred. Wire emitters (`_source_health_row`, `_fetch_report_source_state_row`) still carry aliases for the Admin UI.
+- **Phase 5** — NOT executed (bridge contract change; operator approval required). Emit surface unchanged; guardrail test pins it.
+- **Phase 6** — guardrail test added: alias-map completeness, persistence single-writer grep guard, wire-emit still carries aliases, canonical-first + absent-aware read contract.
+
+## Phase-4 acceptance evidence
+
+- Divergence audit (plan script): `none` across 4,988 rows; zero `zeroKeptStreak` occurrences.
+- Nested counter-name audit: no alias keys anywhere besides top-level source rows.
+- Suites: `test_jobs_source_health`, `test_pipeline_storage_gzip`, `test_fetch_report_normalization_parity`, `test_state_incremental_empty_streak`, `test_source_counter_alias_guardrails`, `test_fetch_report_source_row_enrichment`, `test_browser_fallback`, `test_structured_migration_state` — 53 passed; `tests/bridge/` + `test_admin_bridge_source_health` — 648 passed; changed-mode gate exit 0.
+- Next full consolidation pass will write the first alias-free state file; the heal keeps old files self-correcting on load (no bulk migration needed, per plan).
+
+### Phase-4 acceptance audit (forced full pass, 2026-09-09) — two funnel defects found and fixed
+
+The forced full pass (`tmp/alias-collapse-20260910/run1.log`, output 42,114, 72 failed sources, verdict healthy 100/22/Δ−1) wrote state at 18:35:26Z — and the audit found **all 4,989 rows still carrying all three alias keys**, fully synced to canonical. Root cause was the plan's own heal definition, not the derive:
+
+1. **Alias re-add through the funnel.** `heal_counter_aliases` fused both heal directions; its alias-fill branch re-added alias keys on every normalize+save cycle, re-emitting what the derive no longer writes. Fix: persistence uses the new `fill_canonical_counters` (canonical := alias, alias keys **consumed**); alias-fill is reserved for the display/wire join (`heal_counter_aliases`, kept for the Phase-5 surface).
+2. **Vacuous Phase-2 heal.** The state normalizer's whitelist reads canonical keys only and coerces absent → 0, so the post-whitelist heal arrived too late: alias-only legacy rows were silently zeroed (the Phase-2 convergence test passed on all-zeros and asserted the wrong final shape). Fix: `fill_canonical_counters` runs **before** the whitelist (copying each raw row first), plus a real value-preservation round-trip test and a persisted-text alias guard.
+
+Re-acceptance: in-memory normalize audit of the real payload (4,989 rows: 0 aliases, 0 canonical drift); sanctioned read→write round-trip proven byte-clean in temp (0 dropped, 0 field diffs); in-place rewrite via `read_source_state`/`write_source_state` landed the first **alias-free state file** (0 alias keys, 0 counter drift, metadata intact). Guardrails updated to pin both heal directions separately; focused suites 28 passed; grep-guard now also fails if the persistence funnel imports the alias-fill heal.
 
 ## Problem
 

@@ -302,3 +302,51 @@ def test_normalized_health_preserves_signed_delta_and_reasons() -> None:
     assert degraded["status"] == "degraded"
     assert degraded["healthReasons"] == ["coverage_target_missed", "overdue_rising"]
     assert degraded["overdueDelta"] == 108
+
+
+def test_normalize_availability_health_fabricates_nothing_for_absent_input() -> None:
+    """Absent input (None / empty / non-dict) normalizes to None — the
+    fabricated ``overdueCount: 0`` default that used to ride progress
+    payloads into the summary artifact was the baseline-poisoning vector."""
+
+    for absent in (None, {}, "nope", 42):
+        assert normalize_availability_health(absent) is None, absent
+
+
+def test_normalize_availability_health_preserves_present_payload_fields() -> None:
+    """A present payload keeps field-level coercion: empty status and zero
+    counts are honest readings of what the producer sent, and the
+    terminal-baseline shape gate (not the normalizer) decides baseline
+    eligibility."""
+
+    present = normalize_availability_health(
+        {
+            "status": "",
+            "overdueCount": 0,
+            "overdueBySource": {},
+            "overdueDelta": None,
+            "healthReasons": [""],
+        }
+    )
+    assert present == {
+        "status": "",
+        "overdueCount": 0,
+        "overdueBySource": {},
+        "overdueSourceCount": 0,
+        "overdueBySourceDelta": {},
+        "overdueDelta": None,
+        "overdueRising": False,
+        "coverageTargetMissed": False,
+        "healthReasons": [],
+        "verifiedWithinDaysTarget": 0,
+        "verifiedCoverageTarget": 0.0,
+        "verifiedWithinSevenDaysCoverage": 0.0,
+        "sweepSelectedCount": 0,
+        "sweepDeferredCount": 0,
+        "degradedCoverage": False,
+        "shadowClassifier": False,
+        "identity": {
+            "shadowClassifierCounts": {},
+            "rejectionReasonCounts": {},
+        },
+    }

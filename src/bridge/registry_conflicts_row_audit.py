@@ -24,6 +24,7 @@ from src.bridge.registry_conflicts_row_source_state import (
     SOURCE_HEALTH_FIELD_NAMES,
     _source_state_row_for_registry_row,
 )
+from src.shared.source_counter_aliases import heal_counter_aliases
 from src.source_registry import source_identity
 
 CONFLICT_DIFF_FIELDS = (
@@ -219,18 +220,9 @@ def _join_source_health_aliases(
         merged["lastSuccessfulFetchAt"] = merged.get("lastSuccessAt")
     if not merged.get("lastSeenInFetchAt"):
         merged["lastSeenInFetchAt"] = merged.get("lastCheckedAt") or merged.get("lastRunAt") or ""
-    if merged.get("lastJobsKept") in {"", None} and merged.get("lastKeptCount") not in {"", None}:
-        merged["lastJobsKept"] = merged.get("lastKeptCount")
-    if merged.get("failureCount") in {"", None} and merged.get("consecutiveFailures") not in {
-        "",
-        None,
-    }:
-        merged["failureCount"] = merged.get("consecutiveFailures")
-    if merged.get("zeroJobStreak") in {"", None} and merged.get("consecutiveZeroKept") not in {
-        "",
-        None,
-    }:
-        merged["zeroJobStreak"] = merged.get("consecutiveZeroKept")
+    # Alias fill via the shared policy leaf (Phase 3 of the counter collapse):
+    # single definition of alias := canonical for the joined row.
+    heal_counter_aliases(merged)
     transition_reason = _clean_text(
         merged.get("pendingReason")
         or merged.get("quarantineReason")

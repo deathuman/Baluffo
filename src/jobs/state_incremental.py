@@ -14,6 +14,7 @@ from typing import Any
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.shared.source_counter_aliases import read_counter
 
 from .common import config as common_config
 
@@ -43,11 +44,10 @@ _STATIC_DEAD_SOURCE_TOKENS = (
 
 
 def _zero_kept_streak(entry: dict[str, Any]) -> int:
-    return max(
-        int(entry.get("zeroJobStreak") or 0),
-        int(entry.get("consecutiveZeroKept") or 0),
-        int(entry.get("zeroKeptStreak") or 0),
-    )
+    # Canonical-first via the shared policy leaf (Phase 3 of the counter
+    # collapse); zeroKeptStreak is a defensive third spelling covered by the
+    # alias map (zero occurrences in real state, audited 2026-09-09).
+    return int(read_counter(entry, "consecutiveZeroKept") or 0)
 
 
 def _has_consecutive_failures(entry: dict[str, Any]) -> bool:

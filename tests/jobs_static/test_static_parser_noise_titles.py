@@ -10,7 +10,10 @@ from src.jobs.adapters.static_detail_heuristics import (
     process_detail_html,
 )
 from src.jobs.adapters.static_scrapy import _normalize_job
-from src.jobs.page_gating import looks_like_static_parser_noise_title
+from src.jobs.page_gating import (
+    looks_like_server_template_artifact,
+    looks_like_static_parser_noise_title,
+)
 
 
 def _write_json(path: object, rows: list[dict[str, str]]) -> None:
@@ -381,3 +384,32 @@ def test_static_detail_fallback_keeps_real_talent_job_title() -> None:
 
     assert len(result["rows"]) == 1
     assert result["rows"][0]["title"] == "Talent Acquisition Manager"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "'+$Esapi.Encoder().Encodeforhtml(Data['Website'])+ '",
+        "'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'",
+        "https://bkomstudios.zohorecruit.com/jobs/'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'",
+    ],
+)
+def test_server_template_artifacts_are_rejected(text: str) -> None:
+    """The zoho ESAPI/velocity template leak class (BKOM/PlaySimple 2026-03
+    junk rows + 2026-09-10 run-over-run error flap) must read as noise so it
+    is rejected at both row and detail-candidate ingestion."""
+    assert looks_like_server_template_artifact(text)
+    assert looks_like_static_parser_noise_title(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Senior Java Developer",
+        "Salary: $100k+ bonus",
+        "C++ Developer ($80k-$120k)",
+        "https://bkomstudios.zohorecruit.com/jobs/Careers",
+    ],
+)
+def test_legitimate_titles_and_urls_pass(text: str) -> None:
+    assert not looks_like_server_template_artifact(text)

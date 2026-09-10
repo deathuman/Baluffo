@@ -11,6 +11,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.source_counter_aliases import read_counter
 from src.source_registry import source_identity
 
 PROVIDER_ADAPTERS = {
@@ -176,10 +177,14 @@ def _latest_fetch_failed(row: dict[str, Any]) -> bool:
 def _fresh_jobs_found_count(row: dict[str, Any]) -> int | None:
     if _latest_fetch_failed(row):
         return None
-    for key in ("lastJobsFound", "lastJobsKept", "lastKeptCount"):
-        value = _count_from_key(row, key)
-        if value is not None:
-            return value
+    # lastJobsFound first (job-level fact), then the counter pair canonical-
+    # first via the shared policy leaf (Phase 3 of the counter collapse).
+    last_jobs_found = _count_from_key(row, "lastJobsFound")
+    if last_jobs_found is not None:
+        return last_jobs_found
+    counter = read_counter(row, "lastKeptCount")
+    if counter is not None:
+        return _count_from_key(row, "lastKeptCount")
     return None
 
 

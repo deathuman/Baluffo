@@ -234,8 +234,11 @@ def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
     assert merged["consecutiveZeroKept"] == 0
 
 
-def test_state_derive_refreshes_stale_aliases_for_persistence() -> None:
-    """The state-side write-back must heal stale aliases, not perpetuate them."""
+def test_state_derive_emits_canonical_counters_only() -> None:
+    """Phase 4 of the counter collapse: the derive no longer dual-writes the
+    legacy alias keys into persisted state — canonical counters only. A stale
+    alias must not perpetuate itself, and the state normalizer's heal owns
+    legacy-alias convergence on load."""
 
     entry = {
         "lastStatus": "ok",
@@ -251,9 +254,11 @@ def test_state_derive_refreshes_stale_aliases_for_persistence() -> None:
 
     assert derived["health"] == "healthy"
     assert derived["healthReason"] == "last fetch kept jobs"
-    assert derived["lastJobsKept"] == 36
-    assert derived["failureCount"] == 0
-    assert derived["zeroJobStreak"] == 0
+    assert derived["lastKeptCount"] == 36
+    assert derived["consecutiveFailures"] == 0
+    assert derived["consecutiveZeroKept"] == 0
+    for alias in ("lastJobsKept", "failureCount", "zeroJobStreak"):
+        assert alias not in derived, alias
 
 
 def test_stale_healthy_alias_cannot_mask_real_zero_streak() -> None:

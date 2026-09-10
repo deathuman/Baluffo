@@ -26,6 +26,7 @@ from src.jobs.adapters.static_listing_state import (
     _complete_source_without_generic_flow,
     _is_provisional_static_artifact_row,
 )
+from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
 from src.jobs.page_gating import (
     classify_job_page,
     looks_like_static_parser_noise_title,
@@ -157,6 +158,11 @@ def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
         ctx.entry_report["error"] = ""
         return
     if empty_confirmed:
+        return
+    # A live-200 read that proves its own emptiness (explicit no-openings marker
+    # or a prior clean zero read) is an observed-empty board, not an error —
+    # promotes to ok/0 so the availability drain can retire the source's rows.
+    if promote_clean_zero_kept(ctx):
         return
     ctx.entry_report["status"] = "error"
     if not ctx.entry_report.get("error"):

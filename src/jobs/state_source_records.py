@@ -30,6 +30,7 @@ from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_ME
 from src.pipeline_io import write_atomic_if_changed, write_text_if_changed
 from src.shared.json_io import read_json_object
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
+from src.shared.source_counter_aliases import fill_canonical_counters, read_counter
 from src.shared.utils import now_iso
 
 from . import state_incremental as _state_incremental
@@ -274,15 +275,24 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
     last_run_at = _source_health_text(
         src.get("lastRunAt"), src.get("lastCheckedAt"), src.get("lastSeenInFetchAt")
     )
-    # Canonical counters first: the maintained fields (lastKeptCount,
-    # consecutiveZeroKept, consecutiveFailures) are updated fresh each run by the
+    # Canonical-first via the shared policy leaf (Phase 1 of the counter
+    # collapse, docs/plans/source-health-counter-collapse-plan.md): the
+    # maintained fields (lastKeptCount, consecutiveZeroKept,
+    # consecutiveFailures) are updated fresh each run by the
     # apply_*_source_state appliers, while the legacy aliases (lastJobsKept,
-    # zeroJobStreak, failureCount) only exist because this derive wrote them back.
-    # Reading aliases first let a stale alias override the fresh counter forever
-    # (self-perpetuating split brain: healthy rows labeled warning/broken).
-    last_jobs_kept = _source_health_int(src.get("lastKeptCount"), src.get("lastJobsKept"))
-    failure_count = _source_health_int(src.get("consecutiveFailures"), src.get("failureCount"))
-    zero_job_streak = _source_health_int(src.get("consecutiveZeroKept"), src.get("zeroJobStreak"))
+    # zeroJobStreak, failureCount) only exist because this derive wrote them
+    # back. Reading aliases first let a stale alias override the fresh counter
+    # forever (self-perpetuating split brain: healthy rows labeled
+    # warning/broken).
+    last_jobs_kept = _source_health_int(
+        read_counter(src, "lastKeptCount"),
+    )
+    failure_count = _source_health_int(
+        read_counter(src, "consecutiveFailures"),
+    )
+    zero_job_streak = _source_health_int(
+        read_counter(src, "consecutiveZeroKept"),
+    )
     health_score = _clamped_int(src.get("healthScore"), 0, 100)
     if last_status == "excluded":
         health = "unknown"
@@ -302,6 +312,11 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
     else:
         health = "unknown"
         reason = "no fetch history"
+    # Phase 4 of the counter collapse (single-writer at the derive): the
+    # returned payload carries ONLY canonical counter keys — aliases are no
+    # longer written back into persisted state. The state normalizer heals
+    # legacy alias-only rows on load via fill_canonical_counters, and wire
+    # emitters fill alias keys at emit time via emit_with_aliases.
     return {
         "healthScore": health_score,
         "lastStatus": last_status,
@@ -310,12 +325,9 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
         "lastSuccessAt": last_success,
         "lastSuccessfulFetchAt": last_success,
         "lastSeenInFetchAt": last_seen,
-        "lastKeptCount": _source_health_int(src.get("lastKeptCount"), src.get("lastJobsKept")),
-        "lastJobsKept": last_jobs_kept,
+        "lastKeptCount": last_jobs_kept,
         "consecutiveFailures": failure_count,
-        "failureCount": failure_count,
         "consecutiveZeroKept": zero_job_streak,
-        "zeroJobStreak": zero_job_streak,
         "health": health,
         "healthReason": reason,
     }
@@ -343,6 +355,15 @@ def normalize_source_state_payload(
         entry_src = as_json_object(raw_entry)
         if not name or not entry_src:
             continue
+        # Phase 2/4 heal (counter collapse): legacy rows that store counters
+        # only under alias names gain the canonical counters here — BEFORE the
+        # whitelist below coerces them. An absent canonical coerces to 0, so a
+        # post-whitelist heal would arrive too late and silently zero legacy
+        # rows (the vacuous Phase-2 defect caught in the Phase-4 live
+        # acceptance audit, 2026-09-09). Copy first: never mutate the caller's
+        # payload. Persistence must never re-add alias keys.
+        entry_src = dict(entry_src)
+        fill_canonical_counters(entry_src)
         entry = {
             "lastRunAt": clean_text(entry_src.get("lastRunAt")),
             "lastCheckedAt": clean_text(entry_src.get("lastCheckedAt")),

@@ -18,7 +18,6 @@ from src.jobs.finalize_availability import (
     _previous_availability_health,
     write_availability_health_baseline,
 )
-from src.shared.availability_report import normalize_availability_health
 
 
 class _Paths:
@@ -77,14 +76,15 @@ def test_previous_availability_health_survives_broken_json(tmp_path: Any) -> Non
 
 
 def test_previous_availability_health_ignores_normalizer_default_payload(tmp_path: Any) -> None:
-    """Mid-run progress overwrites of the summary artifact carry a
-    normalizer-default availabilityHealth (empty status, overdueCount=0).
-    Reading it as a baseline faked a full overdue rise
-    (overdueDelta == overdueCount) on the next terminal run."""
+    """Mid-run progress overwrites of the summary artifact used to carry a
+    normalizer-default availabilityHealth (empty status, overdueCount=0) —
+    pre-fix artifacts on disk can still hold that shape. Reading it as a
+    baseline faked a full overdue rise (overdueDelta == overdueCount) on the
+    next terminal run."""
 
     paths = _write_summary(
         tmp_path,
-        normalize_availability_health(None),
+        {"status": "", "overdueCount": 0, "overdueBySource": {}, "overdueDelta": None},
     )
     assert _previous_availability_health(paths) is None
 
@@ -121,7 +121,16 @@ def test_previous_availability_health_prefers_dedicated_baseline(tmp_path: Any) 
     summary_path = tmp_path / "jobs-fetch-report-summary.json"
     summary_path.write_text(
         json.dumps(
-            {"runId": "r-progress", "availabilityHealth": normalize_availability_health(None)}
+            {
+                "runId": "r-progress",
+                # pre-fix progress payload: the fabricated default shape
+                "availabilityHealth": {
+                    "status": "",
+                    "overdueCount": 0,
+                    "overdueBySource": {},
+                    "overdueDelta": None,
+                },
+            }
         ),
         encoding="utf-8",
     )

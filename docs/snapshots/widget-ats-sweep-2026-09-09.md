@@ -55,3 +55,26 @@ Corrections vs. the audit's projections:
 - **Weta's widget API key** is no longer re-derivable from the rewritten marketing page; the direct tenant board itself is live, which is the registration target anyway.
 - **TornBanner** fetched 4 (bamboo pagination) → 2 unique after dedup; net feed +2.
 - **Axes in Motion re-adjudicated: not a sixth repair.** Workable adapter exists and the `axesinmotion` account is live, but the board's only posting is a "Speculative Application" talent-pool pseudo-entry (plus one stale page link not in the API) — staging would trade zero-yield for pseudo-entry contamination. Record-only.
+
+## Promotion — 2026-09-09 (same day)
+
+All 5 staged rows promoted pending → active through the sanctioned flow (wave-B Fanatee/inXile precedent), with the lean-registry gotcha applied: every registry IO goes through the `src.source_registry_io` merge load/save on the logical `.json` names — metadata map verified intact at 3,018 entries after the write (no raw gzip anywhere).
+
+- `transition_registry_to_active` (reason `manual_source_promotion`, actor `ai_widget_wave_promotion_20260909`): `registryState=active`, `candidateState=live`, `enabledByDefault=true`; pending 853 → 848.
+- Superseded static rows retired from active + tombstoned via sanctioned `add_tombstone`/`save_tombstones` (bucket `active`, reason `superseded_by_provider`; tombstones 131 → 136): `grand.gs/careers`, `www.riftgaming.gg/careers`, `www.wetaworkshop.com/about-us/careers`, `tornbanner.com/careers/`, `voldex.com/careers/#jobs`.
+- Seed swap (`data/defaults/source-registry-active.seed.json`): the 4 seed-member static rows removed, the 5 promoted rows added in their promoted shape; active seed 1,889 → 1,890. Pending seed unchanged (the staged rows were never seed members; RiftGaming's static was not a seed member).
+- Executor + evidence: `tmp/widget-wave-20260909/promote_five.py` (+ `promotion-run.log`, `promotion-result.json`); every read-back check OK — promoted rows active/live/enabled, statics absent AND tombstoned, zero pending leaks, exact count deltas.
+
+Verification pass in the **regular lane** (no `--include-pending-provider-migration` — that is the promotion proof): `python src/jobs_fetcher.py --only-sources "lever_sources,teamtailor_sources,bamboohr_sources,ashby_sources"` → exit 0, **0 failed sources**, output 41,295 (slot `jobs-fetch-report-run-20260909-162440`).
+
+| Promoted row | family fetch/kept (regular lane) | Feed rows via studio attribution |
+|---|---|---|
+| `lever:account:grand` | lever 310/284, ok | 43 (studio total incl. aggregator-sourced rows) |
+| `teamtailor:listing_url:https://jobs.riftgaming.gg/jobs` | teamtailor 141/131, ok | 2 |
+| `teamtailor:listing_url:https://wetaworkshop.teamtailor.com/jobs` | teamtailor 141/131, ok | 4 |
+| `bamboohr:listing_url:https://tornbanner.bamboohr.com/careers` | bamboohr 81/78, ok | 2 |
+| `ashby:board_url:https://jobs.ashbyhq.com/voldex` | ashby 99/96, ok | 7 |
+
+Control check: teamtailor, lever, and ashby family fetched/kept are **identical** to the morning forced run (141/131, 310/284, 99/96) — the promoted rows contribute exactly as in their staged evidence, now without any special lane. Bamboohr moved 83/80 → 81/78: fully attributed to the 6 *other* still-pending bamboo migration rows (BeamDog, Wolcen, …) that the forced run's lane fetched and a regular lane skips; their 9 cached feed rows remain and decay naturally. Not a regression.
+
+Retirement proof: none of the 5 superseded static IDs appear in the verify report. `availabilityHealth` reads healthy, `overdueCount` 101, `overdueDelta` 0 — the terminal-baseline round-trip stayed intact across the promotion. Registry consistency + seed-runtime suites: 21 passed.

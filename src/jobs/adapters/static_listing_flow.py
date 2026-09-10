@@ -15,6 +15,7 @@ from src.jobs.adapters.static_listing_state import (
 from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
+from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
 from src.jobs.state_source_state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
@@ -48,27 +49,32 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
         and not clean_text(ctx.entry_report.get("classification"))
         and int(ctx.link_rejections.get("dead_listing_page", 0)) <= 0
     ):
-        ctx.entry_report["status"] = "error"
-        ctx.entry_report["error"] = "no jobs extracted from source pages"
-        terminal_reason = clean_text(ctx.stats.get("listing_terminal_reason"))
-        if terminal_reason in {"listing_timeout", "listing_timeout_after_browser_fallback"}:
-            ctx.entry_report["classification"] = "timeout"
-        elif terminal_reason in {"blocked_after_browser_fallback", "browser_fallback_empty"}:
-            ctx.entry_report["classification"] = (
-                "anti_bot_or_challenge"
-                if bool(ctx.source.get("antiBotBrowserRetry"))
-                else "blocked_or_challenge"
-            )
-        elif (
-            bool(ctx.source.get("antiBotBrowserRetry"))
-            and int(ctx.stats.get("listing_browser_fallbacks") or 0) > 0
-        ):
-            ctx.entry_report["classification"] = "anti_bot_or_challenge"
-            ctx.entry_report["error"] = (
-                "browser retry exhausted: no jobs extracted from source pages"
-            )
-        if ctx.selected_source_count == 1:
-            ctx.errors.append(f"static:{ctx.source_name}: no jobs extracted from source pages")
+        # A live-200 read that proves its own emptiness (explicit no-openings
+        # marker or a prior clean zero read) is an observed-empty board, not an
+        # error — promotes to ok/0 so the availability drain can retire the
+        # source's rows as observed-empty instead of overdue-forever.
+        if not promote_clean_zero_kept(ctx):
+            ctx.entry_report["status"] = "error"
+            ctx.entry_report["error"] = "no jobs extracted from source pages"
+            terminal_reason = clean_text(ctx.stats.get("listing_terminal_reason"))
+            if terminal_reason in {"listing_timeout", "listing_timeout_after_browser_fallback"}:
+                ctx.entry_report["classification"] = "timeout"
+            elif terminal_reason in {"blocked_after_browser_fallback", "browser_fallback_empty"}:
+                ctx.entry_report["classification"] = (
+                    "anti_bot_or_challenge"
+                    if bool(ctx.source.get("antiBotBrowserRetry"))
+                    else "blocked_or_challenge"
+                )
+            elif (
+                bool(ctx.source.get("antiBotBrowserRetry"))
+                and int(ctx.stats.get("listing_browser_fallbacks") or 0) > 0
+            ):
+                ctx.entry_report["classification"] = "anti_bot_or_challenge"
+                ctx.entry_report["error"] = (
+                    "browser retry exhausted: no jobs extracted from source pages"
+                )
+            if ctx.selected_source_count == 1:
+                ctx.errors.append(f"static:{ctx.source_name}: no jobs extracted from source pages")
     ctx.emit_heartbeat()
     update_source_detail_taxonomy(ctx.entry_report)
     if (

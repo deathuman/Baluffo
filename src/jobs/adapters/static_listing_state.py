@@ -23,6 +23,7 @@ from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
 from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
+from src.jobs.page_gating import looks_like_server_template_artifact
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 
 from .static_runtime import StaticSourceContext
@@ -44,6 +45,15 @@ def _append_detail_candidate(
 ) -> bool:
     absolute = normalize_url(candidate_url)
     if not absolute or absolute in detail_seen or absolute in seen_links:
+        return False
+    candidate_title = clean_text(anchor_text)
+    # Server-template artifacts (literal ESAPI/velocity fragments leaked into
+    # the page instead of being rendered) are parser noise, not job links —
+    # fetching them returns HTTP 400 and errors the whole source run-over-run
+    # (the BKOM/PlaySimple 2026-03 junk rows and the 2026-09-10 error flap).
+    if looks_like_server_template_artifact(absolute) or looks_like_server_template_artifact(
+        candidate_title
+    ):
         return False
     detail_seen.add(absolute)
     detail_links.append(

@@ -255,6 +255,8 @@ def looks_like_static_parser_noise_title(text: str) -> bool:
         return True
     if _looks_like_parser_code_payload(text):
         return True
+    if looks_like_server_template_artifact(text):
+        return True
     if any(
         fragment in lowered
         for fragment in (
@@ -296,6 +298,29 @@ def _looks_like_parser_code_payload(text: str) -> bool:
     if raw.lstrip().startswith("{") and raw.rstrip().endswith("}"):
         return True
     return False
+
+
+def looks_like_server_template_artifact(text: str) -> bool:
+    """True when the text is a server-side template fragment that leaked into
+    the page instead of being rendered (e.g. zoho boards emitting literal
+    ``'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'``).
+
+    These fragments previously passed the noise filter, were extracted as job
+    rows with literal-code titles, and were later fetched as detail candidates
+    (HTTP 400) — erroring whole sources run-over-run (the BKOM/PlaySimple
+    2026-03 junk rows and the 2026-09-10 error flap)."""
+    raw = str(text or "")
+    if not raw:
+        return False
+    return bool(
+        re.search(
+            r"(?i)\$\s*esapi\s*\.\s*encoder\s*\(\s*\)"  # ESAPI encoder calls
+            r"|encodeforhtml(?:attribute)?\s*\("  # encodeForHTML/Attribute(
+            r"|\$\s*esc\.?\w*\s*\.\s*\w+\s*\("  # $esc.html($data)/similar
+            r"|\+#\s*\$|'\s*\+\s*\$",  # velocity concatenation seams
+            raw,
+        )
+    )
 
 
 _NAV_OR_UI_TITLE_TOKENS = frozenset(

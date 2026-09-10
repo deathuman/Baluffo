@@ -65,8 +65,23 @@ def normalize_availability_summary(value: Any) -> dict[str, Any]:
     return counts
 
 
-def normalize_availability_health(value: Any) -> dict[str, Any]:
-    source = _object(value)
+def normalize_availability_health(value: Any) -> dict[str, Any] | None:
+    """Normalize a present availabilityHealth payload; fabricate nothing.
+
+    Absent input (``None``, empty dict, or non-dict) returns ``None`` — callers
+    emit no health field rather than a default-shaped payload. This is the
+    structural fix for the baseline-poisoning class: the old ``overdueCount: 0``
+    default for absent input survived the compact summary writer and was read by
+    the next terminal finalize as a real "0 overdue" baseline, faking
+    ``overdueDelta == overdueCount`` on every run. Present payloads keep
+    field-level coercion (empty status / zero counts are honest readings of a
+    present payload; the terminal-baseline shape gate rejects non-terminal
+    ones).
+    """
+
+    if not isinstance(value, dict) or not value:
+        return None
+    source = dict(value)
     identity = normalize_availability_summary(source.get("identity"))
     return {
         "status": str(source.get("status") or "").strip(),

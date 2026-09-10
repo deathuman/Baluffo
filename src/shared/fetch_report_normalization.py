@@ -255,9 +255,12 @@ def normalize_fetch_report_source_row_base(
     last_successful_fallback_last_success: bool = True,
     last_seen_fallback_last_checked: bool = True,
     last_seen_fallback_last_run: bool = False,
-    last_jobs_kept_fallback_last_kept: bool = False,
-    failure_count_fallback_consecutive: bool = False,
-    zero_job_streak_fallback_consecutive: bool = False,
+    # Phase 4 of the counter collapse: canonical-preferred is the default for
+    # repo-side producers — alias keys fall back to their canonical counter
+    # instead of a fabricated 0 (docs/plans/source-health-counter-collapse-plan.md).
+    last_jobs_kept_fallback_last_kept: bool = True,
+    failure_count_fallback_consecutive: bool = True,
+    zero_job_streak_fallback_consecutive: bool = True,
     health_score_default: int = 0,
     health_score_max: int | None = 100,
     count_max: int | None = None,
@@ -303,6 +306,13 @@ def normalize_jobs_fetch_report_source_row_base(
     clean_text_func: Any = _clean_text,
     normalize_text_func: Any | None = _normalize_text,
 ) -> dict[str, Any]:
+    # Phase 4 of the counter collapse
+    # (docs/plans/source-health-counter-collapse-plan.md): repo-side producers
+    # normalize canonical-preferred — alias keys fall back to their canonical
+    # counter (via the shared leaf's precedence) instead of fabricating an
+    # alias-shaped dual-write. Wire emitters that must carry aliases for the
+    # Admin UI fill them from canonical via emit_with_aliases (Phase 5 will
+    # drop them from the bridge contract).
     return normalize_fetch_report_source_row_base(
         row,
         clean_text_func=clean_text_func,
@@ -312,9 +322,6 @@ def normalize_jobs_fetch_report_source_row_base(
         adapter_default="custom",
         fetch_strategy_default="auto",
         last_seen_fallback_last_run=True,
-        last_jobs_kept_fallback_last_kept=True,
-        failure_count_fallback_consecutive=True,
-        zero_job_streak_fallback_consecutive=True,
         health_score_default=100,
         health_score_max=None,
         include_duplicate_rate=True,
