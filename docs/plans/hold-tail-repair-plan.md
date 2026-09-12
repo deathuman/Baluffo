@@ -314,6 +314,22 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   two-consecutive-zero basis and the rows drain; fallback blocked/challenged → hold
   (re-classify with S1 semantics if the board is unreachable, not empty).
 - **No registry action** in any branch until the board's truth is rendered-confirmed.
+- **Adjudication (2026-09-12, forced targeted pass — HOLD, rendered-empty ×1 of ×2):**
+  the listing 200s with the same ~1KB JS shell; the fallback pool fired 3×
+  (`js_shell`, `empty_page`) and **got HTML every time** (pool acquisitions=2, no relaunches
+  — the render lane itself is healthy). An independent real-browser probe
+  (`tmp/holdtail-wave2b-20260912/probe_render.py`, Playwright Chromium,
+  `domcontentloaded` + 6s hydration — `networkidle` never settles on this site) confirms
+  the automation-visible page is **genuinely empty**: status 200, title rendered
+  ("Big Moxi — Scale Game Development Smarter"), **0 body text, 0 links, 0 console errors**,
+  and the DOM never grows beyond the 1.1KB shell — the board script fetches nothing and
+  renders nothing. No hidden XHR surface to capture (unlike the Dayforce case): the page
+  is not an SPA loading a board, it is an empty shell with a jobs URL. The guard refused
+  the zero (browser_fallback_attempted) — correct, and the source stays `js_required` with
+  rows preserved. **This is rendered-empty confirmation #1**; the two-consecutive-zero
+  basis needs one more clean render on a later pass, then the 2 rows
+  (`/careers/unreal-programmer`, `/careers/Game-Systems-Engineer`) drain via the guard.
+  No registry action.
 
 ### 5. Exit VR — 2 rows (transient origin; wait-and-reverify)
 
@@ -355,6 +371,25 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   jobs → re-verify; rendered-empty (×2) → drain via guard; still challenged → hold and
   re-probe on the next tail wave. Sep-6 evidence showed a live board behind the wall
   (10 links), so favor patience over registry action.
+- **Adjudication (2026-09-12, forced targeted pass — HOLD; the question inverted):**
+  the Sep-6 403 bot wall is **gone** — the listing now 200s to plain httpx (143KB,
+  full server-rendered board with 5 "SEE OFFER" links: concept-artist,
+  3d-character-artist, senior-environment-artist, quality-assurance, 3d-artist-internship;
+  no JS render needed at all; the pipeline's 3 fallbacks still fired and got HTML). But
+  **every detail URL 404s** — including with the trailing slash the real links carry —
+  serving the site's Spanish 404 template ("Página no encontrada - Inverge Studios",
+  126KB soft bodies, 0 job content), and the site's own href for senior-environment-artist
+  is malformed (`invergestudios.comjobs/…`, missing the slash). Locale-prefixed and
+  alternate-shape guesses all 404 too. The rows flow aborted on the first detail 404
+  (abort-on-first-failure semantics unchanged) and S1 stamped **`details_broken`**
+  honestly — the Wave-1 machinery's first fully-correct live attribution on this shape.
+  This is NOT rendered-empty (the board renders WITH jobs — they are just unreachable),
+  so neither the ×2 drain branch nor the re-verify branch applies: the site reads as
+  **mid-rebuild** (Spanish-default locale, stale board links, malformed href, WP 404
+  templates) and the disposition is wait-and-reverify. The 1 overdue row is the nav-link
+  junk row (`/jobs` "Jobs") and would drain via the finalize missing path only if a full
+  pass reads the source clean — it cannot while details keep 404ing the rows flow. No
+  registry action; re-probe details on the next tail wave.
 
 ### 9. SNK — 1 row (adapter-gap decision; record-only until then)
 
