@@ -77,6 +77,20 @@ def build_headers(request: RequestConfig) -> dict[str, str]:
     return headers
 
 
+def build_fetch_headers(url: str, request: RequestConfig) -> dict[str, str]:
+    """build_headers plus the S5 browser-profile override for allowlisted hosts.
+
+    See ``src.jobs.common.browser_headers``: under the flag + host allowlist,
+    allowlisted URLs get the browser header profile instead of the bot default
+    shape (some edges 500 the bot shape — Mundfish) — everyone else keeps the
+    exact pre-S5 headers.
+    """
+
+    from src.jobs.common.browser_headers import resolve_fetch_headers
+
+    return resolve_fetch_headers(url, build_headers(request))
+
+
 def normalize_url(url: Any) -> str:
     return normalize_url_impl(url)
 
@@ -303,7 +317,7 @@ def build_redirect_resolver(
 
 
 def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
-    headers = build_headers(request or default_request_config(timeout_s=timeout_s))
+    headers = build_fetch_headers(url, request or default_request_config(timeout_s=timeout_s))
     return common_default_fetch_text(url, timeout_s, headers=headers)
 
 
@@ -318,7 +332,7 @@ async def async_fetch_text_httpx(
         raise RuntimeError("httpx is not installed")
     timeout = httpx.Timeout(float(max(1, timeout_s)))
     try:
-        headers = build_headers(request or default_request_config(timeout_s=timeout_s))
+        headers = build_fetch_headers(url, request or default_request_config(timeout_s=timeout_s))
         response = await client.get(url, timeout=timeout, headers=headers)
         response.raise_for_status()
         # ponytail: host-specific cap for heavy outlier listings (603 MiB observed).

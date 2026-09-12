@@ -91,10 +91,10 @@ test("registry conflicts renderer keeps row evidence compact and diffs collapsed
             health: "healthy",
             healthReason: "recent successful fetch",
             jobsFound: 4,
-            lastJobsKept: 3,
+            lastKeptCount: 3,
             lastSuccessfulFetchAt: "2026-05-08T12:00:00+00:00",
-            failureCount: 0,
-            zeroJobStreak: 0
+            consecutiveFailures: 0,
+            consecutiveZeroKept: 0
           }
         ],
         diffs: [

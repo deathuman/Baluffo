@@ -174,8 +174,8 @@ def test_registry_conflicts_payload_joins_source_health_aliases(admin_bridge_ent
                     "lastSeenInFetchAt": "2026-05-01T10:00:00Z",
                     "lastJobsKept": 9,
                     "lastKeptCount": 9,
-                    "failureCount": 0,
                     "zeroJobStreak": 0,
+                    "consecutiveZeroKept": 0,
                 },
                 "Loser Source": {
                     "health": "warning",
@@ -184,8 +184,8 @@ def test_registry_conflicts_payload_joins_source_health_aliases(admin_bridge_ent
                     "lastSeenInFetchAt": "2026-05-01T09:00:00Z",
                     "lastJobsKept": 1,
                     "lastKeptCount": 1,
-                    "failureCount": 2,
                     "zeroJobStreak": 3,
+                    "consecutiveZeroKept": 3,
                 },
             },
         },
@@ -247,7 +247,7 @@ def test_registry_conflicts_payload_enriches_provider_rows_from_fetch_report_det
                     "health": "unknown",
                     "lastRunAt": "2026-05-08T10:00:00Z",
                     "lastSuccessfulFetchAt": "2026-04-10T10:00:00Z",
-                    "lastJobsKept": 0,
+                    "lastKeptCount": 0,
                 }
             },
         },
@@ -292,4 +292,4 @@ def test_registry_conflicts_payload_enriches_provider_rows_from_fetch_report_det
     assert provider["health"] == "healthy"
     assert provider["healthReason"] == "last fetch kept jobs"
     assert provider["lastSuccessfulFetchAt"] == "2026-05-09T10:00:00Z"
-    assert provider["lastJobsKept"] == 10
+    assert provider["lastKeptCount"] == 10

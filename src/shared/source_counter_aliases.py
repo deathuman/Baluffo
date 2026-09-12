@@ -9,10 +9,15 @@ derive. The alias-first reader ordering caused a self-perpetuating split brain
 in commit `ca778258`; this leaf makes the canonical-first precedence the single
 definition so no consumer hand-rolls alias fallbacks again.
 
+Migration state (docs/plans/source-health-counter-collapse-plan.md): Phases
+1–4 + 6 collapsed persisted state to canonical counters only (2026-09-09), and
+Phase 5 (2026-09-10, operator-approved) dropped the alias spellings from the
+bridge wire contract — no emit surface carries them anymore. The alias map
+remains for reading legacy rows and for the persistence heal; new code must
+never write an alias spelling anywhere.
+
 Importable from `src/jobs`, `src/bridge`, `src/shared`, and root-level scripts —
 no composition-root imports (per AGENTS.md code boundaries).
-
-The migration plan lives in `docs/plans/source-health-counter-collapse-plan.md`.
 """
 
 from __future__ import annotations
@@ -55,20 +60,6 @@ def read_counter(row: dict[str, Any], canonical_name: str) -> Any:
     return None
 
 
-def emit_with_aliases(row: dict[str, Any]) -> dict[str, Any]:
-    """Wire-side emission: fill alias keys from their canonical counters.
-
-    Aliases are always canonical-derived so the two names can never diverge on
-    an emitted payload. Missing canonical counters are left untouched (no
-    fabricated zeros).
-    """
-
-    for alias, canonical in COUNTER_ALIASES.items():
-        if canonical in row:
-            row[alias] = row[canonical]
-    return row
-
-
 def _absent(value: Any) -> bool:
     """Absent for heal purposes: missing, None, or blank-string."""
 
@@ -78,16 +69,15 @@ def _absent(value: Any) -> bool:
 def fill_canonical_counters(entry: dict[str, Any]) -> dict[str, Any]:
     """Persistence-side heal: canonical counters := aliases; alias keys consumed.
 
-    This is the only direction the persistence funnel (state normalizer, save
-    path) may use: legacy alias-only rows gain the canonical name so the
-    whitelist coercion never zeroes a legacy counter, and the alias spellings
-    are consumed (removed) — persisted state must never carry them. An earlier
-    combined heal instead re-added alias keys whenever a canonical counter was
-    present, which is how aliases re-entered persisted state through every
-    normalize+save funnel even after the derive stopped emitting them (found
-    in the Phase-4 live acceptance audit, 2026-09-09). Alias spellings on
-    payloads are wire-side (Phase 5 surface); they are re-added at emit time
-    via emit_with_aliases, never persisted.
+    This is the only heal direction in the repo: legacy alias-only rows gain
+    the canonical name so the whitelist coercion never zeroes a legacy counter,
+    and the alias spellings are consumed (removed) — persisted state must never
+    carry them. An earlier combined heal instead re-added alias keys whenever a
+    canonical counter was present, which is how aliases re-entered persisted
+    state through every normalize+save funnel even after the derive stopped
+    emitting them (found in the Phase-4 live acceptance audit, 2026-09-09).
+    Since Phase 5 (2026-09-10) no wire surface re-adds them either: the bridge
+    contract is canonical-only.
     """
 
     for canonical in CANONICAL_COUNTERS:
@@ -97,26 +87,4 @@ def fill_canonical_counters(entry: dict[str, Any]) -> dict[str, Any]:
                 entry[canonical] = alias_value
     for alias in COUNTER_ALIASES:
         entry.pop(alias, None)
-    return entry
-
-
-def heal_counter_aliases(entry: dict[str, Any]) -> dict[str, Any]:
-    """Display/wire-side heal: aliases := canonical; canonical := alias if absent.
-
-    For joined display rows (bridge registry conflicts) and other Phase-5
-    wire surfaces where the alias names are still part of the visible
-    contract: a canonical counter wins over a stale alias, and an alias-only
-    legacy row gains the canonical name. Persistence funnels must use
-    fill_canonical_counters instead — writing alias keys into persisted state
-    is the Phase-4 single-writer violation this leaf guards against. Blank
-    strings count as absent (legacy wire rows use "" for unset).
-    """
-
-    fill_canonical_counters(entry)  # canonical := alias; input aliases consumed
-    for canonical in CANONICAL_COUNTERS:
-        if _absent(entry.get(canonical)):
-            continue
-        for alias, target in COUNTER_ALIASES.items():
-            if target == canonical:
-                entry[alias] = entry[canonical]
     return entry

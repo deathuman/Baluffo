@@ -405,10 +405,73 @@ def test_server_template_artifacts_are_rejected(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
+        # Konami's EJS href template (the 2026-09-10 400ing candidate class)
+        "https://www.konami.com/games/us/en/jobs/<%= official_site %>",
+        "/jobs/<%= official_site %>",
+        "<%= data.title %>",
+        # Generic ERB/EJS code seams
+        "<% if (jobs.length) { %>",
+        # JS ${...} interpolation seams
+        "https://example.com/careers/${jobId}",
+        "/jobs/view/${id}?ref=${source}",
+    ],
+)
+def test_client_template_artifacts_are_rejected(text: str) -> None:
+    """Client-side template seams (EJS/ERB <%= %>, JS ${}) that leak into
+    listing HTML must read as noise so they are rejected at detail-candidate
+    ingestion instead of 400ing run-over-run (the Konami flap)."""
+    assert looks_like_server_template_artifact(text)
+    assert looks_like_static_parser_noise_title(text)
+
+
+def test_detail_candidate_ingestion_rejects_konami_template_url() -> None:
+    """End-to-end ingestion pin: the exact Konami href template (2026-09-10
+    hold-tail Wave 0) must never become a detail candidate — fetching it
+    returns HTTP 400 and errors the source run-over-run."""
+    from src.jobs.adapters.static_listing_state import _append_detail_candidate
+
+    detail_links: list = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+
+    added = _append_detail_candidate(
+        detail_links,
+        detail_seen,
+        seen_links,
+        candidate_url="https://www.konami.com/games/us/en/jobs/<%= official_site %>",
+        anchor_text="Official site",
+        depth=0,
+        parent_url="https://www.konami.com/games/us/en/jobs/",
+    )
+
+    assert added is False
+    assert detail_links == []
+
+    # A real URL on the same page still becomes a candidate.
+    added_real = _append_detail_candidate(
+        detail_links,
+        detail_seen,
+        seen_links,
+        candidate_url="https://www.konami.com/games/us/en/jobs/",
+        anchor_text="Careers",
+        depth=0,
+        parent_url="https://www.konami.com/games/us/en/jobs/",
+    )
+    assert added_real is True
+    assert len(detail_links) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Senior Java Developer",
         "Salary: $100k+ bonus",
         "C++ Developer ($80k-$120k)",
         "https://bkomstudios.zohorecruit.com/jobs/Careers",
+        # Query strings with $ or % are legitimate URLs, not template seams
+        "https://example.com/jobs?salary=$100k&ref=x",
+        "https://example.com/jobs?encoded=a%40b%2Fc",
+        "100% guaranteed offer",
     ],
 )
 def test_legitimate_titles_and_urls_pass(text: str) -> None:

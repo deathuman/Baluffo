@@ -104,9 +104,6 @@ class _SourceRowBaseOptions:
     last_successful_fallback_last_success: bool
     last_seen_fallback_last_checked: bool
     last_seen_fallback_last_run: bool
-    last_jobs_kept_fallback_last_kept: bool
-    failure_count_fallback_consecutive: bool
-    zero_job_streak_fallback_consecutive: bool
     health_score_default: int
     health_score_max: int | None
     count_max: int | None
@@ -207,29 +204,17 @@ def _source_row_count_fields(src: dict[str, Any], options: _SourceRowBaseOptions
     number = lambda value, default=0, maximum=None: _source_row_number(
         value, options, default=default, maximum=maximum
     )
-    last_kept_count = number(src.get("lastKeptCount"))
-    consecutive_failures = number(src.get("consecutiveFailures"))
-    consecutive_zero_kept = number(src.get("consecutiveZeroKept"))
+    # Canonical counters only (alias collapse Phase 5): the wire contract no
+    # longer carries the legacy alias spellings, so legacy alias-only inputs
+    # are normalized away entirely (docs/plans/source-health-counter-collapse-plan.md).
     return {
         "fetchedCount": number(src.get("fetchedCount")),
         "keptCount": number(src.get("keptCount")),
         "lowConfidenceDropped": number(src.get("lowConfidenceDropped")),
         "durationMs": number(src.get("durationMs"), maximum=options.duration_max),
-        "lastKeptCount": last_kept_count,
-        "lastJobsKept": number(
-            src.get("lastJobsKept"),
-            default=last_kept_count if options.last_jobs_kept_fallback_last_kept else 0,
-        ),
-        "consecutiveFailures": consecutive_failures,
-        "failureCount": number(
-            src.get("failureCount"),
-            default=(consecutive_failures if options.failure_count_fallback_consecutive else 0),
-        ),
-        "consecutiveZeroKept": consecutive_zero_kept,
-        "zeroJobStreak": number(
-            src.get("zeroJobStreak"),
-            default=(consecutive_zero_kept if options.zero_job_streak_fallback_consecutive else 0),
-        ),
+        "lastKeptCount": number(src.get("lastKeptCount")),
+        "consecutiveFailures": number(src.get("consecutiveFailures")),
+        "consecutiveZeroKept": number(src.get("consecutiveZeroKept")),
         "healthScore": number(
             src.get("healthScore"),
             default=options.health_score_default,
@@ -255,12 +240,9 @@ def normalize_fetch_report_source_row_base(
     last_successful_fallback_last_success: bool = True,
     last_seen_fallback_last_checked: bool = True,
     last_seen_fallback_last_run: bool = False,
-    # Phase 4 of the counter collapse: canonical-preferred is the default for
-    # repo-side producers — alias keys fall back to their canonical counter
-    # instead of a fabricated 0 (docs/plans/source-health-counter-collapse-plan.md).
-    last_jobs_kept_fallback_last_kept: bool = True,
-    failure_count_fallback_consecutive: bool = True,
-    zero_job_streak_fallback_consecutive: bool = True,
+    # Alias collapse Phase 5: the wire contract is canonical-only — the legacy
+    # alias input spellings are no longer normalized into the output at all
+    # (docs/plans/source-health-counter-collapse-plan.md).
     health_score_default: int = 0,
     health_score_max: int | None = 100,
     count_max: int | None = None,
@@ -283,9 +265,6 @@ def normalize_fetch_report_source_row_base(
         last_successful_fallback_last_success=last_successful_fallback_last_success,
         last_seen_fallback_last_checked=last_seen_fallback_last_checked,
         last_seen_fallback_last_run=last_seen_fallback_last_run,
-        last_jobs_kept_fallback_last_kept=last_jobs_kept_fallback_last_kept,
-        failure_count_fallback_consecutive=failure_count_fallback_consecutive,
-        zero_job_streak_fallback_consecutive=zero_job_streak_fallback_consecutive,
         health_score_default=health_score_default,
         health_score_max=health_score_max,
         count_max=count_max,
@@ -306,13 +285,10 @@ def normalize_jobs_fetch_report_source_row_base(
     clean_text_func: Any = _clean_text,
     normalize_text_func: Any | None = _normalize_text,
 ) -> dict[str, Any]:
-    # Phase 4 of the counter collapse
+    # Alias collapse Phases 4–5
     # (docs/plans/source-health-counter-collapse-plan.md): repo-side producers
-    # normalize canonical-preferred — alias keys fall back to their canonical
-    # counter (via the shared leaf's precedence) instead of fabricating an
-    # alias-shaped dual-write. Wire emitters that must carry aliases for the
-    # Admin UI fill them from canonical via emit_with_aliases (Phase 5 will
-    # drop them from the bridge contract).
+    # normalize the canonical counters only — no alias-shaped dual-write on
+    # any wire surface since Phase 5 dropped the bridge alias contract.
     return normalize_fetch_report_source_row_base(
         row,
         clean_text_func=clean_text_func,
@@ -676,6 +652,7 @@ def normalize_fetch_report_detail_stats(
         "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
         "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
         "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
+        "detail_fetch_failed": _clamped_int(stats.get("detail_fetch_failed"), 0, 0),
         "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
         "fetch_cache_hits": _clamped_int(stats.get("fetch_cache_hits"), 0, 0),
         "detail_yield_percent": _clamped_int(stats.get("detail_yield_percent"), 0, 0),
@@ -843,6 +820,9 @@ def normalize_jobs_fetch_report_detail_item(
         "durationMs": _clamped_int(item.get("durationMs"), 0, 0),
         "fetchMs": _clamped_int(item.get("fetchMs"), 0, 0),
         "parseMs": _clamped_int(item.get("parseMs"), 0, 0),
+        # Rows-flow evidence for the details_broken signal: how many job-like
+        # cards the live board showed before per-row verification aborted.
+        "listingJobsFound": _clamped_int(item.get("listingJobsFound"), 0, 0),
         "error": clean_text_func(item.get("error")),
         "classification": clean_text_func(item.get("classification")) or "",
         "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),

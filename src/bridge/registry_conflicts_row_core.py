@@ -152,7 +152,6 @@ def _row_jobs_evidence(row: dict[str, Any]) -> int:
         "jobsFound",
         "jobs_found",
         "lastKeptCount",
-        "lastJobsKept",
         "keptCount",
         "kept_count",
     ):
@@ -190,8 +189,7 @@ def _fresh_jobs_found_count(row: dict[str, Any]) -> int | None:
 
 def _positive_evidence_score(row: dict[str, Any]) -> int:
     return _row_jobs_evidence(row) + sum(
-        max(0, _int_value(row.get(key)))
-        for key in ("rankScore", "score", "lastJobsKept", "lastKeptCount")
+        max(0, _int_value(row.get(key))) for key in ("rankScore", "score", "lastKeptCount")
     )
 
 
@@ -238,7 +236,7 @@ def _row_urls(row: dict[str, Any]) -> list[str]:
 
 
 def _static_row_current_jobs(row: dict[str, Any]) -> int:
-    for key in ("liveJobsFound", "lastJobsKept", "lastKeptCount", "lastReliableJobsFound"):
+    for key in ("liveJobsFound", "lastKeptCount", "lastReliableJobsFound"):
         value = _count_from_key(row, key)
         if value is not None:
             return value

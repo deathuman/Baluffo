@@ -315,8 +315,8 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
     # Phase 4 of the counter collapse (single-writer at the derive): the
     # returned payload carries ONLY canonical counter keys — aliases are no
     # longer written back into persisted state. The state normalizer heals
-    # legacy alias-only rows on load via fill_canonical_counters, and wire
-    # emitters fill alias keys at emit time via emit_with_aliases.
+    # legacy alias-only rows on load via fill_canonical_counters, and the
+    # bridge wire contract is canonical-only since Phase 5.
     return {
         "healthScore": health_score,
         "lastStatus": last_status,

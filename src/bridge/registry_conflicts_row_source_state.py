@@ -25,11 +25,8 @@ SOURCE_HEALTH_FIELD_NAMES = (
     "lastFetchedCount",
     "lastJobsFound",
     "lastKeptCount",
-    "lastJobsKept",
     "consecutiveFailures",
-    "failureCount",
     "consecutiveZeroKept",
-    "zeroJobStreak",
     "health",
     "healthReason",
 )
@@ -94,7 +91,9 @@ def _fetch_report_source_state_row(
     status = _clean_text(detail.get("status") or parent.get("status")).lower()
     kept = _int_value(detail.get("keptCount") or detail.get("lastKeptCount"))
     fetched = _int_value(detail.get("fetchedCount") or detail.get("lastFetchedCount"))
-    failure_count = _int_value(detail.get("failureCount") or parent.get("failureCount"))
+    failure_count = _int_value(
+        detail.get("consecutiveFailures") or parent.get("consecutiveFailures")
+    )
     observed_at = _clean_text(
         detail.get("finishedAt")
         or detail.get("listingCheckedAt")
@@ -144,11 +143,8 @@ def _fetch_report_source_state_row(
         "lastSuccessfulFetchAt": _clean_text(detail.get("lastSuccessfulFetchAt") or success_at),
         "lastSeenInFetchAt": seen_at,
         "lastKeptCount": kept,
-        "lastJobsKept": kept,
         "lastJobsFound": fetched,
-        "failureCount": failure_count,
         "consecutiveFailures": failure_count,
-        "zeroJobStreak": 0 if kept > 0 else _int_value(parent.get("zeroJobStreak")),
         "consecutiveZeroKept": 0 if kept > 0 else _int_value(parent.get("consecutiveZeroKept")),
     }
     for key in ("sourceId", "name", "adapter", "studio", "providerUrl", "listingUrl"):

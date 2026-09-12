@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -52,11 +53,65 @@ def fetch_max_bytes_for_url(url: str | None = None) -> int:
 
 
 class HttpStatusError(RuntimeError):
-    def __init__(self, code: int, url: str, *, location: str = "") -> None:
+    def __init__(
+        self,
+        code: int,
+        url: str,
+        *,
+        location: str = "",
+        headers: dict[str, list[str]] | None = None,
+    ) -> None:
         self.code = int(code or 0)
         self.url = str(url or "")
         self.location = str(location or "")
+        # Lowercased multi-valued response headers (3xx responses carry
+        # Location/Set-Cookie). Additive: existing callers never populate it.
+        self.headers = headers or {}
         super().__init__(f"HTTP {self.code} for {self.url}")
+
+
+def _headers_to_dict(headers: Any) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    try:
+        items = list(headers.items()) if headers is not None else []
+    except Exception:
+        return result
+    for key, value in items:
+        result.setdefault(str(key).lower(), []).append(str(value))
+    return result
+
+
+def default_fetch_text_with_response_headers(
+    url: str,
+    timeout_s: int,
+    *,
+    headers: dict[str, str],
+) -> tuple[str, dict[str, list[str]]]:
+    """Like default_fetch_text but also returns the response's headers.
+
+    Read-at-most and byte-cap behavior mirrors default_fetch_text. Redirect
+    (3xx) failures surface as HttpStatusError with the response's headers
+    attached so cookie-honoring retry callers can absorb Set-Cookie through a
+    redirect round-trip. Additive sibling of default_fetch_text; the existing
+    seam contract is untouched.
+    """
+    request = Request(url, headers=headers)
+    try:
+        with urlopen(request, timeout=timeout_s) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            cap = fetch_max_bytes_for_url(url)
+            text = str(response.read(cap + 1)[:cap].decode(charset, errors="replace"))
+            return text, _headers_to_dict(response.headers)
+    except HTTPError as exc:
+        location = str(exc.headers.get("Location") or "") if exc.headers else ""
+        raise HttpStatusError(
+            int(exc.code),
+            url,
+            location=location,
+            headers=_headers_to_dict(exc.headers),
+        ) from exc
+    except URLError as exc:
+        raise RuntimeError(f"Network error for {url}: {exc.reason}") from exc
 
 
 def default_fetch_text(url: str, timeout_s: int, *, headers: dict[str, str]) -> str:

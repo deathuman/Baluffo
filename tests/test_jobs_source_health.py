@@ -192,8 +192,8 @@ def test_derive_source_health_ranks_mixed_source_rows() -> None:
     assert (
         normalized["sourcesNeedingAttention"][0]["lastSeenInFetchAt"] == "2026-05-04T10:15:00+00:00"
     )
-    assert normalized["sourcesNeedingAttention"][0]["failureCount"] == 2
-    assert normalized["sourcesNeedingAttention"][0]["zeroJobStreak"] == 0
+    assert normalized["sourcesNeedingAttention"][0]["consecutiveFailures"] == 2
+    assert normalized["sourcesNeedingAttention"][0]["consecutiveZeroKept"] == 0
 
 
 def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
@@ -201,7 +201,7 @@ def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
 
     A row that just kept 70 jobs (keptCount/lastKeptCount) but still carries the
     stale legacy aliases (lastJobsKept: 0, zeroJobStreak: 45) must classify as
-    healthy, and the normalized row must report the refreshed aliases.
+    healthy. Since Phase 5 the wire row carries the canonical counters only.
     """
 
     row = {
@@ -229,9 +229,10 @@ def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
 
     assert merged["health"] == "healthy"
     assert merged["healthReason"] == "last fetch kept jobs"
-    assert merged["lastJobsKept"] == 70
-    assert merged["zeroJobStreak"] == 0
+    assert merged["lastKeptCount"] == 70
     assert merged["consecutiveZeroKept"] == 0
+    assert "lastJobsKept" not in merged
+    assert "zeroJobStreak" not in merged
 
 
 def test_state_derive_emits_canonical_counters_only() -> None:
@@ -287,5 +288,5 @@ def test_stale_healthy_alias_cannot_mask_real_zero_streak() -> None:
 
     assert merged["health"] == "broken"
     assert merged["healthReason"] == "repeated zero-job fetches"
-    assert merged["zeroJobStreak"] == 3
-    assert merged["lastJobsKept"] == 0
+    assert merged["consecutiveZeroKept"] == 3
+    assert merged["lastKeptCount"] == 0

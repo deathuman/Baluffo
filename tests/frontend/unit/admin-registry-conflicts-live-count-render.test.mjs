@@ -83,7 +83,7 @@ test("registry conflicts renderer shows source-state jobs found fallback", () =>
             registryState: "active",
             adapter: "lever",
             lastJobsFound: 0,
-            lastJobsKept: 0
+            lastKeptCount: 0
           }
         ]
       }

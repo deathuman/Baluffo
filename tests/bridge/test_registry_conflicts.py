@@ -39,8 +39,8 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
                         "lastSeenInFetchAt": "2026-05-01T09:00:00Z",
                         "lastJobsKept": 1,
                         "lastKeptCount": 1,
-                        "failureCount": 2,
                         "zeroJobStreak": 3,
+                        "consecutiveZeroKept": 3,
                     },
                 },
             }
@@ -278,7 +278,7 @@ def test_registry_conflicts_prefers_stable_source_state_identity_over_duplicate_
     card = payload["conflicts"][0]
     assert card["winner"]["id"] == canonical_id
     assert card["winner"]["sourceStateName"] == canonical_id
-    assert card["winner"]["lastJobsKept"] == 25
+    assert card["winner"]["lastKeptCount"] == 25
     assert card["winner"]["lastSuccessfulFetchAt"] == "2026-05-08T10:00:00Z"
 
 

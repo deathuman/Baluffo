@@ -70,6 +70,8 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 - **`src/jobs/adapters/static_sources.py`**
   Shard naming, registry-row dynamic loader naming, and single-source/shard wrapper construction.
 - Static helper ownership now lives directly in `static_runtime_support.py` and `static_detail_heuristics.py`; the old `static_helpers.py` facade has been deleted.
+- **`src/jobs/adapters/static_cookie_retry.py`**
+  S4 cookie-jar retry policy for geo-cookie redirect loops: `BALUFFO_STATIC_COOKIE_RETRY` flag + `BALUFFO_STATIC_COOKIE_RETRY_HOSTS` allowlist (both required; off by default), per-attempt `StaticCookieJar` keyed by response host. `StaticHtmlFetcher` triggers the single retry lane only on a `Static redirect loop` for an allowlisted host; a cookie that fails to break the loop re-raises the loop error with a retry-exhausted marker (no new failure class). First candidate: Astrum (`astrum-entertainment.ru`).
 
 ### Jobs fetcher compatibility ownership
 

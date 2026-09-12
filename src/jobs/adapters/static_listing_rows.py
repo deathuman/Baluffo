@@ -24,7 +24,11 @@ from src.jobs.adapters.plugins.static._runner import (
 from src.jobs.adapters.static_detail_heuristics import (
     add_detail_link,
 )
-from src.jobs.adapters.static_listing_common import StaticDetailCandidate
+from src.jobs.adapters.static_listing_common import (
+    _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS,
+    StaticDetailCandidate,
+    _is_expected_static_listing_fetch_fallback,
+)
 from src.jobs.adapters.static_listing_state import (
     _append_detail_candidate,
     _is_provisional_static_artifact_row,
@@ -170,21 +174,36 @@ def _fetch_rendered_detail_rows(
 ) -> list[Any]:
     from src.jobs.adapters import static_listing as _sl
 
-    detail_result = _sl.process_detail_link(
-        detail=link,
-        detail_title=title,
-        source_started=ctx.source_started,
-        static_source_time_budget_s=source_budget_s,
-        fetch_html_cached=ctx.html_fetcher.fetch_html_cached,
-        timeout_s=ctx.run_deps.timeout_s,
-        detail_retries=ctx.run_deps.retries,
-        company=ctx.company,
-        source_name=ctx.source_name,
-        source=ctx.source,
-        ignored_link_titles=ctx.ignored_link_titles,
-        default_path_tokens=ctx.runtime_config.default_path_tokens,
-        default_query_keys=ctx.runtime_config.default_query_keys,
-    )
+    try:
+        detail_result = _sl.process_detail_link(
+            detail=link,
+            detail_title=title,
+            source_started=ctx.source_started,
+            static_source_time_budget_s=source_budget_s,
+            fetch_html_cached=ctx.html_fetcher.fetch_html_cached,
+            timeout_s=ctx.run_deps.timeout_s,
+            detail_retries=ctx.run_deps.retries,
+            company=ctx.company,
+            source_name=ctx.source_name,
+            source=ctx.source,
+            ignored_link_titles=ctx.ignored_link_titles,
+            default_path_tokens=ctx.runtime_config.default_path_tokens,
+            default_query_keys=ctx.runtime_config.default_query_keys,
+        )
+    except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+        if not _is_expected_static_listing_fetch_fallback(exc):
+            raise
+        # Count the attempt before re-raising: this rows flow re-verifies
+        # rendered rows against their detail URLs, and the first failing detail
+        # (e.g. Mundfish's HTTP 500 on /careers/…) otherwise aborts the source
+        # with all-zero stats, so the taxonomy's details_broken signal can
+        # never see the listing-live/details-dead evidence. The caller's
+        # per-page catch turns the re-raise into the source's recorded error;
+        # abort-on-first-failure semantics are unchanged.
+        ctx.stats["detail_pages_visited"] += 1
+        ctx.stats["detail_fetch_failed"] += 1
+        ctx.errors.append(f"static:{ctx.source_name}:{link}: {exc}")
+        raise
     ctx.stats["detail_pages_visited"] += 1
     ctx.emit_source_progress(
         phase_key="static_detail_traversal",
@@ -277,6 +296,14 @@ def _append_rendered_card_rows(
         source_id=clean_text(ctx.source.get("id")) or ctx.source_name,
         allow_any_anchor=True,
     )
+    if rendered_rows:
+        # Stamp the board's visible card count before per-row verification:
+        # a first-row detail failure aborts this loop, and the taxonomy's
+        # details_broken signal needs the listing-live evidence (how many
+        # job-like cards the live board showed) to classify the split.
+        ctx.entry_report["listingJobsFound"] = int(
+            ctx.entry_report.get("listingJobsFound") or 0
+        ) + len(rendered_rows)
     emitted_count = 0
     has_job_like_title = False
     provisional_count = 0

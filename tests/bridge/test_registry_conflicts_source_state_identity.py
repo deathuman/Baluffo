@@ -53,7 +53,7 @@ def test_registry_conflicts_ignores_ambiguous_name_only_source_state() -> None:
             "Focus Entertainment (Recruitee)": {
                 "lastStatus": "ok",
                 "lastKeptCount": 7,
-                "lastJobsKept": 7,
+                "consecutiveFailures": 0,
                 "lastSuccessAt": "2026-05-09T11:15:13Z",
             },
         },
@@ -62,9 +62,9 @@ def test_registry_conflicts_ignores_ambiguous_name_only_source_state() -> None:
     rows = _rows_by_id(derive_registry_conflict_queue(_focus_state(), source_state))
 
     assert rows[NEW_FOCUS_ID].get("sourceStateName") is None
-    assert rows[NEW_FOCUS_ID].get("lastJobsKept") is None
+    assert rows[NEW_FOCUS_ID].get("lastKeptCount") is None
     assert rows[OLD_FOCUS_ID].get("sourceStateName") is None
-    assert rows[OLD_FOCUS_ID].get("lastJobsKept") is None
+    assert rows[OLD_FOCUS_ID].get("lastKeptCount") is None
 
 
 def test_registry_conflicts_matches_fetch_report_recruitee_provider_url_exactly() -> None:
@@ -94,6 +94,6 @@ def test_registry_conflicts_matches_fetch_report_recruitee_provider_url_exactly(
     rows = _rows_by_id(derive_registry_conflict_queue(_focus_state(), source_state))
 
     assert rows[OLD_FOCUS_ID]["sourceStateName"] == OLD_FOCUS_ID
-    assert rows[OLD_FOCUS_ID]["lastJobsKept"] == 7
+    assert rows[OLD_FOCUS_ID]["lastKeptCount"] == 7
     assert rows[NEW_FOCUS_ID].get("sourceStateName") is None
-    assert rows[NEW_FOCUS_ID].get("lastJobsKept") is None
+    assert rows[NEW_FOCUS_ID].get("lastKeptCount") is None

@@ -14,9 +14,10 @@ import hashlib
 import sys
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
+from src.jobs.adapters.static_cookie_retry import cookie_retry_allowed_for_url
 from src.jobs.adapters.static_detail_heuristics import (
     choose_detail_traversal_mode,
     is_probable_job_detail_url,
@@ -148,6 +149,20 @@ class StaticFetchRunner:
             except HttpStatusError as exc:
                 if int(exc.code) not in {301, 302, 303, 307, 308}:
                     raise
+                if urljoin(current_url, exc.location or "") == current_url and (
+                    cookie_retry_allowed_for_url(current_url)
+                ):
+                    # S4: an allowlisted same-URL bounce is the geo/consent-cookie
+                    # shape; the base lane cannot carry cookies, so finish the
+                    # chain through the S4 cookie-jar lane (terminal errors keep
+                    # the retry-exhausted marker so classification never changes).
+                    request = self.ctx.html_fetcher.build_request(url, retries_override=0)
+                    if request is not None:
+                        retry_text, _visited, _cached = (
+                            self.ctx.html_fetcher._cookie_jar_retry_fetch(request)
+                        )
+                        return retry_text
+                    raise
                 current_url = self.ctx.html_fetcher._safe_redirect_url(current_url, exc.location)
         raise RuntimeError(f"Static redirect chain exceeded for {url}")
 
@@ -270,6 +285,7 @@ class StaticFetchRunner:
             else:
                 current_url = url
                 html = ""
+                s4_bounce_continue_used = False
                 for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
                     try:
                         html = await self.deps.listing_async_fetch(
@@ -282,11 +298,24 @@ class StaticFetchRunner:
                     except HttpStatusError as exc:
                         if int(exc.code) not in {301, 302, 303, 307, 308}:
                             raise
+                        if urljoin(current_url, exc.location or "") == current_url and (
+                            cookie_retry_allowed_for_url(current_url)
+                        ):
+                            # S4: allowlisted same-URL bounce (geo/consent cookie).
+                            # The shared batch client stores the bounce's
+                            # Set-Cookie, so re-issuing the identical request
+                            # carries it — _safe_redirect_url would raise the
+                            # loop error on exactly this shape.
+                            s4_bounce_continue_used = True
+                            continue
                         current_url = self.ctx.html_fetcher._safe_redirect_url(
                             current_url, exc.location
                         )
                 else:
-                    raise RuntimeError(f"Static redirect chain exceeded for {url}")
+                    raise RuntimeError(
+                        f"Static redirect chain exceeded for {url}"
+                        + (" (cookie-jar retry exhausted)" if s4_bounce_continue_used else "")
+                    )
         except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
             if not _is_expected_static_listing_fetch_fallback(exc):
                 raise

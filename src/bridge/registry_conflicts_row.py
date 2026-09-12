@@ -24,7 +24,7 @@ from src.bridge.registry_conflicts_row_audit import (
     _build_independent_provider_board_audit,
     _build_pending_conflict_audit,
     _compare_registry_rows,
-    _join_source_health_aliases,
+    _join_source_health_fields,
     _row_has_fresh_count_evidence,
     _safe_auto_demoted_pending_audit_row,
     _source_identity_counts,

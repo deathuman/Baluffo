@@ -24,7 +24,7 @@ from src.bridge.registry_conflicts_row_source_state import (
     SOURCE_HEALTH_FIELD_NAMES,
     _source_state_row_for_registry_row,
 )
-from src.shared.source_counter_aliases import heal_counter_aliases
+from src.shared.source_counter_aliases import fill_canonical_counters
 from src.source_registry import source_identity
 
 CONFLICT_DIFF_FIELDS = (
@@ -56,11 +56,8 @@ CONFLICT_DIFF_FIELDS = (
     "lastFetchedCount",
     "lastJobsFound",
     "lastKeptCount",
-    "lastJobsKept",
     "consecutiveFailures",
-    "failureCount",
     "consecutiveZeroKept",
-    "zeroJobStreak",
     "health",
     "healthReason",
 )
@@ -103,11 +100,8 @@ _FIELD_LABELS = {
     "lastSuccessfulFetchAt": "Last successful fetch at",
     "lastSeenInFetchAt": "Last seen in fetch at",
     "lastKeptCount": "Last kept count",
-    "lastJobsKept": "Last jobs kept",
     "consecutiveFailures": "Consecutive failures",
-    "failureCount": "Failure count",
     "consecutiveZeroKept": "Consecutive zero-kept",
-    "zeroJobStreak": "Zero-job streak",
     "health": "Health",
     "healthReason": "Health reason",
 }
@@ -195,23 +189,34 @@ def _unique_registry_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _row_has_fresh_count_evidence(row: dict[str, Any]) -> bool:
     if any(
         _count_from_key(row, key) is not None
-        for key in ("liveJobsFound", "lastJobsKept", "lastKeptCount", "lastReliableJobsFound")
+        for key in ("liveJobsFound", "lastKeptCount", "lastReliableJobsFound")
     ):
         return True
     return _has_fresh_or_healthy_signal(row)
 
 
-def _join_source_health_aliases(
+def _join_source_health_fields(
     row: dict[str, Any],
     source_state_rows: dict[str, dict[str, Any]],
     ambiguous_names: set[str] | None = None,
 ) -> dict[str, Any]:
+    """Join the source-state health fields onto a registry conflict row.
+
+    Canonical counters only (alias collapse Phase 5): the joined row carries
+    the canonical counter names; legacy alias spellings are neither read from
+    nor written onto the wire payload.
+    """
+
     merged = dict(row)
     source_state_row, source_state_name = _source_state_row_for_registry_row(
         row, source_state_rows, ambiguous_names
     )
     if source_state_name:
         merged["sourceStateName"] = source_state_name
+    # Legacy alias-only state rows converge to canonical at the join (Phase 5:
+    # the wire row must carry canonical counters only); copy is display-side,
+    # persisted state is untouched.
+    source_state_row = fill_canonical_counters(dict(source_state_row))
     for key in SOURCE_HEALTH_FIELD_NAMES:
         value = source_state_row.get(key)
         if value not in {"", None}:
@@ -220,9 +225,6 @@ def _join_source_health_aliases(
         merged["lastSuccessfulFetchAt"] = merged.get("lastSuccessAt")
     if not merged.get("lastSeenInFetchAt"):
         merged["lastSeenInFetchAt"] = merged.get("lastCheckedAt") or merged.get("lastRunAt") or ""
-    # Alias fill via the shared policy leaf (Phase 3 of the counter collapse):
-    # single definition of alias := canonical for the joined row.
-    heal_counter_aliases(merged)
     transition_reason = _clean_text(
         merged.get("pendingReason")
         or merged.get("quarantineReason")

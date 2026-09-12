@@ -122,7 +122,7 @@ def _pending_static_fragment_state() -> dict[str, list[dict[str, Any]]]:
             "studio": "Theorycraft Games",
             "adapter": "static",
             "registryState": "active",
-            "lastJobsKept": 1,
+            "lastKeptCount": 1,
             "health": "healthy",
         }
     )
@@ -133,7 +133,7 @@ def _pending_static_fragment_state() -> dict[str, list[dict[str, Any]]]:
             "studio": "Theorycraft Games",
             "adapter": "static",
             "registryState": "pending",
-            "lastJobsKept": 1,
+            "lastKeptCount": 1,
             "health": "healthy",
         },
     ]
@@ -149,7 +149,7 @@ def _pending_static_bare_alias_state() -> dict[str, list[dict[str, Any]]]:
             "studio": "Overwolf",
             "adapter": "static",
             "registryState": "active",
-            "lastJobsKept": 4,
+            "lastKeptCount": 4,
             "health": "healthy",
         }
     )

@@ -78,4 +78,4 @@ def test_registry_conflicts_route_prefers_gzip_source_state_over_stale_plain(
 
     payload = handler.sent[-1]["payload"]
     assert payload["conflicts"][0]["winner"]["healthReason"] == "fresh gzip source-state"
-    assert payload["conflicts"][0]["winner"]["lastJobsKept"] == 10
+    assert payload["conflicts"][0]["winner"]["lastKeptCount"] == 10

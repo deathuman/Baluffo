@@ -18,7 +18,10 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common.http import HttpStatusError
+from src.jobs.common.http import (
+    HttpStatusError,
+    default_fetch_text_with_response_headers,
+)
 from src.jobs.common.taxonomy import (
     assess_zero_extract,
     classification_context_from_source_detail,
@@ -28,6 +31,11 @@ from src.jobs.common.taxonomy import (
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 from ..common import config as common_config
+from .static_cookie_retry import (
+    COOKIE_RETRY_MAX_HOPS,
+    StaticCookieJar,
+    cookie_retry_allowed_for_url,
+)
 
 # Bounded multi-hop redirect chain for static fetches. Two-hop www/port + trailing-slash
 # chains (e.g. funovus.com/careers -> www.funovus.com:443/careers -> www.funovus.com/careers/)
@@ -224,6 +232,94 @@ class StaticHtmlFetcher:
             raise RuntimeError(f"Static redirect loop for {source_url}")
         return raw_target
 
+    def _fetch_hop_chain(self, request: StaticHtmlFetchRequest) -> tuple[str, set[str], bool]:
+        """Follow safe same-site redirects; returns (text, visited, was_cached).
+
+        Raises RuntimeError("Static redirect loop ...") on a same-URL
+        round-trip and RuntimeError("Static redirect chain exceeded ...")
+        after the bounded hop count — the pre-S4 behavior, unchanged.
+        """
+        current_url = request.fetch_url
+        visited = {request.normalized_url}
+        for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
+            try:
+                text = fetch_with_retries(
+                    current_url,
+                    self._fetch_text,
+                    request.timeout_s,
+                    request.retries,
+                    self._backoff_s,
+                )
+                return text, visited, False
+            except HttpStatusError as exc:
+                if int(exc.code) not in self._REDIRECT_STATUS_CODES:
+                    raise
+                redirect_url = self._safe_redirect_url(current_url, exc.location)
+                if redirect_url in visited:
+                    raise RuntimeError(f"Static redirect loop for {request.fetch_url}") from exc
+                visited.add(redirect_url)
+                with self._fetch_cache_lock:
+                    cached_redirect = self._fetch_cache.get(redirect_url)
+                if cached_redirect is not None:
+                    return cached_redirect, visited, True
+                current_url = redirect_url
+        raise RuntimeError(f"Static redirect chain exceeded for {request.fetch_url}")
+
+    def _cookie_jar_retry_fetch(
+        self, request: StaticHtmlFetchRequest
+    ) -> tuple[str, set[str], bool]:
+        """S4 retry lane: re-run the redirect chain honoring Set-Cookie.
+
+        Single attempt per hop (no retries/backoff), one extra hop budget for
+        the geo round-trip, and the loop/chain errors re-raised with a retry
+        marker so a cookie that fails to break the loop still reads as a
+        redirect-loop failure (never a new success/failure class).
+        """
+        jar = StaticCookieJar()
+        current_url = request.fetch_url
+        visited = {request.normalized_url}
+        retry_headers = dict(common_config.DEFAULT_HTTP_HEADERS)
+        for _hop in range(COOKIE_RETRY_MAX_HOPS):
+            headers = dict(retry_headers)
+            cookie_header = jar.cookie_header(current_url)
+            if cookie_header:
+                headers["Cookie"] = cookie_header
+            try:
+                text, response_headers = default_fetch_text_with_response_headers(
+                    current_url, request.timeout_s, headers=headers
+                )
+                return text, visited, False
+            except HttpStatusError as exc:
+                if int(exc.code) not in self._REDIRECT_STATUS_CODES:
+                    raise
+                had_cookie = bool(cookie_header)
+                jar.absorb(current_url, exc.headers)
+                # _safe_redirect_url itself raises the loop error on a
+                # same-URL bounce; resolve that case here so the geo-cookie
+                # round-trip can continue with the freshly absorbed cookie.
+                location = clean_text(exc.location)
+                if location and urljoin(current_url, location) == current_url:
+                    redirect_url = current_url
+                else:
+                    redirect_url = self._safe_redirect_url(current_url, exc.location)
+                if redirect_url in visited:
+                    if had_cookie or "set-cookie" not in exc.headers:
+                        raise RuntimeError(
+                            f"Static redirect loop for {request.fetch_url}"
+                            " (cookie-jar retry exhausted)"
+                        ) from exc
+                    # Cookie-less round-trip at the retry lane's first hop: the
+                    # base lane cannot carry a cookie, so this is exactly the
+                    # geo-cookie shape — continue; the next hop sends the
+                    # freshly absorbed cookie.
+                    current_url = redirect_url
+                    continue
+                visited.add(redirect_url)
+                current_url = redirect_url
+        raise RuntimeError(
+            f"Static redirect chain exceeded for {request.fetch_url} (cookie-jar retry exhausted)"
+        )
+
     def fetch_html_cached(
         self,
         url: str,
@@ -242,36 +338,18 @@ class StaticHtmlFetcher:
             cached = self._fetch_cache.get(request.normalized_url)
         if cached is not None:
             return cached, True
-        current_url = request.fetch_url
-        visited = {request.normalized_url}
-        text = ""
-        was_cached = False
-        for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
-            try:
-                text = fetch_with_retries(
-                    current_url,
-                    self._fetch_text,
-                    request.timeout_s,
-                    request.retries,
-                    self._backoff_s,
-                )
-                break
-            except HttpStatusError as exc:
-                if int(exc.code) not in self._REDIRECT_STATUS_CODES:
-                    raise
-                redirect_url = self._safe_redirect_url(current_url, exc.location)
-                if redirect_url in visited:
-                    raise RuntimeError(f"Static redirect loop for {request.fetch_url}") from exc
-                visited.add(redirect_url)
-                with self._fetch_cache_lock:
-                    cached_redirect = self._fetch_cache.get(redirect_url)
-                if cached_redirect is not None:
-                    text = cached_redirect
-                    was_cached = True
-                    break
-                current_url = redirect_url
-        else:
-            raise RuntimeError(f"Static redirect chain exceeded for {request.fetch_url}")
+        try:
+            text, visited, was_cached = self._fetch_hop_chain(request)
+        except RuntimeError as loop_error:
+            # S4: a same-URL redirect round-trip is the geo/consent-cookie
+            # shape (Astrum class) ONLY on allowlisted hosts behind the opt-in
+            # flag; everything else keeps the pre-S4 loop error.
+            retry_applicable = "Static redirect loop" in str(
+                loop_error
+            ) and cookie_retry_allowed_for_url(request.fetch_url)
+            if not retry_applicable:
+                raise
+            text, visited, was_cached = self._cookie_jar_retry_fetch(request)
         with self._fetch_cache_lock:
             for visited_url in visited:
                 self._fetch_cache.setdefault(visited_url, text)
@@ -377,6 +455,7 @@ def build_static_entry_report(
         },
         "stats": {
             "candidate_links_found": 0,
+            "detail_fetch_failed": 0,
             "detail_pages_visited": 0,
             "jobs_emitted": 0,
             "fetch_cache_hits": 0,

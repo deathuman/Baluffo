@@ -31,6 +31,7 @@ from src.jobs.adapters.static_runtime_support import (
     remaining_static_source_budget_s,
     static_source_budget_exhausted,
 )
+from src.jobs.page_gating import looks_like_server_template_artifact
 from src.jobs.text_utils import clean_text, normalize_url
 from src.scrapers.domain_profiles import domain_profile_for_url
 from src.shared.http_batch import fetch_pages_batched
@@ -187,6 +188,7 @@ def _record_detail_fetch_error(
     linked_in_throttle = "linkedin" in f"{plan.page_url} {msg}".lower()
     detail_host = (urlparse(detail).netloc or "").strip().lower()
     page_host = (urlparse(plan.page_url).netloc or "").strip().lower()
+    ctx.stats["detail_fetch_failed"] += 1
     if "Exceeded maximum allowed redirects" in msg:
         state.redirect_loop_count += 1
     if detail_host and page_host and detail_host != page_host:
@@ -246,6 +248,12 @@ def _nested_detail_candidates(
             continue
         child_url = normalize_url(item.get("url"))
         if not child_url or child_url in ctx.seen_links or child_url in state.scheduled_urls:
+            continue
+        # Same template-seam rule as the intake funnels: nested detail-page
+        # links must not carry EJS/JS seams into further fetches.
+        if looks_like_server_template_artifact(child_url) or looks_like_server_template_artifact(
+            clean_text(item.get("title"))
+        ):
             continue
         child_candidates.append(
             StaticDetailCandidate(

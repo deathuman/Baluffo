@@ -1,6 +1,6 @@
 # Source Health Counter Collapse Plan
 
-> - **Status:** Executed through Phase 4 + Phase 6 (2026-09-10) and live-audited on the 2026-09-09 forced full pass (two persistence-funnel defects found and fixed in place — see acceptance audit below). Phase 5 (bridge contract change) remains **awaiting operator approval**; the guardrail test `tests/test_source_counter_alias_guardrails.py` pins the executed invariants.
+> - **Status:** Fully executed — Phases 1–4 + 6 (2026-09-09/10) and Phase 5 (2026-09-10, operator-approved) are all landed and live-audited (Phase-4 acceptance audit below found and fixed two persistence-funnel defects in place). The guardrail test `tests/test_source_counter_alias_guardrails.py` pins the executed invariants, including the canonical-only wire contract.
 > - **Use this when:** touching `lastJobsKept`/`zeroJobStreak`/`failureCount` (aliases) or `lastKeptCount`/`consecutiveZeroKept`/`consecutiveFailures` (canonical) read/write precedence, extending source-health fields, or executing the remaining phase
 > - **Canonical for:** the phased migration design, site inventory, and phase acceptance criteria for collapsing the three counter alias pairs
 > - **Not canonical for:** the split-brain root cause (recorded in commit `ca778258` and the changelog) or the availability health payload contract
@@ -12,8 +12,8 @@
 - **Phase 1** — policy leaf `src/shared/source_counter_aliases.py` (`COUNTER_ALIASES`, `CANONICAL_COUNTERS`, `read_counter`, `emit_with_aliases`, `heal_counter_aliases`); derive readers refactored; behavior identical to `ca778258`.
 - **Phase 2** — heal-assertion test in `test_pipeline_storage_gzip.py`: legacy alias-only rows converge through the normal read-modify-write cycle (no bulk rewrite). The divergence audit against real state (`data/jobs-source-state.json.gz`, 4,988 rows) found **zero divergence and zero alias-only rows** pre-migration.
 - **Phase 3** — `source_registry_policy`, `registry_conflicts_row_core` (`_fresh_jobs_found_count`), `registry_conflicts_automation_provider`, `pipeline_loader_selection`, and `state_incremental` (including retiring the defensive third spelling `zeroKeptStreak` from the reader — zero occurrences in real state) all read via `read_counter`; `registry_conflicts_row_audit._join_source_health_aliases` fills aliases via `heal_counter_aliases`.
-- **Phase 4** — `derive_source_health_fields` emits **canonical counters only** (no alias keys into persisted state); the state normalizer heals legacy alias-only rows on load through the leaf; `normalize_fetch_report_source_row_base` option defaults flipped canonical-preferred. Wire emitters (`_source_health_row`, `_fetch_report_source_state_row`) still carry aliases for the Admin UI.
-- **Phase 5** — NOT executed (bridge contract change; operator approval required). Emit surface unchanged; guardrail test pins it.
+- **Phase 4** — `derive_source_health_fields` emits **canonical counters only** (no alias keys into persisted state); the state normalizer heals legacy alias-only rows on load through the leaf.
+- **Phase 5** — **Executed 2026-09-10 (operator-approved)**. `_source_health_row`, `_fetch_report_source_state_row` (+ the `SOURCE_HEALTH_FIELD_NAMES`/`CONFLICT_DIFF_FIELDS` field lists), `_join_source_health_fields` (renamed from `_join_source_health_aliases`), and the shared fetch-report normalizer all emit canonical counters only; `frontend/admin/render/registry-conflicts.js` reads canonical; in-repo registry-row evidence chains dropped the dead alias fallbacks. The alias fill helpers (`emit_with_aliases`, `heal_counter_aliases`) were removed from the leaf — `fill_canonical_counters` normalizes legacy alias-only rows to canonical at the state-join and persistence funnels. Guardrail test updated: the wire-surface grep now fails if an alias spelling or alias-fill heal reappears on an emit surface.
 - **Phase 6** — guardrail test added: alias-map completeness, persistence single-writer grep guard, wire-emit still carries aliases, canonical-first + absent-aware read contract.
 
 ## Phase-4 acceptance evidence
@@ -31,6 +31,14 @@ The forced full pass (`tmp/alias-collapse-20260910/run1.log`, output 42,114, 72 
 2. **Vacuous Phase-2 heal.** The state normalizer's whitelist reads canonical keys only and coerces absent → 0, so the post-whitelist heal arrived too late: alias-only legacy rows were silently zeroed (the Phase-2 convergence test passed on all-zeros and asserted the wrong final shape). Fix: `fill_canonical_counters` runs **before** the whitelist (copying each raw row first), plus a real value-preservation round-trip test and a persisted-text alias guard.
 
 Re-acceptance: in-memory normalize audit of the real payload (4,989 rows: 0 aliases, 0 canonical drift); sanctioned read→write round-trip proven byte-clean in temp (0 dropped, 0 field diffs); in-place rewrite via `read_source_state`/`write_source_state` landed the first **alias-free state file** (0 alias keys, 0 counter drift, metadata intact). Guardrails updated to pin both heal directions separately; focused suites 28 passed; grep-guard now also fails if the persistence funnel imports the alias-fill heal.
+
+### Phase-5 acceptance evidence (2026-09-10)
+
+- Emit surfaces audited and converted: `_source_health_row` (report triage), `_fetch_report_source_state_row` (registry-conflicts merge), `SOURCE_HEALTH_FIELD_NAMES`, `CONFLICT_DIFF_FIELDS`/`_FIELD_LABELS`, `_join_source_health_fields` (renamed from `_join_source_health_aliases`; the leaf's alias-fill heal call removed), `normalize_fetch_report_source_row_base` (alias output keys and their fallback option kwargs deleted), and `frontend/admin/render/registry-conflicts.js` (canonical-only reads). In-repo registry-row evidence chains (`registry_conflicts_row_core._row_jobs_evidence`, `_positive_evidence_score`, `_static_row_current_jobs`, `registry_conflicts_row_audit._row_has_fresh_count_evidence`) dropped their dead alias fallbacks.
+- Leaf simplified: `emit_with_aliases` and `heal_counter_aliases` removed (zero remaining callers); `fill_canonical_counters` is the only heal and now also normalizes legacy alias-only state rows to canonical at the conflict join (display-side copy; persisted state untouched).
+- Grep audit after the change: `lastJobsKept`/`zeroJobStreak`/`zeroKeptStreak` appear in `src/` only inside the leaf's alias map and historical comments; zero emit-site occurrences. `failureCount` remains only in the leaf map, the plan inventory, and the out-of-scope discovery/audit fields.
+- Legacy-input compatibility preserved: fixture inputs carrying alias-only state rows (source-state files written before Phase 4) exercise the canonicalizing join; parity test asserts aliases never survive normalization onto bridge or jobs payloads.
+- Verification: focused suites `test_source_counter_alias_guardrails`, `test_jobs_source_health`, `test_fetch_report_normalization_parity`, `test_state_incremental_empty_streak`, `test_pipeline_storage_gzip`; bridge + admin suites; frontend unit (registry-conflicts render tests on canonical fixtures); changed-mode gate.
 
 ## Problem
 
@@ -105,8 +113,8 @@ change** — behavior identical to `ca778258`; tests unchanged; gate green.
 | 1. Policy leaf + derive refactor | New leaf; derive reads via policy; dual-write unchanged | None (behavior-identical) | `test_jobs_source_health`, `test_pipeline_storage_gzip`, parity suite green; gate exit 0 |
 | 2. Heal assertion | Focused test: a payload with stale aliases and no canonical, after `normalize_source_state_payload` + re-save, converges to alias==canonical | None | New test in `test_pipeline_storage_gzip.py` shape; documents "no bulk rewrite" |
 | 3. In-repo reader convergence | `source_registry_policy`, `registry_conflicts_row_core/_audit/_automation_provider`, `pipeline_loader_selection`, `state_incremental` read via policy; fixtures that assert alias-first precedence updated | Low — precedence now uniform (canonical first) | Registry-conflicts suites, `test_state_incremental_empty_streak`, policy unit tests green |
-| 4. Single-writer at the derive | `derive_source_health_fields` stops emitting the 3 alias keys into **persisted state**; `fetch_report_normalization` option defaults flip to canonical-preferred for repo-side producers; wire emitters (`_source_health_row`, `_fetch_report_source_state_row`) KEEP alias emission via `emit_with_aliases` | Medium — state file loses alias keys; verify nothing repo-side reads them from state | Full grep audit: zero src readers of state-only aliases; full consolidation pass; report emit still carries aliases (bridge) |
-| 5. Bridge contract change (operator-approved) | `_source_health_row` + `registry_conflicts_row_source_state` stop dual-writing; parity test updated to canonical-only; `registry-conflicts.js` reads canonical; Admin payload loses aliases | Deliberate contract change — external/older consumers | Full py suite + frontend unit + smoke; staged behind a release note; changelog records the surface change |
+| 4. Single-writer at the derive | `derive_source_health_fields` stops emitting the 3 alias keys into **persisted state**; `fetch_report_normalization` option defaults flip to canonical-preferred for repo-side producers | Medium — state file loses alias keys; verify nothing repo-side reads them from state | Full grep audit: zero src readers of state-only aliases; full consolidation pass | **EXECUTED** |
+| 5. Bridge contract change (operator-approved) | `_source_health_row` + `registry_conflicts_row_source_state` stop dual-writing; parity test updated to canonical-only; `registry-conflicts.js` reads canonical; Admin payload loses aliases | Deliberate contract change — external/older consumers | Full py suite + frontend unit; changelog records the surface change | **EXECUTED 2026-09-10** |
 | 6. Guardrail + closeout | Test asserting the alias map covers every dual-written name (fails if a fourth alias appears unowned); changelog + snapshot update | None | Gate green; docs updated in the same change |
 
 ## Read-only divergence audit (run before Phase 4)
@@ -144,7 +152,9 @@ Phase-4 drop of alias keys from state is then information-loss-free.
 - **Unknown external readers of the state file** — treat as none (runtime
   artifact, gitignored), but Phase 5's changelog entry covers the wire surface.
 - **The parity-test contract** (`test_fetch_report_normalization_parity.py`
-  asserts both names in bridge output) — deliberate change in Phase 5 only.
+  once asserted both names in bridge output) — changed as part of the executed
+  Phase 5 (2026-09-10): the parity test now asserts the aliases are absent
+  from both normalizer outputs.
 - **Hidden stale writers** — grepped 2026-09-09: the only repo writers are the
   derive, the bridge merger, and the state normalizer; the normalizer heals.
 - **Rollback** — every phase is an independent revert; the persistence heal

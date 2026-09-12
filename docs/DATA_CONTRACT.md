@@ -914,6 +914,14 @@ Google Sheets source detail stats may also include additive title-hydration diag
 
 ### Source health triage
 
+Per-source health counters are canonical-only on every surface (alias collapse,
+`docs/plans/source-health-counter-collapse-plan.md`): `lastKeptCount`,
+`consecutiveZeroKept`, and `consecutiveFailures` are the only stored and emitted
+names since Phase 5 (2026-09-10). The legacy spellings (`lastJobsKept`,
+`zeroJobStreak`, `failureCount`) are read for legacy input compatibility and
+normalized away — readers must not rely on them in persisted state or in bridge
+payloads.
+
 Fetch reports and normalized bridge fetch-report payloads may include top-level `sourceHealth`.
 This additive field is derived from existing `sources` rows and is for Admin/Ops visibility only;
 it must not be copied into source registry rows or used to auto-promote, demote, hide,

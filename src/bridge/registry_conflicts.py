@@ -73,7 +73,7 @@ from src.bridge.registry_conflicts_row import (
     _build_pending_conflict_audit,
     _clean_text,
     _compare_registry_rows,
-    _join_source_health_aliases,
+    _join_source_health_fields,
     _merge_fetch_report_source_details,
     _row_identity,
     _row_state,
@@ -293,11 +293,11 @@ def derive_registry_conflict_queue(
                 source_state_payload=source_state_payload,
             )
         family_key = _clean_text(card.get("familyKey"))
-        winner = _join_source_health_aliases(
+        winner = _join_source_health_fields(
             _as_dict(card.get("winner")), source_state_rows, ambiguous_names
         )
         losers = [
-            _join_source_health_aliases(_as_dict(row), source_state_rows, ambiguous_names)
+            _join_source_health_fields(_as_dict(row), source_state_rows, ambiguous_names)
             for row in _as_list(card.get("losers"))
             if isinstance(row, dict)
         ]

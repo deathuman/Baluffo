@@ -134,11 +134,8 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_source_row_base_overlap(
                 "lastSuccessfulFetchAt": "2026-06-17T08:02:00+00:00",
                 "lastSeenInFetchAt": "2026-06-17T08:03:00+00:00",
                 "lastKeptCount": 2,
-                "lastJobsKept": 2,
                 "consecutiveFailures": 1,
-                "failureCount": 1,
                 "consecutiveZeroKept": 0,
-                "zeroJobStreak": 0,
                 "healthScore": 75,
                 "health": "warning",
                 "healthReason": "slow",
@@ -148,6 +145,12 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_source_row_base_overlap(
 
     bridge_row = normalize_fetch_report_contract(payload)["sources"][0]
     jobs_row = normalize_fetch_report_payload(payload)["sources"][0]
+
+    # Alias collapse Phase 5: the wire contract is canonical-only — a legacy
+    # alias on an input row must not survive normalization onto the payload.
+    for alias in ("lastJobsKept", "failureCount", "zeroJobStreak"):
+        assert alias not in bridge_row
+        assert alias not in jobs_row
 
     for key in (
         "name",
@@ -167,11 +170,8 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_source_row_base_overlap(
         "lastSuccessfulFetchAt",
         "lastSeenInFetchAt",
         "lastKeptCount",
-        "lastJobsKept",
         "consecutiveFailures",
-        "failureCount",
         "consecutiveZeroKept",
-        "zeroJobStreak",
         "healthScore",
         "health",
         "healthReason",
@@ -223,9 +223,9 @@ def test_jobs_source_report_row_uses_shared_base_contract() -> None:
     assert normalized["adapter"] == "custom"
     assert normalized["fetchStrategy"] == "auto"
     assert normalized["lastSeenInFetchAt"] == row["lastRunAt"]
-    assert normalized["lastJobsKept"] == 4
-    assert normalized["failureCount"] == 2
-    assert normalized["zeroJobStreak"] == 1
+    assert normalized["lastKeptCount"] == 4
+    assert normalized["consecutiveFailures"] == 2
+    assert normalized["consecutiveZeroKept"] == 1
     assert normalized["duplicateRate"] == 0.25
     assert normalized["healthScore"] == 100
 

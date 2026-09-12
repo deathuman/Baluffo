@@ -19,6 +19,7 @@ from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.page_gating import (
     looks_like_regular_navigation_text,
     looks_like_regular_page_url,
+    looks_like_server_template_artifact,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.url_hosts import host_matches_domain
@@ -276,6 +277,20 @@ def add_detail_link(
     absolute = normalize_url(safe_page_urljoin(page_url, candidate))
     if not absolute:
         link_rejections["non_job_url"] += 1
+        return
+    # Template seams (EJS ``<%= x %>``, JS ``${...}``) leaked into hrefs are
+    # parser noise, not job links — fetching them returns HTTP 400 and errors
+    # whole sources run-over-run (Konami ``/jobs/<%= official_site %>``,
+    # 2026-09-10). This heuristic funnel previously bypassed the check that
+    # the traversal funnel applies in static_listing_state.py; check both the
+    # raw href and the joined absolute (relative seams are detectable only in
+    # the raw form, percent-encoded drift only in the joined form).
+    if (
+        looks_like_server_template_artifact(candidate)
+        or looks_like_server_template_artifact(absolute)
+        or looks_like_server_template_artifact(anchor_text)
+    ):
+        link_rejections["dead_listing_page"] += 1
         return
     if is_malformed_or_self_detail_url(absolute, page_url=page_url):
         link_rejections["dead_listing_page"] += 1

@@ -15,6 +15,7 @@ class FailureBucket(StrEnum):
     PARSER_EMPTY = "parser_empty"
     TIMEOUT = "timeout"
     SEED_INVALID = "seed_invalid"
+    DETAILS_BROKEN = "details_broken"
     UNKNOWN = "unknown"
 
 
@@ -47,6 +48,7 @@ class ClassificationContext:
     candidate_links_found: int = 0
     listing_jobs_found: int = 0
     detail_parse_empty_count: int = 0
+    detail_fetch_failed_count: int = 0
     extractor_hint: str = ""
     signal_quality: str = "strong"
     raw_fetched: int = 0
@@ -330,6 +332,57 @@ def _status_classification_failure_bucket(
     return None
 
 
+# Minimum detail candidates for a details_broken reading; below this the counts
+# are noise (1 stray link, 1 timeout).
+_DETAILS_BROKEN_MIN_CANDIDATES = 3
+# Fraction of fetched detail pages that must fail for a details_broken reading.
+_DETAILS_BROKEN_FAILURE_FRACTION = 0.8
+
+# Classifications that carry real evidence beyond the generic error text and
+# therefore keep their own bucket even when details also failed en masse.
+# js_required is deliberately absent: its generic spellings (text rules,
+# needs_review fall-through) carry no JS evidence, and a genuine JS shell is
+# excluded by the detail-failure + candidate thresholds of the signal itself.
+_DETAILS_BROKEN_STRONG_CLASSIFICATIONS = frozenset(
+    {
+        "empty_confirmed",
+        "ok_no_jobs",
+        "dead_listing_page",
+        "parse_error",
+        "parser_stale",
+        "timeout",
+        "browser_timeout",
+        "blocked_or_challenge",
+        "anti_bot_or_challenge",
+        "site_changed",
+        "fetch_ok_extract_zero",
+    }
+)
+
+
+def has_details_broken_signal(context: ClassificationContext) -> bool:
+    """True when the listing is live with job-like candidates but detail fetches
+    failed en masse — the Mundfish shape (listing alive, details dead), which the
+    source-level buckets previously collapsed into generic extraction error or
+    js_required. Classification-only: no verdict, drain, or row semantics.
+    """
+    if context.status not in {"ok", "error"}:
+        return False
+    if context.detail_pages_visited <= 0:
+        return False
+    if (
+        context.candidate_links_found < _DETAILS_BROKEN_MIN_CANDIDATES
+        and context.listing_jobs_found < _DETAILS_BROKEN_MIN_CANDIDATES
+    ):
+        return False
+    failed = max(context.detail_fetch_failed_count, 0)
+    if failed <= 0:
+        return False
+    if context.browser_fallback_recommended or context.empty_confirmed:
+        return False
+    return failed / context.detail_pages_visited >= _DETAILS_BROKEN_FAILURE_FRACTION
+
+
 def _source_detail_has_empty_confirmed_signal(src: dict[str, object]) -> bool:
     classification = _normalized_text(src.get("classification"))
     hint = _normalized_text(src.get("extractorHint"))
@@ -364,6 +417,9 @@ def classification_context_from_source_detail(
     detail_parse_empty_count = _coerce_int(
         src.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty")
     )
+    detail_fetch_failed_count = _coerce_int(
+        src.get("detailFetchFailedCount") or stats.get("detail_fetch_failed")
+    )
     raw_fetched = _coerce_int(loss.get("rawFetched"))
     canonical_dropped = _coerce_int(loss.get("canonicalDropped"))
     canonical_kept = _coerce_int(loss.get("canonicalKept"))
@@ -385,6 +441,7 @@ def classification_context_from_source_detail(
         candidate_links_found=candidate_links_found,
         listing_jobs_found=listing_jobs_found,
         detail_parse_empty_count=detail_parse_empty_count,
+        detail_fetch_failed_count=detail_fetch_failed_count,
         extractor_hint=_normalized_text(src.get("extractorHint")),
         signal_quality=_normalized_text(src.get("signalQuality")) or "strong",
         raw_fetched=raw_fetched,
@@ -498,8 +555,20 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     classification = _normalized_text(context.classification)
     status = _normalized_text(context.status)
 
+    classification_bucket = _classification_failure_bucket(classification)
+    # Listing-live/details-dead splits (Mundfish shape) must beat the generic
+    # zero-extract mappings — the old path stamped them js_required (via the
+    # static-manual-no-jobs offender text rules) or needs_review even with zero
+    # JS evidence. Adapter-stamped evidence classifications (anti-bot,
+    # site_changed, timeout, parse, dead listing, empty, ok_no_jobs) keep their
+    # own buckets; only the evidence-free spellings lose to details_broken.
+    if classification not in _DETAILS_BROKEN_STRONG_CLASSIFICATIONS and has_details_broken_signal(
+        context
+    ):
+        return FailureBucket.DETAILS_BROKEN
+
     for bucket in (
-        _classification_failure_bucket(classification),
+        classification_bucket,
         _error_text_failure_bucket(error_lower),
         _status_classification_failure_bucket(context, status, classification),
     ):

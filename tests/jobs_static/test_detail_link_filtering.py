@@ -1,5 +1,7 @@
 import pytest
 
+from src.jobs.adapters.static_listing_traversal import _nested_detail_candidates
+
 from ._helpers import Counter, process_detail_link, static_helpers
 
 
@@ -8,6 +10,13 @@ from ._helpers import Counter, process_detail_link, static_helpers
     [
         "https://www.comeet.com/jobs/ludeo/{{company.website}}",
         "https://careers.beenox.com/us/en/cvdHrefText",
+        # EJS/JS template seams leaked into hrefs — the heuristic funnel
+        # previously bypassed the template-artifact check the traversal
+        # funnel applies (Konami /jobs/<%= official_site %> 400ing
+        # run-over-run, 2026-09-10).
+        "/jobs/<%= official_site %>",
+        "https://www.konami.com/games/us/en/jobs/<%= official_site %>",
+        "https://example.com/jobs/${jobId}",
         "javascript:void(0)",
         "data:image/png;base64,AA==",
         "blob:https://example.com/asset",
@@ -109,3 +118,49 @@ def test_add_detail_link_accepts_elevato_comma_job_paths() -> None:
         ("https://qloc.elevato.net/en/technical-artist,j,240", "Technical Artist")
     ]
     assert not link_rejections
+
+
+def test_add_detail_link_rejects_template_seam_anchor_text() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url="https://example.com/jobs/123",
+        anchor_text="<%= official_site %>",
+        enforce_heuristics=False,
+        page_url="https://example.com/careers",
+        source={"company": "Example"},
+        default_path_tokens=["/jobs/"],
+        default_query_keys=[],
+    )
+
+    assert detail_links == []
+    assert link_rejections["dead_listing_page"] == 1
+
+
+def test_nested_detail_candidates_reject_template_seam_links() -> None:
+    from types import SimpleNamespace
+
+    ctx = SimpleNamespace(seen_links=set())
+    state = SimpleNamespace(scheduled_urls=set())
+    nested_links = [
+        {"url": "https://example.com/jobs/<%= official_site %>", "title": "Artist"},
+        {"url": "https://example.com/jobs/456", "title": "Designer"},
+        {"url": "https://example.com/jobs/789", "title": "${company} Producer"},
+    ]
+
+    candidates = _nested_detail_candidates(
+        ctx,
+        state,
+        parent_url="https://example.com/jobs/1",
+        parent_depth=1,
+        nested_links=nested_links,
+    )
+
+    assert [c.url for c in candidates] == ["https://example.com/jobs/456"]

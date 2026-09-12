@@ -7832,68 +7832,6 @@
     "base_url": "https://careers.10chambers.com"
   },
   {
-    "name": "Steer Studios (Sheet)",
-    "studio": "Steer Studios",
-    "company": "Steer Studios",
-    "adapter": "static",
-    "pages": [
-      "https://www.steerstudios.com/careers#joblist"
-    ],
-    "listing_url": "https://www.steerstudios.com/careers#joblist",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://www.steerstudios.com/careers#joblist",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://www.steerstudios.com/careers#joblist",
-    "id": "static:listing_url:https://www.steerstudios.com/careers#joblist",
-    "discoveredAt": "2026-04-10T12:54:49.914461+00:00",
-    "score": 35,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 12,
-    "jobsFound": 12,
-    "confidence": "high",
-    "lastProbedAt": "2026-04-10T12:55:27.035166+00:00",
-    "deferred": false,
-    "candidateState": "live",
-    "rankScore": 50,
-    "rankReasons": [
-      "high_confidence",
-      "jobs_found_bonus",
-      "evidence_rank_bonus",
-      "existing_registry_match"
-    ],
-    "promotionLane": "manual_review",
-    "approvedAt": "2026-04-10T12:54:49.914461+00:00",
-    "approvedBy": "registry_migration_v2",
-    "liveAt": "2026-04-10T12:54:49.914461+00:00",
-    "quarantinedAt": "",
-    "quarantineReason": "",
-    "deferCount": 0,
-    "firstDeferredAt": "",
-    "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T12:55:27.565044+00:00",
-    "stateChangedBy": "discovery_auto_approve",
-    "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
-  },
-  {
     "name": "Sports Interactive (Sheet)",
     "studio": "Sports Interactive",
     "company": "Sports Interactive",
@@ -141337,5 +141275,29 @@
     "sourceIdentity": "workday:listing_url:https://tencent.wd1.myworkdayjobs.com/timi_careers",
     "stagedAt": "2026-05-19T21:22:08.150411+00:00",
     "stagedBy": "provider_migration_advisory"
+  },
+  {
+    "id": "bamboohr:listing_url:https://steerstudios.bamboohr.com/careers",
+    "name": "Steer Studios (BambooHR)",
+    "adapter": "bamboohr",
+    "studio": "Steer Studios",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-09-10T23:10:45.070207+00:00",
+    "stateChangedBy": "ai_holdtail_wave2_20260910",
+    "lastPromotedAt": "2026-09-10T23:10:45.070207+00:00",
+    "lastDemotedAt": "2026-09-10T23:05:24.577177+00:00",
+    "listing_url": "https://steerstudios.bamboohr.com/careers",
+    "migrationSourceIdentity": "static:listing_url:https://www.steerstudios.com/careers#joblist",
+    "migrationEvidence": "bamboo tenant careers/list JSON live-empty: totalCount=0, empty result array (probes 2026-09-09 + 2026-09-10 reconfirm); WP listing 500 cannot produce the trusted zero read; 9 of 10 overdue rows are bamboo-provenance detail URLs that 404/redirect to the empty careers page. High-5 precedent. Evidence: tmp/holdtail-20260910/dispositions.json",
+    "discoveryMethod": "holdtail_wave2_provider_migration",
+    "candidateState": "live",
+    "createdFromAdvisory": true,
+    "enabledByDefault": true,
+    "approvedAt": "2026-09-10T23:05:24.577177+00:00",
+    "approvedBy": "provider_migration_advisory",
+    "liveAt": "2026-09-10T23:05:24.577177+00:00",
+    "quarantinedAt": "",
+    "quarantineReason": ""
   }
 ]

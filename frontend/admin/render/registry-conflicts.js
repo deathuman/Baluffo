@@ -465,8 +465,10 @@ function renderRowActions(cardIndex, rowIndex, row) {
 }
 
 function getRowMetaItems(row) {
-  const lastJobsKept = row?.lastJobsKept ?? row?.lastKeptCount;
-  const jobsFound = row?.jobsFound ?? row?.sampleCount ?? row?.lastJobsFound ?? lastJobsKept;
+  // Canonical counters only (alias collapse Phase 5): the bridge wire payload
+  // no longer carries the legacy alias spellings.
+  const lastKeptCount = row?.lastKeptCount;
+  const jobsFound = row?.jobsFound ?? row?.sampleCount ?? row?.lastJobsFound ?? lastKeptCount;
   const registryJobsFound = row?.registryJobsFound;
   const liveJobsFound = row?.liveJobsFound;
   return [
@@ -493,11 +495,11 @@ function getRowMetaItems(row) {
     },
     {
       label: "Last jobs kept",
-      value: lastJobsKept === undefined || lastJobsKept === null ? "—" : stringValue(lastJobsKept, "0"),
+      value: lastKeptCount === undefined || lastKeptCount === null ? "—" : stringValue(lastKeptCount, "0"),
       compact: true
     },
-    { label: "Failure count", value: stringValue(row?.failureCount ?? row?.consecutiveFailures, "0"), compact: false },
-    { label: "Zero-job streak", value: stringValue(row?.zeroJobStreak ?? row?.consecutiveZeroKept, "0"), compact: false }
+    { label: "Failure count", value: stringValue(row?.consecutiveFailures, "0"), compact: false },
+    { label: "Zero-job streak", value: stringValue(row?.consecutiveZeroKept, "0"), compact: false }
   ];
 }
 

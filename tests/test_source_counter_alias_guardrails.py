@@ -1,8 +1,10 @@
 """Counter-collapse guardrails (docs/plans/source-health-counter-collapse-plan.md).
 
 The alias map in the policy leaf owns every dual-written counter name. These
-tests fail if an alias spelling re-enters the persistence layer unowned, or if
-a wire emitter silently stops carrying the alias surface before Phase 5.
+tests fail if an alias spelling re-enters the persistence layer or the bridge
+wire contract unowned. Phase 5 (2026-09-10, operator-approved) dropped the
+alias spellings from the wire contract: the bridge emit surface is
+canonical-only, so no repo emitter may carry the alias names anymore.
 """
 
 from __future__ import annotations
@@ -13,10 +15,14 @@ from pathlib import Path
 from src.shared.source_counter_aliases import (
     CANONICAL_COUNTERS,
     COUNTER_ALIASES,
-    emit_with_aliases,
     fill_canonical_counters,
-    heal_counter_aliases,
     read_counter,
+)
+
+_WIRE_EMIT_SURFACES = (
+    Path("src/jobs/common/contracts_source_health.py"),
+    Path("src/bridge/registry_conflicts_row_source_state.py"),
+    Path("src/shared/fetch_report_normalization.py"),
 )
 
 
@@ -76,39 +82,19 @@ def test_persistence_heal_fills_canonical_only_and_never_writes_aliases() -> Non
     assert healed == fresh
 
 
-def test_display_heal_is_alias_fill_and_canonical_wins() -> None:
-    """Display/wire direction (bridge joined rows, Phase-5 surface): aliases
-    are part of the visible contract, canonical wins over a stale alias, and
-    an alias-only row gains the canonical name. This direction is what the
-    persistence funnel must NOT use."""
+def test_wire_emit_surfaces_are_canonical_only() -> None:
+    """Phase 5 contract change (operator-approved, 2026-09-10): the bridge
+    wire emitters carry the canonical counter names only — the legacy alias
+    spellings must not appear as emitted keys or alias-filling calls anywhere
+    on the wire surface. Legacy alias-only INPUT rows are read through the
+    leaf's read_counter and normalized to canonical before emit."""
 
-    legacy = {"lastJobsKept": 7, "zeroJobStreak": 2, "failureCount": 1}
-    healed = heal_counter_aliases(dict(legacy))
-    assert healed["lastKeptCount"] == 7
-    assert healed["consecutiveZeroKept"] == 2
-    assert healed["consecutiveFailures"] == 1
-    assert healed["lastJobsKept"] == 7
-
-    stale = {"lastKeptCount": 36, "lastJobsKept": 0}
-    healed = heal_counter_aliases(dict(stale))
-    assert healed["lastJobsKept"] == 36
-
-
-def test_wire_emit_with_aliases_still_carries_the_alias_surface() -> None:
-    """Until Phase 5 lands (operator-approved contract change), wire emitters
-    must keep filling alias keys from canonical — this guards the bridge emit
-    surface against silent early removal."""
-
-    emitted = emit_with_aliases(
-        {"lastKeptCount": 5, "consecutiveZeroKept": 1, "consecutiveFailures": 0}
-    )
-    assert emitted["lastJobsKept"] == 5
-    assert emitted["zeroJobStreak"] == 1
-    assert emitted["failureCount"] == 0
-
-    # emit never fabricates: absent canonical counters stay absent
-    untouched = emit_with_aliases({"status": "ok"})
-    assert "lastJobsKept" not in untouched
+    for path in (*_WIRE_EMIT_SURFACES, Path("src/bridge/registry_conflicts_row_audit.py")):
+        body = path.read_text(encoding="utf-8")
+        for forbidden in ("emit_with_aliases", "heal_counter_aliases"):
+            assert forbidden not in body, (path, forbidden)
+        for alias in ("lastJobsKept", "zeroJobStreak"):
+            assert f'"{alias}"' not in body, (path, alias)
 
 
 def test_read_counter_canonical_first_and_absent_aware() -> None:

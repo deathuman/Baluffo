@@ -301,14 +301,17 @@ def _looks_like_parser_code_payload(text: str) -> bool:
 
 
 def looks_like_server_template_artifact(text: str) -> bool:
-    """True when the text is a server-side template fragment that leaked into
-    the page instead of being rendered (e.g. zoho boards emitting literal
-    ``'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'``).
+    """True when the text is a template fragment that leaked into the page
+    instead of being rendered — server-side (zoho boards emitting literal
+    ``'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'``) or
+    client-side (EJS ``<%= official_site %>`` href templates, ``${id}``
+    JS interpolation seams).
 
     These fragments previously passed the noise filter, were extracted as job
     rows with literal-code titles, and were later fetched as detail candidates
     (HTTP 400) — erroring whole sources run-over-run (the BKOM/PlaySimple
-    2026-03 junk rows and the 2026-09-10 error flap)."""
+    2026-03 junk rows, the 2026-09-10 error flap, and the Konami
+    ``/jobs/<%= official_site %>`` candidate 400ing run-over-run)."""
     raw = str(text or "")
     if not raw:
         return False
@@ -317,7 +320,9 @@ def looks_like_server_template_artifact(text: str) -> bool:
             r"(?i)\$\s*esapi\s*\.\s*encoder\s*\(\s*\)"  # ESAPI encoder calls
             r"|encodeforhtml(?:attribute)?\s*\("  # encodeForHTML/Attribute(
             r"|\$\s*esc\.?\w*\s*\.\s*\w+\s*\("  # $esc.html($data)/similar
-            r"|\+#\s*\$|'\s*\+\s*\$",  # velocity concatenation seams
+            r"|\+#\s*\$|'\s*\+\s*\$"  # velocity concatenation seams
+            r"|<%=?\s*[\w$.]+"  # EJS/ERB client template seams (<%= x %>, <% code %>)
+            r"|\$\{[^}]{1,200}\}",  # JS ${...} interpolation seams
             raw,
         )
     )

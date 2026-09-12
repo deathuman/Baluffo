@@ -29,15 +29,11 @@ _TRIAGE_ROW_LIMIT = 10
 def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
     status = norm_text(row.get("status")) or "error"
     kept_count = _clamped_int(row.get("keptCount"), 0, 0)
-    # Canonical counters first (see derive_source_health_fields): the run-applied
-    # consecutiveZeroKept/consecutiveFailures are fresh, the legacy aliases are
-    # derived write-backs that can be stale.
-    failure_count = _clamped_int(
-        row.get("consecutiveFailures"), _clamped_int(row.get("failureCount"), 0, 0), 0
-    )
-    zero_job_streak = _clamped_int(
-        row.get("consecutiveZeroKept"), _clamped_int(row.get("zeroJobStreak"), 0, 0), 0
-    )
+    # Canonical counters only (alias collapse Phase 5): persisted state is
+    # canonical-only (Phase 4), and the wire contract no longer carries the
+    # legacy alias spellings (docs/plans/source-health-counter-collapse-plan.md).
+    failure_count = _clamped_int(row.get("consecutiveFailures"), 0, 0)
+    zero_job_streak = _clamped_int(row.get("consecutiveZeroKept"), 0, 0)
     last_success = clean_text(row.get("lastSuccessfulFetchAt")) or clean_text(
         row.get("lastSuccessAt")
     )
@@ -46,9 +42,7 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         or clean_text(row.get("lastCheckedAt"))
         or clean_text(row.get("lastRunAt"))
     )
-    last_jobs_kept = _clamped_int(
-        row.get("lastKeptCount"), _clamped_int(row.get("lastJobsKept"), 0, 0), 0
-    )
+    last_jobs_kept = _clamped_int(row.get("lastKeptCount"), 0, 0)
     health_score = _clamped_int(row.get("healthScore"), 100, 0)
     if status == "excluded":
         health = "unknown"
@@ -84,11 +78,8 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         "lastKeptCount": _clamped_int(
             row.get("lastKeptCount"), _clamped_int(row.get("keptCount"), 0, 0), 0
         ),
-        "lastJobsKept": last_jobs_kept,
-        "failureCount": failure_count,
-        "consecutiveFailures": _clamped_int(row.get("consecutiveFailures"), 0, 0),
-        "zeroJobStreak": zero_job_streak,
-        "consecutiveZeroKept": _clamped_int(row.get("consecutiveZeroKept"), 0, 0),
+        "consecutiveFailures": failure_count,
+        "consecutiveZeroKept": zero_job_streak,
         "healthScore": health_score,
         "health": norm_text(row.get("health")) or health,
         "healthReason": clean_text(row.get("healthReason")) or reason,

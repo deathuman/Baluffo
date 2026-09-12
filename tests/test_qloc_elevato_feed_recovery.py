@@ -97,7 +97,6 @@ def _write_source_check_only_qloc_state(out: Path) -> None:
                         "lastSuccessAt": "",
                         "lastSuccessfulFetchAt": "",
                         "lastKeptCount": 0,
-                        "lastJobsKept": 0,
                         "lastJobsFound": 9,
                         "nextEligibleCheckAt": future,
                         "cacheDecision": "skip_fresh",

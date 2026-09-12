@@ -25,6 +25,7 @@ from src.jobs.common.taxonomy import (
     FailureBucket,
     classification_context_from_source_detail,
     classify_zero_kept,
+    has_details_broken_signal,
     map_error_to_failure_bucket,
 )
 from src.jobs.models import CanonicalJob
@@ -656,6 +657,39 @@ def _apply_source_specific_loss(
     report["loss"] = report_loss
 
 
+def _apply_static_detail_evidence_to_report(
+    *,
+    report: dict[str, Any],
+    detail_rows: list[dict[str, Any]],
+) -> None:
+    """Surface adapter-stamped detail evidence on the source-level report.
+
+    The source-level zero-kept classification runs on the report only, so the
+    rows-flow details_broken evidence the adapter stamped on its detail entry
+    (listingJobsFound + the detail counters) would otherwise vanish: the
+    source-level bucket stayed js_required while the detail-level bucket was
+    honestly details_broken (Mundfish, 2026-09-10 targeted pass). Projection
+    only — the adapter's detail entry stays authoritative.
+    """
+    if norm_text(report.get("adapter")) != "static" or not detail_rows:
+        return
+    detail = detail_rows[0]
+    stats = as_json_object(detail.get("stats"))
+    for key, value in (
+        ("candidateLinksFound", stats.get("candidate_links_found")),
+        ("detailPagesVisited", stats.get("detail_pages_visited")),
+        ("detailFetchFailedCount", stats.get("detail_fetch_failed")),
+        ("listingJobsFound", detail.get("listingJobsFound")),
+    ):
+        # Nonzero-only: zero is the context builder's default, so stamping it
+        # would add surface noise to every healthy static report.
+        if not int(value or 0) > 0:
+            continue
+        report[key] = int(value)
+    if has_details_broken_signal(classification_context_from_source_detail(report)):
+        report["failureBucket"] = FailureBucket.DETAILS_BROKEN.value
+
+
 def _classify_report_outcome(
     *,
     report: dict[str, Any],
@@ -782,6 +816,10 @@ def execute_loader(
             detail_rows=detail_rows,
             report_loss=report_loss,
         )
+        _apply_static_detail_evidence_to_report(
+            report=report,
+            detail_rows=detail_rows,
+        )
     except _SourceExecutionFailure as exc:
         report["status"] = "error"
         report["error"] = format_source_error(name, exc)
@@ -798,6 +836,10 @@ def execute_loader(
             report=report,
             detail_rows=detail_rows,
             report_loss=report_loss,
+        )
+        _apply_static_detail_evidence_to_report(
+            report=report,
+            detail_rows=detail_rows,
         )
     finally:
         thread_local.source_name = ""

@@ -31,7 +31,16 @@ blocked/challenge/js/timeout classifications and diagnoses, browser-fallback
 recommendations or attempts, listing timeouts, dead-listing evidence,
 canonical-dropped rows, detail candidates or visited detail pages (the parser
 found job-like links it failed to extract — that needs review, not an empty
-board), and unreadable or empty page bodies.
+board), and unreadable or empty page bodies. One demotion applies: when the
+only failure evidence is a hard-failed row-detail fetch (HTTP 4xx on one
+stale or off-board link — the Konami 2026-09-11 shape: a trusted-empty listing
+whose rendered-row detail lookup 404s a stale nav page), the detail-fetch error
+is demoted to a dead-detail fact and the guard judges emptiness on the
+listing's own evidence. The demotion is fail-closed: it fires only for that
+exact error shape (4xx client-gone codes, never challenge codes), only at
+noise-level detail evidence (below the taxonomy's details_broken candidate
+threshold — mass detail failure needs review, not a stale link), and it never
+relaxes the emptiness proof itself.
 """
 
 from __future__ import annotations
@@ -40,6 +49,7 @@ from typing import Any
 
 from src.jobs.common.no_openings import contains_no_openings_marker
 from src.jobs.common.taxonomy import (
+    _DETAILS_BROKEN_MIN_CANDIDATES,
     FailureBucket,
     ZeroKeptClassification,
     assess_zero_extract,
@@ -52,6 +62,54 @@ from .static_runtime import StaticSourceContext
 
 _MARKER_SEARCH_CHAR_LIMIT = 400_000
 _MAX_MARKER_PROBE_PAGES = 3
+
+# A detail-traversal hard failure (HTTP 4xx/5xx on one stale row-detail link)
+# aborts the rendered-rows flow with the failure recorded as a bare per-source
+# error — `static:<source>:<detail-url>: HTTP <code> for <url>`. When the
+# listing itself is a no-openings board, that stale link is a dead detail, not
+# extraction trouble on the listing read, so the guard may demote it and judge
+# emptiness on the listing's own marker evidence. Scoped to exactly that error
+# shape: generic funnel errors ("no jobs extracted from source pages") and any
+# other failure text keep refusing.
+_DETAIL_ERROR_PREFIX_TEMPLATE = "static:{source_name}:"
+_DETAIL_ERROR_HTTP_MARKER = ": HTTP "
+# Challenge/auth codes are extraction trouble (anti-bot), never stale-link
+# evidence; everything 5xx is a server-side transient, also not demoted.
+_DETAIL_ERROR_NON_DEMOTABLE_CODES = {401, 403, 429}
+
+
+def _detail_http_code(text: str) -> int:
+    """HTTP code from a `... HTTP <code> for ...` failure line, else 0."""
+    marker_at = text.find(_DETAIL_ERROR_HTTP_MARKER)
+    if marker_at < 0:
+        return 0
+    code_part = text[marker_at + len(_DETAIL_ERROR_HTTP_MARKER) :][:3]
+    return int(code_part) if code_part.isdigit() else 0
+
+
+def _collect_demotable_source_error_lines(ctx: StaticSourceContext) -> list[int]:
+    """Indices of this-source detail-fetch 4xx failure lines in ctx.errors.
+
+    The static detail funnels (rendered-rows abort + planned traversal) record
+    the failure as `static:<source>:<url>: HTTP <code> for <url>` — a
+    per-source error line in the shared adapter errors list. Only
+    client-gone codes (4xx minus challenge codes) demote: a 404 on a stale
+    nav page is dead-detail evidence, while a 403/429 is anti-bot and a 5xx is
+    a transient. The first non-demotable this-source line wins (fail-closed).
+    """
+    prefix = _DETAIL_ERROR_PREFIX_TEMPLATE.format(source_name=ctx.source_name)
+    demotable: list[int] = []
+    for index, error in enumerate(ctx.errors):
+        text = clean_text(error)
+        if not text.startswith(prefix):
+            continue
+        code = _detail_http_code(text)
+        if 400 <= code < 500 and code not in _DETAIL_ERROR_NON_DEMOTABLE_CODES:
+            demotable.append(index)
+        else:
+            return []
+    return demotable
+
 
 _REFUSAL_CLASSIFICATIONS = {
     "dead_listing_page",
@@ -79,6 +137,7 @@ _BROKEN_PRIOR_BUCKETS = {
     "parser_empty",
     "parse_error",
     "timeout",
+    "details_broken",
 }
 
 
@@ -122,6 +181,44 @@ def _prior_clean_zero_read(state_entry: dict[str, Any]) -> bool:
     return prior_error == _GENERIC_NO_JOBS_ERROR
 
 
+def _stale_detail_demotion_applies(ctx: StaticSourceContext) -> bool:
+    """True when the only detail evidence is a stale-link hard failure.
+
+    Two scopes must hold: (1) every this-source failure line is a demotable
+    4xx detail-fetch abort (fail-closed — one anti-bot line, generic error, or
+    other failure text keeps the refusal); (2) the detail evidence is at
+    noise level — below the taxonomy's details_broken candidate threshold —
+    because mass candidate/detail failure is the details_broken shape and
+    needs review, not a stale link.
+    """
+    demotable = _collect_demotable_source_error_lines(ctx)
+    if not demotable:
+        return False
+    report_error = clean_text(ctx.entry_report.get("error"))
+    if report_error:
+        # The plugin fast path copies the plugin meta error verbatim into the
+        # report; the demotion only applies when that error is itself the
+        # demotable detail-fetch line (prefix + 4xx), i.e. the failure
+        # travelled the plugin-meta carrier instead of the shared list.
+        prefix = _DETAIL_ERROR_PREFIX_TEMPLATE.format(source_name=ctx.source_name)
+        code = _detail_http_code(report_error)
+        if (
+            "; " in report_error
+            or not report_error.startswith(prefix)
+            or not 400 <= code < 500
+            or code in _DETAIL_ERROR_NON_DEMOTABLE_CODES
+        ):
+            # Multi-failure concat, non-detail failure text, or a
+            # challenge/transient code — none of it is a single stale-link
+            # abort; refuse.
+            return False
+    context = classification_context_from_source_detail(ctx.entry_report)
+    return (
+        context.candidate_links_found < _DETAILS_BROKEN_MIN_CANDIDATES
+        and context.listing_jobs_found < _DETAILS_BROKEN_MIN_CANDIDATES
+    )
+
+
 def _refusal_reason(ctx: StaticSourceContext) -> str:
     report = ctx.entry_report
     if bool(report.get("browserFallbackRecommended")):
@@ -129,7 +226,7 @@ def _refusal_reason(ctx: StaticSourceContext) -> str:
     if int(report.get("deadListingPageCount") or 0) > 0:
         return "dead_listing_page"
     classification = clean_text(report.get("classification"))
-    if classification in _REFUSAL_CLASSIFICATIONS:
+    if classification in _REFUSAL_CLASSIFICATIONS and not _stale_detail_demotion_applies(ctx):
         return f"classification:{classification}"
     if clean_text(ctx.stats.get("listing_terminal_reason")):
         return "listing_terminal_reason"
@@ -139,6 +236,8 @@ def _refusal_reason(ctx: StaticSourceContext) -> str:
     if has_all_rows_canonical_dropped(context):
         return "canonical_rows_dropped"
     if context.candidate_links_found > 0 or context.detail_pages_visited > 0:
+        if _stale_detail_demotion_applies(ctx):
+            return ""
         return "detail_candidates_present"
     assessment = assess_zero_extract(context)
     if assessment.diagnosis.value in {"js_required", "anti_bot_or_challenge", "site_changed"}:
@@ -168,6 +267,14 @@ def promote_clean_zero_kept(ctx: StaticSourceContext) -> bool:
         evidence_kind = "prior_clean_zero_read"
     if not evidence_kind:
         return False
+    demotable_error_indices = _collect_demotable_source_error_lines(ctx)
+    if demotable_error_indices:
+        # The stale row-detail failure is dead-detail evidence, not extraction
+        # trouble; drop the matching lines so the promoted ok/0 report carries
+        # no failure evidence (the availability drain treats any error as
+        # broken missing evidence). Pop in reverse to keep indices valid.
+        for index in sorted(demotable_error_indices, reverse=True):
+            ctx.errors.pop(index)
     ctx.entry_report.update(
         {
             "status": "ok",
