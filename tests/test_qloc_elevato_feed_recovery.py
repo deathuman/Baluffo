@@ -192,7 +192,14 @@ def test_run_pipeline_default_loaders_use_output_dir_active_registry(monkeypatch
         assert [str(row.get("listing_url") or "") for row in calls] == [
             "https://qloc.elevato.net/en/"
         ]
-        assert int(report["summary"].get("outputCount") or 0) == 2
+        # The strengthened missing-universe lifecycle drain (hold-tail Wave 1)
+        # treats sources absent from the registered universe as retired: this
+        # synthetic default run is registry-driven and contains no sheet
+        # loader, so the legacy seeded sheet row provably cannot be
+        # re-observed and drains like production's retired-row drains. In real
+        # default runs the sheet family is part of the universe and its rows
+        # survive (the ~41k-row feeds carry them every pass).
+        assert int(report["summary"].get("outputCount") or 0) == 1
         assert any(str(row.get("jobLink") or "") == QLOC_J240 for row in rows)
 
 

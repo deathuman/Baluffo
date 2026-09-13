@@ -88,9 +88,9 @@ def test_committed_security_inputs_close_python_security_caveats(repo_root: Path
         today=date(2026, 5, 21),
     )
 
-    assert "Scrapy==2.17.0" in requirements
+    assert "Scrapy==2.19.0" in requirements
     assert "Twisted==26.4.0" in requirements
-    assert "scrapy==2.17.0" in lock
+    assert "scrapy==2.19.0" in lock
     assert "twisted==26.4.0" in lock
     assert advisory_ids == []
 

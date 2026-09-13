@@ -2551,7 +2551,7 @@
     "promotionReason": "",
     "hiddenFromDefault": true,
     "residualFailureClass": "redundant_provider_coverage",
-    "duplicateOfSourceId": "static:listing_url:https://www.yodo1.com/careers",
+    "duplicateOfSourceId": "teamtailor:listing_url:https://careers.yodo1.com/jobs",
     "demotionNote": "Hidden from default fetch because a stronger active source covers the same family or canonical careers URL.",
     "residualFailureEvidence": "Known redundant static source with stronger active coverage."
   },

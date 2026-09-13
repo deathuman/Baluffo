@@ -1,42 +1,46 @@
 {
   "static:listing_url:https://34bigthings.com/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://airstrafeinteractive.com/careers.html": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://blindsquirrelentertainment.com/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://fusegames.com/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://playground-games.com/careers/": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://thirdkindgames.com/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://www.jokergame.net/jobs/": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://www.series.inc/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://www.thecoalitionstudio.com/careers": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
   },
   "static:listing_url:https://www.thefarm51.com/eng/careers/": {
-    "reason": "jobs_dead_source_evidence",
-    "deletedBy": "jobs_dead_source_evidence_20260429"
+    "deletedBy": "jobs_dead_source_evidence_20260429",
+    "reason": "jobs_dead_source_evidence"
+  },
+  "static:listing_url:https://www.yodo1.com/careers": {
+    "deletedBy": "yodo1_teamtailor_migration_20260909",
+    "reason": "superseded_by_provider"
   }
 }

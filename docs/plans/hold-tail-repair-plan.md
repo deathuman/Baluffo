@@ -1001,6 +1001,31 @@ missing-universe path, with the health verdict healthy throughout.
   wait-and-reverify), Inverge 1 (mid-rebuild board), SNK 1 (tenant gone, record-only) —
   all blocked on external triggers, as projected. The hold-tail repair work is complete.
 
+### External-trigger re-verify sweep (2026-09-13): the monitoring leaf for the remaining floor
+
+`tmp/external-trigger-sweep/sweep.py` — a read-only, single-request-per-trigger probe of
+the four upstream conditions this plan's dispositions wait on, one JSON verdict record
+per run appended to `history.jsonl` (diffable recovery evidence, no re-derivation):
+
+- **midgar_afjv_tls** (2 rows): GETs the afjv company page; TLS success ⇒ RECOVERED
+  (re-verify lane), `CERTIFICATE_VERIFY_FAILED` hostname mismatch ⇒ STILL_BROKEN.
+- **exitvr_wp500** (2 rows): GETs `/jobs/`; any non-500 ⇒ RECOVERED, 500 ⇒ STILL_BROKEN,
+  and the record carries the plan §5 chronic-day counter (outage start 2026-09-06;
+  escalation at day ~28 opens the third-probe dead/lapse lane).
+- **inverge_details** (1 row): GETs the five SEE OFFER detail URLs; any 200 ⇒ RECOVERED,
+  all-404 ⇒ MID_REBUILD (wait-and-reverify per §8).
+- **snk_axol_tenant** (1 row): GETs `job.axol.jp/{pm,qd,jn,vb}/c/snk-corp/job/list`; any
+  non-404 ⇒ RECOVERED, 404s ⇒ TENANT_DEAD (record-only per §9; probes also use the
+  server-rendered `/job/list` shape, not the JS-search path).
+
+Baseline run (2026-09-13): all four verdicts match the plan's known state — TLS mismatch
+unchanged, Exit VR 500 with chronic day 7 of ~28, Inverge five 404s (126.9 KB Spanish
+404 template), SNK 9-byte 404s under every prefix; zero recovered. On any future
+RECOVERED verdict: re-adjudicate per the section above, then run the targeted pipeline
+pass (`python -m src.jobs.pipeline --force-refresh-all --only-sources <loader names>`,
+`--ignore-circuit-breaker` if the breaker has quarantined the source) or open the §5
+tombstone lane when Exit VR crosses chronic day ~28.
+
 ## Risks and rollback
 
 - **Trusted-zero fabrication** (the one way this plan could destroy real rows): mitigated

@@ -224,12 +224,15 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
             continue
         absolute = urljoin(base_url, value) if base_url else value
         parsed = urlparse(absolute)
-        if parsed.scheme not in {"http", "https"}:
+        if parsed.scheme not in {"http", "https", ""}:
             # Inline-asset URIs (data:, blob:, tel:, ...) are page content, not
             # detail links. The CarX Technologies 2026-09-07 contamination
             # traced to a 6.5 MB data:image href whose base64 path noise
             # matched _STATIC_DETAIL_PATH_RE; a data: URI must never enter
-            # detail samples or registry pages.
+            # detail samples or registry pages. The empty scheme is a relative
+            # link with no base_url to resolve against (test/probe-less paths)
+            # and must keep flowing; urljoin in the absolute case always
+            # produces http(s) here.
             continue
         page = (parsed.scheme, parsed.netloc, parsed.path.rstrip("/") or "/")
         same_listing_query_detail = _is_same_listing_query_detail_link(base_url, absolute, label)

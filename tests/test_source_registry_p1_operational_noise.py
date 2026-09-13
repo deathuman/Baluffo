@@ -60,7 +60,7 @@ REDUNDANT_STATIC_COVERAGE = {
         "static:listing_url:https://ndreams.com/careers/"
     ),
     "static:listing_url:https://www.yodo1.com/careers/": (
-        "static:listing_url:https://www.yodo1.com/careers"
+        "teamtailor:listing_url:https://careers.yodo1.com/jobs"
     ),
     "static:listing_url:https://www.thefarm51.com/eng/careers/": (
         "static:listing_url:https://www.thefarm51.com/careers/"
