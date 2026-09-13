@@ -22,7 +22,11 @@ from src.jobs.adapters.static_listing_common import StaticDetailCandidate
 from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
+from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED
 from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
+from src.jobs.common.origin_junk import (
+    is_junk_provenance_row,
+)
 from src.jobs.page_gating import looks_like_server_template_artifact
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 
@@ -42,11 +46,30 @@ def _append_detail_candidate(
     anchor_text: str,
     depth: int,
     parent_url: str,
+    ctx: StaticSourceContext | None = None,
 ) -> bool:
     absolute = normalize_url(candidate_url)
     if not absolute or absolute in detail_seen or absolute in seen_links:
         return False
     candidate_title = clean_text(anchor_text)
+    # Guest-view junk rows must not even become detail candidates: this funnel
+    # previously lacked the LinkedIn-host check the traversal funnel applies,
+    # so a non-LinkedIn origin's page could harvest guest-view search URLs
+    # (Fusebox's 41 ``/jobs/{slug}?trk=…`` rows, 2026-09-13) and queue detail
+    # fetches LinkedIn always answers with HTTP 999.
+    if (
+        GUEST_JUNK_GUARD_ENABLED
+        and absolute
+        and ctx is not None
+        and is_junk_provenance_row(
+            {"jobLink": absolute, "title": candidate_title},
+            source=ctx.source,
+        )
+    ):
+        ctx.stats["junk_provenance_candidates_dropped"] = (
+            int(ctx.stats.get("junk_provenance_candidates_dropped") or 0) + 1
+        )
+        return False
     # Server-template artifacts (literal ESAPI/velocity fragments leaked into
     # the page instead of being rendered) are parser noise, not job links —
     # fetching them returns HTTP 400 and errors the whole source run-over-run

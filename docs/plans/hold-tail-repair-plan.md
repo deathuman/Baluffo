@@ -1026,6 +1026,76 @@ pass (`python -m src.jobs.pipeline --force-refresh-all --only-sources <loader na
 `--ignore-circuit-breaker` if the breaker has quarantined the source) or open the §5
 tombstone lane when Exit VR crosses chronic day ~28.
 
+### Big Moxi S6 re-promotion (2026-09-13): the ×2 basis survives full-pass rewrites; one targeted pass re-arms it after an erasure
+
+The deps-verification full pass (11:51Z) ran Big Moxi before the ×3 fallback list quirk
+was understood: it kept the detail row's 3 accumulated stamps but classified the source
+`js_required` (consec 1) — the promotion never fired in that lane, and the 2 drained rows
+from pass D stayed retired while the source row sat in error state. Re-armed via two
+targeted no-`--output-dir` stamp passes with working renders (`got_html=True` after the
+playwright browser-repair): stamp #1 appended its confirmation (4 stamps) but its guard
+chance didn't promote — the promote path's live re-read returned no bodies that run
+(marginal, timing-shaped); stamp #2's guard accepted the accumulated basis and promoted
+(`status=ok fetched 0 / kept 0`, state `ok`/`no_openings`/`consecutiveZeroKept: 2`).
+Observed operational rule, refined: **targeted runs never erase accumulated stamps and
+the promotion can land in the second targeted pass itself** — a full pass is then only
+needed for the row drain, not the promotion. Evidence `tmp/bigmoxi-restamp-20260913/`
+(stamp1/stamp2 logs, render.html/text of the 1.2 KB shell, 0 visible chars,
+challenge-free). The 2 rows drain on the next full pass with the source eligible.
+
+### Fusebox adjudication (2026-09-13): the post-drain overdue rise is junk-provenance rows on a live-empty board — trusted-empty path, no repair build
+
+The first post-drain full pass aged in a new overdue cohort (6 → 47, all Fusebox Games
+(Nazara) (GameDevMap); health degraded/`overdue_rising`). Adjudicated from live evidence
+(`tmp/fusebox-adjudication-20260913/`):
+
+- **Not the Scrapy 2.19 bump and not a source outage**: the WP careers page serves 200
+  (332 KB, healthy, `Careers | Fusebox Games`); the source fails `no jobs extracted` /
+  `needs_review` because the page contains **zero individual job links** — it is a pure
+  LinkedIn funnel (`linkedin.com/company/fusebox-games/jobs` → guest HTTP 999; the page's
+  four LinkedIn hrefs are company/nav links, none are job links).
+- **The 41 overdue rows are junk provenance**: 38 `linkedin.com/jobs/{slug}?trk=…` +
+  3 `uk.linkedin.com/…` guest-view search URLs harvested by the 09-06 success run (the
+  only success since 09-06; consec 12–13), plus 1 real HiBob ATS row
+  (`fuseboxgames.careers.hibob.com/jobs/{guid}`, "Writer") already `unavailable`/
+  `source_absent`/`definitive` from the sheets sweep. LinkedIn guest-view URLs are the
+  same junk class as Konami's "Community" row (S7 precedent) — they can never
+  re-verify for a logged-out fetcher (LinkedIn 999s bots) and carry no detail surface.
+- **The real board is live-empty**: the careers page's one ATS reference is
+  `fuseboxgames.careers.hibob.com` (HiBob careers site, Angular SPA — static lane sees a
+  1.3 KB shell). Playwright render lands `Current openings — Check again later — New job
+  openings will be added soon` (71 visible chars, trusted-empty), and the public jobs
+  API confirms: `GET /api/job-ad` → 200 JSON `{"filterGroups": {...}, "jobAdDetails": []}`
+  (the SPA catch-all-routes guessed `/api/*` paths to the shell — Reflecto wall — but the
+  app's own two calls, `/api/career-site` + `/api/job-ad`, are plain public JSON).
+- **Company status**: alive — Nazara subsidiary (acquired 2024-08), site actively invites
+  applications ("Love Island game is back!"). This is a hiring pause, not a dead tenant.
+
+**Disposition — superseded same day (2026-09-13, Fusebox restamp attempt): HOLD / record-only,
+the S6 path is closed.** The stamp passes falsified the trusted-empty premise: the WP page
+renders **textful** — 570 visible chars (careers copy incl. "Keep an eye out on our LinkedIn
+page for any job openings!", values, studio blurb), 0 rendered job links — so the S6
+producer's ≤240-char near-textless cap (deliberately fail-closed: a textful page could hide
+job surfaces) refuses the stamp deterministically on every run (pass #1: renders
+`got_html=True`, stamp did not land; the render probe reproduced the refusal shape). The
+S7 demotion lane is closed too: the failure lines are the LinkedIn **999**s (non-4xx,
+non-demotable), so the guard's stale-detail demotion never applies. What remains is a wait
+lane with three exits: (1) **repair path if Fusebox ever reopens a parseable board** — the
+public HiBob jobs JSON (`/api/job-ad`, `jobAdDetails[]`) is a trivial structured read, or
+the hibob adapter thread more generally; (2) **tombstone/lapse lane** if the LinkedIn-junk
+rows age into chronic overdue without a recovery path (the Exit VR §5 chronic-day precedent,
+~day 28-equivalent); (3) **junk-class guard** if more LinkedIn-guest-view-provenance sources
+surface — a provenance filter on `linkedin.com/jobs/{slug}?trk=` row URLs would be the
+systemic fix (Konami's "Community" row and these 41 share the shape). No code landed for
+Fusebox today; the 41 rows re-verify naturally if the source ever keeps >0 again.
+
+**Env note captured during adjudication**: the operator's library upgrade bumped the
+`playwright` package to a browser-revision (1234) without matching binaries installed
+(machine had 1208) — every Playwright render in the deps verification pass silently
+no-opped (0/3262 `got_html=True` vs 20 in the pre-bump pass). `python -m playwright
+install chromium` restored renders mid-adjudication; recorded in
+`dependency-runtime-pin-update-2026-09-13`.
+
 ## Risks and rollback
 
 - **Trusted-zero fabrication** (the one way this plan could destroy real rows): mitigated

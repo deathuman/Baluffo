@@ -15,6 +15,7 @@ from typing import Any
 
 from src.jobs.common.config import AVAILABILITY_OVERDUE_DAYS, AVAILABILITY_OVERDUE_FAILURE_COUNT
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
+from src.jobs.common.origin_junk import is_junk_provenance_row
 from src.jobs.state_lifecycle_availability import (
     _availability_transition_id,
     _normalize_availability_aliases,
@@ -249,6 +250,52 @@ def _apply_missing_lifecycle_entry(
         "source": clean_text(entry.get("source")),
     }
     entry["availabilityClosureOrigin"] = "source_absent"
+    entry["consecutiveAvailabilityFailures"] = 0
+    return entry
+
+
+def _apply_guest_junk_lifecycle_entry(
+    entry: dict[str, Any], *, finished_at: str
+) -> dict[str, Any] | None:
+    """Drain a junk-provenance row (guest-junk guard, hold-tail 2026-09-13).
+
+    Origin-aware guest-view rows — LinkedIn guest search/slug URLs harvested by
+    non-LinkedIn static origins (Fusebox's 41 ``/jobs/{slug}?trk=…``) and the
+    nav-anchor self-page shape (Konami's "Community") — can never re-verify
+    for a logged-out fetcher (LinkedIn 999s bots) and carry no detail surface.
+    Left in place they strand as ``verification_overdue`` floor rows forever,
+    so the failed-source shield drains them to the same terminal state the
+    missing path uses (unavailable now, archived via retention later), with a
+    dedicated evidence kind and closure origin so the drain is auditable and
+    distinguishable from a real source-absent read. Returns ``None`` when the
+    entry does not match the junk class (fail-open: unknown sources and
+    unparseable URLs keep the legacy preserve behavior).
+    """
+    if not is_junk_provenance_row(entry, source={"id": clean_text(entry.get("source"))}):
+        return None
+    if _normalize_availability_status(entry) == "unavailable":
+        # Already terminal (drained on a previous run): idempotent no-op so
+        # availability timestamps and transition ids never churn run-over-run.
+        return entry
+    availability_id = clean_text(entry.get("availabilityId")) or availability_id_for_job(entry)
+    entry["availabilityId"] = availability_id
+    entry["status"] = "likely_removed"
+    if not clean_text(entry.get("removedAt")):
+        entry["removedAt"] = finished_at
+    entry["availabilityStatus"] = "unavailable"
+    entry["availabilityCheckedAt"] = finished_at
+    entry["availabilityVerifiedAt"] = finished_at
+    entry["availabilityUnavailableAt"] = finished_at
+    entry["availabilityEvidence"] = {
+        "kind": "guest_junk_provenance",
+        "confidence": "definitive",
+        "checkedAt": finished_at,
+        "source": clean_text(entry.get("source")),
+    }
+    entry["availabilityClosureOrigin"] = "guest_junk_provenance"
+    entry["availabilityTransitionId"] = _availability_transition_id(
+        clean_text(entry.get("availabilityId")), "unavailable", finished_at
+    )
     entry["consecutiveAvailabilityFailures"] = 0
     return entry
 

@@ -34,6 +34,8 @@ from src.jobs.adapters.static_listing_state import (
     _is_provisional_static_artifact_row,
     _needs_detail_location_resolution,
 )
+from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED
+from src.jobs.common.origin_junk import is_junk_provenance_row
 from src.jobs.page_gating import (
     looks_like_job_title_candidate,
     looks_like_static_parser_noise_title,
@@ -143,6 +145,11 @@ def _append_parsed_listing_rows(
     )
     for row in parsed:
         link = normalize_url(row.get("jobLink"))
+        if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+            ctx.stats["junk_provenance_rows_dropped"] = (
+                int(ctx.stats.get("junk_provenance_rows_dropped") or 0) + 1
+            )
+            continue
         if _is_provisional_static_artifact_row(row):
             provisional_count += 1
             if link:
@@ -154,6 +161,7 @@ def _append_parsed_listing_rows(
                     anchor_text=clean_text(row.get("title")),
                     depth=0,
                     parent_url=page_url,
+                    ctx=ctx,
                 )
             continue
         if looks_like_static_parser_noise_title(clean_text(row.get("title"))):
@@ -240,6 +248,11 @@ def _append_rendered_row(
     row = dict(raw_row)
     if clean_text(row.pop("_renderedCardMode", "")) == "fallback":
         return 0, False, 0
+    if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+        ctx.stats["junk_provenance_rows_dropped"] = (
+            int(ctx.stats.get("junk_provenance_rows_dropped") or 0) + 1
+        )
+        return 0, False, 0
     row["adapter"] = "static"
     row["studio"] = _source_studio(ctx)
     row["source"] = _source_label(ctx)
@@ -258,6 +271,7 @@ def _append_rendered_row(
                 anchor_text=title,
                 depth=0,
                 parent_url=page_url,
+                ctx=ctx,
             )
         return 0, False, 1
     if not link or link in ctx.seen_links:

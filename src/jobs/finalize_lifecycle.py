@@ -181,6 +181,7 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
             lifecycle_counts_map.get("preservedBecauseSourceSkipped") or 0
         ),
         "retiredSourceDrainedCount": int(lifecycle_counts_map.get("retiredSourceDrained") or 0),
+        "guestJunkDrainedCount": int(lifecycle_counts_map.get("guestJunkDrained") or 0),
         "eligibleMissingSourceCount": int(
             lifecycle_counts_map.get("eligibleMissingSourceCount") or 0
         ),

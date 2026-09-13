@@ -181,6 +181,18 @@ STRICT_GAME_ONLY_ENABLED = os.environ.get("BALUFFO_STRICT_GAME_ONLY", "").strip(
     "yes",
 )
 
+# Origin-aware guest-view junk guard (hold-tail 2026-09-13, Fusebox/Konami
+# junk class): static sources whose registry origin is NOT LinkedIn keep
+# harvesting LinkedIn guest-view URLs that can never re-verify for the
+# logged-out fetcher (HTTP 999), stranding them as verification_overdue
+# floor rows. The guard is fail-open by default and fails closed per-run
+# only while this flag is set (rollback = unset the env var).
+GUEST_JUNK_GUARD_ENABLED = os.environ.get("BALUFFO_GUEST_JUNK_GUARD", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
 # Mutable diagnostics map used across fetch runs.

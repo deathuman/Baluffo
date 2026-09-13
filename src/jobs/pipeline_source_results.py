@@ -680,6 +680,11 @@ def _apply_static_detail_evidence_to_report(
         ("detailPagesVisited", stats.get("detail_pages_visited")),
         ("detailFetchFailedCount", stats.get("detail_fetch_failed")),
         ("listingJobsFound", detail.get("listingJobsFound")),
+        (
+            "junkProvenanceRowsDropped",
+            int(stats.get("junk_provenance_rows_dropped") or 0)
+            + int(stats.get("junk_provenance_candidates_dropped") or 0),
+        ),
     ):
         # Nonzero-only: zero is the context builder's default, so stamping it
         # would add surface noise to every healthy static report.

@@ -1448,6 +1448,7 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 | `preservedBecauseSourceSkippedCount` | `number` | Missing jobs preserved because their source was skipped, excluded, not selected, or needed review/browser fallback. |
 | `eligibleMissingSourceCount` | `number` | Source rows with trustworthy missing-job evidence in the run. |
 | `ineligibleMissingSourceCount` | `number` | Source rows present but not eligible to mark jobs removed. |
+| `guestJunkDrainedCount` | `number` | Junk-provenance rows drained to `unavailable` via the origin-aware guest-junk guard while their source failed (evidence kind `guest_junk_provenance`, `availabilityClosureOrigin: "guest_junk_provenance"`). Additive, observability-only; the underlying transitions use the same terminal row state as the missing-job path. |
 
 Fetch reports, both report normalizers, the compact fetch-report sidecar, and
 `/ops/fetch-report?view=summary` preserve the bounded top-level `availabilitySummary`,

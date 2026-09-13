@@ -33,6 +33,7 @@ from src.jobs.state_lifecycle_identity import (
 )
 from src.jobs.state_lifecycle_normalization import lifecycle_counts
 from src.jobs.state_lifecycle_transitions import (
+    _apply_guest_junk_lifecycle_entry,
     _apply_missing_lifecycle_entry,
     _apply_unverified_availability_entry,
     _lifecycle_entry_from_active_job,
@@ -152,15 +153,24 @@ def _apply_missing_lifecycle_rows(
                 entry = dict(entry)
                 next_rows[key] = entry
                 if source_name in failed_sources:
-                    summary["preservedBecauseSourceFailed"] += 1
-                    entry["lifecycleEvent"] = "preserved"
-                    entry["lifecycleReason"] = "source_failed"
-                    _apply_unverified_availability_entry(
-                        entry,
-                        finished_at=finished_at,
-                        reason="source_failed",
-                        now_dt=now_dt,
-                    )
+                    # Origin-aware guest-junk rows (Fusebox's 41 LinkedIn
+                    # guest-view URLs, 2026-09-13) cannot re-verify while the
+                    # source keeps failing — draining them here stops them
+                    # stranding as verification_overdue floor rows forever.
+                    # Fail-open: non-matching entries keep the preserve path.
+                    drained_junk = _apply_guest_junk_lifecycle_entry(entry, finished_at=finished_at)
+                    if drained_junk is not None:
+                        summary["guestJunkDrained"] += 1
+                    else:
+                        summary["preservedBecauseSourceFailed"] += 1
+                        entry["lifecycleEvent"] = "preserved"
+                        entry["lifecycleReason"] = "source_failed"
+                        _apply_unverified_availability_entry(
+                            entry,
+                            finished_at=finished_at,
+                            reason="source_failed",
+                            now_dt=now_dt,
+                        )
                 elif (
                     known_missing_evidence_sources is not None
                     and source_name not in skipped_sources
