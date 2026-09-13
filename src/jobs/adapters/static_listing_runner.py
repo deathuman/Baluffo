@@ -16,7 +16,10 @@ import time
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
+from src.jobs.adapters.plugins.static._heuristics import (
+    detect_cookie_challenge_shell,
+    detect_js_shell,
+)
 from src.jobs.adapters.static_cookie_retry import cookie_retry_allowed_for_url
 from src.jobs.adapters.static_detail_heuristics import (
     choose_detail_traversal_mode,
@@ -58,6 +61,18 @@ from src.shared.utils import now_iso
 
 from ..common import config as common_config
 from .static_runtime import StaticSourceContext
+
+# S6 (Big Moxi 2026-09-12): rendered-empty confirmation bounds. A Playwright
+# render of a JS-shell listing that surfaced at most this many visible-text
+# characters is a provably empty board read (no hidden text surface); the
+# stamp feeds the guard's two_rendered_empty_confirmations evidence kind.
+_RENDERED_EMPTY_MAX_VISIBLE_CHARS = 240
+
+
+def _rendered_visible_text_len(html: str) -> int:
+    from src.jobs.adapters.html_parsers import strip_html_text
+
+    return len(clean_text(strip_html_text(html or "")))
 
 
 class StaticFetchRunner:
@@ -500,6 +515,20 @@ class StaticFetchRunner:
         self._log_playwright_fallback(page_url, label, html2)
         if html2:
             self.stage_state.increment_browser_fallbacks()
+            # S6 (Big Moxi 2026-09-12): a render that provably mounted the app
+            # (JS shell) without a challenge interstitial and surfaced near-
+            # zero visible text is a rendered-empty confirmation. Two such
+            # reads across passes become guard emptiness evidence (the guard
+            # then promotes ok/0 with two_rendered_empty_confirmations).
+            # Fail-closed: challenge interstitials are JS shells too — they
+            # must never stamp; and a textful render means the board is not
+            # provably empty (extraction trouble, not emptiness).
+            if (
+                detect_js_shell(html2)
+                and not detect_cookie_challenge_shell(html2)
+                and _rendered_visible_text_len(html2) <= _RENDERED_EMPTY_MAX_VISIBLE_CHARS
+            ):
+                self.stats["renderedEmptyConfirmedAt"] = now_iso()
             return html2
         return html
 

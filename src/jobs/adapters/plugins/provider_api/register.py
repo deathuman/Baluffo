@@ -19,6 +19,7 @@ from src.jobs.adapters import provider_structured_listing as _provider_structure
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
+from .dayforce import run_dayforce_sources_source
 from .greenhouse_runner import _run_greenhouse_boards
 from .html_board import _html_board_plugin
 from .json_feed import _json_feed_plugin
@@ -103,6 +104,17 @@ def ensure_registered() -> None:
                 ctx.family == "provider_api" and ctx.adapter_key == "oracle_hcm_sources"
             ),
             run_fn=run_oracle_hcm_sources_source,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="dayforce_sources",
+            family="provider_api",
+            priority=56,
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "dayforce_sources"
+            ),
+            run_fn=run_dayforce_sources_source,
         )
     )
     default_registry.register(

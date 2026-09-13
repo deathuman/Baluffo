@@ -350,6 +350,31 @@ def run_bamboohr_sources_source(
     )
 
 
+def run_dayforce_sources_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
+    registry_entries_fn: Callable[[str], list[dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
+    del try_playwright  # dispatch parity; the CSRF two-step pair never renders
+    from src.jobs.adapters.plugins.provider_api import dayforce as _dayforce
+
+    return _dayforce.run_dayforce_sources_source(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
+        registry_entries_fn=registry_entries_fn,
+    )
+
+
 def run_workday_sources_source(
     *,
     fetch_text: Callable[[str, int], str],

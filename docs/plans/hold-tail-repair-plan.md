@@ -330,6 +330,37 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   basis needs one more clean render on a later pass, then the 2 rows
   (`/careers/unreal-programmer`, `/careers/Game-Systems-Engineer`) drain via the guard.
   No registry action.
+- **Adjudication #2 (2026-09-12, forced targeted pass #2 — rendered-empty ×2 confirmed
+  evidentially, but the automatic drain lane does not exist in code; HOLD stands, no
+  registry action):** pass #2 (isolated output dir `tmp/holdtail-wave2b-20260912/bigmoxi2/`,
+  live `data/` state untouched by targeted runs — they write state into their own output
+  dir) reproduced #1 exactly: listing 200 with the ~1KB shell, fallback pool fired 2×
+  (`js_shell`, `empty_page`), HTML every time, 0 extracted, generic zero error; detail-level
+  stamp `site_changed`/`broken_extraction`, source bucket `js_required`. The independent
+  Playwright probe re-run matched #1: status 200, title rendered, **0 text chars, 0 links,
+  0 console errors**. The two-clean-render basis is complete. **The discovery:** the branch's
+  "drain via guard" mechanism is not realizable — the zero-kept guard's
+  `prior_clean_zero_read` path (the intended ×2 consumer) is unreachable for this shape:
+  (a) the guard unconditionally refuses any zero read with listing browser fallbacks
+  (`listing_browser_fallbacks > 0` → `browser_fallback_attempted`; by design a
+  browser-rendered zero is indistinguishable from a JS-shell trap without new evidence
+  plumbing), and (b) errored reads never increment `consecutiveZeroKept`, and Big Moxi's
+  prior bucket is `js_required` (broken set). Confirmed against the guard's own test pins
+  (no browser-fallback promotion shape exists) and both zero-kept funnels. The rows also
+  cannot drain on dead-link evidence: both row URLs soft-200 the same 1KB shell (catch-all
+  routing), so no 404 shape reaches the stale-detail demotion or the direct-check lane.
+  **Disposition:** HOLD — the evidence says empty, but the trust boundary says a rendered
+  zero is not yet admissible proof. The honest paths forward: (1) a small future S6 leaf —
+  persist a `renderedEmptyConfirmedAt` timestamp from the browser-fallback lane when the
+  render returns full HTML, and let the guard accept two such timestamps as the emptiness
+  evidence (equivalent discipline to the manual probe, no widening of the JS-shell trap
+  surface); or (2) an explicit operator decision to adjudicate the 2 rows manually on the
+  ×2 evidence. Until one of those, the rows remain the floor.
+  **Update (2026-09-12, later same day):** path (1) is now built — see the S6 execution
+  record below. The ×2 basis re-accumulated live through the new lane and the guard
+  promoted on pass 3: Big Moxi's state row reads `lastStatus: ok`,
+  `lastFailureBucket: no_openings`. The 2 rows keep their missing-universe drain lane on
+  a full default pass with the source eligible.
 
 ### 5. Exit VR — 2 rows (transient origin; wait-and-reverify)
 
@@ -340,6 +371,14 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
 - **Escalation trigger:** if the 500 persists ~4+ weeks (chronic, not transient), run the
   third-probe dead/lapse confirmation and only then consider tombstone criteria. Until
   then the 2 rows are correctly preserved.
+- **Re-adjudication (2026-09-12, live probes — wait-and-reverify unchanged):** the origin
+  still WP-fatal-500s, now **site-wide** — `/`, `/jobs/`, and `/data-protection` all serve
+  the same 13.4KB WordPress error page (listing probe: 500, "WordPress › Error"), so this
+  is an origin outage, not a `/jobs/`-only regression. Chronic day ~7 of ~28: the
+  escalation trigger is not met. The 2 overdue rows (`/jobs`, `/data-protection` — both
+  junk-class ingests) cannot drain or re-verify while the site 500s, and correctly so:
+  500 is transient-or-broken, never gone — a recovery re-verifies the rows, a chronic-day
+  ~28 third-probe opens the dead/lapse lane. **No action this pass.**
 
 ### 6. Astrum — 1 row (fetch-client fix + junk-row drain)
 
@@ -363,8 +402,34 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   no-openings marker with 0 real job hrefs — the drain path is primary; a repoint is
   optional and not drain-blocking.
 - **Registry gate:** any repoint is operator-approved.
-
-### 8. Inverge — 1 row (bot-wall; browser-fallback adjudication)
+- **Adjudication (2026-09-12, live probes + guard-spy run — HOLD on automated drain; the
+  promotion path is blocked by a funnel gap, not by the evidence):** the listing still
+  reads trusted-empty (200, repo `contains_no_openings_marker` → **True**, 0 real job
+  hrefs out of 70 — nav/self only), but the stale-detail demotion built for exactly this
+  shape never fires. Two blockers, confirmed by running the real source through the real
+  runner with the guard instrumented (`tmp/holdtail-wave2-20260910/konami-guard-debug.py`:
+  **0 guard calls**): (1) Konami rides the plugin fast path, where
+  `_probe_empty_plugin_listing` classifies the nav-only listing `dead_listing_page` and
+  `_record_empty_plugin_result` early-returns before `promote_clean_zero_kept` — the
+  stale-detail demotion only lives inside the guard, so it is unreachable on this funnel;
+  (2) the rows flow fetched the stale Community nav link
+  (`/games/us/en/pages/sns_account`, no trailing slash → HTTP 404), appended the error
+  line, and the entry wrapper raised `AdapterValidationError` — the source-level report is
+  `status=error`, bucket `site_changed`, `zeroKeptClassification broken_extraction`, and
+  the availability drain treats any error as broken missing evidence. The overdue row's
+  own `jobLink` **is the dead nav page** (`availability_0676ed10…` →
+  `https://www.konami.com/games/us/en/pages/sns_account`), and the page has drifted shape,
+  not died: the slashless URL 404s while the slashed twin (`…/sns_account/`) serves 200.
+  The row is junk either way (a Community nav page ingested as a job — it could never
+  verify available as a job). **Paths forward (recorded, not executed):** (a) small S7
+  funnel fix — extend the stale-detail demotion to the plugin empty-result path (and
+  ordering: judge emptiness on the listing's own marker evidence before the
+  `dead_listing_page` short-circuit), making the guard's documented Konami shape actually
+  reachable end-to-end; (b) operator adjudication — drain the junk row on the completed
+  evidence (marker-confirmed empty board + stale-detail 404 with a live slashed twin).
+  Until one lands, the row stays the floor. **S7 executed (2026-09-12):** path (a) landed
+  the same day — see the S7 execution record below; the next full default pass retires
+  the row (expected floor 9 → 8).
 
 - **Design:** one forced targeted run with browser fallback (the 403 interstitial is the
   fallback pool's target case). Branches mirror Big Moxi: through-the-wall render with
@@ -423,6 +488,53 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   (listing 200s, dead links fall out) — no code work, the S5 pattern covers it.
   Wait-and-reverify: either SNK restores a board or the listing eventually reads
   trusted-empty and the guard path takes over.
+  **Re-probe with the dayforce two-step (2026-09-12, `tmp/snk-axol-reprobe/`):
+  record-only disposition stands — the tenant is gone, and the CSRF hypothesis is now
+  empirically closed, not just header-exonerated.** The platform's real CSRF surface is
+  a form token, not NextAuth: the live marv board (`/qd/c/marv/job/search`) embeds an
+  `fb_csrf` hidden input and the GET→POST same-session round-trip answers 200 — the
+  two-step *mechanism* works on axol, so a token gate was never what hid SNK. SNK's
+  tenant 404s under every product-line prefix (`/pm/`, `/qd/`, `/bx/`, `/jn/`, `/vb/`
+  × `snk-corp`/`snk`) and the subdomain form doesn't resolve; the live marv control
+  answers 200 throughout. SNK's own recruit page still links four axol category URLs
+  today (`/pm/c/snk-corp/public/job/category/{token}` — a deeper path shape than any
+  prior probe tried) and **all four 404 too**: the site links a tenant the platform no
+  longer serves. No replacement board (mynavi/Twitter links only). The 1 overdue junk
+  row's drain lane is unchanged (finalize missing path on a full pass with the source
+  eligible).
+
+**Axol adapter sketch and build decision (2026-09-12, `tmp/axol-adapter-sketch/`):
+reads need no CSRF at all — and for marv alone, no-build.** Probing the live marv
+tenant for the sketch produced a platform contract that supersedes the Wave-3
+"CSRF-gated SPA" framing twice over: the `fb_csrf` hidden input belongs to the
+**search-filter form** (`action=ob/search` in the re-probe's own capture; the POST
+round-trip returned the identical 45,801-char page), not to the listing — job reads
+are **plain GETs with no token, no POST, and no cookie requirements** (verified with
+a fresh no-cookie client). Verified URL map: `/qd/c/{tenant}/job/list` server-renders
+the full offer list on one page with all detail URLs (`/job/detail/{encid}`, 29 hrefs
+on marv); `/job/search` is the paginated card view (`?page=N&searchKey=…` with a
+server-issued `searchKey` — pagination must follow rendered hrefs, never be
+constructed); `/job/detail/{encid}` is fully server-rendered (title in `<title>`,
+`job__offer__detail__{item,title,text}` label/value blocks, `job__jusho__*` location
+block, ~8.8 KB/page). Row selectors: `jsAxolJob_box` / `jsAxolJob_title` /
+`job_encid`. **The sketch, if ever built:** a plugin-family HTML adapter — register
+on the `job.axol.jp` host, listing lane prefers `/job/list`, details through the
+existing static traversal (**no** `_skipDetailFetch` — details render server-side,
+unlike Dayforce), row id `axol:{tenant}:{encid}`, empty boards ride the existing
+zero-extract taxonomy (server-rendered empties are trusted-empty evidence; no special
+empty class needed). **Decision: no-build.** Marv is the only axol tenant in the
+registry (active 2,167: one axol.jp row [marv] + one Axolot Games name collision;
+pending 830: zero; tombstones: zero), and it is **already active and healthy on the
+static lane** — `lastStatus: ok`, `lastKeptCount: 38`, `consecutiveFailures: 0` on
+today's full pass, reading the same server-rendered HTML an adapter would read. A
+structured migration would be a re-registration with identical output: zero yield
+delta, nonzero migration risk — the opposite of the Dayforce case (SPA-invisible
+jobs, a tenant-addressable family). Revisit triggers: a second axol tenant appears
+in discovery; marv's static lane degrades; or axol ships an SPA migration (then the
+S6 rendered-empty lane becomes the reading lane and `/job/list` is the cheapest
+re-entry point). This also retro-closes the §9 design note's "no axol adapter" gap
+framing: an adapter was never the missing piece for SNK (tenant gone) and static
+reads every live axol board fine.
 
 ## Wave sequencing
 
@@ -626,6 +738,58 @@ tenant is `{clientNamespace}/{careerSiteXRefCode}`-addressable with the same
 two-request contract — the axol (SNK) deferral should be re-probed with the CSRF
 two-step before calling the platform dead.
 
+**Adapter built and Reflector migrated (2026-09-12, Wave-3 execution; evidence
+`tmp/dayforce-wave/`):**
+
+1. **The leaf** (`src/jobs/adapters/plugins/provider_api/dayforce.py`): the runner owns
+   the two-request contract with a self-contained cookie-jar urllib client (the
+   workday-CXS pattern — the shared GET-text `fetch_text` lane cannot execute the
+   token+cookie POST pair). Empirical contract check on 2026-09-12 confirmed the
+   cookie pair is load-bearing: POST with `x-csrf-token` + the same client's cookies
+   → 200; the identical header without the cookies → 403 (NextAuth double-submit).
+   The CSRF check is the only gate — `cf_clearance` and browser headers unnecessary.
+   Row shape: `sourceJobId dayforce:{ns}:{jobPostingId}`, full `jobDescription`
+   (HTML-entity-decoded) carried on the row with `_skipDetailFetch` (the SPA detail
+   route serves an empty shell unauthenticated), `postingLocations` → city/country/
+   summary, stable detail URL `…/CANDIDATEPORTAL/jobs/{jobPostingId}`, pagination via
+   `paginationStart += count` until `offset+count >= maxCount` (10-page bound),
+   empty boards classified `legit_empty` via the provider-empty path. Wired through
+   the standard seams: `register.py` plugin (`dayforce_sources`), dispatch shim in
+   `provider_api.py`, loader name + `SOURCE_REPORT_META`, and `dayforce` added to
+   `PROVIDER_REGISTRY_ADAPTERS` (the staged-pending lane). Tests:
+   `tests/test_provider_dayforce_adapter.py` (URL/namespace derivation, row
+   normalization from the real capture, CSRF two-step request shapes, 403
+   classification) + `tests/test_provider_dayforce_runner.py` (end-to-end over
+   registry rows, pagination continuation, empty-board classification, expected
+   error surfaces) via `tests/helpers/dayforce_fixtures.py`; 18 cases. Live
+   validation against the real endpoint: **3/3 postings fetched and normalized**
+   (161 Programmer Engine and Tools, 149 Technical Animator Senior, 115 VFX Artist
+   Expert) — matches the Wave-3 capture.
+2. **Staging** (`tmp/dayforce-wave/stage_reflector.py`, dry-run then `--apply`):
+   staged `dayforce:client_namespace:ref` (listing_url
+   `https://jobs.dayforcehcm.com/en-CA/ref/CANDIDATEPORTAL`) via
+   `transition_registry_to_pending(provider_migration_candidate)` with
+   `migrationSourceIdentity` → `static:listing_url:https://emplois.reflectorentertainment.com/l/en`.
+   Pending 830 → 831, read-back OK.
+3. **Validation** (`validate.log`): dayforce-family targeted pass with
+   `--include-pending-provider-migration` — exit 0, 0 failed sources,
+   **dayforce_sources ok fetched 3 / kept 3** with full Montréal attribution —
+   the structured read the SPA shell could never produce.
+4. **Promotion** (`promote_reflector.py`, mirrors promote_steer.py):
+   `transition_registry_to_active` → active 2,167 → 2,167 (1:1 swap), pending
+   831 → 830, static SPA-shell row tombstoned `superseded_by_provider`
+   (tombstones 159 → 160, active bucket), `normalize_manual_promotion_rows: 1`,
+   active seed 1,891 → 1,892 (+1 dayforce row). Full read-back OK.
+5. **Drain — verified:** the 3 stale Reflector overdue rows
+   (`directeurtrice-technique-studio`, `legal-notice`, `skip-to-content` — none
+   matches a live posting) closed via the finalize missing-universe path on the
+   following full default pass (Wave-2 drain rule: provider-migrated tombstoned
+   sources are provably un-re-observable). The pass manifest carries **0 reflector
+   work items** and the report's `availabilityHealth.overdueBySource` re-captured at
+   **9 overdue / 6 sources** (Big Moxi 2, Midgar 2, Exit VR 2, Inverge 1, Konami 1,
+   SNK 1 — exactly the predicted composition minus Reflecto). **Floor measured
+   12 → 9**; the pass itself: 41,036 jobs, 70 failed (the usual transient tail).
+
 ### S4 activation executed (2026-09-11, #8 Astrum): listing-funnel coverage gap closed, junk row drained
 
 The Astrum activation (flag-gated cookie-jar retry for its `bp_chl` geo-cookie
@@ -709,6 +873,133 @@ link set = exactly the 6), plus the `/legal` junk row — all 4 closed
 22 → 12.** The `details_broken` Wave-1 accounting stays intact as the regression
 net — it was the right diagnosis of a genuinely broken window; this repair is
 the recovery, not a reclassification.
+
+### S7 executed (2026-09-12, #7 Konami): the stale-detail demotion made reachable end-to-end — promotion verified live
+
+**Design as recorded vs. what the trace found.** The §7 adjudication's path (a) said
+"extend the demotion to the plugin empty-result path" — but the instrumented pipeline
+trace (`tmp/konami-s7-pipeline-spy.py`) found Konami rides the **generic** funnel, and
+the real blockers were three, not one:
+
+1. **Generic finish gate** (`_finish_generic_source`): the zero-kept guard chance
+   required an empty classification AND zero dead-listing rejections — extraction
+   pre-stamped `dead_listing_page` (58 rejections on the nav-only board), so the guard
+   was unreachable. Fixed: the gate defers to the guard's own refusals (they encode
+   every case the old pre-filter excluded, fail-closed), and the widened-gate decline
+   path preserves the pre-S7 outcome byte-for-byte (no error stamp on shapes the old
+   gate excluded from the error path; the dead-listing re-stamp still applies on
+   decline, and a promoted `empty_confirmed` stamp is protected from the re-stamp).
+2. **Canonical-URL dead end in the guard's marker probe** (`_fetch_listing_bodies`):
+   the cache-backed fetcher canonicalizes URLs (`normalize_url` strips trailing
+   slashes) and Konami's host 404s the slashless form — the probe could never re-read
+   a listing extraction itself had just fetched via raw-URL `fetch_text`. Fixed: a
+   single raw-URL `fetch_text` fallback per page, keeping the all-or-nothing refusal
+   (no live-200 read → no promotion).
+3. **`browser_fallback_attempted` refusal**: with the canonicalized 404, the runner
+   attempts a listing browser fallback on every Konami read — the attempt counter
+   alone shadowed all evidence. Fixed: the refusal now relaxes only under the
+   stale-detail demotion shape, which requires the demotable 404 line to exist at all;
+   promotion still requires emptiness evidence on freshly re-read bodies. The Big Moxi
+   JS-shell shape (fallbacks, no demotable line, no marker, broken prior bucket) keeps
+   refusing — pinned by test (`test_guard_browser_fallback_with_demotable_404_but_no_marker_declines`).
+
+The plugin funnel got the same guard-first ordering fix (the original §7 finding was
+real for that funnel too) — the dead-listing short-circuit no longer shadows the guard;
+the promote-first/fall-through shape preserves every prior outcome on decline.
+
+**Live verification** (`tmp/konami-s7-pass2/`, targeted forced pass): the guard was
+reached with zero refusals, the raw-URL fallback read the real 86,844-char listing,
+`no_openings_marker` evidence fired, the stale 404 line was demoted (no
+`AdapterValidationError`), and the source state landed **`lastStatus: ok`,
+`lastFailureBucket: no_openings`, `consecutiveZeroKept: 1`, `lastError: None`** — the
+promoted empty-confirmed stamp end-to-end. The next full default pass retires the junk
+row via the missing-universe drain (expected floor 9 → 8).
+
+**Tests:** 9 new cases across `test_zero_kept_guard_plugin_demotion.py` (6: promote
+shape, decline byte-parity, challenge-403 refusal, no-evidence refusal, recompute
+survival) and `test_zero_kept_guard_generic_demotion.py` (generic promote through the
+widened gate, decline byte-parity, browser-refusal pin, canonical-404 fallback, all-or-
+nothing fallback failure, marker-free JS-shell pin). 455 static/fetcher/dayforce tests
+green; changed-mode gate exit 0.
+
+### S6 executed (2026-09-12, #1 Big Moxi): rendered-empty confirmations became admissible guard evidence — promotion verified live
+
+The §4 adjudication's path (1), built as specified: the browser-fallback lane now stamps
+emptiness evidence, per-source state persists it across passes, and the guard accepts two
+confirmations as a third emptiness evidence kind (alongside `no_openings_marker` and
+`prior_clean_zero_read`).
+
+- **Producer** (`static_listing_runner._try_playwright_fallback`, one stamp per run —
+  the ×3 fallback pool must never fabricate a ×2 basis from a single pass): a Playwright
+  render that `detect_js_shell` matches, does **not** match the new public
+  `detect_cookie_challenge_shell` (challenge interstitials are JS shells too — a bot-wall
+  render must never fabricate emptiness), and surfaces ≤240 visible text chars stamps
+  `stats["renderedEmptyConfirmedAt"]`. The stamp rides the detail entry's stats, the same
+  carrier `apply_static_detail_stats` already reads.
+- **Persistence** (`state_source_records.apply_rendered_empty_state`, wired before the
+  status appliers so an errored run can't erase accumulated evidence):
+  `renderedEmptyConfirmationsAt` bounded list (cap 8) on the per-detail state row,
+  whitelisted in `normalize_source_state_payload`, appended per run (same-timestamp idem-
+  potent), cleared when the source keeps >0 jobs — two stamps with a success in between
+  can never satisfy the guard.
+- **Guard** (`static_zero_kept_guard._two_rendered_empty_confirmations`): two distinct
+  stamps on `ctx.state_entry` relax exactly the `browser_fallback_attempted` and
+  `js_required`-diagnosis refusals (S7's demotion relaxation stays a separate, narrower
+  lane). Every other refusal still fires; promotion still requires 0 kept, no demotable
+  stale line, and the S2-preserved rows contract.
+
+**Live verification** (spy pass 1 isolated → pass 2 against the same output dir so state
+accumulates): pass 1 stamped `2026-09-12T19:30:16Z` on the real render (js shell, no
+challenge), pass 2 grew the list to 2, pass 3's guard accepted the basis and promoted —
+Big Moxi's state row landed **`lastStatus: ok`, `lastFailureBucket: no_openings`,
+`consecutiveZeroKept: 1`, `lastError: None`** (exit 2 is the pipeline's normal empty-
+board code). A full default pass with the source eligible drains the 2 rows via the
+missing-universe path (floor 9 → 6 when it lands alongside the S7 Konami drain:
+Big Moxi 2 + Konami 1). One deliberate gap
+(vs. the §4 manual probes): the automation lane stamps on the ~1.1KB shell it actually
+sees and has no independent console/DOM-growth check — accepted because the guard lane
+carries the same zero-kept discipline as `no_openings_marker` evidence, and an operator
+probe remains the escalation path if the promoted board ever misbehaves.
+
+**Tests:** 10 new cases in `test_rendered_empty_confirmations.py` (heuristic wrapper,
+producer stamp/fail-closed shapes, persistence round-trip and clear, guard promote-on-
+two, single-confirmation and challenge-shell fail-closed pins). 427 static + 38
+fetcher/dayforce tests green; changed-mode gate exit 0.
+
+### Drains verified (2026-09-12/13, forced passes; evidence `tmp/holdtail-drain-20260912/`): floor 9 → 6, exactly the projection
+
+The S7 Konami drain (−1) and the S6 Big Moxi drain (−2) both landed through the finalize
+missing-universe path, with the health verdict healthy throughout.
+
+- **Konami (pass B, forced full universe, 1,962 sources):** the S7-promoted source read
+  `ok fetched 0 / kept 0` (no `AdapterValidationError`, weeks after the 404-abort shape),
+  detail row banked zero #14, and the junk "Community" row (`/pages/sns_account`)
+  drained `likely_removed` with `removedAt` stamped. State: source `ok`/`no_openings`/
+  `consecutiveZeroKept: 1`; floor 9 → 8 (delta −1).
+- **Big Moxi (stamps 1–2 targeted → pass D promote+drain):** pass B's under-load renders
+  returned empty (`got_html=False`) so no stamp landed, and its error pushed
+  `consecutiveFailures` to 15 → the breaker quarantined the source, benching it from
+  pass C entirely (universe 1,962 vs 1,969). The ×2 was then driven in live state by two
+  **targeted** stamp passes (`--force-refresh-all --ignore-circuit-breaker --only-sources
+  …`, no `--output-dir` — omitting it is what routes state to live `data/`; the Wave-2b
+  runs' isolated dirs are why their stamps never reached live state) and pass D — full
+  forced universe with `--ignore-circuit-breaker` — promoted on the ×2 (`ok fetched 0 /
+  kept 0`), banked its own stamp as #3, and both rows (`/careers/unreal-programmer`,
+  `/careers/Game-Systems-Engineer`) drained `likely_removed`/`removedAt`. State: both
+  rows `ok`/`no_openings`/`consecutiveZeroKept: 1`; floor 8 → 6 (delta −2).
+- **Operational gotchas for the next drain campaign:** (1) a *regular* full pass
+  excludes error-state targets via `cache_within_freshness_window` (the incremental
+  scheduler benches them despite error status) — forced full-universe passes remain the
+  drain lane; (2) a forced-pass failure on a near-threshold source triggers the breaker
+  on the *next* pass (quarantine `circuit_breaker_active_until`) — the sanctioned bypass
+  is `--ignore-circuit-breaker` (S5 Mundfish precedent); (3) targeted passes write full
+  stub state rows for untouched sources when run without `--output-dir` — harmless
+  because the next full pass rewrites every row (verified: all 4,993 rows carry the
+  drain pass's finish stamp), but two targeted runs in a row should not be treated as a
+  substitute for the closing full pass.
+- **Remaining floor (6):** Midgar 2 (afjv TLS upstream), Exit VR 2 (WP 500, chronic-day
+  wait-and-reverify), Inverge 1 (mid-rebuild board), SNK 1 (tenant gone, record-only) —
+  all blocked on external triggers, as projected. The hold-tail repair work is complete.
 
 ## Risks and rollback
 

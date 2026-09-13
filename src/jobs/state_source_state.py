@@ -19,6 +19,7 @@ from .state_source_records import (
     apply_errored_source_state,
     apply_excluded_source_state,
     apply_provider_coverage_state,
+    apply_rendered_empty_state,
     apply_stage_timings,
     apply_static_detail_stats,
     apply_structured_migration_state,
@@ -64,6 +65,10 @@ def _apply_report_to_entry(
 
     details = apply_static_detail_stats(entry, report)
     apply_stage_timings(entry, report)
+    # S6: persist rendered-empty confirmations before the status appliers so
+    # the stamp survives an errored run (the errored applier may quarantine
+    # but must not erase the accumulated evidence).
+    apply_rendered_empty_state(entry, report=report, finished_at=finished_at)
 
     _apply_status_state(
         entry,

@@ -75,6 +75,20 @@ def normalized_google_sheets_redirect_cache(value: Any) -> dict[str, str]:
     return out
 
 
+# S6 (Big Moxi 2026-09-12): rendered-empty confirmations from the
+# browser-fallback lane persist as a bounded timestamp list; two distinct
+# stamps with no successful extraction in between are guard emptiness
+# evidence (two_rendered_empty_confirmations).
+_MAX_RENDERED_EMPTY_CONFIRMATIONS = 8
+
+
+def normalized_rendered_empty_confirmations(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out = [clean_text(item) for item in value]
+    return [text for text in out if text][-_MAX_RENDERED_EMPTY_CONFIRMATIONS:]
+
+
 def structured_source_host(source_row: dict[str, Any]) -> str:
     pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
     url = clean_text(source_row.get("listing_url")) or (clean_text(pages[0]) if pages else "")
@@ -388,6 +402,9 @@ def normalize_source_state_payload(
             "sourceUrl": clean_text(entry_src.get("sourceUrl")),
             "lastSuccessAt": clean_text(entry_src.get("lastSuccessAt")),
             "lastNonEmptyAt": clean_text(entry_src.get("lastNonEmptyAt")),
+            "renderedEmptyConfirmationsAt": normalized_rendered_empty_confirmations(
+                entry_src.get("renderedEmptyConfirmationsAt")
+            ),
             "lastFingerprint": clean_text(entry_src.get("lastFingerprint")),
             "lastListingFingerprint": clean_text(entry_src.get("lastListingFingerprint")),
             "lastListingCheckedAt": clean_text(entry_src.get("lastListingCheckedAt")),
@@ -670,6 +687,34 @@ def _source_bundle_overlap_count(source_name: str, canonical_rows: list[dict[str
         if int(row.get("sourceBundleCount") or 0) > 1:
             total += 1
     return total
+
+
+def apply_rendered_empty_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+) -> None:
+    """S6: persist rendered-empty confirmations across runs (bounded list).
+
+    The browser-fallback lane stamps one confirmation per run (the report's
+    ``stats.renderedEmptyConfirmedAt``) when a Playwright render provably
+    mounted the app on a near-textless page without a challenge interstitial.
+    Any successful extraction (kept > 0) invalidates the evidence and clears
+    the list — the guard requires two distinct stamps with no success in
+    between.
+    """
+    if int(report.get("keptCount") or 0) > 0:
+        entry.pop("renderedEmptyConfirmationsAt", None)
+        return
+    stats = report.get("stats") if isinstance(report.get("stats"), dict) else {}
+    stamped_at = clean_text(stats.get("renderedEmptyConfirmedAt"))
+    if not stamped_at:
+        return
+    prior = normalized_rendered_empty_confirmations(entry.get("renderedEmptyConfirmationsAt"))
+    if not prior or prior[-1] != stamped_at:
+        prior.append(stamped_at)
+    entry["renderedEmptyConfirmationsAt"] = prior[-_MAX_RENDERED_EMPTY_CONFIRMATIONS:]
 
 
 def apply_provider_coverage_state(

@@ -153,16 +153,24 @@ def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
     if int(ctx.entry_report.get("deadListingPageCount") or 0) > 0:
         classification = "dead_listing_page"
         ctx.entry_report["classification"] = classification
+    # S7 (Konami 2026-09-12): consult the guard before every short-circuit —
+    # the stale-detail demotion lives inside the guard, so the dead-listing
+    # short-circuit used to shadow it for nav-only listings (the documented
+    # trusted-empty + stale-link-404 shape). Promote first; fall through to the
+    # unchanged dead-listing / empty-confirmed outcomes when it declines.
+    # Fail-closed: without the demotable shape plus emptiness evidence the
+    # guard returns False and every prior outcome is preserved byte-for-byte.
+    # A live-200 read that proves its own emptiness (explicit no-openings
+    # marker or a prior clean zero read) is an observed-empty board, not an
+    # error — promotes to ok/0 so the availability drain can retire the
+    # source's rows.
+    if promote_clean_zero_kept(ctx):
+        return
     if classification == "dead_listing_page":
         ctx.entry_report["status"] = "ok"
         ctx.entry_report["error"] = ""
         return
     if empty_confirmed:
-        return
-    # A live-200 read that proves its own emptiness (explicit no-openings marker
-    # or a prior clean zero read) is an observed-empty board, not an error —
-    # promotes to ok/0 so the availability drain can retire the source's rows.
-    if promote_clean_zero_kept(ctx):
         return
     ctx.entry_report["status"] = "error"
     if not ctx.entry_report.get("error"):

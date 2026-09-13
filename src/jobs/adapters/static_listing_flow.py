@@ -43,17 +43,33 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
     }
     ctx.entry_report["deadListingPageCount"] = int(ctx.link_rejections.get("dead_listing_page", 0))
     ctx.entry_report["deadListingPageExamples"] = ctx.dead_listing_page_examples
+    dead_listing_rejections = int(ctx.link_rejections.get("dead_listing_page", 0))
+    gate_entry_classification = clean_text(ctx.entry_report.get("classification"))
     if (
         ctx.entry_report["keptCount"] == 0
         and ctx.pages
-        and not clean_text(ctx.entry_report.get("classification"))
-        and int(ctx.link_rejections.get("dead_listing_page", 0)) <= 0
+        and (not gate_entry_classification or dead_listing_rejections > 0)
     ):
         # A live-200 read that proves its own emptiness (explicit no-openings
         # marker or a prior clean zero read) is an observed-empty board, not an
         # error — promotes to ok/0 so the availability drain can retire the
         # source's rows as observed-empty instead of overdue-forever.
-        if not promote_clean_zero_kept(ctx):
+        # S7 (Konami 2026-09-12): a nav-only listing with dead-listing
+        # rejections also gets the guard chance. The guard's own refusals
+        # (dead-listing without the stale-detail demotion shape, challenge
+        # classifications, terminal reasons, browser fallbacks attempted)
+        # already encode every case the old pre-filter excluded, so deferring
+        # to it keeps the gate fail-closed while letting the trusted-empty +
+        # stale-link-404 shape through.
+        if promote_clean_zero_kept(ctx):
+            pass
+        elif gate_entry_classification or dead_listing_rejections > 0:
+            # S7 decline on a widened-gate shape: the pre-S7 gate excluded
+            # these from the error path entirely, so preserve that outcome
+            # byte-for-byte (the taxonomy recompute + re-stamp below still
+            # applies its dead-listing classification when evidence demands).
+            pass
+        else:
             ctx.entry_report["status"] = "error"
             ctx.entry_report["error"] = "no jobs extracted from source pages"
             terminal_reason = clean_text(ctx.stats.get("listing_terminal_reason"))
@@ -76,11 +92,16 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
             if ctx.selected_source_count == 1:
                 ctx.errors.append(f"static:{ctx.source_name}: no jobs extracted from source pages")
     ctx.emit_heartbeat()
+    promoted_to_empty_confirmed = bool(ctx.entry_report.get("emptyConfirmed"))
     update_source_detail_taxonomy(ctx.entry_report)
     if (
         ctx.entry_report["keptCount"] == 0
         and int(ctx.entry_report.get("deadListingPageCount") or 0) > 0
+        and not promoted_to_empty_confirmed
     ):
+        # S7: the guard's promoted empty-confirmed stamp must survive the
+        # post-taxonomy re-stamp — a nav-only board it promoted on marker
+        # evidence is observed-empty, not dead-listing evidence.
         ctx.entry_report["classification"] = "dead_listing_page"
         ctx.entry_report["browserFallbackRecommended"] = False
         ctx.entry_report["browserEscalationEligible"] = False

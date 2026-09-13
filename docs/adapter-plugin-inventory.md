@@ -34,6 +34,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | pinpoint_sources | pinpoint | provider_api dispatch -> JSON-feed plugin | adapter: pinpoint |
 | ashby_sources | ashby | provider_api dispatch -> HTML-board plugin | adapter: ashby |
 | bamboohr_sources | bamboohr | provider_api dispatch -> structured-listing plugin | adapter: bamboohr |
+| dayforce_sources | dayforce | provider_api dispatch -> Dayforce CANDIDATEPORTAL plugin (CSRF two-step) | adapter: dayforce |
 | breezy_sources | breezy | provider_api dispatch -> HTML-board plugin | adapter: breezy |
 | jazzhr_sources | jazzhr | provider_api dispatch -> HTML-board plugin | adapter: jazzhr |
 | oracle_hcm_sources | oracle_hcm | provider_api dispatch -> Oracle HCM CE plugin | adapter: oracle_hcm |
@@ -91,7 +92,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
   Registers the current provider plugins:
   - direct runner plugins: `greenhouse_boards`, `teamtailor_sources`
   - JSON-feed plugins: `lever_sources`, `workable_sources`, `smartrecruiters_sources`, `recruitee_sources`, `pinpoint_sources`
-  - structured/migration plugins: `personio_sources`, `bamboohr_sources`, `workday_sources`, `oracle_hcm_sources`
+  - structured/migration plugins: `personio_sources`, `bamboohr_sources`, `workday_sources`, `oracle_hcm_sources`, `dayforce_sources`
   - HTML-board plugins: `breezy_sources`, `jazzhr_sources`, `ashby_sources`
 
 - **Provider plugin implementation owners**
@@ -99,6 +100,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
   - `json_feed.py` owns shared JSON feed providers.
   - `html_board.py` owns shared HTML board providers.
   - `provider_personio.py`, `provider_structured_listing.py`, and `oracle_hcm.py` remain specialized provider owners behind registered plugin entries.
+  - `dayforce.py` owns the Dayforce CANDIDATEPORTAL runner: a self-contained cookie-jar urllib client executes the NextAuth CSRF two-step (GET `/api/auth/csrf` -> `x-csrf-token` POST `/api/geo/{clientNamespace}/jobposting/search`; the cookie pair must ride the same client — a cookieless replay 403s) and normalizes `jobPostings[]` with full descriptions and `postingLocations` (Wave-3 contract, `tmp/holdtail-wave2-20260910/dayforce-findings.md`; pilot `dayforce:client_namespace:ref`).
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:

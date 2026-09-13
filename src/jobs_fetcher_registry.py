@@ -24,6 +24,7 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "pinpoint_sources",
     "ashby_sources",
     "bamboohr_sources",
+    "dayforce_sources",
     "breezy_sources",
     "jazzhr_sources",
     "oracle_hcm_sources",
@@ -68,6 +69,7 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "pinpoint_sources": {"adapter": "pinpoint", "studio": "multiple", "fetchStrategy": "http"},
     "ashby_sources": {"adapter": "ashby", "studio": "multiple", "fetchStrategy": "http"},
     "bamboohr_sources": {"adapter": "bamboohr", "studio": "multiple", "fetchStrategy": "http"},
+    "dayforce_sources": {"adapter": "dayforce", "studio": "multiple", "fetchStrategy": "http"},
     "breezy_sources": {"adapter": "breezy", "studio": "multiple", "fetchStrategy": "http"},
     "jazzhr_sources": {"adapter": "jazzhr", "studio": "multiple", "fetchStrategy": "http"},
     "oracle_hcm_sources": {

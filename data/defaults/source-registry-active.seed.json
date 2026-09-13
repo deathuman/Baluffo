@@ -141299,5 +141299,30 @@
     "liveAt": "2026-09-10T23:05:24.577177+00:00",
     "quarantinedAt": "",
     "quarantineReason": ""
+  },
+  {
+    "id": "dayforce:client_namespace:ref",
+    "name": "Reflector Entertainment (Dayforce)",
+    "adapter": "dayforce",
+    "studio": "Reflector Entertainment",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-09-12T14:12:09.749916+00:00",
+    "stateChangedBy": "ai_holdtail_wave3_20260912",
+    "lastPromotedAt": "2026-09-12T14:12:09.749916+00:00",
+    "lastDemotedAt": "2026-09-12T14:10:25.291049+00:00",
+    "client_namespace": "ref",
+    "listing_url": "https://jobs.dayforcehcm.com/en-CA/ref/CANDIDATEPORTAL",
+    "migrationSourceIdentity": "static:listing_url:https://emplois.reflectorentertainment.com/l/en",
+    "migrationEvidence": "Dayforce CANDIDATEPORTAL CSRF two-step contract captured live (Wave-3, tmp/holdtail-wave2-20260910/dayforce-findings.md): GET /api/auth/csrf -> x-csrf-token POST /api/geo/ref/jobposting/search (cookie pair required); board 2026-09-11 + adapter live validation 2026-09-12: 3 postings (161 Programmer Engine and Tools, 149 Technical Animator Senior, 115 VFX Artist Expert). The static twin renders a zero-link SPA shell (catch-all-routed) and cannot read the board; the 3 overdue static rows match none of the live postings. iCIMS/Dayforce adapter thread decision: build the dayforce adapter, Reflector as pilot. High-5/Steer precedent.",
+    "discoveryMethod": "holdtail_wave3_dayforce_adapter",
+    "candidateState": "live",
+    "createdFromAdvisory": true,
+    "enabledByDefault": true,
+    "approvedAt": "2026-09-12T14:10:25.291049+00:00",
+    "approvedBy": "provider_migration_advisory",
+    "liveAt": "2026-09-12T14:10:25.291049+00:00",
+    "quarantinedAt": "",
+    "quarantineReason": ""
   }
 ]

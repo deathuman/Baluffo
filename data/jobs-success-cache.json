@@ -1,10 +1,11 @@
 {
-  "updatedAt": "2026-09-11T23:30:30.878607+00:00",
+  "updatedAt": "2026-09-12T23:30:21.123624+00:00",
   "successfulSources": [
     "8bitplay",
     "ashby_sources",
     "bamboohr_sources",
     "breezy_sources",
+    "dayforce_sources",
     "epic_games_careers",
     "gamejobs",
     "gamesindustry",
@@ -714,6 +715,7 @@
     "static_source::static:listing_url:https://tiltfactor.org/join-us-for-come-out-play-nyc-june-12-14/",
     "static_source::static:listing_url:https://tinybullstudios.com/careers/",
     "static_source::static:listing_url:https://tinyroar.de",
+    "static_source::static:listing_url:https://toastinteractive.com/jobs/",
     "static_source::static:listing_url:https://togetherlabs.com/careers/",
     "static_source::static:listing_url:https://tornbanner.com/careers/",
     "static_source::static:listing_url:https://toronto.ubisoft.com/jobs",

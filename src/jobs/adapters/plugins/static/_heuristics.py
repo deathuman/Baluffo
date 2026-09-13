@@ -96,6 +96,17 @@ _LegacyCareerContextTokens = (
 )
 
 
+def detect_cookie_challenge_shell(html: str) -> bool:
+    """Public wrapper for the CUPID/slowAES cookie-challenge interstitial check.
+
+    The S6 rendered-empty producer must not stamp emptiness evidence on a
+    challenge render; ``detect_js_shell`` deliberately matches challenge
+    shells too (a challenge page IS a JS shell), so this separate predicate
+    lets callers distinguish "app mounted, board empty" from "bot wall".
+    """
+    return _detect_cookie_challenge_shell(normalize_html(html).lower())
+
+
 def detect_js_shell(html: str) -> bool:
     """Best-effort detection for JS-rendered app shells.
 

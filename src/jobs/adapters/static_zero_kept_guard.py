@@ -31,16 +31,22 @@ blocked/challenge/js/timeout classifications and diagnoses, browser-fallback
 recommendations or attempts, listing timeouts, dead-listing evidence,
 canonical-dropped rows, detail candidates or visited detail pages (the parser
 found job-like links it failed to extract — that needs review, not an empty
-board), and unreadable or empty page bodies. One demotion applies: when the
-only failure evidence is a hard-failed row-detail fetch (HTTP 4xx on one
-stale or off-board link — the Konami 2026-09-11 shape: a trusted-empty listing
-whose rendered-row detail lookup 404s a stale nav page), the detail-fetch error
-is demoted to a dead-detail fact and the guard judges emptiness on the
-listing's own evidence. The demotion is fail-closed: it fires only for that
-exact error shape (4xx client-gone codes, never challenge codes), only at
-noise-level detail evidence (below the taxonomy's details_broken candidate
-threshold — mass detail failure needs review, not a stale link), and it never
-relaxes the emptiness proof itself.
+board), and unreadable or empty page bodies. One demotion applies (the Konami
+2026-09-11/09-12 stale-detail shape): when the only failure evidence is a
+hard-failed row-detail fetch (HTTP 4xx on one stale or off-board link — a
+trusted-empty listing whose rendered-row detail lookup 404s a stale nav page),
+the detail-fetch error is demoted to a dead-detail fact and the guard judges
+emptiness on the listing's own evidence. The demotion relaxes exactly three
+refusals — dead-listing evidence, detail evidence, and browser-fallback
+attempts (in production the Konami listing fetch 404s on the canonicalized
+URL, so the runner attempts a browser fallback on every read) — and stays
+fail-closed: it fires only for that exact error shape (4xx client-gone codes,
+never challenge codes), only at noise-level detail evidence (below the
+taxonomy's details_broken candidate threshold — mass detail failure needs
+review, not a stale link), and it never relaxes the emptiness proof itself:
+promotion still requires a no-openings marker or a prior clean zero read on
+freshly re-read bodies, so the Big Moxi JS-shell shape (browser fallbacks,
+no demotable line, no marker) keeps refusing.
 """
 
 from __future__ import annotations
@@ -151,14 +157,31 @@ def _fetch_listing_bodies(ctx: StaticSourceContext) -> list[str]:
         page_url = clean_text(page)
         if not page_url:
             continue
+        html_text = ""
         try:
             html_text, _was_cached = fetch_html_cached(page_url)
         except Exception:
             # Expected static fetch fallbacks (HttpStatusError/OSError/RuntimeError
             # redirects) mean this run could not produce a live-200 read.
+            html_text = ""
+        if not html_text:
+            # S7 (Konami 2026-09-12): the cache-backed fetcher canonicalizes
+            # URLs (normalize_url strips trailing slashes), and hosts that 404
+            # the canonical form (Konami serves the listing only on the slashed
+            # URL) are unreachable through it even though extraction read them
+            # via raw-URL fetch_text. Fall back to the raw page once; a second
+            # failure keeps the all-or-nothing refusal (no live-200 read).
+            fetch_text = getattr(ctx.run_deps, "fetch_text", None)
+            if callable(fetch_text):
+                try:
+                    html_text = fetch_text(
+                        page_url, int(getattr(ctx.run_deps, "timeout_s", 0) or 0)
+                    )
+                except Exception:
+                    html_text = ""
+        if not html_text:
             return []
-        if html_text:
-            bodies.append(html_text)
+        bodies.append(html_text)
     return bodies
 
 
@@ -219,18 +242,61 @@ def _stale_detail_demotion_applies(ctx: StaticSourceContext) -> bool:
     )
 
 
+def _two_rendered_empty_confirmations(state_entry: Any) -> bool:
+    """S6 (Big Moxi 2026-09-12): two distinct rendered-empty confirmations.
+
+    The browser-fallback lane stamps one confirmation per run when a Playwright
+    render provably mounted the app on a near-textless page without a
+    challenge interstitial (``renderedEmptyConfirmationsAt`` in per-source
+    state, cleared on any successful extraction). Two stamps with no success
+    in between are the same discipline as the ×2 manual real-browser probe:
+    the board renders, the app runs, and no job surface exists — without
+    widening the JS-shell trap surface, because the producer refuses
+    challenge interstitials and textful renders.
+    """
+    if not isinstance(state_entry, dict):
+        return False
+    stamps = state_entry.get("renderedEmptyConfirmationsAt")
+    if not isinstance(stamps, list):
+        return False
+    return len([stamp for stamp in (clean_text(item) for item in stamps) if stamp]) >= 2
+
+
 def _refusal_reason(ctx: StaticSourceContext) -> str:
     report = ctx.entry_report
     if bool(report.get("browserFallbackRecommended")):
         return "browser_fallback_recommended"
-    if int(report.get("deadListingPageCount") or 0) > 0:
+    if int(report.get("deadListingPageCount") or 0) > 0 and not _stale_detail_demotion_applies(ctx):
+        # S7 (Konami 2026-09-12): a nav-only listing that the plugin probe
+        # classified dead_listing_page still gets the stale-detail demotion
+        # chance — when the only failure evidence is the demotable 404 shape,
+        # judge emptiness on the listing's own marker evidence instead of
+        # short-circuiting ahead of the guard. Fail-closed: without the exact
+        # demotable shape (mass detail failure, challenge codes, no marker)
+        # the refusal holds.
         return "dead_listing_page"
     classification = clean_text(report.get("classification"))
     if classification in _REFUSAL_CLASSIFICATIONS and not _stale_detail_demotion_applies(ctx):
         return f"classification:{classification}"
     if clean_text(ctx.stats.get("listing_terminal_reason")):
         return "listing_terminal_reason"
-    if int(ctx.stats.get("listing_browser_fallbacks") or 0) > 0:
+    if int(ctx.stats.get("listing_browser_fallbacks") or 0) > 0 and not (
+        _stale_detail_demotion_applies(ctx) or _two_rendered_empty_confirmations(ctx.state_entry)
+    ):
+        # S7 (Konami 2026-09-12): the demotion shape also escapes this
+        # refusal — in production the Konami listing fetch 404s on the
+        # canonicalized URL (normalize_url strips the trailing slash the host
+        # requires), the runner attempts a browser fallback, and the attempt
+        # counter alone must not shadow marker evidence on a board that is
+        # re-readable via raw-URL fetch. Fail-closed: the demotion requires a
+        # demotable 404 detail line to exist at all, and promotion still
+        # requires emptiness evidence on the re-read bodies — the Big Moxi
+        # JS-shell shape (no demotable line, no marker, broken prior bucket)
+        # keeps this refusal.
+        # S6 (Big Moxi 2026-09-12): two persisted rendered-empty
+        # confirmations escape too — their producer already excludes
+        # challenge interstitials and textful renders, and promotion still
+        # requires the evidence check below on fresh re-read bodies.
         return "browser_fallback_attempted"
     context = classification_context_from_source_detail(report)
     if has_all_rows_canonical_dropped(context):
@@ -241,7 +307,16 @@ def _refusal_reason(ctx: StaticSourceContext) -> str:
         return "detail_candidates_present"
     assessment = assess_zero_extract(context)
     if assessment.diagnosis.value in {"js_required", "anti_bot_or_challenge", "site_changed"}:
-        return f"diagnosis:{assessment.diagnosis.value}"
+        # S6: js_required is exactly the rendered-empty diagnosis; two
+        # persisted confirmations (challenge-free, near-textless renders on
+        # distinct runs) un-block it. Challenge and site-changed diagnoses
+        # never relax — they are bot walls and layout breakage, not emptiness.
+        if assessment.diagnosis.value == "js_required" and _two_rendered_empty_confirmations(
+            ctx.state_entry
+        ):
+            pass
+        else:
+            return f"diagnosis:{assessment.diagnosis.value}"
     return ""
 
 
@@ -265,6 +340,10 @@ def promote_clean_zero_kept(ctx: StaticSourceContext) -> bool:
         evidence_kind = "no_openings_marker"
     elif _prior_clean_zero_read(ctx.state_entry):
         evidence_kind = "prior_clean_zero_read"
+    elif _two_rendered_empty_confirmations(ctx.state_entry):
+        # S6: the re-read bodies are near-empty JS shells with no marker; the
+        # two persisted confirmations carry the emptiness proof instead.
+        evidence_kind = "two_rendered_empty_confirmations"
     if not evidence_kind:
         return False
     demotable_error_indices = _collect_demotable_source_error_lines(ctx)

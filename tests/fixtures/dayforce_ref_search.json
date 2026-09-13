@@ -1,0 +1,49 @@
+{
+  "jobPostings": [
+    {
+      "clientNamespace": "ref",
+      "jobBoardId": 1,
+      "jobPostingId": 161,
+      "jobReqId": 8,
+      "jobTitle": "Programmer Engine and Tools",
+      "jobDescription": "Tired of engine and tooling work being treated as an afterthought? Join a 10-person programming team. You&rsquo;ll build the technical foundations for UE5 &amp; tooling.",
+      "postingAppliedStatus": null,
+      "postingExpiryTimestampUTC": null,
+      "postingStartTimestampUTC": "2026-09-10T04:00:00+00:00",
+      "postingLocations": [
+        {
+          "formattedAddress": "1100 Av. des Canadiens-de-Montréal, Montréal, QC H3B, Canada",
+          "locationId": 1,
+          "locationType": 2,
+          "isoCountryCode": "CA",
+          "stateCode": "QC",
+          "cityName": "Montréal",
+          "coordinates": "lat:45.4970238;lng:-73.5680751"
+        }
+      ],
+      "hasVirtualLocation": false,
+      "isEvergreen": false,
+      "reapplyPeriodDays": 30,
+      "searchScore": 1
+    },
+    {
+      "clientNamespace": "ref",
+      "jobBoardId": 1,
+      "jobPostingId": 149,
+      "jobReqId": 7,
+      "jobTitle": "Technical Animator Senior",
+      "jobDescription": "Senior technical animator role. Rigging, skinning and animation pipelines for a cherished IP.",
+      "postingAppliedStatus": null,
+      "postingExpiryTimestampUTC": null,
+      "postingStartTimestampUTC": "2026-08-28T04:00:00+00:00",
+      "postingLocations": [],
+      "hasVirtualLocation": true,
+      "isEvergreen": false,
+      "reapplyPeriodDays": 30,
+      "searchScore": 0.9
+    }
+  ],
+  "maxCount": 2,
+  "offset": 0,
+  "count": 2
+}
