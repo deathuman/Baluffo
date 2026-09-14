@@ -31,6 +31,7 @@ from src.jobs.adapters.static_runtime_support import (
     remaining_static_source_budget_s,
     static_source_budget_exhausted,
 )
+from src.jobs.common.origin_junk import is_junk_provenance_row
 from src.jobs.page_gating import looks_like_server_template_artifact
 from src.jobs.text_utils import clean_text, normalize_url
 from src.scrapers.domain_profiles import domain_profile_for_url
@@ -249,6 +250,17 @@ def _nested_detail_candidates(
         child_url = normalize_url(item.get("url"))
         if not child_url or child_url in ctx.seen_links or child_url in state.scheduled_urls:
             continue
+        # Same origin-aware junk drop as the intake doors: guest-view shapes
+        # found inside fetched pages (e.g. LinkedIn search pagination) are not
+        # worth a fetch that LinkedIn will answer with HTTP 999.
+        if is_junk_provenance_row(
+            {"jobLink": child_url, "title": item.get("title")},
+            source=getattr(ctx, "source", None),
+        ):
+            ctx.stats["junk_provenance_candidates_dropped"] = (
+                int(ctx.stats.get("junk_provenance_candidates_dropped") or 0) + 1
+            )
+            continue
         # Same template-seam rule as the intake funnels: nested detail-page
         # links must not carry EJS/JS seams into further fetches.
         if looks_like_server_template_artifact(child_url) or looks_like_server_template_artifact(
@@ -391,6 +403,10 @@ def _process_detail_result_row(
     )
     ctx.stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
     ctx.stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
+    if detail_result.get("junkProvenanceRowsDropped"):
+        ctx.stats["junk_provenance_rows_dropped"] = int(
+            ctx.stats.get("junk_provenance_rows_dropped") or 0
+        ) + int(detail_result["junkProvenanceRowsDropped"])
     appended_rows = _append_detail_result_rows(ctx, detail_result.get("rows") or [])
     nested_scheduled = 0
     if appended_rows == 0:

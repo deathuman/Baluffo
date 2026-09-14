@@ -36,6 +36,7 @@ from src.jobs.common.exact_category_titles import (
     looks_like_category_container_url,
     looks_like_static_container_url,
 )
+from src.jobs.common.origin_junk import is_junk_provenance_row
 from src.jobs.page_gating import (
     classify_job_page,
     looks_like_job_title_candidate,
@@ -199,8 +200,25 @@ def process_detail_html(
                     inferred_work_type=inferred_work_type,
                     inferred_contract_type=inferred_contract_type,
                 )
+    junk_dropped = 0
+    if rows:
+        kept_rows = []
+        for row in rows:
+            # Origin-aware guest-junk drop (2026-09-14 Fusebox revival fix):
+            # re-verification fetches junk rows' own LinkedIn guest search
+            # pages, whose card extraction used to re-emit the junk as fresh
+            # rows — reviving exactly what the guard's rows flow dropped. This
+            # is the single choke point shared by the traversal and plugin
+            # detail callers; the predicate is kill-switch-aware and
+            # origin-aware (sanctioned LinkedIn origins pass untouched).
+            if isinstance(row, dict) and is_junk_provenance_row(row, source=source):
+                junk_dropped += 1
+                continue
+            kept_rows.append(row)
+        rows = kept_rows
     return {
         "rows": rows,
+        "junkProvenanceRowsDropped": junk_dropped,
         "nestedDetailLinks": nested_detail_links,
         "parseEmpty": parse_empty,
         "fetchMs": int(fetch_ms),

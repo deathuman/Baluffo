@@ -31,8 +31,13 @@ from src.jobs.common import config as common_config
 from src.jobs.text_utils import clean_text
 from src.url_hosts import host_matches_domain
 
+# Two id spellings carry a listing URL: the registry/extraction form
+# (``static:listing_url:…``, what ctx.source.id holds in the rows flow) and the
+# lifecycle/state form (``static_source::static:listing_url:…``). The 2026-09-14
+# Fusebox revival proved the prefix-sensitive spelling silently no-oped every
+# extraction-lane guard (empty identity host → fail-open), so both are accepted.
 _SOURCE_LISTING_URL_RE = re.compile(
-    r"(?i)^static_source::static:listing_url:(?P<url>https?://\S+)$"
+    r"(?i)^(?:static_source::)?static:listing_url:(?P<url>https?://\S+)$"
 )
 
 # Bare numeric view URL: the only LinkedIn row shape that carries a real
@@ -41,6 +46,12 @@ _LINKEDIN_VIEW_NUMERIC_PATH_RE = re.compile(r"(?i)^/jobs/view/\d+/?$")
 
 # Queryless guest search-results shape: /jobs/{anything}-jobs (Fusebox's 41).
 _LINKEDIN_SLUG_SEARCH_PATH_RE = re.compile(r"(?i)^/jobs/[a-z0-9][a-z0-9-]*-jobs/?$")
+
+# Company-page shape (the rendered widget's "LinkedIn" link and its browse_jobs
+# relatives — any path under /company/): a company/talent surface, never a
+# per-job detail page (jobs live at /jobs/view/{id}). Sanctioned LinkedIn-origin
+# sources stay exempt via the origin check, not this shape.
+_LINKEDIN_COMPANY_PATH_PREFIX = "/company/"
 
 # Nav-anchor / generic self-page shape that leaked as a "job" row (Konami's
 # "Community" → /pages/sns_account). Exact titles only — substring or prefix
@@ -151,6 +162,8 @@ def _linkedin_junk_url_shape(url: str) -> bool:
         # Tracked / decorated rows: junk unless a bare numeric view URL.
         return not _LINKEDIN_VIEW_NUMERIC_PATH_RE.match(path)
     if path.startswith("/jobs/search"):
+        return True
+    if path.startswith(_LINKEDIN_COMPANY_PATH_PREFIX):
         return True
     return bool(_LINKEDIN_SLUG_SEARCH_PATH_RE.match(path))
 

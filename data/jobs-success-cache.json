@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-13T11:53:01.235240+00:00",
+  "updatedAt": "2026-09-14T10:20:31.512293+00:00",
   "successfulSources": [
     "8bitplay",
     "ashby_sources",
@@ -582,6 +582,7 @@
     "static_source::static:listing_url:https://playerunknownproductions.net",
     "static_source::static:listing_url:https://playground-games.com/careers/",
     "static_source::static:listing_url:https://playkot.com/jobs",
+    "static_source::static:listing_url:https://playsidestudios.com/careers",
     "static_source::static:listing_url:https://playstack.com/careers/",
     "static_source::static:listing_url:https://playtouch.net/career/",
     "static_source::static:listing_url:https://pokuch.com/jobs",

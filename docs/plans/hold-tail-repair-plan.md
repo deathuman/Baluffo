@@ -1089,6 +1089,42 @@ surface — a provenance filter on `linkedin.com/jobs/{slug}?trk=` row URLs woul
 systemic fix (Konami's "Community" row and these 41 share the shape). No code landed for
 Fusebox today; the 41 rows re-verify naturally if the source ever keeps >0 again.
 
+**Guard exercised + verification-pass defect record (2026-09-14, evidence
+`tmp/guest-junk-drain-20260913/`)**: the guard landed 09-13 (`1c00dd68`) and the forced
+full-universe verification pass proved the drain lane and wire contract end-to-end —
+`guestJunkDrainedCount: 1541` on the wire and 124 fresh `guest_junk_provenance` markers
+(skybound 62 — its 63 active search-result junk rows, the audit's frozen stock, plus
+sidestudio 36, hyperbeard 24, inverge 1, exit-vr 1). But Fusebox's 66 rows came back
+`active/available` (`status=ok fetched=86 kept=86`): the Playwright render finally
+succeeded, the WP page's embedded LinkedIn widget populated, and a live repro
+(`repro_extract.py`) found **three landed defects**. (1) **The extraction-lane guards
+were silent no-ops**: `source_identity_url` required the `static_source::` id prefix,
+but extraction ctx carries the registry spelling (`static:listing_url:…`) — empty
+identity host → `is_junk_provenance_row` fail-opened to False in every rows-flow/detail
+funnel, while every test fixture used the state spelling and encoded the wrong
+assumption. (2) Queryless company-page paths (`/company/fusebox-games/jobs`, the
+widget's own link) escaped the slug-shape regex. (3) The drain transition returned the
+entry (success) for already-`unavailable` idempotent re-visits, so the summary counted
+~1,443 no-ops (1,541 vs 124 fresh markers). Fixes: the resolver accepts both id
+spellings; any `/company/…` path classifies junk for non-LinkedIn origins (measured
+first: 209 non-LinkedIn-origin rows enter drain scope, 0 sanctioned-origin rows
+affected); already-terminal rows return None so the counter reflects fresh drains only.
+Verified live: identical render conditions now `fetched=0 kept=0`; Fusebox banked
+`consecutiveZeroKept: 2`, so the 66 revived rows drain via the eligible-missing
+universe path on the next full pass (Big Moxi/Konami precedent, no promotion gate
+needed).
+
+**Drain landed (2026-09-14, pass #3, evidence `tmp/guest-junk-drain-20260913/pass3.log`)**:
+the forced full-universe pass closed the loop end-to-end. Fusebox ran `ok fetched=0
+kept=0` (zero-kept streak 3) and all 66 revived rows exited via the eligible-missing
+universe path: `status=likely_removed`, `availabilityEvidence.kind=source_absent`,
+closure origin `source_absent`, active stock 0. `guestJunkDrainedCount: 6` on the wire
+— fresh drains only (Inverge 1, Exit VR 1, Fox & Sheep 5, Impact Reality 1; net −6),
+confirming the counter fix: pass #2's 1,541 re-count is gone and the guard's
+provenance-lane transitions are now the only thing it counts. The guard's own inbound
+lanes also held: no LinkedIn-harvest rows re-entered (Fusebox kept 0 despite another
+render pass).
+
 **Env note captured during adjudication**: the operator's library upgrade bumped the
 `playwright` package to a browser-revision (1234) without matching binaries installed
 (machine had 1208) — every Playwright render in the deps verification pass silently

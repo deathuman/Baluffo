@@ -134,6 +134,45 @@ def test_non_linkedin_static_origin_classifies_guest_rows() -> None:
     )
 
 
+def test_registry_form_id_resolves_identity() -> None:
+    """The 2026-09-14 Fusebox revival regression: extraction lanes carry the
+    registry spelling (``static:listing_url:…``, no ``static_source::``
+    prefix). The prefix-sensitive resolver returned an empty host and the
+    guards fail-opened to no-ops in every funnel while all tests used the
+    state spelling."""
+    source = {"id": "static:listing_url:https://fuseboxgames.com/careers/"}
+    assert source_identity_host(source) == "fuseboxgames.com"
+    assert not source_origin_is_linkedin(source)
+    assert is_junk_provenance_row(
+        {"jobLink": FUSEBOX_GUEST_ROW, "title": "Production Specialist"}, source=source
+    )
+
+
+def test_registry_form_linkedin_origin_still_sanctioned() -> None:
+    source = {"id": "static:listing_url:https://www.linkedin.com/jobs/search/?f_C=1245936"}
+    assert source_origin_is_linkedin(source)
+    assert not is_junk_provenance_row(
+        {"jobLink": SANCTIONED_VIEW_ROW, "title": "Front of House Administrator"}, source=source
+    )
+
+
+def test_company_page_path_is_junk() -> None:
+    """The rendered widget's "LinkedIn" link (Fusebox 09-14 render): a
+    company/talent page, queryless or tracked, is never a per-job surface."""
+    assert is_linkedin_guest_junk_url("https://www.linkedin.com/company/fusebox-games/jobs")
+    assert is_linkedin_guest_junk_url(
+        "https://uk.linkedin.com/company/fusebox-games?trk=organization_guest_main-feed-card_feed-actor-image"
+    )
+
+
+def test_sanctioned_origin_company_row_not_junk() -> None:
+    source = _source("https://www.linkedin.com/jobs/search/?f_C=1245936")
+    assert not is_junk_provenance_row(
+        {"jobLink": "https://www.linkedin.com/company/ubisoft-montreal", "title": "Jobs"},
+        source=source,
+    )
+
+
 def test_non_linkedin_static_origin_classifies_nav_rows() -> None:
     source = _source("https://www.konami.com/games/us/en/jobs/")
     assert is_junk_provenance_row(

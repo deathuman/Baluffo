@@ -168,6 +168,79 @@ def test_detail_candidate_flow_drops_guest_junk_url() -> None:
     assert ctx.stats["junk_provenance_candidates_dropped"] == 1
 
 
+# --- detail-page revival funnel (2026-09-14 fix) -------------------------------
+
+
+def test_detail_page_extraction_drops_guest_junk_rows() -> None:
+    """The revival loop: re-verifying junk rows fetches their LinkedIn guest
+    search pages; detail-page extraction used to re-emit the same junk as
+    fresh rows, reviving what the rows flow dropped (Fusebox 09-13 pass:
+    86 rows re-harvested, stock 41 -> 48)."""
+    from src.jobs.adapters.static_detail_heuristics_entry import process_detail_html
+
+    search_page_html = (
+        "<html><body>"
+        '<script type="application/ld+json">['
+        '{"@type": "JobPosting", "title": "Production Specialist jobs", '
+        '"url": "https://www.linkedin.com/jobs/production-specialist-jobs?trk=organization_guest", '
+        '"hiringOrganization": {"name": "Fusebox Games"}},'
+        '{"@type": "JobPosting", "title": "Executive Producer jobs", '
+        '"url": "https://uk.linkedin.com/jobs/executive-producer-jobs?trk=organization_guest-browse_jobs", '
+        '"hiringOrganization": {"name": "Fusebox Games"}}'
+        "]</script>"
+        "</body></html>"
+    )
+    result = process_detail_html(
+        detail="https://www.linkedin.com/jobs/production-specialist-jobs?trk=organization_guest",
+        detail_title="Production Specialist jobs",
+        detail_html=search_page_html,
+        fetch_ms=10,
+        cache_hit=False,
+        company="Fusebox Games",
+        source_name="Fusebox Games (Nazara) (GameDevMap)",
+        source={
+            "name": "Fusebox Games (Nazara) (GameDevMap)",
+            "id": FUSEBOX_SOURCE_ID,
+            "pages": ["https://fuseboxgames.com/careers/"],
+        },
+        ignored_link_titles=set(),
+    )
+    assert result["rows"] == []
+    assert result["junkProvenanceRowsDropped"] == 2
+
+
+def test_detail_page_extraction_keeps_sanctioned_origin_rows() -> None:
+    from src.jobs.adapters.static_detail_heuristics_entry import process_detail_html
+
+    search_page_html = (
+        "<html><body>"
+        '<script type="application/ld+json">['
+        '{"@type": "JobPosting", "title": "Front of House Administrator", '
+        '"url": "https://bg.linkedin.com/jobs/view/front-of-house-at-sega-4455769546", '
+        '"hiringOrganization": {"name": "SEGA Europe"}}'
+        "]</script>"
+        "</body></html>"
+    )
+    result = process_detail_html(
+        detail="https://www.linkedin.com/jobs/search/?f_C=1&geoId=1",
+        detail_title="Jobs",
+        detail_html=search_page_html,
+        fetch_ms=10,
+        cache_hit=False,
+        company="SEGA Europe",
+        source_name="SEGA (LinkedIn)",
+        source={
+            "name": "SEGA (LinkedIn)",
+            "id": "static_source::static:listing_url:https://www.linkedin.com/jobs/search/?f_C=1",
+            "pages": ["https://www.linkedin.com/jobs/search/?f_C=1"],
+        },
+        ignored_link_titles=set(),
+    )
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["jobLink"].startswith("https://bg.linkedin.com/jobs/view/")
+    assert result["junkProvenanceRowsDropped"] == 0
+
+
 # --- lifecycle drain ----------------------------------------------------------
 
 
@@ -239,8 +312,52 @@ def test_guest_junk_drain_idempotent_once_unavailable() -> None:
     row["availabilityStatus"] = "unavailable"
     row["status"] = "likely_removed"
     row["removedAt"] = "2026-09-13T11:51:46+00:00"
+    row["availabilityClosureOrigin"] = "guest_junk_provenance"
+    row["availabilityEvidence"] = {
+        "kind": "guest_junk_provenance",
+        "confidence": "definitive",
+        "checkedAt": "2026-09-13T11:51:46+00:00",
+        "source": FUSEBOX_SOURCE_ID,
+    }
     _rows, entry, _lifecycle, summary = _apply(row)
-    # Already unavailable: the unverified path returns unchanged and the junk
-    # drain must not resurrect or re-stamp it — counts stay stable.
+    # Already unavailable: nothing is re-stamped and the drain counter stays
+    # at zero — guestJunkDrainedCount must reflect fresh drains only, never
+    # re-count Skybound-scale already-drained stock every failed pass
+    # (pass #2 reported 1,541 while only 124 rows carried fresh markers).
     assert entry["availabilityStatus"] == "unavailable"
-    assert summary["guestJunkDrained"] == 1 or summary["guestJunkDrained"] == 0
+    assert entry["availabilityClosureOrigin"] == "guest_junk_provenance"
+    assert entry["availabilityEvidence"]["checkedAt"] == "2026-09-13T11:51:46+00:00"
+    assert summary["guestJunkDrained"] == 0
+
+
+def test_registry_form_source_id_guards_inbound_rows() -> None:
+    """The 2026-09-14 no-op regression: extraction ctx carries the registry
+    spelling (``static:listing_url:…``, no ``static_source::`` prefix); the
+    rows flow must still drop guest junk for those sources."""
+    ctx = _make_context(source_id="static:listing_url:https://fuseboxgames.com/careers/")
+
+    def parse_jobpostings_from_html(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "title": "Production Specialist",
+                "jobLink": FUSEBOX_GUEST_ROW,
+                "company": "Fusebox Games",
+            }
+        ]
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(
+            static_listing, "parse_jobpostings_from_html", parse_jobpostings_from_html
+        )
+        emitted, _provisional = static_listing_rows._append_parsed_listing_rows(
+            ctx,
+            "<html></html>",
+            "https://fuseboxgames.com/careers/",
+            [],
+            set(),
+        )
+    finally:
+        monkeypatch.undo()
+    assert emitted == 0
+    assert ctx.stats["junk_provenance_rows_dropped"] == 1

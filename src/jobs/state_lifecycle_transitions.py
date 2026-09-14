@@ -274,9 +274,12 @@ def _apply_guest_junk_lifecycle_entry(
     if not is_junk_provenance_row(entry, source={"id": clean_text(entry.get("source"))}):
         return None
     if _normalize_availability_status(entry) == "unavailable":
-        # Already terminal (drained on a previous run): idempotent no-op so
-        # availability timestamps and transition ids never churn run-over-run.
-        return entry
+        # Already terminal (drained on a previous run): report it as *not*
+        # drained this run (None → the caller's preserve accounting) so
+        # guestJunkDrainedCount reflects fresh drains only and never inflates
+        # run-over-run on Skybound-scale already-drained stock. The caller's
+        # unverified path no-ops on unavailable rows, so nothing churns.
+        return None
     availability_id = clean_text(entry.get("availabilityId")) or availability_id_for_job(entry)
     entry["availabilityId"] = availability_id
     entry["status"] = "likely_removed"
