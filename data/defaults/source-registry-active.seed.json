@@ -3490,13 +3490,13 @@
     "company": "GAME FREAK inc.",
     "adapter": "static",
     "pages": [
-      "https://hrmos.co/pages/gamefreak/jobs?jobType=FULL"
+      "https://hrmos.co/pages/gamefreak/jobs?jobtype=full"
     ],
-    "listing_url": "https://hrmos.co/pages/gamefreak/jobs?jobType=FULL",
+    "listing_url": "https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
-    "careersUrl": "https://hrmos.co/pages/gamefreak/jobs?jobType=FULL",
+    "careersUrl": "https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
     "evidenceSource": "game_studios_sheet",
     "evidenceTypes": [
       "sheet_directory",
@@ -3507,7 +3507,7 @@
     "weakSignal": false,
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://hrmos.co/pages/gamefreak/jobs?jobType=FULL",
+    "sourceDirectoryEntryUrl": "https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
     "id": "static:listing_url:https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
     "discoveredAt": "2026-04-10T12:54:49.913303+00:00",
     "score": 48,
