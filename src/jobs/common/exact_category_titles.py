@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs title norma
 from __future__ import annotations
 
 import re
+import unicodedata
 from html import unescape
 from typing import Any
 from urllib.parse import urlparse
@@ -415,6 +416,15 @@ _LANGUAGE_NAME_ALIASES = frozenset(
         "漢語",
         "汉语",
         "中文",
+        # Corpus forms (2026-09-15 casualty sweep: real switcher titles that the
+        # narrowed predicate escaped — konami/kwalee/disneycareers nav rows).
+        "繁體中文",  # Traditional Chinese (zh-Hant nav labels)
+        "簡体中文",
+        "简体中文",  # Simplified Chinese
+        "台灣中文",
+        "ไทย",  # Thai (kwalee `ไทย (ไทย)` switcher)
+        "french",  # missing from the switch-word list; alias-only so the outer
+        # token branch stays unchanged ("French Localization QA" must not flag)
         "韓国語",
         "한국어",
         "朝鮮語",
@@ -427,13 +437,86 @@ _LANGUAGE_NAME_ALIASES = frozenset(
         "トルコ語",
         "ポーランド語",
     }
-)
-
-# Whole-outer switcher labels ("Language (中文)" widgets): the OUTER must be
+)  # Whole-outer switcher labels ("Language (中文)" widgets): the OUTER must be
 # exactly the label, so multi-word outers ("Language Model Engineer") never
 # match.
 _LANGUAGE_SWITCH_LABEL_OUTERS = frozenset(
     {"language", "languages", "言語", "语言", "sprache", "lingua", "idioma", "langue"}
+)
+
+# Region nav labels switchers use as their outer text — "Asia (English)",
+# "Europe (Deutsch)", "Canada (Français)", "亞洲(繁體中文)", "北美网站(简体中文)"
+# (2026-09-15 casualty sweep: konami/kwalee/disneycareers switcher rows the
+# narrowed predicate escaped). Switcher evidence only when the INNER paren
+# text names a language AND every outer token is a region word — a job title's
+# outer always carries a role token, and a country qualifier inside a job's
+# parens ("…, Fashion (Thailand)") is not a language name. Common-word
+# abbreviations ("sea") are deliberately excluded — too collision-prone.
+_LANGUAGE_REGION_OUTER_TOKENS = frozenset(
+    {
+        "africa",
+        "america",
+        "americas",
+        "apac",
+        "asia",
+        "australia",
+        "benelux",
+        "brazil",
+        "canada",
+        "central",
+        "china",
+        "east",
+        "emea",
+        "eu",
+        "europe",
+        "global",
+        "international",
+        "japan",
+        "korea",
+        "latam",
+        "mena",
+        "mexico",
+        "middle",
+        "north",
+        "northamerica",
+        "northeast",
+        "northwest",
+        "oceania",
+        "south",
+        "southamerica",
+        "southeast",
+        "southwest",
+        "uk",
+        "us",
+        "usa",
+        "west",
+        "worldwide",
+        # CJK/Japanese nav labels (konami corpus + JP conventions).
+        "アジア",
+        "オセアニア",
+        "グローバル",
+        "ヨーロッパ",
+        "中東",
+        "北米",
+        "南米",
+        "欧州",
+        "亚洲",
+        "亞洲",
+        "全球",
+        "北美网站",
+        "北美",
+        "南美",
+        "欧洲",
+        "歐洲",
+        "中国",
+        "日本",
+        "韓国",
+        "韩国",
+        "台灣",
+        "臺灣",
+        "台湾",
+        "香港",
+    }
 )
 _STATIC_CONTAINER_ROOT_SEGMENTS = frozenset(
     {"career", "careers", "job", "jobs", "open-positions", "vacancies"}
@@ -531,9 +614,26 @@ def _is_language_name_text(value: str) -> bool:
     )
 
 
+_CJK_THAI_RUN_RE = re.compile(r"[^a-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f]+")
+
+
+def _latin_fold(value: str) -> str:
+    """Lowercase + strip Latin diacritics (NFKD), leaving CJK/Thai intact.
+
+    ``Português`` must match the ``portugues`` switch word the same way its
+    unaccented spelling does; CJK/Thai codepoints are decomposition-inert.
+    """
+    decomposed = unicodedata.normalize("NFKD", norm_text(value))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def _outer_tokens(outer: str) -> set[str]:
+    """Folded word tokens of the outer, keeping CJK/Thai runs as single tokens."""
+    return {token for token in _CJK_THAI_RUN_RE.split(_latin_fold(outer)) if token}
+
+
 def _has_outer_language_switch_word(outer: str) -> bool:
-    tokens = {token for token in re.split(r"[^a-z0-9]+", norm_text(outer)) if token}
-    return bool(tokens & _LANGUAGE_SWITCH_WORDS)
+    return bool(_outer_tokens(outer) & _LANGUAGE_SWITCH_WORDS)
 
 
 def _looks_like_language_switch_title(value: Any) -> bool:
@@ -567,6 +667,17 @@ def _looks_like_language_switch_title(value: Any) -> bool:
     if not outer_key:
         # Pure parenthetical: only a language-named paren is switcher evidence.
         return _is_language_name_text(_inner_text_of_last_parens(raw))
+    # Region nav outers: "Asia (English)", "Europe (Deutsch)", "亞洲(繁體中文)".
+    # Switcher only when EVERY outer token is a region word AND the inner paren
+    # names a language — a job title's outer always carries a role token, and
+    # a country qualifier inside a job's parens is never a language name.
+    outer_tokens = _outer_tokens(outer)
+    if (
+        outer_tokens
+        and outer_tokens <= _LANGUAGE_REGION_OUTER_TOKENS
+        and _is_language_name_text(_inner_text_of_last_parens(raw))
+    ):
+        return True
     return False
 
 

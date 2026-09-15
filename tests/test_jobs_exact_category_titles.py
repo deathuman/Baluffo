@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.jobs.common.exact_category_titles import (
+    _looks_like_language_switch_title,
     has_static_container_artifact_evidence,
     is_exact_category_title,
     is_static_container_artifact_title,
@@ -217,3 +218,68 @@ def test_language_switch_fallback_bare_cjk_without_parens_unchanged() -> None:
     """No parens → the predicate was always False and stays False (out of
     contract); the bare-CJK language-code pins keep their other coverage."""
     assert not is_static_container_artifact_title("日本語版ジョブ一覧")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # 2026-09-15 casualty-sweep corpus: real switcher rows drained by the
+        # old flag and missed by the first narrowing — the guard must hold.
+        "Europe (English)",
+        "Europe (Français)",
+        "Europe (Español)",
+        "Europe (Italiano)",
+        "Europe (Deutsch)",
+        "Canada (English)",
+        "Asia (English)",
+        "亞洲(繁體中文)",
+        "亚洲(简体中文)",
+        "北美网站(简体中文)",
+        "ไทย (ไทย)",
+        "ไทย ( Thai )",
+        "Português ( Portuguese (Brazil) )",
+        "繁體中文 (CN)",
+        "North America (French)",
+        "Southeast Asia (English)",
+    ],
+)
+def test_language_switch_region_and_native_script_switchers_flag(title: str) -> None:
+    assert _looks_like_language_switch_title(title)
+    assert is_static_container_artifact_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # Region-outer contract: switcher evidence requires the inner paren to
+        # NAME A LANGUAGE and every outer token to be a region word.
+        "Europe (Remote)",
+        "Asia (Games)",
+        "Japan (Marketing)",
+        "North America (Remote)",
+        "North America (Games)",
+        "Middle East (Marketing)",
+        "West (Support)",
+        # Country qualifiers inside a job's parens are not language names.
+        "TikTok Shop - Account Management, Fashion (Thailand)",
+        "Declaration of Principles - LKSG (Germany)",
+    ],
+)
+def test_language_switch_region_branch_spares_postings(title: str) -> None:
+    assert not _looks_like_language_switch_title(title)
+    assert not is_static_container_artifact_title(title)
+
+
+def test_language_switch_french_alias_is_not_a_switch_word() -> None:
+    """'french' joins the alias set (inner/whole-outer recognition) but NOT
+    the switch-word list, whose outer-token branch must not fire on job
+    titles that merely contain a language word in the outer."""
+    assert not _looks_like_language_switch_title("French Localization QA (Games)")
+    assert _looks_like_language_switch_title("French (Français)")
+    assert _looks_like_language_switch_title("North America (French)")
+
+
+def test_language_switch_accents_fold_like_the_switch_word_list() -> None:
+    """NFKD folding: accented inner text recognizes like its ASCII spelling."""
+    assert _looks_like_language_switch_title("Português ( Português )")
+    assert not is_static_container_artifact_title("Café (Brazil)")
