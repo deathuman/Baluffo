@@ -10,7 +10,7 @@ Baseline-IO tests (the dedicated terminal-only baseline artifact and the
 summary fallback) live in ``test_availability_health_baseline_io.py``.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.availability_schedule import (
     OVERDUE_BY_SOURCE_LIMIT,
@@ -127,7 +127,7 @@ def test_multiple_reasons_accumulate() -> None:
 
 
 def test_overdue_by_source_counts_rows_and_skips_blank_sources() -> None:
-    rows = [
+    rows: list[Any] = [
         _overdue_row("static_source::static:listing_url:https://a.example/"),
         _overdue_row("static_source::static:listing_url:https://a.example/"),
         _overdue_row("provider_source::google_sheets:jobs"),
@@ -287,6 +287,7 @@ def test_normalized_health_preserves_signed_delta_and_reasons() -> None:
         identity_summary=_identity_summary(),
     )
     normalized = normalize_availability_health(verdict)
+    assert normalized is not None
     assert normalized["status"] == "healthy"
     assert normalized["overdueDelta"] == -3
     assert normalized["healthReasons"] == []
@@ -299,6 +300,7 @@ def test_normalized_health_preserves_signed_delta_and_reasons() -> None:
             previous_overdue_count=292,
         )
     )
+    assert degraded is not None
     assert degraded["status"] == "degraded"
     assert degraded["healthReasons"] == ["coverage_target_missed", "overdue_rising"]
     assert degraded["overdueDelta"] == 108
@@ -309,8 +311,10 @@ def test_normalize_availability_health_fabricates_nothing_for_absent_input() -> 
     fabricated ``overdueCount: 0`` default that used to ride progress
     payloads into the summary artifact was the baseline-poisoning vector."""
 
-    for absent in (None, {}, "nope", 42):
-        assert normalize_availability_health(absent) is None, absent
+    absent_inputs: tuple[Any, ...] = (None, {}, "nope", 42)
+    for absent in absent_inputs:
+        payload = cast("Any", absent)
+        assert normalize_availability_health(payload) is None, absent
 
 
 def test_normalize_availability_health_preserves_present_payload_fields() -> None:

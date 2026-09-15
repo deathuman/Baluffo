@@ -43,10 +43,11 @@ def test_static_probe_skips_other_non_http_schemes() -> None:
 
 
 def _fetcher(tmp_path: Path) -> StaticHtmlFetcher:
+    def _reject_transport(url: str, timeout_s: int, headers: dict[str, str] | None = None) -> str:
+        raise AssertionError(f"data: URI reached the transport: {url[:60]}")
+
     return StaticHtmlFetcher(
-        fetch_text=lambda url, timeout_s, headers=None: (_ for _ in ()).throw(
-            AssertionError(f"data: URI reached the transport: {url[:60]}")
-        ),
+        fetch_text=_reject_transport,
         timeout_s=5,
         retries=0,
         backoff_s=0.0,

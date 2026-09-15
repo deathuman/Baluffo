@@ -44,7 +44,8 @@ def _history_dir(report_path: Path) -> Path:
 
 def _read_backup(path: Path) -> dict:
     with gzip.open(path, mode="rt", encoding="utf-8") as handle:
-        return json.load(handle)
+        payload: dict = json.load(handle)
+    return payload
 
 
 def test_terminal_report_is_backed_up_before_progress_shell_overwrite(tmp_path) -> None:

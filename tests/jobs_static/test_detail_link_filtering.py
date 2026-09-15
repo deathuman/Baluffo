@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 from src.jobs.adapters.static_listing_traversal import _nested_detail_candidates
@@ -147,8 +149,8 @@ def test_add_detail_link_rejects_template_seam_anchor_text() -> None:
 def test_nested_detail_candidates_reject_template_seam_links() -> None:
     from types import SimpleNamespace
 
-    ctx = SimpleNamespace(seen_links=set())
-    state = SimpleNamespace(scheduled_urls=set())
+    ctx = cast("Any", SimpleNamespace(seen_links=set()))
+    state = cast("Any", SimpleNamespace(scheduled_urls=set()))
     nested_links = [
         {"url": "https://example.com/jobs/<%= official_site %>", "title": "Artist"},
         {"url": "https://example.com/jobs/456", "title": "Designer"},

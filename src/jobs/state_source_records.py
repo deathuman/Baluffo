@@ -707,7 +707,8 @@ def apply_rendered_empty_state(
     if int(report.get("keptCount") or 0) > 0:
         entry.pop("renderedEmptyConfirmationsAt", None)
         return
-    stats = report.get("stats") if isinstance(report.get("stats"), dict) else {}
+    stats_raw = report.get("stats")
+    stats = stats_raw if isinstance(stats_raw, dict) else {}
     stamped_at = clean_text(stats.get("renderedEmptyConfirmedAt"))
     if not stamped_at:
         return

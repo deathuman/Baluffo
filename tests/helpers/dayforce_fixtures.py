@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -12,7 +13,8 @@ FIXTURES = Path("tests/fixtures")
 
 
 def fixture_payload(name: str) -> dict:
-    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    payload: dict = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    return payload
 
 
 class FakeResponse:
@@ -35,7 +37,7 @@ class ScriptedOpener:
 
     def __init__(self, responses: dict[str, tuple[int, bytes]]) -> None:
         self.responses = responses
-        self.requests: list[tuple[str, bytes | None, dict[str, str]]] = []
+        self.requests: list[tuple[str, Any | None, dict[str, str]]] = []
 
     def open(self, request: urllib.request.Request, timeout: float) -> FakeResponse:
         body = request.data
@@ -47,8 +49,8 @@ class ScriptedOpener:
                 request.full_url,
                 status,
                 "error",
-                {},
-                None,  # type: ignore[arg-type]
+                cast("Any", {}),
+                None,
             )
         return FakeResponse(status, payload)
 

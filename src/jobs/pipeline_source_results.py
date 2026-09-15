@@ -690,7 +690,7 @@ def _apply_static_detail_evidence_to_report(
         # would add surface noise to every healthy static report.
         if not int(value or 0) > 0:
             continue
-        report[key] = int(value)
+        report[key] = int(value or 0)
     if has_details_broken_signal(classification_context_from_source_detail(report)):
         report["failureBucket"] = FailureBucket.DETAILS_BROKEN.value
 

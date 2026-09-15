@@ -404,7 +404,7 @@ _REGISTRY_ASSET_AUDIT_FLAG_CAP = 20
 _REGISTRY_ASSET_AUDIT_SAMPLE_CAP = 3
 
 
-def registry_asset_page_audit(rows: Iterable[Any]) -> dict[str, Any]:
+def registry_asset_page_audit(rows: Any) -> dict[str, Any]:
     """Audit configured registry ``pages`` lists for static-asset URLs.
 
     Post-setup invariant (2026-09-15 asset filter): configured listing pages

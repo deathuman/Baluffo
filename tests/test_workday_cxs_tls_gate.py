@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import ssl
-from typing import Any
+from typing import Any, cast
 from urllib.error import HTTPError
 
 import pytest
@@ -121,7 +121,7 @@ def test_maintenance_redirect_raises_classified_http_error(
         _ENDPOINT,
         303,
         "See Other",
-        {"Location": "https://community.workday.com/maintenance-page"},
+        cast("Any", {"Location": "https://community.workday.com/maintenance-page"}),
         None,
     )
 
@@ -147,7 +147,7 @@ def test_maintenance_redirect_is_not_retried(monkeypatch: pytest.MonkeyPatch) ->
         _ENDPOINT,
         303,
         "See Other",
-        {"Location": "https://community.workday.com/maintenance-page"},
+        cast("Any", {"Location": "https://community.workday.com/maintenance-page"}),
         None,
     )
     opener = _FakeOpener(error=error)
@@ -165,7 +165,9 @@ def test_maintenance_redirect_is_not_retried(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_other_http_errors_still_retry_and_raise_last(monkeypatch: pytest.MonkeyPatch) -> None:
-    opener = _FakeOpener(error=HTTPError(_ENDPOINT, 503, "Service Unavailable", {}, None))
+    opener = _FakeOpener(
+        error=HTTPError(_ENDPOINT, 503, "Service Unavailable", cast("Any", {}), None)
+    )
 
     monkeypatch.setattr(runner, "_build_cxs_opener", lambda _ctx: opener)
     with pytest.raises(HTTPError):

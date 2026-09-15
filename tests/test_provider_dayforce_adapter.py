@@ -185,7 +185,7 @@ def test_client_two_step_sends_csrf_token_and_payload(monkeypatch) -> None:
     assert csrf_data is None
     search_url, search_data, search_headers = opener.requests[1]
     assert "/api/geo/ref/jobposting/search" in search_url
-    sent = json.loads(search_data.decode())
+    sent = json.loads((search_data or b"").decode())
     assert sent["clientNamespace"] == "ref"
     assert sent["jobBoardCode"] == "CANDIDATEPORTAL"
     assert sent["cultureCode"] == "en-CA"
@@ -206,7 +206,7 @@ def test_client_search_403_raises_expected_transport_error(monkeypatch) -> None:
                     403,
                     "Forbidden",
                     {},
-                    None,  # type: ignore[arg-type]
+                    None,
                 )
             return FakeResponse(200, csrf_body)
 

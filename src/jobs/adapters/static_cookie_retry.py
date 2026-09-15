@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 from http.cookiejar import CookieJar
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 COOKIE_RETRY_ENV = "BALUFFO_STATIC_COOKIE_RETRY"
@@ -93,7 +93,10 @@ class StaticCookieJar:
             header_block = "".join(f"Set-Cookie: {value}\r\n" for value in raw_values)
             response_headers = parse_headers(io.BytesIO(header_block.encode("ascii")))
             request = _redirect_request(url)
-            cookies = CookieJar().make_cookies(_RedirectResponse(response_headers), request)
+            cookies = CookieJar().make_cookies(
+                cast("Any", _RedirectResponse(response_headers)),
+                cast("Any", request),
+            )
         except Exception:
             return
         host = _url_host(url)

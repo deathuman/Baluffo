@@ -78,22 +78,21 @@ def test_terminal_over_different_run_finalizes_both_slots(tmp_path: Path) -> Non
 
 def test_same_run_terminal_rewrite_dedups_to_one_slot(tmp_path: Path) -> None:
     report = tmp_path / "jobs-fetch-report.json"
-    common = dict(
+    upsert_terminal_report_history_slots(
+        path=report,
+        existing_text="",
+        incoming_text=json.dumps(_report("run-a", marker="T1")),
         report_names=FETCH_NAMES,
         history_dir_name="fetch-report-history",
         file_stem="jobs-fetch-report",
     )
     upsert_terminal_report_history_slots(
         path=report,
-        existing_text="",
-        incoming_text=json.dumps(_report("run-a", marker="T1")),
-        **common,
-    )
-    upsert_terminal_report_history_slots(
-        path=report,
         existing_text=json.dumps(_report("run-a", marker="T1")),
         incoming_text=json.dumps(_report("run-a", marker="T2")),
-        **common,
+        report_names=FETCH_NAMES,
+        history_dir_name="fetch-report-history",
+        file_stem="jobs-fetch-report",
     )
     slots_map = _slot_payloads(_history(tmp_path, "fetch-report-history"), "jobs-fetch-report")
     assert len(slots_map) == 1

@@ -118,7 +118,7 @@ def test_plugin_funnel_refuses_when_no_emptiness_evidence() -> None:
     ctx.html_fetcher.fetch_html_cached = lambda url, remaining_budget_s=0, retries_override=None: (
         "<html><body>careers</body></html>",
         False,
-    )  # type: ignore[method-assign]
+    )
 
     _record_empty_plugin_result(ctx)
     update_source_detail_taxonomy(ctx.entry_report)

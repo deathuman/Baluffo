@@ -156,7 +156,7 @@ def test_runner_search_403_surfaces_expected_source_error(monkeypatch) -> None:
                 403,
                 "Forbidden",
                 {},
-                None,  # type: ignore[arg-type]
+                None,
             )
 
     monkeypatch.setattr(

@@ -272,8 +272,8 @@ def test_monitor_counts_non_linkedin_origin_harvesting_guest_urls() -> None:
 
 
 def test_monitor_tolerates_non_iterable_and_non_dict_entries() -> None:
-    assert count_active_junk_class_rows(None) == 0  # type: ignore[arg-type]
-    assert count_active_junk_class_rows(["nope", 42, None]) == 0  # type: ignore[list-item]
+    assert count_active_junk_class_rows(None) == 0
+    assert count_active_junk_class_rows(["nope", 42, None]) == 0
 
 
 def test_is_junk_class_row_matches_guard_but_ignores_kill_switch(

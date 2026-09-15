@@ -6,8 +6,10 @@ import io
 import json
 import sys
 import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import pytest
@@ -48,7 +50,11 @@ class _FakeOpener:
         if self._response is not None:
             return self._response
         raise urllib.error.HTTPError(
-            self._url_for_error, 404, "Not Found", hdrs=None, fp=io.BytesIO(b"not found")
+            self._url_for_error,
+            404,
+            "Not Found",
+            cast("Any", None),
+            fp=io.BytesIO(b"not found"),
         )
 
 
@@ -97,7 +103,7 @@ def test_probe_site_populated_board(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["endpoint"] == row["endpoint"]
     # The POST must carry the CXS JSON payload with the right headers.
     assert opener.requests[0].get_method() == "POST"
-    body = opener.requests[0].data
+    body = cast("Any", opener.requests[0].data)
     assert json.loads(body.decode("utf-8")) == {"limit": 20, "offset": 0}
 
 

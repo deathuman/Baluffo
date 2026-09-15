@@ -623,7 +623,7 @@ def test_stale_demotion_refuses_without_emptiness_evidence() -> None:
         c.html_fetcher.fetch_html_cached = lambda url, remaining_budget_s=0, retries_override=None: (
             "<html><body>careers</body></html>",
             False,
-        )  # type: ignore[method-assign]
+        )
 
     assert promote_clean_zero_kept(ctx) is False
     assert promote_clean_zero_kept(ctx2) is False

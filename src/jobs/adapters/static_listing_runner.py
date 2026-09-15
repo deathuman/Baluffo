@@ -118,13 +118,14 @@ class StaticFetchRunner:
                     f"{len(asset_pages)} static-asset URL(s) from listing pages"
                 )
                 self.cleaned_pages = filter_listable_pages(self.cleaned_pages)
-                self.seen_listing_pages = set(self.cleaned_pages)
         self.anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
         # hrmos pagination (2026-09-14): listing pages discovered from
         # ?page=N anchors queue behind the registry pages and are followed
         # within the same run (kill-switch + cap live in
         # static_listing_pagination.py).
         self.pending_listing_pages: list[str] = []
+        # Built from the (asset-filtered) cleaned pages; the filter block
+        # above must not assign this earlier or mypy flags a no-redef.
         self.seen_listing_pages: set[str] = set(self.cleaned_pages)
         self.pagination_discovered_count = 0
 

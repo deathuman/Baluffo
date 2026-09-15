@@ -110,7 +110,7 @@ def test_guard_all_or_nothing_holds_when_fallback_also_fails() -> None:
     # StaticRunDeps is frozen; the test-only swap goes through the dataclass
     # escape hatch instead of mutating the field.
     object.__setattr__(ctx.run_deps, "fetch_text", _raise)
-    ctx.html_fetcher = _Always404Fetcher()  # type: ignore[assignment]
+    ctx.html_fetcher = _Always404Fetcher()
 
     assert promote_clean_zero_kept(ctx) is False
     report = ctx.entry_report
