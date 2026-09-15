@@ -129,6 +129,22 @@ def static_pagination_follow_enabled() -> bool:
     }
 
 
+def card_lane_render_skip_enabled() -> bool:
+    """Kill switch: ``BALUFFO_STATIC_CARD_LANE_RENDER_SKIP`` (default on).
+
+    When on, the generic listing runner consults the rendered-card extractor
+    before escalating a listing page to Playwright: a static document whose
+    card lane parses job rows is already harvestable and must not pay for a
+    render. Flip to ``0`` to restore render-first escalation.
+    """
+    return os.environ.get("BALUFFO_STATIC_CARD_LANE_RENDER_SKIP", "1").strip().lower() not in {
+        "0",
+        "off",
+        "false",
+        "no",
+    }
+
+
 def _page_param_values(query: str) -> list[str]:
     return [value for key, value in parse_qsl(query or "") if key == _PAGE_PARAM]
 

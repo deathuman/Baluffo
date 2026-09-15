@@ -41,6 +41,7 @@ from src.jobs.adapters.static_listing_common import (
 from src.jobs.adapters.static_listing_flow import _finish_generic_source
 from src.jobs.adapters.static_listing_pagination import (
     STATIC_PAGINATION_MAX_FOLLOWED_PAGES,
+    card_lane_render_skip_enabled,
     pagination_anchors_for_html,
 )
 from src.jobs.adapters.static_listing_plugin import _should_try_listing_browser_fallback
@@ -589,6 +590,21 @@ class StaticFetchRunner:
         )
         if parsed_pre or fallback_timeout_s <= 0:
             return html
+        try:
+            card_lane_skip = card_lane_render_skip_enabled() and self._card_lane_parses_static_html(
+                html, page_url
+            )
+        except Exception:  # the oracle must never break a listing pass
+            card_lane_skip = False
+        if card_lane_skip:
+            # Board-variant oracle (PS Nuxt flip, 2026-09-15): a page can be a
+            # JS-app shell for the generic parser while the rendered-card lane
+            # extracts its rows from the same static document — escalating it
+            # to Playwright gambles the whole page on a degraded render. The
+            # static HTML is already harvestable by the lane that runs next;
+            # keep it. Fail-open by design: any oracle error falls back to the
+            # legacy render path.
+            return html
         html2, _ = self.deps.try_playwright(page_url, fallback_timeout_s)
         self._log_playwright_fallback(page_url, label, html2)
         if html2:
@@ -609,6 +625,32 @@ class StaticFetchRunner:
                 self.stats["renderedEmptyConfirmedAt"] = now_iso()
             return html2
         return html
+
+    # pure — HTML parsing only, no network
+    def _card_lane_parses_static_html(self, html: str, page_url: str) -> bool:
+        """True when the rendered-card lane extracts job rows from the static
+        document — the same extractor the card-row flow runs next, with the
+        same config (allow_any_anchor, real company/source id), so a skip
+        here can never starve the downstream lane of rows it would have
+        found. Pure parsing; no network. Any failure fails open (render-first
+        escalation preserved).
+        """
+        try:
+            from src.jobs.adapters.plugins.static._rendered_cards import (
+                extract_rendered_card_jobs,
+            )
+
+            return bool(
+                extract_rendered_card_jobs(
+                    html,
+                    page_url=page_url,
+                    company=self.ctx.company,
+                    source_id=clean_text(self.ctx.source.get("id")) or self.ctx.source_name,
+                    allow_any_anchor=True,
+                )
+            )
+        except Exception:  # malformed HTML must never break a listing pass
+            return False
 
     def _prepare_listing_htmls(self, page_url: str, result: dict[str, Any]) -> list[str]:
         from src.jobs.adapters import static_listing as _sl
