@@ -32,10 +32,6 @@ _LOCK = threading.Lock()
 _TERMINAL_MARKER_KEYS = ("finishedAt",)
 
 
-def _is_report_path(path: Path, names: set[str]) -> bool:
-    return Path(path).name in names
-
-
 def looks_like_terminal_report_payload(payload: Any) -> bool:
     """Terminal reports carry a truthy terminal marker (e.g. finishedAt)."""
     if not isinstance(payload, dict):
@@ -239,22 +235,3 @@ def upsert_terminal_report_history_payloads(
     with _LOCK:
         for payload in _decide_terminal_upserts(existing_payload, incoming_payload):
             _upsert(payload)
-
-
-def prune_orphan_history_slots(*, path: Path, history_dir_name: str, file_stem: str) -> None:
-    """Best-effort removal of stale/extra history files (retention pass only)."""
-    history_dir = Path(path).parent / history_dir_name
-    try:
-        survivors: list[tuple[float, str, Path]] = []
-        for entry in history_dir.glob(f"{file_stem}-*.json.gz"):
-            try:
-                survivors.append((entry.stat().st_mtime, entry.name, entry))
-            except OSError:
-                continue
-        for _, _, entry in sorted(survivors)[:-HISTORY_KEEP]:
-            try:
-                entry.unlink()
-            except OSError:
-                pass
-    except OSError:
-        pass
