@@ -148,13 +148,10 @@ def test_pagination_anchors_never_follow_backwards_to_page_one() -> None:
 
 
 def test_pagination_anchors_cap() -> None:
-    html = _pagination_pages_html(2, 3, 4, 5, 6, 7)
-    assert STATIC_PAGINATION_MAX_FOLLOWED_PAGES == 4  # documented bound
+    html = _pagination_pages_html(2, 3, 4, 5, 6, 7, 8)
+    assert STATIC_PAGINATION_MAX_FOLLOWED_PAGES == 6  # documented bound
     assert pagination_anchors_for_html(html, _BASE) == [
-        f"{_BASE}?page=2",
-        f"{_BASE}?page=3",
-        f"{_BASE}?page=4",
-        f"{_BASE}?page=5",
+        f"{_BASE}?page={n}" for n in (2, 3, 4, 5, 6, 7)
     ]
 
 
@@ -197,7 +194,7 @@ def test_runner_pagination_respects_kill_switch(monkeypatch) -> None:
 
 
 def test_runner_pagination_cap_limits_followed_pages() -> None:
-    extra_pages = [2, 3, 4, 5, 6, 7]
+    extra_pages = [2, 3, 4, 5, 6, 7, 8]
     page_one = _listing_html(1, job_ids=["1001"], extra_pages=[1, *extra_pages])
     pages_by_url = {_BASE: page_one}
     for n in extra_pages:
@@ -209,8 +206,8 @@ def test_runner_pagination_cap_limits_followed_pages() -> None:
     runner.run()
 
     followed = {url for url in fetch_log if "page=" in url}
-    assert followed == {f"{_BASE}?page={n}" for n in (2, 3, 4, 5)}
-    assert f"{_BASE}?page=6" not in fetch_log
+    assert followed == {f"{_BASE}?page={n}" for n in (2, 3, 4, 5, 6, 7)}
+    assert f"{_BASE}?page=8" not in fetch_log
 
 
 def test_runner_pagination_self_loop_never_fetched() -> None:
@@ -458,3 +455,140 @@ def test_runner_pagination_queues_even_when_fingerprint_skips_details() -> None:
     # The fingerprint skip only bypasses details; pagination anchors queue
     # before it so the full board window still syncs.
     assert f"{_BASE}?page=2" in fetch_log
+
+
+# --- path-pager dialect (coverage sweep 2026-09-14) --------------------------
+
+
+def _path_pages_html(*extra_pages: int) -> str:
+    page_anchors = "".join(
+        f'<a href="/page/{n}" aria-label="Page {n}">{n}</a>' for n in extra_pages
+    )
+    details = "".join(f'<a href="/slug/job/{n}001">Job {n}001</a>' for n in extra_pages)
+    return f"<html><body>{details}{page_anchors}</body></html>"
+
+
+_PS_BASE = "https://www.playstation.com/en-us/corporate/playstation-careers/#listings"
+_PS_BOARD = "https://careers.playstation.com/"
+_PS_CANONICAL = f'<link rel="canonical" href="{_PS_BOARD}">'
+
+
+def test_path_dialect_anchors_follow_trailing_page_segment() -> None:
+    # Nexon shape: path-pager anchors carry the listing path (/job/page/N).
+    html = (
+        '<a href="/job/page/2">2</a><a href="/job/page/3">3</a>'
+        '<a href="/job/some-slug/job/12">detail</a><a href="/jobs/2">wp-comment-noise</a>'
+    )
+    assert pagination_anchors_for_html(html, "https://x.example/job/") == [
+        "https://x.example/job/page/2",
+        "https://x.example/job/page/3",
+    ]
+
+
+def test_path_dialect_requires_trailing_page_segment() -> None:
+    # Intermediate /page/ segments are a different URL family; the WP noise
+    # class (/jobs/2, /jobs/2?replytocom=1) has no /page/ segment at all.
+    html = (
+        '<a href="/page/2/edit">admin</a>'
+        '<a href="/jobs/2">comment</a>'
+        '<a href="/page/abc">not digits</a>'
+        '<a href="/job/page/2?page=3">piggyback-polluted query</a>'
+    )
+    assert pagination_anchors_for_html(html, "https://x.example/job/?jobtype=full") == []
+
+
+def test_path_dialect_ignores_page_param_piggyback_in_query_equality() -> None:
+    # Nexon's historic anchors carry a redundant ?page=2 on /page/2 — the
+    # piggyback page param is pagination noise, but real filters still gate.
+    base = "https://x.example/job/"
+    html = '<a href="/job/page/2?page=2">2</a>'
+    assert pagination_anchors_for_html(html, base) == ["https://x.example/job/page/2?page=2"]
+    html_filtered = '<a href="/job/page/2?jobtype=contract">2</a>'
+    assert pagination_anchors_for_html(html_filtered, base) == []
+
+
+def test_path_dialect_base_page_number_gates() -> None:
+    # Matching the query dialect's contract: same page and page < 2 are
+    # refused; other pages (backward included — dedupe prevents refetch)
+    # are accepted by the URL check.
+    base = "https://x.example/job/page/3"
+    html = '<a href="/job/page/2">2</a><a href="/job/page/3">3</a><a href="/job/page/4">4</a>'
+    assert pagination_anchors_for_html(html, base) == [
+        "https://x.example/job/page/2",
+        "https://x.example/job/page/4",
+    ]
+    assert pagination_anchors_for_html('<a href="/job/page/1">1</a>', base) == []
+
+
+def test_playstation_redirect_window_resolves_via_document_evidence() -> None:
+    html = _PS_CANONICAL + _path_pages_html(2, 3, 4, 5, 6, 7, 8)
+    anchors = pagination_anchors_for_html(html, _PS_BASE)
+    assert anchors == [f"https://careers.playstation.com/page/{n}" for n in (2, 3, 4, 5, 6, 7)]
+
+
+def test_document_base_evidence_priority_and_fallbacks() -> None:
+    # base href wins over canonical and og:url (same registrable domain)
+    html = (
+        '<link rel="canonical" href="https://b.win.example/x">'
+        '<meta property="og:url" content="https://c.win.example/x">'
+        '<base href="https://a.win.example/x">'
+        '<a href="/x/page/2">2</a>'
+    )
+    assert pagination_anchors_for_html(html, "https://www.win.example/y") == [
+        "https://a.win.example/x/page/2"
+    ]
+    # og:url alone works (attr order swapped)
+    html_og = '<meta content="https://board.example/x" property="og:url"><a href="/x/page/2">2</a>'
+    assert pagination_anchors_for_html(html_og, "https://www.board.example/y") == [
+        "https://board.example/x/page/2"
+    ]
+    # malformed/cross-domain/downgrade evidence ignored -> anchors resolve
+    # against page_url, so plain query-dialect behavior is unchanged
+    for evidence in (
+        '<base href="not-a-url">',
+        '<link rel="canonical" href="https://evil.org/x">',
+        '<link rel="canonical" href="http://www.win.example/x">',
+    ):
+        assert pagination_anchors_for_html(
+            evidence + '<a href="?page=2">2</a>', "https://www.win.example/x"
+        ) == ["https://www.win.example/x?page=2"]
+
+
+def test_document_evidence_same_host_path_never_relocates() -> None:
+    # Query-only and scheme-only variants must not change the anchor base:
+    # the result equals the no-evidence case exactly.
+    page = "https://x.example/jobs"
+    for evidence_html in (
+        "",
+        '<link rel="canonical" href="https://x.example/jobs?render=1">',
+    ):
+        html = evidence_html + '<a href="/jobs/page/2">2</a>'
+        assert pagination_anchors_for_html(html, page) == ["https://x.example/jobs/page/2"]
+
+
+def test_registrable_domain_guard_units() -> None:
+    from src.jobs.adapters.static_listing_pagination import _registrable_domain
+
+    assert _registrable_domain("careers.playstation.com") == "playstation.com"
+    assert _registrable_domain("www.playstation.com") == "playstation.com"
+    assert _registrable_domain("recruit.nexon.co.jp") == "nexon.co.jp"
+    assert _registrable_domain("a.b.co.uk") == "b.co.uk"
+    assert _registrable_domain("playstation.com") == "playstation.com"
+    assert _registrable_domain("localhost") == "localhost"
+    # Sibling-subdomain relocation (the PlayStation shape) is in-site; a
+    # foreign registrable domain is never trusted.
+    from src.jobs.adapters.static_listing_pagination import _anchor_base_url
+
+    assert (
+        _anchor_base_url(
+            "https://www.playstation.com/x",
+            '<link rel="canonical" href="https://careers.playstation.com/">',
+        )
+        == "https://careers.playstation.com/"
+    )
+    assert (
+        _anchor_base_url(
+            "https://www.a.com/x", '<link rel="canonical" href="https://careers.a.org/">'
+        )
+        == "https://www.a.com/x"
+    )
