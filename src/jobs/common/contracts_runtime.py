@@ -143,6 +143,20 @@ def normalize_runtime_payload(
         ),
         "browserFallbackEnabled": bool(src.get("browserFallbackEnabled")),
         "browserFallbackCap": _clamped_int(src.get("browserFallbackCap"), 0, 0),
+        "browserFallbackDemand": {
+            "attempts": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get("attempts"), 0, 0
+            ),
+            "refused": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get("refused"), 0, 0
+            ),
+            "servedWithHtml": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get("servedWithHtml"), 0, 0
+            ),
+            "servedEmpty": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmpty"), 0, 0
+            ),
+        },
         "staticDomainGateWaitMs": _clamped_int(src.get("staticDomainGateWaitMs"), 0, 0),
         "staticDetailBatchCount": _clamped_int(src.get("staticDetailBatchCount"), 0, 0),
         "staticAdaptiveStops": _clamped_int(src.get("staticAdaptiveStops"), 0, 0),

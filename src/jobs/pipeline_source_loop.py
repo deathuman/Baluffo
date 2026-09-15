@@ -143,6 +143,7 @@ def run_source_execution_stage(
     canonical_rows: list[CanonicalJob],
     source_reports: list[dict[str, Any]],
     fetched_rows_writer: Any | None = None,
+    runtime_payload: dict[str, Any] | None = None,
 ) -> None:
     heap_stop = None
     heap_thread = None
@@ -217,6 +218,17 @@ def run_source_execution_stage(
                 f"startupMs={metrics['pool_startup_ms']} "
                 f"relaunchCount={metrics['pool_relaunch_count']}"
             )
+        if runtime_payload is not None and browser_fallback_guard is not None:
+            # Saturation visibility (2026-09-15): stamp the per-run fallback
+            # demand accounting into the runtime payload so the fetch report
+            # shows refused fallback demand instead of it surfacing only as
+            # silent got_html=False escalation log lines.
+            runtime_payload["browserFallbackDemand"] = {
+                "attempts": int(browser_fallback_guard.demand_attempts),
+                "refused": int(browser_fallback_guard.demand_refused),
+                "servedWithHtml": int(browser_fallback_guard.demand_served_with_html),
+                "servedEmpty": int(browser_fallback_guard.demand_served_empty),
+            }
     finally:
         if heap_stop is not None:
             heap_stop.set()

@@ -62,6 +62,15 @@ class BrowserFallbackCircuitBreaker:
     last_success_at: str = ""
     last_error: str = ""
     failure_count: int = 0
+    # Per-run demand accounting (saturation visibility, 2026-09-15): every
+    # wrapped call is an attempt; the breaker refusing one in cooldown is
+    # refused demand that used to surface only as a silent got_html=False
+    # escalation log line. Attempts = refused + served; served splits into
+    # with-html and empty outcomes.
+    demand_attempts: int = 0
+    demand_refused: int = 0
+    demand_served_with_html: int = 0
+    demand_served_empty: int = 0
     _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     @classmethod
@@ -101,8 +110,10 @@ class BrowserFallbackCircuitBreaker:
             now_dt = datetime.now(UTC)
             stamp = now_iso()
             with self._lock:
+                self.demand_attempts += 1
                 if not self.is_available(now=now_dt):
                     self.last_attempt_at = stamp
+                    self.demand_refused += 1
                     return "", "browser fallback unavailable (cooldown active)"
                 self.last_attempt_at = stamp
             try:
@@ -116,6 +127,7 @@ class BrowserFallbackCircuitBreaker:
                     self.last_error = ""
                     self.failure_count = 0
                     self.disabled_until_at = ""
+                    self.demand_served_with_html += 1
                 return html, ""
             if is_browser_fallback_environment_error(error):
                 cooldown_minutes = max(0, int(self.cooldown_minutes or 0))
@@ -127,6 +139,10 @@ class BrowserFallbackCircuitBreaker:
                         self.disabled_until_at = (
                             now_dt + timedelta(minutes=cooldown_minutes)
                         ).isoformat()
+                    self.demand_served_empty += 1
+            else:
+                with self._lock:
+                    self.demand_served_empty += 1
             return html, clean_text(error)
 
         return _wrapped
