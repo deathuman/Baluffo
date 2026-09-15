@@ -40,19 +40,6 @@ SOURCE_APPROVAL_STATE_PATH = common_config.SOURCE_APPROVAL_STATE_PATH
 STUDIO_SOURCE_REGISTRY = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
 
-def reload_studio_source_registry() -> list[dict[str, Any]]:
-    """Refresh the in-process registry after a manual promotion outside the running pipeline.
-
-    persist_state_and_auto_sync writes through to the active file, but the module-level
-    STUDIO_SOURCE_REGISTRY global is populated once at import time, so a manual promotion
-    leaves the in-process registry stale until this is called.
-    """
-    global STUDIO_SOURCE_REGISTRY
-    refreshed = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
-    STUDIO_SOURCE_REGISTRY[:] = [dict(row) for row in refreshed if isinstance(row, dict)]
-    return list(STUDIO_SOURCE_REGISTRY)
-
-
 PENDING_PROVIDER_MIGRATION_REASON = "provider_migration_candidate"
 
 

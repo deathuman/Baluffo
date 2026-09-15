@@ -382,15 +382,6 @@ def cleanup_fetched_rows_sidecar(output_dir: Path) -> None:
         pass
 
 
-def _is_fetch_report_path(path: Path) -> bool:
-    return Path(path).name in _FETCH_REPORT_NAMES
-
-
-def _looks_like_terminal_fetch_report(text: str) -> bool:
-    """Terminal reports carry finishedAt; progress/start shells never do."""
-    return report_slots.looks_like_terminal_report_text(text)
-
-
 def _write_fetch_report_history_backup(target: Path, text: str) -> None:
     """Snapshot a terminal report into its per-run history slot (shared leaf)."""
     report_slots.upsert_history_slot(

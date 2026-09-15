@@ -10,7 +10,6 @@ tenant-agnostic and only needs the tenant path from the listing URL.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from html import unescape
 from urllib.parse import urljoin, urlparse
@@ -149,7 +148,3 @@ def phenom_detail_fields(html_text: str) -> dict[str, str]:
         if match:
             out[itemprop] = clean_text(match.group(1))
     return out
-
-
-def phenom_stable_id(job_link: str) -> str:
-    return hashlib.sha1(job_link.encode("utf-8")).hexdigest()[:10]

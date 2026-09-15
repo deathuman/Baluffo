@@ -485,3 +485,12 @@ _parse_remote_ok_payload_compat  # unused function (src\jobs_fetcher.py:71) — 
 _parse_remotive_payload_compat  # unused function (src\jobs_fetcher.py:75) — false positive: accessed via sys.modules[__name__] dynamic ref
 KNOWN_TWIN_URLS_DEFAULT_RELATIVE_PATH  # unused variable (src\source_registry_data.py:30) — consumed by tools/repo_health/source_registry_duplicate_url_policy.py (guardrail), not scanned by vulture's src-only scope
 load_known_collision_urls  # unused function (src\source_registry_data.py:47) — consumed by tools/repo_health/source_registry_duplicate_url_policy.py (guardrail), not scanned by vulture's src-only scope
+redirect_request  # unused method (src\jobs\adapters\provider_structured_listing.py) — urllib HTTPRedirectHandler protocol override, invoked by the opener's dispatch
+get_full_url  # unused method (src\jobs\adapters\static_cookie_retry.py) — CookieJar request-protocol override, invoked via http.cookiejar dispatch
+get_host  # unused method (src\jobs\adapters\static_cookie_retry.py) — CookieJar request-protocol override, invoked via http.cookiejar dispatch
+get_type  # unused method (src\jobs\adapters\static_cookie_retry.py) — CookieJar request-protocol override, invoked via http.cookiejar dispatch
+_write_fetch_report_history_backup  # unused function (src\pipeline_io.py) — consumed by tests/test_fetch_report_history_backup.py, outside vulture's src-only scope
+normalize_manual_promotion_rows  # unused function (src\jobs\registry.py) — consumed by tmp wave-promotion scripts (bamboo-wave promote_nine, dayforce-wave promote_reflector), outside vulture's src-only scope
+DAYFORCE_PAGE_SIZE  # unused variable (src\jobs\adapters\plugins\provider_api\dayforce.py) — documents the provider's fixed 50/page search contract; Dayforce's API has no client page-size param
+newurl  # unused variable (src\jobs\adapters\provider_structured_listing.py) — urllib HTTPRedirectHandler.redirect_request protocol signature parameter
+looks_like_terminal_report_text  # unused function (src\report_history_slots.py) — consumed by tests/test_report_history_slots.py, outside vulture's src-only scope
