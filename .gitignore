@@ -28,6 +28,10 @@ coverage-report/
 # Build/runtime artifact cleanup
 tmp-manual-check/
 tmp-pytest-bridge/
+# Repo-root agent scratch (never tracked; the documented artifact root is .tmp/).
+# Unignored it is ~3k files / 740 MB of logs, JSON dumps, and registry backups,
+# which trips check-added-large-files for any `git add -A` submit.
+/tmp/
 release-notes.md
 .container-frontend/
 
@@ -38,6 +42,8 @@ data/*.log
 data/*.md
 data/*.jsonl
 data/*.jsonl.gz
+# Rotation siblings (e.g. storage-metrics.jsonl.1) are not matched by *.jsonl
+data/*.jsonl.*
 data/*.lock
 data/*.db
 data/*.db-*
@@ -66,6 +72,21 @@ tmp-pytest-bridge/
 packaging/github-app-sync-config.json
 packaging/github-app-sync-config.localkey.json
 baluffo.config.local.json
+# Local tool credentials (e.g. slopo reads SLOPO_EMBEDDING_API_KEY from a .env)
+.env
+.env.*
+!.env.example
+
+# Slopo (contributor-local code duplication detector)
+# Only generated artifacts are ignored here, so any contributor running slopo
+# stays clean. slopo.conf.yaml and slopo.ignore.txt are contributor-local and
+# excluded via .git/info/exclude instead (see that file), keeping the AGPL tool
+# text out of this MIT repo. The API key comes from SLOPO_EMBEDDING_API_KEY.
+slopo.db
+slopo.db-*
+slopo.agent.log
+slopo-report/
+slopo-agent-configs/
 
 # Dev tool configs
 .kilo/
