@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from html import unescape
 from typing import Any
 from urllib.parse import urlparse
@@ -326,6 +327,132 @@ def looks_like_server_template_artifact(text: str) -> bool:
             raw,
         )
     )
+
+
+# Static-asset extensions that are never documents a fetch could parse into
+# job rows. Deliberately conservative: data formats a board could genuinely
+# serve as a feed (.json/.xml/.txt) and human-readable documents (.pdf) stay
+# listable — only code, style, font, image, media, archive, and manifest
+# artifacts are filtered.
+_ASSET_URL_EXTENSIONS = frozenset(
+    {
+        ".js",
+        ".mjs",
+        ".css",
+        ".map",
+        ".webmanifest",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".ico",
+        ".avif",
+        ".bmp",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
+        ".mp4",
+        ".webm",
+        ".mp3",
+        ".ogg",
+        ".wav",
+        ".wasm",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".rar",
+        ".7z",
+        ".dmg",
+        ".exe",
+    }
+)
+
+
+def looks_like_asset_url(url: str) -> bool:
+    """True when the URL targets a static asset (script/style/font/bundle)
+    rather than a document a fetch could parse into job rows.
+
+    Documents must never become listing pages or detail candidates: the
+    sms.playstation.com seed row carried five webpack bundle URLs in its
+    ``pages`` list, each fetched every pass as a JS shell and re-escalated
+    through the Playwright fallback (52 dead escalations in the 2026-09-15
+    full pass), and the raw-URL detail-candidate scan can harvest the same
+    links straight out of ``<script src>``/``<link href>`` markup.
+    """
+    path = (urlparse(str(url or "")).path or "").lower()
+    if not path:
+        return False
+    last_segment = path.rsplit("/", 1)[-1]
+    if "." not in last_segment:
+        return False
+    extension = "." + last_segment.rsplit(".", 1)[-1]
+    return extension in _ASSET_URL_EXTENSIONS
+
+
+def filter_listable_pages(pages: Iterable[Any]) -> list[Any]:
+    """Drop static-asset URLs from a listing-page intake, preserving order
+    and every non-asset entry (including blanks, whose cleaning stays the
+    caller's business)."""
+    return [page for page in pages if not looks_like_asset_url(str(page or ""))]
+
+
+_REGISTRY_ASSET_AUDIT_FLAG_CAP = 20
+_REGISTRY_ASSET_AUDIT_SAMPLE_CAP = 3
+
+
+def registry_asset_page_audit(rows: Iterable[Any]) -> dict[str, Any]:
+    """Audit configured registry ``pages`` lists for static-asset URLs.
+
+    Post-setup invariant (2026-09-15 asset filter): configured listing pages
+    must be documents, not assets. The runtime filter prevents the fetch
+    waste (and the pagination-queue/candidate doors close the ingress), but
+    the report surfaces rows whose registered windows are stale so the data
+    can be repaired at the source — the same "nonzero is the flag" shape as
+    the active-junk-class row monitor. Kill-switch-independent: a disabled
+    runtime filter cannot blind the monitor. Bounded samples (20 flagged
+    sources × 3 sample URLs) keep the payload small while the counts stay
+    exact.
+    """
+    try:
+        iterator = list(rows)
+    except TypeError:
+        iterator = []
+    flagged: list[dict[str, Any]] = []
+    source_count = 0
+    asset_page_count = 0
+    for row in iterator:
+        if not isinstance(row, dict):
+            continue
+        pages = row.get("pages")
+        if not isinstance(pages, list) or not pages:
+            continue
+        asset_pages = [str(page or "") for page in pages if looks_like_asset_url(str(page or ""))]
+        if not asset_pages:
+            continue
+        source_count += 1
+        asset_page_count += len(asset_pages)
+        if len(flagged) < _REGISTRY_ASSET_AUDIT_FLAG_CAP:
+            flagged.append(
+                {
+                    "sourceId": str(row.get("id") or "").strip(),
+                    "registryState": str(row.get("registryState") or "").strip(),
+                    "assetPageCount": len(asset_pages),
+                    "sampleAssetPages": [
+                        page.strip()
+                        for page in asset_pages[:_REGISTRY_ASSET_AUDIT_SAMPLE_CAP]
+                        if page.strip()
+                    ],
+                }
+            )
+    return {
+        "sourceCount": source_count,
+        "assetPageCount": asset_page_count,
+        "sources": flagged,
+    }
 
 
 _NAV_OR_UI_TITLE_TOKENS = frozenset(

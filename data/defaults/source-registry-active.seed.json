@@ -138597,12 +138597,7 @@
     "company": "Sony Computer Entertainment Santa Monica Studio",
     "adapter": "static",
     "pages": [
-      "https://sms.playstation.com",
-      "https://sms.playstation.com/js/careers-category.3186a499.js",
-      "https://sms.playstation.com/js/careers-detail.4af210d9.js",
-      "https://sms.playstation.com/js/careers-detail~careers-landing~connect~studio-life~who-we-are.53ba7427.js",
-      "https://sms.playstation.com/js/careers-landing.c0995026.js",
-      "https://sms.playstation.com/js/careers.b0cdbeb1.js"
+      "https://sms.playstation.com"
     ],
     "listing_url": "https://sms.playstation.com",
     "nlPriority": false,

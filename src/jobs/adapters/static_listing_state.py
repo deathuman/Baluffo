@@ -22,12 +22,12 @@ from src.jobs.adapters.static_listing_common import StaticDetailCandidate
 from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
-from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED
+from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED, STATIC_ASSET_URL_FILTER_ENABLED
 from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
 from src.jobs.common.origin_junk import (
     is_junk_provenance_row,
 )
-from src.jobs.page_gating import looks_like_server_template_artifact
+from src.jobs.page_gating import looks_like_asset_url, looks_like_server_template_artifact
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 
 from .static_runtime import StaticSourceContext
@@ -77,6 +77,11 @@ def _append_detail_candidate(
     if looks_like_server_template_artifact(absolute) or looks_like_server_template_artifact(
         candidate_title
     ):
+        return False
+    # Static assets (script/style/bundle links) are parser noise, not
+    # documents — same rule as the heuristic funnel and the listing intake
+    # (sms.playstation.com /js/* bundles, 2026-09-15).
+    if STATIC_ASSET_URL_FILTER_ENABLED and looks_like_asset_url(absolute):
         return False
     detail_seen.add(absolute)
     detail_links.append(

@@ -35,6 +35,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 from src.jobs.common.contracts_task_state import normalize_task_state_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
+from src.jobs.page_gating import registry_asset_page_audit
 from src.jobs.pipeline_bootstrap import PipelinePaths, build_pipeline_paths
 from src.jobs.pipeline_loader_selection import (
     apply_dynamic_redundant_static_exclusions,
@@ -568,6 +569,11 @@ def prepare_pipeline_run(
     )
     runtime_payload["staticSuppressionPolicy"] = dynamic_static_suppression_policy
     runtime_payload["includePendingProviderMigration"] = bool(include_pending_provider_migration)
+    # Post-setup invariant (2026-09-15 asset filter): configured listing
+    # pages must be documents, not assets. The runtime filter prevents the
+    # fetch waste; this monitor surfaces the stale registry rows so the data
+    # gets repaired at the source. Nonzero sourceCount is the flag.
+    runtime_payload["registryAssetPageAudit"] = registry_asset_page_audit(STUDIO_SOURCE_REGISTRY)
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,
         incremental_cache_enabled=incremental_cache_enabled,

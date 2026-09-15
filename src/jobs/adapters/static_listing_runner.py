@@ -56,8 +56,10 @@ from src.jobs.adapters.static_runtime_support import (
     effective_timeout_for_remaining_budget,
     static_source_budget_exhausted,
 )
+from src.jobs.common.config import STATIC_ASSET_URL_FILTER_ENABLED
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
+from src.jobs.page_gating import filter_listable_pages, looks_like_asset_url
 from src.jobs.text_utils import clean_text
 from src.scrapers.domain_profiles import domain_profile_for_url
 from src.shared.http_batch import fetch_pages_batched
@@ -101,6 +103,22 @@ class StaticFetchRunner:
         )
         self.stage_state = StaticListingStageState()
         self.stop_source = False
+        # Asset-URL filter (2026-09-15): documents must never enter as listing
+        # pages. The sms.playstation.com seed row carried five webpack bundle
+        # URLs in its pages list — each was fetched every pass, detected as a
+        # JS shell, and escalated to the browser fallback (52 dead escalations
+        # in the 2026-09-15 full pass). Fail-open: unset the env var to restore
+        # fetch-as-registered.
+        if STATIC_ASSET_URL_FILTER_ENABLED:
+            asset_pages = [page for page in self.cleaned_pages if looks_like_asset_url(page)]
+            if asset_pages:
+                self.stats["asset_listing_pages_filtered"] = len(asset_pages)
+                self.ctx.warnings.append(
+                    f"static:{self.source_name}: filtered "
+                    f"{len(asset_pages)} static-asset URL(s) from listing pages"
+                )
+                self.cleaned_pages = filter_listable_pages(self.cleaned_pages)
+                self.seen_listing_pages = set(self.cleaned_pages)
         self.anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
         # hrmos pagination (2026-09-14): listing pages discovered from
         # ?page=N anchors queue behind the registry pages and are followed
@@ -550,6 +568,10 @@ class StaticFetchRunner:
                 listing_html, page_url, max_pages=max(0, remaining)
             ):
                 if next_page in self.seen_listing_pages:
+                    continue
+                # Anchors are trusted as pagination, but an asset URL here is
+                # a misparse — never fetch it as a document.
+                if looks_like_asset_url(next_page):
                     continue
                 self.seen_listing_pages.add(next_page)
                 self.pending_listing_pages.append(next_page)

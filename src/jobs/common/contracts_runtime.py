@@ -26,6 +26,36 @@ def _float_or_zero(value: Any) -> float:
         return 0.0
 
 
+_REGISTRY_ASSET_AUDIT_SOURCES_LIMIT = 20
+_REGISTRY_ASSET_AUDIT_SAMPLES_LIMIT = 3
+
+
+def _normalize_registry_asset_page_audit(value: Any) -> dict[str, Any]:
+    """Allowlist-clamp the registry asset-page audit block (absent → zeroed,
+    junk values clamp, unknown keys drop, bounded source/sample lists)."""
+    src = as_json_object(value)
+    sources: list[dict[str, Any]] = []
+    for row in json_object_rows(src.get("sources"))[:_REGISTRY_ASSET_AUDIT_SOURCES_LIMIT]:
+        # Samples must be real strings: junk types drop rather than coerce
+        # (an int 1 must not survive as the string "1").
+        samples = [
+            clean_text(s) for s in as_json_list(row.get("sampleAssetPages")) if isinstance(s, str)
+        ][:_REGISTRY_ASSET_AUDIT_SAMPLES_LIMIT]
+        sources.append(
+            {
+                "sourceId": clean_text(row.get("sourceId")),
+                "registryState": clean_text(row.get("registryState")),
+                "assetPageCount": _clamped_int(row.get("assetPageCount"), 0, 0),
+                "sampleAssetPages": [s for s in samples if s],
+            }
+        )
+    return {
+        "sourceCount": _clamped_int(src.get("sourceCount"), 0, 0),
+        "assetPageCount": _clamped_int(src.get("assetPageCount"), 0, 0),
+        "sources": sources,
+    }
+
+
 def _normalize_named_duration_rows(
     rows: list[Any],
     *,
@@ -157,6 +187,9 @@ def normalize_runtime_payload(
                 as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmpty"), 0, 0
             ),
         },
+        "registryAssetPageAudit": _normalize_registry_asset_page_audit(
+            src.get("registryAssetPageAudit")
+        ),
         "staticDomainGateWaitMs": _clamped_int(src.get("staticDomainGateWaitMs"), 0, 0),
         "staticDetailBatchCount": _clamped_int(src.get("staticDetailBatchCount"), 0, 0),
         "staticAdaptiveStops": _clamped_int(src.get("staticAdaptiveStops"), 0, 0),

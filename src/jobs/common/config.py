@@ -223,6 +223,22 @@ PROVISIONAL_CARD_FALLBACK_ENABLED = os.environ.get(
     "yes",
 )
 
+# sms.playstation.com follow-up (2026-09-15): the seed row carried five
+# webpack bundle URLs in its pages list, fetched every pass as JS shells and
+# escalated through the browser fallback; the raw-URL detail-candidate scan
+# can likewise harvest <script src>/<link href> links out of any document.
+# Documents must never become listing pages or detail candidates — filter
+# static-asset URLs at the listing intake, the pagination-discovered queue,
+# and both detail-candidate doors. Fail-open: unset the env var to restore
+# fetch-as-registered / queue-as-seen.
+STATIC_ASSET_URL_FILTER_ENABLED = os.environ.get(
+    "BALUFFO_STATIC_ASSET_URL_FILTER", "1"
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
 # Mutable diagnostics map used across fetch runs.

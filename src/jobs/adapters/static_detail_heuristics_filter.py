@@ -15,8 +15,10 @@ from urllib.parse import ParseResult, unquote, urlparse
 from src.jobs.adapters.html_parsers import (
     strip_html_text,
 )
+from src.jobs.common.config import STATIC_ASSET_URL_FILTER_ENABLED
 from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.page_gating import (
+    looks_like_asset_url,
     looks_like_regular_navigation_text,
     looks_like_regular_page_url,
     looks_like_server_template_artifact,
@@ -290,6 +292,13 @@ def add_detail_link(
         or looks_like_server_template_artifact(absolute)
         or looks_like_server_template_artifact(anchor_text)
     ):
+        link_rejections["dead_listing_page"] += 1
+        return
+    # Static assets (script/style/font/bundle links) are parser noise, not
+    # documents: fetching them yields JS shells that burn escalation demand
+    # and can never parse into rows (sms.playstation.com /js/* bundles,
+    # 2026-09-15).
+    if STATIC_ASSET_URL_FILTER_ENABLED and looks_like_asset_url(absolute):
         link_rejections["dead_listing_page"] += 1
         return
     if is_malformed_or_self_detail_url(absolute, page_url=page_url):
