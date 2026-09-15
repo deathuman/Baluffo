@@ -48,6 +48,9 @@ data/*.lock
 data/*.db
 data/*.db-*
 data/*.json.gz
+# Tombstone snapshot is canonical seed-state for fresh checkouts (CI tests
+# assert retired-row tombstones exist); runtime rewrites are committed.
+!data/source-registry-tombstones.json.gz
 data/local-user-data/
 data/updater/
 data/runtime/

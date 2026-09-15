@@ -70,9 +70,18 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
     )
     assert (
-        "python -m pip install -r requirements-lock.txt pre-commit mypy pip-audit==2.10.0"
+        "python -m pip install -r requirements-lock.txt pre-commit pip-audit==2.10.0"
         in workflow_text
     ), f"{workflow_path.name} should install pinned Python tooling before running lint."
+    for forbidden_bare_install in (
+        "pre-commit mypy",
+        "requirements-lock.txt mypy",
+    ):
+        assert forbidden_bare_install not in workflow_text, (
+            f"{workflow_path.name} must not install bare mypy: it is pinned in "
+            "requirements-lock.txt and a bare install shadows the pin with latest "
+            "(2026-09 drift; same shape as the ruff 0.16.7 environment drift)."
+        )
     assert "npm run security:python" in workflow_text, (
         f"{workflow_path.name} should run the Python dependency security audit."
     )
