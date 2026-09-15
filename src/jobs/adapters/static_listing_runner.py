@@ -188,7 +188,7 @@ class StaticFetchRunner:
             reserve_s=reserve_s,
         ):
             return False
-        self.ctx.stop_for_budget_exhaustion(target_url=page_url, source_budget_s=source_budget_s)
+        self.ctx.stop_for_budget_exhaustion(target_url=page_url)
         return True
 
     # network — makes HTTP requests
@@ -454,7 +454,13 @@ class StaticFetchRunner:
             payload.get("sourceBudgetS") or self.config.static_source_time_budget_s
         )
         self.ctx.sync_source_deadline(source_budget_s)
-        return page_url, domain_profile, source_budget_s
+        # PS 2026-09-15: the detail flow anchors per-detail deadlines at
+        # source_started + this budget, so it must receive the effective
+        # budget (floor + pagination extension), not the payload's base —
+        # with the extension active, a base-budget detail deadline is already
+        # in the past and every card-row detail verification raises,
+        # aborting the page's card loop after a dozen rows.
+        return page_url, domain_profile, self.ctx.effective_source_budget_s()
 
     # orchestration — coordinates network + mutation
     def _process_listing_result(self, result: dict[str, Any]) -> None:
@@ -537,6 +543,7 @@ class StaticFetchRunner:
     # mutation — modifies in-place state
     def _queue_discovered_pagination_pages(self, page_url: str, listing_htmls: list[str]) -> None:
         remaining = STATIC_PAGINATION_MAX_FOLLOWED_PAGES - self.pagination_discovered_count
+        discovered_before = self.pagination_discovered_count
         for listing_html in listing_htmls:
             for next_page in pagination_anchors_for_html(
                 listing_html, page_url, max_pages=max(0, remaining)
@@ -548,7 +555,14 @@ class StaticFetchRunner:
                 self.pagination_discovered_count += 1
                 remaining -= 1
                 if remaining <= 0:
-                    return
+                    break
+        # Adaptive budget (2026-09-15): every newly discovered continuation
+        # page earns bounded extra budget seconds so a multi-page board fits
+        # its per-source budget instead of truncating mid-universe.
+        if self.pagination_discovered_count > discovered_before:
+            self.ctx.extend_source_deadline_for_pagination(
+                pages_discovered=self.pagination_discovered_count
+            )
 
     # mutation — modifies in-place state
     def _try_playwright_fallback(

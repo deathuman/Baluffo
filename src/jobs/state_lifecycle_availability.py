@@ -87,6 +87,21 @@ def _source_report_has_broken_missing_evidence(row: dict[str, Any]) -> bool:
     )
 
 
+def _source_report_was_truncated_by_budget(row: dict[str, Any]) -> bool:
+    """A partial run that stopped on the per-source time budget mid-board.
+
+    The runtime marks budget exhaustion in the entry report even when partial
+    rows keep ``status=ok`` (keptCount > 0), and the message survives report
+    aggregation inside the ``error`` text. Such a run only saw a prefix of the
+    board's postings, so the absent tail must be preserved, not marked missing.
+    """
+
+    error_text = clean_text(row.get("error")).lower()
+    if not error_text:
+        return False
+    return "time budget exceeded" in error_text or "time_budget_exceeded" in error_text
+
+
 def _source_report_missing_evidence_kind(row: dict[str, Any]) -> str:
     status = norm_text(row.get("status"))
     if status == "error":
@@ -97,6 +112,10 @@ def _source_report_missing_evidence_kind(row: dict[str, Any]) -> str:
         return "skipped"
     kept_count = int(row.get("keptCount") or 0)
     if kept_count > 0:
+        # A kept>0 run that exhausted its time budget saw only a prefix of the
+        # board; the unfetched tail must be preserved, not drained.
+        if _source_report_was_truncated_by_budget(row):
+            return "skipped"
         return "eligible"
     if _source_report_has_broken_missing_evidence(row):
         return "skipped"

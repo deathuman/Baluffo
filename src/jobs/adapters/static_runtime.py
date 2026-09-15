@@ -27,6 +27,7 @@ from .static_runtime_support import (
     build_static_entry_report,
     build_static_source_deadline,
     classify_static_fetch_exception,
+    pagination_budget_extension_s,
     remaining_static_source_budget_s,
 )
 
@@ -84,6 +85,12 @@ class StaticSourceContext:
     details: list[dict[str, Any]]
     source_started: float = field(default_factory=time.perf_counter)
     source_deadline: float = 0.0
+    # Adaptive pagination budget (2026-09-15): the floor is the min of every
+    # synced per-page/domain budget (byte-equivalent to the legacy min-of
+    # deadlines), and discovered pagination pages earn a bounded extension on
+    # top so multi-page boards fit their budget instead of truncating.
+    pagination_budget_floor_s: int = 0
+    pagination_budget_extension_s: int = 0
     kept_before: int = 0
     progress_state: dict[str, Any] = field(
         default_factory=lambda: {
@@ -103,10 +110,14 @@ class StaticSourceContext:
     detail_shell_strikes: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not self.pagination_budget_floor_s:
+            self.pagination_budget_floor_s = max(
+                1, int(self.runtime_config.static_source_time_budget_s or 0)
+            )
         if not self.source_deadline:
             self.source_deadline = build_static_source_deadline(
                 source_started=self.source_started,
-                source_budget_s=self.runtime_config.static_source_time_budget_s,
+                source_budget_s=self.pagination_budget_floor_s,
             )
         if not self.kept_before:
             self.kept_before = len(self.jobs)
@@ -184,14 +195,36 @@ class StaticSourceContext:
         )
 
     def sync_source_deadline(self, source_budget_s: int) -> float:
-        self.source_deadline = min(
-            float(self.source_deadline),
-            build_static_source_deadline(
-                source_started=self.source_started,
-                source_budget_s=source_budget_s,
-            ),
+        # Legacy min-of-deadlines semantics, expressed as a floor: the
+        # effective budget never rises above the smallest synced budget.
+        self.pagination_budget_floor_s = min(
+            int(self.pagination_budget_floor_s),
+            max(1, int(source_budget_s or 0)),
         )
+        self._rebuild_source_deadline()
         return float(self.source_deadline)
+
+    def extend_source_deadline_for_pagination(self, *, pages_discovered: int) -> int:
+        """Earn budget seconds for discovered pagination pages (bounded)."""
+
+        self.pagination_budget_extension_s = pagination_budget_extension_s(
+            pages_discovered=pages_discovered,
+            base_budget_s=int(self.runtime_config.static_source_time_budget_s),
+        )
+        self._rebuild_source_deadline()
+        return int(self.pagination_budget_extension_s)
+
+    def effective_source_budget_s(self) -> int:
+        return max(
+            1,
+            int(self.pagination_budget_floor_s) + int(self.pagination_budget_extension_s),
+        )
+
+    def _rebuild_source_deadline(self) -> None:
+        self.source_deadline = build_static_source_deadline(
+            source_started=self.source_started,
+            source_budget_s=self.pagination_budget_floor_s,
+        ) + float(max(0, int(self.pagination_budget_extension_s)))
 
     def remaining_budget_s(self) -> float:
         return remaining_static_source_budget_s(deadline_monotonic=float(self.source_deadline))
@@ -229,10 +262,12 @@ class StaticSourceContext:
             return
         self.errors.append(f"static:{self.source_name}:{target_url}: {exc}")
 
-    def stop_for_budget_exhaustion(self, *, target_url: str, source_budget_s: int) -> None:
+    def stop_for_budget_exhaustion(self, *, target_url: str) -> None:
         self.entry_report["classification"] = "timeout"
         self.entry_report["browserFallbackRecommended"] = True
-        self.entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
+        # Truthful budget: include the pagination extension so operators see
+        # the budget the run actually had, not the base config number.
+        self.entry_report["error"] = f"time budget exceeded ({self.effective_source_budget_s()}s)"
         if self.current_source_kept_count() <= 0:
             self.entry_report["status"] = "error"
         self.warnings.append(f"static:{self.source_name}:{target_url}: time_budget_exceeded")

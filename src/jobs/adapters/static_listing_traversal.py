@@ -435,10 +435,7 @@ def _detail_budget_exhausted(
         reserve_s=reserve_s,
     ):
         return False
-    ctx.stop_for_budget_exhaustion(
-        target_url=plan.page_url,
-        source_budget_s=plan.source_budget_s,
-    )
+    ctx.stop_for_budget_exhaustion(target_url=plan.page_url)
     return True
 
 

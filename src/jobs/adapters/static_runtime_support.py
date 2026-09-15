@@ -408,6 +408,46 @@ def build_static_source_deadline(*, source_started: float, source_budget_s: int)
     return float(source_started) + max(1.0, float(int(source_budget_s or 0)))
 
 
+STATIC_PAGINATION_BUDGET_EXTENSION_MAX_PAGES = 6
+
+
+def static_pagination_budget_extension_enabled() -> bool:
+    """Kill switch: ``BALUFFO_STATIC_PAGINATION_BUDGET_EXTENSION`` (default on)."""
+
+    return os.environ.get(
+        "BALUFFO_STATIC_PAGINATION_BUDGET_EXTENSION", "1"
+    ).strip().lower() not in {
+        "0",
+        "off",
+        "false",
+        "no",
+    }
+
+
+def pagination_budget_extension_s(*, pages_discovered: int, base_budget_s: int) -> int:
+    """Extra source-budget seconds earned by discovered pagination pages.
+
+    The per-source time budget predates pagination-follow (2026-09-15
+    full-pass finding): a 7-page board cannot finish inside the pre-pagination
+    25s budget, so the run truncates and its un-fetched tail relies on the
+    lifecycle preserve shield. Each discovered continuation page instead earns
+    one extra ``base_budget_s`` unit — self-scaling with the operator's own
+    budget choice — capped by the same page count the pagination follow cap
+    allows, so the worst-case source duration is deterministically
+    ``(1 + STATIC_PAGINATION_MAX_FOLLOWED_PAGES) × base``. Live calibration:
+    PlayStation (7 pages, 441 details) needs ~141s → 25 + 6×25 = 175s suffices;
+    nexon (3 pages) needs ~27s → 25 + 2×25 = 75s.
+    """
+
+    pages = max(0, int(pages_discovered))
+    base = max(1, int(base_budget_s or 0))
+    if pages <= 0:
+        return 0
+    if not static_pagination_budget_extension_enabled():
+        return 0
+    return min(STATIC_PAGINATION_BUDGET_EXTENSION_MAX_PAGES * base, pages * base)
+
+
 def remaining_static_source_budget_s(*, deadline_monotonic: float) -> float:
     return max(0.0, float(deadline_monotonic) - float(time.perf_counter()))
 
