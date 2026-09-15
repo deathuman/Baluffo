@@ -6,6 +6,10 @@
     "theme.js",
     "frontend-runtime-config.js"
   ],
+  // hydrateDesktopVersionLabels is a @deprecated compatibility shim consumed
+  // only by a unit test through the cache-busting importFresh helper, whose
+  // dynamic import knip cannot statically resolve.
+  "ignore": ["frontend/shared/app-version.js"],
   "ignoreBinaries": [
     "python",
     "ruff"
