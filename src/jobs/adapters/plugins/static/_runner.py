@@ -19,6 +19,10 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_listing_pagination import (
+    STATIC_PAGINATION_MAX_FOLLOWED_PAGES,
+    pagination_anchors_for_html,
+)
 from src.jobs.adapters.static_runtime_support import (
     is_static_fetch_fallback_exception,
     safe_page_urljoin,
@@ -467,6 +471,71 @@ def _blocked_by_page_gate(
     return True
 
 
+def _fetch_plugin_listing_pages(
+    *,
+    fetch_text: Callable[[str, int], str],
+    seed_pages: list[str],
+    timeout_s: int,
+    source_row: dict[str, Any],
+    spec: SimpleStaticPlugin,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None,
+) -> list[tuple[str, str]]:
+    """Every registry window page plus same-listing ``?page=N`` continuations.
+
+    Registry windows are honored in full: every operator-configured ``pages``
+    entry is fetched as a seed (first-seed failure aborts as before; later
+    seed failures skip best-effort so one dead page never zeroes the
+    harvest). Server-paginated boards advertise the rest of their universe
+    via same-path ``?page=N`` anchors (hrmos 2026-09-14); up to
+    ``STATIC_PAGINATION_MAX_FOLLOWED_PAGES`` continuations are discovered per
+    run across all seeds, so a multi-page registry window stays capped
+    overall. The kill switch gates only anchor *discovery* — configured seed
+    windows always run.
+    """
+    fetched: list[tuple[str, str]] = []
+    seen_pages: set[str] = set()
+    pending: list[str] = []
+    for index, seed_url in enumerate(seed_pages):
+        try:
+            html = _fetch_html(fetch_text, seed_url, timeout_s, source_row, spec, try_playwright)
+        except Exception:
+            if index == 0:
+                raise
+            break  # later seeds are best-effort
+        if not html:
+            if index == 0:
+                return []
+            break
+        seen_pages.add(seed_url)
+        fetched.append((seed_url, html))
+        pending.extend(
+            url
+            for url in pagination_anchors_for_html(html, seed_url)
+            if url not in seen_pages and url not in pending
+        )
+
+    discovered = 0
+    while pending and discovered < STATIC_PAGINATION_MAX_FOLLOWED_PAGES:
+        next_url = clean_text(pending.pop(0))
+        if not next_url or next_url in seen_pages:
+            continue
+        seen_pages.add(next_url)
+        try:
+            next_html = _fetch_html(
+                fetch_text, next_url, timeout_s, source_row, spec, try_playwright
+            )
+        except Exception:  # continuation pages are best-effort
+            break
+        if not next_html:
+            break
+        discovered += 1
+        fetched.append((next_url, next_html))
+        pending.extend(
+            url for url in pagination_anchors_for_html(next_html, next_url) if url not in seen_pages
+        )
+    return fetched
+
+
 def run_simple_static_plugin(
     *,
     fetch_text: Callable[[str, int], str],
@@ -502,28 +571,45 @@ def run_simple_static_plugin(
             filter_role_keywords=spec.filter_feed_keywords,
         )
     assert parse_html is not None  # non-feed specs always supply a parser
-    page_url = clean_text(pages[0])
-    if not page_url:
+    seed_pages = [clean_text(page) for page in pages if clean_text(page)]
+    if not seed_pages:
         return []
+    page_url = seed_pages[0]
     company = company_override or (
         clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
         or spec.default_company
     )
     source_id = source_id_override or clean_text(source_row.get("id")) or spec.source_id
-    html = _fetch_html(fetch_text, page_url, timeout_s, source_row, spec, try_playwright)
-    if not html:
+    fetched_pages = _fetch_plugin_listing_pages(
+        fetch_text=fetch_text,
+        seed_pages=seed_pages,
+        timeout_s=timeout_s,
+        source_row=source_row,
+        spec=spec,
+        try_playwright=try_playwright,
+    )
+    if not fetched_pages:
         return []
-    if _blocked_by_page_gate(html, page_url, source_row, company, spec, try_playwright, timeout_s):
+    if _blocked_by_page_gate(
+        fetched_pages[0][1], page_url, source_row, company, spec, try_playwright, timeout_s
+    ):
         return []
-    rows = [
-        row
+    rows: list[RawJob] = []
+    seen_links: set[str] = set()
+    for page_url_i, html_i in fetched_pages:
         for row in parse_html(
             SimpleStaticContext(
-                page_url, html, source_row, company, source_id, parse_jobpostings_from_html
+                page_url_i, html_i, source_row, company, source_id, parse_jobpostings_from_html
             )
-        )
-        if isinstance(row, dict)
-    ]
+        ):
+            if not isinstance(row, dict):
+                continue
+            link = clean_text(row.get("jobLink"))
+            if link and link in seen_links:
+                continue
+            if link:
+                seen_links.add(link)
+            rows.append(row)
     if rows:
         if spec.parser_stale_hint and spec.empty_detail_fetch_required is not None:
             _meta(

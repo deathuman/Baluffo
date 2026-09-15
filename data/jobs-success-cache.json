@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-14T10:20:31.512293+00:00",
+  "updatedAt": "2026-09-14T22:41:03.926701+00:00",
   "successfulSources": [
     "8bitplay",
     "ashby_sources",
@@ -395,6 +395,7 @@
     "static_source::static:listing_url:https://hk-devblog.com/category/jobs/",
     "static_source::static:listing_url:https://holycowprod.com/careers/",
     "static_source::static:listing_url:https://hrmos.co/pages/2052996596448374784/jobs",
+    "static_source::static:listing_url:https://hrmos.co/pages/bandainamcostudios/jobs?category=2226903550201643009",
     "static_source::static:listing_url:https://hrmos.co/pages/cygames/jobs",
     "static_source::static:listing_url:https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
     "static_source::static:listing_url:https://htxlabs.com/careers/",

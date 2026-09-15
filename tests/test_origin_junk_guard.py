@@ -16,6 +16,8 @@ import pytest
 
 from src.jobs.common import config as common_config
 from src.jobs.common.origin_junk import (
+    count_active_junk_class_rows,
+    is_junk_class_row,
     is_junk_provenance_row,
     is_linkedin_guest_junk_url,
     is_nav_anchor_junk_row,
@@ -35,6 +37,9 @@ SANCTIONED_VIEW_ROW = (
     "https://bg.linkedin.com/jobs/view/front-of-house-administrator-at-sega-europe-4455769546"
 )
 KONAMI_COMMUNITY_ROW = "https://www.konami.com/games/us/en/pages/sns_account"
+# Registry-form source ids (extraction-ctx spelling) for the monitor tests.
+FUSEBOX_SOURCE_ID = "static:listing_url:https://fuseboxgames.com/careers/"
+LINKEDIN_SOURCE_ID = "static:listing_url:https://www.linkedin.com/jobs/search/?geoId=103112868"
 
 
 def _source(listing_url: str | None) -> dict[str, object]:
@@ -204,3 +209,79 @@ def test_guard_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not is_junk_provenance_row(
         {"jobLink": FUSEBOX_GUEST_ROW, "title": "Production Specialist"}, source=source
     )
+
+
+# --- post-pass active-junk monitor (2026-09-14 widget survey) -----------------
+
+
+def _entry(status: str, source: str, url: str, title: str = "Engineer") -> dict[str, object]:
+    return {"status": status, "source": source, "jobLink": url, "title": title}
+
+
+def test_monitor_counts_active_linkedin_junk_rows() -> None:
+    rows = [
+        _entry("active", FUSEBOX_SOURCE_ID, FUSEBOX_GUEST_ROW),
+        _entry("likely_removed", FUSEBOX_SOURCE_ID, FUSEBOX_GUEST_ROW),
+        _entry("archived", FUSEBOX_SOURCE_ID, FUSEBOX_GUEST_ROW),
+    ]
+    assert count_active_junk_class_rows(rows) == 1
+
+
+def test_monitor_counts_active_nav_anchor_rows_without_linkedin_url() -> None:
+    # The Konami "Community" shape points at the source's own page — the
+    # monitor must not prefilter on "linkedin in url" (the 2026-09-14 survey
+    # did, and missed four stranded JOBS nav-anchor rows because of it).
+    rows = [
+        _entry(
+            "active",
+            "static:listing_url:https://metricminds.com/jobs/",
+            "https://metricminds.com/jobs",
+            "JOBS",
+        )
+    ]
+    assert count_active_junk_class_rows(rows) == 1
+
+
+def test_monitor_counts_with_state_prefix_and_when_guard_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        _entry("active", "static_source::" + FUSEBOX_SOURCE_ID, FUSEBOX_GUEST_ROW),
+    ]
+    assert count_active_junk_class_rows(rows) == 1
+    monkeypatch.setattr(common_config, "GUEST_JUNK_GUARD_ENABLED", False)
+    assert count_active_junk_class_rows(rows) == 1  # monitor outlives the kill switch
+
+
+def test_monitor_ignores_sanctioned_and_unidentifiable_sources() -> None:
+    rows = [
+        _entry("active", LINKEDIN_SOURCE_ID, SANCTIONED_VIEW_ROW),
+        _entry("active", "", FUSEBOX_GUEST_ROW),
+        {"status": "active", "source": FUSEBOX_SOURCE_ID, "jobLink": "", "title": "Engineer"},
+        _entry("active", FUSEBOX_SOURCE_ID, "https://fuseboxgames.com/careers/real-role"),
+    ]
+    assert count_active_junk_class_rows(rows) == 0
+
+
+def test_monitor_counts_non_linkedin_origin_harvesting_guest_urls() -> None:
+    # A non-LinkedIn origin carrying LinkedIn guest URLs IS the junk class
+    # (the sheets-row Fusebox shape) — the monitor counts it even though the
+    # origin host is not linkedin.com.
+    rows = [_entry("active", "static:listing_url:https://sheets.example.com", FUSEBOX_GUEST_ROW)]
+    assert count_active_junk_class_rows(rows) == 1
+
+
+def test_monitor_tolerates_non_iterable_and_non_dict_entries() -> None:
+    assert count_active_junk_class_rows(None) == 0  # type: ignore[arg-type]
+    assert count_active_junk_class_rows(["nope", 42, None]) == 0  # type: ignore[list-item]
+
+
+def test_is_junk_class_row_matches_guard_but_ignores_kill_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source("https://fuseboxgames.com/careers/")
+    row = {"jobLink": FUSEBOX_GUEST_ROW, "title": "Production Specialist"}
+    assert is_junk_class_row(row, source=source)
+    monkeypatch.setattr(common_config, "GUEST_JUNK_GUARD_ENABLED", False)
+    assert is_junk_class_row(row, source=source)
+    assert not is_junk_provenance_row(row, source=source)

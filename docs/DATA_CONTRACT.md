@@ -1449,6 +1449,7 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 | `eligibleMissingSourceCount` | `number` | Source rows with trustworthy missing-job evidence in the run. |
 | `ineligibleMissingSourceCount` | `number` | Source rows present but not eligible to mark jobs removed. |
 | `guestJunkDrainedCount` | `number` | Junk-provenance rows drained to `unavailable` via the origin-aware guest-junk guard while their source failed (evidence kind `guest_junk_provenance`, `availabilityClosureOrigin: "guest_junk_provenance"`). Additive, observability-only; the underlying transitions use the same terminal row state as the missing-job path. |
+| `activeJunkClassRowCount` | `number` | Post-pass invariant monitor (2026-09-14): lifecycle entries that are both `active` and junk-class under the origin-aware guard's shapes, counted store-wide after all transitions. A healthy pipeline reports 0 — nonzero is the regression flag for the widget-embed harvest class. Kill-switch-independent (counts even when `BALUFFO_GUEST_JUNK_GUARD=off`). Additive, observability-only. |
 
 Fetch reports, both report normalizers, the compact fetch-report sidecar, and
 `/ops/fetch-report?view=summary` preserve the bounded top-level `availabilitySummary`,

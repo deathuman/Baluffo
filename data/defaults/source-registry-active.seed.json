@@ -543,8 +543,8 @@
     "promotionReason": "structured_batch_family"
   },
   {
-    "name": "The Pok\u00e9mon Company International (Greenhouse)",
-    "studio": "The Pok\u00e9mon Company International",
+    "name": "The Pokémon Company International (Greenhouse)",
+    "studio": "The Pokémon Company International",
     "adapter": "greenhouse",
     "slug": "pokemoncareers",
     "api_url": "https://boards-api.greenhouse.io/v1/boards/pokemoncareers/jobs?content=true",
@@ -2923,7 +2923,10 @@
     "company": "Cygames Group",
     "adapter": "static",
     "pages": [
-      "https://hrmos.co/pages/cygames/jobs"
+      "https://hrmos.co/pages/cygames/jobs",
+      "https://hrmos.co/pages/cygames/jobs?page=2",
+      "https://hrmos.co/pages/cygames/jobs?page=3",
+      "https://hrmos.co/pages/cygames/jobs?page=4"
     ],
     "listing_url": "https://hrmos.co/pages/cygames/jobs",
     "nlPriority": false,
@@ -2977,7 +2980,10 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "registryUpdatedAt": "2026-09-14T18:41:52.183398+00:00",
+    "registryUpdatedBy": "hrmos_pagination_window",
+    "registryUpdateReason": "hrmos pagination window: cover pages 2-4 of the 338-posting universe (page-1-only window held 100)"
   },
   {
     "name": "Warner Bros. Games (Sheet)",
@@ -3227,7 +3233,7 @@
     "enabledByDefault": true,
     "promotionReason": "manual_review_only",
     "repointedAt": "2026-09-07T18:10:44Z",
-    "repointReason": "Personio tenant deleted (redirects to vendor apex); real board career.welevel.com live per web corroboration (5+ postings); TLS-chain incomplete in python trust store \u2014 heals at origin fix (CipSoft class)"
+    "repointReason": "Personio tenant deleted (redirects to vendor apex); real board career.welevel.com live per web corroboration (5+ postings); TLS-chain incomplete in python trust store — heals at origin fix (CipSoft class)"
   },
   {
     "name": "Stillfront (Sheet)",
@@ -62902,9 +62908,9 @@
     "sourceDirectoryCategories": [
       "Developer"
     ],
-    "sourceDirectoryLocation": "T\u00fcbingen, Baden-Wurttemberg, Germany",
+    "sourceDirectoryLocation": "Tübingen, Baden-Wurttemberg, Germany",
     "sourceDirectoryDuplicateCount": 1,
-    "sourceDirectoryCity": "T\u00fcbingen",
+    "sourceDirectoryCity": "Tübingen",
     "sourceDirectoryState": "Baden-Wurttemberg",
     "sourceDirectoryCountry": "Germany",
     "sourceDirectoryAiResponse": "Correct (Gaming)",
@@ -83217,9 +83223,9 @@
     "sourceDirectoryCategories": [
       "Developer"
     ],
-    "sourceDirectoryLocation": "Reykjav\u00edk, Reykjavik, Iceland",
+    "sourceDirectoryLocation": "Reykjavík, Reykjavik, Iceland",
     "sourceDirectoryDuplicateCount": 1,
-    "sourceDirectoryCity": "Reykjav\u00edk",
+    "sourceDirectoryCity": "Reykjavík",
     "sourceDirectoryState": "Reykjavik",
     "sourceDirectoryCountry": "Iceland",
     "sourceDirectoryAiResponse": "Correct (Gaming)",
@@ -103942,9 +103948,9 @@
     "sourceDirectoryCategories": [
       "Developer"
     ],
-    "sourceDirectoryLocation": "Reykjav\u00edk, Reykjavik, Iceland",
+    "sourceDirectoryLocation": "Reykjavík, Reykjavik, Iceland",
     "sourceDirectoryDuplicateCount": 1,
-    "sourceDirectoryCity": "Reykjav\u00edk",
+    "sourceDirectoryCity": "Reykjavík",
     "sourceDirectoryState": "Reykjavik",
     "sourceDirectoryCountry": "Iceland",
     "sourceDirectoryAiResponse": "Correct (Gaming)",
@@ -135151,9 +135157,9 @@
     "promotionReason": "manual_review_only"
   },
   {
-    "name": "Lil\u2019 Snack (GameDevMap)",
-    "studio": "Lil\u2019 Snack",
-    "company": "Lil\u2019 Snack",
+    "name": "Lil’ Snack (GameDevMap)",
+    "studio": "Lil’ Snack",
+    "company": "Lil’ Snack",
     "adapter": "static",
     "pages": [
       "https://lilsnack.co/company/jobs"
@@ -140569,7 +140575,7 @@
     "enabledByDefault": true,
     "discoveredAt": "2026-09-07T11:55:14.799733+00:00",
     "manualAddedAt": "2026-09-07T11:55:14.799733+00:00",
-    "stagingEvidence": "bamboohr board live; careers/list returns meta+result (scam-warning entry only \u2014 healthy-empty, WP16 adapter-ready precedent)",
+    "stagingEvidence": "bamboohr board live; careers/list returns meta+result (scam-warning entry only — healthy-empty, WP16 adapter-ready precedent)",
     "candidateState": "live",
     "approvedAt": "2026-09-07T11:55:14.799733+00:00",
     "approvedBy": "registry_migration_v2",
@@ -141324,5 +141330,43 @@
     "liveAt": "2026-09-12T14:10:25.291049+00:00",
     "quarantinedAt": "",
     "quarantineReason": ""
+  },
+  {
+    "id": "static:listing_url:https://hrmos.co/pages/bandainamcostudios/jobs?category=2226903550201643009",
+    "name": "Bandai Namco Studios SOL-AVES (hrmos category)",
+    "adapter": "static",
+    "studio": "Bandai Namco Studios",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-09-14T20:52:08.123817+00:00",
+    "stateChangedBy": "bandai_solaves_category_window",
+    "lastPromotedAt": "2026-09-14T20:52:08.123817+00:00",
+    "lastDemotedAt": "",
+    "company": "Bandai Namco Studios",
+    "pages": [
+      "https://hrmos.co/pages/bandainamcostudios/jobs?category=2226903550201643009"
+    ],
+    "listing_url": "https://hrmos.co/pages/bandainamcostudios/jobs?category=2226903550201643009",
+    "enabledByDefault": true,
+    "nlPriority": false,
+    "candidateState": "live",
+    "approvedAt": "2026-09-14T20:52:08.123817+00:00",
+    "approvedBy": "bandai_solaves_category_window",
+    "liveAt": "2026-09-14T20:52:08.123817+00:00",
+    "quarantinedAt": "",
+    "quarantineReason": "",
+    "discoveryMethod": "careers_page_category_link",
+    "discoveredAt": "2026-09-14T20:52:08.123817+00:00",
+    "discoveryStage": "generic_static",
+    "evidenceSource": "bandai_funnel_trace_2026_09_14",
+    "evidenceScore": 40,
+    "evidenceTypes": [
+      "careers_page_category_link",
+      "hrmos_live_probe_10_postings"
+    ],
+    "confidence": "high",
+    "registryUpdatedAt": "2026-09-14T20:52:08.123817+00:00",
+    "registryUpdatedBy": "bandai_solaves_category_window",
+    "registryUpdateReason": "bandainamcostudios SOL-AVES engine-role window: the careers page links this category-filtered hrmos listing but no registered window follows it; adds 10 postings (050_0050_sa010_*) invisible to the careers window"
   }
 ]

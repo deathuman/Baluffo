@@ -24,6 +24,27 @@ def _truth_job(title: str = "Operational Truth Engineer") -> dict[str, Any]:
     }
 
 
+def test_lifecycle_summary_carries_active_junk_class_flag_to_wire() -> None:
+    """The zero-active-stock invariant (2026-09-14 widget survey) must reach
+    the report payload — nonzero ``activeJunkClassRowCount`` is the alert."""
+    payload = normalize_fetch_report_payload(
+        {
+            "summary": {"sourceCount": 1, "outputCount": 1},
+            "lifecycleSummary": {
+                "activeCount": 10,
+                "guestJunkDrainedCount": 2,
+                "activeJunkClassRowCount": 3,
+            },
+        }
+    )
+    lifecycle = payload["lifecycleSummary"]
+    assert lifecycle["activeJunkClassRowCount"] == 3
+    assert lifecycle["guestJunkDrainedCount"] == 2
+
+    blank = normalize_fetch_report_payload({"summary": {"sourceCount": 1}, "lifecycleSummary": {}})
+    assert blank["lifecycleSummary"]["activeJunkClassRowCount"] == 0
+
+
 def _assert_completed_fetch_report_truth(report: dict[str, Any], output_dir: Path) -> None:
     summary = report.get("summary") or {}
     progress = report.get("taskProgress") or {}

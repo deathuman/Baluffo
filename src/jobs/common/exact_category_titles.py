@@ -388,6 +388,53 @@ _LANGUAGE_SWITCH_WORDS = frozenset(
 _LANGUAGE_CODE_TITLES = frozenset(
     {"de", "en", "es", "fr", "it", "ja", "ko", "pl", "pt", "ru", "th", "tr", "zh"}
 )
+
+# Language names/exonyms a switcher may use as its outer label that are not in
+# _LANGUAGE_SWITCH_WORDS — JP-market romaji 語-forms plus the CJK forms
+# themselves (nav widgets render the native script). Titles like
+# (Remote)/(一部リモート) must never match.
+_LANGUAGE_NAME_ALIASES = frozenset(
+    {
+        "nihongo",  # 日本語 Japanese (romaji)
+        "eigo",  # 英語 English
+        "chuugokugo",  # 中国語 Chinese
+        "kankokugo",  # 韓国語 Korean
+        "chousengo",  # 朝鮮語 Korean (DPRK reading)
+        "doitsugo",  # ドイツ語 German
+        "furansugo",  # フランス語 French
+        "supeingo",  # スペイン語 Spanish
+        "itariago",  # イタリア語 Italian
+        "roshiago",  # ロシア語 Russian
+        "taigo",  # タイ語 Thai
+        "torukogo",  # トルコ語 Turkish
+        "poorandogo",  # ポーランド語 Polish
+        # Native-script forms (matched via norm_text; CJK has no case).
+        "日本語",
+        "英語",
+        "中国語",
+        "漢語",
+        "汉语",
+        "中文",
+        "韓国語",
+        "한국어",
+        "朝鮮語",
+        "ドイツ語",
+        "フランス語",
+        "スペイン語",
+        "イタリア語",
+        "ロシア語",
+        "タイ語",
+        "トルコ語",
+        "ポーランド語",
+    }
+)
+
+# Whole-outer switcher labels ("Language (中文)" widgets): the OUTER must be
+# exactly the label, so multi-word outers ("Language Model Engineer") never
+# match.
+_LANGUAGE_SWITCH_LABEL_OUTERS = frozenset(
+    {"language", "languages", "言語", "语言", "sprache", "lingua", "idioma", "langue"}
+)
 _STATIC_CONTAINER_ROOT_SEGMENTS = frozenset(
     {"career", "careers", "job", "jobs", "open-positions", "vacancies"}
 )
@@ -457,16 +504,70 @@ def _strip_static_status_suffix(value: Any) -> str:
     return key
 
 
+def _outer_text_outside_last_parens(raw: str) -> str:
+    open_idx = raw.rfind("(")
+    close_idx = raw.rfind(")")
+    if close_idx < open_idx:
+        return raw[:open_idx]
+    return raw[:open_idx] + raw[close_idx + 1 :]
+
+
+def _inner_text_of_last_parens(raw: str) -> str:
+    open_idx = raw.rfind("(")
+    close_idx = raw.rfind(")")
+    if open_idx < 0 or close_idx <= open_idx:
+        return ""
+    return raw[open_idx + 1 : close_idx]
+
+
+def _is_language_name_text(value: str) -> bool:
+    key = norm_text(value).strip(" \t:：・~〜-—–")
+    if not key:
+        return False
+    return (
+        key in _LANGUAGE_CODE_TITLES
+        or key in _LANGUAGE_SWITCH_WORDS
+        or key in _LANGUAGE_NAME_ALIASES
+    )
+
+
+def _has_outer_language_switch_word(outer: str) -> bool:
+    tokens = {token for token in re.split(r"[^a-z0-9]+", norm_text(outer)) if token}
+    return bool(tokens & _LANGUAGE_SWITCH_WORDS)
+
+
 def _looks_like_language_switch_title(value: Any) -> bool:
+    """Language-switch UI artifact detection, narrowed (2026-09-14 bandai fix).
+
+    The original final fallback flagged ANY title containing ASCII parens plus
+    any CJK character, collateralizing real CJK job titles — the JP market's
+    common ``家庭用ゲームエンジニア (新規格闘アクション)`` style — and the
+    word branch matched language words as substrings anywhere, catching
+    ``Localization Quality Assurance (Simplified Chinese)``. Both branches now
+    read the text OUTSIDE the last paren pair only: a switcher puts the
+    language name as the outer label (``English ( Inglese )``, ``EN (日本語)``)
+    or names it in a paren while the outer is the nav label, while job titles
+    put the qualifier inside parens under a role-shaped outer. A pure
+    parenthetical title (no outer) flags only when the paren itself names a
+    language — ``(Remote)`` is a job posting, ``(日本語)`` is a switcher.
+    """
     raw = clean_text(value)
     if not raw or "(" not in raw or ")" not in raw:
         return False
     if category_tokens(raw) & _ROLE_TITLE_VETO_TOKENS:
         return False
-    lowered = norm_text(raw)
-    if any(word in lowered for word in _LANGUAGE_SWITCH_WORDS):
+    outer = _outer_text_outside_last_parens(raw)
+    if _has_outer_language_switch_word(outer):
         return True
-    return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0e7f]", raw))
+    if _is_language_name_text(outer):
+        return True
+    outer_key = norm_text(outer).strip()
+    if outer_key in _LANGUAGE_SWITCH_LABEL_OUTERS:
+        return True
+    if not outer_key:
+        # Pure parenthetical: only a language-named paren is switcher evidence.
+        return _is_language_name_text(_inner_text_of_last_parens(raw))
+    return False
 
 
 def _looks_like_numeric_page_title(value: Any) -> bool:

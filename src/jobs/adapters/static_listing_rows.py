@@ -12,10 +12,12 @@ from __future__ import annotations
 import re
 from html import unescape
 from typing import Any
+from urllib.parse import urlparse
 
 from src.jobs.adapters.html_parsers import (
     strip_html_text,
 )
+from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.static._runner import (
     looks_like_listing_role_title,
     static_listing_anchor_link,
@@ -23,6 +25,7 @@ from src.jobs.adapters.plugins.static._runner import (
 )
 from src.jobs.adapters.static_detail_heuristics import (
     add_detail_link,
+    is_probable_job_detail_url,
 )
 from src.jobs.adapters.static_listing_common import (
     _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS,
@@ -34,7 +37,11 @@ from src.jobs.adapters.static_listing_state import (
     _is_provisional_static_artifact_row,
     _needs_detail_location_resolution,
 )
-from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED
+from src.jobs.common.config import (
+    GUEST_JUNK_GUARD_ENABLED,
+    PROVISIONAL_CARD_FALLBACK_ENABLED,
+    STATIC_SHELL_DETAIL_SKIP_ENABLED,
+)
 from src.jobs.common.origin_junk import is_junk_provenance_row
 from src.jobs.page_gating import (
     looks_like_job_title_candidate,
@@ -176,12 +183,32 @@ def _append_parsed_listing_rows(
     return emitted_count, provisional_count
 
 
+# pure — reads ctx field
+def _detail_host_shell_skipped(ctx: StaticSourceContext, link: str) -> bool:
+    """True when this detail's host already burned its 2 shell strikes."""
+    host = (urlparse(link).hostname or "").lower()
+    return ctx.detail_shell_strikes.get(host, 0) >= 2
+
+
 # mutation — modifies in-place state
 def _fetch_rendered_detail_rows(
     ctx: StaticSourceContext, link: str, title: str, source_budget_s: int
 ) -> list[Any]:
     from src.jobs.adapters import static_listing as _sl
 
+    # Bandai 2026-09-14 shell-skip: rendered-card verification fetches each
+    # card's detail page; on JS-shell-CDN hosts (hrmos tenants) every fetch
+    # returns a shell the parser can only reject, so 38 verifications burned
+    # the whole source budget and killed the queued-candidate conversion with
+    # it. After two verifications from one host produced "shell-shaped fetched
+    # HTML AND zero parsed rows", skip the rest of that host's verifications
+    # for this source's run — the caller's card-row fallback still emits the
+    # rows, so output is unchanged while the budget goes to work that can pay.
+    # Shell shape alone never strikes (the hrmos listing page carries Next.js
+    # tokens yet is fully server-rendered); the pair is required.
+    if STATIC_SHELL_DETAIL_SKIP_ENABLED and _detail_host_shell_skipped(ctx, link):
+        ctx.stats["detail_shell_skipped"] = int(ctx.stats.get("detail_shell_skipped") or 0) + 1
+        return []
     try:
         detail_result = _sl.process_detail_link(
             detail=link,
@@ -220,7 +247,26 @@ def _fetch_rendered_detail_rows(
         target_url=link,
     )
     ctx.stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
-    return detail_result.get("rows") or []
+    rows = detail_result.get("rows") or []
+    if STATIC_SHELL_DETAIL_SKIP_ENABLED and not rows and not detail_result.get("cacheHit"):
+        # Strike predicate: the verification produced zero usable rows (post
+        # noise-filter — the bandai trace shape had the shell parse to chrome
+        # junk rows that were then rejected) AND the fetched HTML is
+        # shell-shaped. The shell test is the discriminator: shell-shaped HTML
+        # cannot carry server-rendered job content, so the fetch was futile by
+        # construction. Classify the same document process_detail_link just
+        # fetched (shared normalized-URL cache) — this read is free.
+        request = ctx.html_fetcher.build_request(link)
+        fetched_html = ""
+        if request is not None:
+            with ctx.html_fetcher._fetch_cache_lock:
+                fetched_html = ctx.html_fetcher._fetch_cache.get(request.normalized_url, "")
+        if fetched_html and detect_js_shell(fetched_html):
+            host = (urlparse(link).hostname or "").lower()
+            strikes = ctx.detail_shell_strikes.get(host, 0) + 1
+            ctx.detail_shell_strikes[host] = strikes
+            ctx.stats["detail_shell_strikes"] = int(ctx.stats.get("detail_shell_strikes") or 0) + 1
+    return rows
 
 
 # mutation — modifies in-place state
@@ -263,6 +309,44 @@ def _append_rendered_row(
         return 0, False, 0
     if _is_provisional_static_artifact_row(row):
         if link:
+            # Bandai 2026-09-14 fallback parity: the provisional demotion used
+            # to be unconditional — queued as a detail candidate and nothing
+            # else — so when the conversion stage died (the 38 sibling detail
+            # verifications burning the source budget), the card's posting
+            # died with it even though the card itself carried the evidence.
+            # Verify inline against the card's own detail URL first; on empty
+            # result, fall back to the card row exactly like the non-provisional
+            # lane's `if row:` arm. Probable-detail URLs only (the traversal
+            # candidate fan-out already bounds improbable URLs by cap); no
+            # job-like gate — the bandai shape is non-job-like under the same
+            # language-shape misclassification this fallback protects, and the
+            # non-provisional lane already verifies non-job-like titles first.
+            if (
+                PROVISIONAL_CARD_FALLBACK_ENABLED
+                and is_probable_job_detail_url(
+                    link,
+                    ctx.source,
+                    default_path_tokens=ctx.runtime_config.default_path_tokens,
+                    default_query_keys=ctx.runtime_config.default_query_keys,
+                )
+                and not _detail_host_shell_skipped(ctx, link)
+            ):
+                # The listing-only rendered meta ("detailFetchRequired: False")
+                # must not stamp over a page that just did detail work.
+                ctx.stats["provisional_inline_verified"] = (
+                    int(ctx.stats.get("provisional_inline_verified") or 0) + 1
+                )
+                detail_rows = _fetch_rendered_detail_rows(ctx, link, title, source_budget_s)
+                if detail_rows:
+                    ctx.seen_links.add(link)
+                    return _append_rendered_detail_rows(ctx, detail_rows), True, 0
+                ctx.stats["provisional_card_fallback_emitted"] = (
+                    int(ctx.stats.get("provisional_card_fallback_emitted") or 0) + 1
+                )
+                row["provisionalCardFallback"] = True
+                ctx.seen_links.add(link)
+                ctx.jobs.append(row)
+                return 1, False, 0
             _append_detail_candidate(
                 detail_links,
                 detail_seen,
@@ -471,7 +555,10 @@ def _extract_listing_candidates(
             listing_jobs_found += rendered_count
             provisional_rows_found += rendered_provisional
             if listing_jobs_found > 0 and has_job_like_title and provisional_rows_found == 0:
-                _record_listing_only_rendered_meta(ctx)
+                # Provisional inline verifications performed detail fetches —
+                # stamping listing_only over them would misreport the run.
+                if not int(ctx.stats.get("provisional_inline_verified") or 0):
+                    _record_listing_only_rendered_meta(ctx)
                 continue
         _collect_listing_detail_links(
             ctx,

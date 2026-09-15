@@ -18,6 +18,7 @@ from src.jobs.common.config import (
     LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
 )
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
+from src.jobs.common.origin_junk import count_active_junk_class_rows
 from src.jobs.models import CanonicalJob
 from src.jobs.state_lifecycle_availability import (
     _empty_lifecycle_summary,
@@ -356,6 +357,11 @@ def apply_job_lifecycle_state(
     summary["availabilityAvailable"] = availability_counts["available"]
     summary["availabilityOverdue"] = availability_counts["verification_overdue"]
     summary["availabilityUnavailable"] = availability_counts["unavailable"]
+    # Post-pass invariant (2026-09-14 widget survey): a healthy pipeline holds
+    # ZERO active junk-class rows — guard regressions announce themselves as
+    # active stock, while drained history stays terminal. Nonzero is the flag;
+    # kill-switch-independent so a disabled guard cannot blind the monitor.
+    summary["activeJunkClass"] = count_active_junk_class_rows(next_rows.values())
     counts = {**lifecycle_counts(next_rows), **summary}
     return (
         [CanonicalJob.from_mapping(row) for row in projected_rows],

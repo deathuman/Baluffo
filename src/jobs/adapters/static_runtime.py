@@ -95,6 +95,12 @@ class StaticSourceContext:
     dead_listing_page_examples: list[str] = field(default_factory=list)
     link_rejections: Counter[str] = field(default_factory=Counter)
     ignored_link_titles: set[str] = field(default_factory=_default_ignored_link_titles)
+    # Bandai 2026-09-14: per-source-run shell-strike tally for the rendered-card
+    # detail-verification lane (host → strikes). Two "shell-shaped fetched HTML
+    # AND zero parsed rows" verifications from one host skip the rest of that
+    # host's verifications for the remainder of this source's run; reset
+    # naturally when the next pass builds a fresh context.
+    detail_shell_strikes: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.source_deadline:

@@ -5,6 +5,7 @@ import pytest
 from src.jobs.common.exact_category_titles import (
     has_static_container_artifact_evidence,
     is_exact_category_title,
+    is_static_container_artifact_title,
     looks_like_category_container_url,
     looks_like_static_container_url,
 )
@@ -148,3 +149,71 @@ def test_looks_like_static_container_url_detects_filter_and_language_urls(
     url: str,
 ) -> None:
     assert looks_like_static_container_url(url)
+
+
+# --- language-switch fallback narrowing (2026-09-14 bandai fix) ---------------
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # bandai careers shapes (the 4 trace targets + survivors): real CJK job
+        # titles with ASCII parentheses — the JP market's common style.
+        "家庭用ゲームエンジニア (新規格闘アクション)",
+        "テクニカルアーティスト (アーティスト部門)",
+        "家庭用ゲームエンジニア (クライアント)",
+        "家庭用ゲームエンジニア(テクニカルディレクター)",
+        "シニアR&Dエンジニア(機械学習)",
+        "ゲームエンジニア (プロジェクトマネジメント)",
+        # greenhouse (siei): CJK title, brand qualifier in parens.
+        "サーバーサイドエンジニア (PlayStation™Network サーバアプリケーション開発)",
+        "プロジェクトマネージャー／スクラムマスター(ITセキュリティ領域)",
+        # grackle: language word inside the parens, role-shaped outer.
+        "Localization Quality Assurance (Simplified Chinese)",
+        "Localization Quality Assurance (Traditional Chinese)",
+        # gamejobs: CJK title, English department qualifier.
+        "C++游戏开发工程师 (Software Engineering)",
+        # generic real-title shapes with ASCII parens.
+        "Engine Programmer (Unreal Engine)",
+        "Senior Producer (Remote)",
+        # role-shaped outer containing a veto word.
+        "English Teacher (Tokyo)",
+        "Language Model Engineer (NLP)",
+    ],
+)
+def test_language_switch_fallback_spares_real_job_titles(title: str) -> None:
+    assert not is_static_container_artifact_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # Outer label IS a language name (the switcher contract).
+        "English ( Inglese )",
+        "EN (日本語)",
+        "Deutsch (German)",
+        "(English)",
+        "(日本語)",
+        "(中文)",
+        # Whole-outer switcher labels ("Language (中文)" widgets).
+        "Language (中文)",
+        "言語 (Language)",
+        "Sprache (Language)",
+        "Languages (English)",
+    ],
+)
+def test_language_switch_fallback_still_flags_switcher_shapes(title: str) -> None:
+    assert is_static_container_artifact_title(title)
+
+
+def test_language_switch_fallback_pure_parenthetical_requires_language_name() -> None:
+    """(Remote) is a job posting; (日本語) is a switcher."""
+    assert not is_static_container_artifact_title("(Remote)")
+    assert not is_static_container_artifact_title("(一部リモート)")
+    assert is_static_container_artifact_title("(日本語)")
+
+
+def test_language_switch_fallback_bare_cjk_without_parens_unchanged() -> None:
+    """No parens → the predicate was always False and stays False (out of
+    contract); the bare-CJK language-code pins keep their other coverage."""
+    assert not is_static_container_artifact_title("日本語版ジョブ一覧")

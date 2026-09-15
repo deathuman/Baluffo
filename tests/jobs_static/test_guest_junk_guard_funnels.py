@@ -361,3 +361,36 @@ def test_registry_form_source_id_guards_inbound_rows() -> None:
         monkeypatch.undo()
     assert emitted == 0
     assert ctx.stats["junk_provenance_rows_dropped"] == 1
+
+
+def test_active_junk_class_summary_flags_preserved_active_stock() -> None:
+    """The zero-active-stock invariant (2026-09-14 widget survey): a source
+    that merely skips its pass leaves its active junk row in the store, and
+    the post-pass summary must flag it — nonzero is the alert."""
+    row = _lifecycle_row(FUSEBOX_SOURCE_ID)
+    row["status"] = "active"
+    _rows, _entry, _lifecycle, summary = apply_job_lifecycle_state(
+        deduped_rows=[],
+        lifecycle_rows={"fusebox-1": row},
+        finished_at="2026-09-14T12:00:00+00:00",
+        allow_mark_missing=False,
+        eligible_missing_sources=set(),
+        source_evidence={
+            "eligibleMissingSources": set(),
+            "failedMissingSources": set(),
+            "skippedMissingSources": {FUSEBOX_SOURCE_ID},
+        },
+        known_missing_evidence_sources={FUSEBOX_SOURCE_ID},
+    )
+    assert summary["activeJunkClass"] == 1
+
+
+def test_active_junk_class_summary_zero_once_drained() -> None:
+    """When the failed-source shield drains the junk row, the monitor's
+    count returns to zero in the same pass — the flag is self-clearing."""
+    row = _lifecycle_row(FUSEBOX_SOURCE_ID)
+    row["status"] = "active"
+    _rows, entry, _lifecycle, summary = _apply(row)
+    assert entry["availabilityClosureOrigin"] == "guest_junk_provenance"
+    assert summary["guestJunkDrained"] == 1
+    assert summary["activeJunkClass"] == 0

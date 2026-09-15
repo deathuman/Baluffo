@@ -28,7 +28,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.common import config as common_config
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, norm_text
 from src.url_hosts import host_matches_domain
 
 # Two id spellings carry a listing URL: the registry/extraction form
@@ -226,18 +226,65 @@ def is_junk_provenance_row(row: dict[str, Any], *, source: dict[str, Any] | None
     """
     if not guest_junk_guard_enabled():
         return False
+    return is_junk_class_row(row, source=source)
+
+
+def is_junk_class_row(row: dict[str, Any], *, source: dict[str, Any] | None) -> bool:
+    """The guard's shape logic without the kill-switch gate.
+
+    The post-pass monitor counts the junk-class stock even when the guard is
+    disabled (``BALUFFO_GUEST_JUNK_GUARD=off``): an operator toggling the
+    guard off must not also blind the invariant check.
+    """
     if source_origin_is_linkedin(source):
         return False
     source_host = source_identity_host(source)
     if not source_host:
         return False
-    url = clean_text(row.get("jobLink") if isinstance(row, dict) else None)
+    if not isinstance(row, dict):
+        return False
+    url = clean_text(row.get("jobLink"))
     if not url:
         return False
     if is_linkedin_guest_junk_url(url):
         return True
     return is_nav_anchor_junk_row(
-        clean_text(row.get("title")) if isinstance(row, dict) else "",
+        clean_text(row.get("title")),
         url,
         source_host=source_host,
     )
+
+
+def count_active_junk_class_rows(rows: Any) -> int:
+    """Count lifecycle entries that are both ``active`` and junk-class.
+
+    The post-pass invariant (2026-09-14 widget survey): a healthy pipeline
+    holds ZERO active junk-class rows — guard regressions announce themselves
+    as active stock, while drained/harvested history stays terminal. Cheap
+    prefilters first (status, static-source id, LinkedIn substring or exact
+    nav title) so the full-store scan stays O(N) string work; the shape
+    checkers only run on candidates. Entries without a resolvable static
+    listing identity fail open (uncounted), mirroring the guard.
+    """
+    count = 0
+    try:
+        iterator = list(rows)
+    except TypeError:
+        return 0
+    for entry in iterator:
+        if not isinstance(entry, dict) or norm_text(entry.get("status")) != "active":
+            continue
+        source_id = clean_text(entry.get("source"))
+        if source_id.startswith("static_source::"):
+            source_id = source_id[len("static_source::") :]
+        if not source_id:
+            continue
+        url = clean_text(entry.get("jobLink"))
+        title = clean_text(entry.get("title"))
+        if "linkedin" not in url.lower() and not title:
+            # LinkedIn-shape candidates need a LinkedIn URL; nav-anchor
+            # candidates always carry a title. Everything else is out.
+            continue
+        if is_junk_class_row({"jobLink": url, "title": title}, source={"id": source_id}):
+            count += 1
+    return count

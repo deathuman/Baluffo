@@ -192,6 +192,7 @@ def _normalize_lifecycle_summary(payload: Any, summary: dict[str, Any]) -> dict[
             src.get("preservedBecauseSourceSkippedCount"), 0, 0
         ),
         "guestJunkDrainedCount": _clamped_int(src.get("guestJunkDrainedCount"), 0, 0),
+        "activeJunkClassRowCount": _clamped_int(src.get("activeJunkClassRowCount"), 0, 0),
         "eligibleMissingSourceCount": _clamped_int(src.get("eligibleMissingSourceCount"), 0, 0),
         "ineligibleMissingSourceCount": _clamped_int(src.get("ineligibleMissingSourceCount"), 0, 0),
     }

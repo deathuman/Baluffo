@@ -193,6 +193,36 @@ GUEST_JUNK_GUARD_ENABLED = os.environ.get("BALUFFO_GUEST_JUNK_GUARD", "1").strip
     "yes",
 )
 
+# Bandai trace follow-up (2026-09-14): rendered-card detail verification burns
+# the per-source budget re-fetching JS-shell detail pages the parser can only
+# ever reject (hrmos tenants: 38 × ~0.65s ≈ the whole 25s budget). The rows
+# lane skips a detail host after two verifications whose fetched HTML is
+# shell-shaped AND parsed zero rows; shell shape alone never skips (the hrmos
+# listing page carries Next.js/`__NEXT_DATA__` tokens yet is fully
+# server-rendered). Fail-open: unset the env var to restore fetch-always.
+STATIC_SHELL_DETAIL_SKIP_ENABLED = os.environ.get(
+    "BALUFFO_STATIC_SHELL_DETAIL_SKIP", "1"
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# Bandai trace remediation (2), 2026-09-14: provisional-artifact demotion with
+# no fallback. Demoted cards queued as detail candidates died unconverted when
+# the conversion stage never ran (budget death) — the card itself carried the
+# posting evidence. The rows lane now verifies the demoted card inline against
+# its own detail URL (probable-detail URLs only, job-like titles only) and
+# falls back to the card row on empty, matching the non-provisional lane.
+# Fail-open: unset the env var to restore queue-only demotion.
+PROVISIONAL_CARD_FALLBACK_ENABLED = os.environ.get(
+    "BALUFFO_PROVISIONAL_CARD_FALLBACK", "1"
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
 # Mutable diagnostics map used across fetch runs.

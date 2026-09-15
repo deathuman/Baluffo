@@ -39,6 +39,10 @@ from src.jobs.adapters.static_listing_common import (
     _is_expected_static_listing_fetch_fallback,
 )
 from src.jobs.adapters.static_listing_flow import _finish_generic_source
+from src.jobs.adapters.static_listing_pagination import (
+    STATIC_PAGINATION_MAX_FOLLOWED_PAGES,
+    pagination_anchors_for_html,
+)
 from src.jobs.adapters.static_listing_plugin import _should_try_listing_browser_fallback
 from src.jobs.adapters.static_listing_rows import _extract_listing_candidates
 from src.jobs.adapters.static_listing_state import StaticListingStageState, _source_detail_key
@@ -97,22 +101,60 @@ class StaticFetchRunner:
         self.stage_state = StaticListingStageState()
         self.stop_source = False
         self.anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
+        # hrmos pagination (2026-09-14): listing pages discovered from
+        # ?page=N anchors queue behind the registry pages and are followed
+        # within the same run (kill-switch + cap live in
+        # static_listing_pagination.py).
+        self.pending_listing_pages: list[str] = []
+        self.seen_listing_pages: set[str] = set(self.cleaned_pages)
+        self.pagination_discovered_count = 0
 
     # pure helper
     def run(self) -> None:
-        for batch_start in range(0, len(self.cleaned_pages), self.listing_batch_size):
-            if self.stop_source:
+        registry_batch_start = 0
+        while not self.stop_source:
+            if registry_batch_start < len(self.cleaned_pages):
+                batch_start = registry_batch_start
+                registry_batch_start += 1
+                target_url = clean_text(self.cleaned_pages[batch_start]) or self.source_name
+                listing_batch_jobs = self._build_listing_batch(batch_start)
+            elif self.pending_listing_pages:
+                target_url = self.pending_listing_pages[0]
+                listing_batch_jobs = self._build_discovered_listing_batch()
+            else:
                 break
-            target_url = clean_text(self.cleaned_pages[batch_start]) or self.source_name
+            if self.stop_source or not listing_batch_jobs:
+                break
             if self._page_budget_exhausted(
                 target_url, self.config.static_source_time_budget_s, 1.0
             ):
                 break
-            listing_batch_jobs = self._build_listing_batch(batch_start)
-            if self.stop_source or not listing_batch_jobs:
-                break
             self._run_listing_batch(listing_batch_jobs)
         _finish_generic_source(self.ctx, self.stage_state)
+
+    # pure helper
+    def _build_discovered_listing_batch(self) -> list[dict[str, Any]]:
+        page_url = clean_text(self.pending_listing_pages.pop(0))
+        if not page_url:
+            return []
+        domain_profile = domain_profile_for_url(page_url)
+        source_budget_s = int(
+            domain_profile.get("static_source_time_budget_s")
+            or self.config.static_source_time_budget_s
+        )
+        self.ctx.sync_source_deadline(source_budget_s)
+        if self._page_budget_exhausted(page_url, source_budget_s, 1.0):
+            self.stop_source = True
+            return []
+        return [
+            {
+                "url": page_url,
+                "payload": {
+                    "domainProfile": domain_profile,
+                    "sourceBudgetS": source_budget_s,
+                },
+            }
+        ]
 
     # pure helper
     def _build_listing_batch(self, batch_start: int) -> list[dict[str, Any]]:
@@ -447,6 +489,12 @@ class StaticFetchRunner:
             detail_links, listing_jobs_found, provisional_rows_found = self._extract_listing_page(
                 page_url, source_budget_s, listing_htmls
             )
+            # hrmos pagination (2026-09-14): queue same-listing ?page=N anchors
+            # before the fingerprint skip so a changed board still syncs its
+            # full window; the queued pages are consumed by run() after the
+            # registry pages and share the source budget.
+            self._queue_discovered_pagination_pages(page_url, listing_htmls)
+
             detail_links = self._apply_listing_fingerprint(
                 detail_links,
                 listing_htmls,
@@ -485,6 +533,22 @@ class StaticFetchRunner:
             }:
                 self.stop_source = True
             self.ctx.emit_heartbeat()
+
+    # mutation — modifies in-place state
+    def _queue_discovered_pagination_pages(self, page_url: str, listing_htmls: list[str]) -> None:
+        remaining = STATIC_PAGINATION_MAX_FOLLOWED_PAGES - self.pagination_discovered_count
+        for listing_html in listing_htmls:
+            for next_page in pagination_anchors_for_html(
+                listing_html, page_url, max_pages=max(0, remaining)
+            ):
+                if next_page in self.seen_listing_pages:
+                    continue
+                self.seen_listing_pages.add(next_page)
+                self.pending_listing_pages.append(next_page)
+                self.pagination_discovered_count += 1
+                remaining -= 1
+                if remaining <= 0:
+                    return
 
     # mutation — modifies in-place state
     def _try_playwright_fallback(
@@ -658,6 +722,9 @@ class StaticFetchRunner:
             and listing_fingerprint == previous_listing_fingerprint
             and not self.deps.force_refresh_all
             and provisional_rows_found <= 0
+            # Provisional inline verifications (2026-09-14) performed detail
+            # fetches on this page — "detail skipped by fingerprint" would lie.
+            and not int(self.ctx.stats.get("provisional_inline_verified") or 0)
         ):
             self.entry_report["cacheDecision"] = "listing_only"
             self.entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
