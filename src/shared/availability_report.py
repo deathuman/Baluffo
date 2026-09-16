@@ -25,7 +25,7 @@ def _int_map(value: Any) -> dict[str, int]:
         for key, item in value.items():
             try:
                 result[str(key).strip()] = int(item)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
     return {key: item for key, item in result.items() if key}
 
@@ -37,7 +37,7 @@ def _signed_int(value: Any) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

@@ -371,7 +371,7 @@ def _json_journal_record_row_count(record: dict[str, Any]) -> int | None:
         return None
     try:
         return int(row_count)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

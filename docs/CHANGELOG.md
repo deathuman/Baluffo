@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.150] - 2026-09-16
+### Fixed
+
+- **`int(float("inf"))` no longer escapes as an uncaught `OverflowError` across the repository's integer coercion helpers.** `OverflowError` is not a `ValueError` subclass, so the ubiquitous `try: int(value) / except (TypeError, ValueError)` idiom caught `nan` (which raises `ValueError`) while letting `inf` through — and `json.dumps` emits bare `Infinity`/`NaN` tokens that `json.loads` parses back, so both values are reachable from any round-tripped artifact or external payload. An empirical probe of the flagged helpers found **21 raising on `inf` today**, plus 9 more that were invisible to a name-only scan because they carried byte-identical buggy bodies under unrecognized names (`_count`, `positive_int`, `_safe_status`, `_safe_pid`, `_summary_int`, `_clamped_int`, `to_int`). All 35 helpers now return their documented fallback for `inf`, `-inf` and `nan` instead of raising, and the three `isinstance`-ladder coercions whose `float` branch sat outside the `try` were guarded too. Net **-195 lines** in `src/` from consolidating 21 duplicated helpers onto `int_or_default`.
+
+- **A duplicated-function-body gate now blocks instead of warning.** New `tools/repo_health/duplicate_body_policy.py` is a stdlib-only AST-hash scan over `src/`, `scripts/` and `tools/`, wired in as the 13th repo-guardrail group. Baseline entries record `max_copies` rather than a bare digest, so a baselined body that gains another copy fails again instead of licensing unlimited copies under an approved hash. The int-coercion consolidation pruned the baseline from 10 patterns to the 6 unrelated ones left.
+
+- **Coercion ratchets stop the defect reappearing.** A name-gated scan flags `int()` with no `OverflowError` handler (its baseline is now empty), a body-digest scan catches a guarded helper's body reappearing unguarded under a name the first scan ignores, and a name-independent scan ratchets the remaining `int(<bare name>)` sites a static rule cannot decide.
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.149] - 2026-09-16
 ### Changed
 

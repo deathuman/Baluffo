@@ -23,10 +23,11 @@ def _write_module(root: Path, name: str, source: str) -> None:
     target.write_text(source, encoding="utf-8", newline="\n")
 
 
-def _write_baseline(root: Path, digests: list[str]) -> None:
+def _write_baseline(root: Path, entries: list[tuple[str, int]]) -> None:
     path = root / policy.BASELINE_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"patterns": digests}), encoding="utf-8", newline="\n")
+    payload = {"patterns": [{"digest": d, "max_copies": c} for d, c in entries]}
+    path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
 
 
 DUPLICATED_BODY = '''
@@ -103,13 +104,58 @@ class TestInvariants:
     def test_baselined_pattern_is_covered(self, tmp_path: Path) -> None:
         _write_module(tmp_path, "probe.py", _duplicated_source())
         digest = policy.collect_duplicate_patterns(tmp_path)[0].digest
-        _write_baseline(tmp_path, [digest])
+        _write_baseline(tmp_path, [(digest, 3)])
         assert policy.check_duplicate_function_bodies(tmp_path) == []
+
+    def test_growing_past_the_cap_is_uncovered_again(self, tmp_path: Path) -> None:
+        """A baselined digest must not license unlimited further copies."""
+        _write_module(tmp_path, "probe.py", _duplicated_source(count=3))
+        digest = policy.collect_duplicate_patterns(tmp_path)[0].digest
+        _write_baseline(tmp_path, [(digest, 3)])
+        assert policy.check_duplicate_function_bodies(tmp_path) == []
+
+        # A 4th identical copy must be reported even though the digest matches.
+        _write_module(tmp_path, "probe.py", _duplicated_source(count=4))
+        uncovered = policy.check_duplicate_function_bodies(tmp_path)
+        assert len(uncovered) == 1
+        assert "grew past the baselined cap of 3" in uncovered[0]
+
+    def test_shrinking_below_the_cap_is_covered(self, tmp_path: Path) -> None:
+        """Consolidation is never blocked by the cap."""
+        _write_module(tmp_path, "probe.py", _duplicated_source(count=5))
+        digest = policy.collect_duplicate_patterns(tmp_path)[0].digest
+        _write_baseline(tmp_path, [(digest, 5)])
+
+        _write_module(tmp_path, "probe.py", _duplicated_source(count=3))
+        assert policy.check_duplicate_function_bodies(tmp_path) == []
+
+    def test_bare_digest_entry_is_rejected(self, tmp_path: Path) -> None:
+        """A digest-only entry would be count-independent, so it must not parse."""
+        _write_module(tmp_path, "probe.py", _duplicated_source())
+        digest = policy.collect_duplicate_patterns(tmp_path)[0].digest
+        path = tmp_path / policy.BASELINE_RELATIVE_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"patterns": [digest]}), encoding="utf-8", newline="\n")
+
+        assert policy.load_baseline(tmp_path) == {}
+        errors = policy.check_baseline_file(tmp_path)
+        assert any("must be an object" in error for error in errors)
+
+    def test_non_positive_cap_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / policy.BASELINE_RELATIVE_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"patterns": [{"digest": "abc", "max_copies": 0}]}),
+            encoding="utf-8",
+            newline="\n",
+        )
+        errors = policy.check_baseline_file(tmp_path)
+        assert any("`max_copies` >= 1" in error for error in errors)
 
     def test_deduplicated_pattern_makes_baseline_stale(self, tmp_path: Path) -> None:
         _write_module(tmp_path, "probe.py", _duplicated_source())
         digest = policy.collect_duplicate_patterns(tmp_path)[0].digest
-        _write_baseline(tmp_path, [digest])
+        _write_baseline(tmp_path, [(digest, 3)])
 
         _write_module(tmp_path, "probe.py", "def _only_one(value):\n    return value\n")
         stale = policy.check_duplicate_bodies_stale_baseline(tmp_path)
@@ -141,7 +187,7 @@ class TestDegradation:
     def test_missing_baseline_does_not_mark_everything_uncovered(self, tmp_path: Path) -> None:
         """A missing baseline must not flood the warning with known patterns."""
         _write_module(tmp_path, "probe.py", _duplicated_source())
-        assert policy.load_baseline(tmp_path) == set()
+        assert policy.load_baseline(tmp_path) == {}
 
 
 class TestRepositoryBaseline:
@@ -204,7 +250,7 @@ class TestGuardrailWiring:
             (tmp_path / "src" / f"{name}.py").write_text(body, encoding="utf-8")
         (tmp_path / "tools" / "repo_health").mkdir(parents=True, exist_ok=True)
         (tmp_path / "tools" / "repo_health" / "duplicate_bodies_baseline.json").write_text(
-            '{"patterns": []}\n', encoding="utf-8"
+            '{"patterns": []}\n', encoding="utf-8", newline="\n"
         )
 
         uncovered = policy.check_duplicate_function_bodies(repo_root=tmp_path)

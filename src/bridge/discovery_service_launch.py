@@ -29,10 +29,10 @@ class DiscoveryServiceLaunchMixin(DiscoveryServiceState):
         raw = self._deps.schema_version
         try:
             return int(raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             try:
                 return int(float(str(raw)))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return 1
 
     @staticmethod

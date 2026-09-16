@@ -54,7 +54,7 @@ def _normalize_log_format(value: Any, default: str = "human") -> str:
 def _coerce_port(value: Any, default: int) -> int:
     try:
         port = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
     return port if 1 <= port <= 65535 else int(default)
 
