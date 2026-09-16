@@ -1,0 +1,19 @@
+# Dependabot registration: makes Dependabot scan the npm manifest on PRs that
+# touch it (alert-on-PR preview) and open version-update PRs for direct deps.
+# Security alerts on the default branch remain GitHub-native (no config needed).
+# The advisory enforcement itself lives in the npm audit gate on PRs (lint.yml
+# `npm run security:js`, allowlist tools/security/npm-audit-allowlist.json).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      js-dev-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"

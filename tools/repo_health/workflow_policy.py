@@ -85,7 +85,34 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "npm run security:python" in workflow_text, (
         f"{workflow_path.name} should run the Python dependency security audit."
     )
+    assert "npm run security:js" in workflow_text, (
+        f"{workflow_path.name} should run the JavaScript dependency security audit "
+        "so npm advisories surface on PRs and main pushes, not only on release "
+        "pushes when Dependabot rescans the default-branch manifest."
+    )
     assert "ruff==0.15.14" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
+
+
+def test_package_json_exposes_js_security_audit_entrypoint(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    script = package["scripts"]["security:js"]
+    allowlist = repo_root / "tools" / "security" / "npm-audit-allowlist.json"
+    dependabot = repo_root / ".github" / "dependabot.yml"
+    lint_workflow = (repo_root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+
+    assert script == "python scripts/js_security_audit.py"
+    assert allowlist.is_file(), (
+        "The npm-audit allowlist must exist so accepted advisories stay visible "
+        "and expiry-enforced, mirroring the pip-audit allowlist contract."
+    )
+    assert dependabot.is_file(), (
+        ".github/dependabot.yml must register the npm ecosystem so Dependabot "
+        "previews alerts on PRs and opens version-update PRs."
+    )
+    assert "package-ecosystem" in dependabot.read_text(encoding="utf-8")
+    assert "Run JavaScript dependency security audit" in lint_workflow, (
+        "lint.yml must run the JavaScript dependency security audit beside the Python lane."
+    )
 
 
 def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(

@@ -64,3 +64,6 @@ jobs:
 
       - name: Run Python dependency security audit
         run: npm run security:python
+
+      - name: Run JavaScript dependency security audit
+        run: npm run security:js
