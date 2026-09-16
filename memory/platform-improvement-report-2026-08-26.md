@@ -118,3 +118,41 @@ remains: `tests/bridge/test_container_runtime.py::test_container_handler_serves_
   fixture data dir at `/data` (chown 1000), a hard readiness assertion, and per-mode `--base-url`
   forwarding (the `npm run ... -- --base-url` form only reached the nav leg). Local seeded run:
   cold/warm/nav ALL CHECKS PASSED.
+
+### Gate-truth follow-up (2026-09-17, v0.2.151): the local pre-push gate was not running mypy or eslint
+
+**Corrects the line above that says "eslint stay[s] outside local preflight".** The opposite was true and
+worse: `mypy` and `eslint` were dead configuration locally.
+
+- **Root cause was stage selection, not a missing hook.** `.pre-commit-config.yaml` declares `mypy`,
+  `eslint` and `vulture` with `stages: [pre-push]`, but `scripts/precommit_gate.py` invoked the framework
+  with no `--hook-stage` — selecting the default `pre-commit` stage — and then hand-added only `vulture`.
+  A green `npm run lint:precommit` therefore said nothing about types.
+- **`eslint` had never run anywhere**: absent from `.github/workflows/lint.yml`, absent from
+  `release:preflight`, absent from `.githooks/pre-push`. It reported **7,118 errors**, of which 7,063 came
+  from `.venv/**` and `.container-frontend/**` that `eslint.config.js` did not ignore. Do NOT fix this by
+  adding `--hook-stage pre-push` alone — that selects the eslint hook, whose `pass_filenames: false`
+  ignores the gate's file list.
+- **Fix**: `PRE_PUSH_HOOK_IDS = ("vulture", "mypy", "eslint")` with one
+  `pre_commit run <hook-id> --all-files --hook-stage pre-push` per hook. `pre-commit run` accepts only a
+  single hook id; `--all-files` is required because both hooks scan the whole repo regardless of the file
+  list. `run_changed` keeps the default stage so commits stay fast.
+- **The wiring proved itself on its first run** by catching a real `attr-defined` error in
+  `tests/test_release_docs.py` that I had just introduced — exactly the failure class it exists to catch.
+- **CRLF write bug**: `Path.write_text()` with default `newline=None` translates to `os.linesep`, so
+  `bump_version.py` emitted CRLF for `src/app_version.py`, the Umbrel app/compose metadata, the changelog
+  and the release notes on Windows, and `ruff format --check` then failed on the LF-only tree. Both
+  writers now pass `newline="\n"`; the 0.2.151 bump emitted **0 CRLF bytes** across all five artifacts.
+- **`git commit` is blocked by the container version gate when shipped code lands after a bump.**
+  `Dockerfile` has `COPY . .` and `COPY frontend ./frontend`, so `scripts/` and `frontend/` genuinely ship.
+  The sanctioned escapes are a version bump or a `Release-tag: vX.Y.Z` line — **never** `--no-verify`.
+  Folding the offending commit in with `git reset --soft HEAD~1` and re-committing as the release works
+  because the anchor then becomes the release commit itself and the window is empty.
+- **Verification that mattered**: an unedited `pre_commit run --all-files` (bypassing the gate's
+  `--exclude-root data`) silently rewrote two tracked data artifacts, adding one trailing byte each. Use
+  the gate, not raw pre-commit, and check `git status` afterwards.
+- Gates at closeout: 5128 passed / 1 skipped (`test:py:linux`), 5375 passed / 2 skipped
+  (`test:py:extended`), mypy clean on 1308 files, `eslint` 0 errors (19 pre-existing `no-unused-vars`
+  warnings), all 13 guardrail groups green. Published `ghcr.io/deathuman/baluffo:0.2.151` = `latest` =
+  `sha256:6e8f8bc75706805809fcd8be062e5d1f1df9db3d430d365d42343dafe0c84f62` (linux/amd64 + linux/arm64).
+  **No live Umbrel smoke evidence** for 0.2.151 — image and CI verified, installed app not.
