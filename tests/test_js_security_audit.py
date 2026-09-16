@@ -89,6 +89,47 @@ def test_fix_available_rendering_variants() -> None:
     assert "fixAvailable: no" in findings[2]
 
 
+def test_advisory_id_falls_back_to_url_tail_when_id_missing() -> None:
+    """npm omits `id` on some advisory records (observed: cross-spawn 7.0.3 ReDoS
+    reports only a `url` ending in the GHSA id). The fallback keeps such findings
+    allowlistable by their documented id — found by the 2026-09-16 red-team drill."""
+    payload = {
+        "vulnerabilities": {
+            "cross-spawn": {
+                "severity": "high",
+                "via": [
+                    {
+                        "source": 1099,
+                        "name": "cross-spawn",
+                        "url": "https://github.com/advisories/GHSA-3xgq-45jj-v275",
+                        "severity": "high",
+                        "range": "<7.0.5",
+                    }
+                ],
+            }
+        }
+    }
+    findings = js_security_audit.assess_audit_payload(payload, set())
+    assert len(findings) == 1
+    assert "GHSA-3xgq-45jj-v275" in findings[0]
+    assert "no advisory id" not in findings[0]
+
+
+def test_url_fallback_ignores_non_advisory_urls() -> None:
+    payload = {
+        "vulnerabilities": {
+            "pkg": {
+                "severity": "moderate",
+                "via": [{"source": 1, "name": "pkg", "url": "https://example.com/not-an-advisory"}],
+            }
+        }
+    }
+    findings = js_security_audit.assess_audit_payload(payload, set())
+    assert findings == [
+        "pkg [moderate] advisories: (transitive effect — no advisory id) fixAvailable: no"
+    ]
+
+
 def test_unknown_severity_is_reported_not_dropped() -> None:
     payload = {"vulnerabilities": {"pkg": {"severity": "weird", "via": [{"id": "GHSA-x"}]}}}
     findings = js_security_audit.assess_audit_payload(payload, set())

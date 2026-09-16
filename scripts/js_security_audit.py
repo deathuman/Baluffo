@@ -56,14 +56,28 @@ def build_npm_audit_command(npm: str) -> list[str]:
 
 
 def _advisory_ids(via: object) -> list[str]:
-    """Advisory ids from an npm-audit ``via`` list (string entries are chain causes)."""
+    """Advisory ids from an npm-audit ``via`` list (string entries are chain causes).
+
+    npm omits ``id`` on some advisory records and carries the identifier only in
+    ``url`` (observed live: cross-spawn 7.0.3 ReDoS reports ``url`` ending in
+    ``GHSA-3xgq-45jj-v275`` with no ``id`` key). Without the URL fallback such a
+    finding can never be allowlisted by its GHSA id — the documented acceptance
+    remedy dead-ends (found by the 2026-09-16 red-team drill).
+    """
     ids: list[str] = []
+    seen: set[str] = set()
     if isinstance(via, list):
         for entry in via:
-            if isinstance(entry, dict):
-                advisory_id = str(entry.get("id") or "").strip()
-                if advisory_id:
-                    ids.append(advisory_id)
+            if not isinstance(entry, dict):
+                continue
+            advisory_id = str(entry.get("id") or "").strip()
+            if not advisory_id:
+                tail = str(entry.get("url") or "").rstrip("/").rsplit("/", 1)[-1]
+                if tail.upper().startswith(("GHSA-", "PYSEC-")):
+                    advisory_id = tail
+            if advisory_id and advisory_id not in seen:
+                seen.add(advisory_id)
+                ids.append(advisory_id)
     return ids
 
 
