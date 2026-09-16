@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -126,7 +127,8 @@ _RAISING_PROBES = (float("nan"), float("inf"), float("-inf"))
 @pytest.mark.parametrize("module_name", _DESKTOP_MODULES)
 def test_desktop_as_int_never_raises(module_name: str) -> None:
     module = importlib.import_module(module_name)
-    helper = getattr(module, "_as_int", None)
+    # getattr with a None default is inferred as None; the helper is callable.
+    helper: Any = getattr(module, "_as_int", None)
     if helper is None:
         pytest.skip(f"{module_name} has no _as_int helper")
 
@@ -136,7 +138,7 @@ def test_desktop_as_int_never_raises(module_name: str) -> None:
 
 def test_desktop_as_int_copies_agree() -> None:
     """Every desktop _as_int must return the same result for the same input."""
-    helpers = []
+    helpers: list[tuple[str, Any]] = []
     for module_name in _DESKTOP_MODULES:
         module = importlib.import_module(module_name)
         helper = getattr(module, "_as_int", None)

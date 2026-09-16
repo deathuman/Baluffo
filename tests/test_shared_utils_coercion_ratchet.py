@@ -65,7 +65,7 @@ _INT_HELPER_NAMES = frozenset(
 # EMPTY: every helper this ratchet can see now catches OverflowError. Keep it
 # empty -- a new entry means new unguarded int() coercion, and the test below
 # will name it.
-_KNOWN_OVERFLOW_UNSAFE = frozenset()
+_KNOWN_OVERFLOW_UNSAFE: frozenset[str] = frozenset()
 
 _OVERFLOW_HANDLER_NAMES = frozenset(
     {"OverflowError", "ArithmeticError", "Exception", "BaseException"}
