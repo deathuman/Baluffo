@@ -400,6 +400,7 @@ Before any release:
    - `npm run lint:precommit`
    - `npm run test:py:extended`
    - `npm run test:frontend:unit`
+   - `npm run security:js`
    - `npm run test:frontend:packaged`
    - `npm run test:frontend:packaged:sync-rehearsal`
    - `npm run test:frontend:packaged:update-rehearsal`
@@ -508,7 +509,7 @@ For the canonical startup measurement architecture and the preferred `perf:start
 
 ### Local Preflight vs CI Gate Coverage
 
-`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
+`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
 
 - `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) run on every push and pull request in `.github/workflows/lint.yml`; mypy runs again at tag time in `build-linux.yml` together with the Linux AppImage build and AppImage smoke, which have no local preflight lane.
 - The container Jobs boot performance gate (`jobs-boot-perf.yml`) builds and runs the real container; it is deliberately not part of local preflight because preflight has no live container.

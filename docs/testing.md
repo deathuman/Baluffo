@@ -159,6 +159,16 @@ npm run security:python
 
 The audit scans the checked-in `requirements-lock.txt` with `pip-audit`, writes a JSON report to `.tmp/security/pip-audit.json`, and fails on any unallowlisted advisory. CI runs this lane after the pre-commit guardrails in the lint workflow.
 
+## JavaScript dependency security audit
+
+Run the npm dependency vulnerability audit with:
+
+```bash
+npm run security:js
+```
+
+The audit runs `npm audit --json` against the checked-in `package-lock.json` (dev transitives included — the js-yaml/smol-toml/@humanfs advisories all rode tooling chains), writes a JSON report to `.tmp/security/npm-audit.json`, and fails on any advisory at severity moderate or above unless its id is accepted in the expiry-enforced `tools/security/npm-audit-allowlist.json`. The gate fails closed on missing npm or unparsable reports. CI runs it in the lint workflow on every PR and main push, and `npm run release:preflight` verifies it locally before tagging.
+
 The same audit runs locally through the pre-commit gate: a `pip-audit` local hook fires on commit whenever `requirements-lock.txt` or `tools/security/pip-audit-allowlist.json` changes, and on every push via the full-repo gate (which always includes the lock file, so a new advisory against unchanged pins is caught before it reaches CI). If `pip-audit` is not installed locally, the gate fails with install guidance (`python -m pip install pip-audit==2.10.0`).
 
 Known non-actionable findings must be listed in `tools/security/pip-audit-allowlist.json` with an advisory id, package, reason, owner, and `review_by` date. Expired or malformed allowlist entries are failures. Ownership defaults to the matching code owner; for repository-wide dependency findings, use the default owner from `CODEOWNERS`.
@@ -221,6 +231,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Repository policy guardrails | `npm run lint:repo-guardrails` |
 | Frontend unit tests | `npm run test:frontend:unit` |
 | Python dependency security audit | `npm run security:python` |
+| JavaScript dependency security audit | `npm run security:js` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
 | Build Linux AppImage | `npm run build:linux` |
