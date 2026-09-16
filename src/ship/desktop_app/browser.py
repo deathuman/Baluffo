@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import cast
 
 from src.shared.json_shapes import as_json_object as _as_dict
+from src.shared.utils import int_or_default as _as_int
 
 from ._compat import desktop_api
 from .config import (
@@ -43,21 +44,6 @@ LEAN_CHROMIUM_APP_FLAGS = (
     "--disable-sync",
     "--metrics-recording-only",
 )
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _as_float(value: object, default: float = 0.0) -> float:

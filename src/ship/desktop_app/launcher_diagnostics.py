@@ -10,23 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.shared.utils import int_or_default as _as_int
+
 from ._compat import desktop_api
 from .config import WINDOW_TITLE
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> None:

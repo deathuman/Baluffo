@@ -15,6 +15,7 @@ from src.bridge.routes.route_storage_metrics import (
     storage_metrics_data_dir,
 )
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
+from src.shared.utils import int_or_default as _safe_int
 from src.storage.source_runtime import SourceRuntimeStore
 
 
@@ -36,13 +37,6 @@ def _as_list(value: Any) -> list[Any]:
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value or default)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def _record_source_run_diagnostic(

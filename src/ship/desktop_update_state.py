@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from src.app_version import get_app_version
+from src.shared.utils import int_or_default as _as_int
 from src.ship import desktop_update_constants as constants_mod
 from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_CHANNEL,
@@ -47,21 +48,6 @@ def _as_str_dict(value: Any) -> dict[str, str]:
 
 def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
-
-
-def _as_int(value: Any, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:

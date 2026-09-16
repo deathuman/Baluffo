@@ -34,10 +34,6 @@ def _clean_text(value: Any) -> str:
     return clean_text(value)
 
 
-def _coerce_int(value: Any) -> int:
-    return int_or_default(value)
-
-
 def _json_dumps(value: Any) -> str:
     return json_dumps(value)
 
@@ -372,9 +368,9 @@ class JobRuntimeStore:
         return {
             "generation": _clean_text(row.get("current_generation")),
             "runId": _clean_text(row.get("run_id")),
-            "rowCount": _coerce_int(row.get("row_count")),
+            "rowCount": int_or_default(row.get("row_count")),
             "rowHash": _clean_text(row.get("row_hash")),
-            "sourceCount": _coerce_int(row.get("source_count")),
+            "sourceCount": int_or_default(row.get("source_count")),
             "sourceHash": _clean_text(row.get("source_hash")),
             "publishedAt": _clean_text(row.get("published_at")),
             "updatedAt": _clean_text(row.get("updated_at")),
@@ -472,7 +468,7 @@ class JobRuntimeStore:
         )
 
     def _source_count(self, generation: str) -> int:
-        return _coerce_int(
+        return int_or_default(
             self.store.execute_scalar(
                 "SELECT COUNT(*) FROM job_sources WHERE feed_generation = ?",
                 (_clean_text(generation),),

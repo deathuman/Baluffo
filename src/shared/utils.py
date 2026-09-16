@@ -75,19 +75,29 @@ def coerce_int(
     minimum: int = 1,
     maximum: int = 65535,
 ) -> int:
-    """Coerce value to int and clamp to [minimum, maximum]."""
+    """Coerce value to int and clamp to [minimum, maximum].
+
+    OverflowError is caught explicitly: ``int(float("inf"))`` raises
+    OverflowError, which is not a ValueError subclass, so a bare
+    ``except (TypeError, ValueError)`` would let it escape.
+    """
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
 
 
 def int_or_default(value: Any, default: int = 0) -> int:
-    """Return int(value) when possible, otherwise the provided default."""
+    """Return int(value) when possible, otherwise the provided default.
+
+    OverflowError is caught explicitly: ``int(float("inf"))`` raises
+    OverflowError, which is not a ValueError subclass, so a bare
+    ``except (TypeError, ValueError)`` would let it escape.
+    """
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
 
 

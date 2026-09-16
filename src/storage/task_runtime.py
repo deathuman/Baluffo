@@ -37,10 +37,6 @@ def _clean_text(value: Any) -> str:
     return clean_text(value)
 
 
-def _coerce_int(value: Any) -> int:
-    return int_or_default(value)
-
-
 def _coerce_bool_int(value: Any) -> int:
     return 1 if bool(value) else 0
 
@@ -109,7 +105,7 @@ def _task_record_from_entry(
     summary = entry.get("summary")
     progress = entry.get("progress") if "progress" in entry else entry.get("taskProgress")
     return {
-        "schema_version": _coerce_int(entry.get("schemaVersion")) or TASK_SCHEMA_VERSION,
+        "schema_version": int_or_default(entry.get("schemaVersion")) or TASK_SCHEMA_VERSION,
         "run_id": _clean_text(entry.get("runId") or entry.get("id")),
         "task_type": _clean_text(entry.get("taskType") or entry.get("type")).lower(),
         "parent_run_id": _clean_text(entry.get("parentRunId") or entry.get("parent_run_id")),
@@ -124,7 +120,7 @@ def _task_record_from_entry(
         "finished_at": finished_at,
         "terminal_reason": _clean_text(entry.get("terminalReason") or entry.get("terminal_reason")),
         "owner_kind": _clean_text(entry.get("ownerKind") or entry.get("owner_kind")),
-        "owner_pid": _coerce_int(entry.get("ownerPid") or entry.get("owner_pid")),
+        "owner_pid": int_or_default(entry.get("ownerPid") or entry.get("owner_pid")),
         "progress": _json_object(progress),
         "summary": _json_object(summary),
         "error": _clean_text(entry.get("error")),
@@ -151,7 +147,7 @@ def _task_route_row(record: Mapping[str, Any], *, active: bool) -> dict[str, Any
         "parentRunId": _clean_text(record.get("parent_run_id")),
         "parentTaskType": _clean_text(record.get("parent_task_type")),
         "ownerKind": _clean_text(record.get("owner_kind")),
-        "ownerPid": _coerce_int(record.get("owner_pid")),
+        "ownerPid": int_or_default(record.get("owner_pid")),
         "stage": _clean_text(record.get("stage")),
         "taskProgress": _json_loads_object(record.get("progress_json")),
         "summary": _json_loads_object(record.get("summary_json")),
@@ -164,7 +160,7 @@ def _task_route_row(record: Mapping[str, Any], *, active: bool) -> dict[str, Any
 
 def _task_record_from_sql(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "schema_version": _coerce_int(row.get("schema_version")),
+        "schema_version": int_or_default(row.get("schema_version")),
         "run_id": _clean_text(row.get("run_id")),
         "task_type": _clean_text(row.get("task_type")),
         "parent_run_id": _clean_text(row.get("parent_run_id")),
@@ -177,7 +173,7 @@ def _task_record_from_sql(row: Mapping[str, Any]) -> dict[str, Any]:
         "finished_at": _clean_text(row.get("finished_at")),
         "terminal_reason": _clean_text(row.get("terminal_reason")),
         "owner_kind": _clean_text(row.get("owner_kind")),
-        "owner_pid": _coerce_int(row.get("owner_pid")),
+        "owner_pid": int_or_default(row.get("owner_pid")),
         "progress_json": _clean_text(row.get("progress_json")) or "{}",
         "summary_json": _clean_text(row.get("summary_json")) or "{}",
         "error": _clean_text(row.get("error")),
@@ -195,7 +191,7 @@ def _sync_record_from_entry(
     summary = _json_object(entry.get("summary"))
     started_at = _clean_text(entry.get("startedAt") or entry.get("started_at"))
     finished_at = _clean_text(entry.get("finishedAt") or entry.get("finished_at"))
-    duration_ms = _coerce_int(entry.get("durationMs") or entry.get("duration_ms"))
+    duration_ms = int_or_default(entry.get("durationMs") or entry.get("duration_ms"))
     if not duration_ms:
         duration_ms = _duration_ms(started_at, finished_at)
     return {
@@ -205,23 +201,25 @@ def _sync_record_from_entry(
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_ms": duration_ms,
-        "size_bytes": _coerce_int(entry.get("sizeBytes") or summary.get("sizeBytes")),
-        "max_snapshot_size_bytes": _coerce_int(
+        "size_bytes": int_or_default(entry.get("sizeBytes") or summary.get("sizeBytes")),
+        "max_snapshot_size_bytes": int_or_default(
             entry.get("maxSnapshotSizeBytes") or summary.get("maxSnapshotSizeBytes")
         ),
         "size_warning": _coerce_bool_int(entry.get("sizeWarning") or summary.get("sizeWarning")),
-        "shard_count": _coerce_int(entry.get("shardCount") or summary.get("shardCount")),
-        "changed_shard_count": _coerce_int(
+        "shard_count": int_or_default(entry.get("shardCount") or summary.get("shardCount")),
+        "changed_shard_count": int_or_default(
             entry.get("changedShardCount") or summary.get("changedShardCount")
         ),
-        "shards_pushed_bytes": _coerce_int(
+        "shards_pushed_bytes": int_or_default(
             entry.get("shardsPushedBytes") or summary.get("shardsPushedBytes")
         ),
-        "manifest_size_bytes": _coerce_int(
+        "manifest_size_bytes": int_or_default(
             entry.get("manifestSizeBytes") or summary.get("manifestSizeBytes")
         ),
-        "shard_cap_bytes": _coerce_int(entry.get("shardCapBytes") or summary.get("shardCapBytes")),
-        "snapshot_schema_version": _coerce_int(
+        "shard_cap_bytes": int_or_default(
+            entry.get("shardCapBytes") or summary.get("shardCapBytes")
+        ),
+        "snapshot_schema_version": int_or_default(
             entry.get("snapshotSchemaVersion") or summary.get("snapshotSchemaVersion")
         ),
         "snapshot_format": _clean_text(
@@ -241,16 +239,16 @@ def _sync_record_from_sql(row: Mapping[str, Any]) -> dict[str, Any]:
         "status": _clean_text(row.get("status")),
         "started_at": _clean_text(row.get("started_at")),
         "finished_at": _clean_text(row.get("finished_at")),
-        "duration_ms": _coerce_int(row.get("duration_ms")),
-        "size_bytes": _coerce_int(row.get("size_bytes")),
-        "max_snapshot_size_bytes": _coerce_int(row.get("max_snapshot_size_bytes")),
-        "size_warning": _coerce_int(row.get("size_warning")),
-        "shard_count": _coerce_int(row.get("shard_count")),
-        "changed_shard_count": _coerce_int(row.get("changed_shard_count")),
-        "shards_pushed_bytes": _coerce_int(row.get("shards_pushed_bytes")),
-        "manifest_size_bytes": _coerce_int(row.get("manifest_size_bytes")),
-        "shard_cap_bytes": _coerce_int(row.get("shard_cap_bytes")),
-        "snapshot_schema_version": _coerce_int(row.get("snapshot_schema_version")),
+        "duration_ms": int_or_default(row.get("duration_ms")),
+        "size_bytes": int_or_default(row.get("size_bytes")),
+        "max_snapshot_size_bytes": int_or_default(row.get("max_snapshot_size_bytes")),
+        "size_warning": int_or_default(row.get("size_warning")),
+        "shard_count": int_or_default(row.get("shard_count")),
+        "changed_shard_count": int_or_default(row.get("changed_shard_count")),
+        "shards_pushed_bytes": int_or_default(row.get("shards_pushed_bytes")),
+        "manifest_size_bytes": int_or_default(row.get("manifest_size_bytes")),
+        "shard_cap_bytes": int_or_default(row.get("shard_cap_bytes")),
+        "snapshot_schema_version": int_or_default(row.get("snapshot_schema_version")),
         "snapshot_format": _clean_text(row.get("snapshot_format")),
         "shard_hashes_json": _clean_text(row.get("shard_hashes_json")) or "{}",
         "summary_json": _clean_text(row.get("summary_json")) or "{}",
@@ -273,7 +271,7 @@ def _sync_history_row(record: Mapping[str, Any]) -> dict[str, Any]:
         "status": _clean_text(record.get("status")),
         "startedAt": _clean_text(record.get("started_at")),
         "finishedAt": _clean_text(record.get("finished_at")),
-        "durationMs": _coerce_int(record.get("duration_ms")),
+        "durationMs": int_or_default(record.get("duration_ms")),
         "summary": summary,
     }
 
@@ -486,7 +484,7 @@ class TaskRuntimeStore:
                 (
                     run_id,
                     task_type,
-                    _coerce_int(normalized.get("schemaVersion")) or TASK_SCHEMA_VERSION,
+                    int_or_default(normalized.get("schemaVersion")) or TASK_SCHEMA_VERSION,
                     _clean_text(normalized.get("level")).lower() or "info",
                     _clean_text(normalized.get("event")),
                     _clean_text(normalized.get("message")),
@@ -543,7 +541,7 @@ class TaskRuntimeStore:
         )
         events = [
             {
-                "schemaVersion": _coerce_int(row.get("schema_version")) or TASK_SCHEMA_VERSION,
+                "schemaVersion": int_or_default(row.get("schema_version")) or TASK_SCHEMA_VERSION,
                 "timestamp": _clean_text(row.get("created_at")),
                 "level": _clean_text(row.get("level")),
                 "event": _clean_text(row.get("event")),
@@ -675,14 +673,14 @@ class TaskRuntimeStore:
                     record["run_id"],
                     record["task_type"],
                     record["status"],
-                    _coerce_int(record.get("owner_pid")),
+                    int_or_default(record.get("owner_pid")),
                     _clean_text(record.get("started_at")),
                     _clean_text(record.get("updated_at")),
                     _clean_text(record.get("finished_at")),
                     _json_dumps(record.get("progress")),
                     _json_dumps(record.get("summary")),
                     _clean_text(record.get("error")),
-                    _coerce_int(record.get("schema_version")) or TASK_SCHEMA_VERSION,
+                    int_or_default(record.get("schema_version")) or TASK_SCHEMA_VERSION,
                     _clean_text(record.get("parent_run_id")),
                     _clean_text(record.get("parent_task_type")),
                     _clean_text(record.get("stage")),

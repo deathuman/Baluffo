@@ -27,6 +27,7 @@ from src.shared.json_shapes import (
 from src.shared.json_shapes import (
     as_json_object as _as_dict,
 )
+from src.shared.utils import int_or_default as _as_int
 
 from ._compat import desktop_api
 from .config import ACTIVE_WORK_TASK_TYPES, INSTANCE_CONFLICT_RETRY_S, INSTANCE_LOCK_WAIT_S
@@ -108,21 +109,6 @@ def _sleep_for_lock_retry(attempt: int, deadline: float) -> None:
     if remaining <= 0:
         return
     time.sleep(min(_lock_backoff_delay(attempt), remaining))
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:

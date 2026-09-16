@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from src.shared.utils import int_or_default as _as_int
 from src.source_registry import source_identity
 
 from .config import SUPPORTED_PROVIDERS
@@ -23,13 +24,6 @@ _BROWSER_FALLBACK_ERROR_TOKENS = (
     "playwright",
     "timeout",
 )
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _as_bool(value: Any) -> bool:

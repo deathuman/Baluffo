@@ -31,6 +31,7 @@ from src.bridge.routes.route_payload_helpers import (
 from src.bridge.routes.route_payload_helpers import (
     clean_text as _clean_text,
 )
+from src.shared.utils import int_or_default as _safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +50,6 @@ class _RegistryConflictsRouteApi(Protocol):
     def load_state(self) -> dict[str, Any]: ...
 
     def summarize_state(self, state: dict[str, Any]) -> dict[str, Any]: ...
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value or default)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def _conflict_page_sort_key(card: dict[str, Any]) -> tuple[int, str, str]:

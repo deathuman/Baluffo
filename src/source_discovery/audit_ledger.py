@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.shared.utils import int_or_default as _safe_int
+
 """Shared internal helpers for source-discovery audit artifacts."""
 
 import json
@@ -18,13 +20,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
-
-
-def _safe_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def duration_ms(started: float) -> int:

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from src.shared.utils import int_or_default as _as_int
 from src.source_registry import source_identity
 
 from .scoring import unique_string_list
@@ -120,13 +121,6 @@ _M5_REGION_TOKENS = (
     ("oceania", M5_OCEANIA_TOKENS),
     ("africa", M5_AFRICA_TOKENS),
 )
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def update_candidate_review_metadata(

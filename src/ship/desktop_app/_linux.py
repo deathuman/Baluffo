@@ -15,27 +15,14 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from src.shared.utils import int_or_default as _as_int
+
 from ._compat import desktop_api
 from .config import CHROMIUM_WINDOW_CLASS_PREFIXES
 
 # POSIX-only; Windows typeshed has no signal.SIGKILL, and this module is also
 # type-checked on Windows. Fall back to the conventional SIGKILL value 9.
 _SIGKILL = getattr(signal, "SIGKILL", 9)
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _normalize_path_text(value: object) -> str:

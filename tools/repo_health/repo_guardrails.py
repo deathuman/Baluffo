@@ -42,6 +42,10 @@ from desktop_update_root_dependency_inventory import (
 from desktop_updater_root_dependency_inventory import (
     check_desktop_updater_root_dependency_inventory,
 )
+from duplicate_body_policy import (
+    check_duplicate_bodies_stale_baseline,
+    check_duplicate_function_bodies,
+)
 from release_artifacts_policy import (
     check_desktop_update_manifest_version,
     check_portable_zip_embedded_version,
@@ -80,7 +84,13 @@ GROUPS = (
     "release",
     "registry",
     "bundle",
+    "duplication",
 )
+
+# Duplicate-body gate mode. False = report new duplicate patterns as a warning
+# but still exit 0; True = fail the run. Start permissive so the seeded baseline
+# can be validated against real changes, then flip to True.
+DUP_GATE_ENFORCING = False
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
@@ -911,6 +921,44 @@ def run_registry_group() -> list[GuardFailure]:
     return failures
 
 
+def run_duplication_group() -> list[GuardFailure]:
+    """Duplicate function bodies: warn-only until the baseline is trusted.
+
+    The baseline is seeded from the patterns present when the gate landed, so a
+    *new* duplicate body is reported but does not fail the run yet. Flip
+    ``DUP_GATE_ENFORCING`` to True once the warn output has stayed empty for a
+    few changes.
+    """
+    failures: list[GuardFailure] = []
+    uncovered = check_duplicate_function_bodies(repo_root=ROOT)
+    stale = check_duplicate_bodies_stale_baseline(repo_root=ROOT)
+
+    if uncovered:
+        report = "\n\n".join(uncovered)
+        if DUP_GATE_ENFORCING:
+            failures.append(
+                GuardFailure(
+                    "duplication",
+                    "check_duplicate_function_bodies",
+                    "new duplicate function bodies detected; reuse the existing "
+                    f"implementation or baseline it deliberately:\n\n{report}",
+                )
+            )
+        else:
+            print(
+                f"repo guardrails: duplication WARN (not enforcing) -- "
+                f"{len(uncovered)} new duplicate pattern(s):\n\n{report}\n",
+                file=sys.stderr,
+            )
+
+    stale_failure = _failure_from_messages(
+        "duplication", "check_duplicate_bodies_stale_baseline", stale
+    )
+    if stale_failure:
+        failures.append(stale_failure)
+    return failures
+
+
 GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "docs": run_docs_group,
     "workflow": run_workflow_group,
@@ -924,6 +972,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "release": run_release_group,
     "registry": run_registry_group,
     "bundle": run_bundle_group,
+    "duplication": run_duplication_group,
 }
 
 

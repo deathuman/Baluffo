@@ -63,6 +63,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
 | Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py` 1,133→12, 12/12) and lifecycle coordinator (`state_lifecycle.py` 1,121→38, 45/49+4 via `_sl.`) plus `registry_conflicts.py` were split into leaf modules (2026-05 through 2026-08-20); public entrypoints remain stable in the coordinator files |
+| A local `_as_int` / `_safe_int` / `_coerce_int` is safer than the shared helper | `src/shared/utils.py` owns integer coercion. Use `int_or_default(value, default)`; do not re-implement it. 21 local copies were deleted in favour of it, and every one of them was missing `except OverflowError`, so `float("inf")` escaped as an uncaught `OverflowError` (`int(float("inf"))` raises `OverflowError`, which is **not** a `ValueError`) |
 
 ## Verification Shortcuts
 
@@ -73,6 +74,8 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Container / Umbrel changes | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted frontend unit checks from [`testing.md`](testing.md) |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
+| Integer coercion | `python -m pytest tests/test_shared_utils_coercion.py -q` — covers nan/inf/Decimal/bool/str handling and holds the no-new-unsafe-helper ratchet |
+| Duplicated function bodies | `python tools/repo_health/repo_guardrails.py --group duplication` (warn-only; `DUP_GATE_ENFORCING` in `repo_guardrails.py` flips it to blocking) |
 | Linux Python tests | `npm run test:py:linux` |
 | Linux frontend tests | `npm run test:frontend:linux` |
 | Full verification | `npm run verify` |

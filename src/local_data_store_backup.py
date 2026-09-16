@@ -16,6 +16,7 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_source_policy_review_state import (
     normalize_source_policy_review_state_artifact,
 )
+from src.shared.utils import int_or_default as _as_int
 from src.shared.utils import now_iso
 
 from .local_data_store_profiles import (
@@ -52,13 +53,6 @@ SOURCE_POLICY_REVIEW_STATE_FILENAME = "source-policy-review-state.json"
 ADMIN_OVERVIEW_CACHE_TTL_S = 0.5
 ADMIN_OVERVIEW_DETAILS = {"summary", "full"}
 _ADMIN_OVERVIEW_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _admin_overview_detail(value: Any) -> str:

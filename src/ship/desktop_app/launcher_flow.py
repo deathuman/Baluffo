@@ -15,6 +15,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from src.shared.utils import int_or_default as _as_int
+
 from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
 from .config import (
@@ -28,21 +30,6 @@ from .config import (
     STARTUP_PROFILE_MODE_ENV,
     DesktopRuntimeConfig,
 )
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _child_env_for(

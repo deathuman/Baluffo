@@ -19,6 +19,7 @@ from src.shared.json_shapes import (
 from src.shared.json_shapes import (
     json_object_rows as _as_dict_rows,
 )
+from src.shared.utils import int_or_default as _as_int
 
 from ._compat import desktop_api
 from .config import (
@@ -37,21 +38,6 @@ def _as_float(value: object, default: float = 0.0) -> float:
     if isinstance(value, str):
         try:
             return float(value)
-        except ValueError:
-            return default
-    return default
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
         except ValueError:
             return default
     return default

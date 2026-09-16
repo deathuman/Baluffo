@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
+from src.shared.utils import int_or_default as _as_int
 from src.source_registry import source_identity
 from src.url_hosts import host_matches_domain
 
@@ -95,13 +96,6 @@ def _text(value: Any) -> str:
 
 def _lower(value: Any) -> str:
     return _text(value).lower()
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _as_bool(value: Any) -> bool:

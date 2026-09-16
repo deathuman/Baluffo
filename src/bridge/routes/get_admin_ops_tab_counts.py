@@ -40,6 +40,7 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
 )
+from src.shared.utils import int_or_default as _safe_int
 
 # ponytail: 30-second freshness window. Admin's own poll cadence is ~5 s; the
 # badge strip can be a hair stale without anyone noticing. The mtime key still
@@ -385,13 +386,6 @@ def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, 
     with time_operation("admin.ops_tab_counts.summary.cache_write"):
         _write_ops_tab_counts_cache(cache_path, cache_key, payload)
     return payload
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value or default)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def handle_admin_ops_tab_counts_routes(

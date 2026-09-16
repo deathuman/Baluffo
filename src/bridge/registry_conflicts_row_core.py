@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.shared.source_counter_aliases import read_counter
+from src.shared.utils import int_or_default as _int_value
 from src.source_registry import source_identity
 
 PROVIDER_ADAPTERS = {
@@ -127,13 +128,6 @@ def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
         any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal"))
         or (confidence and confidence != "high")
     )
-
-
-def _int_value(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _row_jobs_evidence(row: dict[str, Any]) -> int:

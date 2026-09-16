@@ -35,10 +35,6 @@ def _clean_text(value: Any) -> str:
     return clean_text(value)
 
 
-def _coerce_int(value: Any) -> int:
-    return int_or_default(value)
-
-
 def _json_dumps(value: Any) -> str:
     return json_dumps(value)
 
@@ -435,10 +431,10 @@ class SourceRegistryRuntimeStore:
         return {
             "generation": _clean_text(row.get("current_generation")),
             "reason": _clean_text(row.get("reason")),
-            "activeCount": _coerce_int(row.get("active_count")),
-            "pendingCount": _coerce_int(row.get("pending_count")),
-            "rejectedCount": _coerce_int(row.get("rejected_count")),
-            "tombstoneCount": _coerce_int(row.get("tombstone_count")),
+            "activeCount": int_or_default(row.get("active_count")),
+            "pendingCount": int_or_default(row.get("pending_count")),
+            "rejectedCount": int_or_default(row.get("rejected_count")),
+            "tombstoneCount": int_or_default(row.get("tombstone_count")),
             "stateHash": _clean_text(row.get("state_hash")),
             "tombstoneHash": _clean_text(row.get("tombstone_hash")),
             "publishedAt": _clean_text(row.get("published_at")),

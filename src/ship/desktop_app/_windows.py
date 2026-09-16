@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.json_shapes import json_object_rows as _as_dict_rows
+from src.shared.utils import int_or_default as _as_int
 
 from ._compat import desktop_api
 from .config import CHROMIUM_WINDOW_CLASS_PREFIXES, WINDOW_TITLE
@@ -27,21 +28,6 @@ def _normalize_path_text(value: object) -> str:
     with contextlib.suppress(OSError, RuntimeError):
         return str(Path(text).expanduser().resolve()).lower()
     return text.lower()
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _current_exe_path() -> str:

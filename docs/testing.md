@@ -352,6 +352,8 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 ## Test ownership rules
 
 - Repository policy checks belong in `tools/repo_health/repo_guardrails.py` and run through `npm run lint:repo-guardrails`, not pytest or frontend unit collection.
+- The `duplication` group is the repo's duplicated-function-body gate. It is stdlib-only (no new dependency) and lives in `tools/repo_health/duplicate_body_policy.py`, keyed on an AST hash of the normalized body so comments do not matter but docstrings do. It flags a body with **>=3 copies averaging >=4 lines** across `src/`, `scripts/`, and `tools/`, ignoring `...`/`pass` stubs and `raise NotImplementedError` declarations. Known groups are recorded in `tools/repo_health/duplicate_bodies_baseline.json`; the baseline must contain no uncovered pattern and no stale entry, so a baseline entry must be deleted as soon as its copies are consolidated. It is currently **warn-only**: `DUP_GATE_ENFORCING` in `repo_guardrails.py` is `False`, so new duplication prints a warning and still exits 0. Flip that flag to `True` once the warning output has stayed empty for a few changes.
+- Prefer deleting a duplicated body over baselining it. `tools/repo_health/duplicate_bodies_baseline.json` is a ratchet, not a list of accepted debt.
 - Frontend unit tests are discovered directly by Node through `npm run test:frontend:unit`; new files only need to live under `tests/frontend/unit/` and match `*.test.mjs`.
 - Do not add generated frontend unit aggregators or manifest-sync scripts.
 - Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
