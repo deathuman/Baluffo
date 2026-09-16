@@ -10,6 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.149] - 2026-09-16
+### Changed
+
+- **JavaScript dev-tooling modernization lands in the container build: eslint 9.39.4 → 10.10.0, @eslint/js 9.39.4 → 10.0.1, knip 5.88.1 → 6.35.1, and an in-range esbuild lockfile refresh (^0.28.1 → ^0.28.2) — merged from the first four Dependabot update PRs (#7–#10) opened by the new npm ecosystem registration. No desktop behavior changes: the shipped desktop payload (src/, frontend/, bundled Python) is unchanged from 0.2.148; the bumps ride only the build/CI toolchain, where eslint 10's flat config also cut the local-only `lint:js` lane's pre-existing `no-undef` noise from 6,904 findings to 58. Support hardening riding the same container identity: `scripts/js_security_audit.py` now recovers advisory ids from url-only npm audit `via` records (cross-spawn 7.0.3 ReDoS shape) so those findings stay allowlistable, and `test_container_packaging.py` pins the esbuild caret range instead of an exact patch so in-range lockfile refreshes stop breaking CI. Verified by red-team drill: the security:js gate fails local lane, CI Lint, and release:preflight on a real injected advisory carrier (GHSA-p498-v437-472g), and the allowlist remedy flips it green.
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.148] - 2026-09-16
 ### Added
 
