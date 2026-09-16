@@ -244,7 +244,7 @@ def _read_metric_events(data_dir: Path | str | None = None) -> list[dict[str, An
 def _int_value(value: Any) -> int:
     try:
         return max(0, int(float(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

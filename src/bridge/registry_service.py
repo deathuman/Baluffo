@@ -539,7 +539,7 @@ class RegistryService:
     def _summary_int(value: Any) -> int:
         try:
             return max(0, int(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return 0
 
     @classmethod

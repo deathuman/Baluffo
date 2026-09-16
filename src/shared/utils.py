@@ -101,6 +101,11 @@ def int_or_default(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def coerce_non_negative_int(value: Any, default: int = 0) -> int:
+    """Return max(0, int_or_default(value, default)), so counts never go negative."""
+    return max(0, int_or_default(value, default))
+
+
 def coerce_str(value: Any, default: str) -> str:
     """Coerce value to non-empty str; return default if stripped empty."""
     text = str(value or "").strip()

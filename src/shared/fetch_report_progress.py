@@ -17,7 +17,7 @@ from src.shared.text_utils import clean_text
 def _clamped_int(value: Any, default: int = 0, maximum: int = 1_000_000_000) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(0, min(maximum, parsed))
 

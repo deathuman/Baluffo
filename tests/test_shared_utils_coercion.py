@@ -170,6 +170,13 @@ def test_desktop_as_int_copies_agree() -> None:
 
 # Names that read as "coerce a value to int": private variants of the canonical
 # src/shared/utils.py helpers.
+#
+# The list is deliberately wider than the canonical names. The bug this ratchet
+# guards (int() without OverflowError) is a property of the BODY, not the name,
+# so a name-only scan has a blind spot: `_count`, `positive_int`, `_safe_status`
+# and `_safe_non_negative_int` all carried a byte-identical buggy body while
+# being invisible here. The second block below is every such name found by
+# matching bodies against the baselined set.
 _INT_HELPER_NAMES = frozenset(
     {
         "_as_int",
@@ -181,40 +188,26 @@ _INT_HELPER_NAMES = frozenset(
         "int_or_default",
         "coerce_non_negative_int",
         "_int",
+        # names recovered from byte-identical buggy bodies
+        "_clamped_int",
+        "_count",
+        "_safe_non_negative_int",
+        "_safe_pid",
+        "_safe_status",
+        "_summary_int",
+        "positive_int",
+        "safe_non_negative_int",
+        "to_int",
     }
 )
 
 # Helpers that call int() without catching OverflowError, so float("inf")
-# escapes as an uncaught exception. Recorded at the time the canonical helpers
-# were fixed; the list may shrink but must never grow.
+# escapes as an uncaught exception.
 #
-# Fixing one of these means deleting its entry here.
-_KNOWN_OVERFLOW_UNSAFE = frozenset(
-    {
-        "scripts/chrome_trace_summary.py:_safe_int",
-        "scripts/jobs_yield_gate.py:_int_value",
-        "scripts/perf_compare.py:_int_value",
-        "scripts/source_policy_soak_report.py:_int_value",
-        "src/bridge/admin_bootstrap.py:_int",
-        "src/bridge/fetch_report_summary.py:_safe_int",
-        "src/bridge/ops_health.py:_safe_int",
-        "src/bridge/ops_live_payload.py:coerce_non_negative_int",
-        "src/bridge/registry_sync_summary.py:_safe_int",
-        "src/bridge/report_normalizer.py:safe_int",
-        "src/bridge/task_failure_attempts.py:_safe_int",
-        "src/container_entrypoint.py:_coerce_int",
-        "src/jobs/adapters/plugins/social/register.py:_int_value",
-        "src/jobs/adapters/social.py:_coerce_int",
-        "src/jobs/common/taxonomy.py:_coerce_int",
-        "src/source_discovery/active_audit_runtime.py:_safe_int",
-        "src/source_discovery/audit_report_summary.py:safe_int",
-        "src/source_discovery/gamedevmap_active_dry_run.py:_safe_int",
-        "src/source_registry_state.py:_coerce_int",
-        "src/storage/source_runtime.py:_coerce_int",
-        "src/storage_metrics.py:_int_value",
-        "tools/measurements/pipeline/dedup_pressure_report.py:_int",
-    }
-)
+# EMPTY: every helper this ratchet can see now catches OverflowError. Keep it
+# empty -- a new entry means new unguarded int() coercion, and the test below
+# will name it.
+_KNOWN_OVERFLOW_UNSAFE = frozenset()
 
 _OVERFLOW_HANDLER_NAMES = frozenset(
     {"OverflowError", "ArithmeticError", "Exception", "BaseException"}
@@ -283,3 +276,62 @@ def test_ratchet_baseline_has_no_stale_entries() -> None:
         "these helpers are baselined as overflow-unsafe but no longer are; "
         "delete their entries from _KNOWN_OVERFLOW_UNSAFE:\n  " + "\n  ".join(stale)
     )
+
+
+def test_guarded_coercion_helper_is_not_shadowed_by_an_unguarded_twin() -> None:
+    """A guarded helper's body must not reappear unguarded under another name.
+
+    The name-gated ratchet above has a blind spot: a helper named `_count` or
+    `positive_int` is invisible to it even when its body is a byte-identical
+    copy of an unguarded coercion. That is exactly how 9 extra unsafe helpers
+    hid before they were consolidated. Compare bodies instead of names.
+    """
+    import hashlib
+
+    from tools.repo_health.duplicate_body_policy import _normalized_body
+
+    def body_digest(node: ast.FunctionDef) -> str:
+        return hashlib.sha256(_normalized_body(node).encode()).hexdigest()[:12]
+
+    # Digests of every unguarded body the ratchet already knows about.
+    guarded_digests = {
+        body_digest(node)
+        for _, node in _helper_defs()
+        if _calls_int(node) and _catches_overflow(node)
+    }
+
+    shadowed = []
+    for base in ("src", "scripts", "tools"):
+        for path in sorted((ROOT / base).rglob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                if node.name in _INT_HELPER_NAMES:
+                    continue  # already covered by the ratchet above
+                if not _calls_int(node) or _catches_overflow(node):
+                    continue
+                if body_digest(node) in guarded_digests:
+                    shadowed.append(f"{rel}:{node.name}")
+
+    assert not shadowed, (
+        "these functions have a body byte-identical to a guarded coercion helper "
+        "but are named something the name-gated ratchet ignores, so they still "
+        "let float('inf') escape. Rename them into _INT_HELPER_NAMES or guard "
+        "them:\n  " + "\n  ".join(sorted(shadowed))
+    )
+
+
+def test_canonical_helpers_reject_infinity_and_nan() -> None:
+    """The documented fix: int(float("inf")) must not escape as OverflowError."""
+    from src.shared.utils import coerce_int, coerce_non_negative_int, int_or_default
+
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        assert int_or_default(bad) == 0
+        assert coerce_non_negative_int(bad) == 0
+        assert coerce_int(bad, 0, minimum=0, maximum=65535) == 0
+        assert int_or_default(bad, 7) == 7

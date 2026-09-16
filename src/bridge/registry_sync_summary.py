@@ -5,13 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.shared.json_shapes import as_json_object, json_object_rows
-
-
-def _safe_int(value: Any) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return 0
+from src.shared.utils import coerce_non_negative_int as _safe_int
 
 
 def _text(value: Any) -> str:

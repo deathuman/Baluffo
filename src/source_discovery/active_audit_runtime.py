@@ -25,6 +25,7 @@ from src.shared.json_shapes import (
 from src.shared.json_shapes import (
     as_json_object as _as_dict,
 )
+from src.shared.utils import int_or_default as _safe_int
 from src.shared.utils import now_iso
 
 from . import audit_ledger
@@ -299,17 +300,6 @@ def build_active_audit_loop_strategy(
         write_artifact=write_artifact,
         progress_callback=progress_callback,
     )
-
-
-def _safe_int(value: Any) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _dict_rows(value: Any) -> list[dict[str, Any]]:

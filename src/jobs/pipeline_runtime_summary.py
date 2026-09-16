@@ -13,6 +13,7 @@ from src.shared.live_task import (
     build_live_task_progress_payload,
     snapshot_live_task_work_items,
 )
+from src.shared.utils import coerce_non_negative_int as _safe_non_negative_int
 from src.shared.utils import now_iso
 
 
@@ -21,13 +22,6 @@ def _runtime_non_negative_int(runtime: Any, attr_name: str) -> int:
 
 
 RUNNING_SOURCE_NAME_LIMIT = 5
-
-
-def _safe_non_negative_int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _task_status(row: dict[str, Any]) -> str:

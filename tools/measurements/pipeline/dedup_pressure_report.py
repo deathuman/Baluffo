@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.shared.utils import int_or_default as _int
 from src.url_hosts import url_host_matches_domain
 
 FETCH_REPORT_NAME = "jobs-fetch-report.json"
@@ -81,13 +82,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
-
-
-def _int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _positive_counts(mapping: dict[str, Any]) -> dict[str, int]:

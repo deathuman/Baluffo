@@ -4,15 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.utils import coerce_non_negative_int as positive_int
+
 QUEUE_ADAPTER_CAP_OVERRIDE_FIELD = "queueAdapterCapOverride"
 QUEUE_DOMAIN_CAP_OVERRIDE_FIELD = "queueDomainCapOverride"
-
-
-def positive_int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def apply_prevalidated_queue_overrides(

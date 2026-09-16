@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.shared.utils import int_or_default as _safe_int
 from src.source_registry_io import load_runtime_evidence, save_json_atomic
 
 FETCH_REPORT_SUMMARY_FILE_NAME = "jobs-fetch-report-summary.json"
@@ -68,13 +69,6 @@ def _as_list(value: Any) -> list[Any]:
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value if value is not None else default)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def _source_row(row: dict[str, Any]) -> dict[str, Any]:

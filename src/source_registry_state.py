@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.utils import int_or_default as _coerce_int
 from src.shared.utils import now_iso
 from src.source_registry_identity import ensure_source_id
 
@@ -27,13 +28,6 @@ REGISTRY_REASON_DUPLICATE_FAMILY = "duplicate_family_weaker_variant"
 REGISTRY_REASON_REPEATED_ZERO_JOBS = "repeated_zero_jobs"
 REGISTRY_MIGRATION_V2 = "registry_migration_v2"
 ZERO_JOB_HIDDEN_DEFER_THRESHOLD = 3
-
-
-def _coerce_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def _first_text(*values: Any) -> str:

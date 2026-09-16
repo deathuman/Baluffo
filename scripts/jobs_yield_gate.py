@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 from src.jobs.adapters import default_source_loaders
 from src.jobs.adapters.static_sources import static_source_name_for_registry_row
 from src.jobs.text_utils import clean_text
+from src.shared.utils import coerce_non_negative_int as _int_value
 from src.source_registry import source_identity, source_url_fingerprint
 
 DELETION_PENDING_REASONS = frozenset(
@@ -125,13 +126,6 @@ def _row_is_tombstoned(row: dict[str, Any], tombstones: dict[str, Any]) -> bool:
     if not tombstones:
         return False
     return any(key in tombstones for key in _source_keys_for_row(row))
-
-
-def _int_value(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _bool_value(value: Any) -> bool:

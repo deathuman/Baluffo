@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from src.shared.utils import int_or_default as _int
+
 
 class _AdminBootstrapLocalDataStore(Protocol):
     def get_admin_overview(self, *, detail: str = "summary") -> dict[str, Any]: ...
@@ -54,13 +56,6 @@ def _as_list(value: Any) -> list[Any]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 _EXPECTED_BOOTSTRAP_FALLBACK_EXCEPTIONS = (

@@ -19,6 +19,8 @@ from threading import Lock
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.utils import coerce_non_negative_int as _safe_status
+
 MAX_SAMPLES_PER_CATEGORY = 500
 MAX_REPORTED_CATEGORIES = 80
 MAX_LABEL_LENGTH = 120
@@ -49,13 +51,6 @@ def _now_iso() -> str:
 
 def _safe_duration_ms(value: int | float) -> int:
     return max(0, int(round(float(value or 0))))
-
-
-def _safe_status(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _truncate_label(value: str) -> str:

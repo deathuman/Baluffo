@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.shared.utils import coerce_non_negative_int as _summary_int
 from src.source_registry_io_journal import (
     _json_journal_path_for,
     _json_journal_payload_hash,
@@ -168,13 +169,6 @@ def _summary_text(value: Any) -> str:
 
 def _summary_lower(value: Any) -> str:
     return _summary_text(value).lower()
-
-
-def _summary_int(value: Any) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _summary_pending_is_hidden(row: dict[str, Any]) -> bool:

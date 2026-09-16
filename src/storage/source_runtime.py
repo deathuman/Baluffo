@@ -15,6 +15,7 @@ from typing import Any
 
 from src.shared.json_io import json_dumps, loads_object
 from src.shared.text_utils import clean_text
+from src.shared.utils import coerce_non_negative_int as _coerce_int
 from src.shared.utils import now_iso as _shared_now_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 
@@ -32,13 +33,6 @@ def _clean_text(value: Any) -> str:
 
 def _norm_token(value: Any) -> str:
     return _clean_text(value).lower()
-
-
-def _coerce_int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _json_object(value: Any) -> dict[str, Any]:

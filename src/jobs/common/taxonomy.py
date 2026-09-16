@@ -75,14 +75,17 @@ def _coerce_int(value: object) -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        return int(value)
+        try:
+            return int(value)
+        except (ValueError, OverflowError):
+            return 0
     if isinstance(value, str):
         text = str(value).strip()
         if not text:
             return 0
         try:
             return int(text)
-        except ValueError:
+        except (ValueError, OverflowError):
             return 0
     return 0
 

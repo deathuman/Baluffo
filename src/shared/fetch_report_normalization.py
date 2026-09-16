@@ -37,7 +37,7 @@ def _clamped_int(
 ) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
 

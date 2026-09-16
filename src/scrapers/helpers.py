@@ -5,16 +5,15 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from src.shared.utils import int_or_default as to_int
+
+# Re-exported for src.scrapers.runner and src.scrapers.spiders.generic_careers;
+# __all__ keeps the alias alive against unused-import pruning.
+__all__ = ["build_job", "clean_text", "safe_id", "to_float", "to_int"]
+
 
 def clean_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def to_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 def to_float(value: Any, default: float = 0.0) -> float:

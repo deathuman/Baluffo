@@ -109,7 +109,7 @@ class TaskStatePayload(TypedDict, total=False):
 def _clamped_int(value: Any, default: int = 0) -> int:
     try:
         return max(0, int(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
 
 

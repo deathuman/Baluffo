@@ -137,7 +137,7 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return active_audit_runtime._safe_int(value)
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
 
 

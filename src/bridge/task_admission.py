@@ -5,12 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-
-def _safe_pid(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+from src.shared.utils import int_or_default as _safe_pid
 
 
 def get_active_task_metadata(

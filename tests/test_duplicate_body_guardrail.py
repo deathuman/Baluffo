@@ -173,11 +173,48 @@ class TestGuardrailWiring:
 
         assert repo_guardrails.run_duplication_group() == []
 
-    def test_warn_only_until_enforcing(self) -> None:
-        """Warn-only is the shipped default so the seeded baseline can be validated."""
+    def test_gate_is_enforcing(self) -> None:
+        """Enforcing since the seeded baseline was validated and pruned.
+
+        A regression here would silently turn new duplication into a warning
+        that never fails a run.
+        """
         from tools.repo_health import repo_guardrails
 
-        assert repo_guardrails.DUP_GATE_ENFORCING is False
+        assert repo_guardrails.DUP_GATE_ENFORCING is True
+
+    def test_uncovered_pattern_fails_the_group(self, tmp_path: Path) -> None:
+        """With enforcing on, an unbaselined pattern must produce a failure.
+
+        Builds a throwaway tree with 3 identical bodies and an empty baseline,
+        so this exercises the real enforcing branch rather than a stub.
+        """
+        from tools.repo_health import repo_guardrails
+
+        body = (
+            "def f(v):\n"
+            "    total = 0\n"
+            "    for item in v:\n"
+            "        total += int(item)\n"
+            "    return total\n"
+            "\n\n"
+        )
+        for name in ("a", "b", "c"):
+            (tmp_path / "src").mkdir(exist_ok=True)
+            (tmp_path / "src" / f"{name}.py").write_text(body, encoding="utf-8")
+        (tmp_path / "tools" / "repo_health").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "tools" / "repo_health" / "duplicate_bodies_baseline.json").write_text(
+            '{"patterns": []}\n', encoding="utf-8"
+        )
+
+        uncovered = policy.check_duplicate_function_bodies(repo_root=tmp_path)
+        assert uncovered, "3 identical bodies must be reported"
+
+        failures = repo_guardrails._failure_from_messages(
+            "duplication", "check_duplicate_function_bodies", uncovered
+        )
+        assert failures is not None
+        assert failures.group == "duplication"
 
 
 @pytest.mark.parametrize(

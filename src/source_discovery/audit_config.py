@@ -30,7 +30,7 @@ def positive_int(value: Any, default: int, *, minimum: int = 0) -> int:
         value = default
     try:
         return max(minimum, int(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return max(minimum, int(default))
 
 

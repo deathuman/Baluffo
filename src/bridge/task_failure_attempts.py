@@ -81,7 +81,7 @@ def _clean_label(value: Any, default: str = "unknown", *, max_length: int = 160)
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return max(0, int(value or default))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
 
 

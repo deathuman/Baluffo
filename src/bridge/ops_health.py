@@ -17,6 +17,7 @@ from typing import Any
 from src.bridge.performance_profile import time_operation
 from src.bridge.registry_sync_summary import derive_registry_sync_summary
 from src.shared.json_shapes import as_json_object, json_object_rows
+from src.shared.utils import coerce_non_negative_int as _safe_int
 
 # Constants used by evaluate_alerts and compute_ops_health (mirror admin_bridge defaults)
 STALE_FETCH_HOURS = 12
@@ -30,13 +31,6 @@ SOCIAL_DUPLICATE_RATE_THRESHOLD = 0.70
 SOCIAL_FALSE_POSITIVE_THRESHOLD = 0.05
 SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE = 50
 NON_DISMISSIBLE_ALERT_IDS = frozenset({"fetch_never_run", "pipeline_never_run"})
-
-
-def _safe_int(value: Any) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _has_registry_summary_counts(summary: dict[str, Any]) -> bool:

@@ -42,6 +42,7 @@ from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
+from src.shared.utils import int_or_default as _int_value
 from src.shared.utils import now_iso
 from src.source_discovery.config import SUPPORTED_PROVIDERS
 from src.source_discovery.provider_migration_advisory import (
@@ -245,13 +246,6 @@ def _source_state_rows(payload: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(sources, dict):
         return {}
     return {clean_text(key): value for key, value in sources.items() if isinstance(value, dict)}
-
-
-def _int_value(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _first_clean_text(mapping: dict[str, Any], *keys: str) -> str:

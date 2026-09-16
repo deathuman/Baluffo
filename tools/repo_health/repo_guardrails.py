@@ -88,9 +88,10 @@ GROUPS = (
 )
 
 # Duplicate-body gate mode. False = report new duplicate patterns as a warning
-# but still exit 0; True = fail the run. Start permissive so the seeded baseline
-# can be validated against real changes, then flip to True.
-DUP_GATE_ENFORCING = False
+# but still exit 0; True = fail the run. Enforcing since the seeded baseline was
+# validated: the int-coercion consolidation pruned 4 patterns, leaving 6 known
+# groups, and the baseline holds exactly those.
+DUP_GATE_ENFORCING = True
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 

@@ -8,6 +8,6 @@ from typing import Any
 def _clamped_int(value: Any, default: int = 0, minimum: int = 0) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(int(minimum), int(parsed))

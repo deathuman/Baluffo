@@ -62,7 +62,7 @@ def _as_list(payload: Any) -> list[Any]:
 def safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
 

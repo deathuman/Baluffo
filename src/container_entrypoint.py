@@ -19,7 +19,7 @@ DEFAULT_DATA_ROOT = Path("/data")
 def _coerce_int(value: object, default: int) -> int:
     try:
         return int(str(value or "").strip())
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
 
 

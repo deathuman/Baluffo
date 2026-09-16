@@ -37,7 +37,7 @@ def load_benchmark_payload(path: Path) -> dict[str, Any]:
 def _int_value(value: Any) -> int:
     try:
         return max(0, int(float(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

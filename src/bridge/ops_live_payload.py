@@ -20,15 +20,9 @@ from src.shared.json_shapes import (
     as_json_object as _as_dict,
 )
 from src.shared.live_task import normalize_live_task_progress
+from src.shared.utils import coerce_non_negative_int as coerce_non_negative_int
 
 JsonObject = dict[str, Any]
-
-
-def coerce_non_negative_int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def fetch_progress_counts(payload: JsonObject) -> dict[str, int]:

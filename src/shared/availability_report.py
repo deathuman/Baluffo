@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.utils import coerce_non_negative_int as _count
+
 
 def _object(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
-
-
-def _count(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _count_map(value: Any) -> dict[str, int]:
