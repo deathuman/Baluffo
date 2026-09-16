@@ -114,8 +114,8 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.58.2",
-    "esbuild": "^0.28.1",
+    "@playwright/test": "1.63.0",
+    "esbuild": "^0.28.2",
     "eslint": "10.10.0",
     "knip": "6.35.1"
   }
