@@ -16,6 +16,7 @@ existing payload before clobbering it.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import re
 import threading
@@ -30,12 +31,6 @@ HISTORY_KEEP = 48
 _LOCK = threading.Lock()
 
 _TERMINAL_MARKER_KEYS = ("finishedAt",)
-
-# Defensive allowlist for slug chars embedded in history filenames. ``_run_slug``
-# already normalizes runIds; this fullmatch gate (lookahead forbids ``..`` anywhere)
-# guarantees the name component can never carry separators or traversal fragments
-# even if the slug regex is later loosened (CodeQL py/path-injection #122/#125).
-_RUN_SLUG_SAFE_RE = re.compile(r"(?!.*\.\.)[A-Za-z0-9._-]+")
 
 
 def looks_like_terminal_report_payload(payload: Any) -> bool:
@@ -59,16 +54,19 @@ def _run_slug(payload: dict[str, Any]) -> str:
     return slug
 
 
-def _safe_run_slug(candidate: str, stamp: str) -> str:
-    """Slot filename component: reject anything that could shape or escape the path.
+def _slot_run_component(payload: dict[str, Any], stamp: str) -> str:
+    """Slot filename component derived from the report's runId.
 
-    Defensive gate for slugs embedded in history filenames (CodeQL
-    py/path-injection #122): ``_run_slug`` normalizes runIds, and this refuses
-    anything the slug regex would later allow to carry separators or traversal
-    fragments, falling back to the stamp-named slot.
+    The component is a hex digest of the runId, never the runId text (CodeQL
+    py/path-injection #122/#125): digest output cannot carry separators or
+    traversal fragments, so the filename is structurally safe no matter what a
+    hostile report claims as its runId. The runId itself stays verbatim inside
+    the stored payload, and per-run dedup keys on the payload content, so the
+    mapping stays deterministic and one-to-one.
     """
-    if _RUN_SLUG_SAFE_RE.fullmatch(candidate):
-        return candidate
+    run_id = str(payload.get("runId") or "").strip()
+    if run_id:
+        return hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:16]
     return f"run-{stamp}"
 
 
@@ -86,9 +84,9 @@ def _upsert_history_slot(
             payload = parsed
     except (json.JSONDecodeError, ValueError):
         pass
-    run_slug = _safe_run_slug(_run_slug(payload) or f"run-{stamp}", stamp)
+    run_component = _slot_run_component(payload, stamp)
     history_dir.mkdir(parents=True, exist_ok=True)
-    slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}.json.gz"
+    slot_path = history_dir / f"{file_stem}-{run_component}-{stamp}.json.gz"
     if slot_path.exists():
         # Same-second rewrite of the same run — uniquify; dedup below collapses it.
         # The ``_`` separator is deliberate: dedup tiebreaks on (mtime, name) and
@@ -96,7 +94,9 @@ def _upsert_history_slot(
         # slot lost an mtime tie against the plain slot it superseded — keeping
         # the stale payload and deleting the fresh one. ``_`` (0x5F) sorts after
         # ``.`` so the later (fresher) write always wins the tie.
-        slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}_{uuid.uuid4().hex[:6]}.json.gz"
+        slot_path = (
+            history_dir / f"{file_stem}-{run_component}-{stamp}_{uuid.uuid4().hex[:6]}.json.gz"
+        )
     with gzip.open(slot_path, mode="wt", encoding="utf-8") as handle:
         handle.write(text)
 

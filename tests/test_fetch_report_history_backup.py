@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -175,7 +176,9 @@ def test_history_filename_carries_run_slug(tmp_path) -> None:
 
     names = [path.name for path in _history_dir(report).glob("jobs-fetch-report-*.json.gz")]
     assert len(names) == 1
-    assert names[0].startswith("jobs-fetch-report-run-full-pass-")
+    # The filename embeds a hex digest of the runId (never the raw runId text):
+    # 16 lowercase hex chars between the file stem and the UTC timestamp stamp.
+    assert re.fullmatch(r"jobs-fetch-report-[0-9a-f]{16}-\d{8}-\d{6}\.json\.gz", names[0])
 
 
 def test_targeted_run_snapshot_cannot_displace_full_pass_snapshot(tmp_path) -> None:
@@ -213,6 +216,6 @@ def test_same_run_terminal_rewrites_dedup_to_newest_copy(tmp_path) -> None:
     report.write_text(first, encoding="utf-8")
     assert write_text_if_changed(report, second) is True
 
-    backups = list(_history_dir(report).glob("jobs-fetch-report-run-x-*.json.gz"))
+    backups = list(_history_dir(report).glob("jobs-fetch-report-*.json.gz"))
     assert len(backups) == 1
     assert _read_backup(backups[0])["summary"]["keptCount"] == 2
