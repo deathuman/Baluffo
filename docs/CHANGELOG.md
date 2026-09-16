@@ -9,6 +9,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ---
 
 ## [Unreleased]
+### Fixed
+
+- **CodeQL's six open alerts are resolved at the source: the script/style strip regexes now accept loose end tags (`</script >`), the report-history slot filename slug is allowlist-gated against traversal-shaped runIds, and the four test-side incomplete-URL-substring findings now assert on parsed hostnames or full canonical ids (2026-09-16, CodeQL alerts #119–#124).** The `py/bad-tag-filter` fix (`_LIST_ONLY_SCRIPT_STYLE_RE`, plus the same-class siblings `_NON_VISIBLE_BLOCK_RE` in the no-openings detector and the discovery probe's block stripper) closes the `</script >`/`</style >` gap where scripted heading text could survive stripping and leak into the row universe, pinned by a new loose-end-tag case; `py/path-injection` gains a defensive `^[A-Za-z0-9._-]+$` + no-`..` gate on the slug embedded in history slot filenames so a hostile runId can never shape or escape the path (payload runId preserved verbatim, pinned); the test rewrites replace substring assertions with hostname-suffix/full-id comparisons so lookalike hosts or ids cannot satisfy them. Bonus hardening surfaced by the new tie test: the slot-writer uniquify separator changed `-` → `_` so an mtime-tied same-run dedup can no longer keep the stale payload over the fresh one (deterministically pinned by forcing equal mtimes). Full suite 5,254 passed / 2 skipped; mypy clean; changed-mode gate exit 0.
 
 ## [0.2.148] - 2026-09-16
 ### Added

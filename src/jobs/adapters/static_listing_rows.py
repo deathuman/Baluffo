@@ -63,7 +63,7 @@ def _source_label(ctx: StaticSourceContext) -> str:
 
 
 _LIST_ONLY_HEADING_TAG_RE = re.compile(r"(?is)<(h[2-4])[^>]*>(.*?)</\1>")
-_LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>")
+_LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)\s*>")
 _LIST_ONLY_MIN_JOB_LIKE_HEADINGS = 2
 _LIST_ONLY_MAX_ANCHORED_ROWS = 50
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -116,9 +118,12 @@ def test_outbound_ats_links_detect_ultipro_and_paycom() -> None:
     links = _heuristics.detect_outbound_ats_links(
         html, base_url="https://www.konamigaming.com/careers"
     )
-    assert any("recruiting.ultipro.com" in link for link in links)
-    assert any("paycomonline.net" in link for link in links)
-    assert not any("konamigaming.com/careers" in link for link in links)
+    # Compare on the parsed hostname: substring matching would let e.g.
+    # ``evil-recruiting.ultipro.com`` satisfy the assertion
+    # (CodeQL py/incomplete-url-substring-sanitization #119/#120).
+    assert any((urlparse(link).hostname or "").endswith("recruiting.ultipro.com") for link in links)
+    assert any((urlparse(link).hostname or "").endswith("paycomonline.net") for link in links)
+    assert not any((urlparse(link).hostname or "").endswith("konamigaming.com") for link in links)
 
 
 def test_js_shell_classifies_as_browser_eligible_js_required() -> None:

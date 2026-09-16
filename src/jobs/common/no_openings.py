@@ -6,7 +6,7 @@ import re
 from html import unescape
 from typing import Any
 
-_NON_VISIBLE_BLOCK_RE = re.compile(r"(?is)<(script|style|template)\b.*?</\1>")
+_NON_VISIBLE_BLOCK_RE = re.compile(r"(?is)<(script|style|template)\b.*?</\1\s*>")
 _HIDDEN_BLOCK_RE = re.compile(
     r"(?is)<(?P<tag>[a-z0-9]+)\b[^>]*"
     r"(?:hidden\b|aria-hidden\s*=\s*['\"]?true|display\s*:\s*none|visibility\s*:\s*hidden)"

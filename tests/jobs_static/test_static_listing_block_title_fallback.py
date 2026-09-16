@@ -52,6 +52,18 @@ def test_heading_scan_extracts_job_like_titles_only() -> None:
     ]
 
 
+def test_heading_scan_strips_script_blocks_with_loose_end_tags() -> None:
+    # ``</script >`` (whitespace before the angle bracket) is valid HTML; the
+    # strip regex must still remove the whole block or scripted heading text
+    # leaks into the row universe (CodeQL py/bad-tag-filter #121).
+    html = (
+        "<h2>Real Role</h2>"
+        "<script>var t = '<h3>Fake Role In Script</h3>';</script >"
+        "<style>.x h3 { color: red; }</style >"
+    )
+    assert _job_like_heading_titles(html) == ["Real Role"]
+
+
 def test_heading_scan_dedupes_identical_titles() -> None:
     html = (
         "<h3>Game Programmer</h3><h4>Game Programmer</h4><h3>Game Programmer</h3>"

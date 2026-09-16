@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,64 @@ def _slot_payloads(history_dir: Path, stem: str) -> dict[str, dict]:
 
 def _history(tmp_path: Path, name: str) -> Path:
     return tmp_path / name
+
+
+def test_dedup_mtime_tie_keeps_the_freshest_payload(tmp_path: Path) -> None:
+    # The writer's ``_``-suffixed uniquified name sorts after the plain slot name,
+    # so when two same-run slots tie on mtime the dedup tiebreak must keep the
+    # freshest content, never the stale snapshot. (With the historical ``-``
+    # suffix the older plain slot won the tie and the fresh payload was deleted.)
+    # Both files are constructed with forced equal mtimes so the tiebreak is
+    # exercised deterministically; reverting the writer separator fails this test.
+    history_dir = _history(tmp_path, "fetch-report-history")
+    history_dir.mkdir(parents=True)
+
+    def _write_slot(name: str, marker: str) -> Path:
+        entry = history_dir / name
+        with gzip.open(entry, mode="wt", encoding="utf-8") as handle:
+            handle.write(json.dumps(_report("run-a", marker=marker)))
+        return entry
+
+    older = _write_slot("jobs-fetch-report-run-a-20260916-120000.json.gz", "T1")
+    fresher = _write_slot("jobs-fetch-report-run-a-20260916-120000_zzzzzz.json.gz", "T2")
+    for entry in (older, fresher):
+        os.utime(entry, (1_789_545_600.0, 1_789_545_600.0))
+
+    # Any new slot write re-runs dedup over the tied run-a pair.
+    upsert_history_slot(
+        json.dumps(_report("run-b", marker="T3")),
+        history_dir=history_dir,
+        file_stem="jobs-fetch-report",
+    )
+
+    run_a_slots = sorted(history_dir.glob("jobs-fetch-report-run-a-*.json.gz"))
+    assert len(run_a_slots) == 1
+    with gzip.open(run_a_slots[0], mode="rt", encoding="utf-8") as handle:
+        assert json.load(handle)["finishedAt"] == "T2"
+
+
+def test_hostile_run_id_cannot_shape_or_escape_the_slot_filename(tmp_path: Path) -> None:
+    # The slot filename embeds a slug derived from the report's runId. A hostile
+    # runId must never carry separators or traversal fragments into that name
+    # (CodeQL py/path-injection #122): the slug stays inside the history dir and
+    # the stored payload keeps the original runId verbatim.
+    report = tmp_path / "jobs-fetch-report.json"
+    upsert_terminal_report_history_slots(
+        path=report,
+        existing_text=json.dumps(_report("x..y")),
+        incoming_text=json.dumps(_report("../../evil")),
+        report_names=FETCH_NAMES,
+        history_dir_name="fetch-report-history",
+        file_stem="jobs-fetch-report",
+    )
+    history_dir = _history(tmp_path, "fetch-report-history")
+    names = [entry.name for entry in history_dir.glob("jobs-fetch-report-*.json.gz")]
+    assert len(names) == 2
+    assert all(".." not in name for name in names)
+    assert all("/" not in name and "\\" not in name for name in names)
+    assert list(tmp_path.glob("*.json.gz")) == []
+    payloads = _slot_payloads(history_dir, "jobs-fetch-report")
+    assert {payload["runId"] for payload in payloads.values()} == {"x..y", "../../evil"}
 
 
 # --- text-level API -------------------------------------------------------

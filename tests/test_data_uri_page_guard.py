@@ -94,8 +94,12 @@ def test_list_rows_with_inline_asset_urls_flags_contaminated_rows() -> None:
     ]
     failures = list_rows_with_inline_asset_urls(rows)
     assert len(failures) == 2
-    assert "carx-online.com" in failures[0]
-    assert "battery.example" in failures[1]
+    # Assert on the full row id: failure lines lead with the row's canonical id,
+    # and matching the bare host as a substring would let a lookalike id
+    # (``evil-carx-online.com``) satisfy the assertion
+    # (CodeQL py/incomplete-url-substring-sanitization #123/#124).
+    assert failures[0].startswith("static:listing_url:https://carx-online.com ")
+    assert failures[1].startswith("static:listing_url:https://battery.example ")
 
 
 def test_check_active_seed_no_inline_asset_urls_on_real_seed(tmp_path: Path) -> None:
@@ -125,5 +129,5 @@ def test_check_active_seed_no_inline_asset_urls_fails_on_fixture(tmp_path: Path)
     (defaults / "source-registry-active.seed.json").write_text(json.dumps(rows), encoding="utf-8")
     failures = check_active_seed_no_inline_asset_urls(repo_root=tmp_path)
     assert len(failures) == 1
-    assert "carx-online.com" in failures[0]
+    assert "static:listing_url:https://carx-online.com" in failures[0]
     assert "data:" in failures[0]

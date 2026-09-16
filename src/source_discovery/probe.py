@@ -115,7 +115,7 @@ def _html_text(html: str) -> str:
 
 
 def _visible_link_html(html: str) -> str:
-    text = re.sub(r"(?is)<(script|style|template)\b.*?</\1>", " ", str(html or ""))
+    text = re.sub(r"(?is)<(script|style|template)\b.*?</\1\s*>", " ", str(html or ""))
     return _HIDDEN_BLOCK_RE.sub(" ", text)
 
 

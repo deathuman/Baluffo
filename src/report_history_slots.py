@@ -31,6 +31,12 @@ _LOCK = threading.Lock()
 
 _TERMINAL_MARKER_KEYS = ("finishedAt",)
 
+# Defensive allowlist for slug chars embedded in history filenames. ``_run_slug``
+# already normalizes runIds; this gate guarantees the name component can never
+# carry separators or traversal fragments even if the slug regex is later loosened
+# (CodeQL py/path-injection #122).
+_RUN_SLUG_SAFE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
 
 def looks_like_terminal_report_payload(payload: Any) -> bool:
     """Terminal reports carry a truthy terminal marker (e.g. finishedAt)."""
@@ -68,11 +74,18 @@ def _upsert_history_slot(
     except (json.JSONDecodeError, ValueError):
         pass
     run_slug = _run_slug(payload) or f"run-{stamp}"
+    if not _RUN_SLUG_SAFE_RE.match(run_slug) or ".." in run_slug:
+        run_slug = f"run-{stamp}"
     history_dir.mkdir(parents=True, exist_ok=True)
     slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}.json.gz"
     if slot_path.exists():
         # Same-second rewrite of the same run — uniquify; dedup below collapses it.
-        slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}-{uuid.uuid4().hex[:6]}.json.gz"
+        # The ``_`` separator is deliberate: dedup tiebreaks on (mtime, name) and
+        # ``-`` (0x2D) sorts before ``.`` (0x2E), so a ``-``-suffixed uniquified
+        # slot lost an mtime tie against the plain slot it superseded — keeping
+        # the stale payload and deleting the fresh one. ``_`` (0x5F) sorts after
+        # ``.`` so the later (fresher) write always wins the tie.
+        slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}_{uuid.uuid4().hex[:6]}.json.gz"
     with gzip.open(slot_path, mode="wt", encoding="utf-8") as handle:
         handle.write(text)
 
