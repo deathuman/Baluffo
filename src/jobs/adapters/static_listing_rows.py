@@ -63,7 +63,10 @@ def _source_label(ctx: StaticSourceContext) -> str:
 
 
 _LIST_ONLY_HEADING_TAG_RE = re.compile(r"(?is)<(h[2-4])[^>]*>(.*?)</\1>")
-_LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)\s*>")
+# Backreference end tag (mirrors the no-openings/probe strip patterns): pairs each
+# start tag with its OWN end tag (no script/style cross-pairing) and tolerates
+# loose end tags like ``</script >`` (CodeQL py/bad-tag-filter #121/#129).
+_LIST_ONLY_SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1\s*>")
 _LIST_ONLY_MIN_JOB_LIKE_HEADINGS = 2
 _LIST_ONLY_MAX_ANCHORED_ROWS = 50
 

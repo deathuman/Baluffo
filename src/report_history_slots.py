@@ -32,10 +32,10 @@ _LOCK = threading.Lock()
 _TERMINAL_MARKER_KEYS = ("finishedAt",)
 
 # Defensive allowlist for slug chars embedded in history filenames. ``_run_slug``
-# already normalizes runIds; this gate guarantees the name component can never
-# carry separators or traversal fragments even if the slug regex is later loosened
-# (CodeQL py/path-injection #122).
-_RUN_SLUG_SAFE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+# already normalizes runIds; this fullmatch gate (lookahead forbids ``..`` anywhere)
+# guarantees the name component can never carry separators or traversal fragments
+# even if the slug regex is later loosened (CodeQL py/path-injection #122/#125).
+_RUN_SLUG_SAFE_RE = re.compile(r"(?!.*\.\.)[A-Za-z0-9._-]+")
 
 
 def looks_like_terminal_report_payload(payload: Any) -> bool:
@@ -67,7 +67,7 @@ def _safe_run_slug(candidate: str, stamp: str) -> str:
     anything the slug regex would later allow to carry separators or traversal
     fragments, falling back to the stamp-named slot.
     """
-    if _RUN_SLUG_SAFE_RE.match(candidate) and ".." not in candidate:
+    if _RUN_SLUG_SAFE_RE.fullmatch(candidate):
         return candidate
     return f"run-{stamp}"
 

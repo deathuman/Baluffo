@@ -118,12 +118,12 @@ def test_outbound_ats_links_detect_ultipro_and_paycom() -> None:
     links = _heuristics.detect_outbound_ats_links(
         html, base_url="https://www.konamigaming.com/careers"
     )
-    # Compare on the parsed hostname: substring matching would let e.g.
-    # ``evil-recruiting.ultipro.com`` satisfy the assertion
-    # (CodeQL py/incomplete-url-substring-sanitization #119/#120).
-    assert any((urlparse(link).hostname or "").endswith("recruiting.ultipro.com") for link in links)
-    assert any((urlparse(link).hostname or "").endswith("paycomonline.net") for link in links)
-    assert not any((urlparse(link).hostname or "").endswith("konamigaming.com") for link in links)
+    # Compare whole parsed hostnames via set operations: substring matching
+    # against URL strings would let e.g. ``evil-recruiting.ultipro.com`` satisfy
+    # the assertion (CodeQL py/incomplete-url-substring-sanitization #119/#120).
+    hosts = {urlparse(link).hostname for link in links}
+    assert {"recruiting.ultipro.com", "www.paycomonline.net"} <= hosts
+    assert hosts.isdisjoint({"konamigaming.com", "www.konamigaming.com"})
 
 
 def test_js_shell_classifies_as_browser_eligible_js_required() -> None:
