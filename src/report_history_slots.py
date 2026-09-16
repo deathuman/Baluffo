@@ -59,6 +59,19 @@ def _run_slug(payload: dict[str, Any]) -> str:
     return slug
 
 
+def _safe_run_slug(candidate: str, stamp: str) -> str:
+    """Slot filename component: reject anything that could shape or escape the path.
+
+    Defensive gate for slugs embedded in history filenames (CodeQL
+    py/path-injection #122): ``_run_slug`` normalizes runIds, and this refuses
+    anything the slug regex would later allow to carry separators or traversal
+    fragments, falling back to the stamp-named slot.
+    """
+    if _RUN_SLUG_SAFE_RE.match(candidate) and ".." not in candidate:
+        return candidate
+    return f"run-{stamp}"
+
+
 def _upsert_history_slot(
     text: str,
     *,
@@ -73,9 +86,7 @@ def _upsert_history_slot(
             payload = parsed
     except (json.JSONDecodeError, ValueError):
         pass
-    run_slug = _run_slug(payload) or f"run-{stamp}"
-    if not _RUN_SLUG_SAFE_RE.match(run_slug) or ".." in run_slug:
-        run_slug = f"run-{stamp}"
+    run_slug = _safe_run_slug(_run_slug(payload) or f"run-{stamp}", stamp)
     history_dir.mkdir(parents=True, exist_ok=True)
     slot_path = history_dir / f"{file_stem}-{run_slug}-{stamp}.json.gz"
     if slot_path.exists():
