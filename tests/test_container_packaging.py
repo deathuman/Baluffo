@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from src.app_version import APP_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
+
+_ESBUILD_CARET_RE = re.compile(r'"esbuild": "\^0\.\d+\.\d+"')
 
 
 def _read(rel_path: str) -> str:
@@ -123,7 +126,11 @@ def test_container_frontend_bundle_script_uses_esbuild_dev_dependency() -> None:
     script = _read("scripts/build_container_frontend.mjs")
 
     assert '"build:container-frontend": "node scripts/build_container_frontend.mjs"' in package_json
-    assert '"esbuild": "^0.28.1"' in package_json
+    # The caret range is the contract (one compatible esbuild major); pinning the
+    # exact patch broke on in-range Dependabot lockfile refreshes.
+    assert _ESBUILD_CARET_RE.search(package_json), (
+        "package.json must declare a caret-range esbuild devDependency"
+    )
     assert '"node_modules/esbuild"' in package_lock
     assert "strip-import-query" in script
     assert "admin.html" in script
