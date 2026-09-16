@@ -5,6 +5,29 @@ from typing import Any
 from scripts import precommit_gate
 
 
+def _expected_pre_push_commands() -> list[list[str]]:
+    """One `pre_commit run <hook-id> --hook-stage pre-push` per pre-push hook.
+
+    Defined once so the three command-shape tests do not each restate the list
+    and drift apart when a hook is added.
+    """
+    return [
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            hook_id,
+            "--all-files",
+            "--hook-stage",
+            "pre-push",
+        ]
+        for hook_id in precommit_gate.PRE_PUSH_HOOK_IDS
+    ]
+
+
 def test_collect_changed_files_includes_changed_and_untracked_files(tmp_path, monkeypatch) -> None:
     staged = ["docs/changed.md", "src/changed.py", "src/changed.py"]
     unstaged = ["src/changed.py", "tests/changed_test.py"]
@@ -121,21 +144,54 @@ def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
             "--color=always",
             "--all-files",
         ],
-        [
-            precommit_gate.PYTHON,
-            "-m",
-            "pre_commit",
-            "run",
-            "--show-diff-on-failure",
-            "--color=always",
-            "vulture",
-            "--all-files",
-            "--hook-stage",
-            "pre-push",
-        ],
+        *_expected_pre_push_commands(),
     ]
     assert guardrails_called is True
     assert complexity_called is True
+
+
+def test_pre_push_hooks_are_actually_selected(monkeypatch) -> None:
+    """Every `stages: [pre-push]` hook must be requested explicitly.
+
+    `pre_commit run` with no `--hook-stage` selects the default `pre-commit`
+    stage, so a hook declared `stages: [pre-push]` is silently skipped unless it
+    is named on the command line. That gap let a mypy error reach main in
+    e696be64 while the local gate stayed green.
+    """
+    commands = precommit_gate.build_all_commands()
+
+    default_stage = commands[0]
+    assert "--hook-stage" not in default_stage
+
+    selected = {
+        # The hook id sits between the base flags and `--all-files`.
+        command[command.index("--all-files") - 1]
+        for command in commands[1:]
+        if "--hook-stage" in command
+    }
+    assert selected == set(precommit_gate.PRE_PUSH_HOOK_IDS), (
+        "these pre-push hooks are declared in .pre-commit-config.yaml but never "
+        f"selected by the gate: {sorted(set(precommit_gate.PRE_PUSH_HOOK_IDS) - selected)}"
+    )
+
+
+def test_pre_push_hooks_match_the_config_declaration() -> None:
+    """The gate's hook list must match what .pre-commit-config.yaml declares."""
+    import re
+
+    config_path = precommit_gate.ROOT / ".pre-commit-config.yaml"
+    text = config_path.read_text(encoding="utf-8")
+
+    declared = {
+        block.split("\n", 1)[0].strip()
+        for block in re.split(r"\n\s*-\s*id:\s*", text)[1:]
+        if re.search(r"stages:\s*\[pre-push\]", block)
+    }
+    assert declared, "expected at least one pre-push hook in .pre-commit-config.yaml"
+    assert declared == set(precommit_gate.PRE_PUSH_HOOK_IDS), (
+        "PRE_PUSH_HOOK_IDS drifted from .pre-commit-config.yaml: "
+        f"config={sorted(declared)} gate={sorted(precommit_gate.PRE_PUSH_HOOK_IDS)}"
+    )
 
 
 def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> None:
@@ -203,18 +259,7 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
             "docs/readme.md",
             "src/app.py",
         ],
-        [
-            precommit_gate.PYTHON,
-            "-m",
-            "pre_commit",
-            "run",
-            "--show-diff-on-failure",
-            "--color=always",
-            "vulture",
-            "--all-files",
-            "--hook-stage",
-            "pre-push",
-        ],
+        *_expected_pre_push_commands(),
     ]
     assert guardrails_called is True
     assert complexity_called is True
@@ -247,18 +292,7 @@ def test_build_all_commands_chunks_filtered_repo_files(monkeypatch) -> None:
             "--files",
             "c.py",
         ],
-        [
-            precommit_gate.PYTHON,
-            "-m",
-            "pre_commit",
-            "run",
-            "--show-diff-on-failure",
-            "--color=always",
-            "vulture",
-            "--all-files",
-            "--hook-stage",
-            "pre-push",
-        ],
+        *_expected_pre_push_commands(),
     ]
 
 

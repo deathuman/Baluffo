@@ -301,7 +301,7 @@ export function createJobsDesktopUpdateController({
       confirmLabel: "Install and restart",
       cancelLabel: "Later",
     };
-    let confirmed = false;
+    let confirmed;
     if (typeof requestConfirmationDialog === "function") {
       confirmed = Boolean(await requestConfirmationDialog(confirmationOptions));
     } else if (typeof confirmFallback === "function") {

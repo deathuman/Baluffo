@@ -107,4 +107,74 @@ def test_tracked_docs_restore_is_byte_identical(repo_root: Path) -> None:
             path.write_bytes(b"## [0.0.0] - 1970-01-01\n\n> stale placeholder\n")
         finally:
             path.write_bytes(before)
-        assert path.read_bytes() == before
+
+
+# --- LF-only output --------------------------------------------------------
+#
+# The repo is LF-only (.gitattributes: `* text=auto eol=lf`). Path.write_text()
+# with the default newline=None applies os.linesep translation, so on Windows
+# these scripts emitted CRLF and `ruff format --check` then failed on
+# src/app_version.py -- a confusing failure that looks unrelated to the bump.
+# These tests pin the newline="\n" argument so the bug cannot return silently.
+
+_LF_SENSITIVE_WRITE_SITES = (
+    ("scripts/bump_version.py", "_write"),
+    ("scripts/extract_release_notes.py", "build_release_notes"),
+)
+
+
+@pytest.mark.parametrize(("rel_path", "func_name"), _LF_SENSITIVE_WRITE_SITES)
+def test_release_scripts_write_lf_only(repo_root: Path, rel_path: str, func_name: str) -> None:
+    """A release-tooling writer must pass newline="\\n" to write_text()."""
+    import ast
+
+    source = (repo_root / rel_path).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    target = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == func_name
+        ),
+        None,
+    )
+    assert target is not None, f"{rel_path} has no {func_name}()"
+
+    # Keep the call and its method name together: mypy does not carry the
+    # `isinstance(node.func, ast.Attribute)` narrowing into a later `call.func`
+    # access, so `call.func.attr` would be an attr-defined error on ast.expr.
+    write_calls: list[tuple[ast.Call, str]] = [
+        (node, node.func.attr)
+        for node in ast.walk(target)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"write_text", "write_bytes"}
+    ]
+    assert write_calls, f"{rel_path}:{func_name} no longer writes anything; update this test"
+
+    for call, method_name in write_calls:
+        keywords = {kw.arg for kw in call.keywords}
+        assert "newline" in keywords, (
+            f"{rel_path}:{func_name} calls {method_name}() at line {call.lineno} "
+            'without newline="\\n", so it emits CRLF on Windows and breaks '
+            "`ruff format --check` on the LF-only tree."
+        )
+
+
+def test_bump_version_writes_lf_on_this_platform(repo_root: Path, tmp_path: Path) -> None:
+    """End-to-end: the bump helper must not emit CRLF bytes on any platform."""
+    sys.path.insert(0, str(repo_root / "scripts"))
+    try:
+        import importlib
+
+        bump_version = importlib.import_module("bump_version")
+    finally:
+        sys.path.pop(0)
+
+    target = tmp_path / "sample.py"
+    bump_version._write(target, 'APP_VERSION = "0.0.0"\n\n\n')  # noqa: SLF001 - pinning the writer
+
+    raw = target.read_bytes()
+    assert b"\r\n" not in raw, f"bump_version._write emitted CRLF: {raw!r}"
+    assert raw.endswith(b"\n")

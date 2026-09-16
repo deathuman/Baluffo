@@ -82,7 +82,7 @@ export function getJobsLastUpdatedText(timestamp, now = Date.now()) {
   const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
   const startOfYear = new Date(reference.getFullYear(), 0, 1);
 
-  let dayPart = "";
+  let dayPart;
   if (dt >= startOfToday) {
     dayPart = "";
   } else if (dt >= startOfYesterday) {

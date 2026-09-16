@@ -91,7 +91,7 @@ export async function uploadAttachments(jobKey, files, deps) {
   } = deps;
   if (!currentUser || !jobKey || !Array.isArray(files) || files.length === 0) return;
 
-  let currentList = [];
+  let currentList;
   try {
     const currentListResult = await listAttachmentsForJob(currentUser.uid, jobKey);
     currentList = currentListResult.ok ? currentListResult.data : [];

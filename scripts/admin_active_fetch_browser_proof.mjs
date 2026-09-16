@@ -58,7 +58,7 @@ async function fetchBridgeJson(bridgeBase, route, options = {}) {
     headers: options.body ? { "content-type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  let payload = null;
+  let payload;
   try {
     payload = await response.json();
   } catch {
@@ -166,7 +166,7 @@ async function extractAdminState(tab) {
       const node = document.getElementById(id);
       return Boolean(node && node.offsetParent !== null);
     }
-    let resourceEntries = [];
+    let resourceEntries;
     try {
       const perf = globalThis.performance;
       resourceEntries = typeof perf?.getEntriesByType === "function"

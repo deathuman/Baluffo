@@ -145,7 +145,6 @@ export function createAdminFetcherController({
     } catch {
       if (!usedFallback) {
         logController.appendFetcherLog(FETCHER_FALLBACK_MESSAGES.bridgeUnavailable, "warn");
-        usedFallback = true;
       }
     } finally {
       setBusyFlag("fetcherRun", false);

@@ -46,7 +46,9 @@ def build_release_notes(changelog_path: Path, version: str, output_path: Path) -
     changelog_text = changelog_path.read_text(encoding="utf-8")
     release_notes = extract_release_notes(changelog_text, version)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(release_notes, encoding="utf-8")
+    # newline="\n" keeps the artifact LF on Windows; the repo is LF-only, and
+    # release-notes.md is tracked, so a CRLF write shows up as spurious churn.
+    output_path.write_text(release_notes, encoding="utf-8", newline="\n")
     return output_path
 
 

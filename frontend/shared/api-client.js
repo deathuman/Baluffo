@@ -74,10 +74,10 @@ export async function fetchBridge(baseUrl, path, options = {}) {
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === "AbortError") {
-        throw new Error("Bridge request timed out");
+        throw new Error("Bridge request timed out", { cause: err });
       }
       if (err instanceof TypeError && err.message && err.message.includes("fetch")) {
-        throw new Error("Network error: bridge unreachable");
+        throw new Error("Network error: bridge unreachable", { cause: err });
       }
       throw err;
     }

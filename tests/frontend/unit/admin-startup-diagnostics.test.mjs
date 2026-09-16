@@ -28,7 +28,7 @@ const activeFetchProofSource = readFileSync(
 );
 
 test("admin startup has no automatic deferred diagnostics fan-out", () => {
-  const match = compositionSource.match(/async function loadPostInteractiveDiagnostics\(\) \{([\s\S]*?)\n  \}/);
+  const match = compositionSource.match(/async function loadPostInteractiveDiagnostics\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(match, "expected post-interactive diagnostics helper");
   const body = match[1];
   assert.match(body, /return null;/);
@@ -43,7 +43,7 @@ test("admin startup has no automatic deferred diagnostics fan-out", () => {
 });
 
 test("admin bootstrap schedules source table loading without report diagnostics", () => {
-  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
+  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
   const schedulerBody = schedulerMatch[1];
   assert.match(schedulerBody, /markSourceTablesLoadingForBootstrap/);
@@ -57,7 +57,7 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   assert.doesNotMatch(schedulerBody, /loadDiscoveryLogChunk/);
   assert.doesNotMatch(schedulerBody, /getBridge\(/);
 
-  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
+  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(bootstrapMatch, "expected bootstrap loader");
   assert.match(bootstrapMatch[1], /scheduleBootstrapSourceTablesLoad\(\)/);
   assert.match(bootstrapMatch[1], /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh \}\)/);
@@ -71,7 +71,7 @@ test("admin bootstrap schedules source table loading without report diagnostics"
 });
 
 test("admin degraded bootstrap refreshes overview instead of rendering false empty", () => {
-  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
+  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(bootstrapMatch, "expected bootstrap loader");
   const body = bootstrapMatch[1];
   assert.match(body, /bootstrapDegraded/);
@@ -84,7 +84,7 @@ test("admin degraded bootstrap refreshes overview instead of rendering false emp
 });
 
 test("admin auth leaves first fallback schedule and history ownership to bootstrap", () => {
-  const initMatch = authSource.match(/function initAdminPage\(\) \{([\s\S]*?)\n  \}/);
+  const initMatch = authSource.match(/function initAdminPage\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(initMatch, "expected auth init");
   const body = initMatch[1];
   assert.match(body, /loadPipelineStatusFallbackData/);
@@ -94,13 +94,13 @@ test("admin auth leaves first fallback schedule and history ownership to bootstr
 });
 
 test("admin startup heavy hydration is sequential and defers while source load is busy", () => {
-  const deferMatch = opsHealthSource.match(/function shouldDeferIdleOpsHeavyHydration\(options = \{\}\) \{([\s\S]*?)\n  \}/);
+  const deferMatch = opsHealthSource.match(/function shouldDeferIdleOpsHeavyHydration\(options = \{\}\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(deferMatch, "expected idle hydration deferral helper");
   assert.match(deferMatch[1], /adminStartupBridgeHydrationInFlight/);
   assert.match(deferMatch[1], /adminBusyState\?\.discoveryLoad/);
   assert.match(deferMatch[1], /allowStartupBridgeLane/);
 
-  const loaderMatch = opsHealthSource.match(/async function loadIdleOpsHeavyHydration\(renderToken = opsRenderToken, options = \{\}\) \{([\s\S]*?)\n  \}/);
+  const loaderMatch = opsHealthSource.match(/async function loadIdleOpsHeavyHydration\(renderToken = opsRenderToken, options = \{\}\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(loaderMatch, "expected idle hydration loader");
   const body = loaderMatch[1];
   assert.doesNotMatch(body, /Promise\.allSettled/);
@@ -119,7 +119,7 @@ test("admin startup heavy hydration is sequential and defers while source load i
 });
 
 test("admin critical bootstrap fallback hydrates summaries before delayed source tables", () => {
-  const match = compositionSource.match(/async function loadCriticalBootstrapFallbacks\(\) \{([\s\S]*?)\n  \}/);
+  const match = compositionSource.match(/async function loadCriticalBootstrapFallbacks\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(match, "expected critical bootstrap fallback helper");
   const body = match[1];
   assert.match(body, /loadActiveOpsSummaryData/);
@@ -131,7 +131,7 @@ test("admin critical bootstrap fallback hydrates summaries before delayed source
   assert.match(body, /opsController\.loadOpsHistoryData\(\{/);
   assert.doesNotMatch(body, /registryController\.loadDiscoveryData/);
 
-  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
+  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
   const schedulerBody = schedulerMatch[1];
   assert.match(schedulerBody, /markSourceTablesLoadingForBootstrap/);
@@ -146,7 +146,7 @@ test("admin ops controller forwards compact active summary loader to composition
 });
 
 test("admin active idle recovery refreshes final state before source tables", () => {
-  const match = compositionSource.match(/function runActivePipelineIdleRecovery\(meta = \{\}\) \{([\s\S]*?)\n  \}/);
+  const match = compositionSource.match(/function runActivePipelineIdleRecovery\(meta = \{\}\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(match, "expected active idle recovery helper");
   const body = match[1];
   assert.match(body, /activeIdleRecoveryInFlight/);
@@ -184,7 +184,7 @@ test("admin degraded bootstrap sync is not rendered as disabled", () => {
   assert.match(compositionSource, /function isAuthoritativeSyncPayload\(payload\)/);
   assert.match(compositionSource, /bootstrapSyncNeedsRefresh = !isAuthoritativeSyncPayload/);
   assert.match(compositionSource, /syncController\.loadSyncStatus\(\{\s*silent: true,\s*forceForm: false,\s*includeLive: false,\s*summary: true/s);
-  const match = compositionSource.match(/function renderBootstrapSyncPayload\(syncPayload\) \{([\s\S]*?)\n  \}/);
+  const match = compositionSource.match(/function renderBootstrapSyncPayload\(syncPayload\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(match, "expected bootstrap sync renderer");
   const body = match[1];
   assert.match(body, /isAuthoritativeSyncPayload\(syncPayload\)/);

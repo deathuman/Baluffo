@@ -3,6 +3,7 @@ import js from "@eslint/js";
 export default [
   {
     ignores: [
+      // Build outputs and caches.
       ".tmp/**",
       "_out/**",
       ".pre-commit-home*/**",
@@ -13,6 +14,21 @@ export default [
       "playwright-report/**",
       "pytest-cache-files-*/**",
       "tmp*/**",
+      // Not build output, but not lintable source either. These were missing,
+      // so `npx eslint .` walked them and reported 7,118 errors, of which 7,063
+      // came from vendored or generated JavaScript. That is why the eslint hook
+      // could never be enforced: see docs/testing.md (Type Check).
+      ".venv/**",
+      ".container-frontend/**",
+      ".opencode/**",
+      ".codex/**",
+      ".serena/**",
+      ".kilo/**",
+      ".kilocode/**",
+      ".freebuff/**",
+      ".windsurf/**",
+      ".cursor/**",
+      "site-packages/**",
     ],
   },
 
@@ -180,6 +196,42 @@ export default [
     rules: {
       "no-unused-vars": "warn",
       "no-undef": "error",
+    },
+  },
+
+  // Playwright configs and browser-automation scripts run in Node, but drive
+  // pages, so they need both Node globals (process) and browser globals
+  // (PerformanceObserver, getComputedStyle). Declared once here rather than
+  // sprinkling eslint-disable comments through the files.
+  {
+    files: [
+      "playwright*.config.js",
+      "scripts/**/*.mjs",
+      "tests/frontend/**/*.mjs",
+      "tests/frontend/**/*.js",
+    ],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        PerformanceObserver: "readonly",
+        getComputedStyle: "readonly",
+        Event: "readonly",
+        FocusEvent: "readonly",
+        PageTransitionEvent: "readonly",
+        Response: "readonly",
+        Node: "readonly",
+        CustomEvent: "readonly",
+        MutationObserver: "readonly",
+        IntersectionObserver: "readonly",
+        ResizeObserver: "readonly",
+        DOMParser: "readonly",
+        XMLHttpRequest: "readonly",
+        WebSocket: "readonly",
+        structuredClone: "readonly",
+        crypto: "readonly",
+        TextDecoderStream: "readonly",
+        ReadableStream: "readonly",
+      },
     },
   },
 

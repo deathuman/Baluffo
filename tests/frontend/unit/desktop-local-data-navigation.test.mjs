@@ -120,7 +120,7 @@ function setupDesktopGlobals({
       });
     }
     if (normalizedUrl.includes("/desktop-local-data/sign-in")) {
-      let body = {};
+      let body;
       try {
         body = JSON.parse(String(options?.body || "{}"));
       } catch {

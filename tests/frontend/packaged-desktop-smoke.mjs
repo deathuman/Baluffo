@@ -192,7 +192,7 @@ async function visibleErrorToastText(page) {
 async function assertNoImmediateAdminError(page, { buttonLocator, actionName = "admin action", observeMs = 8_000 }) {
   const errorLogCountBefore = await page.locator(".admin-fetcher-line.log-error").count();
   const errorToast = page.locator(".toast.error").first();
-  let toastSeen = false;
+  let toastSeen;
   try {
     await errorToast.waitFor({ state: "visible", timeout: observeMs });
     toastSeen = true;

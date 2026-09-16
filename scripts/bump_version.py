@@ -43,7 +43,11 @@ def _read(path: Path) -> str:
 
 
 def _write(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    # newline="\n" keeps the file LF on Windows. Without it, write_text() applies
+    # os.linesep translation and emits CRLF, which the repo (LF-only via
+    # .gitattributes) then fails on `ruff format --check` until the file is
+    # renormalized -- a confusing failure that looks unrelated to the bump.
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def bump_app_version(text: str, version: str) -> str:

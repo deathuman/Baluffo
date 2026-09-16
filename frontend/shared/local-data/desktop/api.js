@@ -86,7 +86,7 @@ async function requestJson(path, options = {}) {
     });
   } catch (error) {
     if (controller?.signal?.aborted) {
-      throw new Error("Desktop local-data request timed out.");
+      throw new Error("Desktop local-data request timed out.", { cause: error });
     }
     throw error;
   } finally {
@@ -255,7 +255,7 @@ export function createDesktopLocalDataApi() {
       };
 
       while (true) {
-        let existingProfiles = [];
+        let existingProfiles;
         let description = "Enter a profile name to sign in or create a local desktop profile. Signing in keeps your seen and saved jobs on this device.";
         try {
           existingProfiles = await listDesktopProfiles();

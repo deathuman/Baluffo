@@ -39,8 +39,6 @@ function createOpsController(overrides = {}) {
   const state = overrides.state || createOpsState();
   const refs = overrides.refs || createOpsRefs();
   return createAdminOpsController({
-    state,
-    refs,
     getBridge: overrides.getBridge,
     postBridge: async () => ({}),
     deriveAdminRunsModel: ({ taskState }) => ({

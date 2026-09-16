@@ -133,6 +133,13 @@ def build_changed_command(files: list[str]) -> list[str]:
     return [*_precommit_base_command(), "--files", *files]
 
 
+# Hooks declared with `stages: [pre-push]` in .pre-commit-config.yaml. The
+# default `pre-commit` stage never selects them, so before this list existed
+# they ran only in CI -- which is how a mypy error reached main in e696be64
+# while the local gate stayed green.
+PRE_PUSH_HOOK_IDS = ("vulture", "mypy", "eslint")
+
+
 def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     commands: list[list[str]] = []
     if files:
@@ -146,15 +153,21 @@ def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
             )
     else:
         commands.append([*_precommit_base_command(), "--all-files"])
-    commands.append(
-        [
-            *_precommit_base_command(),
-            "vulture",
-            "--all-files",
-            "--hook-stage",
-            "pre-push",
-        ]
-    )
+    # `pre-commit run` takes exactly one hook id, so each pre-push hook gets its
+    # own command. `--all-files` is required rather than the chunked file list:
+    # mypy and eslint both set pass_filenames: false and scan the whole repo
+    # regardless, and running them once per 200-file chunk would multiply that
+    # cost by the chunk count.
+    for hook_id in PRE_PUSH_HOOK_IDS:
+        commands.append(
+            [
+                *_precommit_base_command(),
+                hook_id,
+                "--all-files",
+                "--hook-stage",
+                "pre-push",
+            ]
+        )
     return commands
 
 

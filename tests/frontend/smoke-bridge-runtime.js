@@ -66,7 +66,7 @@ export function appendBoundedLog(logPath, chunk, { maxBytes = BRIDGE_LOG_MAX_BYT
   if (!text) {
     return;
   }
-  let existing = "";
+  let existing;
   try {
     existing = readFileSync(logPath, "utf8");
   } catch {
@@ -319,7 +319,7 @@ export async function startSmokeBridge({
     const tail = readBoundedLogTail(logPath);
     await cleanupImpl({ metaPath, logPath, processHandle: bridgeProcess, quiet: true });
     const suffix = tail ? `\n\nBridge log tail:\n${tail}` : "";
-    throw new Error(`${error instanceof Error ? error.message : String(error)}${suffix}`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}${suffix}`, { cause: error });
   } finally {
     if (!settled && smokeBridgeDebugEnabled()) {
       console.log("[bridge] smoke bridge failed before readiness.");

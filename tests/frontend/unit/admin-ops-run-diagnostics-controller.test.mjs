@@ -37,7 +37,7 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     configurable: true,
     value: { clipboard: { writeText: async text => copied.push(text) } }
   });
-  let copyPromise = Promise.resolve();
+  let copyPromise;
   let copyRunDiagnostics = null;
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({

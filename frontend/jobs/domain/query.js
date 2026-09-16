@@ -126,7 +126,7 @@ export function isValidCountry(country) {
 
 export function normalizeTimestamp(value) {
   if (!value) return "";
-  let dt = null;
+  let dt;
   if (typeof value === "number" && Number.isFinite(value)) {
     const ms = value > 10_000_000_000 ? value : value * 1000;
     dt = new Date(ms);

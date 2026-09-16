@@ -40,7 +40,6 @@ function buildRefs() {
 function createController(overrides = {}) {
   const refs = overrides.refs || buildRefs();
   return createJobsDesktopUpdateController({
-    refs,
     baseUrl: "http://127.0.0.1:8877",
     fetchJson: async () => ({
       currentVersion: "0.0.15",

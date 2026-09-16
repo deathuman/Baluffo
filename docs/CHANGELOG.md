@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.151] - 2026-09-17
+### Fixed
+
+- **The local pre-push gate now actually runs `mypy`, `eslint` and `vulture`.** `.pre-commit-config.yaml` declares all three with `stages: [pre-push]`, but `scripts/precommit_gate.py` invoked the framework with no `--hook-stage`, which selects the default `pre-commit` stage, and then hand-added only `vulture`. `mypy` and `eslint` were therefore dead configuration locally: a green `npm run lint:precommit` said nothing about types, and a mypy error reached `main` while the local gate stayed green. The gate now appends one `pre_commit run <hook-id> --all-files --hook-stage pre-push` per entry in a `PRE_PUSH_HOOK_IDS` list. Each of those hooks sets `pass_filenames: false` and scans the whole repository, so they run once rather than once per 200-file chunk, and the commit-time path stays on the default stage so commits stay fast. Two regression tests pin the command shape and assert the hook list still matches `.pre-commit-config.yaml`, so adding a `pre-push` hook without selecting it fails the suite. Verified adversarially: with a planted annotation error the gate exits non-zero and names the file, and with the stage removed it silently passes.
+
+- **`eslint` went from 7,118 errors to 0, making the newly-wired hook a real gate.** `eslint.config.js` ignored neither `.venv/**` nor `.container-frontend/**`, so 7,063 of those errors came from vendored and built JavaScript rather than repository source; the ignore list now covers those plus the agent-tool directories. The remaining 32 were genuine defects and were fixed rather than silenced: 12 dead stores (`no-useless-assignment`), 11 regexes using literal repeated spaces instead of a quantifier (`no-regex-spaces`), 5 duplicate object keys whose later occurrence silently won (`no-dupe-keys`), and 4 rethrows that discarded the original error (`preserve-caught-error`), which now attach it as `cause`. The 19 remaining `no-unused-vars` warnings are pre-existing and left as a warning budget. Note that `eslint` is enforced only by this local gate — it is not wired into CI, `release:preflight`, or `.githooks/pre-push`.
+
+- **Release scripts write LF on every platform.** `scripts/bump_version.py` and `scripts/extract_release_notes.py` used `Path.write_text()` with the default `newline=None`, which translates to `os.linesep` and so emitted CRLF for the version file, the Umbrel app and compose metadata, the changelog and the release notes on Windows. `ruff format --check` then failed on the LF-only tree, because the reformat and the commit disagreed about line endings. Both writers now pass `newline="\n"`. A parametrized AST test asserts that every `write_text`/`write_bytes` call inside those two functions keeps an explicit `newline`, and a platform test asserts the emitted bytes contain no CRLF.
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.150] - 2026-09-16
 ### Fixed
 
