@@ -75,7 +75,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
 | Integer coercion | `python -m pytest tests/test_shared_utils_coercion.py -q` — covers nan/inf/Decimal/bool/str handling and holds the no-new-unsafe-helper ratchet |
-| Duplicated function bodies | `python tools/repo_health/repo_guardrails.py --group duplication` (warn-only; `DUP_GATE_ENFORCING` in `repo_guardrails.py` flips it to blocking) |
+| Duplicated function bodies | `python tools/repo_health/repo_guardrails.py --group duplication` (blocking; `DUP_GATE_ENFORCING` in `repo_guardrails.py` is `True`) |
 | Linux Python tests | `npm run test:py:linux` |
 | Linux frontend tests | `npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
