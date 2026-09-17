@@ -8,16 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from src.baluffo_version import compare_baluffo_versions, parse_baluffo_version
+from src.shared.hashing import sha256_file
 
 from .update_manager_paths import REQUIRED_VERSION_FILES, UPDATER_VERSION, ShipPaths
 
 
 def compute_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def is_downgrade(current: str, target: str) -> bool:

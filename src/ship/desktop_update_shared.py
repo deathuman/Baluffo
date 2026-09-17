@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import contextlib
 import ctypes
-import hashlib
 import json
 import os
 import ssl
@@ -29,6 +28,7 @@ from urllib.request import Request, urlopen
 
 from src.baluffo_version import compare_baluffo_versions
 from src.shared.github_https import build_github_ssl_context, wrap_github_request_error
+from src.shared.hashing import sha256_file
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
@@ -142,11 +142,7 @@ def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, A
 
 
 def compute_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def compare_versions(left: str, right: str) -> int:

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.metadata
 import importlib.util
 import json
@@ -249,11 +248,12 @@ if str(ROOT) not in sys.path:
 
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
 from src.python_version_guard import ensure_required_python
+from src.shared.hashing import sha256_bytes, sha256_file
 from src.ship.update_manager_paths import REQUIRED_VERSION_FILES
 
 
 def _sha256_bytes(payload: bytes) -> str:
-    return hashlib.sha256(payload).hexdigest()
+    return sha256_bytes(payload)
 
 
 def _sha256_text(text: str) -> str:
@@ -261,11 +261,7 @@ def _sha256_text(text: str) -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _relative_key(path: Path) -> str:

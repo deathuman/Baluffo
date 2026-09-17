@@ -31,6 +31,7 @@ from src.runtime_seed import (
     APP_VERSION_CONTRACT_FILES,
     seed_runtime_data,
 )
+from src.shared.hashing import sha256_file
 from src.shared.json_io import (
     copy_json_file_to_storage,
     gzip_backed_json_storage_path,
@@ -245,11 +246,7 @@ def _iso_now() -> str:
 
 
 def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _state_payload(version: str) -> dict:

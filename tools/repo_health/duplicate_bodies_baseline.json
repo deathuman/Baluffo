@@ -2,10 +2,6 @@
   "_comment": "Duplication ratchet. `max_copies` is the highest copy count allowed for that body; the gate fails when a baselined body gains another copy. Prune an entry as soon as its copies are consolidated. See duplicate_body_policy.py.",
   "patterns": [
     {
-      "digest": "4ee6199f500d",
-      "max_copies": 5
-    },
-    {
       "digest": "6326d1193860",
       "max_copies": 3
     },

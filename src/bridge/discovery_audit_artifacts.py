@@ -8,12 +8,13 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery artifa
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.hashing import sha256_file
 
 MAX_SUMMARY_BYTES = 5 * 1024 * 1024
 MAX_TOP_LEVEL_KEYS = 40
@@ -78,11 +79,7 @@ def _active_data_dir(api: Any) -> Path:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _iso_from_timestamp(timestamp: float) -> str:
