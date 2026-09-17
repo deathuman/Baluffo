@@ -46,15 +46,23 @@ VERSION_FILES = (
 )
 
 # Paths that never change the container image or the store metadata the box
-# consumes: docs, tests, repo tooling, CI config, and root-level docs/identity
-# files. Everything else (src/, frontend/, scripts/, Dockerfile, requirements,
-# data/contracts, data/defaults, deathuman-baluffo/, ...) is shipped code.
+# consumes: docs, tests, repo tooling, CI config, AI continuity notes, and
+# root-level docs/identity files. Everything else (src/, frontend/, scripts/,
+# Dockerfile, requirements, data/contracts, data/defaults, deathuman-baluffo/,
+# ...) is shipped code.
 # Keep this superset of the container workflow's `paths-ignore` list so the
 # gate and the republish trigger stay aligned.
+#
+# `memory/**` is here because continuity notes are not runtime inputs: nothing
+# under src/ or scripts/ reads them. While it was shipped, committing a note
+# re-triggered Build Container and retagged the current version with newer code
+# while umbrel-app.yml still declared the old version -- exactly the 0.2.140
+# reuse trap this gate exists to prevent.
 NON_SHIPPED_PATTERNS = (
     "docs/**",
     "tests/**",
     "tools/**",
+    "memory/**",
     ".github/**",
     "README.md",
     "CONTRIBUTING.md",

@@ -12,6 +12,8 @@ docs
 docs/**
 tests
 tests/**
+memory
+memory/**
 tools/mcp
 tools/mcp/**
 node_modules

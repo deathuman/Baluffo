@@ -71,6 +71,28 @@ def test_is_shipped_path_classifies_docs_vs_code() -> None:
     assert not _is_shipped_path("release-notes.md")
 
 
+def test_memory_notes_are_not_shipped_paths() -> None:
+    """Continuity notes must not force a container republish.
+
+    ``memory/`` was a shipped path, so committing a memory note re-triggered
+    ``Build Container`` and retagged the current version with newer code while
+    ``umbrel-app.yml`` still declared the old version -- the 0.2.140 reuse trap.
+    """
+    assert not _is_shipped_path("memory/platform-improvement-report-2026-08-26.md")
+    assert not _is_shipped_path("memory/notes/anything.md")
+
+
+def test_dockerignore_excludes_memory_notes() -> None:
+    """The image must not carry AI continuity notes, which are not runtime inputs."""
+    patterns = {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    assert "memory" in patterns
+    assert "memory/**" in patterns
+
+
 def test_declared_release_tag_versions_parses_intent_forms() -> None:
     assert _declared_release_tag_versions("feat: x\n\nRelease-tag: v0.2.142") == ["0.2.142"]
     assert _declared_release_tag_versions("feat: x\n\nrelease-tag: 0.2.142") == ["0.2.142"]
