@@ -509,11 +509,13 @@ For the canonical startup measurement architecture and the preferred `perf:start
 
 ### Local Preflight vs CI Gate Coverage
 
-`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
+`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, the published-version check, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
 
 - `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) run on every push and pull request in `.github/workflows/lint.yml`; mypy runs again at tag time in `build-linux.yml` together with the Linux AppImage build and AppImage smoke, which have no local preflight lane.
 - The container Jobs boot performance gate (`jobs-boot-perf.yml`) builds and runs the real container; it is deliberately not part of local preflight because preflight has no live container.
-- `npm run lint:js` (eslint) is currently a local-only/manual lane and is not wired into CI or preflight.
+- `eslint` runs inside the pre-commit gate: `.pre-commit-config.yaml` declares it `stages: [pre-push]` and `scripts/precommit_gate.py` selects that stage explicitly, so it is enforced by `lint:precommit:ci` in CI, by the `.githooks/pre-push` hook, and here. The only bypass is `--no-verify`, which is forbidden.
+
+`npm run check:published-version` (lane 4 of preflight) queries GHCR for the current `APP_VERSION` and warns when that version is already published. It exists because the container version gate validates release *intent* but is deliberately offline — it cannot see whether the version it is asking you to publish has already shipped, which is the 0.2.140 reuse trap in another disguise. It is warn-only by default (republishing inside an open release window is sometimes intentional); `--strict` turns an already-published version into a failure. A network failure degrades to a "verify manually" notice rather than breaking preflight, and it is intentionally **not** part of the always-on `repo_guardrails` set so that gate stays fast and offline.
 
 Do not read "preflight passed" as "all gates passed"; the tag-push workflows run the remaining lanes.
 
