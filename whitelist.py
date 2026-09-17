@@ -199,6 +199,7 @@ tag_names  # unused variable (src\source_sync_checkpoint_tags.py:17)
 skip_reason  # unused variable (src\source_sync_checkpoint_tags.py:18)
 github_app_auth_get_installation_token  # unused function (src\source_sync_runtime.py:274)
 clear_counters  # unused function (src\shared\timing_counters.py:70)
+sha256_bytes  # unused function (src\shared\hashing.py:33) - consumed by scripts\build_portable_exe.py, which is outside vulture's src/ scan set
 plugin_family  # unused variable (src\jobs\adapters\plugins\registry.py:17)
 last_attempt_at  # unused variable (src\jobs\browser_fallback.py:45)
 last_success_at  # unused variable (src\jobs\browser_fallback.py:47)
