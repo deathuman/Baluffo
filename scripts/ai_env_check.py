@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import re
 import shutil
@@ -19,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_NODE = "25.8.0"
 REQUIRED_PYTHON = (3, 13)
 SERENA_PACKAGE = "serena-agent"
+MEMORY_VAULT_DIR_NAME = "BaluffoMemory"
+MEMORY_VAULT_ENV_VAR = "BALUFFO_MEMORY_VAULT"
 
 
 @dataclass(frozen=True)
@@ -200,8 +203,72 @@ def _check_path_location() -> Check:
     return Check("repo_path", "ok", root)
 
 
+def _memory_vault_path() -> Path | None:
+    """Locate the BaluffoMemory continuity vault, or None when it is not on this machine."""
+    override = os.environ.get(MEMORY_VAULT_ENV_VAR)
+    if override:
+        candidate = Path(override).expanduser()
+        return candidate if candidate.is_dir() else None
+    candidate = ROOT.parent / MEMORY_VAULT_DIR_NAME
+    return candidate if candidate.is_dir() else None
+
+
+def _git_lines(vault: Path, *args: str) -> list[str] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(vault), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return [line for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _check_memory_vault() -> Check | None:
+    """Warn when continuity notes are written but never committed.
+
+    Notes are only durable once pushed: an uncommitted note is invisible to every
+    other machine and is destroyed by a routine ``git clean``. The closeout
+    checklist in tools/mcp/BASIC_MEMORY.md documents the commit step, but nothing
+    detected a session that skipped it, so notes accumulated uncommitted twice.
+    """
+    vault = _memory_vault_path()
+    if vault is None:
+        return None
+    if _git_lines(vault, "rev-parse", "--is-inside-work-tree") is None:
+        return Check("memory_vault", "warn", f"{vault.name} present but not a git repo")
+
+    status = _git_lines(vault, "status", "--porcelain")
+    if status is None:
+        return Check("memory_vault", "warn", f"{vault.name} git status unavailable")
+
+    untracked = sum(1 for line in status if line.startswith("??"))
+    uncommitted = len(status) - untracked
+
+    unpushed = _git_lines(vault, "rev-list", "--count", "origin/main..HEAD")
+    unpushed_count = int(unpushed[0]) if unpushed and unpushed[0].isdigit() else 0
+
+    if not status and not unpushed_count:
+        return Check("memory_vault", "ok", f"{vault.name} clean and pushed")
+
+    parts = []
+    if uncommitted:
+        parts.append(f"{uncommitted} uncommitted")
+    if untracked:
+        parts.append(f"{untracked} untracked")
+    if unpushed_count:
+        parts.append(f"{unpushed_count} unpushed commit(s)")
+    detail = ", ".join(parts) + f" in {vault.name}; commit and push before closeout"
+    return Check("memory_vault", "warn", detail)
+
+
 def _checks(*, smoke: bool, check_updates: bool) -> list[Check]:
-    return [
+    checks = [
         _check_python(),
         _check_node(),
         _check_npm(),
@@ -214,6 +281,10 @@ def _checks(*, smoke: bool, check_updates: bool) -> list[Check]:
         _check_playwright(),
         _check_path_location(),
     ]
+    memory_check = _check_memory_vault()
+    if memory_check is not None:
+        checks.append(memory_check)
+    return checks
 
 
 def _print(checks: list[Check]) -> None:

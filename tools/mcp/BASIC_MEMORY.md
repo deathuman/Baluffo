@@ -255,6 +255,7 @@ __pycache__/
 3. Explicitly decide whether to update current focus, handoff, gotcha, decision, or stale-memory notes; skip the write only when the task produced no durable continuity value.
 4. Commit and push durable BaluffoMemory updates as part of normal closeout when memory changed and the network is available.
 5. If memory push fails or network is unavailable, report the pending BaluffoMemory status and the exact command to retry.
+6. Confirm nothing was left behind: `python scripts/ai_env_check.py` reports a `memory_vault` line that warns on uncommitted or unpushed notes (see Uncommitted-Notes Detection below).
 
 ### Git-Backed Closeout Checklist
 
@@ -267,6 +268,26 @@ Before pushing BaluffoMemory:
 5. Run a targeted secret scan or `git diff --cached` review before committing. Never commit secrets, private keys, token values, local config files, databases, indexes, or cache artifacts.
 6. Run `basic-memory status --project baluffo-memory` and `basic-memory reindex --project baluffo-memory --search`.
 7. Commit with a message that names the durable event, push `main`, and confirm `git status --short --branch` is clean.
+
+### Uncommitted-Notes Detection
+
+`python scripts/ai_env_check.py` (also `npm run check:ai-env`) reports a `memory_vault` line that
+surfaces notes written but never committed or pushed:
+
+```
+OK    memory_vault  BaluffoMemory clean and pushed
+WARN  memory_vault  3 uncommitted, 5 untracked in BaluffoMemory; commit and push before closeout
+WARN  memory_vault  1 unpushed commit(s) in BaluffoMemory; commit and push before closeout
+```
+
+The vault is located as a sibling directory of the repo (`../BaluffoMemory`), or from
+`BALUFFO_MEMORY_VAULT` when set. When no vault is present the check is skipped silently, so it is
+safe on machines and CI that do not clone memory.
+
+**Why this exists:** the checklist above already required the commit and push, but nothing detected a
+session that skipped it, so notes accumulated uncommitted twice (2026-09-02..09-08 and
+2026-09-10..09-16, 19 files). Uncommitted notes are invisible to every other machine and are destroyed
+by a routine `git clean`. Run the check before closing out a task that wrote memory.
 
 ## Merge-Conflict Handling
 

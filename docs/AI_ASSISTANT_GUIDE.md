@@ -227,6 +227,13 @@ When starting a new Codex/OpenCode assistant session against this repo:
 
 This keeps language indexing from being a blocker before touching code.
 
+### Continuity Closeout
+
+Before ending a session that wrote Basic Memory notes, run `python scripts/ai_env_check.py` and confirm
+the `memory_vault` line reads `clean and pushed`. A `WARN` there means notes were written but never
+committed or pushed — they are invisible to every other machine and a routine `git clean` destroys them.
+See [`../tools/mcp/BASIC_MEMORY.md`](../tools/mcp/BASIC_MEMORY.md) for the full closeout checklist.
+
 See [`testing.md`](testing.md) for the full verification matrix.
 
 ## AI Editing Rules
