@@ -381,12 +381,12 @@ function formatPipelineCaption(progress) {
 
 // ponytail: plain-language caption for the end-user Jobs page. The technical
 // formatter below (formatBlockingTaskProgressLabel) stays the detail source for
-// the button tooltip and for Admin; this one is deliberately poor in
-// information: a count, an ETA, and a human phase name, never more than two
-// segments. docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md records the
+// Admin; this one is deliberately poor in information: a human phase name, a
+// count, and a rough ETA, never more than three segments.
+// docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md records the
 // decision ("Progress copy should use user-facing stages"; "Admin remains the
 // canonical place for detailed pipeline diagnostics").
-const JOBS_CAPTION_MAX_SEGMENTS = 2;
+const JOBS_CAPTION_MAX_SEGMENTS = 3;
 
 // The closed set of stage labels getUserFacingUpdateStage is trusted to return.
 // Anything else means it was title-casing an unrecognised internal token.
@@ -430,28 +430,31 @@ function plainJobsPhaseLabel(progress) {
   return "";
 }
 
-function plainCountSegment(counts, progress, noun) {
+function plainCountSegment(counts, progress, noun, phase) {
   const resolved = numericOrZero(counts?.resolvedSources ?? counts?.probedCandidates);
   const total = numericOrZero(counts?.sourceCount ?? counts?.probeTotal);
   const determinate = String(progress?.mode || "").toLowerCase() === "determinate";
-  if (determinate && total > 0) return `${compactCount(resolved)} of ${compactCount(total)} ${noun}`;
-  if (resolved > 0) return `${compactCount(resolved)} ${noun} checked`;
+  // The phase usually already names the thing being counted ("Executing
+  // sources"), and repeating it reads as a stutter: "Executing sources · 5 of
+  // 2,052 sources". Keep the noun only when the phase is silent about it.
+  const suffix = String(phase || "").toLowerCase().includes(noun) ? "" : ` ${noun}`;
+  if (determinate && total > 0) return `${compactCount(resolved)} of ${compactCount(total)}${suffix}`;
+  if (resolved > 0) return `${compactCount(resolved)}${suffix} checked`;
   return "";
 }
 
 function buildPlainJobsCaption(progress, noun) {
   const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
   const eta = formatShortDuration(counts?.estimatedRemainingMs);
+  const phase = plainJobsPhaseLabel(progress);
+  // Three segments: what it is doing, how far along, and roughly how much
+  // longer. The phase leads because the button label above only names the
+  // coarser stage, and the tooltip no longer carries the breakdown.
   const parts = [
-    plainCountSegment(counts, progress, noun),
-    eta ? `ETA ${eta}` : ""
+    phase,
+    plainCountSegment(counts, progress, noun, phase),
+    eta ? `~${eta} left` : ""
   ].filter(Boolean);
-  // With a count the button label above already names the stage, so repeating it
-  // is redundant; without one the plain phase is the only useful signal.
-  if (!parts.length) {
-    const phase = plainJobsPhaseLabel(progress);
-    if (phase) parts.push(phase);
-  }
   return parts.slice(0, JOBS_CAPTION_MAX_SEGMENTS).join(" · ") || "Working…";
 }
 

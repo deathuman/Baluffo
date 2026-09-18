@@ -30,12 +30,15 @@ test("formatJobsProgressCaption keeps the end-user caption plain", () => {
       }
     }
   });
-  assert.equal(discovery, "138 of 500 sources · ETA 4m");
-  // No internal vocabulary of any kind reaches the caption.
-  assert.doesNotMatch(discovery, /steam_curator_feeds|stage \d|generated|endpoints|queued|rate \d|probing/i);
+  assert.equal(discovery, "Probing candidates · 138 of 500 sources · ~4m left");
+  // No internal vocabulary of any kind reaches the caption. "Probing candidates"
+  // is the human phase label and is allowed through; the adapter id, step
+  // markers and raw counters are not.
+  assert.doesNotMatch(discovery, /steam_curator_feeds|stage \d|generated|endpoints|queued|rate \d/i);
 
-  // A determinate fetch run: count + ETA, and the phase is deliberately not
-  // echoed because the button label above already names the stage.
+  // A determinate fetch run: phase, count and a rough ETA. The phase leads
+  // because the button label above only names the coarser stage ("Fetching job
+  // listings"), and the button tooltip no longer carries the breakdown.
   const fetch = formatJobsProgressCaption({
     taskType: "fetch",
     taskProgress: {
@@ -50,12 +53,15 @@ test("formatJobsProgressCaption keeps the end-user caption plain", () => {
       }
     }
   });
-  assert.equal(fetch, "512 of 2,135 sources · ETA 10m");
-  assert.doesNotMatch(fetch, /Executing sources|rate|Studio A/i);
+  assert.equal(fetch, "Executing sources · 512 of 2,135 · ~10m left");
+  assert.doesNotMatch(fetch, /rate \d|Studio A/i);
+  // The phase already names the thing being counted, so the count must not
+  // stutter it back ("Executing sources · 512 of 2,135 sources").
+  assert.doesNotMatch(fetch, /of 2,135 sources/i);
 
-  // At most two segments, always.
+  // At most three segments, always.
   for (const label of [discovery, fetch]) {
-    assert.ok(label.split(" · ").length <= 2, `too many segments: ${label}`);
+    assert.ok(label.split(" · ").length <= 3, `too many segments: ${label}`);
   }
 });
 

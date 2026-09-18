@@ -1,6 +1,5 @@
 import {
   clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
-  formatBlockingTaskProgressLabel,
   formatJobsProgressCaption,
   getJobsUpdateTooltip,
   getPipelineRunningLabel,
@@ -129,7 +128,7 @@ function buildBlockingTaskPayload(task) {
   // sweeping fill so the button still visibly moves while the stage is genuinely
   // silent. The frame deliberately has *no* label so the primary stage copy
   // (e.g. "Fetching job listings...") is unaffected — sub-progress text lives in
-  // progressLabel via formatBlockingTaskProgressLabel.
+  // progressLabel via formatJobsProgressCaption.
   const determinate = String(taskProgress.mode || "").trim().toLowerCase() === "determinate";
   const ratio = Number(taskProgress.ratio);
   payload.progress = {
@@ -267,7 +266,6 @@ export function createJobsPipelineController({
     disabled = false,
     buttonLabel = "",
     progressLabel = "",
-    progressDetail = "",
     firstRunBootstrapActive = false,
     isError = false,
     abortTask = null
@@ -316,22 +314,18 @@ export function createJobsPipelineController({
         quietSuffix = `\n${JOBS_UPDATE_COPY.stillWorkingSuffixLabel} for ${totalMin}m.`;
       }
     }
-    // ponytail: keep the technical breakdown reachable after the caption went
-    // plain-language. Only shown while running, and only when it adds something
-    // beyond the plain caption (identical strings would just be noise).
-    const detail = String(progressDetail || "").trim();
-    const plain = String(progressLabel || "").trim();
-    const detailSuffix = running && detail && detail !== plain ? `\n${detail}` : "";
+    // ponytail: the tooltip is the fixed tip and nothing else. It used to append
+    // the technical progress breakdown, but the caption below the button already
+    // reports progress, so repeating it there was noise. Stall/quiet stay as the
+    // one exception: a dead or frozen run would otherwise look perfectly healthy,
+    // because the caption just freezes on its last numbers.
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
       disabled,
       buttonLabel: aborting ? JOBS_UPDATE_COPY.abortingLabel : buttonLabel,
       progressLabel,
-      // ponytail: the caption is plain-language; the technical breakdown rides in
-      // the tooltip so nothing is lost for a user who wants it (Admin still owns
-      // the canonical diagnostics view).
-      buttonTooltip: baseTooltip + detailSuffix + stallSuffix + quietSuffix,
+      buttonTooltip: baseTooltip + stallSuffix + quietSuffix,
       isError,
       abortable,
       aborting
@@ -567,7 +561,6 @@ export function createJobsPipelineController({
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
       const blockingPayload = buildBlockingTaskPayload(primaryRow);
       const blockingProgressLabel = formatJobsProgressCaption(primaryRow);
-      const blockingProgressDetail = formatBlockingTaskProgressLabel(primaryRow);
       // ponytail: the child payload carries the determinate fill (child ratio),
       // while stall/shutdown state still comes from the pipeline payload itself.
       const mergedPayload = {
@@ -580,7 +573,6 @@ export function createJobsPipelineController({
         disabled: true,
         buttonLabel: getPipelineRunningLabel(blockingPayload),
         progressLabel: blockingProgressLabel || String(primaryRow?.taskProgress?.phaseLabel || "").trim(),
-        progressDetail: blockingProgressDetail,
         firstRunBootstrapActive,
         pipelinePayload: mergedPayload,
         abortTask: isAbortableTask(primaryRow) ? primaryRow : {
@@ -737,13 +729,11 @@ export function createJobsPipelineController({
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
         const blockingPayload = buildBlockingTaskPayload(blockingTask);
         const blockingProgressLabel = formatJobsProgressCaption(blockingTask);
-        const blockingProgressDetail = formatBlockingTaskProgressLabel(blockingTask);
         updateJobsPipelineUi({
           running: true,
           disabled: true,
           buttonLabel: getPipelineRunningLabel(blockingPayload),
           progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
-          progressDetail: blockingProgressDetail,
           firstRunBootstrapActive,
           pipelinePayload: blockingPayload,
           abortTask: isAbortableTask(blockingTask) ? blockingTask : null

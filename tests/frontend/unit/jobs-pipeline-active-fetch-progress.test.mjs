@@ -79,11 +79,11 @@ test("pollJobsPipelineStatus shows bounded active fetch progress while pipeline 
     assert.equal(caption.hidden, false);
     assert.equal(caption.classList.contains("running"), true);
     assert.match(String(button.textContent || ""), /Fetching job listings/i);
-    // ponytail: the end-user caption is plain language only — a count and an ETA.
-    // No phase echo (the button label above already names the stage), no rate, and
-    // no internal counters. The technical breakdown lives in the button tooltip.
-    assert.match(String(caption.textContent || ""), /51 of 1,154 sources/i);
-    assert.match(String(caption.textContent || ""), /ETA 1h/i);
+    // ponytail: the end-user caption is plain language only — phase, count and a
+    // rough ETA. No rate and no internal counters. The phase already names the
+    // counted thing, so the count drops the "sources" noun to avoid stuttering.
+    assert.match(String(caption.textContent || ""), /Executing sources · 51 of 1,154 · ~1h left/i);
+    assert.match(String(caption.textContent || ""), /~1h left/i);
     assert.doesNotMatch(String(caption.textContent || ""), /rate 12\/min/i);
     assert.doesNotMatch(String(caption.textContent || ""), /current Studio A, Studio B/);
   } finally {
@@ -161,10 +161,12 @@ test("pollJobsPipelineStatus uses the live active child from the pipeline status
     const caption = getJobsPipelineProgressCaption(button);
     assert.ok(caption, "sub-progress caption should be created");
     assert.match(String(button.textContent || ""), /Fetching job listings/i);
-    // ponytail: plain-language caption — the phase is not echoed here.
-    assert.match(String(caption.textContent || ""), /100 of 400 sources/i);
-    assert.match(String(caption.textContent || ""), /ETA 15m/i);
-    assert.doesNotMatch(String(caption.textContent || ""), /Executing sources/i);
+    // ponytail: plain-language caption — phase, count and rough ETA. The phase
+    // now leads because the button label above only names the coarser stage.
+    assert.match(String(caption.textContent || ""), /Executing sources · 100 of 400 · ~15m left/i);
+    assert.match(String(caption.textContent || ""), /~15m left/i);
+    // The count must not repeat the noun the phase already carries.
+    assert.doesNotMatch(String(caption.textContent || ""), /of [\d,]+ sources/i);
   } finally {
     restoreTimers();
   }
@@ -245,11 +247,11 @@ test("pollJobsPipelineStatus shows aggregate fetch tail ETA without extra routes
 
     const aggregateCaption = getJobsPipelineProgressCaption(button);
     assert.ok(aggregateCaption, "sub-progress caption should be created");
-    // ponytail: aggregate detail is compacted to a plain count + ETA; the
-    // fallback-rate and per-phase aggregate detail stay out of the user caption
-    // (they remain available in the button tooltip).
-    assert.match(String(aggregateCaption.textContent || ""), /333 of 334 sources/i);
-    assert.match(String(aggregateCaption.textContent || ""), /ETA 18m/i);
+    // ponytail: aggregate detail is compacted to phase + plain count + rough ETA;
+    // the fallback-rate and per-phase aggregate detail stay out of the user
+    // caption (Admin owns the detailed view).
+    assert.match(String(aggregateCaption.textContent || ""), /333 of 334/i);
+    assert.match(String(aggregateCaption.textContent || ""), /~18m left/i);
     assert.doesNotMatch(String(aggregateCaption.textContent || ""), /fallback rate/i);
     assert.doesNotMatch(String(aggregateCaption.textContent || ""), /fallback 212\/551/i);
     assert.deepEqual(paths, [
