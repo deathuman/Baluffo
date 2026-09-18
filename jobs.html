@@ -206,16 +206,19 @@
 
     <div class="jobs-toolbar">
       <div class="toolbar-actions">
+        <!-- ponytail: the Last-updated stamp shares the button line, pinned left
+             with margin-right:auto while the button stays right. Below 900px the
+             row wraps and the stamp drops to its own line above the caption. -->
+        <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite" hidden></span>
         <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Find new openings and rebuild the local job list. This usually takes a few minutes; first updates can take up to 1 hour.">Update jobs</button>
       </div>
-      <!-- ponytail: fixed-height status row — the results summary, the running
-           caption, and the Last-updated timestamp swap here without ever
-           resizing the toolbar or reflowing the buttons above. The summary
-           hugs the left edge so it sits directly above the jobs table. -->
+      <!-- ponytail: fixed-height status row — the results summary and the running
+           caption swap here without ever resizing the toolbar or reflowing the
+           buttons above. The summary hugs the left edge so it sits directly
+           above the jobs table. -->
       <div class="jobs-toolbar-status" data-ui="jobs-toolbar-status">
         <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
         <span id="jobs-pipeline-progress-caption" data-ui="jobs-pipeline-progress-caption" class="jobs-pipeline-progress jobs-pipeline-progress-caption" aria-live="polite" hidden></span>
-        <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite" hidden></span>
       </div>
     </div>
 

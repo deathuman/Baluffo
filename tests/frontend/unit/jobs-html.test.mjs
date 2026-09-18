@@ -21,15 +21,19 @@ test("jobs html update button uses user-facing update copy", () => {
 });
 
 test("jobs toolbar keeps a fixed status row for pipeline progress and last-updated", () => {
-  // ponytail: the caption and the Last-updated timestamp must live in the
-  // always-rendered status row below the actions row — that is what keeps the
-  // toolbar height and button positions invariant while a run is active.
+  // ponytail: the caption and the results summary live in the always-rendered
+  // status row below the actions row — that is what keeps the toolbar height and
+  // button positions invariant while a run is active. The Last-updated stamp
+  // shares the button line instead (pinned left), so it is asserted against the
+  // actions row, not the status row.
   const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
   const actionsStart = html.indexOf('<div class="toolbar-actions">');
+  const actionsEnd = html.indexOf('<div class="jobs-toolbar-status"');
   const statusStart = html.indexOf('<div class="jobs-toolbar-status" data-ui="jobs-toolbar-status">');
   const summaryAt = html.indexOf('id="results-summary"');
   const captionAt = html.indexOf('id="jobs-pipeline-progress-caption"');
   const lastUpdatedAt = html.indexOf('id="jobs-last-updated"');
+  const runBtnAt = html.indexOf('id="jobs-pipeline-run-btn"');
   const reloadBtnAt = html.indexOf('id="refresh-jobs-btn"');
   const badgeAt = html.indexOf('id="refresh-jobs-needed-badge"');
   assert.ok(actionsStart >= 0, "actions row must exist");
@@ -39,9 +43,34 @@ test("jobs toolbar keeps a fixed status row for pipeline progress and last-updat
     "results summary must lead the status row so it sits directly above the table"
   );
   assert.ok(captionAt > summaryAt, "pipeline caption must live in the status row");
-  assert.ok(lastUpdatedAt > captionAt, "last-updated must live in the status row");
+  // The stamp rides the button line, ahead of the button so `margin-right: auto`
+  // pins it to the left edge while the button stays right-aligned.
+  assert.ok(lastUpdatedAt > actionsStart, "last-updated must live in the actions row");
+  assert.ok(lastUpdatedAt < actionsEnd, "last-updated must live in the actions row, not the status row");
+  assert.ok(lastUpdatedAt < runBtnAt, "last-updated must precede the Update jobs button");
   assert.equal(reloadBtnAt, -1, "Reload button is removed; updates load automatically");
   assert.equal(badgeAt, -1, "Updates-found badge is removed with the Reload flow");
+});
+
+test("jobs toolbar spacing and compact pagination cannot silently regress", () => {
+  const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  const css = fs.readFileSync(path.join(repoRoot, "styles", "jobs.css"), "utf8");
+  // A small gap keeps the caption line from looking crammed against the button.
+  assert.match(css, /\.jobs-page \.jobs-toolbar-status\s*\{[\s\S]*margin-top:\s*0\.25rem/);
+  // The stamp is pinned left on the shared button line.
+  assert.match(css, /\.jobs-page \.jobs-last-updated\s*\{[\s\S]*margin-right:\s*auto/);
+  // Narrow screens wrap the stamp onto its own row below the full-width button.
+  assert.match(css, /@media \(max-width: 900px\)[\s\S]*\.jobs-page \.jobs-last-updated\s*\{[\s\S]*order:\s*2/);
+  // The dim-while-running rule must follow the stamp out of the status row.
+  assert.match(css, /\.jobs-page \.jobs-toolbar\.running \.jobs-last-updated\s*\{[\s\S]*opacity:\s*0\.55/);
+  // Compact pager: the strip is still reserved (first-paint invariant) but small.
+  const paginationRule = css.match(/\.jobs-page \.pagination\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.match(paginationRule, /min-height:\s*1\.75rem/);
+  const pageBtnRule = css.match(/\.jobs-page \.page-btn\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.match(pageBtnRule, /min-height:\s*1\.75rem/);
+  assert.match(pageBtnRule, /min-width:\s*1\.75rem/);
+  // The pager still sits inside the toolbar block, above the table header.
+  assert.ok(html.indexOf('id="pagination"') > html.indexOf('id="jobs-list"'));
 });
 
 test("desktop html meaningful operational buttons expose polished tooltips", () => {

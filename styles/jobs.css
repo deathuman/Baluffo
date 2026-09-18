@@ -234,6 +234,9 @@
      row ran out of width (it collapsed to ~6px). The caption yields first. */
   flex: 0 0 auto;
   white-space: nowrap;
+  /* ponytail: shares the button line, pinned to the left edge (the row is
+     justify-content: flex-end, so auto margin pushes the button right). */
+  margin-right: auto;
 }
 
 .jobs-page .jobs-pipeline-btn {
@@ -350,7 +353,9 @@
   gap: 0.6rem;
   min-width: 0;
   min-height: 1.35rem;
-  margin-top: 0;
+  /* ponytail: a small gap so the caption line never looks crammed against the
+     button row above it (it was flush at 0px). */
+  margin-top: 0.25rem;
 }
 
 /* ponytail: the live determinate sub-progress (counts/ETA) renders right-
@@ -397,8 +402,10 @@
 }
 
 /* ponytail: while a run is active the previous run's timestamp stays visible
-   but clearly secondary — dimmed in place, never removed (no layout shift). */
-.jobs-page .jobs-toolbar-status.running .jobs-last-updated {
+   but clearly secondary — dimmed in place, never removed (no layout shift).
+   The stamp now lives on the button line, so the run state is read from the
+   shared .jobs-toolbar ancestor (toggled in pipeline.js). */
+.jobs-page .jobs-toolbar.running .jobs-last-updated {
   opacity: 0.55;
 }
 
@@ -782,18 +789,33 @@
   color: #a9f5b7;
 }
 
+/* ponytail: compact pager — the buttons were 38px tall for ~13px numerals,
+   which read as oversized empty boxes. The min-height is kept (it reserves the
+   strip so late pagination cannot shift first paint) but reduced. */
 .jobs-page .pagination {
-  margin-top: 0.75rem;
-  margin-bottom: 0.75rem;
-  min-height: 2.4rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  min-height: 1.75rem;
 }
 
 .jobs-page .page-btn {
-  border-radius: 10px;
+  border-radius: 8px;
   border-color: var(--surface-20);
-  padding: 0.36rem 0.66rem;
-  min-width: 2rem;
+  padding: 0.2rem 0.45rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
   font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ponytail: keep the "..." separator on the same baseline as the compact
+   buttons (the shared rule pads for the taller original buttons). */
+.jobs-page .page-ellipsis {
+  padding: 0.2rem 0.4rem;
+  display: inline-flex;
+  align-items: center;
 }
 
 .jobs-page .page-nav-btn,
@@ -911,6 +933,19 @@
   .jobs-page .jobs-pipeline-btn {
     inline-size: 100%;
     width: 100%;
+  }
+
+  /* ponytail: the full-width button leaves no room on its line, so the
+     Last-updated stamp wraps to its own row. order:2 puts it *after* the
+     button (i.e. directly above the caption) rather than above the button. */
+  .jobs-page .toolbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .jobs-page .jobs-last-updated {
+    order: 2;
+    flex-basis: 100%;
+    margin-right: 0;
   }
 }
 

@@ -565,6 +565,14 @@ export function updateJobsPipelineUi(
     jobsPipelineRunBtn.textContent = nextLabel;
   }
   const progressText = view.active ? String(view.progressLabel || "").trim() : "";
+  // ponytail: publish the run state on the shared .jobs-toolbar ancestor. The
+  // Last-updated stamp now sits on the button line (outside the status row), so
+  // the dim-while-running rule reads the state from here. Toggled outside the
+  // caption branch so it still applies in environments without a caption node.
+  const toolbarEl = (typeof jobsPipelineRunBtn.closest === "function"
+    ? jobsPipelineRunBtn.closest(".jobs-toolbar")
+    : null) || jobsPipelineRunBtn.parentElement?.parentElement || null;
+  toolbarEl?.classList?.toggle?.("running", Boolean(view.active));
   if (progressCaption) {
     const running = view.active && Boolean(progressText);
     progressCaption.classList?.toggle?.("running", running);
