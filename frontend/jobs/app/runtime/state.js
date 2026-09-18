@@ -35,11 +35,7 @@ export function createJobsPipelineUiState() {
     abortRequested: false,
     abortRevealActive: false,
     abortRequestError: "",
-    abortRequestErrorAt: 0,
-    // ponytail: count of backend stageTransitions entries we've already
-    // toasted for; backend emits them append-only via
-    // /tasks/run-jobs-pipeline-status -> payload.stageTransitions.
-    stageTransitionSeenCount: 0
+    abortRequestErrorAt: 0
   };
 }
 

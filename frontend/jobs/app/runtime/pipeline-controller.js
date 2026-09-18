@@ -226,39 +226,6 @@ function clearRememberedActivePipeline(jobsPipelineUiState) {
   if (!jobsPipelineUiState) return;
   jobsPipelineUiState.lastActivePipelinePayload = null;
   jobsPipelineUiState.lastActivePipelineSeenAt = 0;
-  jobsPipelineUiState.stageTransitionSeenCount = 0;
-}
-
-// ponytail: surface stage-transition moments ("now fetching…", "now syncing…")
-// without parsing stageLedger each tick. Only toasts new transitions (append-only
-// source). Skips silent stages that don't change the user-visible CTA label.
-function maybeToastStageTransitions(jobsPipelineUiState, payload, showToast) {
-  if (!jobsPipelineUiState || !payload || typeof payload !== "object") return;
-  const transitions = Array.isArray(payload.stageTransitions) ? payload.stageTransitions : [];
-  const total = transitions.length;
-  if (!Number.isFinite(total) || total <= 0) return;
-  const prev = Number(jobsPipelineUiState.stageTransitionSeenCount || 0);
-  if (total <= prev) {
-    // Defensive: if backend shrank (restart/new run), snap seen count down.
-    jobsPipelineUiState.stageTransitionSeenCount = total;
-    return;
-  }
-  const news = transitions.slice(prev, total);
-  const latest = news[news.length - 1];
-  jobsPipelineUiState.stageTransitionSeenCount = total;
-  const to = String(latest?.to || "").trim().toLowerCase();
-  if (!to) return;
-  // ponytail: only the four main stages the user actually cares about;
-  // skip internal stages (aborting, pipeline_owned, registry_conflicts…).
-  const copy = ({
-    discovery: "Source discovery",
-    fetch: "Fetching job listings",
-    sync_push: "Syncing results",
-    sync: "Syncing results",
-    completed: "Finishing up"
-  })[to] || "";
-  if (!copy) return;
-  showToast(copy, "info");
 }
 
 function pipelineStartAttachedToast(message) {
@@ -589,10 +556,10 @@ export function createJobsPipelineController({
     jobsPipelineUiState.runId = runId;
     jobsPipelineUiState.startedAt = startedAt;
     rememberActivePipelinePayload(jobsPipelineUiState, activePayload);
-    // ponytail: notice new stage transitions and toast them once per stage.
-    // Backend emits stageTransitions as an append-only list via
-    // /tasks/run-jobs-pipeline-status; we track how many we've already seen.
-    maybeToastStageTransitions(jobsPipelineUiState, activePayload, showToast);
+    // ponytail: stage transitions are deliberately NOT toasted. The backend still
+    // emits its stage-transition list (Admin may consume it), but the jobs CTA
+    // caption already shows live progress, and the raw stage names ("Source
+    // discovery", "Syncing results") are internal jargon on a user-facing page.
     const childTaskType = normalizeTaskType(liveChildRow) || normalizeTaskType(blockingTask);
     if (childTaskType && childTaskType !== "pipeline") {
       const primaryRow = liveChildRow || blockingTask;

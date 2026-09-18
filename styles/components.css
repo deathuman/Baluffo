@@ -2274,18 +2274,24 @@ h1 {
 .toast.info {
   border-color: #48618a;
   color: #c7dbff;
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--accent-soft-text);
-  font-size: 0.65rem;
-  font-weight:  600;
-  text-transform: lowercase;
-  letter-spacing: 0.08em;
+}
+
+/* ponytail: restored after a jobs density pass (5d860ccb) overwrote .toast.info
+   into lowercase micro-text and deleted this rule entirely, which left the
+   Undo/Revert buttons in saved-page toasts rendering as browser-default
+   outset buttons with a default cursor. These toasts are shared by Jobs,
+   Saved and Admin, so the repair is global by necessity. */
+.toast-action-btn {
+  margin: 0;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
 .toast-action-btn:hover {
