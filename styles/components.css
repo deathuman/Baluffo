@@ -1686,11 +1686,18 @@ h1 {
   border-color: var(--surface-20);
 }
 
-.page-btn.active {
-  background: linear-gradient(180deg, var(--surface-12), var(--surface-14));
-  border-color: var(--accent);
-  color: var(--accent-soft-text);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+/* ponytail: a filled accent chip, mirroring what [data-theme="light"] already
+   did. The soft-tinted version read as just another plain button: on the Jobs
+   page the active chip differed from its neighbours only by a slightly lighter
+   fill. The .pagination ancestor is deliberate — .jobs-page .page-btn
+   (styles/jobs.css, loaded after this file) sets border-color at the same
+   (0,2,0) specificity and silently repainted the current page's border grey.
+   The dark on-accent text keeps 6.8:1 against --accent (5.2:1 on hover). */
+.pagination .page-btn.active {
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  border-color: color-mix(in srgb, var(--accent) 78%, #000000);
+  color: #1c1226;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 4px 12px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .page-ellipsis {
