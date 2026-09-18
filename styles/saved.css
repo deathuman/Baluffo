@@ -80,7 +80,9 @@
   display: grid;
   --saved-remove-gutter: 4.65rem;
   --saved-remove-size: 2.25rem;
-  grid-template-columns: minmax(17.5rem, 1.58fr) minmax(12.5rem, 1.05fr) minmax(10rem, 0.68fr) 7.2rem 6.2rem minmax(8rem, 0.55fr);
+  /* Zero floors so the table can shrink below its natural width instead of
+     overflowing the document between 901px and the track sum. */
+  grid-template-columns: minmax(0, 1.58fr) minmax(0, 1.05fr) minmax(0, 0.68fr) 7.2rem 6.2rem minmax(0, 0.55fr);
   column-gap: 0.64rem;
   padding: 0.78rem 1rem 0.78rem var(--saved-remove-gutter);
   align-items: center;
@@ -532,6 +534,7 @@
   font-weight: 600;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   min-width: 0;
   gap: 0.34rem;
   text-align: left;
@@ -1938,22 +1941,30 @@
     padding: 0.68rem 0.85rem 0.48rem;
   }
 
+  /* A wrapping grid, not the horizontal flex row it used to be. Each step
+     carried `min-width: 5.65rem`, so the eight of them had a hard 723px floor
+     inside a container that is ~360px at the narrow end: the bar could only
+     scroll sideways, and its absolutely-positioned connector line stretched to
+     the full scrolled width. Wrapped into rows, there is no single straight
+     line to draw through the steps, so the connector is suppressed rather than
+     left floating across the middle of the grid. */
   .phase-bar {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(4.6rem, 1fr));
     gap: 0.45rem;
-    overflow-x: auto;
+    overflow-x: visible;
     padding-bottom: 0.18rem;
   }
 
-  .phase-bar::before {
-    left: 1rem;
-    right: 1rem;
+  .phase-bar::before,
+  .phase-bar::after {
+    display: none;
   }
 
   .phase-timeline-step,
   .phase-step-btn.phase-timeline-step.complete,
   .phase-step-btn.phase-timeline-step.locked {
-    min-width: 5.65rem;
+    min-width: 0;
   }
 
   .saved-tracking-action-row {

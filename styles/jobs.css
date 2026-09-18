@@ -519,9 +519,6 @@
 }
 
 .jobs-page .job-row-header {
-  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 5.2rem;
-  column-gap: 0.64rem;
-  padding: 0.78rem 0.82rem 0.78rem 1rem;
   color: var(--text-subtle);
   font-size: 0.77rem;
   letter-spacing: 0.7px;
@@ -529,12 +526,55 @@
 
 .jobs-page .job-row,
 .jobs-page .job-row-link {
-  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 5.2rem;
-  column-gap: 0.64rem;
   min-height: 3.35rem;
-  padding: 0.46rem 0.82rem 0.46rem 1rem;
   border-bottom: 1px solid color-mix(in srgb, var(--surface-11) 88%, transparent);
   align-items: center;
+}
+
+/* The six-column table is desktop-only. Keeping these tracks out of the
+   unguarded base rules is deliberate: as `.jobs-page .job-row` (0,2,0) they
+   outranked the stacked-card fallback in components.css `.job-row` (0,1,0)
+   at every width, so the mobile layout could never apply and the table
+   overflowed the document. The fluid tracks also use a 0 floor so the
+   columns can shrink between 901px and the table's natural width. */
+@media (min-width: 901px) {
+  .jobs-page .job-row-header {
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 0.86fr) minmax(0, 0.76fr) 7.4rem 6.4rem 5.2rem;
+    column-gap: 0.64rem;
+    padding: 0.78rem 0.82rem 0.78rem 1rem;
+  }
+
+  .jobs-page .job-row,
+  .jobs-page .job-row-link {
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 0.86fr) minmax(0, 0.76fr) 7.4rem 6.4rem 5.2rem;
+    column-gap: 0.64rem;
+    padding: 0.46rem 0.82rem 0.46rem 1rem;
+  }
+
+  /* Single-line ellipsis is a table behaviour: the desktop cells are narrow and
+     fixed-height, so wrapping would break row rhythm. In the stacked card the
+     shared block (components.css) asks for wrapping instead, and these rules as
+     `.jobs-page .job-row .job-title-compact` (0,3,0) would silently outrank it. */
+  .jobs-page .job-row .job-title-compact,
+  .jobs-page .job-row .job-company-compact {
+    white-space: nowrap;
+  }
+
+  /* Centred chips only make sense in the table columns. Left unguarded these
+     (0,2,0) rules beat the shared card's flex-start (0,1,0), so the stacked
+     layout showed title/company/location left-aligned but contract/type
+     centred — an inconsistent label/value alignment. `.col-save` is included
+     because centring also clustered its label and button mid-card instead of
+     the label-left / control-right rhythm every other card row follows. */
+  .jobs-page .col-contract,
+  .jobs-page .col-type,
+  .jobs-page .col-save {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: stretch;
+    width: 100%;
+  }
 }
 
 .jobs-page .job-row:hover,
@@ -637,13 +677,11 @@
 .jobs-page .job-row .job-title-compact {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .jobs-page .job-row .job-company-compact {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .jobs-page .job-sector-line {
@@ -686,15 +724,6 @@
   font-size: 0.8rem;
 }
 
-.jobs-page .col-contract,
-.jobs-page .col-type {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  justify-self: stretch;
-  width: 100%;
-}
-
 .jobs-page .col-contract .job-contract,
 .jobs-page .col-type .job-tag {
   max-width: 100%;
@@ -703,11 +732,8 @@
 }
 
 .jobs-page .col-save {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: nowrap;
   gap: 0.3rem;
+  flex-wrap: nowrap;
   overflow: visible;
   min-width: 0;
 }

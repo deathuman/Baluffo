@@ -87,13 +87,75 @@
   font-weight: 700;
 }
 
-.admin-row-header,
+/* The eight-column user table is desktop-only. Keeping the tracks, gap and
+   padding out of the unguarded base rules is deliberate: as `.admin-row-header,
+   .admin-user-row` (0,1,0) these tied the shared stacked-card rules in
+   components.css but loaded after them, so the mobile block could never hide
+   the header or stack the row. The header stayed visible *and* the inline
+   `::before` labels were injected, while the wide tracks ran past an
+   `overflow: hidden` ancestor that made the overflow unreachable. The fluid
+   floors let the columns shrink between 901px and the table's natural width.
+
+   `display: grid` itself stays unguarded because the shared mobile card block
+   asks for grid as well; only the eight-column geometry is desktop-only. */
 .admin-user-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 1.3fr) 95px 110px 100px 120px 110px 130px;
-  gap: 0.6rem;
-  align-items: center;
-  padding: 0.6rem 0.75rem;
+}
+
+@media (min-width: 901px) {
+  .admin-row-header,
+  .admin-user-row {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr) 95px 110px 100px 120px 110px 130px;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .admin-row-header {
+    display: grid;
+  }
+}
+
+/* Between 901px and 1100px the eight-column table technically still fits, but
+   only by starving its two fluid columns: measured at 905px the Name cell is
+   10px and User ID 11px, which wraps one character per line and makes the row
+   155px tall. Neither an overflow metric nor a clipping check sees this — the
+   text fits its own box, it is simply unreadable. So the user table borrows the
+   shared stacked-card treatment for that band and returns to a table once the
+   tracks are wide enough to read (1150px and up).
+
+   Scoped to the user list only: `.admin-user-row` is also carried by the source
+   rows and the Operations History rows, which must stay tables. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  #admin-users-list .admin-user-row {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    padding: 0.7rem;
+    border: 1px solid var(--surface-8);
+    border-top: 1px solid var(--surface-8);
+    border-radius: 8px;
+    margin-bottom: 0.55rem;
+  }
+
+  #admin-users-list .admin-cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+
+  #admin-users-list .admin-cell::before {
+    content: attr(data-label);
+    color: var(--text-subtle);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    flex: 0 0 100px;
+  }
+
+  #admin-users-list .admin-row-header {
+    display: none;
+  }
 }
 
 .admin-row-header {
@@ -106,19 +168,26 @@
   border-radius: 8px 8px 0 0;
 }
 
-.admin-user-row {
-  border: 1px solid var(--surface-8);
-  border-top: none;
-  background-color: var(--surface-3);
-}
+@media (min-width: 901px) {
+  .admin-user-row {
+    border: 1px solid var(--surface-8);
+    border-top: none;
+    background-color: var(--surface-3);
+  }
 
-.admin-user-row:last-child {
-  border-radius: 0 0 8px 8px;
+  .admin-user-row:last-child {
+    border-radius: 0 0 8px 8px;
+  }
 }
 
 .admin-source-row-header,
 .admin-source-row {
-  grid-template-columns: 52px minmax(138px, 1fr) 96px minmax(108px, 1fr) 84px 68px minmax(132px, 0.9fr);
+  /* The three fluid columns use a 0 floor: with `minmax(138px, …)`-style floors
+     the seven tracks could not shrink below the container, so each row clipped
+     its own last column against its `overflow: hidden` — content the user could
+     not reach, because the row never overflowed its parent and so the parent
+     never scrolled. */
+  grid-template-columns: 52px minmax(0, 1fr) 96px minmax(0, 1fr) 84px 68px minmax(0, 0.9fr);
 }
 
 .admin-source-row {
@@ -137,6 +206,116 @@
 .admin-source-row .admin-uid {
   word-break: normal;
   overflow-wrap: anywhere;
+}
+
+/* Dense source tables keep their columns and scroll horizontally instead of
+   being clipped by the `.jobs-list` `overflow: hidden` ancestor, which made the
+   overflow unreachable below ~1200px. Applied at every width because the
+   `max-content` tracks overflow well above the 900px card breakpoint too. */
+#admin-pending-sources,
+#admin-active-sources,
+#admin-rejected-sources,
+#admin-ops-history {
+  overflow-x: auto;
+}
+
+/* Source tables are tables, not cards. Their rows carry `.admin-user-row` as
+   well as `.admin-source-row`, so the shared mobile card block would otherwise
+   give them a card radius and a row gap. The seven cells *do* carry
+   `data-label` (`Select, Name, Adapter, Studio, Status, Jobs, Approval`), so
+   that block would also inject a duplicate `::before` label next to a header
+   that is already visible; `content: none` below suppresses it. Only the
+   Operations History rows genuinely lack labels. */
+@media (max-width: 900px) {
+  /* The scroll container is `.jobs-list`, so its header and body must both be
+     allowed to exceed it. `.jobs-table-body` is `overflow-y: auto` for the
+     virtual window, and that also makes it a *horizontal* scroll container:
+     left at the container width it clips each row's last column, and the parent
+     never scrolls because the child never overflows. Sizing both to
+     `max-content` moves the only horizontal scroller back to `.jobs-list`,
+     which keeps the header and body in step while scrolling. */
+  #admin-pending-sources > .jobs-table-header,
+  #admin-active-sources > .jobs-table-header,
+  #admin-rejected-sources > .jobs-table-header,
+  #admin-pending-sources > .jobs-table-body,
+  #admin-active-sources > .jobs-table-body,
+  #admin-rejected-sources > .jobs-table-body {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .admin-source-row-header,
+  .admin-source-row {
+    display: grid;
+    /* Container-independent tracks, not `fr` and not `max-content`. The header
+       and the rows are two *separate* grid containers, so any track that
+       resolves against its own content desyncs the two: `max-content` sizes the
+       header's "Name" to its 35px label while the row sizes the same column to
+       its 228px value, and `fr` resolves differently in the header's width than
+       in the body's once the body is `max-content`. Fixed tracks are the only
+       form that keeps the scrolled columns aligned.
+       Widths are the measured per-column content maxima across all 103 rows of
+       the three lists (Name 362, Studio 265, Approval 250), so nothing
+       truncates. */
+    grid-template-columns: 52px 23rem 96px 17rem 84px 68px 16rem;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .admin-source-row {
+    height: var(--admin-source-row-height, 52px);
+    min-height: var(--admin-source-row-height, 52px);
+    max-height: var(--admin-source-row-height, 52px);
+    border: none;
+    border-top: 1px solid var(--surface-8);
+    border-radius: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+  }
+
+  .admin-source-row .admin-cell,
+  .admin-source-row-header .admin-cell {
+    display: block;
+  }
+
+  .admin-source-row .admin-cell::before,
+  .admin-source-row-header .admin-cell::before {
+    content: none;
+  }
+
+  /* The headers must stay visible. Without them the scrolled columns would be
+     unidentifiable: the row cells' `data-label` values are suppressed above
+     (the header is already showing the same words), and the labels render as a
+     stacked prefix rather than as column headers.
+     Both selectors are needed. `styles/components.css` hides `.admin-row-header`
+     and `.admin-source-row-header` in its own `@media (max-width: 900px)`, and
+     this file's base `display: grid` no longer reaches that band now that the
+     table geometry is behind `@media (min-width: 901px)`. */
+  .admin-row-header,
+  .admin-source-row-header {
+    display: grid;
+  }
+
+  /* Except the user list, whose rows are cards in this band and carry their own
+     inline `::before` labels: leaving the header up would print every field name
+     twice, once as an eight-line stack of column names and again inside each
+     card. Measured at 900px the header alone was 130px tall above 231px cards. */
+  #admin-users-list .admin-row-header {
+    display: none;
+  }
+
+  /* The Operations History header is a `.admin-row-header` but not a
+     `.admin-source-row-header`, so it misses the padding on the rule above and
+     its cells start 12px to the left of the row cells beneath it. Same box, same
+     offset — without this the header and its rows are visibly out of column at
+     every width below 901px. */
+  .admin-ops-history-header {
+    display: grid;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+  }
 }
 
 .admin-cell {
@@ -1640,15 +1819,46 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-ops-history-header,
 .admin-ops-history-row {
+  /* Container-independent fixed tracks, for the same reason as the source
+     tables: the header and the rows are separate grids. The previous floors
+     summed to 872px, and the rows inherit `overflow: hidden` from
+     `.admin-source-row`, so between ~1000px and 521px the last column was
+     clipped *and* unreachable — the row never overflowed its own parent, so the
+     ancestor scroller had nothing to scroll. Measured clipping was 80px at
+     1000px, 175px at 905px, 252px at 810px and 462px at 600px. The 520px block
+     below drops two columns and already fits, so it is left alone. */
   grid-template-columns:
-    minmax(5rem, 0.62fr)
+    5rem
     6.25rem
     4.5rem
-    minmax(20rem, 1.9fr)
+    20rem
     4.75rem
-    minmax(9rem, max-content)
-    minmax(5rem, max-content);
+    9rem
+    5rem;
   column-gap: 0;
+}
+
+/* The horizontal scroller must be the `.admin-ops-*` wrapper, not the body.
+   `.jobs-table-body` is `overflow-y: auto`, which also makes it a horizontal
+   scroll container: at the container width it clips each row's last column, and
+   the wrapper never scrolls because the child never overflows. Sizing the header
+   and body to `max-content` moves the only horizontal scroller back to the
+   wrapper, which keeps the two in step.
+
+   Guarded to the range where the seven fixed tracks are in play. The `520px`
+   block below replaces them with five fluid `fr` columns that already fit the
+   container, and `max-content` there would resolve those `fr` tracks against
+   their own content instead of the container — measured 1382px of row inside a
+   354px wrapper, i.e. a 1028px sideways scroll on a layout that needed none. */
+@media (min-width: 521px) {
+  .admin-ops-current-runs > .jobs-table-header,
+  .admin-ops-completed-runs > .jobs-table-header,
+  .admin-ops-current-runs > .jobs-table-body,
+  .admin-ops-completed-runs > .jobs-table-body,
+  .admin-ops-history-run {
+    width: max-content;
+    min-width: 100%;
+  }
 }
 
 .admin-ops-history-row .admin-cell {
@@ -1753,7 +1963,11 @@ body::-webkit-scrollbar-thumb:hover,
 .admin-ops-current-runs,
 .admin-ops-completed-runs {
   margin: 0;
-  overflow: hidden;
+  /* `overflow-x: auto` rather than `hidden`: the seven `max-content` tracks
+     overflow between 901px and ~1000px, and clipping here made that overflow
+     unreachable. `overflow-y` stays hidden to preserve the rounded corners. */
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid color-mix(in srgb, var(--surface-11) 86%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--table-row-even) 56%, transparent);

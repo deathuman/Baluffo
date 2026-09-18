@@ -68,6 +68,21 @@ export function createJobsEventsController({
     }
   }
 
+  function resolveRowHeight() {
+    // Last-resort guess, kept for callers that have no rendered row to measure
+    // (and for the unit-test DOM stubs, which expose no querySelector).
+    const fallback = windowObject.innerWidth <= 900 ? 136 : 52;
+    try {
+      if (typeof dom.jobsList?.querySelector !== "function") return fallback;
+      const row = dom.jobsList.querySelector(".job-row, .job-row-link");
+      const measured = row?.getBoundingClientRect?.().height;
+      // +1 covers the row separator so the estimate stays conservative.
+      return measured > 0 ? Math.ceil(measured) + 1 : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   function recalculateItemsPerPage() {
     if (!dom.jobsList) return false;
 
@@ -75,7 +90,7 @@ export function createJobsEventsController({
     const viewportHeight = windowObject.innerHeight;
     const reservedSpace = 140;
     const availableHeight = Math.max(260, viewportHeight - top - reservedSpace);
-    const rowHeight = windowObject.innerWidth <= 900 ? 136 : 52;
+    const rowHeight = resolveRowHeight();
     const next = Math.max(4, Math.min(25, Math.floor(availableHeight / rowHeight)));
 
     if (next !== pageState.itemsPerPage) {

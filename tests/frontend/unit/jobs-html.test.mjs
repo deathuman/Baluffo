@@ -102,6 +102,113 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
   assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
 });
 
+test("jobs table tracks stay behind the desktop guard so narrow layouts cannot overflow", () => {
+  const jobsCss = fs.readFileSync(path.join(repoRoot, "styles", "jobs.css"), "utf8");
+
+  // The six-column table must only be declared inside the desktop guard. As
+  // unguarded `.jobs-page .job-row` rules they are (0,2,0) and outrank the
+  // stacked-card fallback in components.css `.job-row` (0,1,0) at every width,
+  // which silently disabled the mobile layout and overflowed the document.
+  const guarded = jobsCss.match(/@media \(min-width: 901px\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(guarded, /\.jobs-page \.job-row-header\s*\{[\s\S]*grid-template-columns:/);
+  assert.match(guarded, /\.jobs-page \.job-row,\s*\.jobs-page \.job-row-link\s*\{[\s\S]*grid-template-columns:/);
+
+  // No unguarded jobs rule may declare tracks.
+  const unguarded = jobsCss.replace(/@media[^{]*\{[\s\S]*?\n\}\n?/g, "");
+  assert.doesNotMatch(unguarded, /\.jobs-page \.job-row(?:-header|-link)?[^{]*\{[^}]*grid-template-columns:/);
+  assert.doesNotMatch(unguarded, /\.jobs-page \.job-row(?:-header|-link)?[^{]*\{[^}]*column-gap:/);
+
+  // Fluid tracks need a 0 floor; a rem floor sets a hard minimum the table
+  // cannot shrink below and re-introduces the overflow band.
+  assert.doesNotMatch(guarded, /minmax\(\s*\d+(?:\.\d+)?rem/);
+});
+
+test("jobs table-only cell styling stays behind the desktop guard", () => {
+  const jobsCss = fs.readFileSync(path.join(repoRoot, "styles", "jobs.css"), "utf8");
+  const guarded = jobsCss.match(/@media \(min-width: 901px\) \{[\s\S]*?\n\}/)?.[0] || "";
+  const unguarded = jobsCss.replace(/@media[^{]*\{[\s\S]*?\n\}\n?/g, "");
+
+  // Selectors are compared exactly (after trimming) rather than by prefix: a
+  // descendant rule such as `.jobs-page .col-save .job-inline-save-btn` legitimately
+  // centres the round save glyph, and must not be read as centring the cell.
+  const rulesIn = (source) => [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    selectors: match[1].split(",").map((part) => part.trim()).filter(Boolean),
+    body: match[2],
+  }));
+  const bodiesFor = (source, selector) => rulesIn(source)
+    .filter((rule) => rule.selectors.includes(selector))
+    .map((rule) => rule.body);
+
+  // Centring the contract/type chips and single-line ellipsis for the title and
+  // company are table behaviours. Unguarded they are (0,2,0)/(0,3,0) and beat
+  // the shared stacked-card rules in components.css (0,1,0), which left the
+  // card layout with mixed alignment (title/company/location left, contract and
+  // type centred) and a long title ellipsized instead of wrapping.
+  const guardedCells = bodiesFor(guarded, ".jobs-page .col-contract")
+    .concat(bodiesFor(guarded, ".jobs-page .col-type"))
+    .concat(bodiesFor(guarded, ".jobs-page .col-save"));
+  assert.ok(
+    guardedCells.some((body) => /justify-content:\s*center/.test(body)),
+    "the desktop guard must own the centred contract/type/save cells",
+  );
+  const guardedTitles = bodiesFor(guarded, ".jobs-page .job-row .job-title-compact")
+    .concat(bodiesFor(guarded, ".jobs-page .job-row .job-company-compact"));
+  assert.ok(
+    guardedTitles.some((body) => /white-space:\s*nowrap/.test(body)),
+    "the desktop guard must own single-line title/company ellipsis",
+  );
+
+  // None of them may survive outside the guard.
+  for (const selector of [
+    ".jobs-page .col-contract",
+    ".jobs-page .col-type",
+    ".jobs-page .col-save",
+    ".jobs-page .job-row .job-title-compact",
+    ".jobs-page .job-row .job-company-compact",
+  ]) {
+    for (const body of bodiesFor(unguarded, selector)) {
+      assert.doesNotMatch(
+        body,
+        /justify-content:/,
+        `${selector} must not set justify-content outside the desktop guard`,
+      );
+      assert.doesNotMatch(
+        body,
+        /white-space:/,
+        `${selector} must not set white-space outside the desktop guard`,
+      );
+    }
+  }
+});
+
+test("jobs card cells align their labels and clear the freshness dot", () => {
+  const componentsCss = fs.readFileSync(path.join(repoRoot, "styles", "components.css"), "utf8");
+  const css = componentsCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const mobileStart = css.indexOf("@media (max-width: 900px)");
+  assert.ok(mobileStart > -1, "the shared mobile block must exist");
+  const mobile = css.slice(mobileStart);
+  const bodiesFor = (source, selector) => [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => match[1].split(",").map((part) => part.trim()).includes(selector))
+    .map((match) => match[2]);
+
+  // The freshness dot is absolutely positioned inside the card, so its `left`
+  // must clear the card's own left padding. It sat at 2rem while the row padded
+  // by 2.5rem, which put the dot under the first glyph of the title: measured a
+  // -2px gap at every width at or below 900px, i.e. an overlap. At 1rem the gap
+  // is +14px.
+  const dotRule = bodiesFor(mobile, ".col-freshness")[0];
+  assert.ok(dotRule, "the mobile .col-freshness rule must exist");
+  assert.match(dotRule, /position:\s*absolute/);
+  assert.match(dotRule, /left:\s*1rem/);
+
+  // With the label on the left, `space-between` pushed the value to the far
+  // right edge of a full-width card, so values did not line up with each other.
+  const cellRule = bodiesFor(mobile, ".job-cell")[0];
+  assert.ok(cellRule, "the mobile .job-cell rule must exist");
+  assert.match(cellRule, /justify-content:\s*flex-start/);
+  assert.doesNotMatch(cellRule, /justify-content:\s*space-between/);
+});
+
 test("saved html exposes compact grouping controls and group header styling", () => {
   const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
   const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
