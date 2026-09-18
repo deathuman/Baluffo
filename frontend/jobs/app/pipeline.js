@@ -1,6 +1,5 @@
 import { fetchBridge } from "../../shared/api-client.js";
 import { normalizeToken } from "../../shared/text-utils.js";
-import { formatDiscoverySubtaskProgress } from "../../shared/task-progress.js";
 
 // ponytail: helpers shared across the remaining formatters below.
 function compactCount(value) {
@@ -293,99 +292,19 @@ function numericOrZero(value) {
   return Math.max(0, Number(value || 0));
 }
 
-function formatFetchCaption(progress) {
-  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
-  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
-  const resolved = numericOrZero(counts?.resolvedSources);
-  const perMinute = numericOrZero(counts?.completedSourcesPerMinute);
-  const aggPerMinute = String(counts?.etaBasis || "").trim() === "aggregate"
-    ? numericOrZero(counts?.activeAggregateRatePerMinute)
-    : 0;
-  const rate = aggPerMinute > 0 ? `fallback rate ${aggPerMinute}/min`
-    : perMinute > 0 ? `rate ${perMinute}/min`
-    : "";
-  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate"
-    && numericOrZero(counts?.sourceCount) > 0;
-  const resolvedLabel = showTotal
-    ? `${compactCount(resolved)}/${compactCount(counts?.sourceCount)} sources resolved`
-    : resolved > 0 ? `${compactCount(resolved)} sources resolved`
-    : "";
-  const etaLabel = formatShortDuration(counts?.estimatedRemainingMs);
-  const parts = [
-    phaseLabel,
-    resolvedLabel,
-    rate,
-    etaLabel ? `ETA ${etaLabel}` : ""
-  ];
-  return parts.filter(Boolean).join(" · ");
-}
-
-function formatDiscoveryStageLabel(counts) {
-  const stageIndex = numericOrZero(counts?.stageIndex);
-  const stageTotal = numericOrZero(counts?.stageTotal);
-  if (stageIndex > 0 && stageTotal > 0) return `stage ${compactCount(stageIndex)}/${compactCount(stageTotal)}`;
-  if (stageIndex > 0) return `stage ${compactCount(stageIndex)}`;
-  return "";
-}
-
-function formatDiscoveryTargetLabel(counts, progress) {
-  const target = String(counts?.currentAdapter || counts?.targetLabel || progress?.targetLabel || "").trim();
-  return target ? `probing ${target}` : "";
-}
-
-function formatDiscoveryCaption(progress) {
-  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
-  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
-  const probed = numericOrZero(counts?.probedCandidates);
-  const probeTotal = numericOrZero(counts?.probeTotal);
-  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate" && probeTotal > 0;
-  const probedLabel = showTotal
-    ? `${compactCount(probed)}/${compactCount(probeTotal)} candidates probed`
-    : probed > 0 ? `${compactCount(probed)} candidates probed`
-    : "";
-  // ponytail: mirror the admin live page's richer detail — the GameDevMap audit
-  // subtask ticks (batch/URL/fetch-phase) via the shared formatter, plus compact
-  // stage/target/counter segments so long grinding phases keep showing motion.
-  const subtaskLabel = formatDiscoverySubtaskProgress(counts);
-  const counters = [];
-  const generated = numericOrZero(counts?.generatedCandidates);
-  const found = numericOrZero(counts?.foundEndpoints);
-  const queued = numericOrZero(counts?.queuedCandidates);
-  if (generated > 0) counters.push(`generated ${compactCount(generated)}`);
-  if (found > 0) counters.push(`endpoints ${compactCount(found)}`);
-  if (queued > 0) counters.push(`queued ${compactCount(queued)}`);
-  const parts = [
-    phaseLabel,
-    subtaskLabel,
-    formatDiscoveryStageLabel(counts),
-    formatDiscoveryTargetLabel(counts, progress),
-    probedLabel,
-    ...counters
-  ];
-  return parts.filter(Boolean).join(" · ");
-}
-
-function formatPipelineCaption(progress) {
-  // Fallback for indeterminate/silent phases: surface the phase name and, when
-  // the pipeline is grinding (no determinate target yet), the step marker so the
-  // user sees it is still progressing rather than a frozen counts line.
-  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
-  const phaseLabel = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
-  const step = String(counts?.currentStep || "").trim();
-  const total = String(counts?.totalSteps || "").trim();
-  let stepLabel = "";
-  if (total && step) stepLabel = `step ${step}/${total}`;
-  else if (step) stepLabel = `step ${step}`;
-  return [phaseLabel, stepLabel].filter(Boolean).join(" · ");
-}
-
-// ponytail: plain-language caption for the end-user Jobs page. The technical
-// formatter below (formatBlockingTaskProgressLabel) stays the detail source for
-// Admin; this one is deliberately poor in information: a human phase name, a
-// count, and a rough ETA, never more than three segments.
+// ponytail: plain-language caption for the end-user Jobs page, and the only
+// caption formatter the Jobs page has. It is deliberately poor in information:
+// a human phase name, a count, and a rough ETA, never more than three segments.
 // docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md records the
 // decision ("Progress copy should use user-facing stages"; "Admin remains the
 // canonical place for detailed pipeline diagnostics").
+//
+// The technical formatter that used to live here (formatBlockingTaskProgressLabel
+// and its fetch/discovery/pipeline caption helpers) was deleted once the button
+// tooltip stopped carrying the breakdown: it had no remaining caller, and Admin
+// never used it — Admin renders task progress through
+// shared/task-run-view-model.js -> shared/task-progress.js
+// (formatTaskProgressDetail), a separate implementation.
 const JOBS_CAPTION_MAX_SEGMENTS = 3;
 
 // The closed set of stage labels getUserFacingUpdateStage is trusted to return.
@@ -466,18 +385,6 @@ export function formatJobsProgressCaption(task) {
   if (taskType === "fetch") return buildPlainJobsCaption(progress, "sources");
   if (taskType === "discovery") return buildPlainJobsCaption(progress, "sources");
   return buildPlainJobsCaption(progress, "steps");
-}
-
-export function formatBlockingTaskProgressLabel(task) {
-  const taskType = String(task?.taskType || task?.type || "").trim().toLowerCase();
-  const progress = task?.taskProgress && typeof task.taskProgress === "object"
-    ? task.taskProgress
-    : {};
-  if (taskType === "fetch") return formatFetchCaption(progress);
-  if (taskType === "discovery") return formatDiscoveryCaption(progress);
-  // sync + generic fallback: concise phase name, plus the pipeline step marker
-  // when present, and no verbose shard/lifecycle counts in the button caption.
-  return formatPipelineCaption(progress);
 }
 
 export function buildJobsPipelineButtonView(

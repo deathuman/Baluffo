@@ -4,8 +4,8 @@ Locks in that the discovery stage's report taskProgress ticks during a run
 (unlike the fetch report, which is intentionally sparse during source
 execution): the probe loop writes the report every 10 completions with a fresh
 ``probedCandidateCount``, and the pipeline status payload's active child
-projects those counts so the jobs caption shows ``N/M candidates probed``
-staying current.
+projects those counts so the jobs caption's source count keeps advancing
+(rendered as ``N of M`` by the Jobs page's plain-language caption).
 """
 
 from __future__ import annotations
