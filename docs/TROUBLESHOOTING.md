@@ -151,6 +151,29 @@ Use the retained event file when console logs are unavailable or too noisy. The 
 | Network access | Test with `python src/jobs_fetcher.py --only-sources google_sheets` |
 | Report errors | Check `data/jobs-fetch-report.json` for per-source errors |
 
+### Browser console shows a 404 for a source-registry data file
+
+| Check | Action |
+|-------|--------|
+| Symptom | `GET /data/source-registry-active.json` (or `/source-registry-active.json`) returns 404 on the Jobs page |
+| Expected? | Not a fault when the runtime artifact is simply absent — the registry is gitignored (`.gitignore` `data/*.json`, `data/*.json.gz`) and stored gzip-only, so a fresh checkout has no plain `.json` |
+| Seed fallback | In the **container** static route (`src/bridge/server/static_files.py`), the request falls back to the tracked seed `data/defaults/source-registry-active.seed.json` when neither the plain nor `.gz` runtime artifact exists. The same fallback covers `source-registry-pending.json`; artifacts without a seed (for example `source-registry-rejected.json`) still 404 by design |
+| Runtime wins | When a runtime artifact does exist it always takes precedence over the seed |
+| Which runtimes probe this | Browser/desktop-dev mode only; container and desktop modes skip the probe entirely (`getSourceRegistryActiveUrlsForRuntime()`) |
+| Dev mode (`npm run dev:bridge`) | **This is expected and not fixable by the fallback.** The dev supervisor serves the 8080 site with a plain `python -m http.server --directory <repo root>` (`src/dev_admin_supervisor.py` → `build_site_command`), which never loads Baluffo code and has no seed concept. The Baluffo-aware server runs separately on 8877 (`admin_bridge.py`). Expect 404 here on a fresh checkout; the source panel simply degrades |
+| Desktop site server | Also a `SimpleHTTPRequestHandler` variant (`src/ship/runtime_launcher.py` → `build_site_request_handler`), not `StaticFileService`; it does not use the container fallback either |
+| UI impact | None. `fetchJsonFromCandidates` skips non-OK responses and the panel degrades to "Source metadata unavailable." |
+| Still broken after this | Confirm `data/defaults/source-registry-active.seed.json` exists; the container path seeds it via `seed_runtime_data` at boot |
+
+### `content.js` / `runtime.lastError` errors on jobs.html
+
+| Check | Action |
+|-------|--------|
+| Symptom | `content.js:492 Uncaught (in promise) Error: Access to storage is not allowed from this context`, `Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist.` |
+| Source | An installed third-party browser extension, not Baluffo. The repo ships no `content.js`, no `manifest_version`/`content_scripts` manifest, and no `chrome.runtime`/`browser.runtime` usage |
+| Why `jobs.html:1` | That is only the host page Chrome attributes the extension's error to |
+| Action | None in this repo. Disable/update the extension, or ignore — the page is unaffected |
+
 ### Admin says no successful fetch has run yet
 
 | Check | Action |

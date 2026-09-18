@@ -9,6 +9,8 @@ Always-loaded rules only. Keep detailed workflow in the owning docs.
 - Do not add Python or Node dependencies without explicit user approval.
 - Repo source, tests, docs, and `AGENTS.md` are canonical; external memory is continuity only.
 - Never store secrets, tokens, credentials, private keys, or sensitive data in repo docs or memory.
+- Before diagnosing a runtime, console, port, or URL error, identify the process that actually emitted it (for example `Get-NetTCPConnection -LocalPort <port>` plus its command line) and confirm the failing URL is served by the code you intend to change. Do not fix a serving path the error never came from.
+- Before reporting a tool, capability, or feature as broken or unavailable, check the ground truth directly (the file, the store, the response body) rather than a status string or summary message.
 
 ## Code Boundaries
 

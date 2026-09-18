@@ -345,6 +345,80 @@ def test_container_handler_keeps_missing_startup_feed_404_without_backing_feed(
     assert not (data_dir / "jobs-unified-startup.json").exists()
 
 
+def test_container_handler_falls_back_to_registry_seed_when_runtime_artifact_absent(
+    tmp_path: Path,
+) -> None:
+    """The static route must mirror the registry loaders' seed fallback.
+
+    A fresh checkout has no `source-registry-active.json` (the artifact is
+    gitignored and stored gzip-only); without this fallback the browser-mode
+    Jobs page probes 404 on a file the API layer serves fine.
+    """
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    (data_dir / "defaults").mkdir(parents=True)
+    root.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    seed_rows = [{"id": "static:seed-studio", "adapter": "static"}]
+    (data_dir / "defaults" / "source-registry-active.seed.json").write_text(
+        json.dumps(seed_rows) + "\n", encoding="utf-8"
+    )
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        data_response, data_body = _read_url(base_url, "/data/source-registry-active.json")
+        root_response, root_body = _read_url(base_url, "/source-registry-active.json")
+
+    assert json.loads(data_body.decode("utf-8")) == seed_rows
+    assert json.loads(root_body.decode("utf-8")) == seed_rows
+    for response in (data_response, root_response):
+        assert response.headers["Cache-Control"].startswith("no-store")
+        _assert_no_cors(response)
+
+
+def test_container_handler_prefers_runtime_registry_over_seed(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    (data_dir / "defaults").mkdir(parents=True)
+    root.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    (data_dir / "defaults" / "source-registry-active.seed.json").write_text(
+        '[{"id": "static:from-seed"}]\n', encoding="utf-8"
+    )
+    (data_dir / "source-registry-active.json").write_text(
+        '[{"id": "static:from-runtime"}]\n', encoding="utf-8"
+    )
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(base_url, "/data/source-registry-active.json")
+
+    assert json.loads(body.decode("utf-8")) == [{"id": "static:from-runtime"}]
+    assert response.headers["Cache-Control"].startswith("no-store")
+
+
+def test_container_handler_keeps_404_for_registry_files_without_seed(
+    tmp_path: Path,
+) -> None:
+    """The seed fallback must stay scoped to registry artifacts that have one."""
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    (data_dir / "defaults").mkdir(parents=True)
+    root.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    (data_dir / "defaults" / "source-registry-active.seed.json").write_text(
+        '[{"id": "static:from-seed"}]\n', encoding="utf-8"
+    )
+
+    for missing in (
+        "/data/source-registry-rejected.json",
+        "/data/source-registry-tombstones.json",
+        "/data/jobs-fetch-report.json",
+    ):
+        with _served(_make_container_handler(root, data_dir)) as base_url:
+            with pytest.raises(HTTPError) as exc_info:
+                _read_url(base_url, missing)
+        assert exc_info.value.code == 404
+
+
 def test_container_handler_serves_generated_frontend_assets_with_immutable_cache(
     tmp_path: Path,
 ) -> None:

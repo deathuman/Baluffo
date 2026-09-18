@@ -12,6 +12,7 @@ from src.bridge.performance_profile import record_operation_duration
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS
 from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, read_json
+from src.source_registry_io_paths import registry_seed_path_for
 from src.storage_metrics import duration_ms, record_storage_read
 
 API_PREFIXES = (
@@ -243,11 +244,33 @@ class StaticFileService:
                     return candidate, candidate.suffix == ".gz"
         return self._resolve_missing_data_path(safe_parts)
 
+    def _resolve_embedded_seed_path(self, safe_parts: list[str]) -> Path | None:
+        """Resolve a registry seed for a runtime artifact that is not on disk yet.
+
+        The Python loaders already fall back to the tracked seed when the runtime
+        registry artifact is absent (see ``_load_json_array_from_storage``); the
+        static route must mirror that or a fresh checkout 404s on a file the API
+        layer serves fine.
+        """
+        requested_name = safe_parts[-1].removesuffix(".gz")
+        seed_path = registry_seed_path_for(Path(requested_name))
+        if seed_path is None:
+            return None
+        seed_name = seed_path.name
+        for base_dir in (self.data_dir, self.static_root / "data"):
+            candidate = _existing_path_under(Path(base_dir), ["defaults", seed_name])
+            if candidate is not None:
+                return candidate
+        return None
+
     def _resolve_missing_data_path(self, safe_parts: list[str]) -> tuple[Path | None, bool]:
         if safe_parts == ["jobs-unified-startup.json"]:
             backfilled = self._backfill_startup_feed()
             if backfilled is not None:
                 return backfilled, False
+        seed_candidate = self._resolve_embedded_seed_path(safe_parts)
+        if seed_candidate is not None:
+            return seed_candidate, False
         return None, False
 
     def _startup_feed_path(self) -> Path:
