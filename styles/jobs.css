@@ -213,9 +213,13 @@
 
 /* ponytail: the results summary lives in the toolbar status row, pinned to
    the left edge so it sits directly above the jobs table with no gap; the
-   caption and Last-updated timestamp stay right-aligned. */
+   caption and Last-updated timestamp stay right-aligned.
+   It must never be squeezed by the progress caption: flex-shrink 0 makes the
+   caption give up width first, so "Showing 1-11 of ..." keeps its own text
+   instead of being clipped to "Showing 1-11 of 30,96…" mid-run. */
 .jobs-page .jobs-toolbar-status .results-summary {
   margin-right: auto;
+  flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -226,6 +230,10 @@
 .jobs-page .jobs-last-updated {
   font-size: 0.79rem;
   min-height: 1rem;
+  /* ponytail: never squeezed by the caption — it wrapped to two lines when the
+     row ran out of width (it collapsed to ~6px). The caption yields first. */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .jobs-page .jobs-pipeline-btn {
@@ -346,10 +354,14 @@
 }
 
 /* ponytail: the live determinate sub-progress (counts/ETA) renders right-
-   aligned under the Update button, on a single ellipsized line so the row
-   height stays stable for the whole run. */
+   aligned under the Update button on a single ellipsized line.
+   It is the row's flex absorber: it may shrink (flex-shrink 1) and clip its own
+   tail, but it must never steal width from the results summary or the
+   Last-updated stamp. min-width keeps a readable stub so the caption can never
+   degrade into a bare "…". */
 .jobs-page .jobs-pipeline-progress-caption {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -399,6 +411,81 @@
   50% {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* ponytail: thinking-states shimmer for live caption text (the pasted
+   transitions.dev "Thinking states" snippet, adapted to this toolbar):
+   the visible line is ONE in-flow span whose glyphs are painted from a
+   background-clip:text gradient, so a soft neutral highlight sweeps through
+   continuously while the run is active. No colour accent, no per-update fade
+   and no overlaying copy of the previous label: the text simply swaps in place
+   (an overlaid ghost fought this host's nowrap/ellipsis clamp and
+   double-exposed), so nothing blinks and no stray "…" appears on a poll.
+   Line height stays constant so the fixed toolbar status row never reflows. */
+.jobs-page .jobs-pipeline-progress-caption {
+  /* ponytail: dim resting grey + light grey sheen, straight from the snippet
+     (--think-base #9a9a9a / --think-highlight #f5f5f5). The base MUST be dim
+     or the sheen has nothing to read against. Both themes use the same
+     neutral pair; only the dimming is theme-aware so it stays legible. */
+  --think-base: color-mix(in srgb, var(--text-secondary) 62%, var(--bg-page));
+  --think-highlight: color-mix(in srgb, var(--text-primary) 82%, var(--bg-page));
+  --think-shimmer-duration: 2s;
+}
+
+[data-theme="light"] .jobs-page .jobs-pipeline-progress-caption {
+  --think-base: color-mix(in srgb, var(--text-secondary) 72%, var(--bg-page));
+  --think-highlight: color-mix(in srgb, var(--text-primary) 60%, #ffffff);
+}
+
+.jobs-page .jobs-pipeline-think-line {
+  display: inline-block;
+  position: relative;
+  color: var(--think-base);
+}
+
+/* The continuous sweep — the whole animation. Nothing here changes opacity,
+   so the caption never flashes; only the highlight travels across the glyphs. */
+.jobs-page .jobs-pipeline-progress-caption.running .jobs-pipeline-think-line {
+  background: linear-gradient(
+    100deg,
+    var(--think-base) 20%,
+    var(--think-highlight) 50%,
+    var(--think-base) 80%
+  );
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: jobsThinkShimmer var(--think-shimmer-duration) linear infinite;
+}
+
+/* No outgoing-ghost overlay: an absolutely positioned copy of the previous
+   label cannot coexist with this host's nowrap + overflow:hidden +
+   text-overflow:ellipsis clamp. It either overflowed the clamp (host painted
+   "…") or double-exposed over the live line. The text now simply swaps while
+   the shimmer sweeps, which is what the pasted snippet actually shows. */
+
+@keyframes jobsThinkShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* ponytail: not just "animation: none" — with the gradient still painted and
+     the fill transparent the glyphs would freeze on one gradient band. Drop the
+     clip/fill entirely so reduced-motion gets crisp solid running text. */
+  .jobs-page .jobs-pipeline-progress-caption.running .jobs-pipeline-think-line {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: var(--think-base);
   }
 }
 

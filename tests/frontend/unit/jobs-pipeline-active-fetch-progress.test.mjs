@@ -79,11 +79,12 @@ test("pollJobsPipelineStatus shows bounded active fetch progress while pipeline 
     assert.equal(caption.hidden, false);
     assert.equal(caption.classList.contains("running"), true);
     assert.match(String(button.textContent || ""), /Fetching job listings/i);
-    // ponytail: the compact caption keeps the phase + high-signal counts/ETA and
-    // drops the verbose running-source detail, so the caption reads cleanly.
-    assert.match(String(caption.textContent || ""), /51\/1,154 sources resolved/i);
-    assert.match(String(caption.textContent || ""), /rate 12\/min/i);
+    // ponytail: the end-user caption is plain language only — a count and an ETA.
+    // No phase echo (the button label above already names the stage), no rate, and
+    // no internal counters. The technical breakdown lives in the button tooltip.
+    assert.match(String(caption.textContent || ""), /51 of 1,154 sources/i);
     assert.match(String(caption.textContent || ""), /ETA 1h/i);
+    assert.doesNotMatch(String(caption.textContent || ""), /rate 12\/min/i);
     assert.doesNotMatch(String(caption.textContent || ""), /current Studio A, Studio B/);
   } finally {
     restoreTimers();
@@ -160,9 +161,10 @@ test("pollJobsPipelineStatus uses the live active child from the pipeline status
     const caption = getJobsPipelineProgressCaption(button);
     assert.ok(caption, "sub-progress caption should be created");
     assert.match(String(button.textContent || ""), /Fetching job listings/i);
-    assert.match(String(caption.textContent || ""), /Executing sources/i);
-    assert.match(String(caption.textContent || ""), /100\/400 sources resolved/i);
+    // ponytail: plain-language caption — the phase is not echoed here.
+    assert.match(String(caption.textContent || ""), /100 of 400 sources/i);
     assert.match(String(caption.textContent || ""), /ETA 15m/i);
+    assert.doesNotMatch(String(caption.textContent || ""), /Executing sources/i);
   } finally {
     restoreTimers();
   }
@@ -243,12 +245,12 @@ test("pollJobsPipelineStatus shows aggregate fetch tail ETA without extra routes
 
     const aggregateCaption = getJobsPipelineProgressCaption(button);
     assert.ok(aggregateCaption, "sub-progress caption should be created");
-    // ponytail: aggregate detail is compacted to the resolved count + fallback
-    // rate + ETA; the per-phase aggregate completed/total detail is not surfaced
-    // in the button caption.
-    assert.match(String(aggregateCaption.textContent || ""), /333\/334 sources resolved/i);
-    assert.match(String(aggregateCaption.textContent || ""), /fallback rate 18\/min/i);
+    // ponytail: aggregate detail is compacted to a plain count + ETA; the
+    // fallback-rate and per-phase aggregate detail stay out of the user caption
+    // (they remain available in the button tooltip).
+    assert.match(String(aggregateCaption.textContent || ""), /333 of 334 sources/i);
     assert.match(String(aggregateCaption.textContent || ""), /ETA 18m/i);
+    assert.doesNotMatch(String(aggregateCaption.textContent || ""), /fallback rate/i);
     assert.doesNotMatch(String(aggregateCaption.textContent || ""), /fallback 212\/551/i);
     assert.deepEqual(paths, [
       "/tasks/run-jobs-pipeline-status",

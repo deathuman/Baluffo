@@ -1,6 +1,7 @@
 import {
   clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
   formatBlockingTaskProgressLabel,
+  formatJobsProgressCaption,
   getJobsUpdateTooltip,
   getPipelineRunningLabel,
   JOBS_UPDATE_COPY,
@@ -299,6 +300,7 @@ export function createJobsPipelineController({
     disabled = false,
     buttonLabel = "",
     progressLabel = "",
+    progressDetail = "",
     firstRunBootstrapActive = false,
     isError = false,
     abortTask = null
@@ -347,13 +349,22 @@ export function createJobsPipelineController({
         quietSuffix = `\n${JOBS_UPDATE_COPY.stillWorkingSuffixLabel} for ${totalMin}m.`;
       }
     }
+    // ponytail: keep the technical breakdown reachable after the caption went
+    // plain-language. Only shown while running, and only when it adds something
+    // beyond the plain caption (identical strings would just be noise).
+    const detail = String(progressDetail || "").trim();
+    const plain = String(progressLabel || "").trim();
+    const detailSuffix = running && detail && detail !== plain ? `\n${detail}` : "";
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
       disabled,
       buttonLabel: aborting ? JOBS_UPDATE_COPY.abortingLabel : buttonLabel,
       progressLabel,
-      buttonTooltip: baseTooltip + stallSuffix + quietSuffix,
+      // ponytail: the caption is plain-language; the technical breakdown rides in
+      // the tooltip so nothing is lost for a user who wants it (Admin still owns
+      // the canonical diagnostics view).
+      buttonTooltip: baseTooltip + detailSuffix + stallSuffix + quietSuffix,
       isError,
       abortable,
       aborting
@@ -588,7 +599,8 @@ export function createJobsPipelineController({
       const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask || primaryRow);
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
       const blockingPayload = buildBlockingTaskPayload(primaryRow);
-      const blockingProgressLabel = formatBlockingTaskProgressLabel(primaryRow);
+      const blockingProgressLabel = formatJobsProgressCaption(primaryRow);
+      const blockingProgressDetail = formatBlockingTaskProgressLabel(primaryRow);
       // ponytail: the child payload carries the determinate fill (child ratio),
       // while stall/shutdown state still comes from the pipeline payload itself.
       const mergedPayload = {
@@ -601,6 +613,7 @@ export function createJobsPipelineController({
         disabled: true,
         buttonLabel: getPipelineRunningLabel(blockingPayload),
         progressLabel: blockingProgressLabel || String(primaryRow?.taskProgress?.phaseLabel || "").trim(),
+        progressDetail: blockingProgressDetail,
         firstRunBootstrapActive,
         pipelinePayload: mergedPayload,
         abortTask: isAbortableTask(primaryRow) ? primaryRow : {
@@ -756,12 +769,14 @@ export function createJobsPipelineController({
         const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask);
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
         const blockingPayload = buildBlockingTaskPayload(blockingTask);
-        const blockingProgressLabel = formatBlockingTaskProgressLabel(blockingTask);
+        const blockingProgressLabel = formatJobsProgressCaption(blockingTask);
+        const blockingProgressDetail = formatBlockingTaskProgressLabel(blockingTask);
         updateJobsPipelineUi({
           running: true,
           disabled: true,
           buttonLabel: getPipelineRunningLabel(blockingPayload),
           progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
+          progressDetail: blockingProgressDetail,
           firstRunBootstrapActive,
           pipelinePayload: blockingPayload,
           abortTask: isAbortableTask(blockingTask) ? blockingTask : null
@@ -819,7 +834,9 @@ export function createJobsPipelineController({
           running: true,
           disabled: true,
           buttonLabel: getPipelineRunningLabel(recentActivePayload),
-          progressLabel: "Pipeline status delayed; retrying...",
+          // ponytail: user-facing copy; "pipeline" is internal vocabulary on the
+          // end-user page (Admin owns the technical wording).
+          progressLabel: "Still working…",
           pipelinePayload: recentActivePayload,
           abortTask: {
             active: true,

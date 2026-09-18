@@ -32,14 +32,33 @@ function createStyle() {
 }
 
 function createElementMock(tagName) {
-  return {
+  const element = {
     tagName: String(tagName || "").toUpperCase(),
     dataset: {},
     style: createStyle(),
     className: "",
-    textContent: "",
     hidden: false,
     classList: createClassList(),
+    _textContent: "",
+    children: [],
+    get textContent() {
+      return this.children.length
+        ? this.children.map(child => String(child?.textContent || "")).join("")
+        : String(this._textContent || "");
+    },
+    set textContent(value) {
+      this._textContent = String(value);
+      this.children = [];
+    },
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    querySelector(selector) {
+      const match = /^\[data-ui="([^"]+)"\]$/.exec(String(selector || ""));
+      if (!match) return null;
+      return this.children.find(child => String(child?.dataset?.ui || "") === match[1]) || null;
+    },
     setAttribute(name, value) {
       this[name] = value;
     },
@@ -47,6 +66,7 @@ function createElementMock(tagName) {
       delete this[name];
     }
   };
+  return element;
 }
 
 export function createButtonMock(textContent = "Update jobs") {

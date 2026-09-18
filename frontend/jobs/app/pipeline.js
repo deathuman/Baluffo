@@ -182,16 +182,58 @@ function ensureJobsPipelineProgressCaption(button) {
   // back to the button's immediate parent (dynamic-creation path in tests).
   const scope = (typeof button.closest === "function" && button.closest(".jobs-toolbar"))
     || button.parentElement;
-  const existing = scope?.querySelector?.('[data-ui="jobs-pipeline-progress-caption"]');
-  if (existing) return existing;
   const ownerDocument = button.ownerDocument || (typeof document !== "undefined" ? document : null);
   if (!ownerDocument?.createElement) return null;
-  const caption = ownerDocument.createElement("span");
-  caption.className = "jobs-pipeline-progress jobs-pipeline-progress-caption";
-  caption.dataset.ui = "jobs-pipeline-progress-caption";
-  caption.hidden = true;
-  button.insertAdjacentElement?.("afterend", caption);
+  const existing = scope?.querySelector?.('[data-ui="jobs-pipeline-progress-caption"]');
+  const caption = existing || (() => {
+    const el = ownerDocument.createElement("span");
+    el.className = "jobs-pipeline-progress jobs-pipeline-progress-caption";
+    el.dataset.ui = "jobs-pipeline-progress-caption";
+    el.hidden = true;
+    button.insertAdjacentElement?.("afterend", el);
+    return el;
+  })();
+  // ponytail: the animated line gets added to an existing static caption too —
+  // the jobs.html toolbar already carries the caption node, so the first update
+  // must retrofit the line child (created once).
+  ensureJobsPipelineThinkLine(caption, ownerDocument);
   return caption;
+}
+
+// ponytail: thinking-states shimmer — the visible text is ONE in-flow line span
+// so caption.textContent always equals the live line (a11y + tests). The sweep
+// itself is pure CSS, driven by the caption's .running class. Opaque to
+// everything outside this module.
+function ensureJobsPipelineThinkLine(caption, ownerDocument) {
+  if (!caption
+    || typeof caption.querySelector !== "function"
+    || typeof caption.appendChild !== "function") {
+    return null;
+  }
+  const existing = caption.querySelector('[data-ui="jobs-pipeline-think-line"]');
+  if (existing) return existing;
+  const line = ownerDocument.createElement("span");
+  line.className = "jobs-pipeline-think-line";
+  line.dataset.ui = "jobs-pipeline-think-line";
+  caption.appendChild(line);
+  return line;
+}
+
+function setJobsPipelineCaptionText(caption, line, text) {
+  const next = String(text || "").trim();
+  if (!line) {
+    // No DOM-capable caption (unit mocks / capped environments): fall back to
+    // the plain assignment the caption used before the think line existed.
+    if (caption) caption.textContent = next;
+    return;
+  }
+  const current = String(line.textContent || "");
+  if (next === current) return;
+  // ponytail: plain swap — the shimmer sweep is the only motion. No ghost copy
+  // and no enter animation: an overlaying previous label fought this host's
+  // nowrap/ellipsis clamp (flashed "…") and double-exposed over the new text.
+  line.textContent = next;
+  line.dataset.text = next;
 }
 
 function buildPipelineFillState(payload, { running = false } = {}) {
@@ -337,6 +379,92 @@ function formatPipelineCaption(progress) {
   return [phaseLabel, stepLabel].filter(Boolean).join(" · ");
 }
 
+// ponytail: plain-language caption for the end-user Jobs page. The technical
+// formatter below (formatBlockingTaskProgressLabel) stays the detail source for
+// the button tooltip and for Admin; this one is deliberately poor in
+// information: a count, an ETA, and a human phase name, never more than two
+// segments. docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md records the
+// decision ("Progress copy should use user-facing stages"; "Admin remains the
+// canonical place for detailed pipeline diagnostics").
+const JOBS_CAPTION_MAX_SEGMENTS = 2;
+
+// The closed set of stage labels getUserFacingUpdateStage is trusted to return.
+// Anything else means it was title-casing an unrecognised internal token.
+const KNOWN_USER_FACING_STAGES = new Set([
+  "Checking sources",
+  "Fetching job listings",
+  "Updating local jobs",
+  "Updating jobs"
+]);
+
+// Internal pipeline tokens that must never reach the user-facing caption:
+// adapter ids (steam_curator_feeds), stage/step markers, and raw counters.
+function isInternalPipelineToken(value) {
+  const token = String(value || "").trim();
+  if (!token) return true;
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(token)) return true;
+  if (/[./]/.test(token)) return true;
+  if (/^(stage|step|batch|wave|phase)\b/i.test(token)) return true;
+  if (/\b(sources resolved|candidates probed|URLs|pages)\b/i.test(token)) return true;
+  // A single all-lowercase word is a machine key ("discovery", "fetch"), not a
+  // human label — real phase labels read as prose ("Scanning sources").
+  if (!token.includes(" ") && token === token.toLowerCase()) return true;
+  return false;
+}
+
+function plainJobsPhaseLabel(progress) {
+  const raw = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
+  const cleaned = raw.replace(/\.\.\.$/, "").trim();
+  if (cleaned && !isInternalPipelineToken(raw)) {
+    // A phaseLabel is already human-readable ("Scanning sources") — only a
+    // snake_case key needs converting, and title-casing human text would mangle
+    // it ("Scanning sources" -> "Scanning Sources").
+    return raw.includes("_") ? titleCaseWords(cleaned.replace(/_/g, " ")) : cleaned;
+  }
+  // Fall back to the stage vocabulary the button label uses, but never let an
+  // adapter id through prettified: getUserFacingUpdateStage title-cases unknown
+  // values, so "steam_curator_feeds" would become "Steam Curator Feeds" and leak
+  // an internal source id. Only trust the fallback for known stage tokens.
+  const stage = getUserFacingUpdateStage(raw || progress?.phaseKey || "");
+  if (stage && KNOWN_USER_FACING_STAGES.has(stage)) return stage;
+  return "";
+}
+
+function plainCountSegment(counts, progress, noun) {
+  const resolved = numericOrZero(counts?.resolvedSources ?? counts?.probedCandidates);
+  const total = numericOrZero(counts?.sourceCount ?? counts?.probeTotal);
+  const determinate = String(progress?.mode || "").toLowerCase() === "determinate";
+  if (determinate && total > 0) return `${compactCount(resolved)} of ${compactCount(total)} ${noun}`;
+  if (resolved > 0) return `${compactCount(resolved)} ${noun} checked`;
+  return "";
+}
+
+function buildPlainJobsCaption(progress, noun) {
+  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+  const eta = formatShortDuration(counts?.estimatedRemainingMs);
+  const parts = [
+    plainCountSegment(counts, progress, noun),
+    eta ? `ETA ${eta}` : ""
+  ].filter(Boolean);
+  // With a count the button label above already names the stage, so repeating it
+  // is redundant; without one the plain phase is the only useful signal.
+  if (!parts.length) {
+    const phase = plainJobsPhaseLabel(progress);
+    if (phase) parts.push(phase);
+  }
+  return parts.slice(0, JOBS_CAPTION_MAX_SEGMENTS).join(" · ") || "Working…";
+}
+
+export function formatJobsProgressCaption(task) {
+  const taskType = String(task?.taskType || task?.type || "").trim().toLowerCase();
+  const progress = task?.taskProgress && typeof task.taskProgress === "object"
+    ? task.taskProgress
+    : {};
+  if (taskType === "fetch") return buildPlainJobsCaption(progress, "sources");
+  if (taskType === "discovery") return buildPlainJobsCaption(progress, "sources");
+  return buildPlainJobsCaption(progress, "steps");
+}
+
 export function formatBlockingTaskProgressLabel(task) {
   const taskType = String(task?.taskType || task?.type || "").trim().toLowerCase();
   const progress = task?.taskProgress && typeof task.taskProgress === "object"
@@ -438,13 +566,23 @@ export function updateJobsPipelineUi(
   }
   const progressText = view.active ? String(view.progressLabel || "").trim() : "";
   if (progressCaption) {
-    progressCaption.textContent = progressText;
-    progressCaption.hidden = !progressText;
-    progressCaption.classList?.toggle?.("running", view.active && Boolean(progressText));
+    const running = view.active && Boolean(progressText);
+    progressCaption.classList?.toggle?.("running", running);
     // ponytail: the status row carries the run state so the Last-updated
     // timestamp dims while a run is active via CSS — the slot itself never
     // collapses, so the toolbar height stays invariant.
     progressCaption.parentElement?.classList?.toggle?.("running", Boolean(view.active));
+    const thinkLine = ensureJobsPipelineThinkLine(
+      progressCaption,
+      jobsPipelineRunBtn.ownerDocument || (typeof document !== "undefined" ? document : null)
+    );
+    if (thinkLine) {
+      setJobsPipelineCaptionText(progressCaption, thinkLine, progressText);
+    } else {
+      // Fallback for capped/unit environments without a DOM-capable caption.
+      progressCaption.textContent = progressText;
+    }
+    progressCaption.hidden = !progressText;
   }
   jobsPipelineRunBtn.disabled = Boolean(view.disabled);
   jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
