@@ -84,8 +84,83 @@ Two detector traps worth recording, both caught before they caused damage:
   the 1,297 lines of 2–3-line groups are mostly illusory, and the 83 groups with
   median ≥8 lines were the only ones worth dispatching.
 
-### Where duplication now stands
+## Wave 2 and 3: god-file decomposition (legibility, not reduction)
 
+Decomposition **costs** lines, measured three times over:
+
+| Workstream | Coordinator | Leaves | Net |
+|---|---:|---:|---:|
+| W6 `scripts/` (earlier) | −3,749 | +5,140 | **+1,391** |
+| W7 `health.js` | −938 | +1,358 | **+420** |
+| W2a `gamedevmap_active_dry_run.py` | −737 | +1,045 | **+308** |
+| W2b shard + snapshot + normalization | −2,841 | +3,504 | **+663** |
+| W7b four frontend files | −3,645 | +4,754 | **+1,109** |
+
+Every leaf needs its own import preamble, module docstring with the 4-line AI
+boundary banner, and compatibility `__all__`. That is roughly **+25–35% of the
+extracted body**. Decomposition is therefore a **legibility purchase**: it buys
+navigability and blast-radius reduction, and it *raises* the LOC line. Do not
+schedule it as a reduction lever.
+
+### The god *function* is the real god file
+
+W7 split `frontend/admin/app/ops/health.js` 1,726 → 788 lines and the remaining
+788 turned out to be **one 672-line factory function**. The same pattern then
+repeated on four more files:
+
+| File | Total | Dominant single function |
+|---|---:|---|
+| `frontend/admin/app/registry/load.js` | 978 | `createRegistryLoadController` **891 lines** |
+| `frontend/jobs/app/feed.js` | 1,020 | `initJobsFeed` **415 lines** |
+| `frontend/admin/app/ops/health.js` | 788 | `createOpsHealthController` **672 lines** |
+
+Extracting top-level helpers does nothing for these, because the file *is* one
+function. Reducing them means changing how inner closures receive `refs`/`state`/
+`deps` — an architecture decision, not a mechanical split. W7b did reduce all four
+(ops-summary 1,155→142, registry-conflicts 1,108→102, feed 1,020→229, load
+978→143) by extracting coherent groups of inner functions, but the factory bodies
+that remain are still the largest units in those files.
+
+### Verification that actually catches split defects
+
+`tools/repo_health/bin/verify_split_fidelity.py` fingerprints every top-level unit
+of the original and asserts each appears exactly once, byte-identical, across the
+leaves. Measured on Wave 3:
+
+| Split | Result |
+|---|---|
+| `gamedevmap_active_dry_run.py` | **58/58 byte-identical** |
+| `source_sync_shard.py` | **59/59 byte-identical** |
+| `fetch_report_normalization.py` | **45/45 byte-identical** |
+| `source_sync_snapshot.py` | 41/45 — 4 reported `AMBIGUOUS` |
+
+**The 41/45 is a false positive, verified rather than assumed.** The 4 units
+(`read_remote_snapshot`, `write_remote_snapshot`, `pull_and_merge_sources`,
+`push_sources_snapshot`) exist twice: the real body in a leaf, plus a
+**lazy-import delegator** in the coordinator. `inspect.signature` is identical on
+all four pairs, and patching the leaf proved the coordinator forwards. The tool's
+own docstring states it does not model "seam observability, monkeypatch
+compatibility, or re-export surfaces" — a delegator is exactly that gap. Do not
+"fix" the 41/45 by deleting the delegators; the lazy import is deliberate so the
+coordinator is fully initialized before any leaf body runs, in either import order.
+
+### Two real defects the splits introduced, both caught by tests
+
+1. **Monkeypatch seams break when a function moves.** `test_gamedevmap_active_dry_run.py`
+   patches `fetch_directory_pages` on the *coordinator*; an early emit placed its
+   readers in a leaf, so the patch silently missed. The seam-forced units were
+   pinned back to the coordinator. **When splitting, every monkeypatched global's
+   readers must stay in the module the test patches.** The same rule will apply to
+   `active_audit_runtime.run_active_audit_batch`
+   (`test_active_audit_runtime_batch.py:405`).
+2. **New top-level `src/*.py` files must be registered in the ship bundle.**
+   `scripts/ship_bundle_manifest.py` enforces that every top-level `src/` file is
+   in `APP_RUNTIME_SCRIPTS` or `NON_SHIPPING_TOP_LEVEL_MODULES`. Ten new top-level
+   leaves broke 7 bundle tests. Subdirectory leaves need no entry —
+   `build_ship_bundle.py` copies `APP_RUNTIME_SCRIPT_DIRS` wholesale — so only the
+   top-level ones matter.
+
+### Where duplication now stands
 | Area | Before W1b | After W1b |
 |---|---:|---:|
 | `src` (all alpha-renamed groups) | 277 / 3,369 | **269 / 2,928** |

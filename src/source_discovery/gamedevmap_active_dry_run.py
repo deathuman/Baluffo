@@ -12,20 +12,46 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import (
+    UTC as UTC,
+)
+from datetime import (
+    datetime as datetime,
+)
+from datetime import (
+    timedelta as timedelta,
+)
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse as urlparse
 
 from src import source_registry as source_registry_module
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources
 
-from . import active_audit_runtime, audit_ledger, audit_report_summary, recovery_url_planner
-from . import browser_recovery as browser_recovery_helpers
-from . import directory_page_recovery as directory_recovery_helpers
+from . import (
+    active_audit_runtime,
+)
+from . import (
+    audit_ledger as audit_ledger,
+)
+from . import (
+    audit_report_summary as audit_report_summary,
+)
+from . import (
+    browser_recovery as browser_recovery_helpers,
+)
+from . import (
+    directory_page_recovery as directory_recovery_helpers,
+)
+from . import (
+    recovery_url_planner as recovery_url_planner,
+)
 from .config import DEFAULT_DISCOVERY_CONFIG
-from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .directory_fetch import (
+    fetch_directory_pages,
+    resolve_directory_fetch_limits,
+)
 from .gamedevmap import (
     GAMEDEVMAP_CSV_URL,
     GAMEDEVMAP_INDEX_URL,
@@ -35,24 +61,143 @@ from .gamedevmap import (
     parse_gamedevmap_csv,
     select_gamedevmap_representative_rows,
 )
+from .gamedevmap_active_batch_plumbing import (
+    _build_gamedevmap_active_loop_strategy as _build_gamedevmap_active_loop_strategy,
+)
+from .gamedevmap_active_batch_plumbing import (
+    _build_gamedevmap_subtask_progress_callback as _build_gamedevmap_subtask_progress_callback,
+)
+from .gamedevmap_active_batch_plumbing import (
+    _merge_gamedevmap_active_batch_candidates as _merge_gamedevmap_active_batch_candidates,
+)
+from .gamedevmap_active_batch_plumbing import (
+    _prepare_gamedevmap_active_batch_rows as _prepare_gamedevmap_active_batch_rows,
+)
+from .gamedevmap_artifact_store import (
+    DRY_RUN_SCHEMA_VERSION as DRY_RUN_SCHEMA_VERSION,
+)
+from .gamedevmap_artifact_store import (
+    FAILURE_SAMPLE_LIMIT as FAILURE_SAMPLE_LIMIT,
+)
+from .gamedevmap_artifact_store import (
+    _as_dict as _as_dict,
+)
+from .gamedevmap_artifact_store import (
+    _as_list as _as_list,
+)
+from .gamedevmap_artifact_store import (
+    _gamedevmap_artifact_is_fresh as _gamedevmap_artifact_is_fresh,
+)
+from .gamedevmap_artifact_store import (
+    _gamedevmap_artifact_signature_matches as _gamedevmap_artifact_signature_matches,
+)
+from .gamedevmap_artifact_store import (
+    _initial_artifact as _initial_artifact,
+)
+from .gamedevmap_artifact_store import (
+    _load_browser_recovery_artifact as _load_browser_recovery_artifact,
+)
+from .gamedevmap_artifact_store import (
+    _load_or_initialize_artifact as _load_or_initialize_artifact,
+)
+from .gamedevmap_artifact_store import (
+    _mark_browser_recovery_probe_results as _mark_browser_recovery_probe_results,
+)
+from .gamedevmap_artifact_store import (
+    _merge_browser_recovery_artifact_updates as _merge_browser_recovery_artifact_updates,
+)
+from .gamedevmap_artifact_store import (
+    _safe_int as _safe_int,
+)
+from .gamedevmap_artifact_store import (
+    _summarize_artifact as _summarize_artifact,
+)
+from .gamedevmap_artifact_store import (
+    gamedevmap_active_dry_run_path as gamedevmap_active_dry_run_path,
+)
+from .gamedevmap_recovery_comparison import (
+    _classify_lost_recovery as _classify_lost_recovery,
+)
+from .gamedevmap_recovery_comparison import (
+    _index_current_rejections as _index_current_rejections,
+)
+from .gamedevmap_recovery_comparison import (
+    _recovered_active_by_id as _recovered_active_by_id,
+)
+from .gamedevmap_recovery_comparison import (
+    _validated_static_audit_candidate as _validated_static_audit_candidate,
+)
+from .gamedevmap_recovery_comparison import (
+    apply_gamedevmap_lost_recovery_audit as apply_gamedevmap_lost_recovery_audit,
+)
+from .gamedevmap_recovery_comparison import (
+    compare_gamedevmap_recovered_sources as compare_gamedevmap_recovered_sources,
+)
+from .gamedevmap_recovery_comparison import (
+    gamedevmap_audit_report_summary as gamedevmap_audit_report_summary,
+)
+from .gamedevmap_recovery_comparison import (
+    gamedevmap_validated_candidates_from_artifact as gamedevmap_validated_candidates_from_artifact,
+)
+from .gamedevmap_recovery_queue import (
+    PRIMARY_RECOVERY_PATHS as PRIMARY_RECOVERY_PATHS,
+)
+from .gamedevmap_recovery_queue import (
+    SECONDARY_RECOVERY_PATHS as SECONDARY_RECOVERY_PATHS,
+)
+from .gamedevmap_recovery_queue import (
+    SOCIAL_PROFILE_HOSTS as SOCIAL_PROFILE_HOSTS,
+)
+from .gamedevmap_recovery_queue import (
+    THIRD_PARTY_PROFILE_HOSTS as THIRD_PARTY_PROFILE_HOSTS,
+)
+from .gamedevmap_recovery_queue import (
+    _candidate_url_key as _candidate_url_key,
+)
+from .gamedevmap_recovery_queue import (
+    _filter_bad_provider_inferences as _filter_bad_provider_inferences,
+)
+from .gamedevmap_recovery_queue import (
+    _host as _host,
+)
+from .gamedevmap_recovery_queue import (
+    _host_in as _host_in,
+)
+from .gamedevmap_recovery_queue import (
+    _no_careers_reason_detail as _no_careers_reason_detail,
+)
+from .gamedevmap_recovery_queue import (
+    _probe_candidates_async as _probe_candidates_async,
+)
+from .gamedevmap_recovery_queue import (
+    _provider_candidates_from_html_text as _provider_candidates_from_html_text,
+)
+from .gamedevmap_recovery_queue import (
+    _queue_no_careers_recovery as _queue_no_careers_recovery,
+)
+from .gamedevmap_recovery_queue import (
+    _recovery_job_label as _recovery_job_label,
+)
+from .gamedevmap_recovery_queue import (
+    _rendered_page_has_static_job_evidence as _rendered_page_has_static_job_evidence,
+)
 from .gamedevmap_rejection import (
     _error_text,
     _gamedevmap_probe_failed_rejection,
     _gamedevmap_zero_jobs_rejection,
-    _normalize_failure_bucket,
     _rejection,
     _row_url,
+)
+from .gamedevmap_rejection import (
+    _normalize_failure_bucket as _normalize_failure_bucket,
 )
 from .gamedevmap_rerun import (
     _parse_rerun_reasons,
     _prune_rerun_rejections,
     _select_rerun_rows,
 )
-from .io_runtime import endpoint_url
+from .io_runtime import endpoint_url as endpoint_url
 from .page_analysis import analyze_fetched_page
-from .page_diagnostics import (
-    no_candidate_reason_detail as shared_no_candidate_reason_detail,
-)
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -60,7 +205,9 @@ from .page_outcomes import (
     classify_fetched_page_with_strategy,
     static_page_outcome_builders,
 )
-from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
+from .prevalidated_queue_policy import (
+    apply_prevalidated_queue_overrides as apply_prevalidated_queue_overrides,
+)
 from .probe_runtime import (
     candidate_id as probe_candidate_id,
 )
@@ -68,10 +215,9 @@ from .probe_runtime import (
     classify_probe_results,
     rendered_static_probe_result,
 )
-from .probe_runtime import (
-    probe_candidates_async as shared_probe_candidates_async,
+from .provider_inference_filters import (
+    split_bad_provider_inferences as split_bad_provider_inferences,
 )
-from .provider_inference_filters import split_bad_provider_inferences
 from .recovery_escalation import (
     enqueue_rejected_for_web_search as recovery_escalation_enqueue,
 )
@@ -87,466 +233,21 @@ from .recovery_escalation import (
 from .reporting import emit_log
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
-    extract_jobish_links,
+    extract_jobish_links as extract_jobish_links,
+)
+from .web_search import (
     fetch_text,
-    infer_provider_candidates_from_html,
     infer_web_candidate,
 )
-
-DRY_RUN_SCHEMA_VERSION = 3
-LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY: dict[str, Any] = {}
-PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
-SECONDARY_RECOVERY_PATHS = (
-    "/join-us",
-    "/work-with-us",
-    "/company/careers",
-    "/about/careers",
+from .web_search import (
+    infer_provider_candidates_from_html as infer_provider_candidates_from_html,
 )
-FAILURE_SAMPLE_LIMIT = 200
-SOCIAL_PROFILE_HOSTS = {
-    "facebook.com",
-    "instagram.com",
-    "linkedin.com",
-    "tiktok.com",
-    "twitter.com",
-    "x.com",
-    "youtube.com",
-}
-THIRD_PARTY_PROFILE_HOSTS = {
-    "impress.games",
-    "itch.io",
-    "linktr.ee",
-    "sites.google.com",
-}
 
-
-def gamedevmap_active_dry_run_path() -> Path:
-    return source_registry_module.ACTIVE_PATH.parent / "gamedevmap-active-source-dry-run.json"
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(active_audit_runtime._as_list(value))
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(active_audit_runtime._as_dict(value))
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    if int(default) == 0:
-        return active_audit_runtime._safe_int(value)
-    try:
-        return int(value)
-    except (TypeError, ValueError, OverflowError):
-        return int(default)
-
-
-def _candidate_url_key(candidate: dict[str, Any]) -> str:
-    raw = str(
-        candidate.get("listing_url")
-        or candidate.get("careersUrl")
-        or candidate.get("api_url")
-        or candidate.get("url")
-        or endpoint_url(candidate)
-        or ""
-    ).strip()
-    return f"url:{raw}" if raw else ""
-
-
-def _host(url: str) -> str:
-    return recovery_url_planner.host(url)
-
-
-def _host_in(host: str, blocked_hosts: set[str]) -> bool:
-    return recovery_url_planner.host_in(host, blocked_hosts)
-
-
-def _initial_artifact(
-    *,
-    run_id: str,
-    started_at: str,
-    timeout_s: int,
-    csv_url: str,
-    index_url: str,
-    cfg: dict[str, Any],
-    batch_size: int,
-    fetch_concurrency: int,
-    per_host_concurrency: int,
-    homepage_fetch_concurrency: int,
-    recovery_fetch_concurrency: int,
-    recovery_per_host_concurrency: int,
-    recovery_timeout_s: int,
-) -> dict[str, Any]:
-    return active_audit_runtime.create_active_audit_artifact(
-        schema_version=DRY_RUN_SCHEMA_VERSION,
-        run_id=run_id,
-        started_at=started_at,
-        mode="gamedevmap_active_source_dry_run",
-        progress={
-            "complete": False,
-            "cursorPosition": 0,
-            "batchSize": int(batch_size),
-            "batchesCompleted": 0,
-            "completedUrlsCount": 0,
-        },
-        runtime={
-            "timeoutSeconds": int(timeout_s),
-            "fetchConcurrency": int(fetch_concurrency),
-            "perHostConcurrency": int(per_host_concurrency),
-            "homepageFetchConcurrency": int(homepage_fetch_concurrency),
-            "recoveryFetchConcurrency": int(recovery_fetch_concurrency),
-            "recoveryPerHostConcurrency": int(recovery_per_host_concurrency),
-            "recoveryTimeoutSeconds": int(recovery_timeout_s),
-            "csvUrl": csv_url,
-            "indexUrl": index_url,
-            "configSignature": _gamedevmap_cache_signature(cfg),
-        },
-        list_keys=[
-            "failureSamples",
-            "completedUrls",
-            "activeCandidates",
-            "zeroJobCandidates",
-            "rejectedForActivation",
-            "browserRecoveryCandidates",
-            "failures",
-            "allCandidates",
-        ],
-        dict_keys=["failureCounts", "failureErrorCounts"],
-    )
-
-
-def _load_or_initialize_artifact(
-    output_path: Path,
-    *,
-    reset: bool,
-    run_id: str,
-    started_at: str,
-    timeout_s: int,
-    csv_url: str,
-    index_url: str,
-    cfg: dict[str, Any],
-    batch_size: int,
-    fetch_concurrency: int,
-    per_host_concurrency: int,
-    homepage_fetch_concurrency: int,
-    recovery_fetch_concurrency: int,
-    recovery_per_host_concurrency: int,
-    recovery_timeout_s: int,
-) -> dict[str, Any]:
-    return active_audit_runtime.load_or_initialize_active_audit_artifact(
-        output_path,
-        reset=reset,
-        schema_version=DRY_RUN_SCHEMA_VERSION,
-        initial_artifact=_initial_artifact(
-            run_id=run_id,
-            started_at=started_at,
-            timeout_s=timeout_s,
-            csv_url=csv_url,
-            index_url=index_url,
-            cfg=cfg,
-            batch_size=batch_size,
-            fetch_concurrency=fetch_concurrency,
-            per_host_concurrency=per_host_concurrency,
-            homepage_fetch_concurrency=homepage_fetch_concurrency,
-            recovery_fetch_concurrency=recovery_fetch_concurrency,
-            recovery_per_host_concurrency=recovery_per_host_concurrency,
-            recovery_timeout_s=recovery_timeout_s,
-        ),
-        runtime_updates={
-            "timeoutSeconds": int(timeout_s),
-            "fetchConcurrency": int(fetch_concurrency),
-            "perHostConcurrency": int(per_host_concurrency),
-            "homepageFetchConcurrency": int(homepage_fetch_concurrency),
-            "recoveryFetchConcurrency": int(recovery_fetch_concurrency),
-            "recoveryPerHostConcurrency": int(recovery_per_host_concurrency),
-            "recoveryTimeoutSeconds": int(recovery_timeout_s),
-            "csvUrl": csv_url,
-            "indexUrl": index_url,
-            "configSignature": _gamedevmap_cache_signature(cfg),
-        },
-        progress_updates={
-            "batchSize": int(batch_size),
-        },
-        list_keys=[
-            "completedUrls",
-            "activeCandidates",
-            "zeroJobCandidates",
-            "rejectedForActivation",
-            "browserRecoveryCandidates",
-            "failures",
-            "allCandidates",
-        ],
-        dict_keys=["failureCounts", "failureErrorCounts"],
-        failure_sample_limit=FAILURE_SAMPLE_LIMIT,
-        load_json_object=source_registry_module.load_json_object,
-    )
-
-
-def _summarize_artifact(
-    artifact: dict[str, Any],
-    *,
-    parsed_rows: list[dict[str, str]],
-    representative_rows: list[dict[str, Any]],
-    completed_urls: set[str],
-) -> None:
-    prior_summary = _as_dict(artifact.get("summary"))
-    counts = active_audit_runtime.active_audit_artifact_counts(
-        artifact,
-        all_candidates_key="allCandidates",
-        active_candidates_key="activeCandidates",
-        zero_candidates_key="zeroJobCandidates",
-        rejected_key="rejectedForActivation",
-        browser_candidates_key="browserRecoveryCandidates",
-        recovered_predicate=lambda row: bool(row.get("gamedevmapRecovery")),
-        failure_bucket_fn=lambda row: str(
-            row.get("failureBucket") or _normalize_failure_bucket(row.get("reason", ""))
-        ),
-    )
-    csv_rows = len(parsed_rows) if parsed_rows else _safe_int(prior_summary.get("csvRows"))
-    eligible_rows = (
-        len(representative_rows)
-        if representative_rows
-        else _safe_int(prior_summary.get("eligibleRows"))
-    )
-    completed_count = (
-        len(completed_urls) if completed_urls else _safe_int(prior_summary.get("completedUrls"))
-    )
-    artifact["summary"] = {
-        "csvRows": csv_rows,
-        "eligibleRows": eligible_rows,
-        "completedUrls": completed_count,
-        "remainingUrls": max(0, eligible_rows - completed_count),
-        "homepageFetchAttempts": _safe_int(
-            _as_dict(artifact.get("summary")).get("homepageFetchAttempts")
-        ),
-        "homepagesFetched": _safe_int(_as_dict(artifact.get("summary")).get("homepagesFetched")),
-        "recoveryFetchAttempts": _safe_int(
-            _as_dict(artifact.get("summary")).get("recoveryFetchAttempts")
-        ),
-        "recoveryUniqueFetchAttempts": _safe_int(
-            _as_dict(artifact.get("summary")).get("recoveryUniqueFetchAttempts")
-        ),
-        "recoveryNetworkFetchAttempts": _safe_int(
-            _as_dict(artifact.get("summary")).get("recoveryNetworkFetchAttempts")
-        ),
-        "recoveryPagesFetched": _safe_int(
-            _as_dict(artifact.get("summary")).get("recoveryPagesFetched")
-        ),
-        "providerCandidates": len(
-            [row for row in counts.all_candidates if str(row.get("adapter") or "") != "static"]
-        ),
-        "staticCandidates": len(
-            [row for row in counts.all_candidates if str(row.get("adapter") or "") == "static"]
-        ),
-        "recoveredCandidates": len(counts.recovered_candidates),
-        "recoveredActiveCandidates": len(counts.recovered_active),
-        "probedCandidates": len(counts.all_candidates),
-        "activeCandidates": len(counts.active_rows),
-        "zeroJobCandidates": counts.zero_job_count,
-        "probeFailures": int(counts.reason_counts.get("probe_failed") or 0),
-        "technicalFailures": len(counts.technical_failures),
-        "coverageMisses": len(counts.coverage_misses),
-        "failures": counts.failure_count,
-        "failureSampleCount": counts.failure_sample_count,
-        "artifactSizeBytes": _safe_int(_as_dict(artifact.get("runtime")).get("artifactSizeBytes")),
-        "rejectedForActivation": len(counts.rejected_rows),
-        "rejectedReasonCounts": counts.reason_counts,
-        "rejectedReasonDetailCounts": counts.detail_counts,
-        "activeAdapterCounts": counts.active_adapter_counts,
-        "browserRecoveryCandidates": counts.browser_recovery_candidate_count,
-        "browserRecoveryProcessed": counts.browser_recovery_processed_count,
-        "browserRecoveredActiveCandidates": counts.browser_recovered_active_count,
-        "lostRecoveredActiveCandidates": counts.lost_recovered_active_count,
-    }
-
-
-def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return active_audit_runtime.recovered_active_by_identity(
-        artifact,
-        active_key="activeCandidates",
-        recovered_predicate=lambda row: bool(row.get("gamedevmapRecovery")),
-        identity_fn=probe_candidate_id,
-    )
-
-
-def _index_current_rejections(artifact: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    return active_audit_runtime.index_rejections_by_identity(
-        artifact,
-        rejected_key="rejectedForActivation",
-        lookup_keys_fn=lambda rejection: active_audit_runtime.rejection_lookup_keys(
-            rejection,
-            candidate_identity_fn=probe_candidate_id,
-            candidate_url_key_fn=_candidate_url_key,
-        ),
-    )
-
-
-def _classify_lost_recovery(
-    previous_candidate: dict[str, Any],
-    current_rejections: dict[str, list[dict[str, Any]]],
-) -> tuple[str, dict[str, Any]]:
-    keys = [
-        probe_candidate_id(previous_candidate),
-        _candidate_url_key(previous_candidate),
-        f"entry:{str(previous_candidate.get('sourceDirectoryEntryUrl') or '').strip()}",
-    ]
-    matched = next(
-        (
-            rejection
-            for key in keys
-            for rejection in current_rejections.get(key, [])
-            if key and key != "entry:"
-        ),
-        {},
-    )
-    reason = str(matched.get("reason") or "").strip()
-    detail = str(matched.get("reasonDetail") or "").strip()
-    error = str(matched.get("error") or "").strip().lower()
-    if reason == "homepage_fetch_failed":
-        return "homepage_fetch_failure", matched
-    if reason == "probe_failed":
-        return "probe_failure", matched
-    if reason == "zero_jobs":
-        return "zero_jobs", matched
-    if detail in {"social_profile_host", "third_party_profile_host"}:
-        return "skipped_profile_host", matched
-    if detail == "recovery_fetch_failed" or "timeout" in error or "timed out" in error:
-        return "recovery_timeout_or_fetch_failed", matched
-    if str(previous_candidate.get("gamedevmapRecoverySource") or "") == "same_party_recovery_url":
-        return "skipped_wave_two", matched
-    return "unknown", matched
-
-
-def compare_gamedevmap_recovered_sources(
-    *,
-    current_artifact: dict[str, Any],
-    previous_artifact: dict[str, Any],
-) -> dict[str, Any]:
-    previous = _recovered_active_by_id(previous_artifact)
-    current = _recovered_active_by_id(current_artifact)
-    current_rejections = _index_current_rejections(current_artifact)
-    return active_audit_runtime.compare_recovered_active_maps(
-        previous=previous,
-        current=current,
-        current_rejections=current_rejections,
-        classify_lost=_classify_lost_recovery,
-        lost_row_builder=lambda row_id, cause, previous_candidate, matched_rejection: {
-            "sourceId": row_id,
-            "cause": cause,
-            "name": str(previous_candidate.get("name") or ""),
-            "adapter": str(previous_candidate.get("adapter") or ""),
-            "jobsFound": _safe_int(previous_candidate.get("jobsFound")),
-            "recoverySource": str(previous_candidate.get("gamedevmapRecoverySource") or ""),
-            "careersUrl": str(
-                previous_candidate.get("careersUrl") or previous_candidate.get("listing_url") or ""
-            ),
-            "matchedCurrentRejection": matched_rejection,
-        },
-    )
-
-
-def apply_gamedevmap_lost_recovery_audit(
-    artifact: dict[str, Any],
-    *,
-    compare_artifact_path: Path | str | None,
-) -> None:
-    if compare_artifact_path is None:
-        return
-    previous = source_registry_module.load_json_object(Path(compare_artifact_path), {})
-    if not isinstance(previous, dict) or not previous:
-        artifact["lostRecoveryAudit"] = {
-            "error": f"compare artifact not found or invalid: {compare_artifact_path}",
-            "lostCount": 0,
-            "lossCauseCounts": {},
-            "lostCandidates": [],
-        }
-        return
-    artifact["lostRecoveryAudit"] = compare_gamedevmap_recovered_sources(
-        current_artifact=artifact,
-        previous_artifact=previous,
-    )
-
-
-def gamedevmap_audit_report_summary(
-    artifact: dict[str, Any],
-    *,
-    cache_hit: bool = False,
-    output_path: Path | str | None = None,
-) -> dict[str, Any]:
-    summary = audit_report_summary.as_dict(artifact.get("summary"))
-    runtime = audit_report_summary.as_dict(artifact.get("runtime"))
-    timings = audit_report_summary.as_dict(artifact.get("timings"))
-    totals_ms = audit_report_summary.as_dict(timings.get("totalsMs"))
-    active_split = audit_report_summary.active_candidate_split(summary)
-    return {
-        "cacheHit": bool(cache_hit),
-        "complete": bool(audit_report_summary.as_dict(artifact.get("progress")).get("complete")),
-        "auditDurationMs": audit_report_summary.safe_int(totals_ms.get("totalMs")),
-        "activeCandidates": active_split["activeCandidates"],
-        "activeProviderCandidates": active_split["activeProviderCandidates"],
-        "activeStaticCandidates": active_split["activeStaticCandidates"],
-        "recoveredActiveCandidates": audit_report_summary.safe_int(
-            summary.get("recoveredActiveCandidates")
-        ),
-        "browserRecoveryCandidates": audit_report_summary.safe_int(
-            summary.get("browserRecoveryCandidates")
-        ),
-        "browserRecoveredActiveCandidates": audit_report_summary.safe_int(
-            summary.get("browserRecoveredActiveCandidates")
-        ),
-        "artifactSizeBytes": audit_report_summary.artifact_size_bytes(
-            summary=summary, runtime=runtime
-        ),
-        "timingTotalsMs": dict(totals_ms),
-        "topFailureBuckets": audit_report_summary.top_failure_buckets(
-            rejected_reason_detail_counts=summary.get("rejectedReasonDetailCounts"),
-            failure_counts=artifact.get("failureCounts"),
-        ),
-        "lostRecoveredActiveCandidates": audit_report_summary.safe_int(
-            summary.get("lostRecoveredActiveCandidates")
-        ),
-        "outputPath": str(output_path or gamedevmap_active_dry_run_path()),
-    }
+LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY: dict[str, Any] = {}
 
 
 def latest_gamedevmap_audit_report_summary() -> dict[str, Any]:
     return dict(LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY)
-
-
-def _load_browser_recovery_artifact(
-    *,
-    output_path: Path,
-    cfg: dict[str, Any],
-    timeout_s: int,
-    run_id: str,
-    started_at: str,
-) -> dict[str, Any]:
-    artifact = source_registry_module.load_json_object(output_path, {})
-    if isinstance(artifact, dict) and artifact:
-        return artifact
-    return _initial_artifact(
-        run_id=run_id,
-        started_at=started_at or now_iso(),
-        timeout_s=timeout_s,
-        csv_url=str(cfg.get("csvUrl") or GAMEDEVMAP_CSV_URL),
-        index_url=str(cfg.get("indexUrl") or GAMEDEVMAP_INDEX_URL),
-        cfg=cfg,
-        batch_size=max(1, int(cfg.get("activeAuditBatchSize") or 1000)),
-        fetch_concurrency=max(1, int(cfg.get("fetchConcurrency") or 24)),
-        per_host_concurrency=max(1, int(cfg.get("perHostConcurrency") or 3)),
-        homepage_fetch_concurrency=max(
-            1, int(cfg.get("activeAuditHomepageFetchConcurrency") or 32)
-        ),
-        recovery_fetch_concurrency=max(
-            1, int(cfg.get("activeAuditRecoveryFetchConcurrency") or 72)
-        ),
-        recovery_per_host_concurrency=max(
-            1, int(cfg.get("activeAuditRecoveryPerHostConcurrency") or 4)
-        ),
-        recovery_timeout_s=max(
-            1, min(int(timeout_s), int(cfg.get("activeAuditRecoveryTimeoutSeconds") or 5))
-        ),
-    )
 
 
 def _analyze_browser_recovery_fetches(
@@ -662,48 +363,6 @@ def _analyze_browser_recovery_batch(
     return _analyze
 
 
-def _mark_browser_recovery_probe_results(
-    probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-    *,
-    rendered_count: int,
-) -> None:
-    for index, (candidate, ok, jobs_found, _error, _duration_ms) in enumerate(probe_results):
-        if ok and jobs_found > 0:
-            candidate["gamedevmapBrowserRecovery"] = True
-        if index < rendered_count:
-            candidate["probeStatus"] = "ok"
-            candidate["candidateState"] = "validated"
-
-
-def _merge_browser_recovery_artifact_updates(
-    *,
-    artifact: dict[str, Any],
-    batch: browser_recovery_helpers.BrowserRecoveryBatch,
-    combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> None:
-    artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
-        artifact.get("allCandidates"),
-        batch.analysis.all_candidates,
-        unique_rows=unique_sources,
-    )
-    active_audit_runtime.append_artifact_rows(
-        artifact,
-        "rejectedForActivation",
-        list(batch.analysis.rejected_rows or []),
-    )
-    active_audit_runtime.apply_active_audit_probe_results(
-        artifact,
-        combined_probe_results,
-        classify_probe_results=classify_probe_results,
-        probe_failed_rejection=_gamedevmap_probe_failed_rejection,
-        zero_jobs_rejection=_gamedevmap_zero_jobs_rejection,
-        active_key="activeCandidates",
-        zero_candidates_key="zeroJobCandidates",
-        rejected_key="rejectedForActivation",
-        identity_fn=probe_candidate_id,
-    )
-
-
 def run_gamedevmap_browser_recovery(
     *,
     timeout_s: int,
@@ -776,82 +435,6 @@ def run_gamedevmap_browser_recovery(
         ),
     )
     return artifact
-
-
-def _validated_static_audit_candidate(
-    row: dict[str, Any],
-    *,
-    promote_validated_static: bool,
-    validated_static_queue_cap: int,
-    validated_static_domain_cap: int,
-) -> dict[str, Any] | None:
-    if not promote_validated_static:
-        return None
-    return apply_prevalidated_queue_overrides(
-        row,
-        adapter_cap=validated_static_queue_cap,
-        domain_cap=validated_static_domain_cap,
-    )
-
-
-def _no_careers_reason_detail(page_url: str, html: str) -> str:
-    return shared_no_candidate_reason_detail(
-        page_url,
-        html,
-        social_profile_hosts=SOCIAL_PROFILE_HOSTS,
-        third_party_profile_hosts=THIRD_PARTY_PROFILE_HOSTS,
-        jobish_url_fn=lambda url, body: extract_jobish_links(body, url),
-        include_noscript_script_shell=True,
-    )
-
-
-def _recovery_job_label(studio: str, recovery_url: str) -> str:
-    try:
-        parsed = urlparse(str(recovery_url or ""))
-    except ValueError:
-        path = ""
-    else:
-        path = parsed.path or "/"
-    return f"{studio} recovery {path or 'unknown'}"
-
-
-def _provider_candidates_from_html_text(
-    *,
-    row: dict[str, Any],
-    page_url: str,
-    html: str,
-    index_url: str,
-) -> list[dict[str, Any]]:
-    studio = str(row.get("studio") or "").strip()
-    candidates: list[dict[str, Any]] = []
-    for inferred_row in infer_provider_candidates_from_html(
-        page_url=page_url,
-        html=html,
-        studio=studio,
-        nl_priority=False,
-        discovery_method="gamedevmap",
-    ):
-        inferred = dict(inferred_row)
-        inferred["careersUrl"] = page_url
-        inferred["gamedevmapRecovery"] = True
-        inferred["gamedevmapRecoverySource"] = "homepage_html_provider_url"
-        inferred["evidenceTypes"] = list(
-            dict.fromkeys(
-                [
-                    *(inferred.get("evidenceTypes") or []),
-                    "gamedevmap_recovery_provider_url",
-                ]
-            )
-        )
-        candidates.append(
-            _apply_gamedevmap_provenance(
-                inferred,
-                row,
-                index_url=index_url,
-                include_homepage_fetch=True,
-            )
-        )
-    return candidates
 
 
 def _gamedevmap_page_outcome(
@@ -974,69 +557,6 @@ def _append_analyzed_candidates(
         )
         found_candidates = True
     return found_candidates
-
-
-def _rendered_page_has_static_job_evidence(page_url: str, html: str) -> bool:
-    try:
-        from .probe import static_probe_evidence
-
-        return int(static_probe_evidence(html, page_url).count or 0) > 0
-    except (TypeError, ValueError):
-        return False
-
-
-def _queue_no_careers_recovery(
-    *,
-    row: dict[str, Any],
-    target_url: str,
-    html: str,
-    index_url: str,
-    provider_candidates: list[dict[str, Any]],
-    primary_recovery_jobs: list[dict[str, Any]],
-    secondary_recovery_jobs: list[dict[str, Any]],
-    browser_recovery_candidates: list[dict[str, Any]],
-) -> bool:
-    studio = str(row.get("studio") or "").strip()
-    detail = _no_careers_reason_detail(target_url, html)
-    if detail == "js_shell":
-        browser_recovery_candidates.append(
-            browser_recovery_helpers.browser_recovery_candidate_row(
-                adapter="gamedevmap",
-                name=f"{studio} browser recovery",
-                studio=studio,
-                url=target_url,
-                source_directory_entry_url=str(row.get("sourceDirectoryEntryUrl") or "").strip(),
-                reason_detail=detail,
-            )
-        )
-    row_provider_candidates = _provider_candidates_from_html_text(
-        row=row,
-        page_url=target_url,
-        html=html,
-        index_url=index_url,
-    )
-    provider_candidates.extend(row_provider_candidates)
-    primary_jobs, secondary_jobs = directory_recovery_helpers.plan_recovery_fetch_job_waves(
-        page_url=target_url,
-        html=html,
-        primary_paths=PRIMARY_RECOVERY_PATHS,
-        secondary_paths=SECONDARY_RECOVERY_PATHS,
-        payload_factory=lambda _url, wave: {
-            "row": row,
-            "homepageUrl": target_url,
-            "homepageReasonDetail": detail,
-            "recoverySource": "same_party_recovery_url",
-            "recoveryWave": int(wave),
-        },
-        name_factory=lambda recovery_url, _wave: _recovery_job_label(studio, recovery_url),
-        adapter="gamedevmap",
-        failure_stage="gamedevmap_recovery_fetch",
-        blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
-        html_url_candidate_fn=recovery_url_planner.html_url_candidates,
-    )
-    primary_recovery_jobs.extend(primary_jobs)
-    secondary_recovery_jobs.extend(secondary_jobs)
-    return bool(primary_jobs or secondary_jobs or row_provider_candidates)
 
 
 def _extract_candidates_from_homepages(
@@ -1263,77 +783,6 @@ def _apply_recovery_results(
     )
 
 
-def _filter_bad_provider_inferences(
-    candidates: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    good, bad = split_bad_provider_inferences(candidates)
-    return (
-        good,
-        [
-            _rejection(
-                reason="bad_provider_inference",
-                candidate=candidate,
-                reason_detail=str(candidate.get("reasonDetail") or ""),
-            )
-            for candidate in bad
-        ],
-    )
-
-
-async def _probe_candidates_async(
-    candidates: list[dict[str, Any]],
-    *,
-    timeout_s: int,
-    fetcher,
-) -> list[tuple[dict[str, Any], bool, int, str, int]]:
-    return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
-
-
-def _prepare_gamedevmap_active_batch_rows(
-    rows: list[dict[str, Any]],
-    *,
-    index_url: str,
-) -> active_audit_runtime.ActiveAuditPreparedRows:
-    direct_provider_rows: list[dict[str, Any]] = []
-    homepage_rows: list[dict[str, Any]] = []
-    rejected_missing: list[dict[str, Any]] = []
-    for row in rows:
-        studio = str(row.get("studio") or "").strip()
-        target_url = _row_url(row)
-        if not studio or not target_url:
-            rejected_missing.append(
-                _rejection(
-                    reason="missing_studio_or_url",
-                    row=row,
-                    reason_detail="missing_studio_or_url",
-                )
-            )
-            continue
-        inferred = infer_web_candidate(
-            target_url,
-            studio,
-            nl_priority=False,
-            discovery_method="gamedevmap",
-        )
-        if inferred:
-            inferred["careersUrl"] = target_url
-            direct_provider_rows.append(
-                _apply_gamedevmap_provenance(
-                    inferred,
-                    row,
-                    index_url=index_url,
-                    include_direct_url=True,
-                )
-            )
-        else:
-            homepage_rows.append(row)
-    return active_audit_runtime.ActiveAuditPreparedRows(
-        direct_provider_candidates=direct_provider_rows,
-        homepage_rows=homepage_rows,
-        rejected_rows=rejected_missing,
-    )
-
-
 def _fetch_gamedevmap_active_homepages(
     rows: list[dict[str, Any]],
     *,
@@ -1507,29 +956,6 @@ def _apply_gamedevmap_active_recovery(
     )
 
 
-def _merge_gamedevmap_active_batch_candidates(
-    direct_provider_rows: list[dict[str, Any]],
-    provider_rows: list[dict[str, Any]],
-    static_rows: list[dict[str, Any]],
-    recovery_provider_rows: list[dict[str, Any]],
-    recovery_static_rows: list[dict[str, Any]],
-) -> active_audit_runtime.ActiveAuditCandidateMergeResult:
-    all_candidates = unique_sources(
-        [
-            *direct_provider_rows,
-            *provider_rows,
-            *static_rows,
-            *recovery_provider_rows,
-            *recovery_static_rows,
-        ]
-    )
-    all_candidates, bad_provider_rejections = _filter_bad_provider_inferences(all_candidates)
-    return active_audit_runtime.ActiveAuditCandidateMergeResult(
-        candidates=all_candidates,
-        rejected_rows=bad_provider_rejections,
-    )
-
-
 def _build_gamedevmap_active_batch_strategy(
     *,
     artifact: dict[str, Any],
@@ -1625,105 +1051,6 @@ def _build_gamedevmap_active_batch_strategy(
         ),
         progress_callback=progress_callback,
     )
-
-
-def _build_gamedevmap_active_loop_strategy(
-    *,
-    artifact: dict[str, Any],
-    output_path: Path,
-    parsed_rows: list[dict[str, Any]],
-    representative_rows: list[dict[str, Any]],
-    completed_urls: set[str],
-    compare_artifact_path: Path | str | None,
-    batch_strategy: active_audit_runtime.ActiveAuditBatchStrategy,
-    progress_callback: Callable[[dict[str, Any]], None] | None = None,
-) -> active_audit_runtime.ActiveAuditLoopStrategy:
-    return active_audit_runtime.build_active_audit_loop_strategy(
-        artifact=artifact,
-        row_identity=_row_url,
-        batch_strategy=batch_strategy,
-        completed_identities=completed_urls,
-        emit_batch_log=lambda batch_number, row_count, cursor: emit_log(
-            "GameDevMap active-source dry run: "
-            f"batch={batch_number}, rows={row_count}, cursor={cursor}."
-        ),
-        before_write=lambda: apply_gamedevmap_lost_recovery_audit(
-            artifact,
-            compare_artifact_path=compare_artifact_path,
-        ),
-        write_artifact=lambda complete: active_audit_runtime.finalize_active_audit_artifact(
-            artifact,
-            output_path,
-            completed_identities=completed_urls,
-            complete=complete,
-            completed_cursor_position=len(representative_rows),
-            completed_key="completedUrls",
-            summarize=lambda current, identities: _summarize_artifact(
-                current,
-                parsed_rows=parsed_rows,
-                representative_rows=representative_rows,
-                completed_urls=identities,
-            ),
-        ),
-        progress_callback=progress_callback,
-    )
-
-
-def _build_gamedevmap_subtask_progress_callback(
-    *,
-    artifact: dict[str, Any],
-    representative_rows: list[dict[str, Any]],
-    completed_urls: set[str],
-    batch_size: int,
-    progress_callback: Callable[[dict[str, Any]], None] | None,
-) -> Callable[[dict[str, Any]], None] | None:
-    if progress_callback is None:
-        return None
-
-    total_urls = len(representative_rows)
-
-    def _callback(event: dict[str, Any]) -> None:
-        progress = _as_dict(artifact.get("progress"))
-        summary = _as_dict(artifact.get("summary"))
-        phase = str(event.get("phase") or "audit").strip()
-        phase_label = str(event.get("phaseLabel") or "GameDevMap active audit").strip()
-        completed = _safe_int(event.get("completed"), len(completed_urls))
-        if completed <= 0:
-            completed = _safe_int(progress.get("completedUrlsCount"), len(completed_urls))
-        total = _safe_int(event.get("total"), total_urls) or total_urls
-        phase_completed = _safe_int(event.get("phaseCompleted"), 0)
-        phase_total = _safe_int(event.get("phaseTotal"), 0)
-        counts = {
-            "subtaskKey": "gamedevmap_active_audit",
-            "subtaskLabel": "GameDevMap active audit",
-            "activeAuditPhase": phase,
-            "activeAuditCompletedUrls": completed,
-            "activeAuditTotalUrls": total,
-            "activeAuditBatch": _safe_int(event.get("batch"), 0),
-            "activeAuditBatchSize": int(batch_size),
-            "activeAuditBatchRows": _safe_int(event.get("batchRows"), 0),
-            "activeAuditCursor": _safe_int(event.get("cursor"), 0),
-            "activeAuditPhaseCompleted": phase_completed,
-            "activeAuditPhaseTotal": phase_total,
-            "activeAuditHomepageFetched": _safe_int(summary.get("homepagesFetched"), 0),
-            "activeAuditRecoveryFetched": _safe_int(summary.get("recoveryNetworkFetchAttempts"), 0),
-            "activeAuditRecoveryAnalyzed": _safe_int(summary.get("recoveryPagesFetched"), 0),
-            "activeAuditCandidates": len(_as_list(artifact.get("allCandidates"))),
-            "activeAuditFailures": len(_as_list(artifact.get("failures"))),
-        }
-        if "recoveryPayloads" in event:
-            counts["activeAuditRecoveryPayloads"] = _safe_int(event.get("recoveryPayloads"), 0)
-        progress_callback(
-            {
-                "phaseKey": "scanning_sources",
-                "phaseLabel": "Scanning GameDevMap directory",
-                "targetLabel": phase_label,
-                "counts": counts,
-                "force": bool(event.get("force")),
-            }
-        )
-
-    return _callback
 
 
 def run_gamedevmap_active_source_dry_run(
@@ -1899,44 +1226,6 @@ def _active_audit_ttl_minutes(cfg: dict[str, Any]) -> int:
         return 360
 
 
-def _gamedevmap_artifact_signature_matches(
-    artifact: dict[str, Any],
-    *,
-    expected_signature: dict[str, Any],
-) -> bool:
-    if int(artifact.get("schemaVersion") or 0) != int(DRY_RUN_SCHEMA_VERSION):
-        return False
-    existing = _as_dict(_as_dict(artifact.get("runtime")).get("configSignature"))
-    if existing == expected_signature:
-        return True
-    existing_without_chunking = dict(existing)
-    expected_without_chunking = dict(expected_signature)
-    existing_without_chunking.pop("activeAuditBatchSize", None)
-    expected_without_chunking.pop("activeAuditBatchSize", None)
-    return existing_without_chunking == expected_without_chunking
-
-
-def _gamedevmap_artifact_is_fresh(
-    artifact: dict[str, Any],
-    *,
-    expected_signature: dict[str, Any],
-    ttl_minutes: int,
-) -> bool:
-    if not bool(_as_dict(artifact.get("progress")).get("complete")):
-        return False
-    if not _gamedevmap_artifact_signature_matches(
-        artifact,
-        expected_signature=expected_signature,
-    ):
-        return False
-    if ttl_minutes <= 0:
-        return False
-    updated_at = audit_ledger.parse_artifact_time(
-        artifact.get("updatedAt") or artifact.get("finishedAt")
-    )
-    return bool(updated_at and datetime.now(UTC) - updated_at <= timedelta(minutes=ttl_minutes))
-
-
 def run_gamedevmap_source_audit(
     *,
     timeout_s: int,
@@ -2016,32 +1305,6 @@ def run_gamedevmap_source_audit(
         ),
         cache_hit_log=_emit_cache_hit_progress,
         emit_log_fn=emit_log,
-    )
-
-
-def gamedevmap_validated_candidates_from_artifact(
-    artifact: dict[str, Any],
-    *,
-    promote_validated_static: bool = True,
-    validated_static_queue_cap: int = 0,
-    validated_static_domain_cap: int = 0,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    return active_audit_runtime.validated_active_candidates_from_artifact(
-        artifact,
-        active_key="activeCandidates",
-        identity_fn=probe_candidate_id,
-        validation_metadata={
-            "prevalidatedDiscovery": True,
-            "gamedevmapAuditValidated": True,
-        },
-        source_directory="gamedevmap",
-        static_transform=lambda row: _validated_static_audit_candidate(
-            row,
-            promote_validated_static=promote_validated_static,
-            validated_static_queue_cap=validated_static_queue_cap,
-            validated_static_domain_cap=validated_static_domain_cap,
-        ),
-        unique_rows=unique_sources,
     )
 
 
