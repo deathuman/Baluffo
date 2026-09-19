@@ -10,20 +10,12 @@ extended with a minimal German vocabulary for exactly this board.
 
 from __future__ import annotations
 
-from src.jobs.adapters.plugins.static._runner import (
-    SimpleStaticPlugin,
-    simple_static_run,
-    static_identity_handler,
-)
+from src.jobs.adapters.plugins.static._runner import static_feed_leaf
 from src.jobs.feed_urls import site_rss_url
 
-_SPEC = SimpleStaticPlugin(
+_SPEC, can_handle, run = static_feed_leaf(
     source_id="thegoodevil",
     default_company="The Good Evil",
+    identities=("thegoodevil.com", "www.thegoodevil.com"),
     feed_url_builder=site_rss_url,
-    filter_feed_keywords=True,
 )
-
-can_handle = static_identity_handler("thegoodevil.com", "www.thegoodevil.com")
-
-run = simple_static_run(_SPEC, parse_html=None)

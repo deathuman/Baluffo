@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET tests.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from src.bridge.admin_bootstrap import AdminBootstrapApi
@@ -60,6 +61,26 @@ class _GetRouteApi(
     def desktop_local_data_store(self) -> Any: ...
 
 
+# Ordered first-match-wins dispatch table. The sequence is contract: several
+# handlers overlap, so the first one that claims the path wins. Do not reorder,
+# sort, or tidy this tuple.
+_GET_ROUTE_HANDLERS: tuple[Callable[..., bool], ...] = (
+    handle_app_routes,
+    handle_admin_bootstrap_routes,
+    handle_admin_ops_tab_counts_routes,
+    handle_discovery_routes,
+    handle_local_data_get_routes,
+    handle_registry_routes,
+    handle_fetch_report_routes,
+    handle_ops_status_routes,
+    handle_ops_diagnostic_routes,
+    handle_source_policy_routes,
+    handle_registry_conflict_routes,
+    handle_sync_routes,
+    handle_pipeline_task_routes,
+)
+
+
 def handle_get(
     handler: BridgeResponseWriter, *, api: _GetRouteApi, path: str, query: dict[str, list[str]]
 ) -> bool:
@@ -68,43 +89,8 @@ def handle_get(
     Important: `api` must be the currently running bridge route API instance.
     """
 
-    if handle_app_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_admin_bootstrap_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_admin_ops_tab_counts_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_discovery_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_local_data_get_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_registry_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_fetch_report_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_ops_status_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_ops_diagnostic_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_source_policy_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_registry_conflict_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_sync_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if handle_pipeline_task_routes(handler, api=api, path=path, query=query):
-        return True
+    for route_handler in _GET_ROUTE_HANDLERS:
+        if route_handler(handler, api=api, path=path, query=query):
+            return True
 
     return False

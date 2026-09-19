@@ -8,19 +8,11 @@ role-keyword filter before it can become a row.
 from __future__ import annotations
 
 from src.jobs.adapters.plugins.static._feed_postings import site_feed_url
-from src.jobs.adapters.plugins.static._runner import (
-    SimpleStaticPlugin,
-    simple_static_run,
-    static_identity_handler,
-)
+from src.jobs.adapters.plugins.static._runner import static_feed_leaf
 
-_SPEC = SimpleStaticPlugin(
+_SPEC, can_handle, run = static_feed_leaf(
     source_id="arsanesia",
     default_company="Arsanesia",
+    identities=("arsanesia.com", "www.arsanesia.com"),
     feed_url_builder=site_feed_url,
-    filter_feed_keywords=True,
 )
-
-can_handle = static_identity_handler("arsanesia.com", "www.arsanesia.com")
-
-run = simple_static_run(_SPEC, parse_html=None)

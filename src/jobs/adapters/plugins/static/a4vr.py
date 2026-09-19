@@ -2,22 +2,7 @@ from __future__ import annotations
 
 import re
 
-from src.jobs.adapters.plugins.static._runner import (
-    SimpleStaticContext,
-    SimpleStaticPlugin,
-    simple_static_run,
-    static_identity_handler,
-    static_list_only_job_rows,
-)
-from src.jobs.models import RawJob
-
-_SPEC = SimpleStaticPlugin(
-    source_id="a4vr",
-    default_company="A4VR",
-    parser_stale_hint="a4vr_listing_present_but_plugin_empty",
-)
-
-can_handle = static_identity_handler("a4vr.com", "www.a4vr.com")
+from src.jobs.adapters.plugins.static._runner import static_list_only_leaf
 
 # Squarespace careers page: each posting is an <h2><strong>POSITION: ...</strong></h2>
 # block with no per-role detail link. Blocks are split only on "POSITION:" headings:
@@ -43,11 +28,14 @@ def _is_speculative(title: str) -> bool:
     )
 
 
-def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
-    rows = static_list_only_job_rows(ctx, block_sep=_BLOCK_SEP, title_re=_TITLE_RE)
-    # Defensive: the speculative INITIATIVBEWERBUNG block is never a split point, but
-    # drop it explicitly in case the page markup order ever changes.
-    return [row for row in rows if not _is_speculative(row.get("title") or "")]
-
-
-run = simple_static_run(_SPEC, _parse_html)
+# Defensive: the speculative INITIATIVBEWERBUNG block is never a split point, but
+# drop it explicitly in case the page markup order ever changes.
+_SPEC, can_handle, run = static_list_only_leaf(
+    source_id="a4vr",
+    default_company="A4VR",
+    parser_stale_hint="a4vr_listing_present_but_plugin_empty",
+    identities=("a4vr.com", "www.a4vr.com"),
+    block_sep=_BLOCK_SEP,
+    title_re=_TITLE_RE,
+    row_filter=lambda row: not _is_speculative(row.get("title") or ""),
+)

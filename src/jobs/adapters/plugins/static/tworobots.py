@@ -2,22 +2,7 @@ from __future__ import annotations
 
 import re
 
-from src.jobs.adapters.plugins.static._runner import (
-    SimpleStaticContext,
-    SimpleStaticPlugin,
-    simple_static_run,
-    static_identity_handler,
-    static_list_only_job_rows,
-)
-from src.jobs.models import RawJob
-
-_SPEC = SimpleStaticPlugin(
-    source_id="tworobots",
-    default_company="Two Robots Studios",
-    parser_stale_hint="tworobots_listing_present_but_plugin_empty",
-)
-
-can_handle = static_identity_handler("trb.tworobots.com", "www.trb.tworobots.com")
+from src.jobs.adapters.plugins.static._runner import static_list_only_leaf
 
 # Server-rendered role cards on the careers page: each opening is a
 # <div class="role-card ..."> block with a <div class="role-title">Title</div>
@@ -27,9 +12,11 @@ can_handle = static_identity_handler("trb.tworobots.com", "www.trb.tworobots.com
 _BLOCK_SEP = re.compile(r'(?is)(?=class="[^"]*role-card)')
 _TITLE_RE = re.compile(r'(?is)class="[^"]*role-title[^"]*"[^>]*>(.*?)</div>')
 
-
-def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
-    return static_list_only_job_rows(ctx, block_sep=_BLOCK_SEP, title_re=_TITLE_RE)
-
-
-run = simple_static_run(_SPEC, _parse_html)
+_SPEC, can_handle, run = static_list_only_leaf(
+    source_id="tworobots",
+    default_company="Two Robots Studios",
+    parser_stale_hint="tworobots_listing_present_but_plugin_empty",
+    identities=("trb.tworobots.com", "www.trb.tworobots.com"),
+    block_sep=_BLOCK_SEP,
+    title_re=_TITLE_RE,
+)

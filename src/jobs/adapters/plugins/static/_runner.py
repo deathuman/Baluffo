@@ -663,3 +663,71 @@ def simple_static_run(
         )
 
     return run
+
+
+# ``(_SPEC, can_handle, run)`` as a leaf plugin module exposes them.
+StaticLeafModuleGlobals = tuple[
+    SimpleStaticPlugin,
+    Callable[[AdapterPluginContext], bool],
+    Callable[..., list[RawJob]],
+]
+
+
+def static_list_only_leaf(
+    *,
+    source_id: str,
+    default_company: str,
+    identities: tuple[str, ...],
+    block_sep: re.Pattern[str],
+    title_re: re.Pattern[str],
+    parser_stale_hint: str = "",
+    row_filter: Callable[[RawJob], bool] | None = None,
+) -> StaticLeafModuleGlobals:
+    """Build a list-only leaf plugin's module globals from its one row of data.
+
+    A list-only leaf is exactly "split the page on ``block_sep`` and read each role
+    title with ``title_re``", so the modules differ only in that row: the studio
+    identity, the claimed hosts, and the two documented regexes. This factory owns the
+    repeated spec/handler/run scaffolding so the module keeps the part that is real
+    content -- the commented regexes.
+
+    ``row_filter`` is the escape hatch for the pages whose hero heading or speculative
+    block reuses the role markup and must be dropped after extraction.
+    """
+    spec = SimpleStaticPlugin(
+        source_id=source_id,
+        default_company=default_company,
+        parser_stale_hint=parser_stale_hint,
+    )
+
+    def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
+        rows = static_list_only_job_rows(ctx, block_sep=block_sep, title_re=title_re)
+        if row_filter is None:
+            return rows
+        return [row for row in rows if row_filter(row)]
+
+    return spec, static_identity_handler(*identities), simple_static_run(spec, _parse_html)
+
+
+def static_feed_leaf(
+    *,
+    source_id: str,
+    default_company: str,
+    identities: tuple[str, ...],
+    feed_url_builder: Callable[[str], str],
+    filter_feed_keywords: bool = True,
+) -> StaticLeafModuleGlobals:
+    """Build a feed-mode leaf plugin's module globals from its one row of data.
+
+    Feed-mode leaves recover rows from a server-rendered RSS/Atom feed instead of
+    parsing the page, so they carry no listing regexes: ``feed_url_builder`` resolves
+    the feed URL from the page URL, and ``filter_feed_keywords`` enables the
+    conservative role-keyword gate for feeds that mix studio news in with postings.
+    """
+    spec = SimpleStaticPlugin(
+        source_id=source_id,
+        default_company=default_company,
+        feed_url_builder=feed_url_builder,
+        filter_feed_keywords=filter_feed_keywords,
+    )
+    return spec, static_identity_handler(*identities), simple_static_run(spec, None)
