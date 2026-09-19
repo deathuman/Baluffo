@@ -2,9 +2,27 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from tools.repo_health.inventory_common import (
+        NameCategoriesReferencesRow,
+        parse_python,
+        relative_posix,
+    )
+    from tools.repo_health.inventory_common import (
+        print_inventory as _print_inventory,
+    )
+except ImportError:  # direct script execution puts this directory on sys.path
+    from inventory_common import (
+        NameCategoriesReferencesRow,
+        parse_python,
+        relative_posix,
+    )
+    from inventory_common import (
+        print_inventory as _print_inventory,
+    )
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -83,31 +101,16 @@ for _name in MUTABLE_COMPAT_HOOKS:
 
 
 @dataclass(frozen=True)
-class DesktopUpdaterRootDependency:
+class DesktopUpdaterRootDependency(NameCategoriesReferencesRow):
     name: str
     categories: tuple[str, ...]
     references: tuple[str, ...]
 
-    def as_json(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "categories": list(self.categories),
-            "references": list(self.references),
-        }
-
-
-def _parse_python(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-
-def _relative(path: Path, repo_root: Path) -> str:
-    return path.relative_to(repo_root).as_posix()
-
 
 def _iter_dependency_references(path: Path, repo_root: Path) -> list[tuple[str, str]]:
-    tree = _parse_python(path)
+    tree = parse_python(path)
     references: list[tuple[str, str]] = []
-    relative = _relative(path, repo_root)
+    relative = relative_posix(path, repo_root)
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
             if node.value.id == "module":
@@ -149,7 +152,7 @@ def _iter_facade_monkeypatch_names(repo_root: Path) -> set[str]:
     monkeypatched: set[str] = set()
     for path in tests_root.rglob("*.py"):
         try:
-            tree = _parse_python(path)
+            tree = parse_python(path)
         except OSError:
             continue
         if not _imports_desktop_updater_as_updater(tree):
@@ -267,10 +270,6 @@ def check_desktop_updater_root_dependency_inventory(
                 f"referenced at {', '.join(row.references)}."
             )
     return failures
-
-
-def _print_inventory(inventory: tuple[DesktopUpdaterRootDependency, ...]) -> None:
-    print(json.dumps([row.as_json() for row in inventory], indent=2, sort_keys=True))
 
 
 def main() -> int:

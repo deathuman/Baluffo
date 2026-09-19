@@ -7,6 +7,17 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from tools.repo_health.inventory_common import (
+        NameCategoriesReferencesRow,
+        parse_python,
+    )
+except ImportError:  # direct script execution puts this directory on sys.path
+    from inventory_common import (
+        NameCategoriesReferencesRow,
+        parse_python,
+    )
+
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE_API_PATH = Path("src/bridge/api.py")
 EXPECTED_BRIDGE_API_FIELD_COUNT = 95
@@ -53,21 +64,10 @@ PRODUCTION_SCAN_FILES = (Path("src/admin_bridge.py"),)
 
 
 @dataclass(frozen=True)
-class BridgeApiField:
+class BridgeApiField(NameCategoriesReferencesRow):
     name: str
     categories: tuple[str, ...]
     references: tuple[str, ...]
-
-    def as_json(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "categories": list(self.categories),
-            "references": list(self.references),
-        }
-
-
-def _parse_python(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
 def _bridge_api_class(tree: ast.Module) -> ast.ClassDef:
@@ -78,7 +78,7 @@ def _bridge_api_class(tree: ast.Module) -> ast.ClassDef:
 
 
 def bridge_api_field_names(repo_root: Path = ROOT) -> list[str]:
-    tree = _parse_python(repo_root / BRIDGE_API_PATH)
+    tree = parse_python(repo_root / BRIDGE_API_PATH)
     bridge_api = _bridge_api_class(tree)
     fields: list[str] = []
     for node in bridge_api.body:
@@ -88,7 +88,7 @@ def bridge_api_field_names(repo_root: Path = ROOT) -> list[str]:
 
 
 def _bridge_api_service_wired_fields(repo_root: Path, field_names: set[str]) -> set[str]:
-    tree = _parse_python(repo_root / BRIDGE_API_PATH)
+    tree = parse_python(repo_root / BRIDGE_API_PATH)
     bridge_api = _bridge_api_class(tree)
     wired: set[str] = set()
     for node in bridge_api.body:
@@ -104,7 +104,7 @@ def _bridge_api_service_wired_fields(repo_root: Path, field_names: set[str]) -> 
 
 
 def _call_keyword_fields(path: Path, field_names: set[str]) -> set[str]:
-    tree = _parse_python(path)
+    tree = parse_python(path)
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -115,7 +115,7 @@ def _call_keyword_fields(path: Path, field_names: set[str]) -> set[str]:
 
 
 def _api_attribute_refs(path: Path, field_names: set[str]) -> set[str]:
-    tree = _parse_python(path)
+    tree = parse_python(path)
     refs: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
@@ -139,7 +139,7 @@ def _api_attribute_refs(path: Path, field_names: set[str]) -> set[str]:
 
 
 def _test_override_refs(path: Path, field_names: set[str]) -> set[str]:
-    tree = _parse_python(path)
+    tree = parse_python(path)
     refs: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in field_names:

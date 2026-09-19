@@ -19,6 +19,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.shared.utils import int_or_default as _int
 from src.url_hosts import url_host_matches_domain
+from tools.measurements.pipeline._common import candidate_roots as _candidate_roots
+from tools.measurements.pipeline._common import read_report_json as _read_json
 
 FETCH_REPORT_NAME = "jobs-fetch-report.json"
 _EXPECTED_CLI_FAILURES = (OSError, TypeError, ValueError)
@@ -40,26 +42,6 @@ MONITOR_NON_PRIMARY_MERGE_COUNT_KEYS = {
     "monitorSocialKey": "socialKey",
     "monitorUnknown": "unknown",
 }
-
-
-def _read_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise FileNotFoundError(f"Missing report file: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON in report file: {path}") from exc
-
-
-def _candidate_roots(repo_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    for candidate in (repo_root / "data", repo_root / "_out" / "latest"):
-        if candidate.is_dir():
-            roots.append(candidate)
-    runs_root = repo_root / "_out" / "runs"
-    if runs_root.is_dir():
-        roots.extend(path for path in runs_root.iterdir() if path.is_dir())
-    return roots
 
 
 def _resolve_latest_fetch_report(repo_root: Path) -> Path:

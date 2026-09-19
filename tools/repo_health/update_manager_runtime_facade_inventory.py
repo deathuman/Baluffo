@@ -2,9 +2,27 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from tools.repo_health.inventory_common import (
+        PathModuleLineCategoriesRow,
+        parse_python,
+        relative_posix,
+    )
+    from tools.repo_health.inventory_common import (
+        print_inventory as _print_inventory,
+    )
+except ImportError:  # direct script execution puts this directory on sys.path
+    from inventory_common import (
+        PathModuleLineCategoriesRow,
+        parse_python,
+        relative_posix,
+    )
+    from inventory_common import (
+        print_inventory as _print_inventory,
+    )
 
 ROOT = Path(__file__).resolve().parents[2]
 FACADE_MODULE = "src.ship.update_manager"
@@ -12,25 +30,10 @@ EXPECTED_RUNTIME_FACADE_IMPORT_COUNT = 0
 
 
 @dataclass(frozen=True)
-class UpdateManagerRuntimeFacadeImport:
+class UpdateManagerRuntimeFacadeImport(PathModuleLineCategoriesRow):
     path: str
     module: str
     line: int
-
-    def as_json(self) -> dict[str, object]:
-        return {
-            "path": self.path,
-            "module": self.module,
-            "line": self.line,
-        }
-
-
-def _parse_python(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-
-def _relative(path: Path, repo_root: Path) -> str:
-    return path.relative_to(repo_root).as_posix()
 
 
 def _iter_runtime_python_paths(repo_root: Path) -> list[Path]:
@@ -40,12 +43,12 @@ def _iter_runtime_python_paths(repo_root: Path) -> list[Path]:
     return sorted(
         path
         for path in ship_root.rglob("*.py")
-        if _relative(path, repo_root) != "src/ship/update_manager.py"
+        if relative_posix(path, repo_root) != "src/ship/update_manager.py"
     )
 
 
 def _imported_facade_modules(path: Path) -> list[tuple[str, int]]:
-    tree = _parse_python(path)
+    tree = parse_python(path)
     imports: list[tuple[str, int]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -73,7 +76,7 @@ def collect_update_manager_runtime_facade_inventory(
 ) -> tuple[UpdateManagerRuntimeFacadeImport, ...]:
     rows: list[UpdateManagerRuntimeFacadeImport] = []
     for path in _iter_runtime_python_paths(repo_root):
-        relative = _relative(path, repo_root)
+        relative = relative_posix(path, repo_root)
         for module, line in _imported_facade_modules(path):
             rows.append(
                 UpdateManagerRuntimeFacadeImport(
@@ -103,10 +106,6 @@ def check_update_manager_runtime_facade_inventory(
             f"{row.path}:{row.line} imports {row.module}."
         )
     return failures
-
-
-def _print_inventory(inventory: tuple[UpdateManagerRuntimeFacadeImport, ...]) -> None:
-    print(json.dumps([row.as_json() for row in inventory], indent=2, sort_keys=True))
 
 
 def main() -> int:

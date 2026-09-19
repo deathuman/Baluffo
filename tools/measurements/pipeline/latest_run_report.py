@@ -20,6 +20,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src import pipeline_audit as audit
+from tools.measurements.pipeline._common import candidate_roots as _candidate_roots
+from tools.measurements.pipeline._common import read_report_json as _read_json
 
 DISCOVERY_REPORT_NAME = "source-discovery-report.json"
 FETCH_REPORT_NAME = "jobs-fetch-report.json"
@@ -27,15 +29,6 @@ JOBS_UNIFIED_NAME = "jobs-unified.json"
 PARSER_REGRESSION_QUEUE_NAME = "jobs-parser-regression-queue.json"
 BROWSER_FALLBACK_QUEUE_NAME = "jobs-browser-fallback-queue.json"
 _EXPECTED_CLI_FAILURES = (OSError, TypeError, ValueError)
-
-
-def _read_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise FileNotFoundError(f"Missing report file: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON in report file: {path}") from exc
 
 
 def _read_json_list(path: Path) -> list[dict[str, Any]]:
@@ -48,17 +41,6 @@ def _read_json_list(path: Path) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [row for row in payload if isinstance(row, dict)]
     return []
-
-
-def _candidate_roots(repo_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    for candidate in (repo_root / "data", repo_root / "_out" / "latest"):
-        if candidate.is_dir():
-            roots.append(candidate)
-    runs_root = repo_root / "_out" / "runs"
-    if runs_root.is_dir():
-        roots.extend(path for path in runs_root.iterdir() if path.is_dir())
-    return roots
 
 
 def _resolve_latest_artifact_path(repo_root: Path, filename: str) -> Path:

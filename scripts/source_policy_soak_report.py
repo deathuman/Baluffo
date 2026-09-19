@@ -1,489 +1,419 @@
 #!/usr/bin/env python3
-"""Read-only source-policy/runtime evidence soak report."""
+"""Read-only source-policy/runtime evidence soak report.
+
+Thin coordinator: the implementation lives in sibling leaf modules and every
+original module attribute is re-exported here, so importers and tests keep
+working unchanged."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import Counter
-from datetime import UTC, datetime
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+_repo_root = Path(__file__).resolve().parents[1]
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+del _repo_root
 
-from src.jobs.adapters.static_sources import (
-    static_source_name_for_registry_row as runtime_static_source_name_for_registry_row,
+from scripts.source_policy_soak_report_cleanup import (
+    UTC,
+    _active_static_row_by_token,
+    _backup_source_policy,
+    _cleanup_readiness_hash,
+    _cleanup_row_readiness_key,
+    _conservative_static_cleanup_proposals_section,
+    _find_forbidden_source_sync_tokens,
+    _overlap_counts,
+    _parse_iso_datetime,
+    _proposal_by_pair,
+    _source_sync_section,
+    _suppression_evidence_for_pair,
+    _timestamp_age_seconds,
+    datetime,
+    hashlib,
 )
-from src.jobs.common.contracts_provider_coverage import normalize_provider_coverage_payload
-from src.jobs.common.contracts_provider_static_overlap import (
-    normalize_provider_static_overlap_payload,
+from scripts.source_policy_soak_report_evidence import (
+    _artifact_inputs,
+    _discovery_rows,
+    _fetch_only_sources_mode,
+    _find_likely_registry_row,
+    _find_linked_static_registry_row,
+    _find_provider_registry_row,
+    _find_registry_row,
+    _first_clean_text,
+    _first_int_value,
+    _gate,
+    _list_rows,
+    _pair_key,
+    _policy_pairs,
+    _provider_counts,
+    _provider_coverage_status_by_token,
+    _read_json_artifact,
+    _source_evidence_rows,
+    _source_identity_tokens,
+    _source_name,
+    _source_row_excluded_by_cache,
+    _source_row_tokens,
+    _source_state_rows,
+    _source_state_token_index,
+    _source_token_index,
+    _static_loader_name_for_registry_row,
+    _static_loader_name_index,
+    _static_registry_identity_tokens,
+    _static_source_url,
+    _unique_text,
+    _warning_gate,
 )
-from src.jobs.common.contracts_redundant_static_proposals import (
-    normalize_redundant_static_proposals_payload,
+from scripts.source_policy_soak_report_links import (
+    _active_registry_static_link,
+    _advisory_link_rows,
+    _advisory_provider_keys,
+    _advisory_static_candidate,
+    _ambiguity_candidate_static,
+    _ambiguity_groups,
+    _block_colliding_static_link_targets,
+    _blocked_link_actionability,
+    _blocked_link_candidates,
+    _blocker_examples,
+    _candidate_static_id,
+    _company_name_only_blockers,
+    _dedupe_link_rows,
+    _deterministic_static_ambiguity_resolution,
+    _disambiguation_blocker_counts,
+    _has_exact_link_evidence,
+    _host_matches_pattern,
+    _ignored_alternative_row,
+    _is_candidate_link,
+    _is_strong_source_state_candidate,
+    _link_blockers,
+    _link_reasons,
+    _linked_provider_row,
+    _positive_static_history,
+    _potential_review_link,
+    _provider_coverage_link_backfill_sort_key,
+    _provider_id_pair,
+    _provider_id_value,
+    _provider_identity_keys,
+    _provider_link_row,
+    _provider_matches_rule,
+    _provider_shaped_static_identity,
+    _provider_shaped_static_link_blockers,
+    _provider_weak_host_rows,
+    _recommended_api_payload,
+    _registry_backed_static_link,
+    _registry_static_candidate,
+    _resolution_example,
+    _resolve_provider_link_rows,
+    _review_candidates,
+    _source_state_evidence,
+    _source_state_for_static,
+    _static_candidate,
+    _static_candidates,
+    _static_evidence,
+    _static_url_key,
+    _suppress_unbacked_advisory_links_when_registry_link_exists,
+    _why_not_high_confidence,
+    _with_ignored_alternative,
+    _with_selected_link,
+    fnmatch,
+    urlparse,
 )
-from src.jobs.common.contracts_source_policy_recommendations import (
-    normalize_source_policy_recommendations_artifact,
+from scripts.source_policy_soak_report_markdown import (
+    _blocked_candidates_markdown_rows,
+    _conservative_cleanup_blocked_markdown_rows,
+    _conservative_cleanup_markdown_rows,
+    _markdown_cell,
+    _markdown_joined_values,
+    _markdown_table,
+    _migration_link_disambiguation_blocker_summary,
+    _provider_coverage_gap_markdown_rows,
+    _provider_coverage_next_action_markdown_rows,
+    _review_candidates_markdown_rows,
+    _static_scope_conflict_markdown_rows,
+    _static_scope_patch_proposal_markdown_rows,
+    _suppression_eligibility_markdown_rows,
 )
-from src.jobs.common.contracts_source_policy_review_state import (
-    normalize_source_policy_review_state_artifact,
+from scripts.source_policy_soak_report_sections import (
+    _active_static_rows_for_validated_providers,
+    _has_per_provider_identity,
+    _host_coverage_index,
+    _identity_for_gap_row,
+    _jobs_unified_rows,
+    _kept_output_host_breakdown,
+    _looks_like_provider_source_identity,
+    _provider_coverage_gap_bucket,
+    _provider_coverage_gap_example,
+    _provider_coverage_gaps_section,
+    _provider_coverage_next_action_section,
+    _provider_migration_activation_section,
+    _provider_source_rows_missing_migration_identity,
+    _provider_validation_diagnostic_example,
+    _provider_validation_diagnostics,
+    _row_urls_for_scope,
+    _safe_command,
+    _scope_listing_url,
+    _source_report_evidence_for_tokens,
+    _source_rows_include_dynamic_suppression,
+    _source_state_evidence_for_tokens,
+    _static_registry_scope_conflicts_section,
+    _static_scope_conflict_classification,
+    _url_from_row,
+    _url_host,
+    urlparse,
 )
-from src.jobs.common.contracts_static_suppression_policy import (
-    normalize_static_suppression_policy_payload,
-)
-from src.jobs.common.registry import registry_entries as common_registry_entries
-from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
-from src.jobs.text_utils import clean_text, norm_text
-from src.shared.json_io import read_json
-from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
-from src.shared.utils import int_or_default as _int_value
-from src.shared.utils import now_iso
-from src.source_discovery.config import SUPPORTED_PROVIDERS
-from src.source_discovery.provider_migration_advisory import (
+from scripts.source_policy_soak_report_spec import (
+    ARTIFACT_PATHS,
+    CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT,
+    CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
+    CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS,
+    JSON_REPORT_NAME,
+    LEAN_REGISTRY_ARTIFACT_NAMES,
+    MARKDOWN_REPORT_NAME,
+    PROVIDER_ADAPTER_SOURCE_LOADERS,
+    PROVIDER_COVERAGE_GAP_BUCKETS,
+    PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT,
+    PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT,
+    PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY,
+    PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS,
+    PROVIDER_ID_FIELDS,
+    PROVIDER_MIGRATION_ACTIONS,
+    PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS,
+    PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES,
+    REDUNDANT_STATIC_IF_PROVIDER,
+    REGISTRY_SEED_PATHS,
+    ROOT,
+    SCHEMA_VERSION,
+    SOURCE_SYNC_ALLOWED_KEYS,
+    SOURCE_SYNC_FORBIDDEN_TOKENS,
+    STATIC_LIKE_ADAPTERS,
+    STATIC_LIKE_STAGES,
+    STATIC_SCOPE_APPLY_AUDIT_NAME,
+    SUPPORTED_PROVIDERS,
+    _int_value,
+    as_json_list,
+    as_json_object,
     build_provider_migration_payload,
+    clean_text,
+    common_registry_entries,
     enrich_provider_migration_rows,
-)
-from src.source_registry_identity import source_identity
-from src.source_registry_io import load_json_array as load_registry_json_array
-
-SCHEMA_VERSION = "1.0"
-JSON_REPORT_NAME = "source-policy-soak-report.json"
-MARKDOWN_REPORT_NAME = "source-policy-soak-report.md"
-STATIC_SCOPE_APPLY_AUDIT_NAME = "static-scope-apply-audit.json"
-
-ARTIFACT_PATHS = {
-    "sourceDiscoveryReport": "source-discovery-report.json",
-    "sourceDiscoveryCandidates": "source-discovery-candidates.json",
-    "jobsFetchReport": "jobs-fetch-report.json",
-    "jobsSourceState": "jobs-source-state.json",
-    "sourcePolicyRecommendations": "source-policy-recommendations.json",
-    "sourcePolicyReviewState": "source-policy-review-state.json",
-    "sourceRegistryActive": "source-registry-active.json",
-    "sourceRegistryPending": "source-registry-pending.json",
-    "sourceRegistryRejected": "source-registry-rejected.json",
-    "sourceRegistryTombstones": "source-registry-tombstones.json",
-    "sourceSync": "source-sync.json",
-    "jobsUnified": "jobs-unified.json",
-}
-REGISTRY_SEED_PATHS = {
-    "source-registry-active.json": "defaults/source-registry-active.seed.json",
-    "source-registry-pending.json": "defaults/source-registry-pending.seed.json",
-}
-LEAN_REGISTRY_ARTIFACT_NAMES = {
-    "source-registry-active.json",
-    "source-registry-pending.json",
-}
-
-SOURCE_SYNC_ALLOWED_KEYS = {"schemaVersion", "generatedAt", "source", "active", "pending"}
-SOURCE_SYNC_FORBIDDEN_TOKENS = {
-    "sourcePolicy",
-    "sourcePolicyReviewState",
-    "sourcePolicyRecommendations",
-    "reviewState",
-    "manualSuppressionOverride",
-    "force_pause",
-    "recommendations",
-    "redundantStaticProposals",
-}
-PROVIDER_MIGRATION_ACTIONS = {
-    "add_provider_source",
-    "review_provider_migration",
-    "already_covered_by_provider",
-    "unsupported_provider",
-    "needs_probe",
-    "keep_static",
-    "insufficient_evidence",
-}
-STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
-STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
-CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
-CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT = 5
-CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS = 24 * 60 * 60
-PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT = 5
-PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT = 5
-PROVIDER_COVERAGE_GAP_BUCKETS = (
-    "unsupportedProviderDetected",
-    "providerDetectedNeedsProbe",
-    "stagedProviderNotFetched",
-    "fetchedButNotValidated",
-    "validatedProviderMissingMigrationSourceIdentity",
-    "staticStillActiveDespiteValidatedProvider",
-)
-PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES = (
-    "zeroKeptFetched",
-    "fetchError",
-    "notFetched",
-    "missingDetailEvidence",
-    "validated",
-)
-PROVIDER_ID_FIELDS = (
-    "slug",
-    "account",
-    "company_id",
-    "subdomain",
-    "api_url",
-    "feed_url",
-    "board_url",
-    "site_path",
-    "listing_url",
-    "base_url",
-)
-PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS = (
-    "stageableProviderCandidateCount",
-    "stagedProviderCandidateCount",
-    "stagingSkippedCount",
-    "stagingBlockedByDuplicateActiveCount",
-    "stagingBlockedByDuplicatePendingCount",
-    "stagingBlockedByUnsupportedProviderCount",
-    "stagingBlockedByInsufficientEvidenceCount",
-    "stagingBlockedByNeedsProbeCount",
-    "stagingBlockedByProviderRowBuildFailureCount",
-    "stagingBlockedByIdentityCollisionCount",
-    "stagingBlockedByAdapterMismatchCount",
-)
-PROVIDER_ADAPTER_SOURCE_LOADERS = {
-    "ashby": "ashby_sources",
-    "bamboohr": "bamboohr_sources",
-    "breezy": "breezy_sources",
-    "greenhouse": "greenhouse_boards",
-    "jazzhr": "jazzhr_sources",
-    "lever": "lever_sources",
-    "oracle_hcm": "oracle_hcm_sources",
-    "personio": "personio_sources",
-    "pinpoint": "pinpoint_sources",
-    "recruitee": "recruitee_sources",
-    "smartrecruiters": "smartrecruiters_sources",
-    "teamtailor": "teamtailor_sources",
-    "workable": "workable_sources",
-    "workday": "workday_sources",
-}
-PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY = {
-    "refresh_discovery_staging_evidence": 1,
-    "fetch_staged_provider_candidates": 2,
-    "debug_provider_validation": 3,
-    "review_one_migration_link": 4,
-    "plan_unsupported_provider_family": 5,
-    "resolve_link_ambiguity": 6,
-    "none": 0,
-}
-PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS = frozenset(
-    {
-        "insufficient_provider_success_history",
-        "source_state_not_ok",
-    }
+    json_object_rows,
+    load_registry_json_array,
+    norm_text,
+    normalize_provider_coverage_payload,
+    normalize_provider_static_overlap_payload,
+    normalize_redundant_static_proposals_payload,
+    normalize_source_policy_recommendations_artifact,
+    normalize_source_policy_review_state_artifact,
+    normalize_static_suppression_policy_payload,
+    now_iso,
+    read_json,
+    runtime_static_source_name_for_registry_row,
+    source_identity,
 )
 
-
-def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
-    source_path = path
-    status = "ok"
-    if not source_path.exists():
-        gzip_path = path.with_name(path.name + ".gz")
-        seed_rel_path = REGISTRY_SEED_PATHS.get(path.name)
-        seed_path = path.parent / seed_rel_path if seed_rel_path else None
-        if gzip_path.exists():
-            source_path = gzip_path
-        elif seed_path is not None and seed_path.exists():
-            source_path = seed_path
-            status = "seed"
-        else:
-            return {}, "missing", ""
-    try:
-        payload = read_json(source_path, None)
-        if payload is None:
-            return {}, "malformed", f"{source_path.name} is malformed"
-        if path.name in LEAN_REGISTRY_ARTIFACT_NAMES:
-            payload = load_registry_json_array(path, [])
-    except (OSError, json.JSONDecodeError) as exc:
-        return {}, "malformed", f"{source_path.name} is malformed: {exc}"
-    return payload, status, ""
-
-
-def _artifact_inputs(data_dir: Path) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
-    payloads: dict[str, Any] = {}
-    inputs: dict[str, Any] = {}
-    warnings: list[str] = []
-    for key, filename in ARTIFACT_PATHS.items():
-        path = data_dir / filename
-        payload, status, warning = _read_json_artifact(path)
-        payloads[key] = payload
-        inputs[key] = {"path": str(path), "status": status}
-        if warning:
-            warnings.append(warning)
-    if inputs["jobsFetchReport"]["status"] == "missing":
-        warnings.append("jobs-fetch-report.json is missing; runtime fetch evidence is unavailable.")
-    return payloads, inputs, warnings
-
-
-def _gate(
-    gate_id: str,
-    status: str,
-    message: str,
-    details: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": gate_id,
-        "status": status,
-        "message": message,
-        "details": details or {},
-    }
-
-
-def _warning_gate(
-    gate_id: str, message: str, details: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    return _gate(gate_id, "warning", message, details)
-
-
-def _source_state_rows(payload: Any) -> dict[str, dict[str, Any]]:
-    sources = as_json_object(payload).get("sources")
-    if not isinstance(sources, dict):
-        return {}
-    return {clean_text(key): value for key, value in sources.items() if isinstance(value, dict)}
-
-
-def _first_clean_text(mapping: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = clean_text(mapping.get(key))
-        if value:
-            return value
-    return ""
-
-
-def _first_int_value(mapping: dict[str, Any], *keys: str) -> int:
-    for key in keys:
-        value = mapping.get(key)
-        if value not in (None, ""):
-            return _int_value(value)
-    return 0
-
-
-def _list_rows(payload: Any) -> list[dict[str, Any]]:
-    return json_object_rows(payload)
-
-
-def _discovery_rows(report_payload: Any, candidates_payload: Any) -> list[dict[str, Any]]:
-    rows = []
-    rows.extend(json_object_rows(as_json_object(report_payload).get("candidates")))
-    rows.extend(_list_rows(candidates_payload))
-    seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
-    for row in rows:
-        key = (
-            clean_text(row.get("sourceId"))
-            or clean_text(row.get("name"))
-            or json.dumps(row, sort_keys=True)
-        )
-        if key not in seen:
-            seen.add(key)
-            unique.append(row)
-    return unique
-
-
-def _source_name(row: dict[str, Any]) -> str:
-    return clean_text(row.get("name") or row.get("source") or row.get("sourceId"))
-
-
-def _source_identity_tokens(row: dict[str, Any]) -> set[str]:
-    tokens = {
-        clean_text(row.get("id")),
-        clean_text(row.get("sourceId")),
-        clean_text(row.get("name")),
-        clean_text(row.get("source")),
-        clean_text(row.get("sourceIdentity")),
-        clean_text(row.get("migrationSourceIdentity")),
-    }
-    return {token for token in tokens if token}
-
-
-def _pair_key(row: dict[str, Any]) -> tuple[str, str]:
-    return (
-        norm_text(row.get("staticSourceId")) or norm_text(row.get("staticSourceName")),
-        norm_text(row.get("providerSourceId")) or norm_text(row.get("providerSourceName")),
-    )
-
-
-def _policy_pairs(policy: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        *json_object_rows(policy.get("suppressedPairs")),
-        *json_object_rows(policy.get("pausedPairs")),
-        *json_object_rows(policy.get("warningPairs")),
-    ]
-
-
-def _provider_counts(provider_coverage: dict[str, Any]) -> dict[str, int]:
-    status_counts = as_json_object(provider_coverage.get("statusCounts"))
-    validated = int(status_counts.get("validated_provider") or 0)
-    unstable = int(status_counts.get("unstable_provider") or 0)
-    failed = int(status_counts.get("failed_provider") or 0)
-    return {
-        "validatedProviderCount": validated,
-        "unstableFailedProviderCount": unstable + failed,
-    }
-
-
-def _source_token_index(rows: list[dict[str, Any]]) -> set[str]:
-    tokens: set[str] = set()
-    for row in rows:
-        tokens.update(_source_identity_tokens(row))
-    return tokens
-
-
-def _source_state_token_index(source_state_rows: dict[str, dict[str, Any]]) -> set[str]:
-    tokens: set[str] = set()
-    for name, row in source_state_rows.items():
-        tokens.add(clean_text(name))
-        tokens.update(_source_identity_tokens(as_json_object(row)))
-    return {token for token in tokens if token}
-
-
-def _provider_coverage_status_by_token(
-    provider_coverage: dict[str, Any],
-    source_state_rows: dict[str, dict[str, Any]],
-) -> dict[str, str]:
-    status_by_token: dict[str, str] = {}
-    for name, raw in source_state_rows.items():
-        row = as_json_object(raw)
-        status = clean_text(row.get("providerCoverageStatus"))
-        if not status:
-            continue
-        for token in {clean_text(name), *_source_identity_tokens(row)}:
-            if token:
-                status_by_token[token] = status
-    for key in (
-        "probingProviders",
-        "validatedProviders",
-        "unstableOrFailedProviders",
-        "needsReviewProviders",
-        "readyLaterProviders",
-    ):
-        for row in json_object_rows(provider_coverage.get(key)):
-            status = clean_text(row.get("providerCoverageStatus"))
-            if not status:
-                continue
-            for token in _source_identity_tokens(row):
-                status_by_token[token] = status
-    return status_by_token
-
-
-def _source_row_tokens(row: dict[str, Any]) -> set[str]:
-    tokens = set(_source_identity_tokens(row))
-    name = clean_text(row.get("name"))
-    if name.startswith("static_source::"):
-        tokens.add(name[len("static_source::") :])
-    return {token for token in tokens if token}
-
-
-def _source_evidence_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    evidence_rows: list[dict[str, Any]] = []
-    for row in source_rows:
-        evidence_rows.append(row)
-        source_loader_name = clean_text(row.get("name"))
-        adapter = clean_text(row.get("adapter"))
-        for detail in json_object_rows(row.get("details")):
-            detail_row = dict(detail)
-            if source_loader_name and not clean_text(detail_row.get("sourceLoaderName")):
-                detail_row["sourceLoaderName"] = source_loader_name
-            if adapter and not clean_text(detail_row.get("adapter")):
-                detail_row["adapter"] = adapter
-            evidence_rows.append(detail_row)
-    return evidence_rows
-
-
-def _find_registry_row(
-    *,
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]] | None = None,
-    identity: str,
-) -> tuple[str, dict[str, Any]] | None:
-    target = clean_text(identity)
-    if not target:
-        return None
-    for bucket, rows in (
-        ("active", active_rows),
-        ("pending", pending_rows),
-        ("rejected", rejected_rows or []),
-    ):
-        for row in rows:
-            if target in _source_identity_tokens(row):
-                return bucket, row
-    return None
-
-
-def _static_registry_identity_tokens(row: dict[str, Any]) -> set[str]:
-    url = _static_source_url(row)
-    tokens = {
-        clean_text(row.get("id")),
-        clean_text(row.get("sourceId")),
-        clean_text(row.get("sourceIdentity")),
-        clean_text(row.get("staticSourceId")),
-        clean_text(source_identity(row)),
-        url,
-        f"static:listing_url:{url}" if url else "",
-    }
-    return {token for token in tokens if token}
-
-
-def _find_linked_static_registry_row(
-    *,
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]],
-    identity: str,
-) -> tuple[str, dict[str, Any]] | None:
-    target = clean_text(identity)
-    if not target:
-        return None
-    bucket_rows = (
-        ("active", active_rows),
-        ("pending", pending_rows),
-        ("rejected", rejected_rows),
-    )
-    for bucket, rows in bucket_rows:
-        for row in rows:
-            if (
-                target in _static_registry_identity_tokens(row)
-                and clean_text(row.get("adapter")) in STATIC_LIKE_ADAPTERS
-            ):
-                return bucket, row
-    for bucket, rows in bucket_rows:
-        for row in rows:
-            if target in _static_registry_identity_tokens(row):
-                return bucket, row
-    return None
-
-
-def _static_loader_name_for_registry_row(row: dict[str, Any]) -> str:
-    return runtime_static_source_name_for_registry_row(row)
-
-
-def _unique_text(values: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        text = clean_text(value)
-        if text and text not in seen:
-            seen.add(text)
-            out.append(text)
-    return out
-
-
-def _static_loader_name_index(rows: list[dict[str, Any]]) -> dict[str, str]:
-    index: dict[str, str] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        name = _static_loader_name_for_registry_row(row)
-        for token in {*_source_identity_tokens(row), source_identity(row)}:
-            index.setdefault(token, name)
-    return index
+__all__ = [
+    "ARTIFACT_PATHS",
+    "Any",
+    "CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT",
+    "CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS",
+    "CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS",
+    "Counter",
+    "JSON_REPORT_NAME",
+    "LEAN_REGISTRY_ARTIFACT_NAMES",
+    "MARKDOWN_REPORT_NAME",
+    "PROVIDER_ADAPTER_SOURCE_LOADERS",
+    "PROVIDER_COVERAGE_GAP_BUCKETS",
+    "PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT",
+    "PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT",
+    "PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY",
+    "PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS",
+    "PROVIDER_ID_FIELDS",
+    "PROVIDER_MIGRATION_ACTIONS",
+    "PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS",
+    "PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES",
+    "REDUNDANT_STATIC_IF_PROVIDER",
+    "REGISTRY_SEED_PATHS",
+    "ROOT",
+    "SCHEMA_VERSION",
+    "SOURCE_SYNC_ALLOWED_KEYS",
+    "SOURCE_SYNC_FORBIDDEN_TOKENS",
+    "STATIC_LIKE_ADAPTERS",
+    "STATIC_LIKE_STAGES",
+    "STATIC_SCOPE_APPLY_AUDIT_NAME",
+    "SUPPORTED_PROVIDERS",
+    "UTC",
+    "_active_registry_static_link",
+    "_active_static_row_by_token",
+    "_active_static_rows_for_validated_providers",
+    "_advisory_link_rows",
+    "_advisory_provider_keys",
+    "_advisory_static_candidate",
+    "_ambiguity_candidate_static",
+    "_ambiguity_groups",
+    "_artifact_inputs",
+    "_backup_source_policy",
+    "_block_colliding_static_link_targets",
+    "_blocked_candidates_markdown_rows",
+    "_blocked_link_actionability",
+    "_blocked_link_candidates",
+    "_blocker_examples",
+    "_build_sections",
+    "_candidate_static_id",
+    "_cleanup_readiness_hash",
+    "_cleanup_row_readiness_key",
+    "_company_name_only_blockers",
+    "_conservative_cleanup_blocked_markdown_rows",
+    "_conservative_cleanup_markdown_rows",
+    "_conservative_static_cleanup_proposals_section",
+    "_dedupe_link_rows",
+    "_deterministic_static_ambiguity_resolution",
+    "_disambiguation_blocker_counts",
+    "_discovery_rows",
+    "_fetch_only_sources_mode",
+    "_find_forbidden_source_sync_tokens",
+    "_find_likely_registry_row",
+    "_find_linked_static_registry_row",
+    "_find_provider_registry_row",
+    "_find_registry_row",
+    "_first_clean_text",
+    "_first_int_value",
+    "_gate",
+    "_has_exact_link_evidence",
+    "_has_per_provider_identity",
+    "_host_coverage_index",
+    "_host_matches_pattern",
+    "_identity_for_gap_row",
+    "_ignored_alternative_row",
+    "_int_value",
+    "_is_candidate_link",
+    "_is_strong_source_state_candidate",
+    "_jobs_unified_rows",
+    "_kept_output_host_breakdown",
+    "_link_blockers",
+    "_link_reasons",
+    "_linked_provider_row",
+    "_list_rows",
+    "_looks_like_provider_source_identity",
+    "_markdown_cell",
+    "_markdown_joined_values",
+    "_markdown_table",
+    "_migration_link_disambiguation_blocker_summary",
+    "_overlap_counts",
+    "_pair_key",
+    "_parse_args",
+    "_parse_iso_datetime",
+    "_policy_pairs",
+    "_positive_static_history",
+    "_potential_review_link",
+    "_proposal_by_pair",
+    "_provider_counts",
+    "_provider_coverage_gap_bucket",
+    "_provider_coverage_gap_example",
+    "_provider_coverage_gap_markdown_rows",
+    "_provider_coverage_gaps_section",
+    "_provider_coverage_link_backfill_section",
+    "_provider_coverage_link_backfill_sort_key",
+    "_provider_coverage_next_action_markdown_rows",
+    "_provider_coverage_next_action_section",
+    "_provider_coverage_status_by_token",
+    "_provider_id_pair",
+    "_provider_id_value",
+    "_provider_identity_keys",
+    "_provider_link_row",
+    "_provider_matches_rule",
+    "_provider_migration_activation_section",
+    "_provider_shaped_static_identity",
+    "_provider_shaped_static_link_blockers",
+    "_provider_source_rows_missing_migration_identity",
+    "_provider_validation_diagnostic_example",
+    "_provider_validation_diagnostics",
+    "_provider_weak_host_rows",
+    "_read_json_artifact",
+    "_recommended_api_payload",
+    "_registry_backed_static_link",
+    "_registry_static_candidate",
+    "_resolution_example",
+    "_resolve_provider_link_rows",
+    "_review_candidates",
+    "_review_candidates_markdown_rows",
+    "_row_urls_for_scope",
+    "_rule_link_rows",
+    "_safe_command",
+    "_scope_listing_url",
+    "_source_evidence_rows",
+    "_source_identity_tokens",
+    "_source_name",
+    "_source_report_evidence_for_tokens",
+    "_source_row_excluded_by_cache",
+    "_source_row_tokens",
+    "_source_rows_include_dynamic_suppression",
+    "_source_state_evidence",
+    "_source_state_evidence_for_tokens",
+    "_source_state_for_static",
+    "_source_state_rows",
+    "_source_state_token_index",
+    "_source_sync_section",
+    "_source_token_index",
+    "_static_candidate",
+    "_static_candidates",
+    "_static_evidence",
+    "_static_loader_diagnostics",
+    "_static_loader_name_for_registry_row",
+    "_static_loader_name_index",
+    "_static_registry_identity_tokens",
+    "_static_registry_scope_conflicts_section",
+    "_static_scope_conflict_classification",
+    "_static_scope_conflict_markdown_rows",
+    "_static_scope_patch_proposal_markdown_rows",
+    "_static_source_url",
+    "_static_url_key",
+    "_suppress_unbacked_advisory_links_when_registry_link_exists",
+    "_suppression_eligibility_markdown_rows",
+    "_suppression_eligibility_section",
+    "_suppression_evidence_for_pair",
+    "_timestamp_age_seconds",
+    "_unique_text",
+    "_url_from_row",
+    "_url_host",
+    "_warning_gate",
+    "_why_not_high_confidence",
+    "_with_ignored_alternative",
+    "_with_selected_link",
+    "apply_static_scope_proposal",
+    "argparse",
+    "as_json_list",
+    "as_json_object",
+    "build_provider_migration_payload",
+    "build_soak_report",
+    "clean_text",
+    "common_registry_entries",
+    "datetime",
+    "enrich_provider_migration_rows",
+    "fnmatch",
+    "hashlib",
+    "json",
+    "json_object_rows",
+    "load_registry_json_array",
+    "main",
+    "norm_text",
+    "normalize_provider_coverage_payload",
+    "normalize_provider_static_overlap_payload",
+    "normalize_redundant_static_proposals_payload",
+    "normalize_source_policy_recommendations_artifact",
+    "normalize_source_policy_review_state_artifact",
+    "normalize_static_suppression_policy_payload",
+    "now_iso",
+    "read_json",
+    "render_markdown_report",
+    "runtime_static_source_name_for_registry_row",
+    "source_identity",
+    "urlparse",
+    "write_soak_report",
+]
 
 
 def _static_loader_diagnostics(
@@ -566,86 +496,6 @@ def _static_loader_diagnostics(
         "loaderNameMatchStatus": match_status,
         "loaderNotGeneratedReason": loader_not_generated_reason,
     }
-
-
-def _static_source_url(row: dict[str, Any]) -> str:
-    url = clean_text(row.get("listing_url") or row.get("careersUrl") or row.get("url"))
-    if url:
-        return url
-    pages = as_json_list(row.get("pages"))
-    for item in pages:
-        url = clean_text(item)
-        if url:
-            return url
-    return ""
-
-
-def _find_likely_registry_row(
-    *,
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]],
-    identity: str,
-    static_name: str,
-) -> tuple[str, dict[str, Any]] | None:
-    target_name = norm_text(static_name)
-    target_url = norm_text(identity.removeprefix("static:listing_url:"))
-    for bucket, rows in (
-        ("active", active_rows),
-        ("pending", pending_rows),
-        ("rejected", rejected_rows),
-    ):
-        for row in rows:
-            if target_name and target_name == norm_text(row.get("name")):
-                return bucket, row
-            if target_url and target_url == norm_text(_static_source_url(row)):
-                return bucket, row
-    return None
-
-
-def _fetch_only_sources_mode(fetch_report: dict[str, Any]) -> bool:
-    runtime = as_json_object(fetch_report.get("runtime"))
-    if as_json_list(runtime.get("onlySources")):
-        return True
-    if as_json_list(fetch_report.get("onlySources")):
-        return True
-    args = as_json_object(runtime.get("args"))
-    return bool(as_json_list(args.get("onlySources")) or clean_text(args.get("onlySources")))
-
-
-def _source_row_excluded_by_cache(row: dict[str, Any] | None) -> bool:
-    if not row:
-        return False
-    cache_decision = clean_text(row.get("cacheDecision"))
-    exclusion_reason = clean_text(row.get("exclusionReason"))
-    return cache_decision in {"skip_fresh", "cooldown_skip"} or exclusion_reason.startswith(
-        "cache_"
-    )
-
-
-def _find_provider_registry_row(
-    *,
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    source_name: str,
-    source_state_row: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
-    target_name = clean_text(source_name)
-    target_adapter = clean_text(
-        source_state_row.get("lastAdapter") or source_state_row.get("adapter")
-    )
-    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
-        for row in rows:
-            if target_name and clean_text(row.get("name")) == target_name:
-                return bucket, row
-            if (
-                target_name
-                and target_adapter
-                and clean_text(row.get("studio")) == target_name
-                and clean_text(row.get("adapter")) == target_adapter
-            ):
-                return bucket, row
-    return None
 
 
 def _suppression_eligibility_section(
@@ -914,1599 +764,6 @@ def _suppression_eligibility_section(
     )
 
 
-def _provider_migration_activation_section(
-    *,
-    discovery_report: dict[str, Any],
-    discovery_candidates: list[dict[str, Any]],
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    source_rows: list[dict[str, Any]],
-    source_state_rows: dict[str, dict[str, Any]],
-    provider_coverage: dict[str, Any],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    discovery_provider_migration = as_json_object(
-        as_json_object(discovery_report.get("candidateReview")).get("providerMigration")
-    )
-    computed_provider_migration = (
-        {}
-        if discovery_provider_migration
-        else build_provider_migration_payload(
-            discovery_candidates,
-            active_rows=active_rows,
-            pending_rows=pending_rows,
-            at="",
-        )
-    )
-    enriched_candidates = enrich_provider_migration_rows(
-        discovery_candidates,
-        active_rows=active_rows,
-        pending_rows=pending_rows,
-    )
-    action_counts = Counter(
-        clean_text(row.get("recommendedAction"))
-        for row in enriched_candidates
-        if clean_text(row.get("recommendedAction")) in PROVIDER_MIGRATION_ACTIONS
-    )
-    advisory_total = sum(action_counts.values())
-    staged_candidates = [
-        row
-        for row in discovery_candidates
-        if clean_text(row.get("candidateState")) == "staged_provider_candidate"
-        or bool(row.get("createdFromAdvisory"))
-    ]
-    actual_staged_count = len(staged_candidates)
-    pending_provider_migration = [
-        row
-        for row in pending_rows
-        if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
-    ]
-    pending_provider_adapters = [
-        adapter
-        for adapter in PROVIDER_ADAPTER_SOURCE_LOADERS
-        if any(clean_text(row.get("adapter")) == adapter for row in pending_provider_migration)
-    ]
-    pending_provider_source_loaders = [
-        PROVIDER_ADAPTER_SOURCE_LOADERS[adapter] for adapter in pending_provider_adapters
-    ]
-    source_evidence_rows = _source_evidence_rows(source_rows)
-    fetched_tokens = _source_token_index(source_evidence_rows) | _source_state_token_index(
-        source_state_rows
-    )
-    coverage_status_by_token = _provider_coverage_status_by_token(
-        provider_coverage, source_state_rows
-    )
-    validation_diagnostics = _provider_validation_diagnostics(
-        pending_provider_migration=pending_provider_migration,
-        source_rows=source_rows,
-        source_state_rows=source_state_rows,
-        provider_coverage=provider_coverage,
-    )
-    fetched_count = 0
-    validated_count = 0
-    for row in pending_provider_migration:
-        tokens = _source_identity_tokens(row)
-        if tokens & fetched_tokens:
-            fetched_count += 1
-        if any(coverage_status_by_token.get(token) == "validated_provider" for token in tokens):
-            validated_count += 1
-
-    supported_providers = {clean_text(provider) for provider in SUPPORTED_PROVIDERS}
-    active_provider_without_identity = [
-        row
-        for row in active_rows
-        if clean_text(row.get("adapter")) in supported_providers
-        and not clean_text(row.get("migrationSourceIdentity"))
-    ]
-    section = {
-        "advisoryTotalCandidates": advisory_total,
-        "addProviderSourceCount": int(action_counts.get("add_provider_source", 0)),
-        "reviewProviderMigrationCount": int(action_counts.get("review_provider_migration", 0)),
-        "stagingDiagnosticsSource": "computed_from_candidates"
-        if computed_provider_migration
-        else "discovery_report"
-        if discovery_provider_migration
-        else "none",
-        "actualStagedProviderCandidateCount": actual_staged_count,
-        "stagedProviderCandidateCount": actual_staged_count,
-        "pendingProviderMigrationCandidateCount": len(pending_provider_migration),
-        "duplicateActiveSkippedCount": sum(
-            1 for row in enriched_candidates if bool(row.get("duplicateOfActiveSource"))
-        ),
-        "duplicatePendingSkippedCount": sum(
-            1 for row in enriched_candidates if bool(row.get("duplicateOfPendingSource"))
-        ),
-        "unsupportedProviderCount": int(action_counts.get("unsupported_provider", 0)),
-        "insufficientEvidenceCount": int(action_counts.get("insufficient_evidence", 0)),
-        "needsProbeCount": int(action_counts.get("needs_probe", 0)),
-        "activeProviderWithoutMigrationIdentityCount": len(active_provider_without_identity),
-        "providerMigrationCandidatesFetchedCount": fetched_count,
-        "providerMigrationCandidatesValidatedCount": validated_count,
-        "providerMigrationCandidatesNoFetchCount": max(
-            0, len(pending_provider_migration) - fetched_count
-        ),
-        "pendingProviderMigrationAdapters": pending_provider_adapters,
-        "pendingProviderMigrationSourceLoaders": pending_provider_source_loaders,
-        "providerValidationDiagnostics": validation_diagnostics,
-        "actionCounts": dict(sorted(action_counts.items())),
-    }
-    if discovery_provider_migration:
-        discovery_action_counts = as_json_object(discovery_provider_migration.get("actionCounts"))
-        if discovery_action_counts:
-            section["actionCounts"] = {
-                clean_text(key): int(value or 0)
-                for key, value in discovery_action_counts.items()
-                if clean_text(key)
-            }
-        section["advisoryTotalCandidates"] = int(
-            discovery_provider_migration.get("totalCandidates")
-            or section["advisoryTotalCandidates"]
-        )
-        section["addProviderSourceCount"] = int(
-            section["actionCounts"].get("add_provider_source") or 0
-        )
-        section["reviewProviderMigrationCount"] = int(
-            section["actionCounts"].get("review_provider_migration") or 0
-        )
-        for key in PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS:
-            section[key] = int(discovery_provider_migration.get(key) or 0)
-        section["stagingBlockerCounts"] = as_json_object(
-            discovery_provider_migration.get("stagingBlockerCounts")
-        )
-        section["stagingBlockerExamples"] = json_object_rows(
-            discovery_provider_migration.get("stagingBlockerExamples")
-        )
-        section["stagedProviderCandidateCount"] = int(
-            section.get("stagedProviderCandidateCount")
-            or discovery_provider_migration.get("stagedProviderCount")
-            or section["stagedProviderCandidateCount"]
-        )
-    elif computed_provider_migration:
-        section["computedStageableProviderCandidateCount"] = int(
-            computed_provider_migration.get("stageableProviderCandidateCount") or 0
-        )
-        section["computedWouldStageProviderCandidateCount"] = int(
-            computed_provider_migration.get("stagedProviderCandidateCount") or 0
-        )
-        for key in (
-            "stagingSkippedCount",
-            "stagingBlockedByDuplicateActiveCount",
-            "stagingBlockedByDuplicatePendingCount",
-            "stagingBlockedByUnsupportedProviderCount",
-            "stagingBlockedByInsufficientEvidenceCount",
-            "stagingBlockedByNeedsProbeCount",
-            "stagingBlockedByProviderRowBuildFailureCount",
-            "stagingBlockedByIdentityCollisionCount",
-            "stagingBlockedByAdapterMismatchCount",
-        ):
-            section[f"computed{key[0].upper()}{key[1:]}"] = int(
-                computed_provider_migration.get(key) or 0
-            )
-        section["computedStagingBlockerCounts"] = as_json_object(
-            computed_provider_migration.get("stagingBlockerCounts")
-        )
-        section["computedStagingBlockerExamples"] = json_object_rows(
-            computed_provider_migration.get("stagingBlockerExamples")
-        )
-    gates: list[dict[str, Any]] = []
-    actionable_advisory_count = (
-        section["addProviderSourceCount"] + section["reviewProviderMigrationCount"]
-    )
-    if actionable_advisory_count > 0 and section["stagedProviderCandidateCount"] == 0:
-        gates.append(
-            _warning_gate(
-                "provider_advisory_without_staging",
-                "Provider migration advisory found actionable candidates but none were staged.",
-                {"actionableAdvisoryCount": actionable_advisory_count},
-            )
-        )
-    diagnostic_stageable_count = int(
-        section.get("stageableProviderCandidateCount")
-        or section.get("computedStageableProviderCandidateCount")
-        or 0
-    )
-    if diagnostic_stageable_count > 0 and section["stagedProviderCandidateCount"] == 0:
-        gates.append(
-            _warning_gate(
-                "stageable_provider_without_staging",
-                "Provider migration diagnostics found stageable candidates but none were staged.",
-                {
-                    "stageableProviderCandidateCount": diagnostic_stageable_count,
-                    "stagingDiagnosticsSource": clean_text(section.get("stagingDiagnosticsSource")),
-                },
-            )
-        )
-    provider_row_build_failure_count = int(
-        section.get("stagingBlockedByProviderRowBuildFailureCount")
-        or section.get("computedStagingBlockedByProviderRowBuildFailureCount")
-        or 0
-    )
-    if provider_row_build_failure_count > 0:
-        gates.append(
-            _warning_gate(
-                "provider_staging_row_build_failure",
-                "Provider migration staging could not build provider rows for some candidates.",
-                {"providerRowBuildFailureCount": provider_row_build_failure_count},
-            )
-        )
-    identity_collision_count = int(
-        section.get("stagingBlockedByIdentityCollisionCount")
-        or section.get("computedStagingBlockedByIdentityCollisionCount")
-        or 0
-    )
-    if identity_collision_count > 0:
-        gates.append(
-            _warning_gate(
-                "provider_staging_identity_collision",
-                "Provider migration staging found provider identity collisions.",
-                {"identityCollisionCount": identity_collision_count},
-            )
-        )
-    adapter_mismatch_count = int(
-        section.get("stagingBlockedByAdapterMismatchCount")
-        or section.get("computedStagingBlockedByAdapterMismatchCount")
-        or 0
-    )
-    if adapter_mismatch_count > 0:
-        gates.append(
-            _warning_gate(
-                "provider_staging_adapter_mismatch",
-                "Provider migration staging skipped candidates because their adapter is not static-like.",
-                {"adapterMismatchCount": adapter_mismatch_count},
-            )
-        )
-    if (
-        section["stagedProviderCandidateCount"] > 0
-        and section["pendingProviderMigrationCandidateCount"] == 0
-    ):
-        gates.append(
-            _warning_gate(
-                "staged_provider_without_pending",
-                "Staged provider migration candidates exist but none are pending.",
-                {"stagedProviderCandidateCount": section["stagedProviderCandidateCount"]},
-            )
-        )
-    if (
-        section["pendingProviderMigrationCandidateCount"] > 0
-        and section["providerMigrationCandidatesFetchedCount"] == 0
-    ):
-        gates.append(
-            _warning_gate(
-                "pending_provider_migration_not_fetched",
-                "Pending provider migration candidates exist but none have fetch evidence.",
-                {
-                    "pendingProviderMigrationCandidateCount": section[
-                        "pendingProviderMigrationCandidateCount"
-                    ]
-                },
-            )
-        )
-    if section["activeProviderWithoutMigrationIdentityCount"] > 0:
-        gates.append(
-            _warning_gate(
-                "active_provider_without_migration_identity",
-                "Active provider rows lack migrationSourceIdentity and cannot drive static coverage.",
-                {
-                    "activeProviderWithoutMigrationIdentityCount": section[
-                        "activeProviderWithoutMigrationIdentityCount"
-                    ]
-                },
-            )
-        )
-    insufficient_or_probe = section["insufficientEvidenceCount"] + section["needsProbeCount"]
-    if advisory_total > 0 and insufficient_or_probe > (advisory_total / 2):
-        gates.append(
-            _warning_gate(
-                "provider_migration_mostly_insufficient_or_probe",
-                "Most provider migration advisory candidates need more evidence or probing.",
-                {
-                    "advisoryTotalCandidates": advisory_total,
-                    "insufficientOrProbeCount": insufficient_or_probe,
-                },
-            )
-        )
-    return section, gates
-
-
-def _safe_command(*parts: str) -> str:
-    return " ".join(part for part in parts if part)
-
-
-def _provider_coverage_next_action_section(
-    *,
-    provider_migration_activation: dict[str, Any],
-    provider_coverage_gaps: dict[str, Any],
-    provider_coverage_link_backfill: dict[str, Any],
-) -> dict[str, Any]:
-    activation = as_json_object(provider_migration_activation)
-    gaps = as_json_object(provider_coverage_gaps)
-    link_backfill = as_json_object(provider_coverage_link_backfill)
-    bucket_counts = as_json_object(gaps.get("bucketCounts"))
-    review_candidates = json_object_rows(link_backfill.get("reviewCandidates"))
-    blocked_candidates = json_object_rows(link_backfill.get("blockedCandidates"))
-    actionable_blocked_candidates = json_object_rows(
-        link_backfill.get("actionableBlockedCandidates")
-    )
-    if "actionableBlockedCandidates" not in link_backfill:
-        actionable_blocked_candidates = blocked_candidates
-    api_eligible_review_count = sum(
-        1 for row in review_candidates if as_json_object(row).get("apiEligible") is True
-    )
-    provider_validation_diagnostics = as_json_object(
-        activation.get("providerValidationDiagnostics")
-    )
-    provider_validation_cause_counts = as_json_object(
-        provider_validation_diagnostics.get("causeCounts")
-    )
-    evidence_counts = {
-        "stagingDiagnosticsSource": clean_text(activation.get("stagingDiagnosticsSource")),
-        "actualStagedProviderCandidateCount": int(
-            activation.get("actualStagedProviderCandidateCount") or 0
-        ),
-        "stagedProviderCandidateCount": int(activation.get("stagedProviderCandidateCount") or 0),
-        "pendingProviderMigrationCandidateCount": int(
-            activation.get("pendingProviderMigrationCandidateCount") or 0
-        ),
-        "computedStageableProviderCandidateCount": int(
-            activation.get("computedStageableProviderCandidateCount") or 0
-        ),
-        "computedWouldStageProviderCandidateCount": int(
-            activation.get("computedWouldStageProviderCandidateCount") or 0
-        ),
-        "providerMigrationCandidatesFetchedCount": int(
-            activation.get("providerMigrationCandidatesFetchedCount") or 0
-        ),
-        "providerMigrationCandidatesValidatedCount": int(
-            activation.get("providerMigrationCandidatesValidatedCount") or 0
-        ),
-        "providerMigrationCandidatesNoFetchCount": int(
-            activation.get("providerMigrationCandidatesNoFetchCount") or 0
-        ),
-        "pendingProviderMigrationAdapters": [
-            clean_text(adapter)
-            for adapter in as_json_list(activation.get("pendingProviderMigrationAdapters"))
-            if clean_text(adapter)
-        ],
-        "pendingProviderMigrationSourceLoaders": [
-            clean_text(loader)
-            for loader in as_json_list(activation.get("pendingProviderMigrationSourceLoaders"))
-            if clean_text(loader)
-        ],
-        "providerValidationDiagnostics": provider_validation_diagnostics,
-        "providerValidationZeroKeptFetchedCount": int(
-            provider_validation_cause_counts.get("zeroKeptFetched") or 0
-        ),
-        "providerValidationFetchErrorCount": int(
-            provider_validation_cause_counts.get("fetchError") or 0
-        ),
-        "providerValidationNotFetchedCount": int(
-            provider_validation_cause_counts.get("notFetched") or 0
-        ),
-        "providerValidationMissingDetailEvidenceCount": int(
-            provider_validation_cause_counts.get("missingDetailEvidence") or 0
-        ),
-        "providerValidationValidatedCount": int(
-            provider_validation_cause_counts.get("validated") or 0
-        ),
-        "reviewCandidateCount": len(review_candidates),
-        "apiEligibleReviewCandidateCount": api_eligible_review_count,
-        "blockedLinkCandidateCount": len(blocked_candidates),
-        "actionableBlockedLinkCandidateCount": len(actionable_blocked_candidates),
-        "nonActionableBlockedLinkCandidateCount": max(
-            0, len(blocked_candidates) - len(actionable_blocked_candidates)
-        ),
-        "unsupportedProviderDetectedCount": int(
-            bucket_counts.get("unsupportedProviderDetected") or 0
-        ),
-        "providerDetectedNeedsProbeCount": int(
-            bucket_counts.get("providerDetectedNeedsProbe") or 0
-        ),
-        "stagedProviderNotFetchedCount": int(bucket_counts.get("stagedProviderNotFetched") or 0),
-        "fetchedButNotValidatedCount": int(bucket_counts.get("fetchedButNotValidated") or 0),
-        "validatedProviderMissingMigrationSourceIdentityCount": int(
-            bucket_counts.get("validatedProviderMissingMigrationSourceIdentity") or 0
-        ),
-        "staticStillActiveDespiteValidatedProviderCount": int(
-            bucket_counts.get("staticStillActiveDespiteValidatedProvider") or 0
-        ),
-        "totalProviderCoverageGapCount": int(gaps.get("totalGapCount") or 0),
-    }
-
-    def section(
-        action: str,
-        rationale: str,
-        *,
-        safe_local_commands: list[str] | None = None,
-        requires_human_approval: bool = False,
-        blocked_by: list[str] | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "action": action,
-            "priority": PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY[action],
-            "rationale": rationale,
-            "evidenceCounts": evidence_counts,
-            "safeLocalCommands": safe_local_commands or [],
-            "requiresHumanApproval": requires_human_approval,
-            "blockedBy": blocked_by or [],
-        }
-
-    def pending_provider_fetch_command(*, force_refresh_all: bool = False) -> str:
-        pending_source_loaders = [
-            clean_text(loader)
-            for loader in evidence_counts["pendingProviderMigrationSourceLoaders"]
-            if clean_text(loader)
-        ]
-        command_parts = ["python", "src/jobs_fetcher.py"]
-        if pending_source_loaders:
-            command_parts.extend(["--only-sources", ",".join(pending_source_loaders)])
-        command_parts.append("--include-pending-provider-migration")
-        if force_refresh_all:
-            command_parts.append("--force-refresh-all")
-        return _safe_command(*command_parts)
-
-    provider_validation_diagnostic_total = sum(
-        int(provider_validation_cause_counts.get(cause) or 0)
-        for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES
-    )
-    non_promotable_provider_validation_count = (
-        evidence_counts["providerValidationZeroKeptFetchedCount"]
-        + evidence_counts["providerValidationFetchErrorCount"]
-    )
-    positive_or_unknown_unvalidated_count = max(
-        0,
-        evidence_counts["fetchedButNotValidatedCount"] - non_promotable_provider_validation_count,
-    )
-    should_debug_provider_validation = (
-        evidence_counts["providerValidationMissingDetailEvidenceCount"] > 0
-        or positive_or_unknown_unvalidated_count > 0
-        or (
-            provider_validation_diagnostic_total == 0
-            and (
-                evidence_counts["fetchedButNotValidatedCount"] > 0
-                or (
-                    evidence_counts["providerMigrationCandidatesFetchedCount"] > 0
-                    and evidence_counts["providerMigrationCandidatesValidatedCount"]
-                    < evidence_counts["providerMigrationCandidatesFetchedCount"]
-                )
-            )
-        )
-    )
-
-    if (
-        evidence_counts["stagingDiagnosticsSource"] == "computed_from_candidates"
-        and evidence_counts["computedWouldStageProviderCandidateCount"] > 0
-        and evidence_counts["actualStagedProviderCandidateCount"] == 0
-        and evidence_counts["pendingProviderMigrationCandidateCount"] == 0
-    ):
-        return section(
-            "refresh_discovery_staging_evidence",
-            "Provider staging evidence is fallback-computed from candidates; refresh discovery so actual pending/staged rows and provider-migration review diagnostics are current.",
-            safe_local_commands=[
-                _safe_command(
-                    "python",
-                    "scripts/provider_migration_staging_refresh.py",
-                    "--data-dir",
-                    "data",
-                    "--out-dir",
-                    "_out",
-                    "--apply-pending",
-                ),
-                _safe_command(
-                    "python",
-                    "scripts/source_policy_soak_report.py",
-                    "--data-dir",
-                    "data",
-                    "--out-dir",
-                    "_out",
-                ),
-            ],
-            blocked_by=["discovery_report_missing_provider_migration_review"],
-        )
-    if (
-        evidence_counts["pendingProviderMigrationCandidateCount"] > 0
-        and evidence_counts["providerMigrationCandidatesFetchedCount"] == 0
-        and evidence_counts["providerValidationFetchErrorCount"] == 0
-        and evidence_counts["providerValidationMissingDetailEvidenceCount"] == 0
-    ):
-        return section(
-            "fetch_staged_provider_candidates",
-            "Pending provider migration candidates exist, but none have provider fetch evidence yet.",
-            safe_local_commands=[
-                pending_provider_fetch_command(),
-                _safe_command(
-                    "python",
-                    "scripts/source_policy_soak_report.py",
-                    "--data-dir",
-                    "data",
-                    "--out-dir",
-                    "_out",
-                ),
-            ],
-            blocked_by=["pending_provider_migration_not_fetched"],
-        )
-    if should_debug_provider_validation:
-        return section(
-            "debug_provider_validation",
-            "Provider migration candidates have fetch evidence, but validation has not reached validated-provider status.",
-            safe_local_commands=[
-                pending_provider_fetch_command(force_refresh_all=True),
-                _safe_command(
-                    "python",
-                    "scripts/source_policy_soak_report.py",
-                    "--data-dir",
-                    "data",
-                    "--out-dir",
-                    "_out",
-                ),
-            ],
-            blocked_by=["provider_fetch_not_validated"],
-        )
-    if evidence_counts["unsupportedProviderDetectedCount"] > 0:
-        return section(
-            "plan_unsupported_provider_family",
-            "Unsupported provider-family detections remain after staged/fetched/linkable provider work is not the top blocker.",
-            blocked_by=["unsupported_provider_family"],
-        )
-    if api_eligible_review_count > 0:
-        return section(
-            "review_one_migration_link",
-            "At least one API-eligible migration-link review candidate exists; applying or clearing links requires explicit Admin/human approval.",
-            requires_human_approval=True,
-            blocked_by=["requires_explicit_admin_migration_link_action"],
-        )
-    if len(actionable_blocked_candidates) > 0:
-        return section(
-            "resolve_link_ambiguity",
-            "Actionable provider/static link candidates exist, but none are currently API-eligible for review.",
-            safe_local_commands=[
-                _safe_command(
-                    "python",
-                    "scripts/source_policy_soak_report.py",
-                    "--data-dir",
-                    "data",
-                    "--out-dir",
-                    "_out",
-                )
-            ],
-            blocked_by=sorted(
-                {
-                    clean_text(blocker)
-                    for row in actionable_blocked_candidates
-                    for blocker in as_json_list(row.get("blockers"))
-                    if clean_text(blocker)
-                }
-            ),
-        )
-    return section(
-        "none",
-        "No provider coverage triage action is currently recommended from the available soak evidence.",
-    )
-
-
-def _identity_for_gap_row(row: dict[str, Any]) -> str:
-    if not row:
-        return ""
-    explicit = clean_text(row.get("sourceIdentity") or row.get("id") or row.get("sourceId"))
-    if explicit:
-        return explicit
-    if any(clean_text(row.get(key)) for key in ("adapter", "name", "listing_url", "api_url")):
-        return source_identity(row)
-    return ""
-
-
-def _source_state_evidence_for_tokens(
-    source_state_rows: dict[str, dict[str, Any]],
-    tokens: set[str],
-) -> tuple[str, dict[str, Any]]:
-    for name, raw in source_state_rows.items():
-        row = as_json_object(raw)
-        state_tokens = {clean_text(name), *_source_identity_tokens(row)}
-        if tokens & {token for token in state_tokens if token}:
-            return clean_text(name), row
-    return "", {}
-
-
-def _source_report_evidence_for_tokens(
-    source_rows: list[dict[str, Any]],
-    tokens: set[str],
-) -> dict[str, Any]:
-    for row in source_rows:
-        if tokens & _source_row_tokens(row):
-            return row
-    return {}
-
-
-def _provider_coverage_gap_example(
-    *,
-    row: dict[str, Any],
-    blocker_reason: str,
-    registry_bucket: str = "",
-    registry_row: dict[str, Any] | None = None,
-    source_row: dict[str, Any] | None = None,
-    state_row: dict[str, Any] | None = None,
-    state_name: str = "",
-    provider_row: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    registry = as_json_object(registry_row)
-    source = as_json_object(source_row)
-    state = as_json_object(state_row)
-    provider = as_json_object(provider_row)
-    latest_kept = _first_int_value(source, "keptCount", "jobsFound")
-    if latest_kept == 0:
-        latest_kept = _first_int_value(
-            state,
-            "lastKeptCount",
-            "providerCoverageLatestKeptCount",
-        )
-    example = {
-        "blockerReason": clean_text(blocker_reason),
-        "sourceIdentity": _identity_for_gap_row(row),
-        "sourceName": _first_clean_text(row, "name", "studio", "company") or clean_text(state_name),
-        "providerSourceIdentity": _identity_for_gap_row(provider) or _identity_for_gap_row(row),
-        "providerSourceName": _first_clean_text(provider, "name", "studio", "company")
-        or _first_clean_text(row, "providerSourceName", "name", "studio", "company")
-        or clean_text(state_name),
-        "detectedProviderFamily": _first_clean_text(
-            row, "detectedProviderFamily", "providerFamily", "providerAdapter", "adapter"
-        ),
-        "detectedProviderUrl": _first_clean_text(
-            row, "detectedProviderUrl", "providerUrl", "listing_url", "careersUrl"
-        ),
-        "detectedProviderId": _first_clean_text(row, "detectedProviderId", "providerId"),
-        "currentAdapter": _first_clean_text(row, "currentAdapter", "adapter"),
-        "registryBucket": clean_text(registry_bucket),
-        "registryState": _first_clean_text(registry, "registryState", "candidateState")
-        or clean_text(registry_bucket),
-        "latestFetchStatus": _first_clean_text(source, "status", "lastStatus")
-        or _first_clean_text(state, "lastStatus", "providerCoverageStatus")
-        or _first_clean_text(row, "lastProbeStatus"),
-        "keptCount": latest_kept,
-        "providerCoverageStatus": _first_clean_text(
-            state,
-            "providerCoverageStatus",
-        )
-        or _first_clean_text(row, "providerCoverageStatus"),
-        "providerCoverageConsecutiveSuccessCount": _first_int_value(
-            state, "providerCoverageConsecutiveSuccesses"
-        ),
-        "migrationSourceIdentity": _first_clean_text(row, "migrationSourceIdentity")
-        or _first_clean_text(state, "migrationSourceIdentity")
-        or _first_clean_text(provider, "migrationSourceIdentity"),
-    }
-    return {key: value for key, value in example.items() if value not in ("", None) and value != []}
-
-
-def _provider_coverage_gap_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "count": len(rows),
-        "examples": rows[:PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT],
-    }
-
-
-def _provider_validation_diagnostic_example(
-    *,
-    row: dict[str, Any],
-    cause: str,
-    source_loader_name: str,
-    registry_row: dict[str, Any],
-    source_row: dict[str, Any],
-    state_row: dict[str, Any],
-    state_name: str,
-    aggregate_row: dict[str, Any],
-) -> dict[str, Any]:
-    example = _provider_coverage_gap_example(
-        row=row,
-        blocker_reason=cause,
-        registry_bucket="pending",
-        registry_row=registry_row,
-        source_row=source_row,
-        state_row=state_row,
-        state_name=state_name,
-    )
-    if source_loader_name:
-        example["sourceLoaderName"] = source_loader_name
-    latest_error = _first_clean_text(
-        source_row,
-        "error",
-        "lastError",
-        "providerCoverageLatestError",
-    ) or _first_clean_text(state_row, "lastError", "providerCoverageLatestError")
-    if latest_error:
-        example["latestFetchError"] = latest_error
-    if aggregate_row:
-        aggregate_status = _first_clean_text(aggregate_row, "status", "lastStatus")
-        aggregate_error = _first_clean_text(aggregate_row, "error", "lastError")
-        if aggregate_status:
-            example["aggregateFetchStatus"] = aggregate_status
-        if aggregate_error:
-            example["aggregateFetchError"] = aggregate_error
-    return example
-
-
-def _provider_validation_diagnostics(
-    *,
-    pending_provider_migration: list[dict[str, Any]],
-    source_rows: list[dict[str, Any]],
-    source_state_rows: dict[str, dict[str, Any]],
-    provider_coverage: dict[str, Any],
-) -> dict[str, Any]:
-    evidence_rows = _source_evidence_rows(source_rows)
-    coverage_status_by_token = _provider_coverage_status_by_token(
-        provider_coverage, source_state_rows
-    )
-    source_loader_rows = {
-        clean_text(row.get("name")): row for row in source_rows if clean_text(row.get("name"))
-    }
-    cause_counts = {cause: 0 for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES}
-    examples_by_cause: dict[str, list[dict[str, Any]]] = {
-        cause: [] for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES
-    }
-    for row in pending_provider_migration:
-        tokens = _source_identity_tokens(row)
-        adapter = clean_text(row.get("adapter"))
-        source_loader_name = PROVIDER_ADAPTER_SOURCE_LOADERS.get(adapter, "")
-        aggregate_row = as_json_object(source_loader_rows.get(source_loader_name))
-        source_row = _source_report_evidence_for_tokens(evidence_rows, tokens)
-        state_name, state_row = _source_state_evidence_for_tokens(source_state_rows, tokens)
-        provider_status = next(
-            (
-                coverage_status_by_token[token]
-                for token in tokens
-                if coverage_status_by_token.get(token)
-            ),
-            "",
-        )
-        if provider_status == "validated_provider":
-            cause = "validated"
-        elif source_row or state_row:
-            latest_status = norm_text(
-                _first_clean_text(source_row, "status", "lastStatus")
-                or _first_clean_text(state_row, "lastStatus", "providerCoverageStatus")
-            )
-            latest_error = _first_clean_text(
-                source_row,
-                "error",
-                "lastError",
-                "providerCoverageLatestError",
-            ) or _first_clean_text(state_row, "lastError", "providerCoverageLatestError")
-            latest_kept = _first_int_value(source_row, "keptCount", "jobsFound")
-            if latest_kept == 0:
-                latest_kept = _first_int_value(
-                    state_row,
-                    "lastKeptCount",
-                    "providerCoverageLatestKeptCount",
-                )
-            if latest_status == "error" or latest_error:
-                cause = "fetchError"
-            elif latest_status in {"ok", "excluded"} and latest_kept == 0:
-                cause = "zeroKeptFetched"
-            else:
-                cause = "missingDetailEvidence"
-        elif aggregate_row:
-            cause = "missingDetailEvidence"
-        else:
-            cause = "notFetched"
-
-        cause_counts[cause] += 1
-        if len(examples_by_cause[cause]) < PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT:
-            examples_by_cause[cause].append(
-                _provider_validation_diagnostic_example(
-                    row=row,
-                    cause=cause,
-                    source_loader_name=source_loader_name,
-                    registry_row=row,
-                    source_row=source_row,
-                    state_row=state_row,
-                    state_name=state_name,
-                    aggregate_row=aggregate_row,
-                )
-            )
-
-    return {
-        "causeCounts": cause_counts,
-        "examples": {cause: rows for cause, rows in examples_by_cause.items() if rows},
-    }
-
-
-def _looks_like_provider_source_identity(value: Any) -> bool:
-    parts = clean_text(value).split(":", 2)
-    if len(parts) != 3:
-        return False
-    adapter, field, identity_value = (norm_text(part) for part in parts)
-    supported = {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
-    return bool(adapter in supported and field in PROVIDER_ID_FIELDS and identity_value)
-
-
-def _has_per_provider_identity(row: dict[str, Any], *, state_name: str = "") -> bool:
-    if clean_text(row.get("sourceIdentity") or row.get("id") or row.get("sourceId")):
-        return True
-    if _looks_like_provider_source_identity(state_name):
-        return True
-    return any(clean_text(row.get(key)) for key in PROVIDER_ID_FIELDS)
-
-
-def _provider_source_rows_missing_migration_identity(
-    *,
-    source_rows: list[dict[str, Any]],
-    source_state_rows: dict[str, dict[str, Any]],
-) -> list[dict[str, Any]]:
-    supported = {clean_text(provider) for provider in SUPPORTED_PROVIDERS}
-    examples: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in source_rows:
-        adapter = clean_text(row.get("adapter"))
-        identity = _identity_for_gap_row(row)
-        if (
-            adapter in supported
-            and clean_text(row.get("status")) == "ok"
-            and _first_int_value(row, "keptCount", "jobsFound") > 0
-            and not clean_text(row.get("migrationSourceIdentity"))
-            and _has_per_provider_identity(row)
-            and identity not in seen
-        ):
-            examples.append(
-                _provider_coverage_gap_example(
-                    row=row,
-                    blocker_reason="missing_migration_source_identity",
-                    source_row=row,
-                )
-            )
-            seen.add(identity)
-    for name, raw in source_state_rows.items():
-        row = as_json_object(raw)
-        adapter = clean_text(row.get("lastAdapter") or row.get("adapter"))
-        identity = _identity_for_gap_row(row) or clean_text(name)
-        if (
-            adapter in supported
-            and clean_text(row.get("lastStatus")) == "ok"
-            and _first_int_value(row, "lastKeptCount", "providerCoverageLatestKeptCount") > 0
-            and not clean_text(row.get("migrationSourceIdentity"))
-            and _has_per_provider_identity(row, state_name=name)
-            and identity not in seen
-        ):
-            examples.append(
-                _provider_coverage_gap_example(
-                    row=row,
-                    blocker_reason="missing_migration_source_identity",
-                    state_row=row,
-                    state_name=clean_text(name),
-                )
-            )
-            seen.add(identity)
-    return examples
-
-
-def _source_rows_include_dynamic_suppression(
-    *,
-    source_rows: list[dict[str, Any]],
-    static_row: dict[str, Any],
-    migration_source_identity: str,
-) -> bool:
-    static_tokens = {
-        clean_text(migration_source_identity),
-        *_static_registry_identity_tokens(static_row),
-    }
-    static_tokens = {token for token in static_tokens if token}
-    for row in source_rows:
-        if clean_text(row.get("exclusionReason")) != "dynamic_redundant_provider":
-            continue
-        if _source_row_tokens(row) & static_tokens:
-            return True
-    return False
-
-
-def _active_static_rows_for_validated_providers(
-    *,
-    source_rows: list[dict[str, Any]],
-    source_state_rows: dict[str, dict[str, Any]],
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
-    for source_name, raw_state_row in source_state_rows.items():
-        state_row = as_json_object(raw_state_row)
-        if clean_text(state_row.get("providerCoverageStatus")) != "validated_provider":
-            continue
-        migration_source_identity = clean_text(state_row.get("migrationSourceIdentity"))
-        if not migration_source_identity:
-            continue
-        static_registry = _find_linked_static_registry_row(
-            active_rows=active_rows,
-            pending_rows=pending_rows,
-            rejected_rows=rejected_rows,
-            identity=migration_source_identity,
-        )
-        if not static_registry:
-            continue
-        static_bucket, static_row = static_registry
-        if (
-            static_bucket != "active"
-            or clean_text(static_row.get("adapter")) not in STATIC_LIKE_ADAPTERS
-        ):
-            continue
-        if _source_rows_include_dynamic_suppression(
-            source_rows=source_rows,
-            static_row=static_row,
-            migration_source_identity=migration_source_identity,
-        ):
-            continue
-        provider_registry = _find_provider_registry_row(
-            active_rows=active_rows,
-            pending_rows=pending_rows,
-            source_name=clean_text(source_name),
-            source_state_row=state_row,
-        )
-        examples.append(
-            _provider_coverage_gap_example(
-                row=static_row,
-                blocker_reason="active_static_not_suppressed",
-                registry_bucket=static_bucket,
-                registry_row=static_row,
-                state_row=state_row,
-                state_name=clean_text(source_name),
-                provider_row=provider_registry[1] if provider_registry else {},
-            )
-        )
-    return examples
-
-
-def _provider_coverage_gaps_section(
-    *,
-    discovery_candidates: list[dict[str, Any]],
-    active_rows: list[dict[str, Any]],
-    pending_rows: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]],
-    source_rows: list[dict[str, Any]],
-    source_state_rows: dict[str, dict[str, Any]],
-    provider_coverage: dict[str, Any],
-) -> dict[str, Any]:
-    enriched_candidates = enrich_provider_migration_rows(
-        discovery_candidates,
-        active_rows=active_rows,
-        pending_rows=pending_rows,
-    )
-    source_evidence_rows = _source_evidence_rows(source_rows)
-    fetched_tokens = _source_token_index(source_evidence_rows) | _source_state_token_index(
-        source_state_rows
-    )
-    coverage_status_by_token = _provider_coverage_status_by_token(
-        provider_coverage,
-        source_state_rows,
-    )
-    pending_provider_migration = [
-        row
-        for row in pending_rows
-        if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
-    ]
-
-    unsupported = [
-        _provider_coverage_gap_example(row=row, blocker_reason="unsupported_provider")
-        for row in enriched_candidates
-        if clean_text(row.get("recommendedAction")) == "unsupported_provider"
-    ]
-    needs_probe = [
-        _provider_coverage_gap_example(row=row, blocker_reason="needs_probe")
-        for row in enriched_candidates
-        if clean_text(row.get("recommendedAction")) == "needs_probe"
-    ]
-    staged_not_fetched: list[dict[str, Any]] = []
-    fetched_not_validated: list[dict[str, Any]] = []
-    for row in pending_provider_migration:
-        tokens = _source_identity_tokens(row)
-        registry_bucket = "pending"
-        source_row = _source_report_evidence_for_tokens(source_evidence_rows, tokens)
-        state_name, state_row = _source_state_evidence_for_tokens(source_state_rows, tokens)
-        if not (tokens & fetched_tokens):
-            staged_not_fetched.append(
-                _provider_coverage_gap_example(
-                    row=row,
-                    blocker_reason="not_fetched",
-                    registry_bucket=registry_bucket,
-                    registry_row=row,
-                )
-            )
-            continue
-        if not any(coverage_status_by_token.get(token) == "validated_provider" for token in tokens):
-            fetched_not_validated.append(
-                _provider_coverage_gap_example(
-                    row=row,
-                    blocker_reason="fetched_but_not_validated",
-                    registry_bucket=registry_bucket,
-                    registry_row=row,
-                    source_row=source_row,
-                    state_row=state_row,
-                    state_name=state_name,
-                )
-            )
-
-    buckets = {
-        "unsupportedProviderDetected": unsupported,
-        "providerDetectedNeedsProbe": needs_probe,
-        "stagedProviderNotFetched": staged_not_fetched,
-        "fetchedButNotValidated": fetched_not_validated,
-        "validatedProviderMissingMigrationSourceIdentity": (
-            _provider_source_rows_missing_migration_identity(
-                source_rows=source_rows,
-                source_state_rows=source_state_rows,
-            )
-        ),
-        "staticStillActiveDespiteValidatedProvider": (
-            _active_static_rows_for_validated_providers(
-                source_rows=source_rows,
-                source_state_rows=source_state_rows,
-                active_rows=active_rows,
-                pending_rows=pending_rows,
-                rejected_rows=rejected_rows,
-            )
-        ),
-    }
-    bucket_counts = {bucket: len(rows) for bucket, rows in buckets.items()}
-    section = {
-        "bucketCounts": bucket_counts,
-        "totalGapCount": sum(bucket_counts.values()),
-    }
-    for bucket in PROVIDER_COVERAGE_GAP_BUCKETS:
-        section[bucket] = _provider_coverage_gap_bucket(buckets.get(bucket, []))
-    return section
-
-
-def _url_from_row(row: dict[str, Any]) -> str:
-    for key in (
-        "listing_url",
-        "careersUrl",
-        "url",
-        "api_url",
-        "feed_url",
-        "board_url",
-        "base_url",
-        "detectedProviderUrl",
-        "currentUrl",
-    ):
-        value = clean_text(row.get(key))
-        if value:
-            return value
-    pages = row.get("pages")
-    if isinstance(pages, list):
-        for value in pages:
-            text = clean_text(value)
-            if text:
-                return text
-    return ""
-
-
-def _url_host(url: str) -> str:
-    try:
-        host = (urlparse(str(url or "")).netloc or "").strip().lower()
-    except ValueError:
-        return ""
-    return host[4:] if host.startswith("www.") else host
-
-
-def _row_urls_for_scope(row: dict[str, Any]) -> list[str]:
-    urls: list[str] = []
-    for key in ("listing_url", "base_url", "careersUrl", "url", "api_url", "feed_url", "board_url"):
-        value = clean_text(row.get(key))
-        if value:
-            urls.append(value)
-    for value in as_json_list(row.get("pages")):
-        text = clean_text(value)
-        if text:
-            urls.append(text)
-    return _unique_text(urls)
-
-
-def _scope_listing_url(row: dict[str, Any]) -> str:
-    for key in ("listing_url", "careersUrl", "url"):
-        value = clean_text(row.get(key))
-        if value:
-            return value
-    pages = as_json_list(row.get("pages"))
-    for value in pages:
-        text = clean_text(value)
-        if text:
-            return text
-    return ""
-
-
-def _host_coverage_index(active_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    coverage: dict[str, list[dict[str, Any]]] = {}
-    for row in active_rows:
-        if not isinstance(row, dict):
-            continue
-        for url in _row_urls_for_scope(row):
-            host = _url_host(url)
-            if not host:
-                continue
-            coverage.setdefault(host, []).append(
-                {
-                    "sourceId": clean_text(row.get("id")) or source_identity(row),
-                    "sourceName": clean_text(row.get("name")) or clean_text(row.get("studio")),
-                    "adapter": clean_text(row.get("adapter")),
-                    "host": host,
-                    "url": url,
-                }
-            )
-    return coverage
-
-
-def _jobs_unified_rows(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, dict):
-        payload = payload.get("jobs")
-    return json_object_rows(payload)
-
-
-def _kept_output_host_breakdown(
-    jobs: list[dict[str, Any]],
-    source_name: str,
-) -> dict[str, Any]:
-    host_counts: Counter[str] = Counter()
-    for row in jobs:
-        if clean_text(row.get("source")) != source_name:
-            bundle_match = any(
-                isinstance(bundle_row, dict) and clean_text(bundle_row.get("source")) == source_name
-                for bundle_row in as_json_list(row.get("sourceBundle"))
-            )
-            if not bundle_match:
-                continue
-        host = _url_host(clean_text(row.get("jobLink"))) or "unknown"
-        host_counts[host] += 1
-    hosts = [
-        {"host": host, "keptCount": count}
-        for host, count in sorted(host_counts.items(), key=lambda item: (-item[1], item[0]))
-    ]
-    return {
-        "totalKeptCount": sum(host_counts.values()),
-        "hostCount": len(host_counts),
-        "hosts": hosts,
-    }
-
-
-def _static_scope_conflict_classification(
-    *,
-    covered_hosts: list[str],
-    uncovered_hosts: list[str],
-    unexpected_kept_hosts: list[str],
-    kept_output_total: int,
-    kept_output_evidence_available: bool,
-) -> tuple[str, str, list[str]]:
-    if unexpected_kept_hosts:
-        return (
-            "manual_scope_review",
-            "review_scope_manually",
-            ["kept_output_host_not_explained_by_registry_scope"],
-        )
-    if kept_output_evidence_available and kept_output_total <= 0:
-        return (
-            "zero_kept_review",
-            "review_scope_manually",
-            ["zero_kept_conflict_review"],
-        )
-    if covered_hosts and uncovered_hosts:
-        return (
-            "manual_scope_review",
-            "review_scope_manually",
-            ["mixed_covered_and_uncovered_off_listing_hosts"],
-        )
-    if uncovered_hosts:
-        return (
-            "needs_split_source",
-            "create_or_link_source_after_review",
-            ["uncovered_off_listing_hosts"],
-        )
-    return (
-        "shadowed_cross_host",
-        "narrow_static_scope_after_review",
-        ["off_listing_hosts_covered_by_other_active_sources"],
-    )
-
-
-def _static_registry_scope_conflicts_section(
-    *,
-    active_rows: list[dict[str, Any]],
-    jobs_unified: Any,
-) -> dict[str, Any]:
-    coverage_index = _host_coverage_index(active_rows)
-    jobs = _jobs_unified_rows(jobs_unified)
-    kept_output_evidence_available = isinstance(jobs_unified, list) or (
-        isinstance(jobs_unified, dict) and isinstance(jobs_unified.get("jobs"), list)
-    )
-    conflicts: list[dict[str, Any]] = []
-    patch_proposals: list[dict[str, Any]] = []
-    scanned_static_count = 0
-    for row in active_rows:
-        if clean_text(row.get("adapter")) != "static":
-            continue
-        scanned_static_count += 1
-        source_id = clean_text(row.get("id")) or source_identity(row)
-        listing_url = _scope_listing_url(row)
-        listing_host = _url_host(listing_url)
-        if not listing_host:
-            continue
-        source_pages = [
-            clean_text(page) for page in as_json_list(row.get("pages")) if clean_text(page)
-        ]
-        off_pages: list[str] = []
-        off_hosts: list[str] = []
-        for page_text in source_pages:
-            page_host = _url_host(page_text)
-            if page_text and page_host and page_host != listing_host:
-                off_pages.append(page_text)
-                off_hosts.append(page_host)
-        off_hosts = _unique_text(off_hosts)
-        if not off_hosts:
-            continue
-        coverage_rows: list[dict[str, Any]] = []
-        covered_hosts: list[str] = []
-        uncovered_hosts: list[str] = []
-        for host in off_hosts:
-            host_rows = [
-                coverage
-                for coverage in coverage_index.get(host, [])
-                if clean_text(coverage.get("sourceId")) != source_id
-            ]
-            if host_rows:
-                covered_hosts.append(host)
-                coverage_rows.extend(host_rows[:3])
-            else:
-                uncovered_hosts.append(host)
-        source_name = _static_loader_name_for_registry_row(row)
-        kept_breakdown = _kept_output_host_breakdown(jobs, source_name)
-        kept_hosts = [
-            clean_text(host_row.get("host"))
-            for host_row in json_object_rows(kept_breakdown.get("hosts"))
-        ]
-        expected_kept_hosts = {listing_host, *off_hosts}
-        unexpected_kept_hosts = [
-            host
-            for host in kept_hosts
-            if host and host != "unknown" and host not in expected_kept_hosts
-        ]
-        classification, recommended_action, reasons = _static_scope_conflict_classification(
-            covered_hosts=covered_hosts,
-            uncovered_hosts=uncovered_hosts,
-            unexpected_kept_hosts=unexpected_kept_hosts,
-            kept_output_total=int(kept_breakdown.get("totalKeptCount") or 0),
-            kept_output_evidence_available=kept_output_evidence_available,
-        )
-        if covered_hosts:
-            reasons.append("covered_off_listing_hosts")
-        if uncovered_hosts:
-            reasons.append("uncovered_off_listing_hosts")
-        if kept_output_evidence_available:
-            reasons.append("kept_output_evidence_available")
-        conflict = {
-            "sourceId": source_id,
-            "sourceName": clean_text(row.get("name")) or source_name,
-            "adapter": "static",
-            "listingHost": listing_host,
-            "offListingHosts": off_hosts,
-            "offListingHostPages": off_pages[:5],
-            "coveredOffListingHosts": covered_hosts,
-            "uncoveredOffListingHosts": uncovered_hosts,
-            "coverageRows": coverage_rows[:8],
-            "keptOutputHostBreakdown": kept_breakdown,
-            "classification": classification,
-            "recommendedAction": recommended_action,
-            "reasons": _unique_text(reasons),
-            "destructiveActionAllowed": False,
-            "requiresExplicitAdminAction": True,
-            "behaviorChangeAllowed": False,
-        }
-        conflicts.append(conflict)
-        if (
-            classification == "shadowed_cross_host"
-            and recommended_action == "narrow_static_scope_after_review"
-            and covered_hosts
-            and not uncovered_hosts
-        ):
-            remove_pages = [page for page in source_pages if _url_host(page) in set(covered_hosts)]
-            keep_pages = [page for page in source_pages if page not in set(remove_pages)]
-            patch_proposals.append(
-                {
-                    "sourceId": source_id,
-                    "sourceName": clean_text(row.get("name")) or source_name,
-                    "proposedAction": "narrow_static_scope",
-                    "classification": classification,
-                    "removePages": remove_pages,
-                    "keepPages": keep_pages,
-                    "preserveFields": ["id", "listing_url", "careersUrl"],
-                    "applyAllowed": False,
-                    "requiresExplicitAdminAction": True,
-                    "destructiveActionAllowed": False,
-                    "behaviorChangeAllowed": False,
-                    "reasons": ["shadowed_cross_host", "all_off_listing_hosts_covered"],
-                }
-            )
-    conflicts.sort(
-        key=lambda item: (
-            clean_text(item.get("classification")),
-            clean_text(item.get("sourceName")) or clean_text(item.get("sourceId")),
-        )
-    )
-    classification_counts = Counter(clean_text(row.get("classification")) for row in conflicts)
-    summary = {
-        "scannedStaticCount": scanned_static_count,
-        "conflictCount": len(conflicts),
-        "shadowedCrossHostCount": int(classification_counts.get("shadowed_cross_host", 0)),
-        "needsSplitSourceCount": int(classification_counts.get("needs_split_source", 0)),
-        "manualScopeReviewCount": int(classification_counts.get("manual_scope_review", 0)),
-        "zeroKeptReviewCount": int(classification_counts.get("zero_kept_review", 0)),
-    }
-    return {
-        "summary": summary,
-        "conflicts": conflicts,
-        "patchProposals": patch_proposals,
-        "examples": conflicts[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
-    }
-
-
-def _host_matches_pattern(host: str, pattern: str) -> bool:
-    clean_host = norm_text(host)
-    clean_pattern = norm_text(pattern)
-    if not clean_host or not clean_pattern:
-        return False
-    return (
-        fnmatch(clean_host, clean_pattern) if "*" in clean_pattern else clean_host == clean_pattern
-    )
-
-
-def _provider_id_value(row: dict[str, Any], field: str) -> str:
-    if field == "adapter":
-        return clean_text(row.get("adapter"))
-    return clean_text(row.get(field))
-
-
-def _provider_id_pair(row: dict[str, Any]) -> tuple[str, str]:
-    for field in PROVIDER_ID_FIELDS:
-        value = clean_text(row.get(field))
-        if value:
-            return field, value
-    return "", ""
-
-
-def _provider_identity_keys(row: dict[str, Any]) -> set[str]:
-    keys = _source_identity_tokens(row)
-    keys.add(source_identity(row))
-    adapter = clean_text(row.get("adapter"))
-    for field in PROVIDER_ID_FIELDS:
-        value = clean_text(row.get(field))
-        if adapter and value:
-            keys.add(f"{adapter}:{field}:{value}".lower())
-    return {key for key in keys if key}
-
-
-def _provider_matches_rule(row: dict[str, Any], rule: dict[str, Any]) -> bool:
-    adapter = clean_text(rule.get("adapter"))
-    field = clean_text(rule.get("provider_id_field"))
-    value = clean_text(rule.get("provider_id_value"))
-    if not adapter or not field or not value:
-        return False
-    return norm_text(row.get("adapter")) == norm_text(adapter) and norm_text(
-        _provider_id_value(row, field)
-    ) == norm_text(value)
-
-
-def _static_candidate(row: dict[str, Any]) -> dict[str, Any]:
-    adapter = norm_text(row.get("adapter") or row.get("currentAdapter"))
-    discovery_stage = norm_text(row.get("discoveryStage") or row.get("discoveryMethod"))
-    url = _url_from_row(row)
-    if adapter not in STATIC_LIKE_ADAPTERS and discovery_stage not in STATIC_LIKE_STAGES:
-        return {}
-    if not url:
-        return {}
-    return {
-        "staticSourceId": clean_text(row.get("id"))
-        or clean_text(row.get("sourceIdentity"))
-        or source_identity(row),
-        "staticSourceName": _source_name(row),
-        "staticUrl": url,
-        "host": _url_host(url),
-        "familyKey": norm_text(row.get("studio") or row.get("company") or row.get("name")),
-        "registryState": clean_text(row.get("registryState") or row.get("_soakRegistryState")),
-        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
-        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
-        "pendingReason": clean_text(row.get("pendingReason")),
-    }
-
-
-def _source_state_for_static(
-    static: dict[str, Any], source_state_rows: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    for token in (
-        clean_text(static.get("staticSourceId")),
-        clean_text(static.get("staticSourceName")),
-    ):
-        if token and isinstance(source_state_rows.get(token), dict):
-            return source_state_rows[token]
-    return {}
-
-
-def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    registry_state = clean_text(static.get("registryState"))
-    hidden = bool(static.get("hiddenFromDefault"))
-    duplicate_of = clean_text(static.get("duplicateOfSourceId"))
-    pending_reason = clean_text(static.get("pendingReason"))
-    last_kept = _int_value(state.get("lastKeptCount"))
-    last_status = clean_text(state.get("lastStatus"))
-    last_successful_at = _first_clean_text(state, "lastSuccessfulAt", "lastSuccessAt")
-    last_fetched_at = _first_clean_text(state, "lastFetchedAt", "lastRunAt")
-    provider_coverage_status = _first_clean_text(state, "providerCoverageStatus")
-    provider_coverage_validated = provider_coverage_status == "validated_provider"
-    provider_coverage_consecutive_successes = _first_int_value(
-        state, "providerCoverageConsecutiveSuccesses"
-    )
-    provider_coverage_latest_kept_count = _first_int_value(state, "providerCoverageLatestKeptCount")
-    provider_replacement_readiness = _first_clean_text(state, "providerReplacementReadiness")
-
-    score = 0
-    reasons: list[str] = []
-    blockers: list[str] = []
-    if registry_state == "active":
-        score += 30
-        reasons.append("active_registry_row")
-    elif registry_state == "pending":
-        score += 5
-        blockers.append("pending_static_row")
-    if hidden:
-        score -= 25
-        blockers.append("hidden_from_default")
-    if duplicate_of:
-        score -= 25
-        blockers.append("duplicate_static_row")
-    if pending_reason:
-        blockers.append("pending_reason_present")
-    if last_kept > 0:
-        score += 30
-        reasons.append("source_state_kept_jobs")
-    if last_status == "ok":
-        score += 10
-        reasons.append("source_state_ok")
-    elif last_status:
-        blockers.append("source_state_not_ok")
-    if provider_coverage_validated:
-        score += 10
-        reasons.append("provider_coverage_validated")
-    elif provider_coverage_status:
-        blockers.append("source_state_not_ok")
-    if provider_coverage_consecutive_successes > 0:
-        score += min(provider_coverage_consecutive_successes, 5)
-        reasons.append("provider_coverage_success_history")
-    if provider_coverage_latest_kept_count > 0:
-        reasons.append("provider_coverage_latest_kept")
-    if last_successful_at:
-        score += 5
-        reasons.append("source_state_success_timestamp")
-    if last_fetched_at:
-        reasons.append("source_state_fetched")
-    has_promotable_source_state_signal = any(
-        (
-            last_kept > 0,
-            last_status == "ok",
-            bool(last_successful_at),
-            provider_coverage_status == "validated_provider",
-            provider_coverage_latest_kept_count > 0,
-        )
-    )
-    if not state:
-        blockers.append("no_source_state_history")
-        if score <= 0:
-            blockers.append("static_only_evidence_present")
-    elif has_promotable_source_state_signal and "source_state_not_ok" not in blockers:
-        if provider_coverage_validated and provider_coverage_consecutive_successes < 2:
-            blockers.append("insufficient_provider_success_history")
-        elif not provider_coverage_validated:
-            blockers.append("source_state_not_ok")
-    return {
-        "lastKeptCount": last_kept,
-        "lastStatus": last_status,
-        "lastSuccessfulAt": last_successful_at,
-        "lastFetchedAt": last_fetched_at,
-        "providerCoverageStatus": provider_coverage_status,
-        "providerCoverageConsecutiveSuccesses": provider_coverage_consecutive_successes,
-        "providerCoverageLatestKeptCount": provider_coverage_latest_kept_count,
-        "providerReplacementReadiness": provider_replacement_readiness,
-        "evidenceScore": score,
-        "evidenceReasons": reasons,
-        "disambiguationBlockers": blockers,
-    }
-
-
-def _static_candidates(
-    rows: list[dict[str, Any]], source_state_rows: dict[str, dict[str, Any]] | None = None
-) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in rows:
-        candidate = _static_candidate(row)
-        key = clean_text(candidate.get("staticSourceId")) if candidate else ""
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        candidate.update(
-            _static_evidence(
-                candidate, _source_state_for_static(candidate, source_state_rows or {})
-            )
-        )
-        out.append(candidate)
-    return out
-
-
-def _provider_link_row(
-    provider: dict[str, Any],
-    static: dict[str, Any],
-    *,
-    confidence: float,
-    reasons: list[str],
-    blockers: list[str] | None = None,
-    recommended_action: str,
-    provider_id_field: str = "",
-    provider_id_value: str = "",
-) -> dict[str, Any]:
-    fallback_field, fallback_value = _provider_id_pair(provider)
-    return {
-        "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
-        "providerSourceName": _source_name(provider),
-        "providerAdapter": clean_text(provider.get("adapter")),
-        "providerIdField": provider_id_field or fallback_field,
-        "providerIdValue": provider_id_value or fallback_value,
-        "staticSourceId": clean_text(static.get("staticSourceId")),
-        "staticSourceName": clean_text(static.get("staticSourceName")),
-        "staticUrl": clean_text(static.get("staticUrl")),
-        "staticHost": clean_text(static.get("staticHost"))
-        or _url_host(clean_text(static.get("staticUrl"))),
-        "registryState": clean_text(static.get("registryState")),
-        "hiddenFromDefault": bool(static.get("hiddenFromDefault")),
-        "duplicateOfSourceId": clean_text(static.get("duplicateOfSourceId")),
-        "pendingReason": clean_text(static.get("pendingReason")),
-        "lastKeptCount": _int_value(static.get("lastKeptCount")),
-        "lastStatus": clean_text(static.get("lastStatus")),
-        "lastSuccessfulAt": _first_clean_text(static, "lastSuccessfulAt", "lastSuccessAt"),
-        "lastFetchedAt": _first_clean_text(static, "lastFetchedAt", "lastRunAt"),
-        "providerCoverageStatus": clean_text(static.get("providerCoverageStatus")),
-        "providerCoverageConsecutiveSuccesses": _int_value(
-            static.get("providerCoverageConsecutiveSuccesses")
-        ),
-        "providerCoverageLatestKeptCount": _int_value(
-            static.get("providerCoverageLatestKeptCount")
-        ),
-        "providerReplacementReadiness": clean_text(static.get("providerReplacementReadiness")),
-        "evidenceScore": _int_value(static.get("evidenceScore")),
-        "evidenceReasons": [
-            clean_text(reason)
-            for reason in as_json_list(static.get("evidenceReasons"))
-            if clean_text(reason)
-        ],
-        "disambiguationRank": _int_value(static.get("disambiguationRank")),
-        "disambiguationBlockers": [
-            clean_text(blocker)
-            for blocker in as_json_list(static.get("disambiguationBlockers"))
-            if clean_text(blocker)
-        ],
-        "confidence": round(float(confidence), 2),
-        "reasons": sorted({clean_text(reason) for reason in reasons if clean_text(reason)}),
-        "blockers": sorted(
-            {clean_text(blocker) for blocker in blockers or [] if clean_text(blocker)}
-        ),
-        "recommendedAction": recommended_action,
-    }
-
-
-def _linked_provider_row(provider: dict[str, Any]) -> dict[str, Any]:
-    static_id = clean_text(provider.get("migrationSourceIdentity"))
-    static = {
-        "staticSourceId": static_id,
-        "staticSourceName": static_id,
-        "staticUrl": clean_text(provider.get("migrationSourceUrl")),
-    }
-    return _provider_link_row(
-        provider,
-        static,
-        confidence=1.0,
-        reasons=["existing_migration_source_identity"],
-        recommended_action="already_linked",
-    )
-
-
 def _rule_link_rows(
     provider: dict[str, Any], static_rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -2545,826 +802,6 @@ def _rule_link_rows(
                 )
             )
     return rows
-
-
-def _provider_weak_host_rows(
-    provider: dict[str, Any],
-    static_rows: list[dict[str, Any]],
-    *,
-    excluded_static_ids: set[str],
-) -> list[dict[str, Any]]:
-    host = _url_host(_url_from_row(provider))
-    if not host:
-        return []
-    rows: list[dict[str, Any]] = []
-    for static in static_rows:
-        static_id = clean_text(static.get("staticSourceId"))
-        if not static_id or static_id in excluded_static_ids:
-            continue
-        if clean_text(static.get("host")) != host:
-            continue
-        rows.append(
-            _provider_link_row(
-                provider,
-                static,
-                confidence=0.25,
-                reasons=["host_only_match"],
-                blockers=["host_only_match"],
-                recommended_action="insufficient_evidence",
-            )
-        )
-    return rows
-
-
-def _advisory_provider_keys(row: dict[str, Any]) -> set[str]:
-    keys = {
-        clean_text(row.get("existingProviderSourceId")),
-        clean_text(row.get("providerStagingCandidateId")),
-    }
-    adapter = clean_text(row.get("detectedProviderFamily") or row.get("currentAdapter"))
-    provider_id = clean_text(row.get("detectedProviderId"))
-    for field in PROVIDER_ID_FIELDS:
-        if provider_id and adapter:
-            keys.add(f"{adapter}:{field}:{provider_id}".lower())
-    return {key for key in keys if key}
-
-
-def _advisory_static_candidate(row: dict[str, Any]) -> dict[str, Any]:
-    static_id = clean_text(
-        row.get("migrationSourceIdentity")
-        or row.get("staticSourceId")
-        or row.get("providerStagingSourceIdentity")
-    )
-    discovery_stage = norm_text(row.get("discoveryStage") or row.get("discoveryMethod"))
-    if not static_id and (
-        norm_text(row.get("currentAdapter") or row.get("adapter")) in STATIC_LIKE_ADAPTERS
-        or discovery_stage in STATIC_LIKE_STAGES
-    ):
-        static_id = clean_text(row.get("sourceIdentity") or row.get("id"))
-    url = clean_text(row.get("staticUrl") or row.get("currentUrl") or _url_from_row(row))
-    if not static_id or not url:
-        return {}
-    return {
-        "staticSourceId": static_id,
-        "staticSourceName": _source_name(row),
-        "staticUrl": url,
-    }
-
-
-def _provider_shaped_static_link_blockers(
-    provider: dict[str, Any], static: dict[str, Any]
-) -> list[str]:
-    static_id = norm_text(static.get("staticSourceId"))
-    if not static_id:
-        return []
-    if static_id in {norm_text(key) for key in _provider_identity_keys(provider)}:
-        return ["provider_shaped_self_link"]
-    static_adapter = static_id.split(":", 1)[0]
-    if static_adapter in {norm_text(provider) for provider in SUPPORTED_PROVIDERS}:
-        return ["provider_shaped_static_identity"]
-    return []
-
-
-def _registry_static_candidate(
-    static: dict[str, Any], registry_static_rows: list[dict[str, Any]]
-) -> dict[str, Any]:
-    static_id = clean_text(static.get("staticSourceId"))
-    static_url = clean_text(static.get("staticUrl"))
-    for candidate in registry_static_rows:
-        if static_id and static_id == clean_text(candidate.get("staticSourceId")):
-            return dict(candidate)
-        if static_url and static_url == clean_text(candidate.get("staticUrl")):
-            return dict(candidate)
-    return {}
-
-
-def _advisory_link_rows(
-    provider: dict[str, Any],
-    advisory_rows: list[dict[str, Any]],
-    registry_static_rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    provider_keys = _provider_identity_keys(provider)
-    rows: list[dict[str, Any]] = []
-    for advisory in advisory_rows:
-        action = clean_text(advisory.get("recommendedAction"))
-        if action != "already_covered_by_provider" and not bool(
-            advisory.get("duplicateOfActiveSource")
-        ):
-            continue
-        if not (provider_keys & _advisory_provider_keys(advisory)):
-            continue
-        static = _advisory_static_candidate(advisory)
-        if not static:
-            continue
-        registry_static = _registry_static_candidate(static, registry_static_rows)
-        link_static = registry_static or static
-        blockers = _provider_shaped_static_link_blockers(provider, link_static)
-        rows.append(
-            _provider_link_row(
-                provider,
-                link_static,
-                confidence=0.8,
-                reasons=["provider_migration_advisory_exact_identity"],
-                blockers=blockers,
-                recommended_action="needs_review",
-            )
-        )
-    return rows
-
-
-def _company_name_only_blockers(
-    provider: dict[str, Any],
-    static_rows: list[dict[str, Any]],
-    *,
-    excluded_static_ids: set[str] | None = None,
-) -> list[dict[str, Any]]:
-    provider_family = norm_text(
-        provider.get("studio") or provider.get("company") or provider.get("name")
-    )
-    if not provider_family:
-        return []
-    excluded = excluded_static_ids or set()
-    rows: list[dict[str, Any]] = []
-    for static in static_rows:
-        static_id = clean_text(static.get("staticSourceId"))
-        if static_id and static_id in excluded:
-            continue
-        if provider_family == norm_text(static.get("familyKey")):
-            rows.append(
-                {
-                    "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
-                    "providerSourceName": _source_name(provider),
-                    "providerAdapter": clean_text(provider.get("adapter")),
-                    "staticSourceId": static_id,
-                    "staticSourceName": clean_text(static.get("staticSourceName")),
-                    "staticUrl": clean_text(static.get("staticUrl")),
-                    "staticHost": clean_text(static.get("host")),
-                    "confidence": 0.0,
-                    "reasons": [],
-                    "blockers": ["company_name_only_ignored"],
-                    "recommendedAction": "insufficient_evidence",
-                }
-            )
-    return rows
-
-
-def _blocker_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in rows:
-        for blocker in row.get("blockers", []):
-            key = clean_text(blocker)
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            examples.append(
-                {
-                    "blocker": key,
-                    "providerSourceId": clean_text(row.get("providerSourceId")),
-                    "providerSourceName": clean_text(row.get("providerSourceName")),
-                    "staticSourceId": clean_text(row.get("staticSourceId")),
-                    "staticSourceName": clean_text(row.get("staticSourceName")),
-                    "recommendedAction": clean_text(row.get("recommendedAction")),
-                }
-            )
-    return examples[:8]
-
-
-def _link_reasons(row: dict[str, Any]) -> list[str]:
-    return [clean_text(reason) for reason in as_json_list(row.get("reasons")) if clean_text(reason)]
-
-
-def _link_blockers(row: dict[str, Any]) -> list[str]:
-    return [
-        clean_text(blocker) for blocker in as_json_list(row.get("blockers")) if clean_text(blocker)
-    ]
-
-
-def _is_candidate_link(row: dict[str, Any]) -> bool:
-    action = clean_text(row.get("recommendedAction"))
-    return action not in {"already_linked", "insufficient_evidence"}
-
-
-def _dedupe_link_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    unique: list[dict[str, Any]] = []
-    seen: dict[tuple[Any, ...], int] = {}
-    action_priority = {
-        "already_linked": 4,
-        "backfill_migration_identity_candidate": 3,
-        "needs_review": 2,
-        "ambiguous_static_match": 1,
-        "insufficient_evidence": 0,
-    }
-    for row in rows:
-        blockers = tuple(_link_blockers(row))
-        static_id = clean_text(row.get("staticSourceId"))
-        static_url = clean_text(row.get("staticUrl"))
-        signature = (
-            clean_text(row.get("providerSourceId")),
-            static_id,
-            static_url,
-            blockers,
-        )
-        if not static_id and not static_url:
-            signature = (
-                *signature,
-                clean_text(row.get("recommendedAction")),
-                round(float(row.get("confidence") or 0), 2),
-                tuple(_link_reasons(row)),
-            )
-        if signature not in seen:
-            seen[signature] = len(unique)
-            unique.append(row)
-            continue
-        index = seen[signature]
-        existing = unique[index]
-        existing_rank = (
-            action_priority.get(clean_text(existing.get("recommendedAction")), -1),
-            float(existing.get("confidence") or 0),
-        )
-        row_rank = (
-            action_priority.get(clean_text(row.get("recommendedAction")), -1),
-            float(row.get("confidence") or 0),
-        )
-        merged = dict(row if row_rank > existing_rank else existing)
-        merged["reasons"] = sorted({*_link_reasons(existing), *_link_reasons(row)})
-        merged["blockers"] = sorted({*_link_blockers(existing), *_link_blockers(row)})
-        unique[index] = merged
-    return unique
-
-
-def _suppress_unbacked_advisory_links_when_registry_link_exists(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    has_registry_backed_candidate = any(
-        clean_text(row.get("registryState")) in {"active", "pending"}
-        and clean_text(row.get("recommendedAction"))
-        in {"backfill_migration_identity_candidate", "needs_review"}
-        and not _link_blockers(row)
-        for row in rows
-    )
-    if not has_registry_backed_candidate:
-        return rows
-    return [
-        row
-        for row in rows
-        if clean_text(row.get("registryState")) in {"active", "pending"}
-        or "provider_migration_advisory_exact_identity" not in set(_link_reasons(row))
-    ]
-
-
-def _has_exact_link_evidence(row: dict[str, Any]) -> bool:
-    reasons = set(_link_reasons(row))
-    return bool(
-        reasons
-        & {
-            "redundant_static_rule_exact_match",
-            "provider_migration_advisory_exact_identity",
-        }
-    )
-
-
-def _candidate_static_id(row: dict[str, Any]) -> str:
-    return clean_text(row.get("staticSourceId"))
-
-
-def _is_strong_source_state_candidate(row: dict[str, Any]) -> bool:
-    if clean_text(row.get("registryState")) != "active":
-        return False
-    if bool(row.get("hiddenFromDefault")) or clean_text(row.get("duplicateOfSourceId")):
-        return False
-    if clean_text(row.get("providerCoverageStatus")) != "validated_provider":
-        return False
-    if _int_value(row.get("lastKeptCount")) <= 0:
-        return False
-    if _int_value(row.get("providerCoverageConsecutiveSuccesses")) < 2:
-        return False
-    return clean_text(row.get("lastStatus")) == "ok" or bool(
-        clean_text(row.get("lastSuccessfulAt"))
-    )
-
-
-def _static_url_key(row: dict[str, Any]) -> str:
-    url = clean_text(row.get("staticUrl"))
-    if not url:
-        return ""
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return norm_text(url).rstrip("/")
-    host = (parsed.netloc or "").lower()
-    host = host[4:] if host.startswith("www.") else host
-    path = (parsed.path or "/").rstrip("/").lower() or "/"
-    query = (parsed.query or "").lower()
-    return f"{host}{path}?{query}" if query else f"{host}{path}"
-
-
-def _active_registry_static_link(row: dict[str, Any]) -> bool:
-    return (
-        _registry_backed_static_link(row)
-        and clean_text(row.get("registryState")) == "active"
-        and not bool(row.get("hiddenFromDefault"))
-        and not clean_text(row.get("duplicateOfSourceId"))
-    )
-
-
-def _positive_static_history(row: dict[str, Any]) -> bool:
-    if _int_value(row.get("lastKeptCount")) <= 0:
-        return False
-    if (
-        clean_text(row.get("providerCoverageStatus"))
-        and _int_value(row.get("providerCoverageConsecutiveSuccesses")) < 2
-    ):
-        return False
-    return clean_text(row.get("lastStatus")) == "ok" or bool(
-        clean_text(row.get("lastSuccessfulAt"))
-    )
-
-
-def _deterministic_static_ambiguity_resolution(
-    ambiguous: list[dict[str, Any]],
-) -> tuple[dict[str, Any], list[dict[str, Any]], str, float] | None:
-    registry_static = [row for row in ambiguous if _registry_backed_static_link(row)]
-    if not registry_static:
-        return None
-    non_registry = [row for row in ambiguous if row not in registry_static]
-    if (
-        len(registry_static) == 1
-        and non_registry
-        and all(_provider_shaped_static_identity(row) for row in non_registry)
-    ):
-        selected = registry_static[0]
-        return (
-            selected,
-            [row for row in ambiguous if row is not selected],
-            "registry_static_disambiguation",
-            0.95,
-        )
-
-    url_keys = {_static_url_key(row) for row in registry_static if _static_url_key(row)}
-    if len(registry_static) > 1 and len(url_keys) == 1:
-        active = [row for row in registry_static if _active_registry_static_link(row)]
-        if len(active) == 1:
-            selected = active[0]
-            return (
-                selected,
-                [row for row in ambiguous if row is not selected],
-                "active_static_canonical_url_disambiguation",
-                0.95,
-            )
-
-    positive_history = [row for row in registry_static if _positive_static_history(row)]
-    if len(registry_static) > 1 and len(positive_history) == 1:
-        selected = positive_history[0]
-        return (
-            selected,
-            [row for row in ambiguous if row is not selected],
-            "static_history_disambiguation",
-            0.8,
-        )
-    return None
-
-
-def _with_selected_link(
-    row: dict[str, Any],
-    *,
-    confidence: float,
-    reason: str,
-) -> dict[str, Any]:
-    updated = dict(row)
-    updated["confidence"] = round(confidence, 2)
-    updated["recommendedAction"] = (
-        "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
-    )
-    updated["blockers"] = sorted(
-        {
-            clean_text(blocker)
-            for blocker in as_json_list(row.get("disambiguationBlockers"))
-            if clean_text(blocker) in PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS
-        }
-    )
-    updated["reasons"] = sorted({*_link_reasons(row), reason})
-    return updated
-
-
-def _with_ignored_alternative(row: dict[str, Any], reason: str) -> dict[str, Any]:
-    updated = dict(row)
-    updated["recommendedAction"] = "insufficient_evidence"
-    updated["confidence"] = min(float(row.get("confidence") or 0), 0.5)
-    updated["blockers"] = sorted(
-        {blocker for blocker in _link_blockers(row) if blocker != "ambiguous_static_match"}
-        | {reason}
-    )
-    return updated
-
-
-def _resolution_example(
-    *,
-    selected: dict[str, Any],
-    ignored: list[dict[str, Any]],
-    reason: str,
-) -> dict[str, Any]:
-    return {
-        "providerSourceId": clean_text(selected.get("providerSourceId")),
-        "providerSourceName": clean_text(selected.get("providerSourceName")),
-        "selectedStaticSourceId": clean_text(selected.get("staticSourceId")),
-        "selectedStaticSourceName": clean_text(selected.get("staticSourceName")),
-        "resolutionReason": reason,
-        "ignoredStaticSourceIds": [
-            clean_text(row.get("staticSourceId"))
-            for row in ignored
-            if clean_text(row.get("staticSourceId"))
-        ],
-    }
-
-
-def _source_state_evidence(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "registryState": clean_text(row.get("registryState")),
-        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
-        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
-        "pendingReason": clean_text(row.get("pendingReason")),
-        "lastKeptCount": _int_value(row.get("lastKeptCount")),
-        "lastStatus": clean_text(row.get("lastStatus")),
-        "lastSuccessfulAt": clean_text(row.get("lastSuccessfulAt")),
-        "lastFetchedAt": clean_text(row.get("lastFetchedAt")),
-        "providerCoverageStatus": clean_text(row.get("providerCoverageStatus")),
-        "providerCoverageConsecutiveSuccesses": _int_value(
-            row.get("providerCoverageConsecutiveSuccesses")
-        ),
-        "providerCoverageLatestKeptCount": _int_value(row.get("providerCoverageLatestKeptCount")),
-        "providerReplacementReadiness": clean_text(row.get("providerReplacementReadiness")),
-        "evidenceScore": _int_value(row.get("evidenceScore")),
-        "evidenceReasons": [
-            clean_text(reason)
-            for reason in as_json_list(row.get("evidenceReasons"))
-            if clean_text(reason)
-        ],
-    }
-
-
-def _why_not_high_confidence(row: dict[str, Any]) -> str:
-    confidence = float(row.get("confidence") or 0)
-    if confidence >= 0.9:
-        return ""
-    reasons = set(_link_reasons(row))
-    if "source_state_disambiguation" in reasons:
-        return "Resolved by source-state history only; no exact advisory static identity."
-    return "Confidence is below the high-confidence threshold."
-
-
-def _ignored_alternative_row(row: dict[str, Any]) -> dict[str, Any]:
-    blockers = _link_blockers(row)
-    return {
-        "staticSourceId": clean_text(row.get("staticSourceId")),
-        "staticSourceName": clean_text(row.get("staticSourceName")),
-        "staticUrl": clean_text(row.get("staticUrl")),
-        "blockers": blockers,
-        "evidenceScore": _int_value(row.get("evidenceScore")),
-        "reasonIgnored": blockers[0] if blockers else clean_text(row.get("recommendedAction")),
-    }
-
-
-def _provider_coverage_link_backfill_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
-    return (
-        clean_text(row.get("providerSourceName")).lower(),
-        clean_text(row.get("providerSourceId")).lower(),
-        clean_text(row.get("staticSourceName")).lower(),
-        clean_text(row.get("staticSourceId")).lower(),
-        -float(row.get("confidence") or 0.0),
-        clean_text(row.get("recommendedAction")).lower(),
-    )
-
-
-def _blocked_link_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    blocked = []
-    for row in rows:
-        if not _link_blockers(row):
-            continue
-        actionability, reason = _blocked_link_actionability(row)
-        blocked.append(
-            {
-                **row,
-                "apiEligible": False,
-                "actionability": actionability,
-                "actionabilityReason": reason,
-            }
-        )
-    blocked.sort(key=_provider_coverage_link_backfill_sort_key)
-    return blocked
-
-
-def _provider_shaped_static_identity(row: dict[str, Any]) -> bool:
-    static_id = norm_text(row.get("staticSourceId"))
-    if not static_id:
-        return False
-    if static_id == norm_text(row.get("providerSourceId")):
-        return True
-    static_adapter = static_id.split(":", 1)[0]
-    return static_adapter in {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
-
-
-def _registry_backed_static_link(row: dict[str, Any]) -> bool:
-    return (
-        clean_text(row.get("registryState")) in {"active", "pending"}
-        and bool(clean_text(row.get("staticSourceId")))
-        and not _provider_shaped_static_identity(row)
-    )
-
-
-def _blocked_link_actionability(row: dict[str, Any]) -> tuple[str, str]:
-    blockers = set(_link_blockers(row))
-    if "provider_shaped_self_link" in blockers or "provider_shaped_static_identity" in blockers:
-        return "non_actionable", "provider_shaped_self_link"
-    if "ambiguous_static_match" in blockers:
-        if _registry_backed_static_link(row):
-            return "actionable", "registry_backed_ambiguous_static_match"
-        return "non_actionable", "unbacked_ambiguous_static_match"
-    return "actionable", "blocked_link_requires_review"
-
-
-def _potential_review_link(row: dict[str, Any]) -> bool:
-    confidence = float(row.get("confidence") or 0)
-    if confidence < 0.75 or _link_blockers(row):
-        return False
-    if clean_text(row.get("recommendedAction")) not in {
-        "backfill_migration_identity_candidate",
-        "needs_review",
-    }:
-        return False
-    return bool(clean_text(row.get("providerSourceId")) and clean_text(row.get("staticSourceId")))
-
-
-def _block_colliding_static_link_targets(rows: list[dict[str, Any]]) -> None:
-    by_static: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        if not _potential_review_link(row):
-            continue
-        static_id = clean_text(row.get("staticSourceId")).lower()
-        by_static.setdefault(static_id, []).append(row)
-    for collisions in by_static.values():
-        provider_ids = {clean_text(row.get("providerSourceId")).lower() for row in collisions}
-        if len(provider_ids) <= 1:
-            continue
-        for row in collisions:
-            row["blockers"] = sorted({*_link_blockers(row), "static_link_target_collision"})
-
-
-def _disambiguation_blocker_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
-    counts = Counter(
-        blocker
-        for row in rows
-        for blocker in as_json_list(row.get("disambiguationBlockers"))
-        if clean_text(blocker)
-    )
-    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
-
-
-def _recommended_api_payload(row: dict[str, Any]) -> dict[str, Any]:
-    confidence = round(float(row.get("confidence") or 0), 2)
-    if not _registry_backed_static_link(row):
-        return {}
-    recommended_action = (
-        "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
-    )
-    return {
-        "action": "apply_migration_identity_link",
-        "providerSourceId": clean_text(row.get("providerSourceId")),
-        "staticSourceId": clean_text(row.get("staticSourceId")),
-        "staticSourceName": clean_text(row.get("staticSourceName")),
-        "confidence": confidence,
-        "reasons": _link_reasons(row),
-        "recommendationSource": "provider_coverage_link_backfill",
-        "recommendedAction": recommended_action,
-    }
-
-
-def _review_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_provider: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        provider_id = clean_text(row.get("providerSourceId"))
-        if provider_id:
-            by_provider.setdefault(provider_id, []).append(row)
-    candidates: list[dict[str, Any]] = []
-    for row in rows:
-        confidence = round(float(row.get("confidence") or 0), 2)
-        blockers = _link_blockers(row)
-        if confidence < 0.75 or blockers:
-            continue
-        action = clean_text(row.get("recommendedAction"))
-        if action not in {"backfill_migration_identity_candidate", "needs_review"}:
-            continue
-        payload = _recommended_api_payload(row)
-        alternatives = [
-            _ignored_alternative_row(other)
-            for other in by_provider.get(clean_text(row.get("providerSourceId")), [])
-            if clean_text(other.get("staticSourceId"))
-            and clean_text(other.get("staticSourceId")) != clean_text(row.get("staticSourceId"))
-            and clean_text(other.get("recommendedAction")) == "insufficient_evidence"
-        ]
-        candidates.append(
-            {
-                "providerSourceId": clean_text(row.get("providerSourceId")),
-                "providerSourceName": clean_text(row.get("providerSourceName")),
-                "providerAdapter": clean_text(row.get("providerAdapter")),
-                "providerIdField": clean_text(row.get("providerIdField")),
-                "providerIdValue": clean_text(row.get("providerIdValue")),
-                "selectedStaticSourceId": clean_text(row.get("staticSourceId")),
-                "selectedStaticSourceName": clean_text(row.get("staticSourceName")),
-                "selectedStaticUrl": clean_text(row.get("staticUrl")),
-                "confidence": confidence,
-                "confidenceTier": "high" if confidence >= 0.9 else "medium",
-                "resolutionReason": next(
-                    (
-                        reason
-                        for reason in _link_reasons(row)
-                        if reason
-                        in {
-                            "advisory_identity_disambiguation",
-                            "source_state_disambiguation",
-                        }
-                    ),
-                    "",
-                ),
-                "whyNotHighConfidence": _why_not_high_confidence(row),
-                "evidenceReasons": _link_reasons(row),
-                "sourceStateEvidence": _source_state_evidence(row),
-                "ignoredAlternatives": alternatives,
-                "recommendedApiPayload": payload,
-                "apiEligible": confidence >= 0.75 and not blockers and bool(payload),
-            }
-        )
-    return candidates
-
-
-def _resolve_provider_link_rows(
-    rows: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    ambiguous = [row for row in rows if "ambiguous_static_match" in set(_link_blockers(row))]
-    if len(ambiguous) <= 1:
-        return rows, None
-
-    advisory_exact = [
-        row
-        for row in rows
-        if "provider_migration_advisory_exact_identity" in set(_link_reasons(row))
-        and _candidate_static_id(row)
-    ]
-    advisory_static_ids = {_candidate_static_id(row) for row in advisory_exact}
-    if len(advisory_static_ids) == 1:
-        selected_id = next(iter(advisory_static_ids))
-        selected = next(row for row in advisory_exact if _candidate_static_id(row) == selected_id)
-        ignored = [
-            row
-            for row in rows
-            if _candidate_static_id(row)
-            and _candidate_static_id(row) != selected_id
-            and "ambiguous_static_match" in set(_link_blockers(row))
-        ]
-        return [
-            _with_selected_link(
-                selected,
-                confidence=0.95,
-                reason="advisory_identity_disambiguation",
-            ),
-            *[_with_ignored_alternative(row, "resolved_by_advisory_identity") for row in ignored],
-            *[
-                row
-                for row in rows
-                if row is not selected
-                and row not in ignored
-                and "ambiguous_static_match" not in set(_link_blockers(row))
-            ],
-        ], _resolution_example(
-            selected=selected,
-            ignored=ignored,
-            reason="advisory_identity_disambiguation",
-        )
-
-    strong = [row for row in ambiguous if _is_strong_source_state_candidate(row)]
-    if len(strong) == 1 and all(
-        row is strong[0] or not _is_strong_source_state_candidate(row) for row in ambiguous
-    ):
-        selected = strong[0]
-        ignored = [row for row in ambiguous if row is not selected]
-        return [
-            _with_selected_link(
-                selected,
-                confidence=0.8,
-                reason="source_state_disambiguation",
-            ),
-            *[_with_ignored_alternative(row, "resolved_by_source_state") for row in ignored],
-            *[row for row in rows if row not in ambiguous],
-        ], _resolution_example(
-            selected=selected,
-            ignored=ignored,
-            reason="source_state_disambiguation",
-        )
-
-    deterministic = _deterministic_static_ambiguity_resolution(ambiguous)
-    if deterministic:
-        selected, ignored, reason, confidence = deterministic
-        return [
-            _with_selected_link(selected, confidence=confidence, reason=reason),
-            *[_with_ignored_alternative(row, f"resolved_by_{reason}") for row in ignored],
-            *[row for row in rows if row not in ambiguous],
-        ], _resolution_example(selected=selected, ignored=ignored, reason=reason)
-
-    ranked = sorted(ambiguous, key=lambda row: _int_value(row.get("evidenceScore")), reverse=True)
-    for rank, row in enumerate(ranked, start=1):
-        row["disambiguationRank"] = rank
-    strong_history = [
-        row
-        for row in ambiguous
-        if _int_value(row.get("lastKeptCount")) > 0
-        or clean_text(row.get("lastStatus"))
-        or clean_text(row.get("providerCoverageStatus"))
-    ]
-    if len(strong_history) > 1:
-        signatures = Counter(
-            (
-                clean_text(row.get("lastStatus")),
-                _int_value(row.get("lastKeptCount")),
-                clean_text(row.get("lastSuccessfulAt")),
-                clean_text(row.get("lastFetchedAt")),
-                clean_text(row.get("providerCoverageStatus")),
-                _int_value(row.get("providerCoverageConsecutiveSuccesses")),
-                _int_value(row.get("providerCoverageLatestKeptCount")),
-            )
-            for row in strong_history
-        )
-        if any(count > 1 for signature, count in signatures.items() if any(signature)):
-            for row in strong_history:
-                blockers = set(_link_blockers(row))
-                blockers.add("multiple_static_candidates_with_equal_history")
-                row["blockers"] = sorted(blockers)
-                disambiguation_blockers = {
-                    clean_text(blocker)
-                    for blocker in as_json_list(row.get("disambiguationBlockers"))
-                    if clean_text(blocker)
-                }
-                disambiguation_blockers.add("multiple_static_candidates_with_equal_history")
-                row["disambiguationBlockers"] = sorted(disambiguation_blockers)
-    return rows, None
-
-
-def _ambiguity_candidate_static(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "staticSourceId": clean_text(row.get("staticSourceId")),
-        "staticSourceName": clean_text(row.get("staticSourceName")),
-        "staticUrl": clean_text(row.get("staticUrl")),
-        "staticHost": clean_text(row.get("staticHost"))
-        or _url_host(clean_text(row.get("staticUrl"))),
-        "matchReasons": _link_reasons(row),
-        "confidence": round(float(row.get("confidence") or 0), 2),
-        "blockers": _link_blockers(row),
-        "registryState": clean_text(row.get("registryState")),
-        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
-        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
-        "pendingReason": clean_text(row.get("pendingReason")),
-        "lastKeptCount": _int_value(row.get("lastKeptCount")),
-        "lastStatus": clean_text(row.get("lastStatus")),
-        "lastSuccessfulAt": clean_text(row.get("lastSuccessfulAt")),
-        "lastFetchedAt": clean_text(row.get("lastFetchedAt")),
-        "evidenceScore": _int_value(row.get("evidenceScore")),
-        "evidenceReasons": [
-            clean_text(reason)
-            for reason in as_json_list(row.get("evidenceReasons"))
-            if clean_text(reason)
-        ],
-        "disambiguationRank": _int_value(row.get("disambiguationRank")),
-        "disambiguationBlockers": [
-            clean_text(blocker)
-            for blocker in as_json_list(row.get("disambiguationBlockers"))
-            if clean_text(blocker)
-        ],
-    }
-
-
-def _ambiguity_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        if "ambiguous_static_match" not in set(_link_blockers(row)):
-            continue
-        key = clean_text(row.get("providerSourceId"))
-        if not key:
-            continue
-        grouped.setdefault(key, []).append(row)
-    groups: list[dict[str, Any]] = []
-    for provider_id, group_rows in sorted(grouped.items()):
-        first = group_rows[0]
-        groups.append(
-            {
-                "providerSourceId": provider_id,
-                "providerSourceName": clean_text(first.get("providerSourceName")),
-                "providerAdapter": clean_text(first.get("providerAdapter")),
-                "providerIdField": clean_text(first.get("providerIdField")),
-                "providerIdValue": clean_text(first.get("providerIdValue")),
-                "candidateStaticCount": len(group_rows),
-                "candidateStatics": [_ambiguity_candidate_static(row) for row in group_rows],
-            }
-        )
-    return groups[:20]
 
 
 def _provider_coverage_link_backfill_section(
@@ -3615,390 +1052,6 @@ def _provider_coverage_link_backfill_section(
             )
         )
     return section, gates
-
-
-def _overlap_counts(overlap: dict[str, Any]) -> dict[str, int]:
-    pairs = json_object_rows(overlap.get("pairs"))
-    statuses = Counter(clean_text(pair.get("auditStatus")) for pair in pairs)
-    return {
-        "overlapSafeCount": int(overlap.get("safePairCount") or statuses.get("safe", 0)),
-        "overlapNeedsReviewCount": int(
-            overlap.get("needsReviewPairCount") or statuses.get("needs_review", 0)
-        ),
-        "overlapInsufficientHistoryCount": int(
-            overlap.get("insufficientHistoryPairCount") or statuses.get("insufficient_history", 0)
-        ),
-    }
-
-
-def _backup_source_policy(backup_payload_path: Path | None) -> tuple[dict[str, Any], str]:
-    if backup_payload_path is None:
-        return {
-            "supplied": False,
-            "status": "not_supplied",
-            "sourcePolicyReviewPairs": 0,
-            "sourcePolicyRecommendationPairs": 0,
-        }, ""
-    payload, status, warning = _read_json_artifact(backup_payload_path)
-    if status != "ok":
-        return {
-            "supplied": True,
-            "status": status,
-            "path": str(backup_payload_path),
-            "sourcePolicyReviewPairs": 0,
-            "sourcePolicyRecommendationPairs": 0,
-        }, warning
-    counts = as_json_object(as_json_object(payload).get("counts"))
-    source_policy = as_json_object(as_json_object(payload).get("sourcePolicy"))
-    review = normalize_source_policy_review_state_artifact(source_policy.get("reviewState"))
-    recommendations = normalize_source_policy_recommendations_artifact(
-        source_policy.get("recommendations")
-    )
-    return {
-        "supplied": True,
-        "status": "ok",
-        "path": str(backup_payload_path),
-        "sourcePolicyReviewPairs": int(
-            counts.get("sourcePolicyReviewPairs") or len(as_json_object(review.get("pairs")))
-        ),
-        "sourcePolicyRecommendationPairs": int(
-            counts.get("sourcePolicyRecommendationPairs")
-            or len(json_object_rows(recommendations.get("pairs")))
-        ),
-        "warnings": [
-            clean_text(item) for item in source_policy.get("warnings", []) if clean_text(item)
-        ]
-        if isinstance(source_policy.get("warnings"), list)
-        else [],
-    }, ""
-
-
-def _find_forbidden_source_sync_tokens(value: Any) -> list[str]:
-    found: set[str] = set()
-
-    def walk(item: Any) -> None:
-        if isinstance(item, dict):
-            for key, child in item.items():
-                if key in SOURCE_SYNC_FORBIDDEN_TOKENS:
-                    found.add(key)
-                walk(child)
-        elif isinstance(item, list):
-            for child in item:
-                walk(child)
-        elif isinstance(item, str) and item in SOURCE_SYNC_FORBIDDEN_TOKENS:
-            found.add(item)
-
-    walk(value)
-    return sorted(found)
-
-
-def _source_sync_section(
-    sync_payload: Any, status: str
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    sync = as_json_object(sync_payload)
-    if status == "missing":
-        return {"present": False, "clean": True, "unexpectedTopLevelKeys": []}, []
-    if status == "malformed":
-        return {"present": True, "clean": False, "unexpectedTopLevelKeys": []}, []
-    top_keys = set(sync)
-    unexpected = sorted(top_keys - SOURCE_SYNC_ALLOWED_KEYS)
-    forbidden = _find_forbidden_source_sync_tokens(sync)
-    gates: list[dict[str, Any]] = []
-    if unexpected:
-        gates.append(
-            _gate(
-                "source_sync_unexpected_top_level_keys",
-                "failed",
-                "source-sync.json contains non-registry top-level keys.",
-                {"keys": unexpected},
-            )
-        )
-    if forbidden:
-        gates.append(
-            _gate(
-                "source_sync_contains_source_policy",
-                "failed",
-                "source-sync.json contains source-policy or review-state payload.",
-                {"tokens": forbidden},
-            )
-        )
-    return {
-        "present": True,
-        "clean": not unexpected and not forbidden,
-        "unexpectedTopLevelKeys": unexpected,
-        "forbiddenTokens": forbidden,
-        "allowedTopLevelKeys": sorted(SOURCE_SYNC_ALLOWED_KEYS),
-    }, gates
-
-
-def _active_static_row_by_token(active_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    rows_by_token: dict[str, dict[str, Any]] = {}
-    for row in active_rows:
-        if clean_text(row.get("adapter")) != "static":
-            continue
-        for token in _source_identity_tokens(row):
-            rows_by_token.setdefault(token, row)
-    return rows_by_token
-
-
-def _proposal_by_pair(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {_pair_key(row): row for row in rows if _pair_key(row) != "||"}
-
-
-def _suppression_evidence_for_pair(
-    pair_key: str,
-    *,
-    suppressed_pairs: list[dict[str, Any]],
-    suppression_eligibility: dict[str, Any],
-) -> tuple[str, str]:
-    if pair_key in {_pair_key(row) for row in suppressed_pairs}:
-        return "observed_dynamic_suppression", "dynamic_redundant_provider"
-    for row in json_object_rows(suppression_eligibility.get("missingLinkedStaticRows")):
-        if _pair_key(row) == pair_key:
-            reason = clean_text(row.get("selectionReason")) or clean_text(row.get("reason"))
-            if reason:
-                return "suppression_absence_explained", reason
-    return "", ""
-
-
-def _parse_iso_datetime(value: Any) -> datetime | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _timestamp_age_seconds(previous: str, current: str) -> int | None:
-    prior = _parse_iso_datetime(previous)
-    current_dt = _parse_iso_datetime(current)
-    if prior is None or current_dt is None:
-        return None
-    return max(0, int((current_dt - prior).total_seconds()))
-
-
-def _cleanup_row_readiness_key(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "staticSourceId": clean_text(row.get("staticSourceId")),
-        "providerSourceId": clean_text(row.get("providerSourceId")),
-        "proposalDisposition": clean_text(row.get("proposalDisposition")),
-        "proposalReadiness": clean_text(row.get("proposalReadiness")),
-        "proposalReadinessReason": clean_text(row.get("proposalReadinessReason")),
-        "blockers": [
-            clean_text(reason) for reason in row.get("blockers", []) if clean_text(reason)
-        ],
-    }
-
-
-def _cleanup_readiness_hash(
-    *,
-    proposal_generated_at: str,
-    proposal_report_run_id: str,
-    proposal_freshness_status: str,
-    source_sync_clean: bool,
-    rows: list[dict[str, Any]],
-) -> str:
-    payload = {
-        "proposalGeneratedAt": clean_text(proposal_generated_at),
-        "proposalReportRunId": clean_text(proposal_report_run_id),
-        "proposalFreshnessStatus": clean_text(proposal_freshness_status),
-        "sourceSyncClean": bool(source_sync_clean),
-        "rows": [_cleanup_row_readiness_key(row) for row in rows],
-    }
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    return digest
-
-
-def _conservative_static_cleanup_proposals_section(
-    *,
-    recommendation_pairs: list[dict[str, Any]],
-    proposal_rows: list[dict[str, Any]],
-    suppressed_pairs: list[dict[str, Any]],
-    suppression_eligibility: dict[str, Any],
-    active_rows: list[dict[str, Any]],
-    source_sync: dict[str, Any],
-    proposal_generated_at: str,
-    proposal_report_run_id: str,
-    report_generated_at: str,
-) -> dict[str, Any]:
-    active_static_by_token = _active_static_row_by_token(active_rows)
-    current_proposals_by_pair = _proposal_by_pair(proposal_rows)
-    proposals: list[dict[str, Any]] = []
-    blocked: list[dict[str, Any]] = []
-    freshness_age_seconds = _timestamp_age_seconds(proposal_generated_at, report_generated_at)
-    freshness_status = (
-        "stale"
-        if freshness_age_seconds is None
-        or freshness_age_seconds > CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS
-        else "fresh"
-    )
-
-    for pair in recommendation_pairs:
-        if clean_text(pair.get("currentRecommendation")) != "stable_safe_redundant":
-            continue
-        pair_key = _pair_key(pair)
-        static_id = clean_text(pair.get("staticSourceId"))
-        active_static = active_static_by_token.get(static_id)
-        current = current_proposals_by_pair.get(pair_key, {})
-        suppression_status, suppression_reason = _suppression_evidence_for_pair(
-            pair_key,
-            suppressed_pairs=suppressed_pairs,
-            suppression_eligibility=suppression_eligibility,
-        )
-        blockers: list[str] = []
-        if int(pair.get("consecutiveSafeRunCount") or 0) < CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS:
-            blockers.append("insufficient_clean_soak_runs")
-        if int(pair.get("staticOnlyDetectedRunCount") or 0) > 0:
-            blockers.append("static_only_evidence_present")
-        if not bool(source_sync.get("clean")):
-            blockers.append("source_sync_not_clean")
-        if not active_static:
-            blockers.append("static_source_not_active")
-        elif clean_text(active_static.get("adapter")) != "static":
-            blockers.append("static_source_adapter_not_static")
-        if not suppression_status:
-            blockers.append("dynamic_suppression_not_observed_or_explained")
-
-        row = {
-            "staticSourceId": static_id,
-            "staticSourceName": clean_text(pair.get("staticSourceName")),
-            "providerSourceId": clean_text(pair.get("providerSourceId")),
-            "providerSourceName": clean_text(pair.get("providerSourceName")),
-            "proposalDisposition": "blocked" if blockers else "proposal_ready",
-            "proposalReadiness": (
-                "blocked"
-                if blockers
-                else ("stale" if freshness_status == "stale" else "actionable")
-            ),
-            "proposalReadinessReason": (
-                ", ".join(blockers)
-                if blockers
-                else (
-                    "proposal evidence is stale; refresh the cleanup proposal report before taking action"
-                    if freshness_status == "stale"
-                    else "proposal evidence is fresh and actionable"
-                )
-            ),
-            "proposalReadinessEvidence": [
-                *(
-                    [f"blocker:{reason}" for reason in blockers]
-                    if blockers
-                    else [f"proposal_freshness:{freshness_status}"]
-                ),
-                f"proposal_disposition:{'blocked' if blockers else 'proposal_ready'}",
-            ],
-            "proposal": "conservative_static_cleanup_candidate",
-            "recommendedAction": "move_static_to_hidden_pending",
-            "destructiveActionAllowed": False,
-            "requiresExplicitAdminAction": True,
-            "decisionLogEvidenceRequired": True,
-            "requiredCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
-            "cleanRunEvidenceCount": int(pair.get("consecutiveSafeRunCount") or 0),
-            "safeRunCount": int(pair.get("safeRunCount") or 0),
-            "staticOnlyDetectedRunCount": int(pair.get("staticOnlyDetectedRunCount") or 0),
-            "sourceSyncClean": bool(source_sync.get("clean")),
-            "suppressionEvidenceStatus": suppression_status,
-            "suppressionEvidenceReason": suppression_reason,
-            "proposalGeneratedAt": clean_text(proposal_generated_at),
-            "proposalReportRunId": clean_text(proposal_report_run_id),
-            "proposalFreshnessStatus": freshness_status,
-            "proposalFreshnessAgeSeconds": freshness_age_seconds,
-            "lastProposal": clean_text(pair.get("lastProposal")),
-            "lastAuditStatus": clean_text(pair.get("lastAuditStatus"))
-            or clean_text(current.get("lastAuditStatus")),
-            "providerCoverageStatus": clean_text(current.get("providerCoverageStatus")),
-            "providerCoverageConsecutiveSuccesses": _int_value(
-                current.get("providerCoverageConsecutiveSuccesses")
-            ),
-            "providerCoverageLatestKeptCount": _int_value(
-                current.get("providerCoverageLatestKeptCount")
-            ),
-            "overlapCount": _int_value(current.get("overlapCount")),
-            "staticOnlyCount": _int_value(current.get("staticOnlyCount")),
-            "evidenceReasons": [
-                reason
-                for reason in (
-                    "source_policy_recommendation_stable_safe_redundant",
-                    "consecutive_safe_run_threshold_met"
-                    if int(pair.get("consecutiveSafeRunCount") or 0)
-                    >= CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS
-                    else "",
-                    "source_sync_clean" if bool(source_sync.get("clean")) else "",
-                    suppression_status,
-                    "static_only_evidence_absent"
-                    if int(pair.get("staticOnlyDetectedRunCount") or 0) == 0
-                    else "",
-                )
-                if reason
-            ],
-            "blockers": blockers,
-        }
-        if blockers:
-            blocked.append(row)
-        else:
-            proposals.append(row)
-
-    def row_sort_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
-        blocker_text = "|".join(clean_text(item) for item in row.get("blockers", []) if item)
-        provider_key = norm_text(row.get("providerSourceName")) or norm_text(
-            row.get("providerSourceId")
-        )
-        static_key = norm_text(row.get("staticSourceName")) or norm_text(row.get("staticSourceId"))
-        return (
-            blocker_text,
-            provider_key,
-            static_key,
-            clean_text(row.get("recommendedAction")),
-        )
-
-    proposals.sort(key=row_sort_key)
-    blocked.sort(key=row_sort_key)
-    blocked_reason_counts = Counter(
-        clean_text(reason)
-        for row in blocked
-        for reason in row.get("blockers", [])
-        if clean_text(reason)
-    )
-    proposal_readiness_rows = [*proposals, *blocked]
-    readiness_hash = _cleanup_readiness_hash(
-        proposal_generated_at=proposal_generated_at,
-        proposal_report_run_id=proposal_report_run_id,
-        proposal_freshness_status=freshness_status,
-        source_sync_clean=bool(source_sync.get("clean")),
-        rows=proposal_readiness_rows,
-    )
-
-    return {
-        "minimumCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
-        "totalCandidateCount": len(proposals) + len(blocked),
-        "proposalCount": len(proposals),
-        "blockedCount": len(blocked),
-        "staleCount": sum(
-            1 for row in proposals if clean_text(row.get("proposalReadiness")) == "stale"
-        ),
-        "proposalGeneratedAt": clean_text(proposal_generated_at),
-        "proposalReportRunId": clean_text(proposal_report_run_id),
-        "proposalFreshnessStatus": freshness_status,
-        "proposalFreshnessAgeSeconds": freshness_age_seconds,
-        "proposalStaleThresholdSeconds": CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS,
-        "proposalReadinessHash": readiness_hash,
-        "blockedReasonCounts": dict(
-            sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
-        ),
-        "proposals": proposals,
-        "blockedCandidates": blocked,
-        "proposalReadyExamples": proposals[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
-        "blockedExamples": blocked[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
-    }
 
 
 def _build_sections(
@@ -4380,307 +1433,6 @@ def build_soak_report(data_dir: Path, backup_payload_path: Path | None = None) -
         "qualityGates": gates,
         "warnings": warnings,
     }
-
-
-def _markdown_table(rows: list[tuple[str, Any]]) -> list[str]:
-    lines = ["| Metric | Value |", "|--------|-------|"]
-    for key, value in rows:
-        lines.append(f"| `{key}` | `{value}` |")
-    return lines
-
-
-def _markdown_cell(value: Any) -> str:
-    return clean_text(value).replace("|", "\\|")
-
-
-def _provider_coverage_gap_markdown_rows(report: dict[str, Any]) -> list[str]:
-    gaps = as_json_object(as_json_object(report.get("sections")).get("providerCoverageGaps"))
-    rows = ["| Bucket | Source | Provider | Reason | Status | Registry |"]
-    rows.append("|--------|--------|----------|--------|--------|----------|")
-    for bucket in PROVIDER_COVERAGE_GAP_BUCKETS:
-        bucket_payload = as_json_object(gaps.get(bucket))
-        for example in json_object_rows(bucket_payload.get("examples")):
-            source = clean_text(example.get("sourceName")) or clean_text(
-                example.get("sourceIdentity")
-            )
-            provider = (
-                clean_text(example.get("providerSourceName"))
-                or clean_text(example.get("providerSourceIdentity"))
-                or clean_text(example.get("detectedProviderFamily"))
-            )
-            status = clean_text(example.get("providerCoverageStatus")) or clean_text(
-                example.get("latestFetchStatus")
-            )
-            registry = clean_text(example.get("registryBucket")) or clean_text(
-                example.get("registryState")
-            )
-            rows.append(
-                "| "
-                f"`{bucket}` | "
-                f"{_markdown_cell(source)} | "
-                f"{_markdown_cell(provider)} | "
-                f"`{_markdown_cell(example.get('blockerReason'))}` | "
-                f"`{_markdown_cell(status)}` | "
-                f"`{_markdown_cell(registry)}` |"
-            )
-    if len(rows) == 2:
-        rows.append("| none |  |  |  |  |  |")
-    return rows
-
-
-def _markdown_joined_values(values: Any) -> str:
-    items = [clean_text(item) for item in as_json_list(values) if clean_text(item)]
-    return ", ".join(items) if items else "none"
-
-
-def _provider_coverage_next_action_markdown_rows(report: dict[str, Any]) -> list[str]:
-    next_action = as_json_object(
-        as_json_object(report.get("sections")).get("providerCoverageNextAction")
-    )
-    return _markdown_table(
-        [
-            ("action", clean_text(next_action.get("action")) or "none"),
-            ("priority", int(next_action.get("priority") or 0)),
-            ("requiresHumanApproval", bool(next_action.get("requiresHumanApproval"))),
-            ("blockedBy", _markdown_joined_values(next_action.get("blockedBy"))),
-            ("safeLocalCommands", _markdown_joined_values(next_action.get("safeLocalCommands"))),
-            ("rationale", clean_text(next_action.get("rationale"))),
-        ]
-    )
-
-
-def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
-    candidates = json_object_rows(
-        as_json_object(
-            as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
-        ).get("reviewCandidates")
-    )
-    lines = [
-        "| Provider | Selected static | Confidence | API eligible | Reason | Last kept | Last status | Why not high confidence |",
-        "|----------|-----------------|------------|--------------|--------|-----------|-------------|-------------------------|",
-    ]
-    if not candidates:
-        lines.append("| none | none | `0` | `false` | none | `0` | none | none |")
-        return lines
-    for candidate in candidates[:10]:
-        evidence = as_json_object(candidate.get("sourceStateEvidence"))
-        lines.append(
-            "| "
-            f"{clean_text(candidate.get('providerSourceName')) or clean_text(candidate.get('providerSourceId'))} | "
-            f"{clean_text(candidate.get('selectedStaticSourceName')) or clean_text(candidate.get('selectedStaticSourceId'))} | "
-            f"`{candidate.get('confidence')}` | "
-            f"`{bool(candidate.get('apiEligible'))}` | "
-            f"`{clean_text(candidate.get('resolutionReason'))}` | "
-            f"`{_int_value(evidence.get('lastKeptCount'))}` | "
-            f"`{clean_text(evidence.get('lastStatus'))}` | "
-            f"{clean_text(candidate.get('whyNotHighConfidence')) or 'none'} |"
-        )
-    return lines
-
-
-def _blocked_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
-    candidates = json_object_rows(
-        as_json_object(
-            as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
-        ).get("blockedCandidates")
-    )
-    lines = [
-        "| Provider | Selected static | Confidence | Blockers | Evidence | Last kept | Last status | Last successful | Last fetched | Coverage status | Successes | Latest kept |",
-        "|----------|-----------------|------------|----------|----------|-----------|-------------|----------------|--------------|-----------------|-----------|-------------|",
-    ]
-    if not candidates:
-        lines.append(
-            "| none | none | `0` | none | none | `0` | none | none | none | none | `0` | `0` |"
-        )
-        return lines
-    for candidate in candidates[:10]:
-        evidence = as_json_object(candidate.get("sourceStateEvidence"))
-        blockers = ", ".join(
-            clean_text(blocker)
-            for blocker in as_json_list(candidate.get("blockers"))
-            if clean_text(blocker)
-        )
-        evidence_reasons = ", ".join(
-            clean_text(reason)
-            for reason in as_json_list(candidate.get("evidenceReasons"))
-            if clean_text(reason)
-        )
-        lines.append(
-            "| "
-            f"{clean_text(candidate.get('providerSourceName')) or clean_text(candidate.get('providerSourceId'))} | "
-            f"{clean_text(candidate.get('selectedStaticSourceName')) or clean_text(candidate.get('selectedStaticSourceId'))} | "
-            f"`{candidate.get('confidence')}` | "
-            f"`{blockers or 'none'}` | "
-            f"`{evidence_reasons or 'none'}` | "
-            f"`{_int_value(evidence.get('lastKeptCount'))}` | "
-            f"`{clean_text(evidence.get('lastStatus'))}` |"
-            f" {clean_text(evidence.get('lastSuccessfulAt')) or 'none'} |"
-            f" {clean_text(evidence.get('lastFetchedAt')) or 'none'} |"
-            f" {clean_text(evidence.get('providerCoverageStatus')) or 'none'} |"
-            f" `{_int_value(evidence.get('providerCoverageConsecutiveSuccesses'))}` |"
-            f" `{_int_value(evidence.get('providerCoverageLatestKeptCount'))}` |"
-        )
-    return lines
-
-
-def _migration_link_disambiguation_blocker_summary(report: dict[str, Any]) -> str:
-    section = as_json_object(
-        as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
-    )
-    counts = as_json_object(section.get("disambiguationBlockerCounts"))
-    examples = json_object_rows(section.get("disambiguationBlockedExamples"))
-    if not counts and not examples:
-        return "none"
-    count_summary = ", ".join(
-        f"{clean_text(key).replace('_', ' ')} {int(value or 0):,}"
-        for key, value in sorted(counts.items(), key=lambda item: (-int(item[1] or 0), item[0]))
-        if clean_text(key)
-    )
-    if not count_summary:
-        count_summary = "none"
-    example_summary = " | ".join(
-        f"{clean_text(example.get('providerSourceName')) or clean_text(example.get('providerSourceId')) or 'Unknown provider'} / "
-        f"{clean_text(example.get('selectedStaticSourceName')) or clean_text(example.get('staticSourceName')) or clean_text(example.get('selectedStaticSourceId')) or clean_text(example.get('staticSourceId')) or 'Unknown static source'} / "
-        f"{', '.join(clean_text(blocker).replace('_', ' ') for blocker in as_json_list(example.get('disambiguationBlockers')) if clean_text(blocker)) or 'none'}"
-        for example in examples[:PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT]
-        if isinstance(example, dict)
-    )
-    if not example_summary:
-        example_summary = "none"
-    return f"{count_summary}. Examples: {example_summary}."
-
-
-def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
-    rows = json_object_rows(
-        as_json_object(as_json_object(report.get("sections")).get("suppressionEligibility")).get(
-            "missingLinkedStaticRows"
-        )
-    )
-    lines = [
-        "| Provider | Linked static | Readiness | Successes | Latest kept | Selection reason | Bucket | Loader match | Loader reason | Generated loader |",
-        "|----------|---------------|-----------|-----------|-------------|------------------|--------|--------------|---------------|------------------|",
-    ]
-    if not rows:
-        lines.append("| none | none | none | `0` | `0` | none | none | none | none | none |")
-        return lines
-    for row in rows[:10]:
-        lines.append(
-            "| "
-            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
-            f"{clean_text(row.get('migrationSourceName')) or clean_text(row.get('migrationSourceIdentity'))} | "
-            f"`{clean_text(row.get('providerReplacementReadiness')) or 'unknown'}` | "
-            f"`{_int_value(row.get('providerCoverageConsecutiveSuccesses'))}` | "
-            f"`{_int_value(row.get('providerCoverageLatestKeptCount'))}` | "
-            f"`{clean_text(row.get('selectionReason')) or clean_text(row.get('reason'))}` | "
-            f"`{clean_text(row.get('registryBucket')) or 'unknown'}` | "
-            f"`{clean_text(row.get('loaderNameMatchStatus')) or 'unknown'}` | "
-            f"`{clean_text(row.get('loaderNotGeneratedReason')) or 'none'}` | "
-            f"`{clean_text(row.get('generatedStaticLoaderName')) or 'unknown'}` |"
-        )
-    return lines
-
-
-def _conservative_cleanup_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
-    lines = [
-        "| Static | Provider | Action | Readiness | Freshness | Clean runs | Suppression evidence | Explicit action | Destructive |",
-        "|--------|----------|--------|-----------|-----------|------------|----------------------|-----------------|-------------|",
-    ]
-    if not rows:
-        lines.append("| none | none | none | none | none | `0` | none | `false` | `false` |")
-        return lines
-    for row in rows[:10]:
-        lines.append(
-            "| "
-            f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
-            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
-            f"`{clean_text(row.get('recommendedAction'))}` | "
-            f"`{clean_text(row.get('proposalReadiness')) or 'actionable'}` | "
-            f"`{clean_text(row.get('proposalFreshnessStatus')) or 'fresh'}` | "
-            f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
-            f"`{clean_text(row.get('suppressionEvidenceStatus'))}:"
-            f"{clean_text(row.get('suppressionEvidenceReason'))}` | "
-            f"`{bool(row.get('requiresExplicitAdminAction'))}` | "
-            f"`{bool(row.get('destructiveActionAllowed'))}` |"
-        )
-    return lines
-
-
-def _conservative_cleanup_blocked_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
-    lines = [
-        "| Static | Provider | Readiness | Freshness | Blockers | Clean runs | Static-only runs | Suppression evidence |",
-        "|--------|----------|-----------|-----------|----------|------------|------------------|----------------------|",
-    ]
-    if not rows:
-        lines.append("| none | none | none | none | none | `0` | `0` | none |")
-        return lines
-    for row in rows[:10]:
-        blockers = ", ".join(
-            clean_text(item) for item in row.get("blockers", []) if clean_text(item)
-        )
-        lines.append(
-            "| "
-            f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
-            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
-            f"`{clean_text(row.get('proposalReadiness')) or 'blocked'}` | "
-            f"`{clean_text(row.get('proposalFreshnessStatus')) or 'fresh'}` | "
-            f"`{blockers or 'none'}` | "
-            f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
-            f"`{_int_value(row.get('staticOnlyDetectedRunCount'))}` | "
-            f"`{clean_text(row.get('suppressionEvidenceStatus'))}:"
-            f"{clean_text(row.get('suppressionEvidenceReason'))}` |"
-        )
-    return lines
-
-
-def _static_scope_conflict_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
-    lines = [
-        "| Source | Classification | Action | Listing host | Off-listing hosts | Covered | Uncovered | Explicit action | Behavior change |",
-        "|--------|----------------|--------|--------------|-------------------|---------|-----------|-----------------|-----------------|",
-    ]
-    if not rows:
-        lines.append("| none | none | none | none | none | none | none | `false` | `false` |")
-        return lines
-    for row in rows[:10]:
-        lines.append(
-            "| "
-            f"{clean_text(row.get('sourceName')) or clean_text(row.get('sourceId'))} | "
-            f"`{clean_text(row.get('classification'))}` | "
-            f"`{clean_text(row.get('recommendedAction'))}` | "
-            f"`{clean_text(row.get('listingHost'))}` | "
-            f"{', '.join(clean_text(host) for host in as_json_list(row.get('offListingHosts')) if clean_text(host)) or 'none'} | "
-            f"{', '.join(clean_text(host) for host in as_json_list(row.get('coveredOffListingHosts')) if clean_text(host)) or 'none'} | "
-            f"{', '.join(clean_text(host) for host in as_json_list(row.get('uncoveredOffListingHosts')) if clean_text(host)) or 'none'} | "
-            f"`{bool(row.get('requiresExplicitAdminAction'))}` | "
-            f"`{bool(row.get('behaviorChangeAllowed'))}` |"
-        )
-    return lines
-
-
-def _static_scope_patch_proposal_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
-    lines = [
-        "| Source | Proposed action | Remove pages | Keep pages | Apply allowed | Explicit action |",
-        "|--------|-----------------|--------------|------------|---------------|-----------------|",
-    ]
-    if not rows:
-        lines.append("| none | none | none | none | `false` | `false` |")
-        return lines
-    for row in rows[:10]:
-        remove_pages = ", ".join(
-            clean_text(page) for page in as_json_list(row.get("removePages")) if clean_text(page)
-        )
-        keep_pages = ", ".join(
-            clean_text(page) for page in as_json_list(row.get("keepPages")) if clean_text(page)
-        )
-        lines.append(
-            "| "
-            f"{clean_text(row.get('sourceName')) or clean_text(row.get('sourceId'))} | "
-            f"`{clean_text(row.get('proposedAction'))}` | "
-            f"{remove_pages or 'none'} | "
-            f"{keep_pages or 'none'} | "
-            f"`{bool(row.get('applyAllowed'))}` | "
-            f"`{bool(row.get('requiresExplicitAdminAction'))}` |"
-        )
-    return lines
 
 
 def render_markdown_report(report: dict[str, Any]) -> str:
