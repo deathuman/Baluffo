@@ -256,20 +256,6 @@ def has_all_rows_canonical_dropped(context: ClassificationContext) -> bool:
     )
 
 
-def _has_needs_review_zero_extract_signal(
-    context: ClassificationContext,
-    status: str,
-    classification: str,
-) -> bool:
-    return status == "ok" and (
-        classification in {"ok_no_jobs", "parser_stale", "fetch_ok_extract_zero", "needs_review"}
-        or context.detail_pages_visited > 0
-        or context.candidate_links_found > 0
-        or context.listing_jobs_found > 0
-        or context.detail_parse_empty_count > 0
-    )
-
-
 ZERO_EXTRACT_FAILURE_BUCKETS: dict[str, FailureBucket] = {
     ZeroExtractDiagnosis.EMPTY_CONFIRMED.value: FailureBucket.NO_OPENINGS,
     ZeroExtractDiagnosis.JS_REQUIRED.value: FailureBucket.JS_REQUIRED,
@@ -498,7 +484,6 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
     Diagnosis stays separate from retry policy. The returned browser fallback flag is a
     policy hint, not a substitute for the diagnosis bucket.
     """
-    status = _normalized_text(context.status)
     error_lower = _normalized_text(context.error)
     classification = _normalized_text(context.classification)
     hint = _normalized_text(context.extractor_hint)
@@ -543,12 +528,6 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
     if _has_empty_confirmed_signal(context, classification, hint):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.EMPTY_CONFIRMED, False)
 
-    if signal_quality == "weak":
-        return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
-
-    if _has_needs_review_zero_extract_signal(context, status, classification):
-        return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
-
     return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
 
 
@@ -577,9 +556,6 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     ):
         if bucket is not None:
             return bucket
-
-    if not error_lower and not classification:
-        return FailureBucket.UNKNOWN
 
     return FailureBucket.UNKNOWN
 

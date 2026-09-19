@@ -52,7 +52,7 @@ export function getRunStatusChipClass(status) {
   const token = String(status || "").toLowerCase();
   if (token === "error" || token === "failed" || token === "orphaned") return "critical";
   if (token === "warning" || token === "canceled" || token === "completed_with_warnings") return "warning";
-  if (token === "running" || token === "started" || token === "succeeded" || token === "completed") return "healthy";
+  // running / started / succeeded / completed and any unknown token are healthy.
   return "healthy";
 }
 

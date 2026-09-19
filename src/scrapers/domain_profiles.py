@@ -164,10 +164,6 @@ def is_probable_job_detail_url(url: str, profile: dict[str, Any]) -> bool:
             return True
     if "/careers/" in path and re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}$", path):
         return True
-    if "/careers/location/" in path or "/careers/locations/" in path:
-        return False
-    if "location=" in query:
-        return False
     return False
 
 

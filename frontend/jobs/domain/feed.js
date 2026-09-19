@@ -112,8 +112,10 @@ function hasGameSourceProvenance(source = "", sourceBundle = [], company = "") {
 // whole-company site and misattributed every employer's rows (WBD, CNN, HBO
 // Max, Disney, SciGames) as Game. Evidence:
 // docs/snapshots/sector-signal-contamination-2026-09-06.md.
-function hasPositiveGameEvidence(company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
-  const text = `${company} ${title} ${source} ${jobLink}`.toLowerCase();
+// `jobLink` is accepted for positional signature stability but carries no
+// evidence (see the comment above: board URLs are not employer-scoped), hence
+// the intentionally unused leading-underscore parameter.
+function hasPositiveGameEvidence(company = "", title = "", source = "", _jobLink = "", sourceBundle = []) {
   if (hasGameSourceProvenance(source, sourceBundle, company)) {
     return true;
   }
@@ -132,20 +134,21 @@ function hasPositiveGameEvidence(company = "", title = "", source = "", jobLink 
   return false;
 }
 
+// Delegates entirely to hasPositiveGameEvidence: the two keyword regexes this
+// function used to carry were a strict subset of that predicate's own
+// company/title matching, so they never changed a verdict. Kept as a named
+// export because it is the public company/sector entry point.
 export function classifyCompanyType(company, title = "", source = "", jobLink = "", sourceBundle = []) {
-  const employerText = `${company || ""} ${title || ""}`.toLowerCase();
-  const isGame =
-    hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ||
-    /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(employerText) ||
-    /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(employerText);
-  return isGame ? "Game" : "Tech";
+  return hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ? "Game" : "Tech";
 }
 
-export function normalizeSector(text, company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
-  const sectorText = String(text || "").trim();
-  if (!sectorText) {
-    return hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ? "Game" : "Tech";
-  }
+// The incoming `sector` value carries no evidence: the verdict is decided
+// entirely by hasPositiveGameEvidence, which is why the parameter is now
+// intentionally unused (leading underscore per eslint argsIgnorePattern). It
+// stays in the signature because it is public surface, re-exported through
+// frontend/jobs/domain.js and passed positionally by call sites such as
+// frontend/jobs/parsing-utils.js.
+export function normalizeSector(_text, company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
   return hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ? "Game" : "Tech";
 }
 

@@ -35,6 +35,10 @@ if str(TOOLS_ROOT) not in sys.path:
 from bridge_api_field_inventory import check_bridge_api_field_inventory
 from bridge_route_inventory import check_bridge_route_inventory
 from container_version_policy import check_container_shipped_code_version_gate
+from dead_branch_policy import (
+    check_dead_branch_stale_baseline,
+    check_dead_branches,
+)
 from desktop_update_facade_inventory import check_desktop_update_facade_inventory
 from desktop_update_root_dependency_inventory import (
     check_desktop_update_root_dependency_inventory,
@@ -87,6 +91,7 @@ GROUPS = (
     "registry",
     "bundle",
     "duplication",
+    "dead-code",
 )
 
 # Duplicate-body gate mode. False = report new duplicate patterns as a warning
@@ -968,6 +973,35 @@ def run_duplication_group() -> list[GuardFailure]:
     return failures
 
 
+def run_dead_code_group() -> list[GuardFailure]:
+    """Dead branches and leaked loop bindings, ratcheted against a baseline.
+
+    Both classes were invisible to every existing gate before this landed:
+    ruff (E, F, I, B, UP, and a trial of SIM/RET/PIE/PLR), vulture, mypy, and
+    eslint all reported nothing for them. The baseline was seeded empty after
+    the 10 detected branches were removed, so any *new* finding is a regression.
+    """
+    failures: list[GuardFailure] = []
+    uncovered = check_dead_branches(repo_root=ROOT)
+    stale = check_dead_branch_stale_baseline(repo_root=ROOT)
+
+    if uncovered:
+        report = "\n".join(uncovered)
+        failures.append(
+            GuardFailure(
+                "dead-code",
+                "check_dead_branches",
+                "dead branch or leaked loop binding detected; remove the dead "
+                f"code (do not baseline it) :\n\n{report}",
+            )
+        )
+
+    stale_failure = _failure_from_messages("dead-code", "check_dead_branch_stale_baseline", stale)
+    if stale_failure:
+        failures.append(stale_failure)
+    return failures
+
+
 GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "docs": run_docs_group,
     "workflow": run_workflow_group,
@@ -983,6 +1017,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "registry": run_registry_group,
     "bundle": run_bundle_group,
     "duplication": run_duplication_group,
+    "dead-code": run_dead_code_group,
 }
 
 

@@ -40,8 +40,6 @@ def _parse_sheet_openings_flag(value: Any) -> str:
         return "speculative"
     if "only" in raw and "speculative" in raw:
         return "speculative"
-    if "?" in raw or "unknown" in raw:
-        return "unknown"
     return "unknown"
 
 

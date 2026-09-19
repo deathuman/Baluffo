@@ -207,7 +207,6 @@ async function startBootstrapAndLoad({ explicit = false } = {}) {
     async function startBootstrapWithConfirmation({ explicit = false } = {}) {
       try {
         const payload = await startJobsBootstrap({ timeoutMs: bootstrapStartTimeoutMs });
-        if (bootstrapStartHasRunningEvidence(payload)) return payload;
         return payload;
       } catch (err) {
         if (!isUncertainBootstrapStartError(err)) throw err;

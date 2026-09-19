@@ -479,8 +479,6 @@ def _merge_source_class(payload: dict[str, Any]) -> str:
         return "social"
     if adapter == "static" or source.startswith(("static_source::", "static:listing_url:")):
         return "static"
-    if source.startswith("google_sheets"):
-        return "other"
     return "other"
 
 

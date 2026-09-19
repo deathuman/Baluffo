@@ -60,8 +60,6 @@ def _classify_result(
         or "403" in lower_errors
     ):
         return "blocked_or_challenge"
-    if fetched_count > 0 and kept_count == 0:
-        return "needs_review"
     return "needs_review"
 
 

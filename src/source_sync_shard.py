@@ -357,7 +357,7 @@ def push_changed_shards(
             continue
         results.append(dict(shard_output.get("pushResult") or {}))
         verifications.append(dict(shard_output.get("verification") or {}))
-        remote_requests.extend(list(output.get("remoteRequests") or []))
+        remote_requests.extend(list(shard_output.get("remoteRequests") or []))
     return {
         "shardCount": len(shards),
         "changedShardCount": len(changed),

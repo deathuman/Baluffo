@@ -140,8 +140,6 @@ def classify_residual_failure(
         return "site_changed"
     if bucket == "js_required" or "js_required" in text.lower():
         return "browser_required" if adapter == "static" else "manual_review"
-    if bucket == "needs_review":
-        return "manual_review"
     return "manual_review"
 
 

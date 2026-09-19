@@ -177,3 +177,75 @@ test("multi-board static with employer-consistent provider studios keeps provena
     "Game"
   );
 });
+
+// The incoming `sector` value is not evidence: normalizeSector decides purely
+// from company/title/source/jobLink/sourceBundle, so its `text` parameter has
+// no effect on the verdict. These assertions pin that dead-branch removal: the
+// empty/conflicting sector strings must all agree with each other.
+test("incoming sector value never changes the normalizeSector verdict", () => {
+  // Game case: Riot Games is a curated employer-name hit, so the verdict is
+  // Game regardless of what the row's stored sector said.
+  const gameArgs = ["Riot Games", "Software Engineer", "google_sheets", "https://www.riotgames.com/en/work-with-us"];
+  assert.equal(normalizeSector("", ...gameArgs), "Game");
+  assert.equal(normalizeSector("Tech", ...gameArgs), "Game");
+  assert.equal(normalizeSector("Game", ...gameArgs), "Game");
+
+  // Tech case: no game evidence anywhere, so the verdict is Tech regardless of
+  // a stored "Game" sector.
+  const techArgs = ["Apple", "Wireless SoC Design Engineer", "google_sheets", "https://jobs.apple.com/en-us/details/200559444/wireless-soc-design-engineer"];
+  assert.equal(normalizeSector("", ...techArgs), "Tech");
+  assert.equal(normalizeSector("Tech", ...techArgs), "Tech");
+  assert.equal(normalizeSector("Game", ...techArgs), "Tech");
+
+  // Whitespace-only sector behaves like the empty string.
+  assert.equal(normalizeSector("   ", ...gameArgs), "Game");
+  assert.equal(normalizeSector("   ", ...techArgs), "Tech");
+});
+
+// classifyCompanyType delegates entirely to the internal game-evidence
+// predicate. That predicate is not exported (exporting it would widen the
+// public sector surface and add an unused export), so the equivalence is
+// pinned against a frozen expected-value table instead. Each row's expected
+// value is the verdict the evidence predicate produces; the assertion fails if
+// classifyCompanyType ever stops agreeing with it.
+test("classifyCompanyType agrees with game evidence across the employer corpus", () => {
+  const WBD = "static_source::static:listing_url:https://careers.wbd.com/global/en/wb-games-jobs";
+  const cases = [
+    // [company, title, source, jobLink, expected]
+    ["Apple", "Wireless SoC Design Engineer", "google_sheets", "https://jobs.apple.com/en-us/details/200559444/wireless-soc-design-engineer", "Tech"],
+    ["NVIDIA", "Senior Software Engineer, Architecture", "workday_sources", "https://nvidia.wd1.myworkdayjobs.com/en-US/NVIDIAExternalCareersSite/job/Senior-Software-Engineer_R1234567", "Tech"],
+    ["CNN", "Software Engineer II (Site Reliability Engineer)", WBD, "https://careers.wbd.com/global/en/job/R000105665/Software-Engineer-II-Site-Reliability-Engineer", "Tech"],
+    ["Riot Games", "Software Engineer", "google_sheets", "https://www.riotgames.com/en/work-with-us", "Game"],
+    ["Metacore", "Talent Acquisition Partner", "google_sheets", "https://job-boards.eu.greenhouse.io/metacore/jobs/4793672101", "Game"],
+    ["Eataly", "Line Cook", "google_sheets", "https://jobs.eataly.com/line-cook", "Tech"],
+    ["EACH1", "Payroll Officer", "google_sheets", "https://jobs.smartrecruiters.com/EACH1/744000112291310-payroll-officer", "Tech"],
+    ["Electronic Arts", "Anti-Cheat Engineer", "static_source::static:listing_url:https://careers.ea.com/careers", "https://jobs.ea.com/en_US/careers/JobDetail/Anti-Cheat-Engineer/212779", "Game"],
+    ["playrix", "Junior QA Engineer (Manual)", "google_sheets", "https://playrix.com/job/open/qa/junior-qa-engineer-manual", "Game"],
+    ["Avalanchestudios", "Total Rewards Specialist", "google_sheets", "https://jobs.lever.co/avalanchestudios/72e4e6a4-f723-48ef-8d83-93e885ecd8a1", "Game"],
+    ["Sonyglobal", "Principal Technical Program Manager", "google_sheets", "https://sonyglobal.wd1.myworkdayjobs.com/en-US/SonyGlobalCareers/job/Principal-Technical-Program-Manager_JR-118447?q=game", "Tech"],
+    ["Sglottery", "Software Engineer II", "workday_sources", "https://scientificgames.wd5.myworkdayjobs.com/en-US/SciPlayCareers/job/Software-Engineer-II_R-24110", "Tech"],
+    ["Schell Games", "Software Engineer", "google_sheets", "https://www.schellgames.com/careers/software-engineer", "Game"],
+    ["WB Games", "Senior Gameplay Programmer", WBD, "https://careers.wbd.com/global/en/job/R000105670/Senior-Gameplay-Programmer", "Game"],
+    // studio / studios / interactive / publisher / entertainment stress rows:
+    // the tokens classifyCompanyType used to test itself, now delegated.
+    ["Acme Studio", "Software Engineer", "google_sheets", "https://example.com/1", "Game"],
+    ["Acme Studios", "Backend Engineer", "google_sheets", "https://example.com/2", "Game"],
+    ["Acme Interactive", "Producer", "google_sheets", "https://example.com/3", "Game"],
+    ["Acme Publisher", "Editor", "google_sheets", "https://example.com/4", "Game"],
+    ["Acme Entertainment", "Lawyer", "google_sheets", "https://example.com/5", "Game"],
+    ["Acme", "Studio Manager", "google_sheets", "https://example.com/6", "Game"],
+    ["Acme", "Entertainment Lawyer", "google_sheets", "https://example.com/7", "Game"],
+    ["Publishing House", "Editor", "google_sheets", "https://example.com/8", "Tech"],
+    // empty / nullish inputs must not throw or drift.
+    ["", "", "", "", "Tech"],
+    ["Acme", "", "", "", "Tech"],
+    ["", "Software Engineer", "", "", "Tech"]
+  ];
+  for (const [company, title, source, jobLink, expected] of cases) {
+    assert.equal(
+      classifyCompanyType(company, title, source, jobLink),
+      expected,
+      `${company} / ${title}`
+    );
+  }
+});
