@@ -46,6 +46,7 @@ from duplicate_body_policy import (
     check_duplicate_bodies_stale_baseline,
     check_duplicate_function_bodies,
 )
+from loc_budget import check_loc_budget
 from release_artifacts_policy import (
     check_desktop_update_manifest_version,
     check_portable_zip_embedded_version,
@@ -81,6 +82,7 @@ GROUPS = (
     "test-shape",
     "fixtures",
     "line-budget",
+    "loc",
     "release",
     "registry",
     "bundle",
@@ -882,6 +884,12 @@ def run_line_budget_group() -> list[GuardFailure]:
     return failures
 
 
+def run_loc_group() -> list[GuardFailure]:
+    """Tracked source line budget: no area grows, no reduction goes un-ratcheted."""
+    failure = _failure_from_messages("loc", "check_loc_budget", check_loc_budget(ROOT))
+    return [failure] if failure is not None else []
+
+
 def run_bundle_group() -> list[GuardFailure]:
     failures: list[GuardFailure] = []
     completeness = _failure_from_messages(
@@ -970,6 +978,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "test-shape": run_test_shape_group,
     "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
+    "loc": run_loc_group,
     "release": run_release_group,
     "registry": run_registry_group,
     "bundle": run_bundle_group,

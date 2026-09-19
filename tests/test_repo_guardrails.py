@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from tests.helpers.mutation import append_and_return
-from tools.repo_health import repo_guardrails, suite_contract_policy
+from tools.repo_health import loc_budget, repo_guardrails, suite_contract_policy
 from tools.repo_health.suppression_inventory import collect_suppressions
 
 
@@ -399,3 +400,114 @@ def test_frontend_unit_shape_rejects_manifest_tool_import(tmp_path: Path, monkey
 
     with pytest.raises(AssertionError, match="retired frontend unit manifest tooling"):
         suite_contract_policy.test_frontend_test_patterns_disallow_generated_manifest_aggregators()
+
+
+def _fake_git_tracked(monkeypatch, tracked: list[str]) -> None:
+    """Make loc_budget treat ``tracked`` as the git-tracked file list."""
+    completed = subprocess.CompletedProcess(
+        args=["git"], returncode=0, stdout="\n".join(tracked), stderr=""
+    )
+    monkeypatch.setattr(loc_budget.subprocess, "run", lambda *args, **kwargs: completed)
+
+
+def _write_baseline(tmp_path: Path, areas: dict[str, int]) -> Path:
+    path = tmp_path / loc_budget.BASELINE_RELATIVE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"areas": areas}), encoding="utf-8")
+    return path
+
+
+def test_loc_budget_counts_only_tracked_source_files(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "code.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
+    (tmp_path / "src" / "notes.md").write_text("prose\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "example.py").write_text("z = 1\n", encoding="utf-8")
+    (tmp_path / "root_script.py").write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
+
+    _fake_git_tracked(
+        monkeypatch,
+        ["src/code.py", "src/notes.md", "docs/example.py", "root_script.py"],
+    )
+
+    assert loc_budget.measure_areas(tmp_path) == {"src": 2, "<root>": 3}
+
+
+def test_loc_budget_requires_git_work_tree(tmp_path: Path, monkeypatch) -> None:
+    completed = subprocess.CompletedProcess(
+        args=["git"], returncode=128, stdout="", stderr="fatal: not a git repository"
+    )
+    monkeypatch.setattr(loc_budget.subprocess, "run", lambda *args, **kwargs: completed)
+
+    with pytest.raises(loc_budget.LocBudgetError, match="unable to list tracked files"):
+        loc_budget.measure_areas(tmp_path)
+
+
+def test_loc_budget_passes_when_counts_match_baseline() -> None:
+    assert loc_budget.compare_areas({"src": 10, "tests": 5}, {"src": 10, "tests": 5}) == []
+
+
+def test_loc_budget_fails_area_growth() -> None:
+    failures = loc_budget.compare_areas({"src": 10}, {"src": 11})
+
+    assert len(failures) == 1
+    assert "growth" in failures[0]
+    assert "baseline allows 10" in failures[0]
+
+
+def test_loc_budget_fails_unratcheted_reduction() -> None:
+    failures = loc_budget.compare_areas({"src": 10}, {"src": 9})
+
+    assert len(failures) == 1
+    assert "stale baseline" in failures[0]
+    assert "--update" in failures[0]
+
+
+def test_loc_budget_fails_new_and_vanished_areas() -> None:
+    assert "not baselined" in loc_budget.compare_areas({"src": 1}, {"src": 1, "new": 2})[0]
+    assert "no longer measured" in loc_budget.compare_areas({"src": 1, "gone": 2}, {"src": 1})[0]
+
+
+def test_loc_budget_rejects_missing_baseline(tmp_path: Path) -> None:
+    with pytest.raises(loc_budget.LocBudgetError, match="missing baseline"):
+        loc_budget.load_baseline(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("areas", "message"),
+    [
+        ({}, "non-empty object"),
+        ({"src": -1}, "non-negative integer"),
+        ({"src": "many"}, "non-negative integer"),
+    ],
+)
+def test_loc_budget_rejects_invalid_baseline_entries(
+    tmp_path: Path, areas: dict[str, object], message: str
+) -> None:
+    _write_baseline(tmp_path, areas)  # type: ignore[arg-type]
+
+    with pytest.raises(loc_budget.LocBudgetError, match=message):
+        loc_budget.load_baseline(tmp_path)
+
+
+def test_loc_budget_update_rewrites_areas(tmp_path: Path) -> None:
+    (tmp_path / "tools" / "repo_health").mkdir(parents=True)
+
+    path = loc_budget.write_baseline(tmp_path, {"src": 7, "tests": 3})
+
+    assert json.loads(path.read_text(encoding="utf-8"))["areas"] == {"src": 7, "tests": 3}
+
+
+def test_loc_group_is_registered_and_wired() -> None:
+    assert "loc" in repo_guardrails.GROUPS
+    assert repo_guardrails.GROUP_RUNNERS["loc"] is repo_guardrails.run_loc_group
+
+
+def test_loc_group_reports_budget_failures(monkeypatch) -> None:
+    monkeypatch.setattr(
+        repo_guardrails, "check_loc_budget", lambda _root: ["growth: src is 11 lines"]
+    )
+
+    assert repo_guardrails.run_loc_group() == [
+        repo_guardrails.GuardFailure("loc", "check_loc_budget", "growth: src is 11 lines")
+    ]

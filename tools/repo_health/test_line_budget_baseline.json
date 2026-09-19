@@ -73,6 +73,6 @@
     "tests/source_discovery/test_gamedevmap_active_dry_run.py": "801",
     "tests/test_container_gateway.py": "451",
     "tests/test_local_data_store.py": "401",
-    "tests/test_repo_guardrails.py": "401"
+    "tests/test_repo_guardrails.py": "513"
   }
 }
