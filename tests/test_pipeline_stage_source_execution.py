@@ -16,6 +16,7 @@ from src.jobs.pipeline_stage_source_execution import (
 )
 from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.mutation import append_and_return
+from tests.helpers.source_loaders import empty_loader
 
 
 class _ThreadLocal:
@@ -582,9 +583,6 @@ def test_stage_reclassifies_zero_kept_static_manual_no_jobs_sources(monkeypatch)
         force_refresh_all=False,
         browser_fallback_cooldown_minutes=30,
     )
-
-    def empty_loader(**_kwargs):  # noqa: ANN202
-        return []
 
     task_rows = {
         source_name: {

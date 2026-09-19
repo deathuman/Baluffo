@@ -15,7 +15,6 @@ const FORBIDDEN_INITIAL = [
 
 const BOOT_GRACE_MS = 2500;
 const BOOT_TIMEOUT_MS = 90_000;
-const RELOAD_TIMEOUT_MS = 25_000;
 const SEED_ROW_FLOOR = 5_000;
 
 function parseArgs(argv) {
@@ -219,11 +218,9 @@ async function runBootMode(browser, args) {
   }
 
   const tracker = createRequestTracker(page);
-  const navStart = Date.now();
   await page.goto(`${args.baseUrl}/jobs.html`);
   const interactiveMs = await waitForJobsInteractive(page);
   const interactiveAtMs = Date.now();
-  const bootWindowEnd = interactiveAtMs + BOOT_GRACE_MS;
 
   await page.waitForTimeout(BOOT_GRACE_MS);
   const metrics = await collectMetrics(page);
@@ -304,7 +301,6 @@ async function runNavMode(browser, args) {
     await page.goto(`${args.baseUrl}/jobs.html`);
     const interactiveMs = await waitForJobsInteractive(page);
     const legInteractiveAtMs = Date.now();
-    const legBootWindowEnd = legInteractiveAtMs + BOOT_GRACE_MS;
     await page.waitForTimeout(BOOT_GRACE_MS);
     const metrics = await collectMetrics(page);
     const legRequests = tracker.requests.filter(item => item.leg === `leg${index + 1}-${leg}`

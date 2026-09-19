@@ -8,9 +8,7 @@ import {
   buildWriteReport,
   runScenario,
   BASE_URL,
-  BRIDGE_BASE,
-  BRIDGE_PORT,
-  BRIDGE_HOST
+  BRIDGE_BASE
 } from "./helpers/packaged-smoke-shared.mjs";
 
 const __filename = fileURLToPath(import.meta.url);

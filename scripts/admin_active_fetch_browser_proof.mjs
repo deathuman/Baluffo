@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..");
 const DEFAULT_OUTPUT_ROOT = path.join(REPO_ROOT, "_out", "admin-active-fetch-browser-proof");
-const SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
 const HEAVY_ROUTE_PATTERNS = [
   /\/registry\/conflicts(?:\?|$)/i,
   /\/admin\/ops-tab-counts(?:\?|$)/i,

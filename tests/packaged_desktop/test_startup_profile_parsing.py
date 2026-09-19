@@ -151,8 +151,15 @@ def test_startup_profile_required_events_include_window_and_page_ready_markers()
     )
 
 
-def test_startup_profile_summary_classifies_blank_probe_page_load_delay() -> None:
-    rows = [
+def _probe_rows(
+    parse_event: str,
+    parse_ts: str,
+    parse_ms: int,
+    ready_event: str,
+    ready_ts: str,
+    ready_ms: int,
+) -> list[dict[str, Any]]:
+    return [
         {
             "ts": "2026-03-10T12:00:00+00:00",
             "event": "desktop_launch_start",
@@ -173,134 +180,84 @@ def test_startup_profile_summary_classifies_blank_probe_page_load_delay() -> Non
             "event": "desktop_shell_window_shown",
             "fields": {"elapsedMs": 1300},
         },
-        {
-            "ts": "2026-03-10T12:00:08+00:00",
-            "event": "desktop_probe_html_parse_start",
-            "payload": {"elapsedMs": 8000},
-        },
-        {
-            "ts": "2026-03-10T12:00:08.050000+00:00",
-            "event": "desktop_probe_ready",
-            "payload": {"elapsedMs": 8050},
-        },
+        {"ts": parse_ts, "event": parse_event, "payload": {"elapsedMs": parse_ms}},
+        {"ts": ready_ts, "event": ready_event, "payload": {"elapsedMs": ready_ms}},
     ]
-    summary = summarize_startup_metrics(rows, page="desktop-probe", profile_mode="cold")
-    assert summary["classification"] == "desktop page load delayed"
-    assert summary["firstUsableMs"] == 8050
 
 
-def test_startup_profile_summary_supports_head_probe_page() -> None:
-    rows = [
-        {
-            "ts": "2026-03-10T12:00:00+00:00",
-            "event": "desktop_launch_start",
-            "fields": {"elapsedMs": 0},
-        },
-        {
-            "ts": "2026-03-10T12:00:01+00:00",
-            "event": "desktop_site_ready",
-            "fields": {"elapsedMs": 1000},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.100000+00:00",
-            "event": "desktop_window_created",
-            "fields": {"elapsedMs": 1100},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.300000+00:00",
-            "event": "desktop_shell_window_shown",
-            "fields": {"elapsedMs": 1300},
-        },
-        {
-            "ts": "2026-03-10T12:00:02.500000+00:00",
-            "event": "desktop_probe_head_html_parse_start",
-            "payload": {"elapsedMs": 2500},
-        },
-        {
-            "ts": "2026-03-10T12:00:02.550000+00:00",
-            "event": "desktop_probe_head_ready",
-            "payload": {"elapsedMs": 2550},
-        },
-    ]
-    summary = summarize_startup_metrics(rows, page="desktop-probe-head", profile_mode="cold")
-    assert summary["firstUsableEvent"] == "desktop_probe_head_ready"
-    assert summary["firstUsableMs"] == 2550
-
-
-def test_startup_profile_summary_supports_css_probe_page() -> None:
-    rows = [
-        {
-            "ts": "2026-03-10T12:00:00+00:00",
-            "event": "desktop_launch_start",
-            "fields": {"elapsedMs": 0},
-        },
-        {
-            "ts": "2026-03-10T12:00:01+00:00",
-            "event": "desktop_site_ready",
-            "fields": {"elapsedMs": 1000},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.100000+00:00",
-            "event": "desktop_window_created",
-            "fields": {"elapsedMs": 1100},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.300000+00:00",
-            "event": "desktop_shell_window_shown",
-            "fields": {"elapsedMs": 1300},
-        },
-        {
-            "ts": "2026-03-10T12:00:03+00:00",
-            "event": "desktop_probe_css_html_parse_start",
-            "payload": {"elapsedMs": 3000},
-        },
-        {
-            "ts": "2026-03-10T12:00:03.020000+00:00",
-            "event": "desktop_probe_css_ready",
-            "payload": {"elapsedMs": 3020},
-        },
-    ]
-    summary = summarize_startup_metrics(rows, page="desktop-probe-css", profile_mode="cold")
-    assert summary["firstUsableEvent"] == "desktop_probe_css_ready"
-    assert summary["firstUsableMs"] == 3020
-
-
-def test_startup_profile_summary_supports_inline_probe_page() -> None:
-    rows = [
-        {
-            "ts": "2026-03-10T12:00:00+00:00",
-            "event": "desktop_launch_start",
-            "fields": {"elapsedMs": 0},
-        },
-        {
-            "ts": "2026-03-10T12:00:01+00:00",
-            "event": "desktop_site_ready",
-            "fields": {"elapsedMs": 1000},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.100000+00:00",
-            "event": "desktop_window_created",
-            "fields": {"elapsedMs": 1100},
-        },
-        {
-            "ts": "2026-03-10T12:00:01.300000+00:00",
-            "event": "desktop_shell_window_shown",
-            "fields": {"elapsedMs": 1300},
-        },
-        {
-            "ts": "2026-03-10T12:00:02.100000+00:00",
-            "event": "desktop_probe_inline_html_parse_start",
-            "payload": {"elapsedMs": 2100},
-        },
-        {
-            "ts": "2026-03-10T12:00:02.120000+00:00",
-            "event": "desktop_probe_inline_ready",
-            "payload": {"elapsedMs": 2120},
-        },
-    ]
-    summary = summarize_startup_metrics(rows, page="desktop-probe-inline", profile_mode="cold")
-    assert summary["firstUsableEvent"] == "desktop_probe_inline_ready"
-    assert summary["firstUsableMs"] == 2120
+@pytest.mark.parametrize(
+    (
+        "page",
+        "parse_event",
+        "parse_ts",
+        "parse_ms",
+        "ready_event",
+        "ready_ts",
+        "ready_ms",
+        "expected",
+    ),
+    [
+        pytest.param(
+            "desktop-probe",
+            "desktop_probe_html_parse_start",
+            "2026-03-10T12:00:08+00:00",
+            8000,
+            "desktop_probe_ready",
+            "2026-03-10T12:00:08.050000+00:00",
+            8050,
+            ("desktop page load delayed", "desktop_probe_ready", 8050),
+            id="blank-probe-page-load-delay",
+        ),
+        pytest.param(
+            "desktop-probe-head",
+            "desktop_probe_head_html_parse_start",
+            "2026-03-10T12:00:02.500000+00:00",
+            2500,
+            "desktop_probe_head_ready",
+            "2026-03-10T12:00:02.550000+00:00",
+            2550,
+            ("desktop page load delayed", "desktop_probe_head_ready", 2550),
+            id="head-probe-page",
+        ),
+        pytest.param(
+            "desktop-probe-css",
+            "desktop_probe_css_html_parse_start",
+            "2026-03-10T12:00:03+00:00",
+            3000,
+            "desktop_probe_css_ready",
+            "2026-03-10T12:00:03.020000+00:00",
+            3020,
+            ("desktop page load delayed", "desktop_probe_css_ready", 3020),
+            id="css-probe-page",
+        ),
+        pytest.param(
+            "desktop-probe-inline",
+            "desktop_probe_inline_html_parse_start",
+            "2026-03-10T12:00:02.100000+00:00",
+            2100,
+            "desktop_probe_inline_ready",
+            "2026-03-10T12:00:02.120000+00:00",
+            2120,
+            ("bridge/site bootstrap delayed", "desktop_probe_inline_ready", 2120),
+            id="inline-probe-page",
+        ),
+    ],
+)
+def test_startup_profile_summary_probe_page_outcomes(
+    page: str,
+    parse_event: str,
+    parse_ts: str,
+    parse_ms: int,
+    ready_event: str,
+    ready_ts: str,
+    ready_ms: int,
+    expected: tuple[str, str, int],
+) -> None:
+    rows = _probe_rows(parse_event, parse_ts, parse_ms, ready_event, ready_ts, ready_ms)
+    summary = summarize_startup_metrics(rows, page=page, profile_mode="cold")
+    assert summary["classification"] == expected[0]
+    assert summary["firstUsableEvent"] == expected[1]
+    assert summary["firstUsableMs"] == expected[2]
 
 
 def test_startup_profile_summary_classifies_local_auth_delay() -> None:

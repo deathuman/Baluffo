@@ -1,5 +1,7 @@
 """Tests for jobs fetcher quality city-noise contracts."""
 
+import pytest
+
 from src import jobs_fetcher as jf
 from src.jobs.text_utils import load_city_noise_contract
 
@@ -156,64 +158,63 @@ def test_canonicalize_job_with_reason_blanks_structural_city_noise_values() -> N
         assert payload["country"] == "Japan"
 
 
-def test_canonicalize_job_with_reason_blanks_metric_and_css_location_noise() -> None:
+@pytest.mark.parametrize(
+    ("city", "country", "source", "job_link", "expected_city", "expected_country"),
+    [
+        pytest.param(
+            "6,559 followers",
+            "--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);",
+            "static_source::noise",
+            "https://example.com/metric-noise",
+            "",
+            "",
+            id="metric-and-css-location-noise",
+        ),
+        pytest.param(
+            "Tokyo",
+            "Hybrid",
+            "static_source::noise",
+            "https://example.com/country-noise",
+            "Tokyo",
+            "Japan",
+            id="country-work-type-noise",
+        ),
+        pytest.param(
+            "Skopje",
+            "North Macedonia",
+            "static_source::region-country",
+            "https://example.com/region-country",
+            "Skopje",
+            "North Macedonia",
+            id="region-country-names",
+        ),
+    ],
+)
+def test_canonicalize_job_with_reason_city_noise_outcomes(
+    city: str,
+    country: str,
+    source: str,
+    job_link: str,
+    expected_city: str,
+    expected_country: str,
+) -> None:
     row, reason = jf.canonicalize_job_with_reason(
         {
             "title": "Artist",
             "company": "Studio",
-            "city": "6,559 followers",
-            "country": "--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);",
-            "jobLink": "https://example.com/metric-noise",
+            "city": city,
+            "country": country,
+            "jobLink": job_link,
             "sector": "Game",
         },
-        source="static_source::noise",
+        source=source,
         fetched_at="2026-03-20T00:00:00Z",
     )
     assert reason == ""
     assert row is not None
     payload = row if isinstance(row, dict) else row.to_dict()
-    assert payload["city"] == ""
-    assert payload["country"] == ""
-
-
-def test_canonicalize_job_with_reason_rejects_country_work_type_noise() -> None:
-    row, reason = jf.canonicalize_job_with_reason(
-        {
-            "title": "Artist",
-            "company": "Studio",
-            "city": "Tokyo",
-            "country": "Hybrid",
-            "jobLink": "https://example.com/country-noise",
-            "sector": "Game",
-        },
-        source="static_source::noise",
-        fetched_at="2026-03-20T00:00:00Z",
-    )
-    assert reason == ""
-    assert row is not None
-    payload = row if isinstance(row, dict) else row.to_dict()
-    assert payload["city"] == "Tokyo"
-    assert payload["country"] == "Japan"
-
-
-def test_canonicalize_job_with_reason_preserves_region_country_names() -> None:
-    row, reason = jf.canonicalize_job_with_reason(
-        {
-            "title": "Artist",
-            "company": "Studio",
-            "city": "Skopje",
-            "country": "North Macedonia",
-            "jobLink": "https://example.com/region-country",
-            "sector": "Game",
-        },
-        source="static_source::region-country",
-        fetched_at="2026-03-20T00:00:00Z",
-    )
-    assert reason == ""
-    assert row is not None
-    payload = row if isinstance(row, dict) else row.to_dict()
-    assert payload["city"] == "Skopje"
-    assert payload["country"] == "North Macedonia"
+    assert payload["city"] == expected_city
+    assert payload["country"] == expected_country
 
 
 def test_canonicalize_job_with_reason_promotes_first_meaningful_multi_location_entry() -> None:

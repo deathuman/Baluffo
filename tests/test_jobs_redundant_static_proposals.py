@@ -11,6 +11,7 @@ from src.jobs.common.contracts_redundant_static_proposals import (
     normalize_redundant_static_proposals_payload,
 )
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
+from tests.helpers.source_loaders import make_provider_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 STATIC_SOURCE_NAME = "static_source::static:listing_url:https://studio.example/jobs"
@@ -230,21 +231,7 @@ def test_pipeline_proposals_are_report_only_and_do_not_mutate_rules_or_source_ro
     calls = {"provider": 0}
     redundant_rules = copy.deepcopy(REDUNDANT_STATIC_IF_PROVIDER)
 
-    def provider_loader(**_: object):
-        calls["provider"] += 1
-        return [
-            {
-                "title": "Provider Engineer",
-                "company": "Studio",
-                "city": "Remote",
-                "country": "Remote",
-                "workType": "Remote",
-                "contractType": "Full-time",
-                "jobLink": "https://boards.greenhouse.io/studio/jobs/provider-engineer",
-                "sector": "Game",
-                "sourceJobId": "provider-1",
-            }
-        ]
+    provider_loader = make_provider_loader(calls)
 
     previous_default_loaders = jf.default_source_loaders
     try:

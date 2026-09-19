@@ -7,13 +7,6 @@ import {
   stubScheduledTimers
 } from "./helpers/admin-controller-test-helpers.mjs";
 
-async function flushAsyncWork() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setImmediate(resolve));
-  await Promise.resolve();
-}
-
 test("admin registry delays source tables during pipeline discovery", async () => {
   const calls = [];
   const fixture = createRegistryControllerFixture({

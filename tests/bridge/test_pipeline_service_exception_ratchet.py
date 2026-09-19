@@ -4,11 +4,11 @@ from typing import Any, cast
 
 import pytest
 
-from tests.bridge.test_pipeline_service import _make_pipeline_service
+from tests.helpers.pipeline_service_factory import make_pipeline_service
 
 
 def test_pipeline_child_boundaries_wrap_expected_operational_failures() -> None:
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         wait_for_sync_completion=lambda _run_id, _timeout_s: (_ for _ in ()).throw(
             TimeoutError("sync timed out")
         ),
@@ -39,7 +39,7 @@ def test_pipeline_child_boundaries_wrap_expected_operational_failures() -> None:
 
 
 def test_pipeline_child_boundaries_do_not_swallow_programming_bugs() -> None:
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         wait_for_sync_completion=lambda _run_id, _timeout_s: (_ for _ in ()).throw(
             TypeError("sync signature bug")
         ),
@@ -83,7 +83,7 @@ def _active_status() -> dict[str, Any]:
 
 def test_registry_adjudication_stage_logs_expected_operational_failure() -> None:
     logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runRegistryConflictAdjudication": True},
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
         run_registry_conflict_adjudication=lambda _payload: (_ for _ in ()).throw(
@@ -101,7 +101,7 @@ def test_registry_adjudication_stage_logs_expected_operational_failure() -> None
 
 
 def test_registry_adjudication_stage_does_not_hide_unexpected_bug() -> None:
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runRegistryConflictAdjudication": True},
         run_registry_conflict_adjudication=lambda _payload: (_ for _ in ()).throw(
             AssertionError("unexpected adjudication bug")
@@ -115,7 +115,7 @@ def test_registry_adjudication_stage_does_not_hide_unexpected_bug() -> None:
 def test_pipeline_worker_records_expected_operational_failure() -> None:
     status = _active_status()
     logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
     )
@@ -132,7 +132,7 @@ def test_pipeline_worker_records_expected_operational_failure() -> None:
 
 
 def test_pipeline_worker_does_not_hide_unexpected_bug() -> None:
-    service = _make_pipeline_service(pipeline_status=_active_status())
+    service = make_pipeline_service(pipeline_status=_active_status())
     cast(Any, service)._run_discovery_stage = lambda _run_id: (_ for _ in ()).throw(
         AssertionError("unexpected pipeline bug")
     )

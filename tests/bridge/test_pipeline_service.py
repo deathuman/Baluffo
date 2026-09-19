@@ -3,36 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from src.bridge.pipeline_service import PipelineRuntime
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
 from tests.helpers.mutation import append_and_return
-from tests.helpers.report_state import parse_iso
-
-_parse_iso = parse_iso
-
-
-def _make_pipeline_service(**overrides: Any) -> PipelineService:
-    kwargs: dict[str, Any] = {
-        "pipeline_state_lock": __import__("threading").RLock(),
-        "pipeline_status": {},
-        "runtime": PipelineRuntime(),
-        "bridge_log": lambda *args, **kwargs: None,
-        "now_iso": lambda: "2026-05-06T19:00:00Z",
-        "parse_iso": _parse_iso,
-        "sync_task_running": lambda: False,
-        "current_fetch_output_count": lambda: 0,
-        "load_json_object": lambda _path, default: default,
-        "load_runtime_evidence": lambda path, default=None: default or {},
-        "wait_for_sync_completion": lambda _run_id, _timeout_s: {},
-        "discovery_report_path": Path("source-discovery-report.json"),
-        "fetch_report_path": Path("jobs-fetch-report.json"),
-        "trigger_discovery_task": lambda **_kwargs: (200, {}),
-        "start_fetcher_task": lambda _payload: {},
-        "start_sync_task": lambda _action, **_kwargs: {},
-        "get_app_version": lambda: "0.0.0-test",
-    }
-    kwargs.update(overrides)
-    return PipelineService(**kwargs)
+from tests.helpers.pipeline_service_factory import make_pipeline_service
 
 
 def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path: Path) -> None:
@@ -40,7 +14,7 @@ def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path:
     refreshed: list[tuple[str, str, str]] = []
     parent_heartbeats: list[tuple[str, str, str]] = []
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={
             "runId": "pipeline_1",
             "stage": "discovery",
@@ -85,7 +59,7 @@ def test_wait_for_report_completion_finalizes_terminal_child_before_parent_abort
         "summary": {"outputCount": 4},
         "taskProgress": {"active": True, "phaseKey": "done"},
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
         runtime=runtime,
         load_json_object=lambda _path, _default: dict(report),
@@ -118,7 +92,7 @@ def test_wait_for_report_completion_does_not_finalize_abort_requested_child() ->
         "summary": {"outputCount": 4},
         "taskProgress": {"active": True, "phaseKey": "done"},
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
         load_json_object=lambda _path, _default: dict(report),
         get_projected_run_history=lambda: LifecycleProjection(
@@ -167,7 +141,7 @@ def test_pipeline_stage_heartbeat_uses_normalized_lifecycle_progress() -> None:
         "jobsPageLoadedCount": 15,
         "finalOutputCount": 0,
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: append_and_return(
             parent_heartbeats, dict(kwargs), {}
@@ -204,7 +178,7 @@ def test_pipeline_completion_uses_normalized_lifecycle_progress() -> None:
         "jobsPageLoadedCount": 15,
         "finalOutputCount": 0,
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         finish_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
             finished_runs, {"runId": run_id, "taskType": task_type, **kwargs}, {}
@@ -244,7 +218,7 @@ def test_pipeline_abort_marks_canceled_lifecycle() -> None:
         "jobsPageLoadedCount": 0,
     }
     runtime = PipelineRuntime(active_run_id="pipeline_1")
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         runtime=runtime,
         cancel_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
@@ -284,7 +258,7 @@ def test_pipeline_abort_during_sync_is_deferred_until_sync_finishes() -> None:
         "baselineOutputCount": 0,
         "jobsPageLoadedCount": 0,
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         start_sync_task=lambda _action, **_kwargs: {"started": True, "runId": "sync_1"},
         wait_for_sync_completion=lambda _run_id, _timeout_s: {"status": "ok", "summary": {}},
@@ -323,7 +297,7 @@ def test_pipeline_abort_pending_sync_is_idempotent() -> None:
         },
         "startedAt": "2026-05-06T18:00:00Z",
     }
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: append_and_return(
             heartbeats, dict(kwargs), {}
@@ -345,7 +319,7 @@ def test_pipeline_abort_pending_sync_is_idempotent() -> None:
 
 def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report() -> None:
     parent_heartbeats: list[tuple[str, str, str]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runId": "pipeline_1"},
         load_json_object=lambda _path, _default: {
             "runtime": {"autoApproval": {"enabled": True, "status": "completed"}}
@@ -367,7 +341,7 @@ def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report(
 
 def test_pipeline_waits_for_discovery_registry_finalization_before_fetch() -> None:
     parent_heartbeats: list[tuple[str, str, str]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runId": "pipeline_1"},
         load_json_object=lambda _path, _default: {
             "runtime": {
@@ -425,7 +399,7 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
     finished_children: list[dict[str, Any]] = []
     failed_runs: list[dict[str, Any]] = []
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         current_fetch_output_count=lambda: 42,
         load_json_object=lambda _path, _default: dict(finished_fetch_report),
@@ -505,7 +479,7 @@ def test_status_payload_warns_after_inactive_pipeline_worker_terminal_sync_failu
     }
     finished_runs: list[dict[str, Any]] = []
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         current_fetch_output_count=lambda: 42,
         get_projected_run_history=lambda: LifecycleProjection(
@@ -548,7 +522,7 @@ def test_status_payload_warns_after_inactive_pipeline_worker_terminal_sync_failu
 def test_pipeline_completion_notifier_fires_once_for_long_terminal_run() -> None:
     calls: list[dict[str, Any]] = []
     logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         now_iso=lambda: "2026-05-06T19:02:00Z",
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
         pipeline_completion_notifier=lambda payload: append_and_return(
@@ -581,7 +555,7 @@ def test_pipeline_completion_notifier_failure_does_not_block_terminal_status() -
     def _raise(_payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("attention failed")
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         now_iso=lambda: "2026-05-06T19:02:00Z",
         bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
         pipeline_completion_notifier=_raise,
@@ -606,7 +580,7 @@ def test_pipeline_completion_notifier_failure_does_not_block_terminal_status() -
 
 def test_pipeline_completion_notifier_skips_short_terminal_run() -> None:
     calls: list[dict[str, Any]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         now_iso=lambda: "2026-05-06T19:00:59Z",
         pipeline_completion_notifier=lambda payload: calls.append(payload),
     )

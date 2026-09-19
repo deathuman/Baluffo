@@ -20,6 +20,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.pipeline_loader_selection import apply_dynamic_redundant_static_exclusions
 from tests.helpers.jobs_rows import excluded_report
+from tests.helpers.source_loaders import make_provider_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 _excluded_report = excluded_report
@@ -302,21 +303,7 @@ def test_pipeline_force_pause_does_not_mutate_registry_or_static_rules() -> None
     calls = {"provider": 0, "static": 0}
     redundant_rules = copy.deepcopy(REDUNDANT_STATIC_IF_PROVIDER)
 
-    def provider_loader(**_: object):
-        calls["provider"] += 1
-        return [
-            {
-                "title": "Provider Engineer",
-                "company": "Studio",
-                "city": "Remote",
-                "country": "Remote",
-                "workType": "Remote",
-                "contractType": "Full-time",
-                "jobLink": "https://boards.greenhouse.io/studio/jobs/provider-engineer",
-                "sector": "Game",
-                "sourceJobId": "provider-1",
-            }
-        ]
+    provider_loader = make_provider_loader(calls)
 
     def static_loader(**_: object):
         calls["static"] += 1

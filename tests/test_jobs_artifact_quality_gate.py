@@ -144,54 +144,96 @@ def test_jobs_artifact_quality_gate_warns_on_unknown_company_without_strong_evid
     assert report["warnings"]["unknownCompanyHostCounts"]["www.linkedin.com"] == 1
 
 
-def test_jobs_artifact_quality_gate_does_not_block_real_animator_title(tmp_path: Path) -> None:
-    csv_path = tmp_path / "jobs-unified.csv"
-    _write_csv(
-        csv_path,
-        [
-            {
-                "id": "1",
-                "title": "Animator",
-                "company": "Example Games",
-                "jobLink": "https://example.com/jobs/1",
-                "source": "google_sheets",
-                "sourceJobId": "sheet-1",
-            }
-        ],
-    )
-
-    report = analyze_jobs_artifact(str(csv_path))
-
-    assert report["status"] == "pass"
-    assert report["counts"]["exactCategoryTitleLeaks"] == 0
-
-
-def test_jobs_artifact_quality_gate_does_not_block_exact_role_shaped_title(tmp_path: Path) -> None:
-    csv_path = tmp_path / "jobs-unified.csv"
-    _write_csv(
-        csv_path,
-        [
-            {
-                "id": "1",
-                "title": "Graphics Engineer",
-                "company": "PlayStation Global",
-                "jobLink": (
-                    "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5837065004"
-                ),
-                "source": "greenhouse_boards",
-                "sourceJobId": "greenhouse:sonyinteractiveentertainmentglobal:5837065004",
-            }
-        ],
-    )
-
-    report = analyze_jobs_artifact(str(csv_path))
-
-    assert report["status"] == "pass"
-    assert report["counts"]["exactCategoryTitleLeaks"] == 0
-
-
-def test_jobs_artifact_quality_gate_blocks_static_exact_category_title_with_container_evidence(
+@pytest.mark.parametrize(
+    (
+        "title",
+        "company",
+        "job_link",
+        "source",
+        "source_job_id",
+        "expected_status",
+        "counter_key",
+        "expected_count",
+    ),
+    [
+        pytest.param(
+            "Animator",
+            "Example Games",
+            "https://example.com/jobs/1",
+            "google_sheets",
+            "sheet-1",
+            "pass",
+            "exactCategoryTitleLeaks",
+            0,
+            id="real-animator-title",
+        ),
+        pytest.param(
+            "Graphics Engineer",
+            "PlayStation Global",
+            "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5837065004",
+            "greenhouse_boards",
+            "greenhouse:sonyinteractiveentertainmentglobal:5837065004",
+            "pass",
+            "exactCategoryTitleLeaks",
+            0,
+            id="exact-role-shaped-title",
+        ),
+        pytest.param(
+            "VFX",
+            "Digital Confectioners",
+            "https://www.digitalconfectioners.com/jobs/vfx",
+            "scrapy_static_sources",
+            "static:vfx",
+            "blocked",
+            "exactCategoryTitleLeaks",
+            1,
+            id="static-exact-category-title-with-container-evidence",
+        ),
+        pytest.param(
+            "Jobs",
+            "Example Games",
+            "https://example.com/jobs",
+            "google_sheets",
+            "sheet-2",
+            "blocked",
+            "staticContainerTitleLeaks",
+            1,
+            id="sheet-container-word-with-container-url",
+        ),
+        pytest.param(
+            "Creative Producer",
+            "Example Games",
+            "https://example.com/careers/creative-producer",
+            "static_source::static:listing_url:https://example.com/careers",
+            "static:creative-producer",
+            "pass",
+            "staticContainerTitleLeaks",
+            0,
+            id="real-container-word-role",
+        ),
+        pytest.param(
+            "Design",
+            "Example Provider",
+            "https://job-boards.greenhouse.io/example/jobs/123",
+            "greenhouse_boards",
+            "greenhouse:example:123",
+            "pass",
+            "exactCategoryTitleLeaks",
+            0,
+            id="exact-category-term-without-static-or-sheet-evidence",
+        ),
+    ],
+)
+def test_jobs_artifact_quality_gate_title_evidence_outcomes(
     tmp_path: Path,
+    title: str,
+    company: str,
+    job_link: str,
+    source: str,
+    source_job_id: str,
+    expected_status: str,
+    counter_key: str,
+    expected_count: int,
 ) -> None:
     csv_path = tmp_path / "jobs-unified.csv"
     _write_csv(
@@ -199,19 +241,19 @@ def test_jobs_artifact_quality_gate_blocks_static_exact_category_title_with_cont
         [
             {
                 "id": "1",
-                "title": "VFX",
-                "company": "Digital Confectioners",
-                "jobLink": "https://www.digitalconfectioners.com/jobs/vfx",
-                "source": "scrapy_static_sources",
-                "sourceJobId": "static:vfx",
+                "title": title,
+                "company": company,
+                "jobLink": job_link,
+                "source": source,
+                "sourceJobId": source_job_id,
             }
         ],
     )
 
     report = analyze_jobs_artifact(str(csv_path))
 
-    assert report["status"] == "blocked"
-    assert report["counts"]["exactCategoryTitleLeaks"] == 1
+    assert report["status"] == expected_status
+    assert report["counts"][counter_key] == expected_count
 
 
 @pytest.mark.parametrize(
@@ -281,30 +323,6 @@ def test_jobs_artifact_quality_gate_does_not_block_sheet_container_word_on_detai
     assert report["counts"]["staticContainerTitleLeaks"] == 0
 
 
-def test_jobs_artifact_quality_gate_blocks_sheet_container_word_with_container_url(
-    tmp_path: Path,
-) -> None:
-    csv_path = tmp_path / "jobs-unified.csv"
-    _write_csv(
-        csv_path,
-        [
-            {
-                "id": "1",
-                "title": "Jobs",
-                "company": "Example Games",
-                "jobLink": "https://example.com/jobs",
-                "source": "google_sheets",
-                "sourceJobId": "sheet-2",
-            }
-        ],
-    )
-
-    report = analyze_jobs_artifact(str(csv_path))
-
-    assert report["status"] == "blocked"
-    assert report["counts"]["staticContainerTitleLeaks"] == 1
-
-
 def test_jobs_artifact_quality_gate_blocks_container_artifact_from_static_bundle(
     tmp_path: Path,
 ) -> None:
@@ -328,51 +346,3 @@ def test_jobs_artifact_quality_gate_blocks_container_artifact_from_static_bundle
 
     assert report["status"] == "blocked"
     assert report["counts"]["staticContainerTitleLeaks"] == 1
-
-
-def test_jobs_artifact_quality_gate_does_not_block_real_container_word_role(
-    tmp_path: Path,
-) -> None:
-    csv_path = tmp_path / "jobs-unified.csv"
-    _write_csv(
-        csv_path,
-        [
-            {
-                "id": "1",
-                "title": "Creative Producer",
-                "company": "Example Games",
-                "jobLink": "https://example.com/careers/creative-producer",
-                "source": "static_source::static:listing_url:https://example.com/careers",
-                "sourceJobId": "static:creative-producer",
-            }
-        ],
-    )
-
-    report = analyze_jobs_artifact(str(csv_path))
-
-    assert report["status"] == "pass"
-    assert report["counts"]["staticContainerTitleLeaks"] == 0
-
-
-def test_jobs_artifact_quality_gate_does_not_block_exact_category_term_without_static_or_sheet_evidence(
-    tmp_path: Path,
-) -> None:
-    csv_path = tmp_path / "jobs-unified.csv"
-    _write_csv(
-        csv_path,
-        [
-            {
-                "id": "1",
-                "title": "Design",
-                "company": "Example Provider",
-                "jobLink": "https://job-boards.greenhouse.io/example/jobs/123",
-                "source": "greenhouse_boards",
-                "sourceJobId": "greenhouse:example:123",
-            }
-        ],
-    )
-
-    report = analyze_jobs_artifact(str(csv_path))
-
-    assert report["status"] == "pass"
-    assert report["counts"]["exactCategoryTitleLeaks"] == 0

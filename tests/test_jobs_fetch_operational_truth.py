@@ -6,6 +6,7 @@ from src import jobs_fetcher as jf
 from src.bridge.fetch_report_summary import compact_fetch_report_summary_payload
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.shared.json_io import read_json
+from tests.helpers.source_loaders import empty_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -113,9 +114,6 @@ def test_completed_fetch_report_operational_truth_matches_sources_and_output() -
 def test_completed_fetch_report_zero_output_overwrites_stale_output() -> None:
     def ok_loader(**_: object):
         return [_truth_job("Initial Truth Engineer")]
-
-    def empty_loader(**_: object):
-        return []
 
     with workspace_tmpdir("jobs-fetch-operational-truth-empty") as tmp:
         out = Path(tmp)

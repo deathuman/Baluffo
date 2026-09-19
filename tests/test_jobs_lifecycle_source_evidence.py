@@ -8,6 +8,7 @@ from src.jobs.state_lifecycle import (
     build_lifecycle_source_evidence,
 )
 from src.shared.json_io import read_json
+from tests.helpers.source_loaders import empty_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 FINISHED_AT = "2026-04-30T12:00:00+00:00"
@@ -225,16 +226,13 @@ def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:
     def failing_loader(**_: object):
         raise RuntimeError("timeout")
 
-    def ok_loader(**_: object):
-        return []
-
     previous_default_loaders = jf.default_source_loaders
     try:
         with workspace_tmpdir("jobs-fetcher-lifecycle-failed-source") as tmp:
             out = Path(tmp)
             jf.default_source_loaders = lambda: [
                 ("failed_source", failing_source_job),
-                ("ok_source", ok_loader),
+                ("ok_source", empty_loader),
             ]
             first = jf.run_pipeline(
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
@@ -243,7 +241,7 @@ def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:
 
             jf.default_source_loaders = lambda: [
                 ("failed_source", failing_loader),
-                ("ok_source", ok_loader),
+                ("ok_source", empty_loader),
             ]
             second = jf.run_pipeline(
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
@@ -265,9 +263,6 @@ def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:
 def test_seeded_row_is_not_observed_and_successful_source_absence_retires_it() -> None:
     def one_job_loader(**_: object):
         return [_active_job("seed_source").to_dict()]
-
-    def empty_loader(**_: object):
-        return []
 
     previous_default_loaders = jf.default_source_loaders
     try:

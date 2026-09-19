@@ -8,8 +8,8 @@ import pytest
 
 from src.bridge.pipeline_service import PipelineAbortRequested
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
-from tests.bridge.test_pipeline_service import _make_pipeline_service
 from tests.helpers.mutation import append_and_return
+from tests.helpers.pipeline_service_factory import make_pipeline_service
 
 
 def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_without_report(
@@ -17,7 +17,7 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
 ) -> None:
     failures: list[dict[str, Any]] = []
     events: list[tuple[str, dict[str, Any]]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runId": "pipeline_1", "stage": "fetch"},
         bridge_log=lambda level, message, **fields: events.append((str(message), dict(fields))),
         load_json_object=lambda _path, _default: {
@@ -69,7 +69,7 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
 
 
 def test_pipeline_propagates_terminal_fetch_report_error_code() -> None:
-    service = _make_pipeline_service()
+    service = make_pipeline_service()
     cast(Any, service).wait_for_report_completion = lambda **_kwargs: {
         "status": "error",
         "finishedAt": "2026-07-17T08:03:00+00:00",
@@ -90,7 +90,7 @@ def test_wait_for_report_completion_cancels_when_discovery_child_canceled_withou
     tmp_path: Path,
 ) -> None:
     failures: list[dict[str, Any]] = []
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runId": "pipeline_1", "stage": "discovery"},
         load_json_object=lambda _path, _default: {
             "runId": "discovery_1",
@@ -165,7 +165,7 @@ def test_live_child_evidence_extends_absolute_fetch_wait_cap(tmp_path: Path) -> 
             "taskProgress": {"active": False, "phaseKey": "completed"},
         }
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"runId": "pipeline_1", "stage": "fetch"},
         load_json_object=load_report,
         refresh_child_task_heartbeat=lambda task_type, run_id, started_at: append_and_return(

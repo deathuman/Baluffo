@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.bridge.routes.get_ops_status import handle_ops_status_routes
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
@@ -143,7 +145,24 @@ def test_ops_dashboard_health_summary_route_uses_summary_payload(tmp_path: Path)
     assert handler.sent[-1]["payload"] == {"detailLevel": "summary", "summaryView": True}
 
 
-def test_ops_dashboard_health_route_rejects_unknown_view(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("path", "view", "error_fragment"),
+    [
+        pytest.param(
+            "/ops/dashboard-health",
+            "heavy",
+            "unsupported dashboard-health view",
+            id="dashboard-health",
+        ),
+        pytest.param("/ops/fetch-kpis", "full", "unsupported fetch-kpis view", id="fetch-kpis"),
+        pytest.param(
+            "/admin/ops-tab-counts", "full", "unsupported ops-tab-counts view", id="ops-tab-counts"
+        ),
+    ],
+)
+def test_ops_route_rejects_unknown_view(
+    tmp_path: Path, path: str, view: str, error_fragment: str
+) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
 
@@ -151,13 +170,13 @@ def test_ops_dashboard_health_route_rejects_unknown_view(tmp_path: Path) -> None
     result = handle_get(
         handler,
         api=api,
-        path="/ops/dashboard-health",
-        query={"view": ["heavy"]},
+        path=path,
+        query={"view": [view]},
     )
 
     assert result is True
     assert handler.sent[-1]["status"] == 400
-    assert "unsupported dashboard-health view" in handler.sent[-1]["payload"]["error"]
+    assert error_fragment in handler.sent[-1]["payload"]["error"]
 
 
 def test_ops_fetch_kpis_summary_route_returns_bounded_payload(tmp_path: Path) -> None:
@@ -204,23 +223,6 @@ def test_ops_fetch_kpis_summary_route_returns_bounded_payload(tmp_path: Path) ->
     }
     assert forbidden.isdisjoint(payload)
     assert forbidden.isdisjoint(payload["kpis"])
-
-
-def test_ops_fetch_kpis_route_rejects_unknown_view(tmp_path: Path) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-
-    handler = FakeHandler()
-    result = handle_get(
-        handler,
-        api=api,
-        path="/ops/fetch-kpis",
-        query={"view": ["full"]},
-    )
-
-    assert result is True
-    assert handler.sent[-1]["status"] == 400
-    assert "unsupported fetch-kpis view" in handler.sent[-1]["payload"]["error"]
 
 
 def test_admin_ops_tab_counts_summary_returns_pending_for_unbounded_counts(
@@ -281,20 +283,3 @@ def test_admin_ops_tab_counts_summary_returns_pending_for_unbounded_counts(
     assert payload["badges"]["dedup"]["loaded"] is False
     assert "sources" not in payload
     assert "history" not in payload
-
-
-def test_admin_ops_tab_counts_rejects_unknown_view(tmp_path: Path) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-
-    handler = FakeHandler()
-    result = handle_get(
-        handler,
-        api=api,
-        path="/admin/ops-tab-counts",
-        query={"view": ["full"]},
-    )
-
-    assert result is True
-    assert handler.sent[-1]["status"] == 400
-    assert "unsupported ops-tab-counts view" in handler.sent[-1]["payload"]["error"]

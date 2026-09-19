@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
-from tests.bridge.test_pipeline_service import _make_pipeline_service
 from tests.helpers.mutation import append_and_return
+from tests.helpers.pipeline_service_factory import make_pipeline_service
 
 
 def test_pipeline_completes_with_warning_for_recoverable_sync_conflict() -> None:
@@ -25,7 +25,7 @@ def test_pipeline_completes_with_warning_for_recoverable_sync_conflict() -> None
         "is at a8f0ae858e0e7c8ecafe671bf9825f6e7328dd97 "
         "but expected db2c4166cf428892f165629d27933ce492d346d1"
     )
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         current_fetch_output_count=lambda: 42,
         start_sync_task=lambda _action, **_kwargs: {"started": True, "runId": "sync_1"},
@@ -59,7 +59,7 @@ def test_pipeline_completes_with_warning_for_recoverable_sync_conflict() -> None
 def test_status_payload_recovers_inactive_pipeline_worker_after_recoverable_sync_conflict() -> None:
     finished_runs: list[dict[str, Any]] = []
     conflict = "sha does not match"
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={
             "active": True,
             "runId": "pipeline_1",

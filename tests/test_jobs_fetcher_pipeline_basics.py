@@ -14,6 +14,7 @@ from src.pipeline_io import write_pipeline_rows_sidecar
 from src.shared.json_io import read_json
 from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture_json
+from tests.helpers.source_loaders import empty_loader, lifecycle_studio_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -340,9 +341,6 @@ def test_pipeline_preserves_previous_output_when_current_is_empty() -> None:
         }
     ]
 
-    def empty_loader(**_: object):
-        return []
-
     with workspace_tmpdir("jobs-fetcher") as tmp:
         out = Path(tmp)
         (out / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
@@ -381,9 +379,6 @@ def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_
             "qualityScore": 100,
         }
     ]
-
-    def empty_loader(**_: object):
-        return []
 
     with workspace_tmpdir("jobs-fetcher") as tmp:
         ship_root = Path(tmp) / "ship"
@@ -437,30 +432,11 @@ def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_
 
 
 def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state() -> None:
-    def one_job_loader(**_: object):
-        return [
-            {
-                "title": "Engine Programmer",
-                "company": "Lifecycle Studio",
-                "city": "Remote",
-                "country": "Remote",
-                "workType": "Remote",
-                "contractType": "Full-time",
-                "jobLink": "https://example.com/lifecycle/engine-programmer",
-                "sector": "Game",
-                "sourceJobId": "life-1",
-                "postedAt": "2026-03-01",
-            }
-        ]
-
-    def empty_loader(**_: object):
-        return []
-
     previous_default_loaders = jf.default_source_loaders
     try:
         with workspace_tmpdir("jobs-fetcher") as tmp:
             out = Path(tmp)
-            jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
+            jf.default_source_loaders = lambda: [("only_source", lifecycle_studio_loader)]
             first = jf.run_pipeline(
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
             )
@@ -485,25 +461,6 @@ def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state() -> None:
 
 
 def test_pipeline_marks_missing_for_successful_sources_even_when_other_sources_fail() -> None:
-    def one_job_loader(**_: object):
-        return [
-            {
-                "title": "Engine Programmer",
-                "company": "Lifecycle Studio",
-                "city": "Remote",
-                "country": "Remote",
-                "workType": "Remote",
-                "contractType": "Full-time",
-                "jobLink": "https://example.com/lifecycle/engine-programmer",
-                "sector": "Game",
-                "sourceJobId": "life-1",
-                "postedAt": "2026-03-01",
-            }
-        ]
-
-    def empty_loader(**_: object):
-        return []
-
     def failing_loader(**_: object):
         raise RuntimeError("timeout")
 
@@ -512,7 +469,7 @@ def test_pipeline_marks_missing_for_successful_sources_even_when_other_sources_f
         with workspace_tmpdir("jobs-fetcher") as tmp:
             out = Path(tmp)
             jf.default_source_loaders = lambda: [
-                ("ok_source", one_job_loader),
+                ("ok_source", lifecycle_studio_loader),
                 ("failing_source", failing_loader),
             ]
             first = jf.run_pipeline(

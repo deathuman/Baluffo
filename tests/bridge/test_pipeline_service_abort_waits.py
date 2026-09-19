@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime
-from tests.bridge.test_pipeline_service import _make_pipeline_service
 from tests.helpers.mutation import append_and_return
+from tests.helpers.pipeline_service_factory import make_pipeline_service
 
 
 def test_pipeline_abort_during_discovery_wait_finishes_canceled() -> None:
@@ -33,7 +33,7 @@ def test_pipeline_abort_during_discovery_wait_finishes_canceled() -> None:
             runtime.abort_requests = {"pipeline_1": {"reason": "test_abort"}}
         return True
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         runtime=runtime,
         trigger_discovery_task=lambda **_kwargs: (
@@ -86,7 +86,7 @@ def test_pipeline_abort_during_fetch_wait_finishes_canceled() -> None:
             runtime.abort_requests = {"pipeline_1": {"reason": "test_abort"}}
         return True
 
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status=status,
         runtime=runtime,
         load_runtime_evidence=load_runtime,
@@ -115,7 +115,7 @@ def test_pipeline_abort_during_fetch_wait_finishes_canceled() -> None:
 
 
 def test_child_report_wait_preserves_pipeline_abort_exception_type() -> None:
-    service = _make_pipeline_service(
+    service = make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "discovery"},
         runtime=PipelineRuntime(abort_requests={"pipeline_1": {"reason": "test_abort"}}),
     )

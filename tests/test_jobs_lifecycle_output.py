@@ -15,6 +15,7 @@ from src.jobs.state_lifecycle_identity import (
 )
 from src.jobs.state_lifecycle_orchestration import _initialize_carried_lifecycle_rows
 from src.shared.json_io import read_json
+from tests.helpers.source_loaders import empty_loader, lifecycle_studio_loader
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -147,9 +148,6 @@ def test_pipeline_lifecycle_state_retains_city_and_country_for_removed_rows() ->
             }
         ]
 
-    def empty_loader(**_: object):
-        return []
-
     previous_default_loaders = jf.default_source_loaders
     try:
         with workspace_tmpdir("jobs-fetcher-lifecycle-state") as tmp:
@@ -176,30 +174,11 @@ def test_pipeline_lifecycle_state_retains_city_and_country_for_removed_rows() ->
 
 
 def test_pipeline_marks_reappeared_rows_in_output() -> None:
-    def one_job_loader(**_: object):
-        return [
-            {
-                "title": "Engine Programmer",
-                "company": "Lifecycle Studio",
-                "city": "Remote",
-                "country": "Remote",
-                "workType": "Remote",
-                "contractType": "Full-time",
-                "jobLink": "https://example.com/lifecycle/engine-programmer",
-                "sector": "Game",
-                "sourceJobId": "life-1",
-                "postedAt": "2026-03-01",
-            }
-        ]
-
-    def empty_loader(**_: object):
-        return []
-
     previous_default_loaders = jf.default_source_loaders
     try:
         with workspace_tmpdir("jobs-fetcher-reappeared") as tmp:
             out = Path(tmp)
-            jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
+            jf.default_source_loaders = lambda: [("only_source", lifecycle_studio_loader)]
             jf.run_pipeline(
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
             )
@@ -209,7 +188,7 @@ def test_pipeline_marks_reappeared_rows_in_output() -> None:
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
             )
 
-            jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
+            jf.default_source_loaders = lambda: [("only_source", lifecycle_studio_loader)]
             third = jf.run_pipeline(
                 output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
             )

@@ -16,9 +16,7 @@ import {
   buildGotoDesktop,
   buildWriteReport,
   BASE_URL,
-  BRIDGE_BASE,
-  BRIDGE_PORT,
-  BRIDGE_HOST
+  BRIDGE_BASE
 } from "./helpers/packaged-smoke-shared.mjs";
 
 const REPORT_PATH =

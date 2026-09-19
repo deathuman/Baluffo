@@ -8,6 +8,7 @@ from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
     run_source_execution_stage,
 )
+from tests.helpers.source_loaders import empty_loader
 
 
 class _ThreadLocal:
@@ -78,13 +79,10 @@ def test_stage_does_not_swallow_unexpected_report_helper_runtime(
     )
     task_rows = {"buggy_source": _task_row()}
 
-    def ok_loader(**_kwargs):  # noqa: ANN202
-        return []
-
     with pytest.raises(RuntimeError, match="unexpected diagnostics bug"):
         run_source_execution_stage(
             config=_config(),
-            selected_loaders=[("buggy_source", ok_loader)],
+            selected_loaders=[("buggy_source", empty_loader)],
             fetch_text_limited=lambda _url, _timeout: "",
             source_state_rows={},
             redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
