@@ -40,7 +40,12 @@ are a pre-existing missing-Playwright-Chromium-binary environment issue in
 | W6 scripts / tools | `9b5c1508` | **+1,391** |
 | W5 test consolidation | `df485e83` | **−444** |
 | W1b structural clones | `ebac6401` | **−894** |
-| **Net** | | **−154** |
+| W3 route de-chaining | `02a827af` | **+3** |
+| W8 static plugin table | `02a827af` | **−89** |
+| W7 ops health split | `02a827af` | **+420** |
+| W2a/W2b/W7b god files | `065e0712` | **+2,090** |
+| W2a remainder | `50b5fa6b` | **+573** |
+| **Net** | | **+2,843** |
 
 ### W1b: why the first scan missed most of the duplication
 
@@ -159,6 +164,29 @@ coordinator is fully initialized before any leaf body runs, in either import ord
    leaves broke 7 bundle tests. Subdirectory leaves need no entry —
    `build_ship_bundle.py` copies `APP_RUNTIME_SCRIPT_DIRS` wholesale — so only the
    top-level ones matter.
+
+### Where the god-file backlog now stands
+
+| Measure | Before Wave 2/3 | After |
+|---|---:|---:|
+| `src` files >600 lines | 71 / 60,441 lines | **67 / 53,768 lines** |
+| Largest `src` file | 2,087 | **1,350** |
+| Frontend god files split | 0 | **5** (`health`, `ops-summary`, `registry-conflicts`, `feed`, `registry/load`) |
+
+**46 `src` files over 700 lines remain, totalling 40,217 lines.** The five worst
+are now all in the 1,300–1,350 band rather than one 2,087 outlier:
+`gamedevmap_active_dry_run.py` (1,350), `rehearsal_browser.py` (1,342),
+`fetch_incremental_sanity_benchmark.py` (1,171), `runtime_launcher.py` (1,103),
+`container_gateway.py` (1,095).
+
+Frontend still has 10 files over 500 lines, led by
+`frontend/jobs/app/runtime/pipeline-controller.js` (910) and
+`frontend/admin/render/ops-summary-dedup.js` (903).
+
+Continuing at the measured rate would cost roughly **+25–35% of each extracted
+body** — so finishing the remaining 46 files would *add* on the order of 10,000
+lines. That is the trade: **legibility is bought with LOC, and cannot be bought
+with it.**
 
 ### Where duplication now stands
 | Area | Before W1b | After W1b |
