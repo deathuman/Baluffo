@@ -3,11 +3,9 @@ import json
 from pathlib import Path
 
 from scripts import source_policy_soak_report as soak
+from tests.helpers.json_files import write_json
 
-
-def _write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
+_write_json = write_json
 
 
 def _write_json_gz(path: Path, payload: object) -> None:

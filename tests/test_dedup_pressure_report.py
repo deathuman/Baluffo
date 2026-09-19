@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.json_files import write_json_text
+
+_write_json = write_json_text
+
 MODULE_PATH = (
     Path(__file__).resolve().parents[1]
     / "tools"
@@ -18,11 +22,6 @@ SPEC = importlib.util.spec_from_file_location("dedup_pressure_report", MODULE_PA
 assert SPEC is not None and SPEC.loader is not None
 dedup_pressure_report = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(dedup_pressure_report)
-
-
-def _write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _write_fetch_report(path: Path) -> None:

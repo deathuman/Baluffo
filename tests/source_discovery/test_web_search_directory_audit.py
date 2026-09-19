@@ -9,8 +9,11 @@ import pytest
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import directory_audit
 from src.url_hosts import url_host_matches_domain
+from tests.helpers.discovery_fakes import seeds
 
 from ._helpers import workspace_tmpdir, write_web_search_browser_recovery_artifact
+
+_seeds = seeds
 
 
 def _audit_config(
@@ -35,20 +38,6 @@ def _audit_config(
             **web_search,
         }
     }
-
-
-def _seeds() -> list[dict[str, Any]]:
-    return [
-        {
-            "studio": "Seed Studio",
-            "careersUrl": "https://seed.example/careers",
-            "nlPriority": True,
-        },
-        {
-            "studio": "Search Studio",
-            "nlPriority": False,
-        },
-    ]
 
 
 def _fetcher(url: str, _timeout_s: int) -> str:

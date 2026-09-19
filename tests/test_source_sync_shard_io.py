@@ -2,7 +2,6 @@ import base64
 import gzip
 import hashlib
 import json
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +18,11 @@ from src.source_sync_shard import (
     read_manifest,
     trusted_committed_manifest,
 )
+from tests.helpers.jobs_rows import fingerprint_row
+from tests.helpers.report_state import simple_config
+
+_config = simple_config
+_row = fingerprint_row
 
 
 class _FakeSyncModule:
@@ -46,29 +50,8 @@ class _FakeSyncModule:
         return status, payload, headers
 
 
-def _row(index: int, *, extra_chunks: int = 8) -> dict[str, str]:
-    return {
-        "id": f"static:listing_url:https://studio-{index:05d}.example/jobs",
-        "adapter": "static",
-        "name": f"Studio {index:05d}",
-        "listing_url": f"https://studio-{index:05d}.example/jobs",
-        "notes": "".join(
-            hashlib.sha256(f"{index}:{chunk}".encode()).hexdigest() for chunk in range(extra_chunks)
-        ),
-    }
-
-
 def _payload(shard) -> dict[str, Any]:
     return dict(json.loads(gzip.decompress(shard.payload_bytes).decode("utf-8")))
-
-
-def _config():
-    return SimpleNamespace(
-        repo="owner/repo",
-        branch="main",
-        path="baluffo/source-sync.json",
-        timeout_s=20,
-    )
 
 
 def _encoded_json(payload: dict) -> str:

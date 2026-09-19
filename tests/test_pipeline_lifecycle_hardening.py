@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,6 +9,9 @@ import pytest
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 from src.jobs.pipeline_runtime_summary import build_fetch_task_progress_payload
 from tests.helpers.mutation import append_and_return
+from tests.helpers.report_state import make_parse_iso
+
+make_parse_iso = make_parse_iso
 
 
 class FakeLock:
@@ -18,20 +20,6 @@ class FakeLock:
 
     def __exit__(self, *args):
         return None
-
-
-def make_parse_iso():
-    def parse_iso(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except (AttributeError, ValueError):
-            return None
-
-    return parse_iso
 
 
 def test_fetch_task_progress_ratio_is_count_based() -> None:

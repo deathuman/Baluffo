@@ -13,18 +13,9 @@ from src.source_sync_shard import (
     content_addressed_shards,
     shard_key,
 )
+from tests.helpers.jobs_rows import fingerprint_row
 
-
-def _row(index: int, *, extra_chunks: int = 8) -> dict[str, str]:
-    return {
-        "id": f"static:listing_url:https://studio-{index:05d}.example/jobs",
-        "adapter": "static",
-        "name": f"Studio {index:05d}",
-        "listing_url": f"https://studio-{index:05d}.example/jobs",
-        "notes": "".join(
-            hashlib.sha256(f"{index}:{chunk}".encode()).hexdigest() for chunk in range(extra_chunks)
-        ),
-    }
+_row = fingerprint_row
 
 
 def _payload(shard) -> dict[str, Any]:

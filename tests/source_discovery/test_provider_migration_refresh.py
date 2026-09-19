@@ -6,11 +6,9 @@ from typing import Any
 
 from scripts.provider_migration_staging_refresh import refresh_provider_migration_staging
 from src.source_registry_io import load_json_array, load_runtime_evidence_array
+from tests.helpers.json_files import write_json
 
-
-def _write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
+_write_json = write_json
 
 
 def _read_json(path: Path) -> dict[str, Any]:

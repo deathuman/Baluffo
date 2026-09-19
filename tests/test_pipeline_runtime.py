@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -24,20 +23,9 @@ from src.jobs.pipeline_runtime_writers import (
 )
 from src.pipeline_io import write_atomic_if_changed, write_hot_text_if_changed
 from tests.helpers.concurrency import BlockingActiveCounter
+from tests.helpers.jobs_rows import task_row
 
-
-def _task_row() -> dict[str, object]:
-    return {
-        "status": "running",
-        "startedAt": "2026-04-18T10:00:00Z",
-        "finishedAt": "",
-        "heartbeatAt": "2026-04-18T10:00:00Z",
-        "durationMs": 0,
-        "error": "",
-        "_startedMonotonic": time.perf_counter(),
-        "_slowWarned": False,
-        "progress": {},
-    }
+_task_row = task_row
 
 
 def test_make_fetch_text_limited_static_host_gate_caps_same_host_concurrency_and_emits_wait_reason() -> (

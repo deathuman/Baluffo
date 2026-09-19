@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -9,12 +8,9 @@ from typing import Any
 from src.bridge.admin_entrypoint_services import _matching_live_report_progress
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from tests.helpers.mutation import append_and_return
+from tests.helpers.report_state import parse_iso_utc
 
-
-def _parse_iso_utc(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+_parse_iso_utc = parse_iso_utc
 
 
 def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: Path) -> None:

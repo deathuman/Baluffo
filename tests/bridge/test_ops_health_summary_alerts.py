@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from src.bridge import ops_health
+from tests.helpers.report_state import parse_iso
 
-
-def _parse_iso(value: Any) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+_parse_iso = parse_iso
 
 
 def test_summary_alerts_warn_when_successful_fetch_is_stale() -> None:

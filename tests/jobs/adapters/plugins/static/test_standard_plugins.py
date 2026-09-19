@@ -16,6 +16,9 @@ from src.jobs.adapters.plugins.static import (
     outerdawn,
     perfectgarbage,
 )
+from tests.helpers.jobs_rows import source_row
+
+_source_row = source_row
 
 _PLUGIN_CASES = [
     pytest.param(
@@ -132,15 +135,6 @@ _PLUGIN_CASES = [
         id="perfectgarbage",
     ),
 ]
-
-
-def _source_row(plugin_name: str) -> dict[str, Any]:
-    return {
-        "id": plugin_name,
-        "name": f"{plugin_name.title()} Careers",
-        "studio": f"{plugin_name.title()} Studio",
-        "company": f"{plugin_name.title()} Studio",
-    }
 
 
 def _run_plugin(

@@ -11,59 +11,12 @@ from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.desktop_update_leaf_namespace import du
+from tests.helpers.handoff_files import write_credible_handoff_request
+from tests.helpers.json_files import write_required_root_html
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
-def _write_required_root_html(version_root: Path) -> None:
-    for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
-        (version_root / name).write_text("<html></html>\n", encoding="utf-8")
-
-
-def _write_credible_handoff_request(
-    paths: du.DesktopUpdatePaths,
-    session_root: Path,
-    *,
-    install_state: str = "handoff_requested",
-    launcher_pid: int = 1234,
-    launcher_token: str = "token-1",
-) -> None:
-    session_root.mkdir(parents=True, exist_ok=True)
-    du.write_json_atomic(
-        session_root / "desktop-session.json",
-        {
-            "launcherPid": int(launcher_pid),
-            "launcherToken": str(launcher_token),
-        },
-    )
-    du.write_json_atomic(
-        paths.install_plan_path,
-        {
-            "planVersion": 1,
-            "installRoot": str(paths.install_root),
-            "dataDir": str(paths.data_dir),
-            "tempHelperPath": str(paths.install_root / du.DESKTOP_UPDATE_HELPER_NAME),
-            "targetVersion": "1.4.0",
-            "currentVersion": "0.1.0",
-            "manifestPath": str(paths.manifest_cache_path),
-            "downloadedZipPath": str(paths.downloads_dir / "baluffo-portable-1.4.0.zip"),
-            "expectedZipSha256": "a" * 64,
-            "manifestKeyId": "desktop-ed25519-test",
-            "rollbackPath": str(paths.rollback_root / "rollback-1"),
-            "updaterWorkingDir": str(paths.updater_dir),
-            "createdAt": "2026-04-19T12:00:00Z",
-            "launcherPid": int(launcher_pid),
-            "launcherToken": str(launcher_token),
-            "desktopSessionRoot": str(session_root),
-        },
-    )
-    du.write_json_atomic(paths.handoff_request_path, {"requestedAt": "2026-04-19T12:00:00Z"})
-    du.save_status(
-        paths,
-        {
-            **du.default_status_payload(current_version="0.1.0"),
-            "installState": str(install_state),
-        },
-    )
+_write_credible_handoff_request = write_credible_handoff_request
+_write_required_root_html = write_required_root_html
 
 
 def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

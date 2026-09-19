@@ -5,26 +5,11 @@ from __future__ import annotations
 from src.jobs.feed_urls import page_relative_feed_url
 from src.source_discovery import wordpress_feed_probe as wfp
 from src.source_discovery.directory_page_recovery import (
-    DirectoryRecoveryRequest,
     run_directory_page_recovery,
 )
+from tests.helpers.bridge_fakes import directory_recovery_request
 
-
-def _request(
-    key: str = "https://studio.example.com/",
-    *,
-    html: str = "<html><body>No openings here</body></html>",
-) -> DirectoryRecoveryRequest:
-    return DirectoryRecoveryRequest(
-        key=key,
-        adapter="gameprog",
-        discovery_method="gameprog",
-        name="Studio",
-        studio="Studio",
-        page_url=key,
-        html=html,
-        payload={"studio": "Studio"},
-    )
+_request = directory_recovery_request
 
 
 # ── extract_advertised_feed_urls ──────────────────────────────────────────────

@@ -18,26 +18,11 @@ from src.jobs.state_lifecycle import read_job_lifecycle_state, write_job_lifecyc
 from src.shared.json_io import read_json
 from src.storage import BaluffoStore, JobRuntimeStore
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
+from tests.helpers.bridge_fakes import wait_for_terminal_status
+from tests.helpers.jobs_rows import canonical_feed_row
 
-
-def _canonical_feed_row(availability_id: str = "availability_1") -> dict:
-    return {
-        "id": "job-1",
-        "title": "Engine Programmer",
-        "company": "Studio",
-        "city": "Rome",
-        "country": "Italy",
-        "workType": "Hybrid",
-        "contractType": "Full-time",
-        "jobLink": "https://example.com/jobs/1",
-        "sector": "Games",
-        "profession": "engine-programmer",
-        "source": "fixture",
-        "sourceJobId": "1",
-        "availabilityId": availability_id,
-        "availabilityStatus": "available",
-        "sourceBundle": [],
-    }
+_canonical_feed_row = canonical_feed_row
+_wait_for_terminal_status = wait_for_terminal_status
 
 
 def test_scheduled_sweep_drains_the_full_bounded_plan(
@@ -69,16 +54,6 @@ def test_scheduled_sweep_drains_the_full_bounded_plan(
     assert result["started"] == 4
     assert result["queued"] == 26
     assert len(started_ids) == 30
-
-
-def _wait_for_terminal_status(service: JobAvailabilityService, run_id: str) -> dict:
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline:
-        status = service.status(run_id)
-        if status.get("status") != "running":
-            return status
-        time.sleep(0.001)
-    raise AssertionError(f"availability task {run_id} did not finish")
 
 
 def test_job_availability_public_routes(tmp_path: Path) -> None:

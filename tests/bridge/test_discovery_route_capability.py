@@ -6,6 +6,9 @@ from typing import Any, cast
 
 from src.bridge.routes.get_discovery import handle_discovery_routes
 from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.json_files import write_json
+
+_write_json = write_json
 
 
 class MinimalDiscoveryRouteApi:
@@ -23,11 +26,6 @@ class MinimalDiscoveryRouteApi:
             "ok": True,
             "autoApproveHealthyPendingOnComplete": False,
         }
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_discovery_get_routes_accept_minimal_capability_object(tmp_path: Path) -> None:

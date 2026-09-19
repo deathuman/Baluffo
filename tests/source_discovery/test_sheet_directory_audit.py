@@ -5,16 +5,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.source_discovery import directory_audit
+from tests.helpers.jobs_rows import sheet_csv
+from tests.helpers.report_state import fetch_from
 
 from ._helpers import sd, workspace_tmpdir
 
-
-def _sheet_csv() -> str:
-    return """x,x,x,x
-x,Studio,Hiring Location,Roles open,Link
-x,Provider Studio,Remote,yes,https://boards.greenhouse.io/providerstudio
-x,Static Studio,Remote,speculative,https://static.example.com/careers
-"""
+_fetch_from = fetch_from
+_sheet_csv = sheet_csv
 
 
 def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
@@ -23,15 +20,6 @@ def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
 
 def _sheet_urls(sheet_id: str = "sheet_test", gid: str = "1") -> list[str]:
     return sd.game_studios_sheet_candidate_urls(sheet_id, gid)
-
-
-def _fetch_from(payloads: dict[str, str]):
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
-
-    return fake_fetch
 
 
 def _audit_config(

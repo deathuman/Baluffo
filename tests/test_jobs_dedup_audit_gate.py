@@ -1,29 +1,9 @@
 from __future__ import annotations
 
 from src.jobs.reporting_dedup_evidence import build_dedup_evidence
+from tests.helpers.jobs_rows import dedup_row
 
-
-def _row(**overrides):
-    payload = {
-        "id": "job-1",
-        "dedupKey": "key-1",
-        "title": "Senior Engineer",
-        "company": "Studio One",
-        "jobLink": "https://example.com/jobs/1",
-        "locationSummary": "Amsterdam, NL",
-        "sourceBundleCount": 1,
-        "sourceBundle": [
-            {
-                "source": "greenhouse:slug:studio-one",
-                "sourceJobId": "gh-1",
-                "jobLink": "https://example.com/jobs/1",
-                "adapter": "greenhouse",
-            }
-        ],
-        "locations": [{"city": "Amsterdam", "country": "NL"}],
-    }
-    payload.update(overrides)
-    return payload
+_row = dedup_row
 
 
 def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:

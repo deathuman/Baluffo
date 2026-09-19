@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 from src.local_data_store import LocalDataPaths, LocalDataStore
+from tests.helpers.json_files import write_json
 from tests.helpers.temp_paths import workspace_tmpdir
+
+_write_json = write_json
 
 
 def _review_artifact(*, review_state: str = "acknowledged") -> dict[str, object]:
@@ -50,11 +53,6 @@ def _recommendations_artifact() -> dict[str, object]:
             }
         ],
     }
-
-
-def _write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_backup_exports_source_policy_artifacts_and_counts() -> None:

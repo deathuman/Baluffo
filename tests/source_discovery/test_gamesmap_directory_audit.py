@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from typing import Any
 
 from src.source_discovery import directory_audit
 from src.source_discovery.gamesmap_candidates import run_gamesmap_directory_audit
+from tests.helpers.report_state import fetch_from
 
 from ._helpers import _gamesmap_next_payload_html, sd, workspace_tmpdir
+
+_fetch_from = fetch_from
 
 
 def _gamesmap_companies() -> list[dict[str, Any]]:
@@ -41,15 +43,6 @@ def _gamesmap_payloads() -> dict[str, str]:
             <!doctype html><html><body><a href="https://boards.greenhouse.io/provider">Jobs</a></body></html>
         """,
     }
-
-
-def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
-
-    return fake_fetch
 
 
 def _gamesmap_config(audit_path: str | None = None) -> dict[str, Any]:

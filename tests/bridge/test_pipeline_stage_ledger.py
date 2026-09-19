@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 from tests.helpers.mutation import append_and_return
+from tests.helpers.report_state import parse_iso
 
-
-def _parse_iso(value: Any) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+_parse_iso = parse_iso
 
 
 def _now_iso_factory(ticks: list[str]) -> Any:

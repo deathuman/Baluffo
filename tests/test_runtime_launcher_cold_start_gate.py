@@ -6,13 +6,11 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from src.ship import runtime_launcher as rl
+from tests.helpers.json_files import write_text_file_plain
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+_write = write_text_file_plain
 
 
 def _write_successful_jobs_runtime(data_dir: Path) -> None:

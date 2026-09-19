@@ -8,16 +8,9 @@ import pytest
 import src.bridge.job_availability_service as availability_service_module
 from src.bridge.job_availability_service import JobAvailabilityService
 from src.jobs.state_lifecycle import write_job_lifecycle_state
+from tests.helpers.bridge_fakes import wait_for_terminal_status
 
-
-def _wait_for_terminal_status(service: JobAvailabilityService, run_id: str) -> dict:
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline:
-        status = service.status(run_id)
-        if status.get("status") != "running":
-            return status
-        time.sleep(0.001)
-    raise AssertionError(f"availability task {run_id} did not finish")
+_wait_for_terminal_status = wait_for_terminal_status
 
 
 def test_invalid_availability_target_fails_in_worker_and_clears_active_state(

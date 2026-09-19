@@ -1,21 +1,15 @@
 from __future__ import annotations
 
 import src.source_discovery.web_search_candidates as web_candidates
+from tests.helpers.report_state import fetch_from
 
 from ._helpers import sd, workspace_tmpdir
+
+_fetch_from = fetch_from
 
 
 def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
     return sd.game_studios_sheet_candidate_urls(sheet_id, gid)[0]
-
-
-def _fetch_from(payloads: dict[str, str]):
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
-
-    return fake_fetch
 
 
 def test_sheet_directory_recovery_url_limit_changes_attempts_and_signature() -> None:

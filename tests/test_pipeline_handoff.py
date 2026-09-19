@@ -9,6 +9,9 @@ from typing import Any
 import pytest
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from tests.helpers.report_state import make_parse_iso
+
+make_parse_iso = make_parse_iso
 
 
 class FakeLock:
@@ -17,20 +20,6 @@ class FakeLock:
 
     def __exit__(self, *args):
         return None
-
-
-def make_parse_iso():
-    def parse_iso(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except (AttributeError, ValueError):
-            return None
-
-    return parse_iso
 
 
 def install_fake_wait_clock(

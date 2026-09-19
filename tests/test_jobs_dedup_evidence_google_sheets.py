@@ -1,22 +1,9 @@
 from __future__ import annotations
 
 from src.jobs.reporting_dedup_evidence import build_dedup_evidence
+from tests.helpers.jobs_rows import lifecycle_row
 
-
-def _row(**overrides):
-    payload = {
-        "id": "job-identity",
-        "dedupKey": "identity-key",
-        "title": "Senior Engineer",
-        "company": "Studio One",
-        "jobLink": "https://example.com/jobs/1",
-        "locationSummary": "Amsterdam, NL",
-        "sourceBundleCount": 2,
-        "sourceBundle": [],
-        "locations": [{"city": "Amsterdam", "country": "NL"}],
-    }
-    payload.update(overrides)
-    return payload
+_row = lifecycle_row
 
 
 def _sheet_item(row_id: str, url: str):

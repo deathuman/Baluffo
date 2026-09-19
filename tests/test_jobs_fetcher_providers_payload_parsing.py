@@ -1,10 +1,12 @@
 """Tests for jobs fetcher providers payload parsing."""
 
 import json
-from typing import Any
 
 from src import jobs_fetcher as jf
+from tests.helpers.discovery_fakes import assert_gamesindustry
 from tests.helpers.job_fixtures import _fixture
+
+_assert_gamesindustry = assert_gamesindustry
 
 
 def test_parse_remote_ok_payload_filters_game_roles() -> None:
@@ -134,16 +136,6 @@ def test_fingerprint_url_matches_smartrecruiters_short_and_slugged_urls() -> Non
     api = "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings/744000108777145"
     assert jf.fingerprint_url(short) == jf.fingerprint_url(slugged)
     assert jf.fingerprint_url(short) == jf.fingerprint_url(api)
-
-
-def _assert_gamesindustry(rows: list[dict[str, Any]]) -> None:
-    assert rows[0]["title"] == "Senior Quality Analyst"
-    assert rows[0]["company"] == "Sharkmob"
-    assert rows[0]["sourceJobId"] == "43821"
-    assert rows[0]["jobLink"].startswith("https://jobs.gamesindustry.biz/job/")
-    titles = {row["title"] for row in rows}
-    assert "Read more" not in titles
-    assert "Programming (6)" not in titles
 
 
 def test_parse_gamesindustry_html_extracts_company_and_city_from_real_43784_listing() -> None:

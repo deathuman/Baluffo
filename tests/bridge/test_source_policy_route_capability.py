@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from src.bridge.routes.get_source_policy import handle_source_policy_routes
 from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.json_files import write_json
+
+_write_json = write_json
 
 
 class MinimalSourcePolicyRouteApi:
@@ -19,11 +21,6 @@ class MinimalSourcePolicyRouteApi:
 
     def source_identity(self, row: dict[str, Any]) -> str:
         return str(row.get("id") or row.get("sourceId") or "").strip()
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_source_policy_route_accepts_minimal_capability_object(tmp_path: Path) -> None:

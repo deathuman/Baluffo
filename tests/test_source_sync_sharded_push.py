@@ -1,5 +1,4 @@
 import base64
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -9,6 +8,9 @@ from src.source_sync_shard import (
     push_manifest,
     push_sharded_snapshot,
 )
+from tests.helpers.report_state import simple_config
+
+_config = simple_config
 
 
 class _FakeSyncModule:
@@ -40,15 +42,6 @@ class _ConflictSyncModule(_FakeSyncModule):
 
     def _set_runtime_state(self, code: str, message: str) -> None:
         self.runtime_state = (code, message)
-
-
-def _config():
-    return SimpleNamespace(
-        repo="owner/repo",
-        branch="main",
-        path="baluffo/source-sync.json",
-        timeout_s=20,
-    )
 
 
 def _snapshot() -> dict:

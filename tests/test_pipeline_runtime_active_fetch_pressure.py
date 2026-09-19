@@ -8,21 +8,10 @@ from src.jobs import pipeline_runtime_summary
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime, build_fetch_task_progress_payload
 from src.jobs.pipeline_runtime_writers import make_task_state_writer, write_progress_report
+from tests.helpers.jobs_rows import task_row
 from tests.helpers.mutation import append_and_return
 
-
-def _task_row() -> dict[str, object]:
-    return {
-        "status": "running",
-        "startedAt": "2026-04-18T10:00:00Z",
-        "finishedAt": "",
-        "heartbeatAt": "2026-04-18T10:00:00Z",
-        "durationMs": 0,
-        "error": "",
-        "_startedMonotonic": time.perf_counter(),
-        "_slowWarned": False,
-        "progress": {},
-    }
+_task_row = task_row
 
 
 def test_task_state_writer_coalesces_active_execution_writes_and_updates_summary_sidecar() -> None:

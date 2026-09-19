@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from textwrap import dedent
 
+from tests.helpers.json_files import write_text_file
 from tools.repo_health import bridge_api_field_inventory as inventory
 from tools.repo_health import repo_guardrails
 
-
-def _write(tmp_path: Path, rel_path: str, source: str) -> Path:
-    path = tmp_path / rel_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dedent(source).strip() + "\n", encoding="utf-8")
-    return path
+_write = write_text_file
 
 
 def test_current_bridge_api_inventory_is_complete() -> None:

@@ -19,7 +19,10 @@ from src.jobs.common.contracts_static_suppression_policy import (
 )
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.pipeline_loader_selection import apply_dynamic_redundant_static_exclusions
+from tests.helpers.jobs_rows import excluded_report
 from tests.helpers.temp_paths import workspace_tmpdir
+
+_excluded_report = excluded_report
 
 STATIC_SOURCE_NAME = "static_source::static:listing_url:https://studio.example/jobs"
 STATIC_SOURCE_ID = "static:listing_url:https://studio.example/jobs"
@@ -77,21 +80,6 @@ def _prior_report() -> dict[str, object]:
                 }
             ]
         }
-    }
-
-
-def _excluded_report(name: str, reason: str) -> dict[str, object]:
-    return {
-        "name": name,
-        "status": "excluded",
-        "adapter": "custom",
-        "fetchStrategy": "auto",
-        "studio": "",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": reason,
-        "exclusionReason": reason,
-        "durationMs": 0,
     }
 
 

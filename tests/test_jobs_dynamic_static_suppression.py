@@ -5,7 +5,10 @@ from pathlib import Path
 from src import jobs_fetcher as jf
 from src.jobs.pipeline_loader_selection import apply_dynamic_redundant_static_exclusions
 from src.jobs.state_source_state import update_source_state_rows
+from tests.helpers.jobs_rows import excluded_report
 from tests.helpers.temp_paths import workspace_tmpdir
+
+_excluded_report = excluded_report
 
 STATIC_SOURCE_NAME = "static_source::static:listing_url:https://studio.example/jobs"
 MIGRATION_SOURCE_IDENTITY = "static:listing_url:https://studio.example/jobs"
@@ -24,21 +27,6 @@ def _eligible_provider_state(**overrides):
     }
     state["Studio Greenhouse"].update(overrides)
     return state
-
-
-def _excluded_report(name, reason):
-    return {
-        "name": name,
-        "status": "excluded",
-        "adapter": "custom",
-        "fetchStrategy": "auto",
-        "studio": "",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": reason,
-        "exclusionReason": reason,
-        "durationMs": 0,
-    }
 
 
 def _provider_report(**overrides):

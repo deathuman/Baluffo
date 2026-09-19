@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 import src.source_sync_shard as shard_mod
+from tests.helpers.report_state import simple_config
+
+_config = simple_config
 
 
 class _FakeSyncModule:
@@ -29,15 +31,6 @@ class _FakeSyncModule:
             raise response
         status, payload = response
         return status, payload, {}
-
-
-def _config() -> SimpleNamespace:
-    return SimpleNamespace(
-        repo="owner/repo",
-        branch="main",
-        path="baluffo/source-sync.json",
-        timeout_s=20,
-    )
 
 
 def _row() -> dict[str, str]:

@@ -8,12 +8,10 @@ import pytest
 
 from src.ship import jobs_first_run_state as first_run_state
 from src.ship import runtime_launcher as rl
+from tests.helpers.json_files import write_text_file_plain
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+_write = write_text_file_plain
 
 
 def _write_successful_jobs_report_and_feeds(data_dir: Path) -> None:

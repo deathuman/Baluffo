@@ -7,6 +7,9 @@ from typing import Any
 
 from src.bridge.routes.get_registry import handle_registry_routes
 from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.json_files import write_json
+
+_write_json = write_json
 
 
 class MinimalRegistryRouteApi:
@@ -84,11 +87,6 @@ class MinimalRegistryRouteApi:
             "pendingCount": len(state.get("pending", [])),
             "rejectedCount": len(state.get("rejected", [])),
         }
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_registry_get_routes_accept_minimal_capability_object(tmp_path: Path) -> None:

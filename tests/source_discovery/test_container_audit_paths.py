@@ -1,34 +1,23 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import audit_config
 from src.url_hosts import url_host_matches_domain
+from tests.helpers.discovery_fakes import seeds
+from tests.helpers.jobs_rows import sheet_csv
+from tests.helpers.report_state import fetch_from
 
 from ._helpers import sd
 
-
-def _sheet_csv() -> str:
-    return """x,x,x,x
-x,Studio,Hiring Location,Roles open,Link
-x,Provider Studio,Remote,yes,https://boards.greenhouse.io/providerstudio
-x,Static Studio,Remote,speculative,https://static.example.com/careers
-"""
+_fetch_from = fetch_from
+_seeds = seeds
+_sheet_csv = sheet_csv
 
 
 def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
     return sd.game_studios_sheet_candidate_urls(sheet_id, gid)[0]
-
-
-def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
-
-    return fake_fetch
 
 
 def _sheet_audit_config(audit_path: str) -> dict[str, object]:
@@ -48,20 +37,6 @@ def _web_audit_config(audit_path: str) -> dict[str, object]:
             "activeAuditTtlMinutes": 60,
         }
     }
-
-
-def _seeds() -> list[dict[str, object]]:
-    return [
-        {
-            "studio": "Seed Studio",
-            "careersUrl": "https://seed.example/careers",
-            "nlPriority": True,
-        },
-        {
-            "studio": "Search Studio",
-            "nlPriority": False,
-        },
-    ]
 
 
 def _web_fetcher(url: str, _timeout_s: int) -> str:

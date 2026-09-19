@@ -9,20 +9,11 @@ from typing import Any
 from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
 from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage import BaluffoStore, TaskRuntimeStore
+from tests.helpers.json_files import load_json_object
+from tests.helpers.report_state import parse_iso
 
-
-def _parse_iso(value: Any) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-
-
-def _load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return dict(default)
-    return payload if isinstance(payload, dict) else dict(default)
+_load_json_object = load_json_object
+_parse_iso = parse_iso
 
 
 def _save_json_atomic(path: Path, payload: Any) -> None:

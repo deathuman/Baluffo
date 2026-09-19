@@ -14,13 +14,11 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import runtime_launcher as rl
 from src.ship import startup_telemetry as telemetry
+from tests.helpers.json_files import write_text_file_plain
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+_write = write_text_file_plain
 
 
 def test_quarantine_stale_jobs_row_artifacts_without_successful_report() -> None:

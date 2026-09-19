@@ -14,12 +14,10 @@ from src.ship.update_manager_bootstrap import (
 )
 from src.ship.update_manager_paths import ShipPaths
 from src.ship.update_manager_recovery import recover_previous, startup_check
+from tests.helpers.json_files import write_text_file_plain
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+_write = write_text_file_plain
 
 
 def _seed_root(root: Path, version: str = "1.0.0") -> None:

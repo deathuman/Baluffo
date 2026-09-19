@@ -7,17 +7,11 @@ from typing import Any, cast
 import pytest
 
 from src.jobs.adapters.plugins.static import playstack, tatem, twirlbound
+from tests.helpers.jobs_rows import source_row
+
+_source_row = source_row
 
 _PLUGINS = (playstack, twirlbound, tatem)
-
-
-def _source_row(plugin_name: str) -> dict[str, Any]:
-    return {
-        "id": plugin_name,
-        "name": f"{plugin_name.title()} Careers",
-        "studio": f"{plugin_name.title()} Studio",
-        "company": f"{plugin_name.title()} Studio",
-    }
 
 
 def _run_plugin(

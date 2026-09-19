@@ -16,6 +16,9 @@ from tests.admin._runtime_helpers import (
     task_row,
     task_state_entry,
 )
+from tests.helpers.handoff_files import setup_report_finished_while_owner_active
+
+_setup_report_finished_while_owner_active = setup_report_finished_while_owner_active
 
 pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 
@@ -374,72 +377,6 @@ def _assert_active_owner_over_finished_history(payload: dict[str, Any]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == "fetch_live_1"
-
-
-def _setup_report_finished_while_owner_active() -> None:
-    started_at = admin_bridge.now_iso()
-    finished_at = admin_bridge.now_iso()
-    run_id = "fetch_report_finished_1"
-    admin_bridge.save_json_atomic(
-        admin_bridge.TASK_STATE_PATH,
-        {
-            "fetch": task_state_entry("fetch", run_id=run_id, started_at=started_at),
-        },
-    )
-    admin_bridge.save_json_atomic(
-        admin_bridge.JOBS_FETCH_REPORT_PATH,
-        fetch_report(
-            run_id=run_id,
-            started_at=started_at,
-            finished_at=finished_at,
-            runtime={"lifecycle": {"owner": "fetch_report", "heartbeatAt": started_at}},
-            task_progress=active_progress(
-                "executing_sources",
-                "Executing sources",
-                {"resolvedSources": 5, "sourceCount": 10},
-            ),
-            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-        ),
-    )
-    admin_bridge.save_json_atomic(
-        admin_bridge.JOBS_FETCH_TASKS_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "heartbeatAt": started_at,
-            "taskProgress": {"active": True},
-            "summary": {"queued": 0, "running": 1, "ok": 0, "error": 0},
-            "tasks": [],
-        },
-    )
-    admin_bridge.save_json_atomic(
-        admin_bridge.OPS_HISTORY_PATH,
-        [
-            history_row(
-                row_id=run_id,
-                run_id=run_id,
-                status="warning",
-                started_at=started_at,
-                finished_at=finished_at,
-                duration_ms=123,
-                summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            )
-        ],
-    )
-    admin_bridge.start_lifecycle_run(
-        run_id=run_id,
-        task_type="fetch",
-        started_at=started_at,
-        owner_kind="process",
-        owner_pid=111,
-        progress=active_progress(
-            "executing_sources",
-            "Executing sources",
-            {"resolvedSources": 5, "sourceCount": 10},
-        ),
-        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-    )
 
 
 def _assert_report_finished_while_owner_active(payload: dict[str, Any]) -> None:

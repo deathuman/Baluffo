@@ -8,6 +8,9 @@ import pytest
 
 from src.bridge.routes.get_admin_ops_tab_counts import handle_admin_ops_tab_counts_routes
 from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.json_files import write_json
+
+_write_json = write_json
 
 
 class MinimalAdminOpsTabCountsRouteApi:
@@ -51,11 +54,6 @@ class MinimalAdminOpsTabCountsRouteApi:
             "pendingCount": len(state.get("pending", [])),
             "rejectedCount": len(state.get("rejected", [])),
         }
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_admin_ops_tab_counts_accepts_minimal_capability_object(tmp_path: Path) -> None:

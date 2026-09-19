@@ -25,23 +25,9 @@ from src.source_discovery.directory_page_recovery import (
 )
 from src.source_discovery.page_outcomes import FetchedPageContext, PageOutcome, PageOutcomeStrategy
 from src.source_discovery.provider_inference_filters import split_bad_provider_inferences
+from tests.helpers.bridge_fakes import directory_recovery_request
 
-
-def _request(
-    key: str = "https://studio.example.com/",
-    *,
-    html: str = "<html><body>No openings here</body></html>",
-) -> DirectoryRecoveryRequest:
-    return DirectoryRecoveryRequest(
-        key=key,
-        adapter="gameprog",
-        discovery_method="gameprog",
-        name="Studio",
-        studio="Studio",
-        page_url=key,
-        html=html,
-        payload={"studio": "Studio"},
-    )
+_request = directory_recovery_request
 
 
 def test_directory_recovery_plans_bounded_deduped_same_site_urls() -> None:

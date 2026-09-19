@@ -5,11 +5,9 @@ from typing import Any
 from scripts import source_policy_soak_report as soak
 from src import source_registry
 from src.shared.json_io import read_json
+from tests.helpers.json_files import write_json
 
-
-def _write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
+_write_json = write_json
 
 
 def _base_fetch_report() -> dict[str, Any]:

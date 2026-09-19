@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from src.source_discovery import gameprog
+from tests.helpers.report_state import fetch_from
 
 from ._helpers import sd, workspace_tmpdir
+
+_fetch_from = fetch_from
 
 
 def _gameprog_payloads() -> dict[str, str]:
@@ -24,15 +26,6 @@ def _gameprog_payloads() -> dict[str, str]:
             <!doctype html><html><body><a href="https://boards.greenhouse.io/second">Jobs</a></body></html>
         """,
     }
-
-
-def _fetch_from(payloads: dict[str, str]) -> Callable[[str, int], str]:
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
-
-    return fake_fetch
 
 
 def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> None:

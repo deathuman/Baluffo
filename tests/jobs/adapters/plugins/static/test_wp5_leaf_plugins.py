@@ -8,15 +8,9 @@ import pytest
 
 from src.jobs.adapters.plugins.static import sandsoft, upsurge
 from src.jobs.adapters.plugins.static._feed_postings import page_relative_feed_url
+from tests.helpers.jobs_rows import source_row
 
-
-def _source_row(plugin_name: str) -> dict[str, Any]:
-    return {
-        "id": plugin_name,
-        "name": f"{plugin_name.title()} Careers",
-        "studio": f"{plugin_name.title()} Studio",
-        "company": f"{plugin_name.title()} Studio",
-    }
+_source_row = source_row
 
 
 def _fetch_once(page_url: str, html: str) -> Any:

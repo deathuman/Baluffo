@@ -23,6 +23,9 @@ from src.jobs.adapters.plugins.static._runner import (
     simple_static_run,
 )
 from src.jobs.feed_urls import site_rss_url
+from tests.helpers.jobs_rows import source_row
+
+_source_row = source_row
 
 _PLUGINS = (arsanesia, petprojectgames)
 
@@ -95,15 +98,6 @@ def test_site_rss_url_targets_tumblr_rss() -> None:
     assert site_rss_url("http://thegoodevil.com/jobs/") == "http://thegoodevil.com/rss"
     assert site_rss_url("") == ""
     assert site_rss_url("ftp://thegoodevil.com/") == ""
-
-
-def _source_row(plugin_name: str) -> dict[str, Any]:
-    return {
-        "id": plugin_name,
-        "name": f"{plugin_name.title()} Careers",
-        "studio": f"{plugin_name.title()} Studio",
-        "company": f"{plugin_name.title()} Studio",
-    }
 
 
 def _run_plugin(plugin: Any, *, page_url: str, feed_html: str) -> list[dict[str, Any]]:

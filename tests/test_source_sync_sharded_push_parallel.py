@@ -1,7 +1,9 @@
 import threading
-from types import SimpleNamespace
 
 from src.source_sync_shard import build_sharded_snapshot_bundle, push_sharded_snapshot
+from tests.helpers.report_state import simple_config
+
+_config = simple_config
 
 
 class _ConcurrentSyncModule:
@@ -39,15 +41,6 @@ class _ConcurrentSyncModule:
         if method == "GET":
             return 404, {"message": "Not Found"}, {}
         raise AssertionError(f"unexpected request: {method} {url}")
-
-
-def _config():
-    return SimpleNamespace(
-        repo="owner/repo",
-        branch="main",
-        path="baluffo/source-sync.json",
-        timeout_s=20,
-    )
 
 
 def _snapshot_with_many_sources(count: int) -> dict:

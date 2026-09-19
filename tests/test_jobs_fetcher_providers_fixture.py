@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 
 from src import jobs_fetcher as jf
+from tests.helpers.discovery_fakes import assert_gamesindustry
 from tests.helpers.job_fixtures import _fixture
+
+_assert_gamesindustry = assert_gamesindustry
 
 
 @dataclass
@@ -22,16 +25,6 @@ class _FixtureParseCase:
     expected_len: int
     at_least: bool = False
     extra_check: Callable[[list[dict[str, Any]]], None] = lambda rows: None
-
-
-def _assert_gamesindustry(rows: list[dict[str, Any]]) -> None:
-    assert rows[0]["title"] == "Senior Quality Analyst"
-    assert rows[0]["company"] == "Sharkmob"
-    assert rows[0]["sourceJobId"] == "43821"
-    assert rows[0]["jobLink"].startswith("https://jobs.gamesindustry.biz/job/")
-    titles = {row["title"] for row in rows}
-    assert "Read more" not in titles
-    assert "Programming (6)" not in titles
 
 
 def _assert_greenhouse(rows: list[dict[str, Any]]) -> None:

@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.registry_service import RegistryPaths, RegistryService
 from tests.helpers.mutation import append_and_return
+from tests.helpers.report_state import parse_iso_utc
 
-
-def _parse_iso_utc(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+_parse_iso_utc = parse_iso_utc
 
 
 def _load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
