@@ -12,18 +12,14 @@ from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.coerce import as_float as _coerce_as_float
 from src.shared.fetch_report_normalization import (
     normalize_fetch_report_timing_summary,
     normalize_finalization_timing,
 )
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
-
-def _float_or_zero(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
+_float_or_zero = _coerce_as_float
 
 
 _REGISTRY_ASSET_AUDIT_SOURCES_LIMIT = 20

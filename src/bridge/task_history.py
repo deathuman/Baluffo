@@ -5,15 +5,12 @@ from __future__ import annotations
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
-
-def _parse_iso(text: str) -> datetime | None:
-    return parse_iso_from_utils(text)
+_parse_iso = _shared_parse_iso_from_utils
 
 
 class TaskHistoryManager:

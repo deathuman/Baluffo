@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from src.jobs.game_detection import has_positive_game_evidence
+from src.shared.coerce import as_text as _clean_text
 
 COUNTRY_NAME_TO_CODE = {
     "united states": "US",
@@ -69,11 +70,10 @@ US_STATE_CODE_TO_COUNTRY = {
 }
 
 
-# These are private duplicates of clean_text / norm_text in text_utils.py.
-# Cannot import from text_utils.py because it imports COUNTRY_NAME_TO_CODE and
-# normalize_country from this module, creating a circular dependency.
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
+# _clean_text is imported from src.shared.coerce as as_text.
+# _norm_text stays local because it cannot import from text_utils.py: that module
+# imports COUNTRY_NAME_TO_CODE and normalize_country from this module, creating a
+# circular dependency.
 
 
 def _norm_text(value: Any) -> str:

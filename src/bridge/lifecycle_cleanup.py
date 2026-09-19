@@ -16,7 +16,9 @@ from typing import Any
 
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 from src.contracts import SCHEMA_VERSION
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.coerce import as_dict as _progress_dict
+from src.shared.coerce import as_dict as _summary_dict
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -41,8 +43,7 @@ def _load_history(path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in payload if isinstance(row, dict)]
 
 
-def _parse_iso(text: str):
-    return parse_iso_from_utils(text)
+_parse_iso = _shared_parse_iso_from_utils
 
 
 def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:
@@ -63,14 +64,6 @@ def _load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict
     except (OSError, json.JSONDecodeError):
         return dict(default or {})
     return dict(payload) if isinstance(payload, dict) else dict(default or {})
-
-
-def _summary_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _progress_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _running_lifecycle_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

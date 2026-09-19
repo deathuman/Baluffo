@@ -7,6 +7,7 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_float as _as_float
 from src.shared.json_io import read_json_object
 
 FLASHW_TRAY = 0x00000002
@@ -23,13 +24,6 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(raw)
     except (OverflowError, TypeError, ValueError):
         return int(default)
-
-
-def _as_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
 
 
 def _false(reason: str, *, hwnd: int = 0) -> dict[str, Any]:

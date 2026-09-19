@@ -13,8 +13,9 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from src.shared.coerce import as_dict as _coerce_as_dict
 from src.shared.json_io import json_dumps, loads_object
-from src.shared.text_utils import clean_text
+from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import coerce_non_negative_int as _coerce_int
 from src.shared.utils import now_iso as _shared_now_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
@@ -27,16 +28,14 @@ def _now_iso() -> str:
     return _shared_now_iso()
 
 
-def _clean_text(value: Any) -> str:
-    return clean_text(value)
+_clean_text = _shared_clean_text
 
 
 def _norm_token(value: Any) -> str:
     return _clean_text(value).lower()
 
 
-def _json_object(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
+_json_object = _coerce_as_dict
 
 
 def _json_dumps(value: Any) -> str:

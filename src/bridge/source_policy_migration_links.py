@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.coerce import as_float as _confidence
 from src.shared.json_shapes import as_json_list, as_json_object
 from src.source_discovery.config import SUPPORTED_PROVIDERS
 
@@ -77,13 +78,6 @@ def _is_static_like(row: dict[str, Any]) -> bool:
     adapter = norm_text(row.get("adapter") or row.get("currentAdapter"))
     stage = norm_text(row.get("discoveryStage") or row.get("discoveryMethod"))
     return adapter in STATIC_LIKE_ADAPTERS or stage in STATIC_LIKE_STAGES
-
-
-def _confidence(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _reasons(value: Any) -> list[str]:

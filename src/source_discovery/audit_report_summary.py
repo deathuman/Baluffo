@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.coerce import as_dict
 from src.shared.utils import int_or_default as safe_int
-
-
-def as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def active_candidate_split(summary: dict[str, Any]) -> dict[str, int]:

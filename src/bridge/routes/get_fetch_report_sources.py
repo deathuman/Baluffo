@@ -15,6 +15,9 @@ from src.bridge.routes.route_storage_metrics import (
     storage_metrics_data_dir,
 )
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+from src.shared.coerce import as_text as _clean_text
 from src.shared.utils import int_or_default as _safe_int
 from src.storage.source_runtime import SourceRuntimeStore
 
@@ -25,18 +28,6 @@ class FetchReportRouteApi(Protocol):
     runtime_config: Any
 
     def normalize_fetch_report_contract(self, payload: Any) -> dict[str, Any]: ...
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _record_source_run_diagnostic(

@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from src.app_version import get_app_version
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
 from src.shared.utils import parse_iso
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
@@ -65,14 +67,6 @@ from src.ship.desktop_update_state import (
     save_status,
     write_handoff_diagnostics,
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def _as_bytes_dict(value: Any) -> dict[str, bytes]:

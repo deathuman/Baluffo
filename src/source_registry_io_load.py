@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_text as _summary_text
 from src.shared.utils import coerce_non_negative_int as _summary_int
 from src.source_registry_io_journal import (
     _json_journal_path_for,
@@ -161,10 +162,6 @@ def load_json_array(
         if isinstance(journal_rows, list):
             return [dict(row) for row in journal_rows if isinstance(row, dict)]
     return rows
-
-
-def _summary_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _summary_lower(value: Any) -> str:

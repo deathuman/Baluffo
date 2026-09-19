@@ -22,7 +22,7 @@ from typing import Any, cast
 
 from cryptography.fernet import InvalidToken
 
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 _RUNTIME_STATE_LOCK = threading.RLock()
 _RUNTIME_STATE: dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
@@ -440,8 +440,7 @@ def allowlist_error(
     return ""
 
 
-def parse_iso(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+parse_iso = _shared_parse_iso_from_utils
 
 
 def init_github_app_auth(auth: Any, packaged_config: Any) -> None:

@@ -27,6 +27,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from src.baluffo_version import compare_baluffo_versions
+from src.shared.coerce import as_dict as _as_dict
 from src.shared.github_https import build_github_ssl_context, wrap_github_request_error
 from src.shared.hashing import sha256_file
 from src.shared.json_io import read_json_object
@@ -44,10 +45,6 @@ else:
     psutil = _psutil
 
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _as_bytes_dict(value: Any) -> dict[str, bytes]:

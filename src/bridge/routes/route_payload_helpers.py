@@ -13,15 +13,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _coerce_as_dict
+from src.shared.coerce import as_list
+from src.shared.coerce import as_text as _coerce_as_text
+
 _DEFAULT_LOG_OFFSET_LIMIT_BYTES = 128 * 1024
 
 
-def as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
+as_dict = _coerce_as_dict
 
 
 def last_items(value: Any, limit: int) -> list[Any]:
@@ -32,8 +31,7 @@ def last_items(value: Any, limit: int) -> list[Any]:
     return rows[-bounded_limit:]
 
 
-def clean_text(value: Any) -> str:
-    return str(value or "").strip()
+clean_text = _coerce_as_text
 
 
 def path_signature(path: Path | None) -> tuple[str, int, int] | None:

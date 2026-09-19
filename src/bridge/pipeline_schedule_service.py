@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_text as _clean_text
+
 SCHEMA_VERSION = 1
 DEFAULT_INTERVAL_HOURS = 24
 MIN_INTERVAL_HOURS = 1
@@ -40,10 +42,6 @@ def _parse_interval_hours(value: Any) -> int:
     if interval < MIN_INTERVAL_HOURS or interval > MAX_INTERVAL_HOURS:
         raise ValueError("intervalHours must be between 1 and 168")
     return interval
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 class PipelineScheduleService:

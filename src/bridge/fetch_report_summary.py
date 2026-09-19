@@ -13,6 +13,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+from src.shared.coerce import as_text as _clean_text
 from src.shared.utils import int_or_default as _safe_int
 from src.source_registry_io import load_runtime_evidence, save_json_atomic
 
@@ -57,18 +60,6 @@ _SOURCE_ROW_KEYS = (
 
 def fetch_report_summary_path(report_path: Path | str) -> Path:
     return Path(report_path).with_name(FETCH_REPORT_SUMMARY_FILE_NAME)
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _source_row(row: dict[str, Any]) -> dict[str, Any]:

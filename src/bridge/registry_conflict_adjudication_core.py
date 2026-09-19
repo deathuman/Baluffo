@@ -12,6 +12,9 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _coerce_as_list
+from src.shared.coerce import as_text as _clean
 from src.source_registry import source_identity
 from src.source_registry_identity import provider_fields_from_row_identity
 
@@ -20,16 +23,7 @@ ADJUDICATION_REASON = "registry_conflict_adjudication_auto_demote"
 ADJUDICATION_PATH_NAME = "registry-conflict-adjudication.json"
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _clean(value: Any) -> str:
-    return str(value or "").strip()
+_as_list = _coerce_as_list
 
 
 def _now_iso() -> str:

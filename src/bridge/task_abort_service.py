@@ -15,6 +15,7 @@ from src.bridge.task_abort_evidence import (
     repair_fetch_canceled_evidence,
     terminal_report_exists,
 )
+from src.shared.coerce import as_text as _clean_text
 
 SUPPORTED_ABORT_TASK_TYPES = {"fetch", "discovery", "pipeline"}
 
@@ -25,10 +26,6 @@ class _AbortRequest:
     run_id: str
     reason: str
     row: dict[str, Any]
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _row_task_type(row: dict[str, Any]) -> str:

@@ -19,10 +19,7 @@ from src.bridge.performance_profile import time_operation
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import SavedJobSchema
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
+from src.shared.coerce import as_dict as _as_dict
 
 
 def _json_error(exc: Exception) -> dict[str, Any]:

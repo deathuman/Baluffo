@@ -6,6 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
 from src.ship.desktop_update_shared import (
     compute_sha256 as _compute_sha256,
 )
@@ -56,14 +58,6 @@ validate_desktop_manifest = _validate_desktop_manifest
 verify_manifest_signature = _verify_manifest_signature
 write_json_atomic = _write_json_atomic
 read_cached_manifest = _read_cached_manifest
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def _find_release_for_target_version(repo: str, target_version: str) -> dict[str, Any]:

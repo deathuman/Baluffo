@@ -10,11 +10,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_text as clean_text
+
 ABORT_TERMINAL_REASON = "user_abort_requested"
-
-
-def clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def row_abort_requested(row: dict[str, Any] | None) -> bool:

@@ -73,8 +73,7 @@ def _normalize_availability_aliases(value: Any) -> list[str]:
     )[:24]
 
 
-def _source_key(value: Any) -> str:
-    return clean_text(value)
+_source_key = clean_text
 
 
 def _source_report_has_broken_missing_evidence(row: dict[str, Any]) -> bool:

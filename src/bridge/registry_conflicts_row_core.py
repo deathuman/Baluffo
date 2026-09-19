@@ -11,6 +11,9 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.coerce import as_dict as _coerce_as_dict
+from src.shared.coerce import as_list as _coerce_as_list
+from src.shared.coerce import as_text as _clean_text
 from src.shared.source_counter_aliases import read_counter
 from src.shared.utils import int_or_default as _int_value
 from src.source_registry import source_identity
@@ -53,16 +56,10 @@ PROVIDER_HOST_EXACT_ADAPTERS = {
 }
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
+_as_dict = _coerce_as_dict
 
 
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
+_as_list = _coerce_as_list
 
 
 def _row_identity(row: dict[str, Any]) -> str:

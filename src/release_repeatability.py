@@ -10,24 +10,13 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from src.shared.coerce import as_dict, as_list
+from src.shared.coerce import as_text as safe_text
 from src.shared.json_io import read_json
-from src.shared.utils import int_or_default, now_iso
+from src.shared.utils import int_or_default as _shared_int_or_default
+from src.shared.utils import now_iso
 
-
-def safe_int(value: Any, default: int = 0) -> int:
-    return int_or_default(value, default)
-
-
-def safe_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
+safe_int = _shared_int_or_default
 
 
 def summarize_run(path: Path) -> dict[str, Any]:

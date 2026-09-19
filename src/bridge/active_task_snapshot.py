@@ -19,7 +19,9 @@ from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
 from src.bridge.ops_task_live_summary import compact_live_task_payload
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_text as _text
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 from src.source_registry_io import load_runtime_evidence, save_json_atomic
 
 SNAPSHOT_FILE_NAME = "admin-active-task-snapshot.json"
@@ -79,14 +81,6 @@ def empty_snapshot(*, snapshot_at: str = "") -> dict[str, Any]:
     }
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
-
-
 def _task_type(row: dict[str, Any]) -> str:
     return _text(row.get("taskType") or row.get("type")).lower()
 
@@ -95,8 +89,7 @@ def _run_id(row: dict[str, Any]) -> str:
     return _text(row.get("runId") or row.get("id"))
 
 
-def _parse_datetime(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+_parse_datetime = _shared_parse_iso_from_utils
 
 
 def _now_utc() -> datetime:

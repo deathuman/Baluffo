@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.coerce import as_dict as _object
 from src.shared.utils import coerce_non_negative_int as _count
-
-
-def _object(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _count_map(value: Any) -> dict[str, int]:

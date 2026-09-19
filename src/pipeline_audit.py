@@ -9,9 +9,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_text as safe_text
 from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_object, json_object_rows
-from src.shared.utils import int_or_default, now_iso
+from src.shared.utils import int_or_default as _shared_int_or_default
+from src.shared.utils import now_iso
 
 HIGH_COST_LOW_YIELD_MS = 20_000
 LOW_YIELD_FETCHED_MIN = 20
@@ -34,12 +36,7 @@ SOFT_FAILURE_CLASSIFICATIONS = {
 }
 
 
-def safe_int(value: Any, default: int = 0) -> int:
-    return int_or_default(value, default)
-
-
-def safe_text(value: Any) -> str:
-    return str(value or "").strip()
+safe_int = _shared_int_or_default
 
 
 def ratio_pct(numerator: int, denominator: int) -> float:

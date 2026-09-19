@@ -10,6 +10,7 @@ from typing import Any
 from src.core.schemas import CanonicalJobSchema
 from src.jobs.common.config import OUTPUT_FIELDS, REQUIRED_FIELDS
 from src.pipeline_io import write_streamed_text_if_changed
+from src.shared.coerce import as_text as _clean_text
 from src.shared.json_io import read_json
 
 TOMBSTONE_SCHEMA_VERSION = 1
@@ -29,10 +30,6 @@ _LIFECYCLE_OVERLAY_FIELDS = (
     "lifecycleEvent",
     "lifecycleReason",
 )
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _canonical_row(row: Mapping[str, Any], availability_id: str) -> dict[str, Any]:

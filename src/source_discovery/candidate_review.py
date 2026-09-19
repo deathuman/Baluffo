@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from src.shared.coerce import as_text as _text
 from src.shared.utils import int_or_default as _as_int
 from src.source_registry import source_identity
 
@@ -32,10 +33,6 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _lower(value: Any) -> str:

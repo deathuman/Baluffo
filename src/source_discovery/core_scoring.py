@@ -2,10 +2,9 @@ from __future__ import annotations
 
 """Discovery candidate scoring, ranking, and normalization."""
 
-from datetime import datetime
 from typing import Any
 
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 from src.source_registry import source_identity
 
 from .config import (
@@ -19,9 +18,7 @@ from .core_identity import queue_family_key
 from .io_runtime import endpoint_url
 from .scoring import unique_string_list
 
-
-def _parse_iso_datetime(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+_parse_iso_datetime = _shared_parse_iso_from_utils
 
 
 def classify_probe_failure_stage(error: str) -> str:

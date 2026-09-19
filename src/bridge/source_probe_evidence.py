@@ -19,6 +19,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
+from src.shared.coerce import as_text as _clean
 from src.source_discovery.config import FETCH_MAX_RETRIES, RETRYABLE_HTTP_CODES
 from src.source_discovery.io_runtime import endpoint_url
 from src.source_discovery.probe import (
@@ -57,10 +58,6 @@ class SourceProbeEvidence:
     response_text: str = ""
     payload_adapter: str = ""
     payload_fields: dict[str, Any] | None = None
-
-
-def _clean(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _urls_from_row(row: dict[str, Any]) -> list[str]:

@@ -7,6 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+
 MAX_COUNTER_ROWS = 12
 MAX_EXAMPLE_ROWS = 5
 HIGH_PRIORITY_MIN_COUNT = 50
@@ -47,14 +50,6 @@ SUMMARY_CORE_KEYS = (
     "suppressedStaticCount",
     "skippedDuplicateCount",
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def _clean_text(value: Any, default: str = "") -> str:

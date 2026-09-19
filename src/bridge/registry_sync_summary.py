@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.coerce import as_text as _text
 from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.utils import coerce_non_negative_int as _safe_int
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _lower(value: Any) -> str:

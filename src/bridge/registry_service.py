@@ -32,6 +32,7 @@ from src.bridge.storage_health import (
 from src.bridge.storage_health import (
     record_storage_diagnostic as default_record_storage_diagnostic,
 )
+from src.shared.coerce import as_text
 from src.source_registry import (
     canonicalize_registry_row,
     demote_duplicate_active_variants,
@@ -527,9 +528,7 @@ class RegistryService:
             "rejectedCount": len(state["rejected"]),
         }
 
-    @staticmethod
-    def _summary_text(value: Any) -> str:
-        return str(value or "").strip()
+    _summary_text = staticmethod(as_text)
 
     @classmethod
     def _summary_lower(cls, value: Any) -> str:

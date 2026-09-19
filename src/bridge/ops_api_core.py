@@ -19,7 +19,7 @@ from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 from src.storage_metrics import duration_ms, record_storage_read
 
 
@@ -95,8 +95,7 @@ def _run_id(row: Mapping[str, Any]) -> str:
     return str(row.get("runId") or row.get("id") or "").strip()
 
 
-def _parse_route_time(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+_parse_route_time = _shared_parse_iso_from_utils
 
 
 def _latest_time_text(*values: Any) -> str:

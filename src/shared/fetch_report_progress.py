@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.coerce import as_float as _safe_float
 from src.shared.json_shapes import as_json_object
 from src.shared.text_utils import clean_text
 
@@ -20,13 +21,6 @@ def _clamped_int(value: Any, default: int = 0, maximum: int = 1_000_000_000) -> 
     except (TypeError, ValueError, OverflowError):
         parsed = int(default)
     return max(0, min(maximum, parsed))
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
 
 
 def normalize_fetch_task_progress(

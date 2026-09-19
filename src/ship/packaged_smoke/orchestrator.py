@@ -15,6 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
+
 root: Any | None = None
 _EXPECTED_PACKAGED_SMOKE_OPERATIONAL_EXCEPTIONS = (
     OSError,
@@ -29,10 +31,6 @@ def _root() -> Any:
     if root is None:
         raise RuntimeError("packaged_smoke.orchestrator.root is not configured")
     return root
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:

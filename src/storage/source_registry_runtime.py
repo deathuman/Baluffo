@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.shared.json_io import json_dumps, loads_object
-from src.shared.text_utils import clean_text
+from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import int_or_default
 from src.shared.utils import now_iso as _shared_now_iso
 from src.source_registry_identity import source_identity
@@ -31,8 +31,7 @@ def _now_iso() -> str:
     return _shared_now_iso()
 
 
-def _clean_text(value: Any) -> str:
-    return clean_text(value)
+_clean_text = _shared_clean_text
 
 
 def _json_dumps(value: Any) -> str:

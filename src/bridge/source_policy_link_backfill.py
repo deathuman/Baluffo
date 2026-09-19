@@ -13,24 +13,15 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.source_policy_migration_links import ADMIN_MIGRATION_LINK_ACTOR
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+from src.shared.coerce import as_text as _clean_text
 
 __all__ = [
     "enrich_provider_coverage_link_backfill",
     "load_provider_coverage_link_backfill",
     "source_policy_soak_report_path",
 ]
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def source_policy_soak_report_path(api: Any) -> Path:

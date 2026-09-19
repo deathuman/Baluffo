@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.shared.coerce import as_dict as _as_dict
 from src.ship import desktop_updater_install as desktop_updater_install_mod
 from src.ship import desktop_updater_release as desktop_updater_release_mod
 from src.ship import desktop_updater_ui as desktop_updater_ui_mod
@@ -99,10 +100,6 @@ _HELPER_OPERATIONAL_ERRORS = (
     zipfile.BadZipFile,
     zipfile.LargeZipFile,
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

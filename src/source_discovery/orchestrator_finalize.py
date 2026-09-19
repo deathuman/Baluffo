@@ -17,6 +17,7 @@ from pydantic import ValidationError as PydanticValidationError
 from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.contracts import SCHEMA_VERSION
+from src.shared.coerce import as_dict as _as_dict
 from src.shared.utils import now_iso
 from src.source_registry import hide_repeated_zero_job_pending, source_identity, unique_sources
 from src.source_registry_state import transition_registry_to_pending
@@ -42,10 +43,6 @@ def _require_root() -> Any:
     if root is None:
         raise RuntimeError("source discovery orchestrator root is not bound")
     return root
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _pending_registry_row(row: dict[str, Any], *, at: str) -> dict[str, Any]:

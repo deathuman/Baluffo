@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode
 
+from src.shared.coerce import as_text as _clean_csv_value
 from src.source_registry import normalize_source_url
 
 from .config import DEFAULT_DISCOVERY_CONFIG
@@ -67,10 +68,6 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "blockedCategories": list(cfg.get("blockedCategories") or []),
         "requireAiReviewed": bool(cfg.get("requireAiReviewed", False)),
     }
-
-
-def _clean_csv_value(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _gamedevmap_ai_reviewed(value: Any) -> bool:

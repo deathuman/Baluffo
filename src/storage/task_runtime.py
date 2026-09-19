@@ -9,15 +9,15 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused task runtime sto
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from typing import Any, cast
 
+from src.shared.coerce import as_dict as _json_object
 from src.shared.json_io import json_dumps, loads_object
 from src.shared.live_task import normalize_live_task_event
-from src.shared.text_utils import clean_text
+from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import int_or_default
 from src.shared.utils import now_iso as _shared_now_iso
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 from src.storage.baluffo_store import BaluffoStore
 
 TASK_SCHEMA_VERSION = 1
@@ -33,16 +33,11 @@ def _now_iso() -> str:
     return _shared_now_iso()
 
 
-def _clean_text(value: Any) -> str:
-    return clean_text(value)
+_clean_text = _shared_clean_text
 
 
 def _coerce_bool_int(value: Any) -> int:
     return 1 if bool(value) else 0
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _json_dumps(value: Any) -> str:
@@ -53,8 +48,7 @@ def _json_loads_object(value: Any) -> dict[str, Any]:
     return loads_object(value)
 
 
-def _parse_iso(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+_parse_iso = _shared_parse_iso_from_utils
 
 
 def _duration_ms(started_at: Any, finished_at: Any) -> int:

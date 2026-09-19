@@ -14,6 +14,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_text as _clean_text
+
 SCHEMA_VERSION = 1
 
 ACTIVE_STATUSES = {"queued", "running"}
@@ -21,10 +23,6 @@ ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"succeeded", "failed", "canceled", "orphaned"}
 
 ALLOWED_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 class TaskLifecycleState:

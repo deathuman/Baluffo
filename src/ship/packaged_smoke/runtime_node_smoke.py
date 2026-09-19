@@ -7,9 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
+from src.shared.coerce import as_list
 
 
 def parse_packaged_node_smoke_report(path: Path) -> list[dict[str, Any]]:

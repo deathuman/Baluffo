@@ -22,6 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
 )
@@ -116,10 +117,6 @@ _recover_manifest_for_install = _recover_manifest_for_install_impl
 NullProgressWindow = _NullProgressWindow
 _helper_relaunch_verify_timeout_s = _helper_relaunch_verify_timeout_s_impl
 _launch_executable = _launch_executable_impl
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _save_install_stage_status(

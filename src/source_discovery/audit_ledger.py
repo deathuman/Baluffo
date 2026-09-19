@@ -11,15 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as source_registry_module
-from src.shared.utils import parse_iso as parse_iso_from_utils
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 
 def duration_ms(started: float) -> int:
@@ -107,8 +101,7 @@ def save_artifact_atomic(artifact: dict[str, Any], output_path: Path) -> None:
     source_registry_module.save_json_atomic(output_path, artifact)
 
 
-def parse_artifact_time(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+parse_artifact_time = _shared_parse_iso_from_utils
 
 
 def artifact_signature_matches(

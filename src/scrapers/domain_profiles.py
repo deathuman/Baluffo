@@ -6,10 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
-
+from src.shared.coerce import as_text as _clean_text
 
 DOMAIN_PROFILES: dict[str, dict[str, Any]] = {
     "www.valvesoftware.com": {

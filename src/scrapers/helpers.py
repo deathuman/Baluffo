@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from src.shared.coerce import as_float as _coerce_as_float
+from src.shared.coerce import as_text as _coerce_as_text
 from src.shared.utils import int_or_default as to_int
 
 # Re-exported for src.scrapers.runner and src.scrapers.spiders.generic_careers;
@@ -12,15 +14,10 @@ from src.shared.utils import int_or_default as to_int
 __all__ = ["build_job", "clean_text", "safe_id", "to_float", "to_int"]
 
 
-def clean_text(value: Any) -> str:
-    return str(value or "").strip()
+clean_text = _coerce_as_text
 
 
-def to_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
+to_float = _coerce_as_float
 
 
 def safe_id(seed: str) -> str:

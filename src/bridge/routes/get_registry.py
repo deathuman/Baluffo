@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_storage_metrics import record_storage_read_metric
+from src.shared.coerce import as_dict as _as_dict
 
 
 class _RegistryRouteApi(Protocol):
@@ -28,10 +29,6 @@ class _RegistryRouteApi(Protocol):
     def get_registry_exact_summary_payload(self) -> dict[str, Any]: ...
 
     def get_registry_summary_payload(self) -> dict[str, Any]: ...
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _include_hidden_pending_registry_rows(query: dict[str, list[str]]) -> bool:

@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.json_io import json_dumps
-from src.shared.text_utils import clean_text
+from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import now_iso as _shared_now_iso
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 MANIFEST_NAME = "evidence-archive-manifest.json"
 DEFAULT_TOTAL_BUDGET_BYTES = 500 * 1024 * 1024
@@ -36,8 +36,7 @@ def _now_iso() -> str:
     return _shared_now_iso()
 
 
-def _clean_text(value: Any) -> str:
-    return clean_text(value)
+_clean_text = _shared_clean_text
 
 
 def _safe_segment(value: Any, *, fallback: str) -> str:
@@ -47,8 +46,7 @@ def _safe_segment(value: Any, *, fallback: str) -> str:
     return text.strip("._") or fallback
 
 
-def _parse_iso(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+_parse_iso = _shared_parse_iso_from_utils
 
 
 def _json_dumps(payload: Any) -> str:

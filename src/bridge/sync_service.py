@@ -981,9 +981,7 @@ class SyncService:
             "reason": str(reason or ""),
         }
 
-    @staticmethod
-    def _parse_iso(value: Any) -> datetime | None:
-        return parse_iso_from_utils(value)
+    _parse_iso = staticmethod(parse_iso_from_utils)
 
 
 __all__ = [

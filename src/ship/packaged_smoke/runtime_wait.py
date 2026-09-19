@@ -8,15 +8,9 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict, as_list
+
 _EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS = (OSError, ValueError)
-
-
-def as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def packaged_runtime_page_ready(deps: Any, site_base_url: str, open_path: str) -> bool:

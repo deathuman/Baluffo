@@ -13,6 +13,9 @@ import re
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+
 from .config import CAREERS_URL_HINTS
 from .scoring import unique_string_list
 
@@ -34,14 +37,6 @@ GAMESMAP_IGNORED_WEBSITE_HOSTS = (
 _GAMESMAP_CATEGORY_REFERENCE_RE = re.compile(
     r"^\$[^:]*:props:children:props:children:props:children:props:companies:(\d+):categories:(\d+)$"
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def _strip_html_tags(html: str) -> str:

@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+from src.shared.coerce import as_text as _text
 from src.shared.utils import int_or_default as _int
 
 
@@ -44,18 +47,6 @@ class AdminBootstrapApi(Protocol):
     def now_iso(self) -> str: ...
 
     def sync_config_status(self) -> dict[str, Any]: ...
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 _EXPECTED_BOOTSTRAP_FALLBACK_EXCEPTIONS = (

@@ -16,7 +16,7 @@ from typing import Any, cast
 
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
-from src.shared.utils import parse_iso as parse_iso_from_utils
+from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 _PROC_ROOT = Path("/proc")
 
@@ -314,8 +314,7 @@ def owner_session_should_exit(*, root_mod: Any) -> bool:
     return expired
 
 
-def parse_iso(value: Any) -> datetime | None:
-    return parse_iso_from_utils(value)
+parse_iso = _shared_parse_iso_from_utils
 
 
 def _posix_pid_is_zombie(pid: int) -> bool:

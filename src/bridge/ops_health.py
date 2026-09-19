@@ -16,6 +16,7 @@ from typing import Any
 
 from src.bridge.performance_profile import time_operation
 from src.bridge.registry_sync_summary import derive_registry_sync_summary
+from src.shared.coerce import as_float as _safe_float
 from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.utils import coerce_non_negative_int as _safe_int
 
@@ -169,13 +170,6 @@ def median(values: list[float]) -> float:
     if len(ordered) % 2:
         return float(ordered[mid])
     return float((ordered[mid - 1] + ordered[mid]) / 2.0)
-
-
-def _safe_float(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:

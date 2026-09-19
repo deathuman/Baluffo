@@ -14,6 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.shared.coerce import as_float as _float_or_zero
+from src.shared.coerce import as_text as _clean_text
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 FINALIZATION_TIMING_KEYS = (
@@ -23,10 +25,6 @@ FINALIZATION_TIMING_KEYS = (
     "running_quality_auditsMs",
     "writing_outputsMs",
 )
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _clamped_int(
@@ -51,13 +49,6 @@ def normalize_finalization_timing(value: Any) -> dict[str, int]:
         for key in FINALIZATION_TIMING_KEYS
         if key in src
     }
-
-
-def _float_or_zero(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _normalize_text(value: Any) -> str:

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from src.app_version import get_app_version
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
 from src.shared.utils import int_or_default as _as_int
 from src.ship import desktop_update_constants as constants_mod
 from src.ship.desktop_update_manifest import (
@@ -38,16 +40,8 @@ from src.ship.desktop_update_shared import (
 )
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
 def _as_str_dict(value: Any) -> dict[str, str]:
     return {str(key): str(item) for key, item in value.items()} if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:

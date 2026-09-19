@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _as_dict
+from src.shared.coerce import as_list as _as_list
+
 PROFILE_THRESHOLDS_MS = {
     "cold": {
         "launch_to_site_ready": 2500,
@@ -54,14 +57,6 @@ NON_BLOCKING_AFTER_FIRST_USABLE_STAGES = {
     "page_loaded_to_local_data_api_ready",
     "page_loaded_to_local_data_ready",
 }
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
 
 
 def _parse_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:

@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
+from src.shared.coerce import as_text as _text
 from src.shared.utils import int_or_default as _as_int
 from src.source_registry import source_identity
 from src.url_hosts import host_matches_domain
@@ -88,10 +89,6 @@ _STRONG_PROVIDER_EVIDENCE_REASONS = {
     "provider_id:listing_url",
     "provider_id:base_url",
 }
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def _lower(value: Any) -> str:

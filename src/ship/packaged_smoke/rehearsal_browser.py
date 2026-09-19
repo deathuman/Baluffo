@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.shared.coerce import as_dict as _coerce_as_dict
+
 root: Any | None = None
 
 
@@ -21,8 +23,7 @@ def _root() -> Any:
     return root
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
+_as_dict = _coerce_as_dict
 
 
 def _preferred_desktop_browser_env() -> dict[str, str]:
