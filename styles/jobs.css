@@ -973,6 +973,33 @@
     flex-basis: 100%;
     margin-right: 0;
   }
+
+  /* The stacked card pairs its metadata cells instead of giving each one a
+     full-width line. The shared block (components.css) sets `1fr`, so every
+     cell was as wide as the card — 544px at a 675px viewport — while the values
+     inside it measured 59-85px. The right side of each line was empty: 48.6% of
+     the row on average at 675px, 63.4% at 900px, and the card was exactly as
+     tall at 900px as at 430px because the track count never changed.
+     `auto-fit` fits three columns at 900px, two down to ~550px, then one; no
+     extra breakpoint is needed. The `min(…, 100%)` cap keeps the floor from
+     overflowing the container once the card is narrower than the floor itself.
+     The floor is 12.75rem rather than something smaller because the longest
+     value that cannot wrap is the single-word company "Blackbirdinteractive"
+     (119px intrinsic). At 12.5rem the tracks were 200.55px wide between 761px
+     and 764px, and the 72px label box — still 72px above the 760px breakpoint —
+     left the value 117.36px, clipping it by 1-2px. 12.75rem is the smallest
+     floor that never clips; every width from 900px down to 320px was measured.
+     `.col-title` keeps the full row so the title, its badges, the sector line
+     and the freshness dot stay together on one line, as they are today. */
+  .jobs-page .job-row,
+  .jobs-page .job-row-link {
+    grid-template-columns: repeat(auto-fit, minmax(min(12.75rem, 100%), 1fr));
+    gap: 0.4rem 0.9rem;
+  }
+
+  .jobs-page .col-title {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 760px) {
