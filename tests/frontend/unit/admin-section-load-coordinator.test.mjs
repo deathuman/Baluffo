@@ -2,14 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAdminSectionLoadCoordinator } from "../../../frontend/admin/app/runtime/section-loader.js";
-
-function createDeferred() {
-  let resolve;
-  const promise = new Promise(resolvePromise => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
+import {
+  createDeferred,
+  flushMicrotasks as flushMicrotasksCore
+} from "./helpers/async-test-helpers.mjs";
+const flushMicrotasks = (count = 6) => flushMicrotasksCore(count);
 
 function createElement() {
   const listeners = new Map();
@@ -46,12 +43,6 @@ function createLink(href) {
       (listeners.get("click") || []).forEach(handler => handler({ preventDefault() {} }));
     }
   };
-}
-
-async function flushMicrotasks(count = 6) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
 }
 
 test("admin section loader queues visible section loads with concurrency one", async () => {

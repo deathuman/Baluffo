@@ -229,23 +229,26 @@ def should_clear_browser_profile_caches(env: dict[str, str] | None = None) -> bo
     return profile_mode != "warm"
 
 
+def _chromium_ready_setting(
+    candidate: dict[str, str] | None, overrides: Mapping[str, float], default: float
+) -> float:
+    browser_name = str((candidate or {}).get("name") or "").strip().lower()
+    return float(overrides.get(browser_name, default))
+
+
 def chromium_process_ready_timeout_s(
     candidate: dict[str, str] | None = None,
 ) -> float:
-    browser_name = str((candidate or {}).get("name") or "").strip().lower()
-    return float(
-        CHROMIUM_PROCESS_READY_TIMEOUTS_S.get(browser_name, CHROMIUM_PROCESS_READY_TIMEOUT_S)
+    return _chromium_ready_setting(
+        candidate, CHROMIUM_PROCESS_READY_TIMEOUTS_S, CHROMIUM_PROCESS_READY_TIMEOUT_S
     )
 
 
 def chromium_process_ready_poll_interval_s(
     candidate: dict[str, str] | None = None,
 ) -> float:
-    browser_name = str((candidate or {}).get("name") or "").strip().lower()
-    return float(
-        CHROMIUM_PROCESS_READY_POLL_INTERVALS_S.get(
-            browser_name, CHROMIUM_PROCESS_READY_POLL_INTERVAL_S
-        )
+    return _chromium_ready_setting(
+        candidate, CHROMIUM_PROCESS_READY_POLL_INTERVALS_S, CHROMIUM_PROCESS_READY_POLL_INTERVAL_S
     )
 
 

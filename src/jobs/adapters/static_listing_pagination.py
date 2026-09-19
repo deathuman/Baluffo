@@ -29,13 +29,13 @@ the ``/page/`` segment is structural.
 
 from __future__ import annotations
 
-import os
 import re
 from html import unescape
 from urllib.parse import ParseResult, parse_qsl, urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import iter_anchor_fragments
 from src.jobs.text_utils import clean_text
+from src.shared.utils import env_flag
 
 # How many pagination pages a source run may discover beyond its registry
 # pages, across all chained discoveries (page 2's anchors do not restart the
@@ -121,12 +121,7 @@ def _registrable_domain(hostname: str) -> str:
 
 def static_pagination_follow_enabled() -> bool:
     """Kill switch: ``BALUFFO_STATIC_PAGINATION_FOLLOW`` (default on)."""
-    return os.environ.get("BALUFFO_STATIC_PAGINATION_FOLLOW", "1").strip().lower() not in {
-        "0",
-        "off",
-        "false",
-        "no",
-    }
+    return env_flag("BALUFFO_STATIC_PAGINATION_FOLLOW", True)
 
 
 def card_lane_render_skip_enabled() -> bool:
@@ -137,12 +132,7 @@ def card_lane_render_skip_enabled() -> bool:
     card lane parses job rows is already harvestable and must not pay for a
     render. Flip to ``0`` to restore render-first escalation.
     """
-    return os.environ.get("BALUFFO_STATIC_CARD_LANE_RENDER_SKIP", "1").strip().lower() not in {
-        "0",
-        "off",
-        "false",
-        "no",
-    }
+    return env_flag("BALUFFO_STATIC_CARD_LANE_RENDER_SKIP", True)
 
 
 def _page_param_values(query: str) -> list[str]:

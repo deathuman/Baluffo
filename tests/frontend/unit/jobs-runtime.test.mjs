@@ -10,20 +10,7 @@ import {
   createJobsUserState
 } from "../../../frontend/jobs/app/runtime/state.js";
 import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
-
-function createWindowStub({ innerHeight = 900, innerWidth = 1200 } = {}) {
-  const listeners = new Map();
-  return {
-    innerHeight,
-    innerWidth,
-    listeners,
-    addEventListener(type, handler) {
-      const handlers = listeners.get(type) || [];
-      handlers.push(handler);
-      listeners.set(type, handlers);
-    }
-  };
-}
+import { createWindowStub } from "./helpers/dom-test-helpers.mjs";
 
 function createDocumentStub() {
   const listeners = new Map();

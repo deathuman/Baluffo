@@ -4,6 +4,7 @@ import {
   OUTCOME_STATUSES,
   PIPELINE_PHASES
 } from "../../local-data/tracking.js";
+import { resolveNowMs } from "../../shared/format-utils.js";
 
 export const SAVED_FILTER_ALL = "all";
 export const SAVED_FILTER_NEEDS_ACTION = "needs_action";
@@ -90,12 +91,6 @@ export function isCustomJob(job) {
 function parseTime(value, parseIsoDate) {
   const parsed = typeof parseIsoDate === "function" ? parseIsoDate(value) : null;
   return parsed ? parsed.getTime() : 0;
-}
-
-function resolveNowMs(value) {
-  if (typeof value === "function") return Number(value()) || Date.now();
-  if (value instanceof Date) return value.getTime();
-  return Number(value) || Date.now();
 }
 
 function reminderState(reminderAt, { parseIsoDate, now = Date.now } = {}) {

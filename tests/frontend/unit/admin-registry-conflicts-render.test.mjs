@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { renderAdminRegistryConflicts } from "../../../frontend/admin/render/registry-conflicts.js";
+import { createClickableButton as createButton } from "./helpers/dom-test-helpers.mjs";
 
 function createReviewElement({
   filterButtons = [],
@@ -36,19 +37,6 @@ function createSelect(value = "all") {
     change(nextValue) {
       this.value = nextValue;
       if (changeHandler) changeHandler();
-    }
-  };
-}
-
-function createButton(dataset = {}) {
-  let clickHandler = null;
-  return {
-    dataset,
-    addEventListener(type, handler) {
-      if (type === "click") clickHandler = handler;
-    },
-    click() {
-      if (clickHandler) clickHandler();
     }
   };
 }

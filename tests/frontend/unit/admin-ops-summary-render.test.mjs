@@ -6,14 +6,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends
 } from "../../../frontend/admin/render.js";
-
-function makeEl() {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: () => []
-  };
-}
+import { createRenderEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
 test("admin render: schedule/trends/history render deterministic core text", () => {
   const scheduleEl = makeEl();

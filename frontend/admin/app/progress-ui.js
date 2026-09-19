@@ -1,8 +1,4 @@
-function clampRatio(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(1, numeric));
-}
+import { clampRatio } from "../../shared/format-utils.js";
 
 function resetBarPresentation(barEl) {
   if (!barEl?.style) return;

@@ -1,5 +1,6 @@
 import { fetchBridge } from "../../shared/api-client.js";
 import { normalizeToken } from "../../shared/text-utils.js";
+import { clampRatio as clampProgressRatio } from "../../shared/format-utils.js";
 
 // ponytail: helpers shared across the remaining formatters below.
 function compactCount(value) {
@@ -104,12 +105,6 @@ function getUserFacingUpdateStage(value) {
     return "Updating jobs";
   }
   return titleCaseWords(String(value || "").replace(/_/g, " "));
-}
-
-function clampProgressRatio(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(1, numeric));
 }
 
 function ensureJobsPipelineButtonChrome(button, idleLabel) {

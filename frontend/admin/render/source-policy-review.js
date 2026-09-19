@@ -1,6 +1,7 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
+import { stringValue } from "../../shared/format-utils.js";
 
 const SOURCE_POLICY_REVIEW_FILTERS = Object.freeze([
   { key: "all", label: "All" },
@@ -22,11 +23,6 @@ const ADMIN_MIGRATION_LINK_ACTOR = "admin_provider_link_backfill";
 function normalizeFilterKey(value) {
   const key = String(value || "all");
   return FILTER_KEYS.has(key) ? key : "all";
-}
-
-function stringValue(value, fallback = "") {
-  const text = String(value ?? "").trim();
-  return text || fallback;
 }
 
 function numberValue(value) {

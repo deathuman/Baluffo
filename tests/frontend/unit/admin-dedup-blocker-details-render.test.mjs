@@ -4,14 +4,7 @@ import {
   renderAdminOpsDedupLists,
   renderAdminOpsFetcherMetrics
 } from "../../../frontend/admin/render.js";
-
-function makeEl() {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: () => []
-  };
-}
+import { createRenderEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
 function metricsPayload() {
   return {

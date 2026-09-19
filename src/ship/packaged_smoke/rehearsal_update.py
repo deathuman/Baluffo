@@ -412,14 +412,19 @@ def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> No
         raise RuntimeError("Desktop update rehearsal did not preserve job attachments.")
 
 
-def _read_helper_stdout_payload(paths: Any) -> dict[str, Any]:
-    if not paths.helper_stdout_log_path.is_file():
+def _read_json_object_file(path: Any) -> dict[str, Any]:
+    """Read ``path`` as a JSON object, returning {} when missing or malformed."""
+    if not path.is_file():
         return {}
     try:
-        payload = json.loads(paths.helper_stdout_log_path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _read_helper_stdout_payload(paths: Any) -> dict[str, Any]:
+    return _read_json_object_file(paths.helper_stdout_log_path)
 
 
 def _helper_diagnostic_rows(paths: Any) -> list[dict[str, Any]]:
@@ -446,13 +451,7 @@ def _helper_failure_message(payload: dict[str, Any]) -> str:
 
 
 def _load_update_install_state(paths: Any) -> dict[str, Any]:
-    if not paths.install_state_path.is_file():
-        return {}
-    try:
-        payload = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {}
-    return dict(payload) if isinstance(payload, dict) else {}
+    return _read_json_object_file(paths.install_state_path)
 
 
 def _wait_for_desktop_update_helper_completion(*, paths: Any, timeout_s: float) -> None:

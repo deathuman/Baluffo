@@ -1,3 +1,5 @@
+import { createElapsedMsTracker } from "../../../shared/perf-marks.js";
+
 export function createAdminStartupMetrics({
   emitStartupMetric,
   emitStartupMetricsBatch,
@@ -7,13 +9,7 @@ export function createAdminStartupMetrics({
   let flushTimer = null;
   const startedAtMs = Number(now()) || 0;
   const pendingMetrics = [];
-  function withElapsedMs(payload = {}) {
-    if (Object.prototype.hasOwnProperty.call(payload, "elapsedMs")) return payload;
-    return {
-      ...payload,
-      elapsedMs: Math.max(0, Math.round((Number(now()) || startedAtMs) - startedAtMs))
-    };
-  }
+  const withElapsedMs = createElapsedMsTracker(now, startedAtMs);
   function enqueue(event, payload = {}) {
     const cleanEvent = String(event || "").trim();
     if (!cleanEvent) return;

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { bindAdminRuntimeEvents } from "../../../frontend/admin/app/runtime/events.js";
+import { flushMicrotasks as flushMicrotasksCore } from "./helpers/async-test-helpers.mjs";
+const flushMicrotasks = (count = 5) => flushMicrotasksCore(count);
 
 function createClickableElement() {
   const listeners = new Map();
@@ -33,12 +35,6 @@ function createToggleElement({ matches = () => false, open = false } = {}) {
       (listeners.get("toggle") || []).forEach(handler => handler({ target }));
     }
   };
-}
-
-async function flushMicrotasks(count = 5) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
 }
 
 test("admin load discovery report button also reloads discovery log from the start", async () => {

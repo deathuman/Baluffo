@@ -567,9 +567,10 @@ def _shard_pull_progress_counts(
     }
 
 
-def _emit_pull_progress(
+def _emit_remote_progress(
     progress_callback: Callable[..., None] | None,
     *,
+    phase_key: str,
     phase_label: str,
     counts: dict[str, Any],
     ratio: float,
@@ -580,7 +581,7 @@ def _emit_pull_progress(
         return
     try:
         progress_callback(
-            phase_key="remote_read",
+            phase_key=phase_key,
             phase_label=phase_label,
             mode="determinate",
             ratio=max(0.0, min(1.0, float(ratio or 0.0))),
@@ -591,6 +592,26 @@ def _emit_pull_progress(
         )
     except _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS:
         return
+
+
+def _emit_pull_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    phase_label: str,
+    counts: dict[str, Any],
+    ratio: float,
+    message: str = "",
+    event_level: str = "muted",
+) -> None:
+    _emit_remote_progress(
+        progress_callback,
+        phase_key="remote_read",
+        phase_label=phase_label,
+        counts=counts,
+        ratio=ratio,
+        message=message,
+        event_level=event_level,
+    )
 
 
 def _emit_push_progress(
@@ -602,21 +623,15 @@ def _emit_push_progress(
     message: str = "",
     event_level: str = "muted",
 ) -> None:
-    if not callable(progress_callback):
-        return
-    try:
-        progress_callback(
-            phase_key="remote_write",
-            phase_label=phase_label,
-            mode="determinate",
-            ratio=max(0.0, min(1.0, float(ratio or 0.0))),
-            counts=counts,
-            target_url="",
-            event_level=event_level,
-            message=message,
-        )
-    except _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS:
-        return
+    _emit_remote_progress(
+        progress_callback,
+        phase_key="remote_write",
+        phase_label=phase_label,
+        counts=counts,
+        ratio=ratio,
+        message=message,
+        event_level=event_level,
+    )
 
 
 def _push_and_verify_changed_shard(

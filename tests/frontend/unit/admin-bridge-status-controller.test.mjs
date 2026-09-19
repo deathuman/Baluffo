@@ -5,16 +5,7 @@ import {
   createClassList,
   createElement
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { createDeferredWithReject as createDeferred } from "./helpers/async-test-helpers.mjs";
 
 function createOpsControllerForBridgeStatus({ getBridge } = {}) {
   return createAdminOpsController({

@@ -6,14 +6,7 @@ import {
   createClassList,
   createElement
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createDeferred() {
-  let resolve;
-  const promise = new Promise(resolvePromise => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
+import { createDeferred } from "./helpers/async-test-helpers.mjs";
 
 function createController({ getBridge, onHistory, onTrends } = {}) {
   const state = { adminBusyState: {} };

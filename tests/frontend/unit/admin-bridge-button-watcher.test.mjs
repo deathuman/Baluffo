@@ -5,19 +5,10 @@ import {
   createAdminBridgeButtonWatcher,
   createAdminBridgeButtonWatcherForPage
 } from "../../../frontend/shared/admin-bridge-button.js";
+import { createDeferredWithReject as createDeferred } from "./helpers/async-test-helpers.mjs";
 
 function createButton() {
   return { disabled: false };
-}
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
 }
 
 test("admin bridge button watcher falls back to desktop bridge URL params", async () => {

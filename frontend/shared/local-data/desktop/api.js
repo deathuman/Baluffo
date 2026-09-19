@@ -5,6 +5,7 @@ import {
   requestTextInputDialog
 } from "../../../local-data/profile-name-dialog.js";
 import { createLocalDataRuntime } from "../../../local-data/runtime-contract.js";
+import { isImageAttachment as isImageAttachmentMeta } from "../../ui-helpers.js";
 import { buildAttachmentPath, generateJobKey } from "../../../local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "../../../local-data/phase.js";
 import {
@@ -47,18 +48,6 @@ function parseFilenameFromContentDisposition(value) {
   if (quotedMatch && quotedMatch[1]) return String(quotedMatch[1]).trim();
   const plainMatch = text.match(/filename\s*=\s*([^;]+)/i);
   return plainMatch && plainMatch[1] ? String(plainMatch[1]).trim() : "";
-}
-
-function getFileExtension(name) {
-  const idx = String(name || "").lastIndexOf(".");
-  return idx === -1 ? "" : String(name).slice(idx + 1).toLowerCase();
-}
-
-function isImageAttachmentMeta(attachment) {
-  const type = String(attachment?.type || "").toLowerCase();
-  if (type === "image/png" || type === "image/jpeg") return true;
-  const ext = getFileExtension(attachment?.name || "");
-  return ext === "png" || ext === "jpg" || ext === "jpeg";
 }
 
 async function requestJson(path, options = {}) {

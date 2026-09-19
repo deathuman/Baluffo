@@ -2,19 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { renderAdminRegistryConflicts } from "../../../frontend/admin/render/registry-conflicts.js";
-
-function createButton(dataset = {}) {
-  let clickHandler = null;
-  return {
-    dataset,
-    addEventListener(type, handler) {
-      if (type === "click") clickHandler = handler;
-    },
-    click() {
-      if (clickHandler) clickHandler();
-    }
-  };
-}
+import { createClickableButton as createButton } from "./helpers/dom-test-helpers.mjs";
 
 function createReviewElement(safeAutomationButtons = []) {
   return {

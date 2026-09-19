@@ -5,12 +5,7 @@ function stripPk(row) {
   return copy;
 }
 
-export function stripAttachmentPk(row) {
-  if (!row) return row;
-  const copy = { ...row };
-  delete copy.pk;
-  return copy;
-}
+export const stripAttachmentPk = stripPk;
 
 export function attachmentDedupeKey(row) {
   return [

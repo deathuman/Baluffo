@@ -29,6 +29,7 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.shared.utils import env_flag
 
 from ..common import config as common_config
 from .static_cookie_retry import (
@@ -413,15 +414,7 @@ STATIC_PAGINATION_BUDGET_EXTENSION_MAX_PAGES = 6
 
 def static_pagination_budget_extension_enabled() -> bool:
     """Kill switch: ``BALUFFO_STATIC_PAGINATION_BUDGET_EXTENSION`` (default on)."""
-
-    return os.environ.get(
-        "BALUFFO_STATIC_PAGINATION_BUDGET_EXTENSION", "1"
-    ).strip().lower() not in {
-        "0",
-        "off",
-        "false",
-        "no",
-    }
+    return env_flag("BALUFFO_STATIC_PAGINATION_BUDGET_EXTENSION", True)
 
 
 def pagination_budget_extension_s(*, pages_discovered: int, base_budget_s: int) -> int:

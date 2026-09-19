@@ -170,16 +170,23 @@ def _registry_conflicts_full_cache_path(source_state_path: Path) -> Path:
     return Path(source_state_path).with_name("registry-conflicts-full.json")
 
 
+def _load_keyed_cache_payload(cache_path: Path, cache_key: str) -> dict[str, Any] | None:
+    """Return the cached ``payload`` object when the cache key still matches."""
+    payload = read_pipeline_json_object(cache_path, {})
+    if not isinstance(payload, dict) or payload.get("cacheKey") != cache_key:
+        return None
+    body = _as_dict(payload.get("payload"))
+    return body or None
+
+
 def load_registry_conflicts_full_cache(
     source_state_path: Path,
     cache_key: str,
 ) -> dict[str, Any] | None:
     """Read the cached full conflict payload (before adjudication overlay)."""
-    payload = read_pipeline_json_object(_registry_conflicts_full_cache_path(source_state_path), {})
-    if not isinstance(payload, dict) or payload.get("cacheKey") != cache_key:
-        return None
-    body = _as_dict(payload.get("payload"))
-    return body or None
+    return _load_keyed_cache_payload(
+        _registry_conflicts_full_cache_path(source_state_path), cache_key
+    )
 
 
 def write_registry_conflicts_full_cache(
@@ -210,13 +217,9 @@ def load_cached_registry_conflicts_summary(
     source_state_path: Path,
     cache_key: str,
 ) -> dict[str, Any] | None:
-    payload = read_pipeline_json_object(
-        _registry_conflicts_summary_cache_path(source_state_path), {}
+    return _load_keyed_cache_payload(
+        _registry_conflicts_summary_cache_path(source_state_path), cache_key
     )
-    if not isinstance(payload, dict) or payload.get("cacheKey") != cache_key:
-        return None
-    summary = _as_dict(payload.get("payload"))
-    return summary or None
 
 
 def write_registry_conflicts_summary_cache(

@@ -4,36 +4,11 @@ import assert from "node:assert/strict";
 import { JOBS_UPDATE_COPY } from "../../../frontend/jobs/app/pipeline.js";
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
-
-function createClassList() {
-  const values = new Set();
-  return {
-    toggle(name, enabled) {
-      if (enabled) values.add(name);
-      else values.delete(name);
-    },
-    contains(name) {
-      return values.has(name);
-    }
-  };
-}
-
-function createStyle() {
-  const values = new Map();
-  return {
-    setProperty(name, value) {
-      values.set(name, value);
-      this[name] = value;
-    },
-    removeProperty(name) {
-      values.delete(name);
-      delete this[name];
-    },
-    getPropertyValue(name) {
-      return values.get(name) || "";
-    }
-  };
-}
+import {
+  createStyleStub as createStyle,
+  createToggleClassList as createClassList
+} from "./helpers/dom-test-helpers.mjs";
+import { installFakeTimers } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
 function createElementMock(tagName) {
   return {
@@ -87,17 +62,6 @@ function createButtonMock(textContent = "Update jobs") {
     removeAttribute(name) {
       delete this[name];
     }
-  };
-}
-
-function installFakeTimers() {
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = callback => ({ callback });
-  globalThis.clearTimeout = () => {};
-  return () => {
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
   };
 }
 

@@ -4,13 +4,9 @@ function normalizePercent(value) {
   return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
-export function formatDesktopUpdateBytes(bytes) {
-  const value = Number(bytes) || 0;
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
+import { formatBytes as formatDesktopUpdateBytes } from "../../shared/format-utils.js";
+
+export { formatDesktopUpdateBytes };
 
 function normalizeReleaseNotesHistory(history) {
   if (!Array.isArray(history)) return [];

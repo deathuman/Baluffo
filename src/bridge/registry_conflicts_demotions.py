@@ -10,6 +10,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused registry demotio
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from src.bridge.registry_conflicts_automation import (
@@ -149,6 +150,42 @@ def _safe_demotion_applied_entry(row_id: str, card: dict[str, Any]) -> dict[str,
     }
 
 
+def _apply_state_transition_targets(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    source_key: str,
+    target_ids: set[str],
+    eligible_by_id: dict[str, dict[str, Any]],
+    now: str,
+    actor: str,
+    transition: Callable[..., dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    """Move matching ``state[source_key]`` rows through ``transition``.
+
+    Returns ``(remaining_rows, transitioned_rows, applied)``: rows whose
+    identity is not targeted are kept, targeted rows are passed through the
+    caller's transition, and each transition records its applied entry.
+    """
+    remaining: list[dict[str, Any]] = []
+    transitioned: list[dict[str, Any]] = []
+    applied: list[dict[str, str]] = []
+    for row in state[source_key]:
+        row_id = source_identity(row)
+        if row_id not in target_ids:
+            remaining.append(row)
+            continue
+        transitioned.append(
+            transition(
+                row,
+                reason=SAFE_AUTO_DEMOTE_REASON,
+                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                at=now or None,
+            )
+        )
+        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
+    return remaining, transitioned, applied
+
+
 def _apply_safe_demotion_targets(
     state: dict[str, list[dict[str, Any]]],
     *,
@@ -157,23 +194,15 @@ def _apply_safe_demotion_targets(
     now: str,
     actor: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]], list[dict[str, Any]]]:
-    moved: list[dict[str, Any]] = []
-    active_remaining: list[dict[str, Any]] = []
-    applied: list[dict[str, str]] = []
-    for row in state["active"]:
-        row_id = source_identity(row)
-        if row_id not in target_ids:
-            active_remaining.append(row)
-            continue
-        moved.append(
-            transition_registry_to_pending(
-                row,
-                reason=SAFE_AUTO_DEMOTE_REASON,
-                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
-                at=now or None,
-            )
-        )
-        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
+    active_remaining, moved, applied = _apply_state_transition_targets(
+        state,
+        source_key="active",
+        target_ids=target_ids,
+        eligible_by_id=eligible_by_id,
+        now=now,
+        actor=actor,
+        transition=transition_registry_to_pending,
+    )
     return active_remaining, applied, moved
 
 
@@ -284,21 +313,12 @@ def _apply_pending_rejection_targets(
     now: str,
     actor: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
-    next_pending: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
-    applied: list[dict[str, str]] = []
-    for row in state["pending"]:
-        row_id = source_identity(row)
-        if row_id not in target_ids:
-            next_pending.append(row)
-            continue
-        rejected.append(
-            transition_registry_to_rejected(
-                row,
-                reason=SAFE_AUTO_DEMOTE_REASON,
-                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
-                at=now or None,
-            )
-        )
-        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
-    return next_pending, rejected, applied
+    return _apply_state_transition_targets(
+        state,
+        source_key="pending",
+        target_ids=target_ids,
+        eligible_by_id=eligible_by_id,
+        now=now,
+        actor=actor,
+        transition=transition_registry_to_rejected,
+    )

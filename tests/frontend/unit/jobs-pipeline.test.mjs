@@ -8,36 +8,10 @@ import {
   JOBS_UPDATE_COPY,
   updateJobsPipelineUi
 } from "../../../frontend/jobs/app/pipeline.js";
-
-function createClassList() {
-  const values = new Set();
-  return {
-    toggle(name, enabled) {
-      if (enabled) values.add(name);
-      else values.delete(name);
-    },
-    contains(name) {
-      return values.has(name);
-    }
-  };
-}
-
-function createStyle() {
-  const values = new Map();
-  return {
-    setProperty(name, value) {
-      values.set(name, value);
-      this[name] = value;
-    },
-    removeProperty(name) {
-      values.delete(name);
-      delete this[name];
-    },
-    getPropertyValue(name) {
-      return values.get(name) || "";
-    }
-  };
-}
+import {
+  createStyleStub as createStyle,
+  createToggleClassList as createClassList
+} from "./helpers/dom-test-helpers.mjs";
 
 function createElementMock(tagName) {
   return {

@@ -13,14 +13,7 @@ import {
   getSourceDiscoveryJobsCount,
   getSourceJobsFoundCount
 } from "../../../frontend/admin/domain.js";
-
-function makeEl() {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: () => []
-  };
-}
+import { createRenderEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
 test("admin render: alerts and kpis render healthy/critical states", () => {
   const alertsEl = makeEl();

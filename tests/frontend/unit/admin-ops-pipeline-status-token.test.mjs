@@ -3,16 +3,7 @@ import assert from "node:assert/strict";
 
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { createDeferredWithReject as createDeferred } from "./helpers/async-test-helpers.mjs";
 
 test("admin ops applies active pipeline status after bootstrap advances render token", async () => {
   const state = {

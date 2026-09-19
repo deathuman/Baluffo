@@ -6,6 +6,10 @@ import {
   renderAdminSourcePolicyReview
 } from "../../../frontend/admin/render/source-policy-review.js";
 import { UI_TOKENS, ui } from "../../../frontend/shared/ui/selectors.js";
+import {
+  createSelectorEl as makeEl,
+  createDatasetButton as makeButton
+} from "./helpers/dom-test-helpers.mjs";
 
 function makeMigrationLinkCandidate(overrides = {}) {
   return {
@@ -46,25 +50,6 @@ function makeLinkedMigrationCandidate(overrides = {}) {
     providerReplacementReadiness: "candidate",
     recommendedAction: "already_linked",
     ...overrides
-  };
-}
-
-function makeEl(buttonsBySelector = {}) {
-  return {
-    innerHTML: "",
-    dataset: {},
-    querySelectorAll(selector) {
-      return buttonsBySelector[selector] || [];
-    }
-  };
-}
-
-function makeButton(dataset) {
-  return {
-    dataset,
-    addEventListener(_event, handler) {
-      this.click = handler;
-    }
   };
 }
 

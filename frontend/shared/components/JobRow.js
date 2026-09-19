@@ -7,6 +7,8 @@
 import { escapeHtml, tooltipAttrs } from "../ui/index.js";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 import { formatJobLocationColumns } from "../location-display.js";
+import { formatDateForStatus as formatTooltipDate } from "../format-utils.js";
+import { renderAvailabilityCheckIcon } from "../ui-helpers.js";
 
 function getFreshnessTier(score) {
   if (!Number.isFinite(score)) return "";
@@ -20,12 +22,6 @@ function getFreshnessTooltip(ageDays, source) {
   if (source === "postedAt") return `Posted ${ageDays}d ago`;
   if (source === "fetchedAt") return `Fetched ${ageDays}d ago (best guess)`;
   return "";
-}
-
-function formatTooltipDate(value) {
-  const parsed = new Date(String(value || ""));
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function renderFreshnessCell(job) {
@@ -50,15 +46,6 @@ function renderFreshnessCell(job) {
     <div class="col-freshness" aria-hidden="true">
       <span class="job-freshness-ping ${tier}"${tooltipAttrs(tooltip)}></span>
     </div>
-  `;
-}
-
-function renderAvailabilityCheckIcon() {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
   `;
 }
 

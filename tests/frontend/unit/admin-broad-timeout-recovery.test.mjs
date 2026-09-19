@@ -3,37 +3,9 @@ import assert from "node:assert/strict";
 
 import { createAdminFetcherLogController } from "../../../frontend/admin/app/fetcher/logs.js";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
-import {
-  createClassList,
-  createElement
-} from "./helpers/admin-controller-test-helpers.mjs";
-
-function createOpsState(extra = {}) {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    },
-    ...extra
-  };
-}
-
-function createOpsRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
+import { createOpsRefs, createOpsState } from "./helpers/admin-controller-test-helpers.mjs";
+import { flushBackgroundTasks as flushBackground } from "./helpers/async-test-helpers.mjs";
 
 function createOpsController({ state, getBridge } = {}) {
   return createAdminOpsController({
@@ -68,13 +40,6 @@ function createOpsController({ state, getBridge } = {}) {
     bridgeStatusPollIntervalMs: 1000,
     idlePollIntervalMs: 1000
   });
-}
-
-async function flushBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
 }
 
 test("admin degraded active skips heavy summaries while allowing KPI hydration", async () => {

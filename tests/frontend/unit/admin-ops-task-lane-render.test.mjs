@@ -1,14 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
-
-function makeEl(buttonsBySelector = {}) {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: selector => buttonsBySelector[selector] || []
-  };
-}
+import { createButtonMapEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
 function makeButton(attributeValue) {
   return {

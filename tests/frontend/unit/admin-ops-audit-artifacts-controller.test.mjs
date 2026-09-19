@@ -5,11 +5,7 @@ import {
   createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-}
+import { flushMicrotaskPair as flushAdminOpsBackground } from "./helpers/async-test-helpers.mjs";
 
 test("admin ops controller lazy-loads discovery audit artifacts into metrics", async () => {
   const state = {

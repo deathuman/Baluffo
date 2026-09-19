@@ -1,5 +1,6 @@
 import {
   COUNTRY_ACCEPTANCE,
+  normalizeCountryAcceptanceToken as normalizeCountryToken,
   resolveCountryAcceptanceValue
 } from "../../shared/data/country-acceptance.js";
 import {
@@ -34,14 +35,7 @@ export function detectContractType(text, title = "") {
   return "Unknown";
 }
 
-export function normalizeCountryToken(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
+export { normalizeCountryToken };
 
 export function canonicalizeCountryName(value, options = {}) {
   const raw = String(value || "").trim();

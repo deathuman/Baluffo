@@ -2,21 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-async function flush() {
-  await Promise.resolve();
-  await Promise.resolve();
-}
+import {
+  flushMicrotaskPair as flush,
+  createDeferredWithReject as createDeferred
+} from "./helpers/async-test-helpers.mjs";
 
 function createFixture({ getBridge, state: stateOverrides = {} } = {}) {
   const state = {

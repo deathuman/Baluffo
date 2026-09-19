@@ -16,6 +16,7 @@ from typing import Any
 
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.text_utils import clean_text
+from src.shared.browser_fallback_tokens import matches_browser_fallback_environment_error
 from src.shared.utils import now_iso
 
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
@@ -25,32 +26,7 @@ DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES = 30
 
 
 def is_browser_fallback_environment_error(error_text: str) -> bool:
-    text = clean_text(error_text).lower()
-    if not text:
-        return False
-    tokens = (
-        "browser fallback unavailable",
-        "playwright is not installed",
-        "spawn eperm",
-        "permission denied",
-        "access is denied",
-        "operation not permitted",
-        "failed to launch browser",
-        "cannot launch browser",
-        "could not find browser",
-        "browser_type.launch",
-        "executable doesn't exist",
-        "executable does not exist",
-        "worker spawn blocked",
-        "write epipe",
-        "broken pipe",
-        "pipetransport",
-        "target closed",
-        "transport closed",
-        "connection closed",
-        "browser has been closed",
-    )
-    return any(token in text for token in tokens)
+    return matches_browser_fallback_environment_error(clean_text(error_text).lower())
 
 
 @dataclass

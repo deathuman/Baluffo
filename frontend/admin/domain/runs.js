@@ -13,6 +13,8 @@ function parseCompletedRunTimestampMs(row) {
   return parseRunStartedTimestampMs(row);
 }
 
+const parsePipelineChildTimestampMs = parseCompletedRunTimestampMs;
+
 function normalizeRunStatus(value) {
   const token = String(value || "").trim().toLowerCase();
   return token || "unknown";
@@ -49,12 +51,6 @@ const PIPELINE_CHILD_STAGE_ORDER = {
 function pipelineChildSortValue(row) {
   const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
   return PIPELINE_CHILD_STAGE_ORDER[type] ?? 99;
-}
-
-function parsePipelineChildTimestampMs(row) {
-  const finished = Date.parse(String(row?.finishedAt || "").trim());
-  if (Number.isFinite(finished)) return finished;
-  return parseRunStartedTimestampMs(row);
 }
 
 function buildPipelineChildrenByParent(rows, nowMs) {

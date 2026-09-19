@@ -2,20 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createJobsEventsController } from "../../../frontend/jobs/app/runtime/events.js";
-
-function createWindowStub({ innerHeight = 900, innerWidth = 1200 } = {}) {
-  const listeners = new Map();
-  return {
-    innerHeight,
-    innerWidth,
-    listeners,
-    addEventListener(type, handler) {
-      const handlers = listeners.get(type) || [];
-      handlers.push(handler);
-      listeners.set(type, handlers);
-    }
-  };
-}
+import { createWindowStub } from "./helpers/dom-test-helpers.mjs";
 
 function createDocumentStub() {
   const listeners = new Map();

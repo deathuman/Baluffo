@@ -5,6 +5,8 @@ import { deriveAdminRunsModel } from "../../../frontend/admin/domain.js";
 import { renderAdminOpsHistory } from "../../../frontend/admin/render.js";
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
+import { createStyleStub as createStyle } from "./helpers/dom-test-helpers.mjs";
+import { installFakeTimers } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
 function createClassList() {
   const values = new Set();
@@ -21,23 +23,6 @@ function createClassList() {
     },
     contains(name) {
       return values.has(name);
-    }
-  };
-}
-
-function createStyle() {
-  const values = new Map();
-  return {
-    setProperty(name, value) {
-      values.set(name, value);
-      this[name] = value;
-    },
-    removeProperty(name) {
-      values.delete(name);
-      delete this[name];
-    },
-    getPropertyValue(name) {
-      return values.get(name) || "";
     }
   };
 }
@@ -98,17 +83,6 @@ function makeContainer() {
     dataset: {},
     classList: createClassList(),
     querySelectorAll: () => []
-  };
-}
-
-function installFakeTimers() {
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = callback => ({ callback });
-  globalThis.clearTimeout = () => {};
-  return () => {
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
   };
 }
 

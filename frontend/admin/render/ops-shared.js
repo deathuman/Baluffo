@@ -1,10 +1,6 @@
-export function formatDuration(ms) {
-  const value = Math.max(0, Number(ms) || 0);
-  if (!value) return "0s";
-  if (value < 1000) return `${value}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  return `${(value / 60_000).toFixed(1)}m`;
-}
+import { formatDuration } from "../../shared/format-utils.js";
+
+export { formatDuration };
 
 export function formatDateTime(value) {
   const parsed = Date.parse(String(value || ""));

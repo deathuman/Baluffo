@@ -16,7 +16,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
@@ -27,6 +26,7 @@ from src.jobs.text_utils import clean_text
 from .lifecycle import (
     apply_provider_cache_decision,
     build_provider_entry_report,
+    run_registry_entries_source,
     skip_provider_for_cache,
 )
 from .source_errors import (
@@ -156,36 +156,17 @@ def run_phenom_sources_source(
     source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    jobs: list[RawJob] = []
-    errors: list[str] = []
-    details: list[dict[str, object]] = []
-    provider_url = ""
-    for source in registry_entries("phenom"):
-        source_jobs, entry_report, error_text = _run_phenom_registry_source(
-            source,
-            fetch_text=fetch_text,
-            timeout_s=timeout_s,
-            retries=retries,
-            backoff_s=backoff_s,
-            source_state_rows=source_state_rows,
-            force_refresh_all=force_refresh_all,
-        )
-        details.append(entry_report)
-        jobs.extend(source_jobs)
-        if error_text:
-            errors.append(error_text)
-            provider_url = provider_url or clean_text(entry_report.get("providerUrl"))
-
-    set_source_diagnostics(
-        "phenom_sources",
-        adapter="phenom",
-        studio="multiple",
-        provider_url=provider_url,
-        details=details,
-        partial_errors=errors,
+    return run_registry_entries_source(
+        registry_entries_fn=registry_entries,
+        registry_key="phenom",
+        source_name="phenom_sources",
+        adapter_name="phenom",
+        run_entry=_run_phenom_registry_source,
+        set_diagnostics=set_source_diagnostics,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
     )
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []

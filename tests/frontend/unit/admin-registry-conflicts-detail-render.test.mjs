@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderAdminRegistryConflicts } from "../../../frontend/admin/render/registry-conflicts.js";
+import { createClickableButton as createButton } from "./helpers/dom-test-helpers.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -15,19 +16,6 @@ function createReviewElement({ actionButtons = [] } = {}) {
     querySelectorAll(selector) {
       if (selector === '[data-ui="admin-registry-conflict-action-btn"]') return actionButtons;
       return [];
-    }
-  };
-}
-
-function createButton(dataset = {}) {
-  let clickHandler = null;
-  return {
-    dataset,
-    addEventListener(type, handler) {
-      if (type === "click") clickHandler = handler;
-    },
-    click() {
-      if (clickHandler) clickHandler();
     }
   };
 }

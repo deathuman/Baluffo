@@ -237,57 +237,59 @@ class SyncService:
                 message=str(exc),
             )
 
-    def _record_sync_task_event(self, event: dict[str, Any]) -> None:
-        surface = "taskEvents"
+    def _write_shadow_surface(
+        self,
+        surface: str,
+        payload: dict[str, Any],
+        *,
+        write: Callable[[TaskRuntimeStore, dict[str, Any]], None],
+        ok_code: str,
+        failed_code: str,
+    ) -> None:
+        """Best-effort shadow write of ``payload`` to ``surface``.
+
+        Skips silently unless the surface's storage mode is ``shadow``/``sqlite``;
+        a failed write rolls the surface back to JSON and records a diagnostic.
+        """
         runtime_store: TaskRuntimeStore | None = None
         try:
             runtime_store = self._runtime_store()
             if self._storage_mode(runtime_store, surface) not in {"shadow", "sqlite"}:
                 return
-            runtime_store.append_task_event(event)
+            write(runtime_store, payload)
             self._record_storage_diagnostic(
                 surface=surface,
-                code="task_event_shadow_write_ok",
+                code=ok_code,
                 ok=True,
-                details={"runId": str(event.get("runId") or "")},
+                details={"runId": str(payload.get("runId") or "")},
             )
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             if runtime_store is not None:
-                self._rollback_storage_surface(
-                    runtime_store, surface, "task_event_shadow_write_failed"
-                )
+                self._rollback_storage_surface(runtime_store, surface, failed_code)
             self._record_storage_diagnostic(
                 surface=surface,
-                code="task_event_shadow_write_failed",
+                code=failed_code,
                 ok=False,
                 message=str(exc),
             )
 
+    def _record_sync_task_event(self, event: dict[str, Any]) -> None:
+        self._write_shadow_surface(
+            "taskEvents",
+            event,
+            write=lambda store, payload: store.append_task_event(payload),
+            ok_code="task_event_shadow_write_ok",
+            failed_code="task_event_shadow_write_failed",
+        )
+
     def _upsert_sync_run(self, entry: dict[str, Any]) -> None:
-        surface = "syncRuns"
-        runtime_store: TaskRuntimeStore | None = None
-        try:
-            runtime_store = self._runtime_store()
-            if self._storage_mode(runtime_store, surface) not in {"shadow", "sqlite"}:
-                return
-            runtime_store.upsert_sync_run(entry)
-            self._record_storage_diagnostic(
-                surface=surface,
-                code="sync_run_shadow_write_ok",
-                ok=True,
-                details={"runId": str(entry.get("runId") or "")},
-            )
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            if runtime_store is not None:
-                self._rollback_storage_surface(
-                    runtime_store, surface, "sync_run_shadow_write_failed"
-                )
-            self._record_storage_diagnostic(
-                surface=surface,
-                code="sync_run_shadow_write_failed",
-                ok=False,
-                message=str(exc),
-            )
+        self._write_shadow_surface(
+            "syncRuns",
+            entry,
+            write=lambda store, payload: store.upsert_sync_run(payload),
+            ok_code="sync_run_shadow_write_ok",
+            failed_code="sync_run_shadow_write_failed",
+        )
 
     # === Configuration Methods ===
 

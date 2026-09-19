@@ -6,19 +6,11 @@ import {
   createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
+import { createDeferredWithReject as createDeferred } from "./helpers/async-test-helpers.mjs";
 
 async function flushAdminOpsBackground() {
   for (let index = 0; index < 8; index += 1) await Promise.resolve();
   await new Promise(resolve => setImmediate(resolve));
-}
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
 }
 function createOpsControllerForBridgeStatus({
   state = { adminBusyState: {} },

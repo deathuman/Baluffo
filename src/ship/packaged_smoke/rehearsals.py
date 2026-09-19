@@ -263,85 +263,47 @@ def _wait_for_desktop_update_helper_completion(*, paths: Any, timeout_s: float) 
     )
 
 
-def run_packaged_sync_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_sync_mod.run_packaged_sync_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
+def _make_rehearsal_runner(module: Any, scenario: str) -> Any:
+    """Build a keyword-only rehearsal runner delegating to ``module.scenario``.
+
+    ``_root()`` binds the submodule roots before every delegation, and the
+    target attribute is resolved at call time so monkeypatching the rehearsal
+    leaf module still takes effect.
+    """
+
+    def runner(
+        *,
+        exe_path: Path,
+        artifacts_dir: Path,
+        runtime_timeout_s: float,
+    ) -> dict[str, Any]:
+        _root()
+        return getattr(module, scenario)(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+
+    return runner
 
 
-def run_desktop_update_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_update_mod.run_desktop_update_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
-
-
-def run_packaged_browser_job_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_browser_mod.run_packaged_browser_job_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
-
-
-def run_packaged_desktop_lifecycle_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_browser_mod.run_packaged_desktop_lifecycle_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
-
-
-def run_packaged_active_task_close_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_browser_mod.run_packaged_active_task_close_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
-
-
-def run_packaged_orphan_reclaim_rehearsal(
-    *,
-    exe_path: Path,
-    artifacts_dir: Path,
-    runtime_timeout_s: float,
-) -> dict[str, Any]:
-    _root()
-    return rehearsal_browser_mod.run_packaged_orphan_reclaim_rehearsal(
-        exe_path=exe_path,
-        artifacts_dir=artifacts_dir,
-        runtime_timeout_s=runtime_timeout_s,
-    )
+# Compatibility surface: each name stays bound in this module for packaged
+# smoke re-export and rehearsal orchestration call sites.
+run_packaged_sync_rehearsal = _make_rehearsal_runner(
+    rehearsal_sync_mod, "run_packaged_sync_rehearsal"
+)
+run_desktop_update_rehearsal = _make_rehearsal_runner(
+    rehearsal_update_mod, "run_desktop_update_rehearsal"
+)
+run_packaged_browser_job_rehearsal = _make_rehearsal_runner(
+    rehearsal_browser_mod, "run_packaged_browser_job_rehearsal"
+)
+run_packaged_desktop_lifecycle_rehearsal = _make_rehearsal_runner(
+    rehearsal_browser_mod, "run_packaged_desktop_lifecycle_rehearsal"
+)
+run_packaged_active_task_close_rehearsal = _make_rehearsal_runner(
+    rehearsal_browser_mod, "run_packaged_active_task_close_rehearsal"
+)
+run_packaged_orphan_reclaim_rehearsal = _make_rehearsal_runner(
+    rehearsal_browser_mod, "run_packaged_orphan_reclaim_rehearsal"
+)

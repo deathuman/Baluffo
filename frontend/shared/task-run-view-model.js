@@ -4,6 +4,7 @@ import {
   formatTaskProgressDetail,
   normalizeTaskProgressPayload
 } from "./task-progress.js";
+import { formatDuration, truncateText as trimDiagnosticText } from "./format-utils.js";
 
 const STALLED_AFTER_MS = 10 * 60 * 1000;
 const DIAGNOSTIC_LIST_LIMIT = 5;
@@ -67,12 +68,6 @@ function syncProgressEvidenceLabel(summary, progress) {
     ? progress.counts
     : {};
   return formatTaskProgressCounts("sync", counts, progress, summary);
-}
-
-function trimDiagnosticText(value, limit = DIAGNOSTIC_TEXT_LIMIT) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text.length > limit ? `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...` : text;
 }
 
 function compactPrimitiveMap(value, allowedKeys) {
@@ -271,14 +266,6 @@ function buildTimelineEntries(row, view) {
     })
     .slice(0, DIAGNOSTIC_LIST_LIMIT)
     .map(({ order: _order, ...entry }) => entry);
-}
-
-function formatDuration(ms) {
-  const value = Math.max(0, Number(ms) || 0);
-  if (!value) return "0s";
-  if (value < 1000) return `${value}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  return `${(value / 60_000).toFixed(1)}m`;
 }
 
 function formatDateTime(value) {

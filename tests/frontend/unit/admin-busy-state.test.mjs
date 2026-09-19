@@ -3,37 +3,7 @@ import assert from "node:assert/strict";
 
 import { syncAdminBusyUi, toAdminViewState } from "../../../frontend/admin/app/busy-state.js";
 import { FETCHER_PRESET_META } from "../../../frontend/admin/app/fetcher.js";
-
-function createClassList(initial = []) {
-  const values = new Set(initial);
-  return {
-    add(...tokens) {
-      tokens.forEach(token => values.add(token));
-    },
-    remove(...tokens) {
-      tokens.forEach(token => values.delete(token));
-    },
-    toggle(token, force) {
-      if (force === true) {
-        values.add(token);
-        return true;
-      }
-      if (force === false) {
-        values.delete(token);
-        return false;
-      }
-      if (values.has(token)) {
-        values.delete(token);
-        return false;
-      }
-      values.add(token);
-      return true;
-    },
-    contains(token) {
-      return values.has(token);
-    }
-  };
-}
+import { createClassList } from "./helpers/dom-test-helpers.mjs";
 
 function createElement(text = "") {
   return {

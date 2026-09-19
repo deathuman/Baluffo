@@ -1,6 +1,6 @@
 const COUNTRY_ACCEPTANCE_URL = new URL("../../../data/contracts/country_acceptance.json", import.meta.url);
 
-function normalizeCountryAcceptanceToken(value) {
+export function normalizeCountryAcceptanceToken(value) {
   return String(value || "")
     .trim()
     .toLowerCase()

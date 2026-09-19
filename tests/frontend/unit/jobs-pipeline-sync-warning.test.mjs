@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
+import { installFakeTimers } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
 function styleMock() {
   return { setProperty() {}, removeProperty() {} };
@@ -52,17 +53,6 @@ function buttonMock() {
         ? this.children.find(child => String(child?.dataset?.ui || "") === match[1]) || null
         : null;
     }
-  };
-}
-
-function installFakeTimers() {
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = callback => ({ callback });
-  globalThis.clearTimeout = () => {};
-  return () => {
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
   };
 }
 

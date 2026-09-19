@@ -1,4 +1,5 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
+import { resolveNowMs } from "../../shared/format-utils.js";
 import {
   OUTCOME_STATUSES,
   OUTCOME_STATUS_LABELS,
@@ -30,12 +31,6 @@ function formatTrackingTimestamp(value, options = {}) {
     });
   }
   return parsed.toLocaleString();
-}
-
-function resolveNowMs(value) {
-  if (typeof value === "function") return Number(value()) || Date.now();
-  if (value instanceof Date) return value.getTime();
-  return Number(value) || Date.now();
 }
 
 function formatRelativeTimestamp(value, options = {}) {

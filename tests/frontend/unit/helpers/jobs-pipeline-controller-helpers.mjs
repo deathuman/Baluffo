@@ -1,35 +1,9 @@
 import { createJobsPipelineController } from "../../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../../frontend/jobs/app/runtime/state.js";
-
-function createClassList() {
-  const values = new Set();
-  return {
-    toggle(name, enabled) {
-      if (enabled) values.add(name);
-      else values.delete(name);
-    },
-    contains(name) {
-      return values.has(name);
-    }
-  };
-}
-
-function createStyle() {
-  const values = new Map();
-  return {
-    setProperty(name, value) {
-      values.set(name, value);
-      this[name] = value;
-    },
-    removeProperty(name) {
-      values.delete(name);
-      delete this[name];
-    },
-    getPropertyValue(name) {
-      return values.get(name) || "";
-    }
-  };
-}
+import {
+  createStyleStub as createStyle,
+  createToggleClassList as createClassList
+} from "./dom-test-helpers.mjs";
 
 function createElementMock(tagName) {
   const element = {

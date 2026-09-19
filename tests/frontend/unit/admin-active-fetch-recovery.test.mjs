@@ -5,30 +5,14 @@ import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { renderAdminOpsKpis } from "../../../frontend/admin/render.js";
 import {
-  createClassList,
-  createElement,
   createRegistryControllerFixture,
   stubScheduledTimers
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushMicrotasks(count = 10) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
-}
-
-function createOpsRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+import {
+  createOpsRefs,
+  createOpsState as activeOpsState
+} from "./helpers/admin-controller-test-helpers.mjs";
+import { flushMicrotasks } from "./helpers/async-test-helpers.mjs";
 
 function createOpsController({ state, refs = createOpsRefs(), getBridge, onActivePipelineIdle, renderAdminOpsKpisImpl } = {}) {
   return createAdminOpsController({
@@ -64,20 +48,6 @@ function createOpsController({ state, refs = createOpsRefs(), getBridge, onActiv
     bridgeStatusPollIntervalMs: 1000,
     idlePollIntervalMs: 1000
   });
-}
-
-function activeOpsState(extra = {}) {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    },
-    ...extra
-  };
 }
 
 test("admin active fetch renders updating KPI state while compact task state is active", async () => {

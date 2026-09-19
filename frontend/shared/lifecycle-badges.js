@@ -1,10 +1,5 @@
 import { escapeHtml, tooltipAttrs } from "./ui/index.js";
-
-function formatDateForStatus(value) {
-  const parsed = new Date(String(value || ""));
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-}
+import { formatDateForStatus } from "./format-utils.js";
 
 function formatRelativeLastSeen(value, now = Date.now()) {
   const parsed = new Date(String(value || ""));

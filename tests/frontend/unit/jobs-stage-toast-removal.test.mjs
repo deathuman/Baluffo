@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
+import { createToggleClassList as createClassList } from "./helpers/dom-test-helpers.mjs";
 
 const controllerSource = readFileSync(
   new URL("../../../frontend/jobs/app/runtime/pipeline-controller.js", import.meta.url),
@@ -17,19 +18,6 @@ const componentsCss = readFileSync(
   new URL("../../../styles/components.css", import.meta.url),
   "utf8"
 );
-
-function createClassList() {
-  const values = new Set();
-  return {
-    toggle(name, enabled) {
-      if (enabled) values.add(name);
-      else values.delete(name);
-    },
-    contains(name) {
-      return values.has(name);
-    }
-  };
-}
 
 function createButtonMock() {
   const children = [];

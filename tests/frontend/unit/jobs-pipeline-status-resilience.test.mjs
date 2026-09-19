@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
+import { installFakeTimers } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
 function createButtonMock() {
   const children = [];
@@ -50,17 +51,6 @@ function createButtonMock() {
     }
   };
   return button;
-}
-
-function installFakeTimers() {
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = callback => ({ callback });
-  globalThis.clearTimeout = () => {};
-  return () => {
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
-  };
 }
 
 test("pollJobsPipelineStatus preserves recent active pipeline state across transient status timeout", async () => {

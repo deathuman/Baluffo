@@ -4,20 +4,10 @@ import {
   createStorageMock,
   importFresh
 } from "./helpers/browser-test-helpers.mjs";
-
-function createJsonResponse(payload) {
-  return {
-    ok: true,
-    json: async () => payload
-  };
-}
-
-async function flushMicrotasks(count = 5) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
-  await new Promise(resolve => setTimeout(resolve, 0));
-}
+import {
+  flushMicrotasksWithTimer as flushMicrotasks,
+  createJsonResponse
+} from "./helpers/async-test-helpers.mjs";
 
 function setupContainerGlobals() {
   const localStorage = createStorageMock();

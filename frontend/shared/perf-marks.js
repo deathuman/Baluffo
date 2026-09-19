@@ -63,3 +63,20 @@ export function createPerfMarks(startupMetrics) {
     measureStep: (name, startMark, endMark, payload = {}) => measureStep(startupMetrics, name, startMark, endMark, payload)
   };
 }
+
+/**
+ * Builds a payload decorator that stamps elapsedMs since the given start.
+ * An existing elapsedMs on the payload is preserved untouched.
+ * @param {Function} now - Clock returning milliseconds.
+ * @param {number} startedAtMs - Start of the measured window.
+ * @returns {(payload?: object) => object}
+ */
+export function createElapsedMsTracker(now, startedAtMs) {
+  return function withElapsedMs(payload = {}) {
+    if (Object.prototype.hasOwnProperty.call(payload, "elapsedMs")) return payload;
+    return {
+      ...payload,
+      elapsedMs: Math.max(0, Math.round((Number(now()) || startedAtMs) - startedAtMs))
+    };
+  };
+}

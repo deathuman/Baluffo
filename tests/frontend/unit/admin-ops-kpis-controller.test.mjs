@@ -5,23 +5,11 @@ import {
   createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
-}
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { createOpsState } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  flushBackgroundTasks as flushAdminOpsBackground,
+  createDeferredWithReject as createDeferred
+} from "./helpers/async-test-helpers.mjs";
 
 function createOpsRefs() {
   return {
@@ -32,20 +20,6 @@ function createOpsRefs() {
     adminOpsHistoryEl: createElement(),
     adminOpsTrendsEl: createElement(),
     adminRegistryConflictsReviewEl: createElement()
-  };
-}
-
-function createOpsState(extra = {}) {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    },
-    ...extra
   };
 }
 

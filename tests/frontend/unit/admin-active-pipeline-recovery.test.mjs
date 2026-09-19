@@ -4,37 +4,12 @@ import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { renderAdminOpsKpis } from "../../../frontend/admin/render.js";
+import { createRegistryControllerFixture } from "./helpers/admin-controller-test-helpers.mjs";
 import {
-  createClassList,
-  createElement,
-  createRegistryControllerFixture
+  createOpsRefs,
+  createBaseOpsState as createOpsState
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createOpsState() {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    }
-  };
-}
-
-function createOpsRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+import { flushBackgroundTasks as flushAdminOpsBackground } from "./helpers/async-test-helpers.mjs";
 
 function createOpsController(overrides = {}) {
   const state = overrides.state || createOpsState();
@@ -72,13 +47,6 @@ function createOpsController(overrides = {}) {
     state,
     refs
   });
-}
-
-async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
 }
 
 test("admin ops controller replaces stale pipeline child rows from fresher pipeline status", async () => {

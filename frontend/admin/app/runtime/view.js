@@ -11,7 +11,4 @@ export function toLocalTime(value) {
   }
 }
 
-export function setStatusText(setText, element, text) {
-  // Matches the shared helper contract but keeps this module slice-local.
-  if (setText && element) setText(element, text);
-}
+export { setStatusText } from "../../../shared/ui-helpers.js";

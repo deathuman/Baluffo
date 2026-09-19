@@ -5,25 +5,7 @@ import {
   createDeferredRenderScheduler,
   createElement
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function registrySourcesPayload({
-  pending = [],
-  active = [],
-  rejected = [],
-  summary = {}
-} = {}) {
-  return {
-    ok: true,
-    sources: { pending, active, rejected },
-    summary: {
-      activeCount: active.length,
-      pendingCount: pending.length,
-      rejectedCount: rejected.length,
-      hiddenPendingCount: 0,
-      ...summary
-    }
-  };
-}
+import { registrySourcesPayload } from "./helpers/admin-controller-test-helpers.mjs";
 
 test("admin registry controller can refresh source tables without full discovery diagnostics", async () => {
   const state = {

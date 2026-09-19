@@ -23,15 +23,20 @@ from urllib.parse import urlparse
 from src.jobs.text_utils import clean_text
 
 
-def site_feed_url(page_url: str) -> str:
-    """WordPress site feed for a page's origin (``<scheme>://<host>/feed/``)."""
+def _site_origin_url(page_url: str, suffix: str) -> str:
+    """Origin of ``page_url`` plus ``suffix``, or "" when the URL has no origin."""
     try:
         parsed = urlparse(clean_text(page_url))
     except ValueError:
         return ""
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return ""
-    return f"{parsed.scheme}://{parsed.netloc}/feed/"
+    return f"{parsed.scheme}://{parsed.netloc}{suffix}"
+
+
+def site_feed_url(page_url: str) -> str:
+    """WordPress site feed for a page's origin (``<scheme>://<host>/feed/``)."""
+    return _site_origin_url(page_url, "/feed/")
 
 
 def page_relative_feed_url(page_url: str, *, feed_name: str = "feed") -> str:
@@ -52,10 +57,4 @@ def page_relative_feed_url(page_url: str, *, feed_name: str = "feed") -> str:
 
 def site_rss_url(page_url: str) -> str:
     """Tumblr/Ghost-style site feed at the origin's ``/rss`` (no trailing slash)."""
-    try:
-        parsed = urlparse(clean_text(page_url))
-    except ValueError:
-        return ""
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
-    return f"{parsed.scheme}://{parsed.netloc}/rss"
+    return _site_origin_url(page_url, "/rss")

@@ -1,6 +1,7 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
+import { stringValue } from "../../shared/format-utils.js";
 
 const ACTION_TOKEN = UI_TOKENS.admin.registryConflictActionBtn;
 const CHECK_TOKEN = UI_TOKENS.admin.registryConflictCheckBtn;
@@ -100,11 +101,6 @@ function objectValue(value) {
 
 function listValue(value) {
   return Array.isArray(value) ? value : [];
-}
-
-function stringValue(value, fallback = "") {
-  const text = String(value ?? "").trim();
-  return text || fallback;
 }
 
 function numberValue(value, fallback = 0) {

@@ -2,44 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
+import { stubScheduledTimers } from "./helpers/admin-controller-test-helpers.mjs";
 import {
-  createClassList,
-  createElement,
-  stubScheduledTimers
+  createOpsRefs as createRefs,
+  createOpsState as createState
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushMicrotasks(count = 10) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
-}
-
-function createState(extra = {}) {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    },
-    ...extra
-  };
-}
-
-function createRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+import { flushMicrotasks } from "./helpers/async-test-helpers.mjs";
 
 function createController({ state, getBridge }) {
   return createAdminOpsController({

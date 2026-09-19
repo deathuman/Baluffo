@@ -3,37 +3,12 @@ import assert from "node:assert/strict";
 
 import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
+import { createFetcherControllerFixture } from "./helpers/admin-controller-test-helpers.mjs";
 import {
-  createClassList,
-  createElement,
-  createFetcherControllerFixture
+  createOpsRefs,
+  createBaseOpsState as createOpsState
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createOpsState() {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    }
-  };
-}
-
-function createOpsRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+import { flushBackgroundTasks as flushBackground } from "./helpers/async-test-helpers.mjs";
 
 function createOpsController(overrides = {}) {
   const state = overrides.state || createOpsState();
@@ -71,13 +46,6 @@ function createOpsController(overrides = {}) {
     state,
     refs
   });
-}
-
-async function flushBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
 }
 
 test("admin ops abort acceptance renders aborting row and keeps polling compact", async () => {

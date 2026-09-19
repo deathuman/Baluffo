@@ -220,39 +220,39 @@ def _transition_state_metadata(
     return ensure_source_id(updated)
 
 
-def transition_registry_to_active(
-    row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
+def _transition_registry_state(
+    row: dict[str, Any], *, registry_state: str, reason: str, actor: str, at: str | None
 ) -> dict[str, Any]:
     return _transition_state_metadata(
         row,
-        registry_state=REGISTRY_STATE_ACTIVE,
+        registry_state=registry_state,
         reason=reason,
         actor=actor,
         at=str(at or now_iso()),
+    )
+
+
+def transition_registry_to_active(
+    row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
+) -> dict[str, Any]:
+    return _transition_registry_state(
+        row, registry_state=REGISTRY_STATE_ACTIVE, reason=reason, actor=actor, at=at
     )
 
 
 def transition_registry_to_pending(
     row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
 ) -> dict[str, Any]:
-    return _transition_state_metadata(
-        row,
-        registry_state=REGISTRY_STATE_PENDING,
-        reason=reason,
-        actor=actor,
-        at=str(at or now_iso()),
+    return _transition_registry_state(
+        row, registry_state=REGISTRY_STATE_PENDING, reason=reason, actor=actor, at=at
     )
 
 
 def transition_registry_to_rejected(
     row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
 ) -> dict[str, Any]:
-    return _transition_state_metadata(
-        row,
-        registry_state=REGISTRY_STATE_REJECTED,
-        reason=reason,
-        actor=actor,
-        at=str(at or now_iso()),
+    return _transition_registry_state(
+        row, registry_state=REGISTRY_STATE_REJECTED, reason=reason, actor=actor, at=at
     )
 
 

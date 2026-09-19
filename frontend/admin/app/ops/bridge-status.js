@@ -1,10 +1,6 @@
 import { setTooltip } from "../../../shared/ui/index.js";
 import { createVisibilityPausedInterval } from "../../../shared/visibility-poll.js";
-
-function maybeUnrefTimer(timer) {
-  timer?.unref?.();
-  return timer;
-}
+import { maybeUnrefTimer } from "../../../shared/ui-helpers.js";
 
 export function createOpsBridgeStatusController({
   state,

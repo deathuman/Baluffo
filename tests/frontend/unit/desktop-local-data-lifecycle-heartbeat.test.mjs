@@ -2,16 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createStorageMock, importFresh } from "./helpers/browser-test-helpers.mjs";
+import { flushMicrotasksWithTimer as flushMicrotasks } from "./helpers/async-test-helpers.mjs";
 
 function jsonResponse(payload) {
   return { ok: true, json: async () => payload };
-}
-
-async function flushMicrotasks(count = 5) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
-  await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 function setupDesktopGlobals() {

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createJobsDesktopUpdateController } from "../../../frontend/jobs/app/desktop-update.js";
+import { buildDesktopUpdateRefs } from "./helpers/jobs-runtime-helpers.mjs";
+const buildRefs = () => buildDesktopUpdateRefs(createElement);
 
 function createElement(text = "") {
   const values = new Set(["hidden"]);
@@ -20,20 +22,6 @@ function createElement(text = "") {
     },
     setAttribute() {},
     addEventListener() {}
-  };
-}
-
-function buildRefs() {
-  return {
-    desktopUpdateToggleBtn: createElement("Check updates"),
-    desktopUpdatePanel: createElement(),
-    desktopUpdateTitle: createElement(),
-    desktopUpdateBody: createElement(),
-    desktopUpdateMeta: createElement(),
-    desktopUpdateProgress: createElement(),
-    desktopUpdatePrimaryBtn: createElement(),
-    desktopUpdateSecondaryBtn: createElement(),
-    desktopUpdateReleaseNotes: createElement(),
   };
 }
 

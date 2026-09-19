@@ -50,23 +50,40 @@ def terminal_report_exists(
     return bool(clean_text(report.get("finishedAt")))
 
 
+def _progress_update(
+    existing: dict[str, Any] | None,
+    *,
+    active: bool,
+    phase_key: str,
+    phase_label: str,
+    updated_at: str,
+) -> dict[str, Any]:
+    progress = dict(existing or {})
+    progress.update(
+        {
+            "active": active,
+            "phaseKey": phase_key,
+            "phaseLabel": phase_label,
+            "mode": progress.get("mode") or "indeterminate",
+            "updatedAt": updated_at,
+        }
+    )
+    return progress
+
+
 def canceled_progress(
     existing: dict[str, Any] | None,
     *,
     finished_at: str,
     phase_label: str,
 ) -> dict[str, Any]:
-    progress = dict(existing or {})
-    progress.update(
-        {
-            "active": False,
-            "phaseKey": "canceled",
-            "phaseLabel": phase_label,
-            "mode": progress.get("mode") or "indeterminate",
-            "updatedAt": finished_at,
-        }
+    return _progress_update(
+        existing,
+        active=False,
+        phase_key="canceled",
+        phase_label=phase_label,
+        updated_at=finished_at,
     )
-    return progress
 
 
 def aborting_progress(
@@ -75,17 +92,13 @@ def aborting_progress(
     updated_at: str,
     phase_label: str = "Aborting...",
 ) -> dict[str, Any]:
-    progress = dict(existing or {})
-    progress.update(
-        {
-            "active": True,
-            "phaseKey": "aborting",
-            "phaseLabel": phase_label,
-            "mode": progress.get("mode") or "indeterminate",
-            "updatedAt": updated_at,
-        }
+    return _progress_update(
+        existing,
+        active=True,
+        phase_key="aborting",
+        phase_label=phase_label,
+        updated_at=updated_at,
     )
-    return progress
 
 
 def _canceled_summary(

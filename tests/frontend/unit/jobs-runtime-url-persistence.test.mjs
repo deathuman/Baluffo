@@ -8,21 +8,7 @@ import {
   parseJobsPageUrlState
 } from "../../../frontend/jobs/app/startup.js";
 import { normalizeLifecycleStatus } from "../../../frontend/jobs/app/filters.js";
-
-function createStorageMock(seed = {}) {
-  const map = new Map(Object.entries(seed).map(([key, value]) => [String(key), String(value)]));
-  return {
-    getItem(key) {
-      return map.has(key) ? map.get(key) : null;
-    },
-    setItem(key, value) {
-      map.set(String(key), String(value));
-    },
-    removeItem(key) {
-      map.delete(String(key));
-    }
-  };
-}
+import { createStorageMock } from "./helpers/browser-test-helpers.mjs";
 
 function createHarness({ desktop = true, ready = false, probe = false, search = "?q=engineer" } = {}) {
   const calls = {

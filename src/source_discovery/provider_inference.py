@@ -216,6 +216,24 @@ def _workable_candidate(
     }
 
 
+def _subdomain_candidate(
+    base: dict[str, Any],
+    host: str,
+    *,
+    domain: str,
+    api_url: str,
+) -> dict[str, Any] | None:
+    """Split ``host`` on ``domain`` into a subdomain-keyed candidate."""
+    subdomain = host.split(f".{domain}", 1)[0]
+    if not subdomain:
+        return None
+    return {
+        **base,
+        "subdomain": subdomain,
+        "api_url": api_url,
+    }
+
+
 def _recruitee_candidate(
     base: dict[str, Any],
     _parsed: ParseResult,
@@ -223,14 +241,9 @@ def _recruitee_candidate(
     _path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    subdomain = host.split(".recruitee.com", 1)[0]
-    if not subdomain:
-        return None
-    return {
-        **base,
-        "subdomain": subdomain,
-        "api_url": f"https://{host}/api/offers/",
-    }
+    return _subdomain_candidate(
+        base, host, domain="recruitee.com", api_url=f"https://{host}/api/offers/"
+    )
 
 
 def _pinpoint_candidate(
@@ -240,14 +253,9 @@ def _pinpoint_candidate(
     _path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    subdomain = host.split(".pinpointhq.com", 1)[0]
-    if not subdomain:
-        return None
-    return {
-        **base,
-        "subdomain": subdomain,
-        "api_url": f"https://{host}/postings.json",
-    }
+    return _subdomain_candidate(
+        base, host, domain="pinpointhq.com", api_url=f"https://{host}/postings.json"
+    )
 
 
 def _teamtailor_candidate(
@@ -298,6 +306,25 @@ def _bamboohr_candidate(
     }
 
 
+def _board_url_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    *,
+    domain: str,
+    board_path: str,
+) -> dict[str, Any] | None:
+    """Build a ``board_url`` candidate for a host under ``domain``."""
+    account = host.split(f".{domain}", 1)[0]
+    if not account:
+        return None
+    scheme = parsed.scheme or "https"
+    return {
+        **base,
+        "board_url": f"{scheme}://{host}{board_path}",
+    }
+
+
 def _breezy_candidate(
     base: dict[str, Any],
     parsed: ParseResult,
@@ -305,14 +332,7 @@ def _breezy_candidate(
     _path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    account = host.split(".breezy.hr", 1)[0]
-    if not account:
-        return None
-    scheme = parsed.scheme or "https"
-    return {
-        **base,
-        "board_url": f"{scheme}://{host}/",
-    }
+    return _board_url_candidate(base, parsed, host, domain="breezy.hr", board_path="/")
 
 
 def _jazzhr_candidate(
@@ -322,14 +342,7 @@ def _jazzhr_candidate(
     _path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    account = host.split(".applytojob.com", 1)[0]
-    if not account:
-        return None
-    scheme = parsed.scheme or "https"
-    return {
-        **base,
-        "board_url": f"{scheme}://{host}/apply",
-    }
+    return _board_url_candidate(base, parsed, host, domain="applytojob.com", board_path="/apply")
 
 
 def _oracle_hcm_candidate(

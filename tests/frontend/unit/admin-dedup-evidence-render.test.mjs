@@ -1,14 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
-
-function makeEl() {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: () => []
-  };
-}
+import { createRenderEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
 test("admin render: fetcher metrics render read-only dedup evidence", () => {
   const metricsEl = makeEl();

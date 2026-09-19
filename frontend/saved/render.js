@@ -9,15 +9,8 @@ import {
   renderApplicationTrackingControls as renderApplicationTrackingControlsFromModule,
   renderPhaseBar as renderPhaseBarFromTrackingUi
 } from "./app/tracking-ui.js";
-
-function renderAvailabilityCheckIcon() {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  `;
-}
+import { resolveNowMs } from "../shared/format-utils.js";
+import { renderAvailabilityCheckIcon } from "../shared/ui-helpers.js";
 
 function renderAvailabilityReportIcon(isClear) {
   return isClear
@@ -274,12 +267,6 @@ export function parseIsoDate(value) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function resolveNowMs(value) {
-  if (typeof value === "function") return Number(value()) || Date.now();
-  if (value instanceof Date) return value.getTime();
-  return Number(value) || Date.now();
 }
 
 export function getReminderMeta(reminderAt, options = {}) {

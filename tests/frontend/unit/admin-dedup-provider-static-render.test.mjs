@@ -1,25 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
-
-function makeEl(buttonsBySelector = {}) {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: selector => buttonsBySelector[selector] || []
-  };
-}
-
-function makeAttrButton(attrs) {
-  return {
-    getAttribute(name) {
-      return attrs[name] || "";
-    },
-    addEventListener(_event, handler) {
-      this.click = handler;
-    }
-  };
-}
+import {
+  createButtonMapEl as makeEl,
+  createAttrButton as makeAttrButton
+} from "./helpers/dom-test-helpers.mjs";
 
 test("admin render: provider/static disagreement examples are read-only", () => {
   const metricsEl = makeEl();

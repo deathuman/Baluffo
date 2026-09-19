@@ -211,39 +211,40 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
                 target["progress"] = dict(progress)
             return self._upsert_locked(target)
 
-    def finish_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+    def _end_run(
+        self, run_id: str, task_type: str, *, status: str, default_reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
         return self._terminal_run(
             run_id=run_id,
             task_type=task_type,
+            status=status,
+            terminal_reason=kwargs.pop("terminal_reason", default_reason),
+            **kwargs,
+        )
+
+    def finish_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        return self._end_run(
+            run_id,
+            task_type,
             status="succeeded",
-            terminal_reason=kwargs.pop("terminal_reason", "completed"),
+            default_reason="completed",
             **kwargs,
         )
 
     def fail_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._terminal_run(
-            run_id=run_id,
-            task_type=task_type,
-            status="failed",
-            terminal_reason=kwargs.pop("terminal_reason", "failed"),
-            **kwargs,
-        )
+        return self._end_run(run_id, task_type, status="failed", default_reason="failed", **kwargs)
 
     def cancel_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._terminal_run(
-            run_id=run_id,
-            task_type=task_type,
-            status="canceled",
-            terminal_reason=kwargs.pop("terminal_reason", "canceled"),
-            **kwargs,
+        return self._end_run(
+            run_id, task_type, status="canceled", default_reason="canceled", **kwargs
         )
 
     def orphan_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._terminal_run(
-            run_id=run_id,
-            task_type=task_type,
+        return self._end_run(
+            run_id,
+            task_type,
             status="orphaned",
-            terminal_reason=kwargs.pop("terminal_reason", "owner_inactive_without_terminal_report"),
+            default_reason="owner_inactive_without_terminal_report",
             **kwargs,
         )
 

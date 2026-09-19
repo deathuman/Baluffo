@@ -8,11 +8,7 @@ import {
   stubDateNow,
   stubScheduledTimers
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-}
+import { flushMicrotaskPair as flushBackground } from "./helpers/async-test-helpers.mjs";
 
 function syncTaskState(tasks) {
   return { tasks, count: tasks.length, summary: true };

@@ -8,37 +8,9 @@ import {
   shouldExposeJobsDesktopUpdateStatus,
   shouldPollDesktopUpdateStatus
 } from "../../../frontend/jobs/app/desktop-update.js";
-
-function createClassList(initial = []) {
-  const values = new Set(initial);
-  return {
-    add(...tokens) {
-      tokens.forEach(token => values.add(token));
-    },
-    remove(...tokens) {
-      tokens.forEach(token => values.delete(token));
-    },
-    toggle(token, force) {
-      if (force === true) {
-        values.add(token);
-        return true;
-      }
-      if (force === false) {
-        values.delete(token);
-        return false;
-      }
-      if (values.has(token)) {
-        values.delete(token);
-        return false;
-      }
-      values.add(token);
-      return true;
-    },
-    contains(token) {
-      return values.has(token);
-    }
-  };
-}
+import { createClassList } from "./helpers/dom-test-helpers.mjs";
+import { buildDesktopUpdateRefs } from "./helpers/jobs-runtime-helpers.mjs";
+const buildRefs = () => buildDesktopUpdateRefs(createElement);
 
 function createElement(text = "") {
   const listeners = new Map();
@@ -61,20 +33,6 @@ function createElement(text = "") {
         ...event
       });
     }
-  };
-}
-
-function buildRefs() {
-  return {
-    desktopUpdateToggleBtn: createElement("Check updates"),
-    desktopUpdatePanel: createElement(),
-    desktopUpdateTitle: createElement(),
-    desktopUpdateBody: createElement(),
-    desktopUpdateMeta: createElement(),
-    desktopUpdateProgress: createElement(),
-    desktopUpdatePrimaryBtn: createElement(),
-    desktopUpdateSecondaryBtn: createElement(),
-    desktopUpdateReleaseNotes: createElement(),
   };
 }
 

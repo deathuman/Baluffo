@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { ruleBodies } from "./helpers/dom-test-helpers.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -30,14 +31,6 @@ const mobileBlock = mediaBlocks
   .join("\n");
 
 /** All rule bodies whose selector list contains `selector` exactly. */
-function ruleBodies(source, selector) {
-  const bodies = [];
-  for (const match of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selectors = match[1].split(",").map((part) => part.trim());
-    if (selectors.includes(selector)) bodies.push(match[2]);
-  }
-  return bodies;
-}
 
 test("saved table tracks use zero floors so they cannot overflow the document", () => {
   const rowRule = css.match(/\.saved-row-header,\s*\.saved-job-row\s*\{[\s\S]*?\n\}/)?.[0] || "";

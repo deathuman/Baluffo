@@ -5,11 +5,7 @@ import {
   createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-}
+import { flushMicrotaskPair as flushAdminOpsBackground } from "./helpers/async-test-helpers.mjs";
 
 test("admin ops pipeline schedule controls post normalized settings", async () => {
   const listeners = {};

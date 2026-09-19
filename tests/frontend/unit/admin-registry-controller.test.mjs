@@ -8,41 +8,11 @@ import {
   createRegistryControllerFixture,
   withDom
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-async function flushMicrotasks(count = 5) {
-  for (let index = 0; index < count; index += 1) {
-    await Promise.resolve();
-  }
-}
-
-function registrySourcesPayload({
-  pending = [],
-  active = [],
-  rejected = [],
-  summary = {}
-} = {}) {
-  return {
-    ok: true,
-    sources: { pending, active, rejected },
-    summary: {
-      activeCount: active.length,
-      pendingCount: pending.length,
-      rejectedCount: rejected.length,
-      hiddenPendingCount: 0,
-      ...summary
-    }
-  };
-}
+import { registrySourcesPayload } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  createDeferredWithReject as createDeferred,
+  flushMicrotasks
+} from "./helpers/async-test-helpers.mjs";
 
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {
   const state = {

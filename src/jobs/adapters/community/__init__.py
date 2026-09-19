@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Dict, List
 from urllib.parse import urljoin
 
@@ -236,20 +236,28 @@ def run_remotive_source(
     )
 
 
-def run_gamesindustry_source(
+def _run_multi_url_source(
+    urls: Sequence[str],
+    parse_html: Callable[[str, str], list[RawJob]],
     *,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
     retries: int,
     backoff_s: float,
 ) -> list[RawJob]:
+    """Try every URL in ``urls``, keeping parsed rows and per-URL errors.
+
+    Shared body for the multi-URL community adapters: each URL is attempted
+    through ``run_recoverable_adapter_attempt``, parsed rows accumulate, and
+    the accumulated errors are raised only when nothing parsed.
+    """
     jobs: list[RawJob] = []
     errors: list[str] = []
-    for url in GAMES_INDUSTRY_URLS:
+    for url in urls:
 
         def _attempt(url: str = url) -> list[RawJob]:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            return parse_gamesindustry_html(text, base_url=url)
+            return parse_html(text, base_url=url)
 
         def _record_error(exc: Exception, url: str = url) -> None:
             errors.append(f"{url}: {exc}")
@@ -262,6 +270,23 @@ def run_gamesindustry_source(
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
+
+
+def run_gamesindustry_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> list[RawJob]:
+    return _run_multi_url_source(
+        GAMES_INDUSTRY_URLS,
+        parse_gamesindustry_html,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
 
 
 _GAMEJOBS_CARD_PATTERN = re.compile(
@@ -597,25 +622,14 @@ def run_workwithindies_source(
     retries: int,
     backoff_s: float,
 ) -> list[RawJob]:
-    jobs: list[RawJob] = []
-    errors: list[str] = []
-    for url in WORKWITHINDIES_URLS:
-
-        def _attempt(url: str = url) -> list[RawJob]:
-            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            return parse_workwithindies_html(text, base_url=url)
-
-        def _record_error(exc: Exception, url: str = url) -> None:
-            errors.append(f"{url}: {exc}")
-
-        parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
-        if parsed:
-            jobs.extend(parsed)
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
+    return _run_multi_url_source(
+        WORKWITHINDIES_URLS,
+        parse_workwithindies_html,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
 
 
 def run_8bitplay_source(
@@ -718,22 +732,11 @@ def run_gracklehq_source(
 def run_wellfound_source(
     *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
 ) -> list[RawJob]:
-    jobs: list[RawJob] = []
-    errors: list[str] = []
-    for url in WELLFOUND_URLS:
-
-        def _attempt(url: str = url) -> list[RawJob]:
-            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            return parse_wellfound_html(text, base_url=url)
-
-        def _record_error(exc: Exception, url: str = url) -> None:
-            errors.append(f"{url}: {exc}")
-
-        parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
-        if parsed:
-            jobs.extend(parsed)
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
+    return _run_multi_url_source(
+        WELLFOUND_URLS,
+        parse_wellfound_html,
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )

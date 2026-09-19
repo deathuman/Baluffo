@@ -426,3 +426,68 @@ export function createFetcherControllerFixture({
 }
 
 export { FakeInputElement };
+
+export function createOpsRefs() {
+  return {
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+}
+
+export function createOpsState(extra = {}) {
+  return {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    },
+    ...extra
+  };
+}
+
+export function createBaseOpsState() {
+  const { latestOpsHealthCache, adminBusyState } = createOpsState();
+  return { latestOpsHealthCache, adminBusyState };
+}
+
+export function createOpsTabButton(key) {
+  const listeners = {};
+  return createElement({
+    dataset: { opsTab: key },
+    tabIndex: 0,
+    addEventListener(type, handler) {
+      listeners[type] = handler;
+    },
+    click() {
+      listeners.click?.();
+    }
+  });
+}
+
+export function registrySourcesPayload({
+  pending = [],
+  active = [],
+  rejected = [],
+  summary = {}
+} = {}) {
+  return {
+    ok: true,
+    sources: { pending, active, rejected },
+    summary: {
+      activeCount: active.length,
+      pendingCount: pending.length,
+      rejectedCount: rejected.length,
+      hiddenPendingCount: 0,
+      ...summary
+    }
+  };
+}

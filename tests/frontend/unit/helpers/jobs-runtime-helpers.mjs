@@ -1,33 +1,4 @@
-function createClassList(initial = []) {
-  const values = new Set(initial);
-  return {
-    add(...tokens) {
-      tokens.forEach(token => values.add(token));
-    },
-    remove(...tokens) {
-      tokens.forEach(token => values.delete(token));
-    },
-    toggle(token, force) {
-      if (force === true) {
-        values.add(token);
-        return true;
-      }
-      if (force === false) {
-        values.delete(token);
-        return false;
-      }
-      if (values.has(token)) {
-        values.delete(token);
-        return false;
-      }
-      values.add(token);
-      return true;
-    },
-    contains(token) {
-      return values.has(token);
-    }
-  };
-}
+import { createClassList } from "./dom-test-helpers.mjs";
 
 export function createElement(overrides = {}) {
   const listeners = new Map();
@@ -68,5 +39,19 @@ export function createElement(overrides = {}) {
       return null;
     },
     ...overrides
+  };
+}
+
+export function buildDesktopUpdateRefs(createElement) {
+  return {
+    desktopUpdateToggleBtn: createElement("Check updates"),
+    desktopUpdatePanel: createElement(),
+    desktopUpdateTitle: createElement(),
+    desktopUpdateBody: createElement(),
+    desktopUpdateMeta: createElement(),
+    desktopUpdateProgress: createElement(),
+    desktopUpdatePrimaryBtn: createElement(),
+    desktopUpdateSecondaryBtn: createElement(),
+    desktopUpdateReleaseNotes: createElement(),
   };
 }

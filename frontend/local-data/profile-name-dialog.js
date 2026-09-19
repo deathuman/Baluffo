@@ -1,4 +1,5 @@
 import { presentPopup } from "../shared/ui/popup-presentation.js";
+import { createModalCleanup, escapeKeyDismissHandler, focusWithPreventScroll } from "../shared/ui-helpers.js";
 
 function getDocumentTarget() {
   if (typeof document === "undefined" || !document || !document.body) {
@@ -135,29 +136,17 @@ export async function requestTextInputDialog({
       form.appendChild(datalist);
     }
 
-    let finished = false;
     let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
 
-    function cleanup(result) {
-      if (finished) return;
-      finished = true;
-      doc.removeEventListener("keydown", onKeyDown, true);
-      overlay.remove();
-      if (previousActiveElement && doc.contains(previousActiveElement)) {
-        try {
-          previousActiveElement.focus({ preventScroll: true });
-        } catch {
-          previousActiveElement.focus();
-        }
-      }
-      resolve(result);
-    }
+    const cleanup = createModalCleanup({
+      doc,
+      overlay,
+      previousActiveElement,
+      getKeyHandler: () => onKeyDown,
+      onDone: resolve
+    });
 
-    function onKeyDown(event) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      cleanup(null);
-    }
+    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
 
     cancelBtn.addEventListener("click", () => cleanup(null));
     overlay.addEventListener("click", event => {
@@ -179,11 +168,7 @@ export async function requestTextInputDialog({
     presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
     const focusInput = () => {
-      try {
-        input.focus({ preventScroll: true });
-      } catch {
-        input.focus();
-      }
+      focusWithPreventScroll(input);
       input.select();
     };
     if (typeof window.requestAnimationFrame === "function") {
@@ -335,31 +320,19 @@ export async function requestProfileName({
     }
     inputEl.value = newProfileName;
 
-    let finished = false;
     let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
 
-    function cleanup(result) {
-      if (finished) return;
-      finished = true;
-      doc.removeEventListener("keydown", onKeyDown, true);
-      overlay.remove();
-      if (previousActiveElement && doc.contains(previousActiveElement)) {
-        try {
-          previousActiveElement.focus({ preventScroll: true });
-        } catch {
-          previousActiveElement.focus();
-        }
-      }
-      resolve(result);
-    }
+    const cleanup = createModalCleanup({
+      doc,
+      overlay,
+      previousActiveElement,
+      getKeyHandler: () => onKeyDown,
+      onDone: resolve
+    });
 
     function focusCurrentField() {
       const target = createMode ? inputEl : selectEl;
-      try {
-        target.focus({ preventScroll: true });
-      } catch {
-        target.focus();
-      }
+      focusWithPreventScroll(target);
       if (createMode && typeof inputEl.select === "function") {
         inputEl.select();
       }
@@ -386,11 +359,7 @@ export async function requestProfileName({
       queueMicrotask(focusCurrentField);
     }
 
-    function onKeyDown(event) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      cleanup(null);
-    }
+    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
 
     createToggleBtn.addEventListener("click", () => {
       if (createMode) {
@@ -494,29 +463,17 @@ export async function requestProfileLoadFailureAction({
     createBtn.type = "button";
     createBtn.textContent = "Create new profile";
 
-    let finished = false;
     let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
 
-    function cleanup(result) {
-      if (finished) return;
-      finished = true;
-      doc.removeEventListener("keydown", onKeyDown, true);
-      overlay.remove();
-      if (previousActiveElement && doc.contains(previousActiveElement)) {
-        try {
-          previousActiveElement.focus({ preventScroll: true });
-        } catch {
-          previousActiveElement.focus();
-        }
-      }
-      resolve(result);
-    }
+    const cleanup = createModalCleanup({
+      doc,
+      overlay,
+      previousActiveElement,
+      getKeyHandler: () => onKeyDown,
+      onDone: resolve
+    });
 
-    function onKeyDown(event) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      cleanup(null);
-    }
+    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
 
     cancelBtn.addEventListener("click", () => cleanup(null));
     retryBtn.addEventListener("click", () => cleanup("retry"));
@@ -532,13 +489,7 @@ export async function requestProfileLoadFailureAction({
     doc.body.appendChild(overlay);
     presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
-    const focusRetry = () => {
-      try {
-        retryBtn.focus({ preventScroll: true });
-      } catch {
-        retryBtn.focus();
-      }
-    };
+    const focusRetry = () => focusWithPreventScroll(retryBtn);
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(focusRetry);
     } else {
@@ -595,23 +546,15 @@ export async function requestConfirmationDialog({
     confirmBtn.type = "button";
     confirmBtn.textContent = String(confirmLabel || "Confirm");
 
-    let finished = false;
     let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
 
-    function cleanup(result) {
-      if (finished) return;
-      finished = true;
-      doc.removeEventListener("keydown", onKeyDown, true);
-      overlay.remove();
-      if (previousActiveElement && doc.contains(previousActiveElement)) {
-        try {
-          previousActiveElement.focus({ preventScroll: true });
-        } catch {
-          previousActiveElement.focus();
-        }
-      }
-      resolve(Boolean(result));
-    }
+    const cleanup = createModalCleanup({
+      doc,
+      overlay,
+      previousActiveElement,
+      getKeyHandler: () => onKeyDown,
+      onDone: result => resolve(Boolean(result))
+    });
 
     function onKeyDown(event) {
       if (event.key === "Escape") {
@@ -638,13 +581,7 @@ export async function requestConfirmationDialog({
     doc.body.appendChild(overlay);
     presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
-    const focusConfirm = () => {
-      try {
-        confirmBtn.focus({ preventScroll: true });
-      } catch {
-        confirmBtn.focus();
-      }
-    };
+    const focusConfirm = () => focusWithPreventScroll(confirmBtn);
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(focusConfirm);
     } else {

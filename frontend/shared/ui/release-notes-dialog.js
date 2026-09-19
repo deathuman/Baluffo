@@ -1,4 +1,5 @@
 import { presentPopup } from "./popup-presentation.js";
+import { escapeKeyDismissHandler, focusWithPreventScroll } from "../ui-helpers.js";
 
 function getDocumentTarget(documentTarget = globalThis?.document) {
   if (!documentTarget || !documentTarget.body || typeof documentTarget.createElement !== "function") {
@@ -370,11 +371,7 @@ export function openReleaseNotesDialog({
     }
   }
 
-  function onKeyDown(event) {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    cleanup();
-  }
+  const onKeyDown = escapeKeyDismissHandler(cleanup);
 
   closeBtn.addEventListener("click", cleanup);
   overlay.addEventListener("click", event => {
@@ -408,13 +405,7 @@ export function openReleaseNotesDialog({
   doc.body.appendChild(overlay);
   presentPopup(overlay, panel, { windowTarget });
 
-  const focusClose = () => {
-    try {
-      closeBtn.focus({ preventScroll: true });
-    } catch {
-      closeBtn.focus();
-    }
-  };
+  const focusClose = () => focusWithPreventScroll(closeBtn);
   if (typeof windowTarget?.requestAnimationFrame === "function") {
     windowTarget.requestAnimationFrame(focusClose);
   } else {

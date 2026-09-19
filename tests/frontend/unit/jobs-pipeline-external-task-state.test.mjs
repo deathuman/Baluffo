@@ -4,19 +4,8 @@ import assert from "node:assert/strict";
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
 import { JOBS_UPDATE_COPY } from "../../../frontend/jobs/app/pipeline.js";
-
-function createClassList() {
-  const values = new Set();
-  return {
-    toggle(name, enabled) {
-      if (enabled) values.add(name);
-      else values.delete(name);
-    },
-    contains(name) {
-      return values.has(name);
-    }
-  };
-}
+import { createToggleClassList as createClassList } from "./helpers/dom-test-helpers.mjs";
+import { installFakeTimers } from "./helpers/jobs-pipeline-controller-helpers.mjs";
 
 function createStyle() {
   return {
@@ -102,17 +91,6 @@ function createButtonMock() {
     children.push(node);
   };
   return button;
-}
-
-function installFakeTimers() {
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = callback => ({ callback });
-  globalThis.clearTimeout = () => {};
-  return () => {
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
-  };
 }
 
 function createBootstrapTask(runId) {

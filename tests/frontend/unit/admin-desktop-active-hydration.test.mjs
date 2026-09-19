@@ -4,42 +4,15 @@ import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { renderAdminOpsKpis, renderAdminOpsSchedule } from "../../../frontend/admin/render.js";
 import {
-  createClassList,
-  createElement
+  createOpsRefs as createRefs,
+  createBaseOpsState as createState
 } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  flushBackgroundTasks as flushBackground,
+  flushMicrotasks
+} from "./helpers/async-test-helpers.mjs";
 
-async function flushBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
-}
-
-function createState() {
-  return {
-    latestOpsHealthCache: null,
-    adminBusyState: {
-      opsLoad: false,
-      liveFetchRunning: false,
-      liveDiscoveryRunning: false,
-      liveSyncRunning: false,
-      livePipelineRunning: false
-    }
-  };
-}
-
-function createRefs() {
-  return {
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
-    adminOpsAlertsEl: createElement(),
-    adminOpsKpisEl: createElement(),
-    adminOpsScheduleEl: createElement(),
-    adminOpsFetcherMetricsEl: createElement(),
-    adminOpsHistoryEl: createElement(),
-    adminOpsTrendsEl: createElement(),
-    adminRegistryConflictsReviewEl: createElement()
-  };
-}
+const drainPromises = () => flushMicrotasks(8);
 
 function createController({ state, refs, getBridge }) {
   return createAdminOpsController({
@@ -155,12 +128,6 @@ test("desktop active pipeline renders compact KPI and schedule summaries", async
   assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /loading schedule/);
   assert.doesNotMatch(refs.adminOpsScheduleEl.innerHTML, /data-ui="admin-pipeline-schedule-enabled"[^>]*disabled/);
 });
-
-async function drainPromises() {
-  for (let round = 0; round < 8; round += 1) {
-    await Promise.resolve();
-  }
-}
 
 test("empty-normalized schedule payload during active run arms retry and recovers", async t => {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });

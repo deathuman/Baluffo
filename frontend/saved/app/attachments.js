@@ -1,3 +1,5 @@
+import { isImageAttachment } from "../../shared/ui-helpers.js";
+
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
 
 function getFileExtension(name) {
@@ -11,13 +13,6 @@ function formatFileSize(bytes) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isImageAttachment(attachment) {
-  const type = String(attachment?.type || "").toLowerCase();
-  if (type === "image/png" || type === "image/jpeg") return true;
-  const ext = getFileExtension(attachment?.name || "");
-  return ext === "png" || ext === "jpg" || ext === "jpeg";
 }
 
 function isAllowedAttachment(file) {

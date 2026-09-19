@@ -7,13 +7,7 @@ import {
   createDeferredRenderScheduler,
   createElement
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await Promise.resolve();
-}
+import { flushBackgroundTasks as flushAdminOpsBackground } from "./helpers/async-test-helpers.mjs";
 
 test("admin ops controller renders active pipeline from status when dashboard health is delayed", async () => {
   const state = {

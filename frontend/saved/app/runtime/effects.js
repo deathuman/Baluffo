@@ -1,3 +1,5 @@
+import { createElapsedMsTracker } from "../../../shared/perf-marks.js";
+
 export function createSavedStartupMetrics({
   emitMetric,
   now = () => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now())
@@ -5,13 +7,7 @@ export function createSavedStartupMetrics({
   let sent = false;
   let renderSent = false;
   const startedAtMs = Number(now()) || 0;
-  function withElapsedMs(payload = {}) {
-    if (Object.prototype.hasOwnProperty.call(payload, "elapsedMs")) return payload;
-    return {
-      ...payload,
-      elapsedMs: Math.max(0, Math.round((Number(now()) || startedAtMs) - startedAtMs))
-    };
-  }
+  const withElapsedMs = createElapsedMsTracker(now, startedAtMs);
   return {
     emit(event, payload = {}) {
       emitMetric(event, withElapsedMs(payload));

@@ -1,4 +1,5 @@
 import { presentPopup } from "../../shared/ui/popup-presentation.js";
+import { escapeKeyDismissHandler, focusWithPreventScroll } from "../../shared/ui-helpers.js";
 
 function isFocusableElement(value) {
   return Boolean(value && typeof value === "object" && typeof value.focus === "function");
@@ -69,11 +70,7 @@ export function openFirstRunJobsNotice({
     }
   }
 
-  function onKeyDown(event) {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    cleanup();
-  }
+  const onKeyDown = escapeKeyDismissHandler(cleanup);
 
   dismissBtn.addEventListener("click", cleanup);
   overlay.addEventListener("click", event => {
@@ -87,13 +84,7 @@ export function openFirstRunJobsNotice({
   doc.body.appendChild(overlay);
   presentPopup(overlay, panel, { windowTarget: win });
 
-  const focusDismiss = () => {
-    try {
-      dismissBtn.focus({ preventScroll: true });
-    } catch {
-      dismissBtn.focus();
-    }
-  };
+  const focusDismiss = () => focusWithPreventScroll(dismissBtn);
   if (typeof win?.requestAnimationFrame === "function") {
     win.requestAnimationFrame(focusDismiss);
   } else {

@@ -6,20 +6,7 @@ import {
   createDeferredRenderScheduler,
   createElement
 } from "./helpers/admin-controller-test-helpers.mjs";
-
-function createTabButton(key) {
-  const listeners = {};
-  return createElement({
-    dataset: { opsTab: key },
-    tabIndex: 0,
-    addEventListener(type, handler) {
-      listeners[type] = handler;
-    },
-    click() {
-      listeners.click?.();
-    }
-  });
-}
+import { createOpsTabButton as createTabButton } from "./helpers/admin-controller-test-helpers.mjs";
 
 test("admin ops controller updates tab badges from loaded review payloads", async () => {
   const state = {
