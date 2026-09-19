@@ -1,66 +1,136 @@
-"""Web-search candidate generation helpers.
+"""Thin coordinator composing the web-search candidate leaves.
 
-AI boundary owns: web-search result normalization, candidate extraction, and evidence shaping.
-AI boundary implement in: this file for web-search candidate generation; fetch/extract primitives stay in web_search_* leaves.
-AI boundary search before contracts: web search config/fetch/extract modules, orchestrator generation, and web search tests.
-AI boundary verify: `npm run lint:repo-guardrails` plus focused web-search discovery tests.
+AI boundary owns: the two web-search discovery entry points and re-export of every leaf unit.
+AI boundary implement in: the web_search_*/web_page_* leaves for behavior; this file for composition and re-exports only.
+AI boundary search before contracts: orchestrator and web_search entry points, directory audit specs, and web search tests.
+AI boundary verify: `python -m pytest tests/source_discovery/test_web_search_directory_audit.py tests/source_discovery/test_web_search_candidates.py -q`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-import time
+import hashlib as hashlib
+import json as json
+import time as time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus as quote_plus
+from urllib.parse import urlparse as urlparse
 
-from src.shared.regex import find_urls_in_text
+from src.shared.regex import find_urls_in_text as find_urls_in_text
 from src.shared.utils import now_iso
-from src.source_registry import unique_sources
-from src.source_registry_io import load_json_object
+from src.source_registry import unique_sources as unique_sources
+from src.source_registry_io import load_json_object as load_json_object
 
-from . import audit_ledger, candidate_collections
+from . import audit_ledger as audit_ledger
 from . import browser_recovery as browser_recovery_helpers
-from .config import (
-    DEFAULT_DISCOVERY_CONFIG,
-    DUCKDUCKGO_HTML_SEARCH,
-    MAX_SEARCH_LINKS_PER_QUERY,
-    WEB_SEARCH_QUERY_SUFFIX,
-)
+from . import candidate_collections as candidate_collections
+from .config import DEFAULT_DISCOVERY_CONFIG as DEFAULT_DISCOVERY_CONFIG
+from .config import DUCKDUCKGO_HTML_SEARCH as DUCKDUCKGO_HTML_SEARCH
+from .config import MAX_SEARCH_LINKS_PER_QUERY as MAX_SEARCH_LINKS_PER_QUERY
+from .config import WEB_SEARCH_QUERY_SUFFIX as WEB_SEARCH_QUERY_SUFFIX
 from .directory_audit import (
     DirectoryAuditRunSpec,
     run_directory_audit_spec,
 )
-from .directory_fetch_jobs import build_directory_fetch_job
+from .directory_fetch_jobs import build_directory_fetch_job as build_directory_fetch_job
+from .directory_page_recovery import DEFAULT_RECOVERY_URL_LIMIT as DEFAULT_RECOVERY_URL_LIMIT
+from .directory_page_recovery import RECOVERY_LOGIC_VERSION as RECOVERY_LOGIC_VERSION
+from .directory_page_recovery import DirectoryRecoveryRequest as DirectoryRecoveryRequest
+from .directory_page_recovery import apply_recovery_to_scan_result as apply_recovery_to_scan_result
 from .directory_page_recovery import (
-    DEFAULT_RECOVERY_URL_LIMIT,
-    RECOVERY_LOGIC_VERSION,
-    DirectoryRecoveryRequest,
-    apply_recovery_to_scan_result,
-    http_recovery_request_from_context,
-    merge_scan_result_payloads,
-    recovery_result_candidates_from_strategy,
-    run_recovery_for_requests,
+    http_recovery_request_from_context as http_recovery_request_from_context,
 )
-from .page_diagnostics import browser_recoverable_error, looks_like_js_shell
+from .directory_page_recovery import merge_scan_result_payloads as merge_scan_result_payloads
+from .directory_page_recovery import (
+    recovery_result_candidates_from_strategy as recovery_result_candidates_from_strategy,
+)
+from .directory_page_recovery import run_recovery_for_requests as run_recovery_for_requests
+from .page_diagnostics import browser_recoverable_error as browser_recoverable_error
+from .page_diagnostics import looks_like_js_shell as looks_like_js_shell
+from .page_outcomes import FetchedPageContext as FetchedPageContext
+from .page_outcomes import PageOutcome as PageOutcome
+from .page_outcomes import PageOutcomeStrategy as PageOutcomeStrategy
 from .page_outcomes import (
-    FetchedPageContext,
-    PageOutcome,
-    PageOutcomeStrategy,
-    classify_fetched_page_with_strategy,
-    static_page_outcome_builders,
+    classify_fetched_page_with_strategy as classify_fetched_page_with_strategy,
 )
-from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
-from .probe_runtime import (
-    candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
+from .page_outcomes import static_page_outcome_builders as static_page_outcome_builders
+from .prevalidated_queue_policy import (
+    apply_prevalidated_queue_overrides as apply_prevalidated_queue_overrides,
 )
-from .probe_runtime import (
-    rendered_static_probe_result,
+from .probe_runtime import rendered_static_probe_result as rendered_static_probe_result
+from .provider_inference import infer_provider_adapter as infer_provider_adapter
+from .provider_inference import provider_candidate as provider_candidate
+from .scoring import careers_keyword_count as careers_keyword_count
+from .scoring import studio_domain_match as studio_domain_match
+from .scoring import unique_string_list as unique_string_list
+from .web_browser_recovery import (
+    _analyze_web_browser_recovery_batch as _analyze_web_browser_recovery_batch,
 )
-from .provider_inference import infer_provider_adapter, provider_candidate
-from .provider_inference import infer_web_candidate as shared_infer_web_candidate
-from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
+from .web_browser_recovery import (
+    _analyze_web_browser_recovery_fetches as _analyze_web_browser_recovery_fetches,
+)
+from .web_browser_recovery import (
+    _analyze_web_browser_recovery_success as _analyze_web_browser_recovery_success,
+)
+from .web_browser_recovery import (
+    _apply_web_browser_recovery_probe_results as _apply_web_browser_recovery_probe_results,
+)
+from .web_browser_recovery import (
+    _browser_static_probe_result_from_rendered_html as _browser_static_probe_result_from_rendered_html,
+)
+from .web_browser_recovery import _candidate_with_probe_evidence as _candidate_with_probe_evidence
+from .web_browser_recovery import (
+    _finalize_web_browser_recovery_candidates as _finalize_web_browser_recovery_candidates,
+)
+from .web_browser_recovery import (
+    _initial_web_search_browser_recovery_artifact as _initial_web_search_browser_recovery_artifact,
+)
+from .web_browser_recovery import (
+    _load_web_search_browser_recovery_artifact as _load_web_search_browser_recovery_artifact,
+)
+from .web_browser_recovery import (
+    _record_web_browser_recovery_fetch_failure as _record_web_browser_recovery_fetch_failure,
+)
+from .web_browser_recovery import (
+    _validated_web_browser_recovery_rows as _validated_web_browser_recovery_rows,
+)
+from .web_candidate_inference import _ATS_HTML_SIGNATURES as _ATS_HTML_SIGNATURES
+from .web_candidate_inference import (
+    infer_provider_candidates_from_html as infer_provider_candidates_from_html,
+)
+from .web_candidate_inference import infer_web_candidate as infer_web_candidate
+from .web_page_job_stage import (
+    _append_browser_recovery_candidate as _append_browser_recovery_candidate,
+)
+from .web_page_job_stage import _page_job as _page_job
+from .web_page_job_stage import _record_web_page_result as _record_web_page_result
+from .web_page_job_stage import _run_web_http_recovery as _run_web_http_recovery
+from .web_page_job_stage import _run_web_page_job_stage as _run_web_page_job_stage
+from .web_page_job_stage import _web_recovery_result_candidates as _web_recovery_result_candidates
+from .web_page_outcomes import _append_page_analysis_outcome as _append_page_analysis_outcome
+from .web_page_outcomes import _web_page_analysis_outcome as _web_page_analysis_outcome
+from .web_search_audit_contracts import (
+    _PREVALIDATED_BROWSER_DOMAIN_CAP as _PREVALIDATED_BROWSER_DOMAIN_CAP,
+)
+from .web_search_audit_contracts import (
+    _PREVALIDATED_BROWSER_QUEUE_CAP as _PREVALIDATED_BROWSER_QUEUE_CAP,
+)
+from .web_search_audit_contracts import (
+    WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT as WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT,
+)
+from .web_search_audit_contracts import (
+    WEB_SEARCH_AUDIT_SAMPLE_LIMIT as WEB_SEARCH_AUDIT_SAMPLE_LIMIT,
+)
+from .web_search_audit_contracts import (
+    WEB_SEARCH_AUDIT_SCHEMA_VERSION as WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+)
+from .web_search_audit_contracts import (
+    WEB_SEARCH_RECOVERY_SUMMARY_KEYS as WEB_SEARCH_RECOVERY_SUMMARY_KEYS,
+)
+from .web_search_audit_contracts import _append_bounded_sample as _append_bounded_sample
+from .web_search_audit_contracts import _recovery_summary_fields as _recovery_summary_fields
+from .web_search_audit_signature import _seed_catalog_signature as _seed_catalog_signature
+from .web_search_audit_signature import _web_search_audit_signature as _web_search_audit_signature
 from .web_search_config import (
     _web_search_audit_path,
     _web_search_audit_ttl_minutes,
@@ -73,1027 +143,21 @@ from .web_search_config import (
     _web_search_recovery_enabled,
     _web_search_recovery_url_limit,
 )
-from .web_search_extract import extract_links_from_html
-from .web_search_fetch import fetch_text, is_expected_web_search_fetch_failure
-
-# Map of (adapter_name, html_substring_signature) for detecting
-# ATS providers on custom domains via HTML content inspection.
-# Only included adapters whose candidate builders are either:
-#   a) truly runtime-flexible (BambooHR, Teamtailor — use any domain), or
-#   b) safely return None on custom domains (Workday, SmartRecruiters).
-# Greenhouse, Lever, and Workable are excluded because their builders
-# fall through to path-based slug/account extraction that produces
-# garbage on arbitrary URLs (e.g. slug="jobs" from /jobs path).
-_ATS_HTML_SIGNATURES: list[tuple[str, str]] = [
-    ("bamboohr", "bamboohr"),
-    ("teamtailor", "teamtailor"),
-    ("workday", "myworkdayjobs"),
-    ("workday", "workday"),
-    ("smartrecruiters", "smartrecruiters"),
-]
-
-WEB_SEARCH_AUDIT_SCHEMA_VERSION = 2
-WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
-WEB_SEARCH_AUDIT_SAMPLE_LIMIT = 25
-WEB_SEARCH_RECOVERY_SUMMARY_KEYS = (
-    "recoveryFetchAttempts",
-    "recoveryPagesFetched",
-    "recoveredProviderCandidates",
-    "recoveredStaticCandidates",
-    "recoveryFailures",
+from .web_search_extract import extract_links_from_html as extract_links_from_html
+from .web_search_fetch import fetch_text as fetch_text
+from .web_search_fetch import (
+    is_expected_web_search_fetch_failure as is_expected_web_search_fetch_failure,
 )
-_PREVALIDATED_BROWSER_QUEUE_CAP = int(
-    DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["validatedStaticQueueCap"]
+from .web_search_scan import _merge_web_scan_results as _merge_web_scan_results
+from .web_search_scan import _queue_web_search_link as _queue_web_search_link
+from .web_search_scan import _sample_web_search_query as _sample_web_search_query
+from .web_search_scan import (
+    _scan_seed_careers_page_candidates as _scan_seed_careers_page_candidates,
 )
-_PREVALIDATED_BROWSER_DOMAIN_CAP = int(
-    DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["validatedStaticDomainCap"]
-)
+from .web_search_scan import _scan_web_search_candidates as _scan_web_search_candidates
+from .web_search_scan import build_web_search_queries as build_web_search_queries
 
 
-# pure inference helper
-def infer_web_candidate(
-    url: str,
-    studio: str,
-    *,
-    nl_priority: bool,
-    discovery_method: str = "web_search",
-) -> dict[str, Any] | None:
-    return shared_infer_web_candidate(
-        url,
-        studio,
-        nl_priority=nl_priority,
-        discovery_method=discovery_method,
-    )
-
-
-# pure inference helper
-def infer_provider_candidates_from_html(
-    page_url: str,
-    html: str,
-    *,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str = "web_search",
-) -> list[dict[str, Any]]:
-    from .io_runtime import collapse_competing_candidates
-
-    candidates: list[dict[str, Any]] = []
-    page_candidate = infer_web_candidate(
-        page_url, studio, nl_priority=nl_priority, discovery_method=discovery_method
-    )
-    if page_candidate:
-        page_candidate["evidenceSource"] = "page_url"
-        page_candidate["evidenceTypes"] = unique_string_list(
-            [*(page_candidate.get("evidenceTypes") or []), "careers_page"]
-        )
-        page_candidate["evidenceScore"] = int(page_candidate.get("evidenceScore") or 0) + 10
-        page_candidate["careersUrl"] = page_url
-        candidates.append(page_candidate)
-    embedded_urls = extract_links_from_html(html)
-    embedded_urls.extend(find_urls_in_text(str(html or "")))
-    html_lower = str(html or "").lower()
-    keyword_match = careers_keyword_count(page_url)
-    if keyword_match:
-        parsed = urlparse(page_url)
-        host = (parsed.hostname or "").lower()
-        path = parsed.path or ""
-        if infer_provider_adapter(host, path) is None:
-            for _adapter, _sig in _ATS_HTML_SIGNATURES:
-                if _sig in html_lower:
-                    inferred = provider_candidate(
-                        studio=studio,
-                        adapter=_adapter,
-                        url=page_url,
-                        nl_priority=nl_priority,
-                        discovery_method=discovery_method,
-                        evidence_types=["html_embed", "html_ats_signature", "careers_page"],
-                        evidence_source="html",
-                        evidence_score=28
-                        + (12 if studio_domain_match(studio, page_url) else 0)
-                        + 4  # keyword_match already confirmed True
-                        + 12,
-                    )
-                    if inferred:
-                        inferred["careersUrl"] = page_url
-                        candidates.append(inferred)
-                    break
-    seen = set()
-    for raw_url in embedded_urls:
-        url = str(raw_url or "").strip()
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        inferred = infer_web_candidate(
-            url, studio, nl_priority=nl_priority, discovery_method=discovery_method
-        )
-        if not inferred:
-            continue
-        inferred["evidenceSource"] = "html_embed"
-        inferred["evidenceTypes"] = unique_string_list(
-            [*(inferred.get("evidenceTypes") or []), "html_embed", "careers_page"]
-        )
-        inferred["evidenceScore"] = int(inferred.get("evidenceScore") or 0) + 12
-        inferred["careersUrl"] = page_url
-        candidates.append(inferred)
-    return collapse_competing_candidates(candidates)
-
-
-# pure — builds search queries from studio seeds
-def build_web_search_queries(
-    studio_seeds: list[dict[str, Any]],
-    max_queries: int = 18,
-) -> list[tuple[str, dict[str, Any]]]:
-    queries: list[tuple[str, dict[str, Any]]] = []
-    for seed in studio_seeds:
-        studio = str(seed.get("studio") or "").strip()
-        if not studio:
-            continue
-        careers_url = str(seed.get("careersUrl") or "").strip()
-        if careers_url:
-            host = (urlparse(careers_url).netloc or "").strip()
-            if host:
-                queries.append((f"{studio} site:{host} jobs", seed))
-        for suffix in WEB_SEARCH_QUERY_SUFFIX:
-            queries.append((f"{studio} {suffix} game studio", seed))
-        if len(queries) >= max_queries:
-            break
-    return queries[:max_queries]
-
-
-# pure — builds directory fetch job dict
-def _page_job(
-    *,
-    url: str,
-    studio: str,
-    nl_priority: bool,
-    adapter: str,
-) -> dict[str, Any]:
-    return build_directory_fetch_job(
-        url=url,
-        payload={
-            "studio": studio,
-            "nlPriority": nl_priority,
-        },
-        adapter=adapter,
-        failure_stage="page_fetch",
-    )
-
-
-# mutation — modifies in-place state
-def _append_page_analysis_outcome(
-    *,
-    page_url: str,
-    page_html: str,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str,
-    provider_candidates: list[dict[str, Any]],
-    static_candidates: list[dict[str, Any]],
-) -> bool:
-    outcome = _web_page_analysis_outcome(
-        page_url=page_url,
-        page_html=page_html,
-        studio=studio,
-        nl_priority=nl_priority,
-        discovery_method=discovery_method,
-    )
-    provider_candidates.extend(outcome.provider_candidates)
-    static_candidates.extend(outcome.static_candidates)
-    return outcome.found_candidates
-
-
-# pure — page outcome classification
-def _web_page_analysis_outcome(
-    *,
-    page_url: str,
-    page_html: str,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str,
-    payload: dict[str, Any] | None = None,
-    recovery_request=None,
-    enable_recovery: bool = False,
-) -> PageOutcome:
-    context = FetchedPageContext(
-        page_url=page_url,
-        html=page_html,
-        studio=studio,
-        nl_priority=nl_priority,
-        discovery_method=discovery_method,
-        payload=dict(payload or {}),
-        recovery_key=page_url,
-    )
-    provider_rows, explicit_static, generic_static = static_page_outcome_builders(
-        name_suffix="Manual Website",
-        evidence_source="careers_page",
-        evidence_types=["careers_keyword"],
-        evidence_score=40,
-        enabled_by_default=False,
-    )
-    outcome = classify_fetched_page_with_strategy(
-        context,
-        PageOutcomeStrategy(
-            provider_rows=provider_rows,
-            explicit_static=explicit_static,
-            generic_static=generic_static,
-            recovery_request=recovery_request,
-        ),
-        enable_recovery=enable_recovery,
-    )
-    return outcome
-
-
-# pure — recovery result candidate extraction
-def _web_recovery_result_candidates(
-    result: dict[str, Any],
-    request: DirectoryRecoveryRequest,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    provider_rows, explicit_static, generic_static = static_page_outcome_builders(
-        name_suffix="Manual Website",
-        evidence_source="careers_page",
-        evidence_types=["careers_keyword"],
-        evidence_score=40,
-        enabled_by_default=False,
-    )
-    return recovery_result_candidates_from_strategy(
-        result,
-        request,
-        strategy=PageOutcomeStrategy(
-            provider_rows=provider_rows,
-            explicit_static=explicit_static,
-            generic_static=generic_static,
-        ),
-        discovery_method=request.discovery_method,
-        nl_priority=bool((request.payload or {}).get("nlPriority")),
-        include_source_page_url=False,
-    )
-
-
-# mutation — modifies in-place state
-def _append_browser_recovery_candidate(
-    browser_recovery_candidates: list[dict[str, Any]],
-    *,
-    url: str,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str,
-    reason_detail: str,
-    error: str = "",
-) -> None:
-    browser_recovery_helpers.append_browser_recovery_candidate_row(
-        browser_recovery_candidates,
-        adapter=discovery_method,
-        discovery_method=discovery_method,
-        name=f"{studio} (Browser Recovery)",
-        studio=studio,
-        company=studio,
-        url=url,
-        source_directory_entry_url=url,
-        nl_priority=nl_priority,
-        reason_detail=reason_detail,
-        error=error,
-    )
-
-
-# pure — hash-based cache busting
-def _seed_catalog_signature(studio_seeds: list[dict[str, Any]]) -> dict[str, Any]:
-    normalized = [
-        {
-            "studio": str(seed.get("studio") or "").strip(),
-            "careersUrl": str(seed.get("careersUrl") or "").strip(),
-            "nlPriority": bool(seed.get("nlPriority")),
-        }
-        for seed in studio_seeds
-    ]
-    payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
-    return {
-        "count": len(normalized),
-        "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
-    }
-
-
-# pure — cache validation signature builder
-def _web_search_audit_signature(
-    *,
-    studio_seeds: list[dict[str, Any]],
-    include_seed_careers: bool,
-    include_web_search: bool,
-    max_queries: int,
-    max_links_per_query: int,
-    recovery_enabled: bool,
-    recovery_url_limit: int,
-) -> dict[str, Any]:
-    return {
-        "parserVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
-        "includeSeedCareers": bool(include_seed_careers),
-        "includeWebSearch": bool(include_web_search),
-        "maxQueries": max(0, int(max_queries)),
-        "maxLinksPerQuery": max(0, int(max_links_per_query)),
-        "activeAuditRecoveryEnabled": bool(recovery_enabled),
-        "activeAuditRecoveryUrlLimit": int(recovery_url_limit),
-        "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
-        "seedCatalog": _seed_catalog_signature(studio_seeds),
-    }
-
-
-# orchestration — network + mutation
-def _run_web_page_job_stage(
-    timeout_s: int,
-    *,
-    page_jobs: list[dict[str, Any]],
-    discovery_method: str,
-    fetcher: Any,
-    page_fetch_progress_label: str,
-    recovery_progress_label: str,
-    recovery_timing_key: str,
-    enable_recovery: bool = False,
-    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
-    provider_candidates: list[dict[str, Any]] | None = None,
-    static_candidates: list[dict[str, Any]] | None = None,
-    failures: list[dict[str, Any]] | None = None,
-    browser_recovery_candidates: list[dict[str, Any]] | None = None,
-    failure_samples: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
-    from .io_runtime import collapse_competing_candidates
-
-    provider_rows_input = list(provider_candidates or [])
-    static_rows_input = list(static_candidates or [])
-    failure_rows = list(failures or [])
-    browser_rows_input = list(browser_recovery_candidates or [])
-    recovery_requests: list[DirectoryRecoveryRequest] = []
-    fetch_defaults = directory_fetch_concurrency_defaults()
-
-    page_fetch_started = time.perf_counter()
-    page_fetch_results = fetch_directory_pages(
-        timeout_s,
-        page_jobs,
-        fetcher=fetcher,
-        total_concurrency=int(fetch_defaults["total"]),
-        per_host_concurrency=int(fetch_defaults["perHost"]),
-        progress_label=page_fetch_progress_label,
-    )
-    page_fetch_ms = audit_ledger.duration_ms(page_fetch_started)
-
-    analysis_started = time.perf_counter()
-    fetched_pages = 0
-    page_fetch_failures = 0
-    for result in page_fetch_results:
-        fetched_delta, failure_delta = _record_web_page_result(
-            result=result,
-            discovery_method=discovery_method,
-            provider_candidates=provider_rows_input,
-            static_candidates=static_rows_input,
-            failures=failure_rows,
-            browser_recovery_candidates=browser_rows_input,
-            failure_samples=failure_samples,
-            recovery_requests=recovery_requests if enable_recovery else None,
-        )
-        fetched_pages += fetched_delta
-        page_fetch_failures += failure_delta
-
-    recovery_summary: dict[str, Any] = {}
-    recovery_timing: dict[str, Any] = {}
-    if enable_recovery and recovery_requests:
-        recovered_providers, recovered_statics, recovered_browser, recovery_payload = (
-            _run_web_http_recovery(
-                timeout_s=timeout_s,
-                requests=recovery_requests,
-                fetcher=fetcher,
-                total_concurrency=int(fetch_defaults["total"]),
-                per_host_concurrency=int(fetch_defaults["perHost"]),
-                progress_label=recovery_progress_label,
-                timing_key=recovery_timing_key,
-                recovery_url_limit=recovery_url_limit,
-            )
-        )
-        provider_rows_input.extend(recovered_providers)
-        static_rows_input.extend(recovered_statics)
-        browser_rows_input.extend(recovered_browser)
-        recovery_summary = dict(recovery_payload.get("summary") or {})
-        recovery_timing = dict(recovery_payload.get("batchTiming") or {})
-
-    provider_rows = collapse_competing_candidates(provider_rows_input)
-    static_rows = unique_sources(static_rows_input)
-    browser_rows = unique_sources(browser_rows_input)
-    return {
-        "providerCandidates": provider_rows,
-        "staticCandidates": static_rows,
-        "browserRecoveryCandidates": browser_rows,
-        "failures": failure_rows,
-        "summary": {
-            "pageFetchJobs": len(page_jobs),
-            "pagesFetched": fetched_pages,
-            "pageFetchFailures": page_fetch_failures,
-            "providerCandidates": len(provider_rows),
-            "staticCandidates": len(static_rows),
-            "failures": len(failure_rows),
-            **_recovery_summary_fields(recovery_summary),
-            **browser_recovery_helpers.browser_recovery_summary(
-                browser_rows,
-                include_reason_breakdown=True,
-            ),
-        },
-        "batchTiming": {
-            "pageFetchMs": page_fetch_ms,
-            "candidateAnalysisMs": audit_ledger.duration_ms(analysis_started),
-            **recovery_timing,
-        },
-        "completedUrlIdentities": [
-            str(job.get("url") or "").strip() for job in page_jobs if str(job.get("url") or "")
-        ],
-    }
-
-
-# orchestration — network + mutation
-def _scan_seed_careers_page_candidates(
-    timeout_s: int,
-    *,
-    studio_seeds: list[dict[str, Any]],
-    fetcher: Any,
-    enable_recovery: bool = False,
-    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
-) -> dict[str, Any]:
-    provider_candidates: list[dict[str, Any]] = []
-    page_jobs: list[dict[str, Any]] = []
-    setup_started = time.perf_counter()
-    seeds_with_careers_url = 0
-    direct_provider_links = 0
-    for seed in studio_seeds:
-        careers_url = str(seed.get("careersUrl") or "").strip()
-        studio = str(seed.get("studio") or "").strip()
-        if not careers_url or not studio:
-            continue
-        seeds_with_careers_url += 1
-        nl_priority = bool(seed.get("nlPriority"))
-        inferred = infer_web_candidate(
-            careers_url,
-            studio,
-            nl_priority=nl_priority,
-            discovery_method="seed_careers_page",
-        )
-        if inferred:
-            inferred["careersUrl"] = careers_url
-            provider_candidates.append(inferred)
-            direct_provider_links += 1
-            continue
-        page_jobs.append(
-            _page_job(
-                url=careers_url,
-                studio=studio,
-                nl_priority=nl_priority,
-                adapter="seed_careers_page",
-            )
-        )
-    setup_ms = audit_ledger.duration_ms(setup_started)
-    page_stage = _run_web_page_job_stage(
-        timeout_s,
-        page_jobs=page_jobs,
-        discovery_method="seed_careers_page",
-        fetcher=fetcher,
-        page_fetch_progress_label="Seed careers page fetch",
-        recovery_progress_label="Seed careers page recovery",
-        recovery_timing_key="seedRecoveryFetchMs",
-        enable_recovery=enable_recovery,
-        recovery_url_limit=recovery_url_limit,
-        provider_candidates=provider_candidates,
-    )
-    page_summary = dict(page_stage.get("summary") or {})
-    page_timing = dict(page_stage.get("batchTiming") or {})
-    return {
-        "providerCandidates": list(page_stage.get("providerCandidates") or []),
-        "staticCandidates": list(page_stage.get("staticCandidates") or []),
-        "browserRecoveryCandidates": list(page_stage.get("browserRecoveryCandidates") or []),
-        "failures": list(page_stage.get("failures") or []),
-        "summary": {
-            "seedRows": len(studio_seeds),
-            "seedRowsWithCareersUrl": seeds_with_careers_url,
-            "seedDirectProviderLinks": direct_provider_links,
-            "seedPageFetchJobs": int(page_summary.get("pageFetchJobs") or 0),
-            "seedPagesFetched": int(page_summary.get("pagesFetched") or 0),
-            "seedProviderCandidates": int(page_summary.get("providerCandidates") or 0),
-            "seedStaticCandidates": int(page_summary.get("staticCandidates") or 0),
-            "seedFailures": int(page_summary.get("failures") or 0),
-            **_recovery_summary_fields(page_summary),
-            **browser_recovery_helpers.browser_recovery_summary(
-                list(page_stage.get("browserRecoveryCandidates") or []),
-                include_reason_breakdown=True,
-            ),
-        },
-        "batchTiming": {
-            "seedSetupMs": setup_ms,
-            "seedPageFetchMs": int(page_timing.get("pageFetchMs") or 0),
-            "seedCandidateAnalysisMs": int(page_timing.get("candidateAnalysisMs") or 0),
-            **{
-                key: value
-                for key, value in page_timing.items()
-                if key not in {"pageFetchMs", "candidateAnalysisMs"}
-            },
-        },
-        "completedUrlIdentities": list(page_stage.get("completedUrlIdentities") or []),
-    }
-
-
-# pure — builds audit sample record
-def _sample_web_search_query(query: str, seed: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "query": query,
-        "studio": str(seed.get("studio") or "").strip(),
-    }
-
-
-# mutation — modifies in-place state
-def _append_bounded_sample(samples: list[dict[str, Any]], sample: dict[str, Any]) -> None:
-    if len(samples) < WEB_SEARCH_AUDIT_SAMPLE_LIMIT:
-        samples.append(sample)
-
-
-# mutation — modifies in-place state
-def _queue_web_search_link(
-    *,
-    link: str,
-    studio: str,
-    nl_priority: bool,
-    provider_candidates: list[dict[str, Any]],
-    page_jobs: list[dict[str, Any]],
-    queued_page_urls: set[str],
-) -> tuple[str, bool]:
-    inferred = infer_web_candidate(
-        link,
-        studio,
-        nl_priority=nl_priority,
-        discovery_method="web_search",
-    )
-    if inferred:
-        provider_candidates.append(inferred)
-        return "direct_provider", False
-    if not careers_keyword_count(link):
-        return "non_jobish", False
-    normalized_link = str(link or "").strip()
-    if normalized_link in queued_page_urls:
-        return "duplicate_page", True
-    queued_page_urls.add(normalized_link)
-    page_jobs.append(
-        _page_job(
-            url=normalized_link,
-            studio=studio,
-            nl_priority=nl_priority,
-            adapter="web_search",
-        )
-    )
-    return "page_job", False
-
-
-# mutation — modifies in-place state
-def _record_web_page_result(
-    *,
-    result: dict[str, Any],
-    discovery_method: str,
-    provider_candidates: list[dict[str, Any]],
-    static_candidates: list[dict[str, Any]],
-    failures: list[dict[str, Any]],
-    browser_recovery_candidates: list[dict[str, Any]],
-    failure_samples: list[dict[str, Any]] | None = None,
-    recovery_requests: list[DirectoryRecoveryRequest] | None = None,
-) -> tuple[int, int]:
-    if not bool(result.get("ok")):
-        failure = result.get("failure")
-        if isinstance(failure, dict):
-            if failure_samples is not None:
-                _append_bounded_sample(
-                    failure_samples,
-                    {
-                        "stage": str(failure.get("stage") or "page_fetch"),
-                        "name": str(failure.get("name") or ""),
-                        "error": str(failure.get("error") or ""),
-                    },
-                )
-            failures.append(failure)
-            payload = dict(result.get("payload") or {})
-            error = str(failure.get("error") or "")
-            if browser_recoverable_error(error):
-                _append_browser_recovery_candidate(
-                    browser_recovery_candidates,
-                    url=str(result.get("url") or ""),
-                    studio=str(payload.get("studio") or ""),
-                    nl_priority=bool(payload.get("nlPriority")),
-                    discovery_method=discovery_method,
-                    reason_detail="browser_recovery_fetch_failed",
-                    error=error,
-                )
-            return 0, 1
-        return 0, 0
-    payload = dict(result.get("payload") or {})
-    page_url = str(result.get("url") or "").strip()
-    page_html = str(result.get("text") or "")
-    outcome = _web_page_analysis_outcome(
-        page_url=page_url,
-        page_html=page_html,
-        studio=str(payload.get("studio") or "").strip(),
-        nl_priority=bool(payload.get("nlPriority")),
-        discovery_method=discovery_method,
-        payload=payload,
-        recovery_request=http_recovery_request_from_context,
-        enable_recovery=recovery_requests is not None,
-    )
-    provider_candidates.extend(outcome.provider_candidates)
-    static_candidates.extend(outcome.static_candidates)
-    found_candidate = outcome.found_candidates
-    if not found_candidate and looks_like_js_shell(page_html):
-        _append_browser_recovery_candidate(
-            browser_recovery_candidates,
-            url=page_url,
-            studio=str(payload.get("studio") or ""),
-            nl_priority=bool(payload.get("nlPriority")),
-            discovery_method=discovery_method,
-            reason_detail="js_shell",
-        )
-    elif not found_candidate and recovery_requests is not None:
-        recovery_requests.extend(
-            [
-                request
-                for request in list(outcome.recovery_requests or [])
-                if isinstance(request, DirectoryRecoveryRequest)
-            ]
-        )
-    return 1, 0
-
-
-# orchestration — network + mutation
-def _run_web_http_recovery(
-    *,
-    timeout_s: int,
-    requests: list[DirectoryRecoveryRequest],
-    fetcher: Any,
-    total_concurrency: int,
-    per_host_concurrency: int,
-    progress_label: str,
-    timing_key: str,
-    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    if not requests:
-        return [], [], [], {}
-    recovery = run_recovery_for_requests(
-        timeout_s,
-        requests,
-        fetcher=fetcher,
-        total_concurrency=total_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        analyze_result=_web_recovery_result_candidates,
-        progress_label=progress_label,
-        url_limit=recovery_url_limit,
-    )
-    updated = apply_recovery_to_scan_result(
-        {
-            "providerCandidates": [],
-            "staticCandidates": [],
-            "browserRecoveryCandidates": [],
-            "summary": {},
-            "batchTiming": {},
-        },
-        recovery,
-        timing_key=timing_key,
-    )
-    return (
-        list(updated.get("providerCandidates") or []),
-        list(updated.get("staticCandidates") or []),
-        list(updated.get("browserRecoveryCandidates") or []),
-        {
-            "summary": dict(updated.get("summary") or {}),
-            "batchTiming": dict(updated.get("batchTiming") or {}),
-        },
-    )
-
-
-# pure — filters summary dict to recovery keys
-def _recovery_summary_fields(summary: dict[str, Any]) -> dict[str, int]:
-    return {
-        key: int(summary.get(key) or 0)
-        for key in WEB_SEARCH_RECOVERY_SUMMARY_KEYS
-        if key in summary
-    }
-
-
-# orchestration — network + mutation
-def _scan_web_search_candidates(
-    timeout_s: int,
-    *,
-    studio_seeds: list[dict[str, Any]],
-    fetcher: Any,
-    max_queries: int = 18,
-    max_links_per_query: int = MAX_SEARCH_LINKS_PER_QUERY,
-    enable_recovery: bool = False,
-    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
-) -> dict[str, Any]:
-    provider_candidates: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    page_jobs: list[dict[str, Any]] = []
-    queries = build_web_search_queries(studio_seeds, max_queries=max_queries)
-    search_started = time.perf_counter()
-    search_successes = 0
-    search_failures = 0
-    links_extracted = 0
-    links_considered = 0
-    direct_provider_links = 0
-    jobish_links = 0
-    non_jobish_links_skipped = 0
-    duplicate_page_fetch_urls = 0
-    queued_page_urls: set[str] = set()
-    web_query_samples: list[dict[str, Any]] = []
-    web_failure_samples: list[dict[str, Any]] = []
-    for query, seed in queries:
-        url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
-        query_sample = _sample_web_search_query(query, seed)
-        _append_bounded_sample(web_query_samples, query_sample)
-        try:
-            html = fetcher(url, timeout_s)
-        except (OSError, TimeoutError, RuntimeError) as exc:
-            if not is_expected_web_search_fetch_failure(exc):
-                raise
-            search_failures += 1
-            _append_bounded_sample(
-                web_failure_samples,
-                {**query_sample, "stage": "search", "error": str(exc)},
-            )
-            failures.append(
-                {"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"}
-            )
-            continue
-        search_successes += 1
-        studio = str(seed.get("studio") or "")
-        nl_priority = bool(seed.get("nlPriority"))
-        extracted_links = extract_links_from_html(html)
-        links_extracted += len(extracted_links)
-        for link in extracted_links[: max(0, int(max_links_per_query))]:
-            links_considered += 1
-            outcome, duplicate = _queue_web_search_link(
-                link=link,
-                studio=studio,
-                nl_priority=nl_priority,
-                provider_candidates=provider_candidates,
-                page_jobs=page_jobs,
-                queued_page_urls=queued_page_urls,
-            )
-            if outcome == "direct_provider":
-                direct_provider_links += 1
-                continue
-            if outcome == "non_jobish":
-                non_jobish_links_skipped += 1
-                continue
-            jobish_links += 1
-            if duplicate:
-                duplicate_page_fetch_urls += 1
-    search_ms = audit_ledger.duration_ms(search_started)
-    page_stage = _run_web_page_job_stage(
-        timeout_s,
-        page_jobs=page_jobs,
-        discovery_method="web_search",
-        fetcher=fetcher,
-        page_fetch_progress_label="Web search page fetch",
-        recovery_progress_label="Web search page recovery",
-        recovery_timing_key="webRecoveryFetchMs",
-        enable_recovery=enable_recovery,
-        recovery_url_limit=recovery_url_limit,
-        provider_candidates=provider_candidates,
-        failures=failures,
-        failure_samples=web_failure_samples,
-    )
-    page_summary = dict(page_stage.get("summary") or {})
-    page_timing = dict(page_stage.get("batchTiming") or {})
-    return {
-        "providerCandidates": list(page_stage.get("providerCandidates") or []),
-        "staticCandidates": list(page_stage.get("staticCandidates") or []),
-        "browserRecoveryCandidates": list(page_stage.get("browserRecoveryCandidates") or []),
-        "failures": list(page_stage.get("failures") or []),
-        "summary": {
-            "webQueriesPlanned": len(queries),
-            "webSearchSuccesses": search_successes,
-            "webSearchFailures": search_failures,
-            "webLinksExtracted": links_extracted,
-            "webLinksConsidered": links_considered,
-            "webDirectProviderLinks": direct_provider_links,
-            "webJobishLinks": jobish_links,
-            "webNonJobishLinksSkipped": non_jobish_links_skipped,
-            "webDuplicatePageFetchUrls": duplicate_page_fetch_urls,
-            "webPageFetchJobs": int(page_summary.get("pageFetchJobs") or 0),
-            "webPagesFetched": int(page_summary.get("pagesFetched") or 0),
-            "webPageFetchFailures": int(page_summary.get("pageFetchFailures") or 0),
-            "webProviderCandidates": int(page_summary.get("providerCandidates") or 0),
-            "webStaticCandidates": int(page_summary.get("staticCandidates") or 0),
-            "webFailures": int(page_summary.get("failures") or 0),
-            "webQuerySamples": web_query_samples,
-            "webFailureSamples": web_failure_samples,
-            **_recovery_summary_fields(page_summary),
-            **browser_recovery_helpers.browser_recovery_summary(
-                list(page_stage.get("browserRecoveryCandidates") or []),
-                include_reason_breakdown=True,
-            ),
-        },
-        "batchTiming": {
-            "webSearchFetchMs": search_ms,
-            "webPageFetchMs": int(page_timing.get("pageFetchMs") or 0),
-            "webCandidateAnalysisMs": int(page_timing.get("candidateAnalysisMs") or 0),
-            **{
-                key: value
-                for key, value in page_timing.items()
-                if key not in {"pageFetchMs", "candidateAnalysisMs"}
-            },
-        },
-        "completedUrlIdentities": list(page_stage.get("completedUrlIdentities") or []),
-    }
-
-
-# pure — merges scan result dicts
-def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
-    return merge_scan_result_payloads(
-        results,
-        additive_summary_keys=WEB_SEARCH_RECOVERY_SUMMARY_KEYS,
-        browser_recovery_dedupe=unique_sources,
-        browser_recovery_summary=lambda rows: browser_recovery_helpers.browser_recovery_summary(
-            rows,
-            include_reason_breakdown=True,
-        ),
-        summary_defaults={"browserRecoveredActiveCandidates": 0},
-    )
-
-
-# pure — decorates candidate with probe evidence
-def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
-    return probe_candidate_with_probe_evidence(
-        candidate,
-        jobs_found,
-        prevalidated_discovery=True,
-    )
-
-
-# pure — thin delegation to rendered_static_probe_result
-def _browser_static_probe_result_from_rendered_html(
-    candidate: dict[str, Any],
-    *,
-    rendered_url: str,
-    rendered_html: str,
-) -> tuple[dict[str, Any], bool, int, str, int] | None:
-    return rendered_static_probe_result(
-        candidate,
-        rendered_url=rendered_url,
-        rendered_html=rendered_html,
-    )
-
-
-# mutation — artifact read (load from disk)
-def _load_web_search_browser_recovery_artifact(output_path: Path) -> dict[str, Any]:
-    payload = load_json_object(output_path, {})
-    return payload if isinstance(payload, dict) else {}
-
-
-# pure — returns empty artifact skeleton
-def _initial_web_search_browser_recovery_artifact() -> dict[str, Any]:
-    return {
-        "schemaVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
-        "adapter": "web_search",
-        "summary": {},
-        "providerCandidates": [],
-        "staticCandidates": [],
-        "browserRecoveryCandidates": [],
-        "browserRecovery": {},
-    }
-
-
-# mutation — records browser fetch failure
-def _record_web_browser_recovery_fetch_failure(
-    _row: dict[str, Any],
-    source_url: str,
-    error: str,
-    browser_recovery: dict[str, Any],
-) -> list[dict[str, Any]]:
-    browser_recovery_helpers.append_failure_sample(
-        browser_recovery,
-        {
-            "url": source_url,
-            "stage": "browser_fetch",
-            "error": error,
-        },
-    )
-    return []
-
-
-# pure — page analysis for browser-rendered page
-def _analyze_web_browser_recovery_success(
-    row: dict[str, Any],
-    source_url: str,
-    html: str,
-) -> browser_recovery_helpers.BrowserRecoveryPageAnalysis:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    _append_page_analysis_outcome(
-        page_url=source_url,
-        page_html=html,
-        studio=str(row.get("studio") or ""),
-        nl_priority=bool(row.get("nlPriority")),
-        discovery_method=str(row.get("discoveryMethod") or "web_search"),
-        provider_candidates=provider_candidates,
-        static_candidates=static_candidates,
-    )
-    for candidate in [*provider_candidates, *static_candidates]:
-        candidate["webSearchBrowserRecovery"] = True
-    return browser_recovery_helpers.BrowserRecoveryPageAnalysis(
-        all_candidates=[*provider_candidates, *static_candidates],
-        rendered_static_candidates=static_candidates,
-    )
-
-
-# pure — deduplication
-def _finalize_web_browser_recovery_candidates(
-    candidates: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    return unique_sources(candidates), []
-
-
-# browser recovery callback chain: web_search analyze_fetches
-def _analyze_web_browser_recovery_fetches(
-    fetch_results: list[tuple[dict[str, Any], str, str, int]],
-    *,
-    browser_recovery: dict[str, Any],
-    processed: set[str],
-) -> tuple[
-    list[dict[str, Any]],
-    list[tuple[dict[str, Any], bool, int, str, int]],
-    int,
-]:
-    analysis = browser_recovery_helpers.analyze_browser_recovery_fetch_results(
-        fetch_results=fetch_results,
-        browser_recovery=browser_recovery,
-        processed=processed,
-        analyze_success=_analyze_web_browser_recovery_success,
-        handle_fetch_failure=_record_web_browser_recovery_fetch_failure,
-        rendered_static_probe_result=lambda candidate, rendered_url, rendered_html: (
-            _browser_static_probe_result_from_rendered_html(
-                candidate,
-                rendered_url=rendered_url,
-                rendered_html=rendered_html,
-            )
-        ),
-        finalize_candidates=_finalize_web_browser_recovery_candidates,
-    )
-    return (
-        analysis.all_candidates,
-        analysis.rendered_probe_results,
-        analysis.fetch_failures,
-    )
-
-
-# strategy factory — browser recovery batch wrapper
-def _analyze_web_browser_recovery_batch(
-    fetch_results: list[tuple[dict[str, Any], str, str, int]],
-    browser_recovery: dict[str, Any],
-    processed: set[str],
-) -> browser_recovery_helpers.BrowserRecoveryAnalysis:
-    all_candidates, rendered_probe_results, fetch_failures = _analyze_web_browser_recovery_fetches(
-        fetch_results,
-        browser_recovery=browser_recovery,
-        processed=processed,
-    )
-    return browser_recovery_helpers.BrowserRecoveryAnalysis(
-        all_candidates=all_candidates,
-        rendered_probe_results=rendered_probe_results,
-        fetch_failures=fetch_failures,
-    )
-
-
-# pure — applies queue/domain caps to probe results
-def _validated_web_browser_recovery_rows(
-    combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> list[dict[str, Any]]:
-    return [
-        apply_prevalidated_queue_overrides(
-            row,
-            adapter_cap=_PREVALIDATED_BROWSER_QUEUE_CAP,
-            domain_cap=_PREVALIDATED_BROWSER_DOMAIN_CAP,
-        )
-        for row in browser_recovery_helpers.positive_probe_candidates(
-            combined_probe_results,
-            normalize_candidate=_candidate_with_probe_evidence,
-        )
-    ]
-
-
-# mutation — modifies in-place state
-def _apply_web_browser_recovery_probe_results(
-    artifact: dict[str, Any],
-    combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> None:
-    validated_rows = _validated_web_browser_recovery_rows(combined_probe_results)
-    provider_validated, static_validated = candidate_collections.split_provider_static_rows(
-        validated_rows
-    )
-    candidate_collections.append_provider_static_rows(
-        artifact,
-        provider_rows=provider_validated,
-        static_rows=static_validated,
-    )
-
-
-# orchestration — coordinates network + mutation
 def run_web_search_directory_audit(
     timeout_s: int,
     *,
@@ -1202,6 +266,8 @@ def run_web_search_directory_audit(
 
 
 # orchestration — coordinates network + mutation
+
+
 def run_web_search_browser_recovery(
     timeout_s: int,
     *,

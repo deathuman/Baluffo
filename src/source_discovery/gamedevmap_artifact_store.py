@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as source_registry_module
+from src.shared.json_shapes import as_json_list as _shared_as_list
+from src.shared.json_shapes import as_json_object as _shared_as_dict
+from src.shared.utils import int_or_default as _shared_int_or_default
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources
 
@@ -55,16 +58,16 @@ def gamedevmap_active_dry_run_path() -> Path:
 
 
 def _as_list(value: Any) -> list[Any]:
-    return list(active_audit_runtime._as_list(value))
+    return list(_shared_as_list(value))
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(active_audit_runtime._as_dict(value))
+    return dict(_shared_as_dict(value))
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
     if int(default) == 0:
-        return active_audit_runtime._safe_int(value)
+        return _shared_int_or_default(value)
     try:
         return int(value)
     except (TypeError, ValueError, OverflowError):
