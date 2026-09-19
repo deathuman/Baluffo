@@ -27,6 +27,40 @@ and `data/` excluded.
 | probes | 758 | 0.2% |
 | **Total** | **473,733** | 100% |
 
+## Wave 1 Result (measured, landed)
+
+Three workstreams landed as three independently revertable commits. All 14
+guardrail groups pass; the full suite reports 5,410 passed with 6 failures that
+are a pre-existing missing-Playwright-Chromium-binary environment issue in
+`tests/test_browser_fallback_pool.py`, unrelated to these changes.
+
+| Workstream | Commit | Measured |
+|---|---|---:|
+| W1 shared helper unification | `ab9d3481` | **−207** |
+| W6 scripts / tools | `9b5c1508` | **+1,391** |
+| W5 test consolidation | `df485e83` | **−444** |
+| **Net** | | **+740** |
+
+The plan projected −29,000…−42,500 for these three. They delivered **+740**. Three
+projections were wrong, each in the same direction, and the reasons are worth
+recording because they invalidate the remaining estimates too:
+
+1. **Duplication is far smaller than the scan suggested.** W1's projection of
+   −2,000…−3,500 assumed 1,154 duplicated lines were removable. The real number
+   is 207, because a duplicated 2-line helper that becomes a 1-line import saves
+   one line — and the shared module that hosts it costs lines back. The 34-copy
+   `_as_dict` group is worth 34 lines, not 68.
+2. **Splitting a god file ADDS lines.** W6's projection was −4,000…−7,000;
+   it measured **+1,391**. Each leaf needs its own import preamble, module
+   docstring, and compatibility `__all__` list. Splitting
+   `source_policy_soak_report.py` (5,015 → 1,767 + 6 leaves) cost **+919**;
+   `perf_complete.py` (2,516 → 749 + 7 leaves) cost **+423**. God-file
+   decomposition is a legibility purchase paid for in lines, not a reduction.
+3. **`git ls-files` does not see untracked files.** New modules are invisible to
+   `loc_budget.py` until staged, so every "before/after" measured on a dirty tree
+   overstates the reduction. W5 first reported −872 and was really −444; W6 first
+   reported −5,015 and was really +1,342. **Stage before measuring.**
+
 ## The 30% Arithmetic Problem
 
 30% of 473,733 is **142,120 lines**. Product code — src + frontend + scripts +
@@ -78,18 +112,48 @@ must record what protection is lost. This is the program's main risk.
 | ID | Scope | Expected | Status |
 |---|---|---:|---|
 | W0 | Tracked-source LOC ratchet gate | — | **landed** `c0459a62` |
-| W1 | Shared helper unification (`src/shared/`) | −2,000…−3,500 | Wave 1 |
-| W5 | Test consolidation | −23,000…−32,000 | Wave 1 |
-| W6 | scripts / tools / styles | −4,000…−7,000 | Wave 1 |
-| W2 | God-file decomposition (152 src files >400 LOC) | ±0 (legibility) | Wave 2 |
-| W2b | `AI boundary` banner collapse (1,240 lines, 327 files) | −900 | Wave 2 |
-| W3 | Route de-chaining | −500…−1,500 | Wave 2 |
-| W7 | Frontend decomposition | −3,000…−5,000 | Wave 2 |
-| W4 | Re-export shim + Protocol consolidation | −1,500…−3,000 | Wave 3 |
-| W8 | Static plugin table-ization | −800…−1,200 | Wave 3 |
+| W1 | Shared helper unification (`src/shared/`) | −2,000…−3,500 | **landed** `ab9d3481` — measured **−207** |
+| W6 | scripts / tools | −4,000…−7,000 | **landed** `9b5c1508` — measured **+1,391** |
+| W5 | Test consolidation | −23,000…−32,000 | **landed** `df485e83` — measured **−444** |
+| W2 | God-file decomposition (152 src files >400 LOC) | ±0 (legibility) | re-estimated **+0.5…+1.5%** (costs lines) |
+| W2b | `AI boundary` banner collapse | −900 | **declined** — see below |
+| W3 | Route de-chaining | −500…−1,500 | pending |
+| W7 | Frontend decomposition | −3,000…−5,000 | re-estimated **costs lines** (same as W6) |
+| W4 | Re-export shim + Protocol consolidation | −1,500…−3,000 | re-estimated **≤ −2,068** hard ceiling |
+| W8 | Static plugin table-ization | −800…−1,200 | pending |
 
-Wave 1 reports measured deltas before Waves 2–3 dispatch, so the remaining
-estimate is anchored to observed results rather than to the projection above.
+### Why the remaining estimates were revised down
+
+Every projection above was built from the same flawed assumption: that a
+duplicated or verbose construct converts its full line count into savings. It
+does not. Measured ceilings for what is left:
+
+- **W2 / W7 (god-file splits) cost lines.** W6 is the direct evidence: two of the
+  largest god files in the repo, split with byte-fidelity proof, cost +1,342.
+  The remaining 152 `src` files over 400 LOC will behave the same way. These are
+  worth doing for legibility; they are not a reduction lever and must not be
+  counted as one.
+- **W4 (shims) has a hard ceiling of 2,068 lines** — the total size of all 30
+  pure re-export shims ≥20 lines. Deleting every one of them (0.44% of the
+  repo) would break the compatibility surfaces `suite_contract_policy.py`
+  asserts, so the realistic yield is a fraction of that.
+- **W2b is declined.** The 1,238 banner lines across 328 files are **1,107
+  distinct** `(kind, text)` pairs — they are bespoke per-file navigation hints,
+  not repeated boilerplate. Collapsing them to one line per file saves 910 lines
+  (0.19%) and destroys the routing information that makes the codebase
+  navigable. That is the opposite of the program's stated goal.
+- **W3 and W8 are the only untested levers** whose shape (branch chains →
+  declarative tables, N files → 1 table) genuinely converts many lines into few.
+  W8's static plugin family is 49 files / 6,635 lines, so its ceiling is real but
+  bounded at ~1,000.
+
+### Revised program ceiling
+
+Adding the measured W1 result to the revised ceilings for what remains gives a
+realistic total of **−4,000 to −7,000 lines (0.8%–1.5%)**, with the *only*
+substantial further reduction available being deletion of the test corpus or of
+the compatibility surfaces the guardrails exist to protect.
+
 
 ## Ownership
 
