@@ -435,3 +435,150 @@ assignments, 12 files ≤30 LOC.
 1,240 lines across 327 files in `src` (plus 1 in `tools`). Convention only — no
 guardrail or test references them, so collapsing to one ownership line per file
 is safe.
+
+## Wave 4 Result (measured, landed)
+
+Wave 4 changed the objective. Waves 1–3 established that reduction and
+legibility pull against each other; Wave 4 spent its budget on the thing the
+audit turned up instead: **pre-existing defects, and the absence of any gate
+that could see them.**
+
+| Unit | Commit | Measured |
+|---|---|---:|
+| Dead branches, stale loop var, dead-code gate | `5852e219` | +698 |
+| Test fixture consolidation, eslint promotion | `ae774644` | −251 |
+
+The +698 is almost entirely the new policy module and the tests that prove the
+fixes; the actual defect removals were ~60 lines. **That is the honest trade:
+correctness cost lines.** The dead-code gate cannot be smaller than the
+detector, and the detector is only trustworthy because it was validated against
+a known positive.
+
+### What the dead-code scan found
+
+The scan was built to catch two specific defects and instead found **ten dead
+branches** across `src`, `tools`, and `frontend`, plus the stale loop variable
+and one orphaned helper. All ten share one shape: an `if` whose body returns the
+byte-identical expression as the statement following it, so the condition cannot
+change the outcome. None were introduced by the earlier waves.
+
+Verified before writing the detector that **no existing gate could see either
+class**: `ruff` (E, F, I, B, UP, and a trial of SIM, RET, PIE, PLR), `vulture
+--min-confidence=60`, `mypy`, and `eslint` all reported nothing.
+
+The detector is validated against the real bug as a **positive control** — a
+gate that cannot fire is worse than no gate, and this was the specific failure
+mode of two earlier attempts at the loop-variable check (one reported 145 false
+positives, the next reported 0 while missing the known bug).
+
+### The real bug
+
+`push_changed_shards` read `output` — a stale binding from the earlier
+`as_completed` loop — instead of the current `shard_output`. The last-completed
+shard's `remoteRequests` diagnostic rows were appended once per shard. No test
+covered the multi-shard aggregator; only the single-shard helper.
+
+**The first version of the regression test would not have caught it.** The
+natural assertion — `len(remoteRequests) == sum of per-shard counts` — passes
+against the buggy code, because every shard contributes the same number of rows
+either way. The discriminating assertion is the per-path multiset. This is
+recorded because it generalizes: a count assertion is not a content assertion.
+
+### A note on the clone scan's false merges
+
+The alpha-renamed normalizer maps every string literal to `_S` and every number
+to `_N`, so bodies that differ **only in fixture values** hash identically. Most
+of the raw test-duplication candidates were therefore false merges: ten distinct
+`ok_loader` fixtures (Nebula Games / Orion Labs / Circuit Studio / …) collapsed
+into one hash group. Merging them would have silently changed what each test
+asserts. They were skipped and reported instead.
+
+Only the byte-identical groups were consolidated. Assertion coverage was
+verified as *asserts × parametrize multiplicity* — 41→41, 66→70, 78→78, 44→44 —
+because raw assert-line counts fall when tests move into a shared body, which
+looks like weakening but is not.
+
+### The eslint gate hole
+
+`no-unused-vars` was `"warn"`, and the pre-push hook runs `npx eslint .`, which
+**exits 0 on warnings**. Unused variables could therefore never fail any gate.
+Clearing 18 findings (13 in `tests`, 5 in `scripts`) let the rule go to `error`
+across frontend, tests, and scripts at once. A probe confirms an unused variable
+now exits 1.
+
+One trap worth recording: promoting the rule in the block that matched
+`frontend` + `tests` **also matched `scripts/**/*.mjs`**, which carried 5
+findings outside the worker's scope. A carve-out block would have left the hole
+open and cost 10 lines; closing it properly cost 5 deletions.
+
+## Program Outcome
+
+**The program did not reduce the codebase. It ended +3,265 lines (+0.69%).**
+
+| Lever kind | Measured |
+|---|---:|
+| Reduction (helper unification, clone consolidation, dead code) | −1,804 |
+| Legibility (god-file splits, de-chaining, new gates) | +5,069 |
+| **Net** | **+3,265** |
+
+Check: `473,733 (W0) + 3,265 = 476,998 (HEAD)`, which is the measured total.
+
+The 30% goal is **closed as unreachable**, for the reason recorded in *The 30%
+Arithmetic Problem*: it requires ~142,000 lines, and canonical `data/` alone is
+1,000,391 tracked lines (65.5% of the repo) and cannot be deleted. No
+combination of real levers reaches it.
+
+What the program did deliver, measured:
+
+- **Duplication:** the exact-body gate plus two clone-consolidation waves
+  removed ~1,800 lines of genuine duplication across `src`, `frontend`, and
+  tests.
+- **Legibility:** the god-file backlog fell from the starting set to 46 `src`
+  files over 700 lines, with the largest four frontend god files reduced
+  1,155→142, 1,108→102, 1,020→229, and 978→143.
+- **Correctness:** 11 dead branches removed, one real diagnostics bug fixed, and
+  two new gate classes where none existed.
+- **Honest cost:** decomposition adds 25–35% of each extracted body (import
+  preamble, boundary banner, compatibility `__all__`). Measured seven times.
+  Decomposition is a legibility purchase, never a reduction lever.
+
+### Open question carried forward
+
+`startBootstrapWithConfirmation` in `frontend/jobs/app/feed-first-run-flow.js`
+had a guard that could never change its outcome; it has been removed
+behaviour-identically. But the guard may have been *intended* to do something on
+the no-evidence path — emit a metric, or refuse to silently accept an
+unconfirmed start — in which case the plain `return payload` was the bug. The
+evidence leans toward vestigial: the caller already throws when the payload
+shows no start, so the check appears to have migrated one frame up. Recorded
+rather than guessed at, because it is a behaviour question.
+
+### Known, unrelated blockers
+
+Two pre-existing conditions will fail `git push` and are **not** from this work:
+
+- **6 `mypy` errors** in `src/ship/packaged_smoke/rehearsals.py`,
+  `src/bridge/sync_service.py` (×2), `src/jobs/adapters/community/__init__.py`
+  (×2), and `src/jobs/adapters/provider_api.py`. No `src/` file is modified by
+  this program.
+- **6 `test_browser_fallback_pool.py` failures** from a Playwright version
+  mismatch: `@playwright/test` is pinned `1.63.0`, the installed module is
+  `1.58.2`, and the runner wants browser revision `1243` while the cache holds
+  `1208`/`1234`. Fixing it means reinstalling a dependency, which needs explicit
+  approval.
+
+## Wave 4 Verification
+
+```
+python -m pytest tests/ -q -k "not browser_fallback_pool"   # 5406 passed, 1 skipped
+node --test --test-reporter=tap "tests/frontend/unit/*.test.mjs"   # 900/900
+python tools/repo_health/repo_guardrails.py                 # all 15 groups
+python -m ruff check src/ tests/ scripts/ tools/            # clean
+python -m vulture src/ whitelist.py --min-confidence=60     # clean
+npx eslint . --ignore-pattern "_out/**" ...                 # 0 problems
+npx knip                                                    # clean
+```
+
+Both new tests were confirmed to **fail against the unfixed code** before the
+fix landed. The dead-code gate was confirmed to **fail when the bug is
+reintroduced** and pass when it is not.
