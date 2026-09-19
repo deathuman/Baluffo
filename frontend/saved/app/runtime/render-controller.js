@@ -184,14 +184,14 @@ export function createSavedRenderController({
   function renderMissingInfoChips(job) {
     if (!isCustomJob(job)) return "";
     const chips = [];
-    if (!sanitizeUrl(job.jobLink || "")) chips.push("No link");
+    // Only "No city" survives here. It used to also emit "No link" and
+    // "No contract", but the cells directly below already say both: the LINK
+    // cell renders "No link" for a custom job, and CONTRACT renders "Unknown"
+    // when the contract type is unset. Repeating them in the chip row stated
+    // the same fact twice in one card. A city has no such counterpart — the
+    // LOCATION cell simply omits the line — so the chip still carries
+    // information and stays.
     if (!String(job.city || "").trim()) chips.push("No city");
-    if (
-      !String(job.contractType || "").trim() ||
-      String(job.contractType || "").toLowerCase() === "unknown"
-    ) {
-      chips.push("No contract");
-    }
     if (chips.length === 0) return "";
     return chips.map(label => `<span class="saved-missing-chip">${escapeHtml(label)}</span>`).join("");
   }

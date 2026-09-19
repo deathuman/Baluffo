@@ -92,22 +92,88 @@ test("saved phase row is a single zero-floor column in the shared card range", (
   assert.doesNotMatch(phaseRow, /\d+px\s+1fr/);
 });
 
-test("saved mobile rows keep their remove-button gutter as a variable", () => {
-  // The remove button is absolutely positioned from the same custom properties
-  // the row pads by, so overriding one without the other puts the button on top
-  // of the content. The gutter and the size are set in two separate mobile rules
-  // (the card rule and the compact-row rule), so the pair is checked as a union.
+test("saved mobile rows pair their metadata fields instead of one per line", () => {
+  // As a card the row was a single column, so each of the six cells owned a
+  // full-width line: at 811px every cell measured 648px wide while the values
+  // inside were 27-115px, spending 322px of height on five short strings and
+  // leaving ~450px of every line empty. An `auto-fit` grid pairs the short
+  // fields up — two per line where the width allows, one where it does not —
+  // which measures 254px for the same content.
   const rowBodies = ruleBodies(mobileBlock, ".saved-job-row");
   assert.ok(rowBodies.length, "the mobile .saved-job-row rules must exist");
-  const joined = rowBodies.join("\n");
-  assert.match(joined, /--saved-remove-gutter:/);
-  assert.match(joined, /--saved-remove-size:/);
-  assert.ok(
-    rowBodies.some((body) => /grid-template-columns:\s*1fr/.test(body)),
-    "the mobile row must collapse to a single column",
-  );
+  const gridRule = rowBodies.find((body) => /grid-template-columns/.test(body));
+  assert.ok(gridRule, "the mobile row must declare its tracks");
+  assert.match(gridRule, /repeat\(auto-fit/);
 
+  // The floor must be wrapped in `min()`: a bare `minmax(18rem, 1fr)` is a hard
+  // 288px floor, and at 360px the row's content box is 252px, so the track
+  // overflowed by 36px and the title's clip box ran 30px under the delete
+  // button. `min(18rem, 100%)` collapses the floor once the container is smaller.
+  const tracks = gridRule.match(/grid-template-columns:\s*([^;]+);/)?.[1] || "";
+  assert.match(tracks, /minmax\(min\(\s*\d+(?:\.\d+)?rem,\s*100%\s*\),\s*1fr\)/);
+
+  // Title and link carry the full width: the title is the card's heading, and
+  // the link row is a centred icon cluster or "No link", neither of which pairs
+  // meaningfully with a field beside it.
+  const spanRule = ruleBodies(mobileBlock, ".saved-job-row > .col-title")
+    .concat(ruleBodies(mobileBlock, ".saved-job-row > .col-link"))
+    .join("\n");
+  assert.match(spanRule, /grid-column:\s*1\s*\/\s*-1/);
+});
+
+test("saved mobile card labels line up and values start on one x", () => {
+  // The label was `flex: 0 0 72px` with mixed `text-align`: three labels were
+  // left-aligned and three centred, and since the glyphs are 26-61px wide the
+  // labels began at x=101, 106, 123... — visibly ragged. A fixed-width label
+  // column with a consistent alignment is what puts every value on the same x.
+  const labelRule = ruleBodies(mobileBlock, ".saved-job-row .job-cell::before")[0];
+  assert.ok(labelRule, "the mobile cell label rule must exist");
+  assert.match(labelRule, /flex:\s*0 0 \d/);
+  assert.match(labelRule, /text-align:\s*left/);
+
+  // Contract and Type are chips that desktop centres inside their track; on a
+  // card that leaves them floating away from their own label.
+  const chipRule = ruleBodies(mobileBlock, ".saved-job-row .col-contract")
+    .concat(ruleBodies(mobileBlock, ".saved-job-row .col-type"))
+    .join("\n");
+  assert.match(chipRule, /text-align:\s*left/);
+
+  // `.saved-link-actions` is `width: 100%; justify-content: center`, so on a
+  // full-width row "No link" sat at x=431 in the middle of the card while the
+  // other five values started at x=191.
+  const linkRule = ruleBodies(mobileBlock, ".saved-job-row .col-link .saved-link-actions")[0];
+  assert.ok(linkRule, "the mobile link-actions rule must exist");
+  assert.match(linkRule, /justify-content:\s*flex-start/);
+
+  // The company name is nowrap+ellipsis on desktop where its column is fixed;
+  // in a card the column is fluid, so wrapping beats truncating a name to
+  // "Really Long Co...".
+  const companyRule = ruleBodies(mobileBlock, ".saved-job-row .job-company-compact")[0];
+  assert.ok(companyRule, "the mobile company-name rule must exist");
+  assert.match(companyRule, /white-space:\s*normal/);
+});
+
+test("saved mobile remove button moves out of the content gutter", () => {
+  // It used to be centred on the whole row (`top: 50%`), which on a 322px card
+  // put it at y=769 — below the title it deletes and alongside the COMPANY cell
+  // — and it held a 68px left gutter open for the full height of the row.
   const buttonRule = ruleBodies(mobileBlock, ".remove-inline-btn")[0];
   assert.ok(buttonRule, "the mobile .remove-inline-btn rule must exist");
-  assert.match(buttonRule, /left:\s*calc\(\(var\(--saved-remove-gutter\)/);
+  assert.match(buttonRule, /left:\s*auto/);
+  assert.match(buttonRule, /right:/);
+  assert.match(buttonRule, /transform:\s*none/);
+  assert.doesNotMatch(buttonRule, /top:\s*50%/);
+
+  // The title must reserve room for the button it now shares a line with. The
+  // value must be non-zero: `padding-right: 0` still matches a bare
+  // `padding-right` check while leaving the title free to run under the button.
+  const titlePad = ruleBodies(mobileBlock, ".saved-job-row > .col-title")
+    .map((body) => body.match(/padding-right:\s*([^;]+);/)?.[1])
+    .filter(Boolean);
+  assert.ok(titlePad.length, "the mobile title must reserve space for the button");
+  for (const value of titlePad) {
+    const trimmed = value.trim();
+    assert.notEqual(trimmed, "0", "the reserved space must not be zero");
+    assert.doesNotMatch(trimmed, /^0(?:px|rem|em|%)?$/, "the reserved space must not be zero");
+  }
 });
