@@ -39,7 +39,65 @@ are a pre-existing missing-Playwright-Chromium-binary environment issue in
 | W1 shared helper unification | `ab9d3481` | **−207** |
 | W6 scripts / tools | `9b5c1508` | **+1,391** |
 | W5 test consolidation | `df485e83` | **−444** |
-| **Net** | | **+740** |
+| W1b structural clones | `ebac6401` | **−894** |
+| **Net** | | **−154** |
+
+### W1b: why the first scan missed most of the duplication
+
+W1 matched function bodies by **AST-normalized exact equality**. That finds
+`_as_dict` in file A matching `_as_dict` in file B, but it cannot see *the same
+logic with different identifiers and constants* — which is precisely the shape
+provider adapters, rehearsal runners, and status renderers take.
+
+Re-scanning with **alpha-renaming** (every identifier → `_V`, every constant →
+`_S`/`_N`, attributes and argument names normalized) found **277 groups /
+3,369 lines in `src` — 3.3× the exact-match figure.** The same blind spot applied
+to `frontend/*.js` and `tests/*.mjs`, which the first pass never scanned for
+function duplication at all.
+
+W1b consolidated the substantive subset (median body ≥8 lines):
+
+| Area | Groups | Measured |
+|---|---:|---:|
+| `src` | 18 | **−176** |
+| `frontend` | 19 | **−11** |
+| `tests/*.mjs` | 27 | **−707** |
+| **Total** | **64** | **−894** |
+
+The wins came from **parameterized factories and tables**, not from moving code:
+`_make_sources_runner` replaced 14 near-identical `run_*_sources_source`
+wrappers; `_make_rehearsal_runner` replaced 6; a shared 27-line browser-fallback
+token list replaced two byte-identical copies. The frontend's −11 is honest: two
+new shared modules cost 179 lines of JSDoc'd helpers against 190 lines of
+recovered duplication, so the real win there was 17 byte-identical merges, not
+a line count.
+
+Two detector traps worth recording, both caught before they caused damage:
+
+- **Over-normalizing string literals is a false-positive machine.** Normalizing
+  `"..."`/`'...'`/`` `...` `` to a single token collapsed *every* HTML template
+  literal in the frontend into one fake 13-member "clone group" worth 868
+  apparent lines. Identifier-only normalization showed those templates are
+  genuinely different. The naive number would have sent a worker chasing 13
+  non-clones.
+- **A 2-line duplicate is worth 1 line, not 2.** It becomes a 1-line import. So
+  the 1,297 lines of 2–3-line groups are mostly illusory, and the 83 groups with
+  median ≥8 lines were the only ones worth dispatching.
+
+### Where duplication now stands
+
+| Area | Before W1b | After W1b |
+|---|---:|---:|
+| `src` (all alpha-renamed groups) | 277 / 3,369 | **269 / 2,928** |
+| `src` (median ≥8 lines) | 83 / 1,608 | **73 / 1,131** |
+| `tests/*.mjs` | 41 / 948 | **5 / 104** |
+| `frontend/*.js` | 56 / 510 | 17 byte-identical merged |
+
+`tests/*.mjs` is effectively exhausted (89% cleared). `src` still holds 73
+groups at median ≥8 lines / 1,131 lines — a legitimate follow-up, but note the
+measured yield rate: 18 groups recovered 176 lines, so the remaining 1,131 lines
+of *potential* is worth roughly **−300 to −500** in practice, not 1,131.
+
 
 The plan projected −29,000…−42,500 for these three. They delivered **+740**. Three
 projections were wrong, each in the same direction, and the reasons are worth
@@ -149,10 +207,12 @@ does not. Measured ceilings for what is left:
 
 ### Revised program ceiling
 
-Adding the measured W1 result to the revised ceilings for what remains gives a
-realistic total of **−4,000 to −7,000 lines (0.8%–1.5%)**, with the *only*
-substantial further reduction available being deletion of the test corpus or of
-the compatibility surfaces the guardrails exist to protect.
+Adding the measured W1 and W1b results to the revised ceilings for what remains
+gives a realistic total of **−4,000 to −7,000 lines (0.8%–1.5%)** beyond what has
+landed, with the *only* substantial further reduction available being deletion of
+the test corpus or of the compatibility surfaces the guardrails exist to protect.
+
+Landed so far: **−154 net** across W1, W5, W6, and W1b.
 
 
 ## Ownership
