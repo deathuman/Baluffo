@@ -10,10 +10,11 @@
   // only by a unit test through the cache-busting importFresh helper, whose
   // dynamic import knip cannot statically resolve.
   "ignore": ["frontend/shared/app-version.js"],
-  "ignoreBinaries": [
-    "python",
-    "ruff"
-  ],
+  // `python` was listed here defensively, but knip resolves it from the
+  // package.json scripts it actually reads, so the entry only produced a
+  // "Remove from ignoreBinaries" hint on every run. `ruff` is still needed:
+  // it is invoked by the pre-commit config, not by any script knip parses.
+  "ignoreBinaries": ["ruff"],
   "project": [
     "frontend/**/*.js",
     "frontend/shared/config/admin-config.js",
