@@ -140,6 +140,74 @@ def read_json_object_rows(path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in payload if isinstance(row, dict)]
 
 
+_TAIL_BLOCK_SIZE = 64 * 1024
+
+
+def read_jsonl_rows_tail(path: Path, limit: int = 200) -> list[dict[str, Any]]:
+    """Return up to ``limit`` trailing JSON-object rows of a newline JSON file.
+
+    Reads backward from the end of the file in bounded blocks so callers only
+    pay for the rows they receive instead of the whole file. A ``limit`` of
+    zero or less returns every row. Missing/unreadable files return ``[]``;
+    blank, malformed, and non-object lines are skipped exactly as a full-file
+    scan would.
+    """
+    path = Path(path)
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return []
+    if size <= 0:
+        return []
+    if limit <= 0:
+        try:
+            with path.open("rb") as handle:
+                return _valid_json_object_lines(handle.read())
+        except OSError:
+            return []
+    max_rows = max(1, int(limit))
+
+    window = b""
+    position = size
+    try:
+        with path.open("rb") as handle:
+            while position > 0 and window.count(b"\n") <= max_rows:
+                take = min(_TAIL_BLOCK_SIZE, position)
+                position -= take
+                handle.seek(position)
+                window = handle.read(take) + window
+            if position == 0:
+                starts_clean = True
+            else:
+                handle.seek(position - 1)
+                starts_clean = handle.read(1) == b"\n"
+            if not starts_clean and b"\n" in window:
+                window = window.split(b"\n", 1)[1]
+            rows = _valid_json_object_lines(window)
+            if position > 0 and len(rows) < max_rows:
+                handle.seek(0)
+                rows = _valid_json_object_lines(handle.read())
+    except OSError:
+        return []
+    return rows[-max_rows:]
+
+
+def _valid_json_object_lines(payload: bytes) -> list[dict[str, Any]]:
+    """Parse newline-delimited JSON objects out of ``payload``, skipping the rest."""
+    rows: list[dict[str, Any]] = []
+    for raw_line in payload.split(b"\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            rows.append(parsed)
+    return rows
+
+
 def json_dumps(value: Any) -> str:
     """Serialize a JSON payload deterministically (sorted keys, compact, UTF-8).
 

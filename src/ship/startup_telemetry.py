@@ -23,6 +23,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
+from src.shared.json_io import read_jsonl_rows_tail
+
 _STARTUP_TRACE_LOCK = threading.Lock()
 STARTUP_METRIC_SCHEMA_VERSION = 1
 STARTUP_METRIC_DEFAULT_EVENT = "unknown"
@@ -170,21 +172,7 @@ def append_runtime_startup_trace(event: str, **fields: object) -> None:
 
 def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, Any]]:
     path = Path(data_dir) / "desktop-startup-metrics.jsonl"
-    rows: list[dict[str, Any]] = []
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(row, dict):
-                    rows.append(row)
-    except OSError:
-        return []
-    if limit > 0:
-        return rows[-limit:]
-    return rows
+    return read_jsonl_rows_tail(path, limit=limit)
 
 
 def _append_wait_for_url_trace(

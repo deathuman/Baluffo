@@ -17,6 +17,7 @@ from typing import Any, Protocol, cast
 
 from src.bridge.pipeline_service import PipelineRuntime
 from src.bridge.task_process_registry import TaskProcessRegistry
+from src.shared.json_io import read_jsonl_rows_tail
 from src.ship.startup_telemetry import build_startup_metric_row
 
 
@@ -139,22 +140,7 @@ def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso
 
 def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
     max_rows = max(1, min(1000, int(limit or 200)))
-    try:
-        text = STARTUP_METRICS_PATH.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        line = str(line or "").strip()
-        if not line:
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            rows.append(parsed)
-    return rows[-max_rows:]
+    return read_jsonl_rows_tail(STARTUP_METRICS_PATH, limit=max_rows)
 
 
 def get_owner_state() -> dict[str, Any]:

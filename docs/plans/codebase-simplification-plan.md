@@ -328,8 +328,8 @@ scan of `src/` found 21 byte-identical pairs (235 nominal lines) after W1b.
 Worker-driven extraction merged the genuine clusters; the registry 5-helper
 group was rejected because its shared leaf nets **−4** (banner overhead
 erodes the win) and the social pair is cycle-blocked (`social.py` imports
-`register.py`). Landed net: **−76** (`db4f4db7` tip measurement moved
-`src` 173,519 → 173,443).
+`register.py`). Landed net: **−28** (`4e6b46a5` tip measurement moved
+`src` 173,519 → 173,491).
 
 
 ## Ownership
