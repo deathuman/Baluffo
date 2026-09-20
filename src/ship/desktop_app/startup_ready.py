@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from src.shared.coerce import as_float as _as_float
 from src.shared.json_shapes import (
     as_json_object as _as_dict,
 )
@@ -30,17 +31,6 @@ from .config import (
     STARTUP_HANDOFF_GRACE_TIMEOUT_S,
     STARTUP_HANDOFF_POLL_INTERVAL_S,
 )
-
-
-def _as_float(value: object, default: float = 0.0) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _startup_handoff_signal_events() -> dict[str, str]:

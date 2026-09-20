@@ -24,7 +24,12 @@ from src.jobs.dedup_identity import (
     _is_elevato_url,
     _is_meaningful_location_value,
 )
-from src.jobs.text_utils import get_city_filter_option_values
+from src.jobs.text_utils import (
+    get_city_filter_option_values,
+)
+from src.jobs.text_utils import (
+    location_summary_from_entries as _location_summary_from_entries,
+)
 
 
 def _normalized_bundle_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -197,16 +202,6 @@ def _fallback_merged_locations(
     if not merged_locations and (fallback_city or fallback_country):
         return [{"city": fallback_city, "country": fallback_country}]
     return merged_locations
-
-
-def _location_summary_from_entries(entries: list[dict[str, Any]]) -> str:
-    return " | ".join(
-        ", ".join(
-            part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
-        )
-        for item in entries
-        if clean_text(item.get("city")) or clean_text(item.get("country"))
-    )
 
 
 def _location_state_from_payload(

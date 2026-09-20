@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
+from src.shared.coerce import as_float as _as_float
 from src.shared.json_shapes import as_json_object as _as_dict
 from src.shared.utils import int_or_default as _as_int
 
@@ -44,17 +45,6 @@ LEAN_CHROMIUM_APP_FLAGS = (
     "--disable-sync",
     "--metrics-recording-only",
 )
-
-
-def _as_float(value: object, default: float = 0.0) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return default
-    return default
 
 
 def _profile_dir_hash(profile_dir: Path) -> str:

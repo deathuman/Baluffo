@@ -21,6 +21,9 @@ from src.jobs.text_utils import (
     norm_text,
     sanitize_location_text,
 )
+from src.jobs.text_utils import (
+    location_summary_from_entries as _location_summary_from_clean_entries,
+)
 
 _MISSING_COUNTRY_PLACEHOLDERS = {"", "unknown", "n/a", "na", "none", "null"}
 
@@ -49,16 +52,6 @@ def _clean_final_location_entry(
     if raw_country and raw_country != country and not _is_missing_country_placeholder(raw_country):
         reasons["country"] = country_reason or "cleaned_country"
     return cleaned_items, reasons
-
-
-def _location_summary_from_clean_entries(entries: list[dict[str, str]]) -> str:
-    return " | ".join(
-        ", ".join(
-            part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
-        )
-        for item in entries
-        if clean_text(item.get("city")) or clean_text(item.get("country"))
-    )
 
 
 def _is_high_confidence_summary_rejection(reason: str) -> bool:

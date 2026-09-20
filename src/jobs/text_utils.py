@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from html import unescape
 from pathlib import Path
@@ -221,6 +221,35 @@ def clean_text(value: Any) -> str:
 
 def norm_text(value: Any) -> str:
     return re.sub(r"\s+", " ", clean_text(value)).strip().lower()
+
+
+def title_identity_tokens(value: Any) -> list[str]:
+    """Tokenize a title/slug into lowercased alphanumeric words for identity matching.
+
+    ``&`` is treated as a separator, and ``+``/``#`` stay inside tokens so
+    ``C++``/``C#`` survive tokenization.
+    """
+    raw = clean_text(value)
+    if not raw:
+        return []
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
+    ]
+
+
+def location_summary_from_entries(entries: Sequence[Mapping[str, Any]]) -> str:
+    """Join location entries into ``"City, Country | City, Country"`` display text.
+
+    Entries with neither a city nor a country are skipped, and a missing part of a
+    kept entry is dropped rather than leaving an empty separator behind.
+    """
+    return " | ".join(
+        ", ".join(
+            part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
+        )
+        for item in entries
+        if clean_text(item.get("city")) or clean_text(item.get("country"))
+    )
 
 
 def sanitize_public_text(value: Any) -> str:

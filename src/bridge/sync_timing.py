@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_io import read_json_object_rows
 from src.shared.utils import now_iso
 from src.source_registry import save_json_atomic
 
@@ -58,13 +58,7 @@ class SyncTimingRecorder:
 
 
 def load_sync_timing_history(path: Path) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(payload, list):
-        return []
-    return [dict(row) for row in payload if isinstance(row, dict)]
+    return read_json_object_rows(path)
 
 
 def append_sync_timing_record(

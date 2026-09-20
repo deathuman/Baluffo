@@ -19,6 +19,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
+from src.bridge.source_row_urls import urls_from_row as _urls_from_row
 from src.shared.coerce import as_text as _clean
 from src.source_discovery.config import FETCH_MAX_RETRIES, RETRYABLE_HTTP_CODES
 from src.source_discovery.io_runtime import endpoint_url
@@ -58,30 +59,6 @@ class SourceProbeEvidence:
     response_text: str = ""
     payload_adapter: str = ""
     payload_fields: dict[str, Any] | None = None
-
-
-def _urls_from_row(row: dict[str, Any]) -> list[str]:
-    values = [
-        row.get(key)
-        for key in (
-            "api_url",
-            "feed_url",
-            "board_url",
-            "listing_url",
-            "careersUrl",
-            "url",
-            "sourceUrl",
-            "id",
-            "sourceId",
-        )
-    ]
-    urls: list[str] = []
-    for value in values:
-        for match in re.findall(r"https?://[^\s|]+", _clean(value)):
-            url = match.rstrip("),.;'\"")
-            if url and url not in urls:
-                urls.append(url)
-    return urls
 
 
 def _adapter_from_row(row: dict[str, Any]) -> str:

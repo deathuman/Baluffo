@@ -125,6 +125,21 @@ def read_json_object(
     return payload if isinstance(payload, dict) else dict(fallback or {})
 
 
+def read_json_object_rows(path: Path) -> list[dict[str, Any]]:
+    """Return the JSON array at ``path`` as dict rows, or ``[]`` when unusable.
+
+    Missing/unreadable files, malformed JSON, and non-array payloads all collapse
+    to an empty list; non-dict rows inside the array are skipped.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [dict(row) for row in payload if isinstance(row, dict)]
+
+
 def json_dumps(value: Any) -> str:
     """Serialize a JSON payload deterministically (sorted keys, compact, UTF-8).
 

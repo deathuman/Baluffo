@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.bridge.sync_timing import load_sync_timing_history as _load_history
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 from src.contracts import SCHEMA_VERSION
 from src.shared.coerce import as_dict as _progress_dict
@@ -31,16 +32,6 @@ def _schema_version_int() -> int:
         return int(SCHEMA_VERSION)
     except (TypeError, ValueError):
         return int(float(str(SCHEMA_VERSION or 1)))
-
-
-def _load_history(path: Path) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(payload, list):
-        return []
-    return [dict(row) for row in payload if isinstance(row, dict)]
 
 
 _parse_iso = _shared_parse_iso_from_utils

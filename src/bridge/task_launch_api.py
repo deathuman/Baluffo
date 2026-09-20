@@ -79,6 +79,9 @@ from src.bridge.task_launch_jobs_feed import (
 from src.bridge.task_launch_jobs_feed import (
     jobs_feed_reconciliation_transaction as jobs_feed_reconciliation_transaction,
 )
+from src.bridge.task_launch_script import (
+    run_background_script_with_identity as run_background_script_with_identity,
+)
 from src.bridge.task_launch_source_runs import (
     SourceRunContext,
 )
@@ -220,31 +223,7 @@ class TaskLaunchApi(
         )
         return int(proc.pid)
 
-    @staticmethod
-    def _call_run_background_script(
-        run_background_script: Callable[..., int],
-        script_name: str,
-        args: list[str],
-        *,
-        extra_env: dict[str, str],
-        run_id: str,
-        task_type: str,
-        metadata: dict[str, Any],
-    ) -> int:
-        try:
-            return run_background_script(
-                script_name,
-                args,
-                extra_env=extra_env,
-                run_id=run_id,
-                task_type=task_type,
-                metadata=metadata,
-            )
-        except TypeError as exc:
-            message = str(exc)
-            if "unexpected keyword argument" not in message or "run_id" not in message:
-                raise
-            return run_background_script(script_name, args, extra_env=extra_env)
+    _call_run_background_script = staticmethod(run_background_script_with_identity)
 
     # ── Thin wrappers that delegate to leaf module ──
 

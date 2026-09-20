@@ -13,8 +13,10 @@ from typing import Any
 from urllib.parse import unquote
 
 from src.jobs.text_utils import (
-    clean_text,
     norm_text,
+)
+from src.jobs.text_utils import (
+    title_identity_tokens as _google_sheets_slug_tokens,
 )
 
 _GOOGLE_SHEETS_TITLE_SLUG_STOP_SEGMENTS = frozenset(
@@ -187,15 +189,6 @@ _GOOGLE_SHEETS_TITLE_EVIDENCE_TOKENS = frozenset(
         "writer",
     }
 )
-
-
-def _google_sheets_slug_tokens(value: Any) -> list[str]:
-    raw = clean_text(value)
-    if not raw:
-        return []
-    return [
-        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
-    ]
 
 
 def _google_sheets_slug_has_title_evidence(value: Any) -> bool:

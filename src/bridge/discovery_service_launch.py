@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import threading
 import uuid
-from collections.abc import Callable
 from contextlib import nullcontext
 from typing import Any
 
@@ -18,6 +17,9 @@ from src.bridge.discovery_service_core import DiscoveryServiceState
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
+)
+from src.bridge.task_launch_script import (
+    run_background_script_with_identity as run_background_script_with_identity,
 )
 
 _DISCOVERY_LAUNCH_ERRORS = (RuntimeError, OSError, ValueError)
@@ -35,31 +37,7 @@ class DiscoveryServiceLaunchMixin(DiscoveryServiceState):
             except (TypeError, ValueError, OverflowError):
                 return 1
 
-    @staticmethod
-    def _run_background_script_with_identity(
-        run_background_script: Callable[..., int],
-        script_name: str,
-        args: list[str],
-        *,
-        extra_env: dict[str, str],
-        run_id: str,
-        task_type: str,
-        metadata: dict[str, Any],
-    ) -> int:
-        try:
-            return run_background_script(
-                script_name,
-                args,
-                extra_env=extra_env,
-                run_id=run_id,
-                task_type=task_type,
-                metadata=metadata,
-            )
-        except TypeError as exc:
-            message = str(exc)
-            if "unexpected keyword argument" not in message or "run_id" not in message:
-                raise
-            return run_background_script(script_name, args, extra_env=extra_env)
+    _run_background_script_with_identity = staticmethod(run_background_script_with_identity)
 
     def trigger_discovery_task(
         self,

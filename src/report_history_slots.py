@@ -174,6 +174,30 @@ def _decide_terminal_upserts(existing_payload: Any, incoming_payload: Any) -> li
     return snapshots
 
 
+def _upsert_terminal_history_payloads(
+    existing_payload: Any,
+    incoming_payload: Any,
+    *,
+    history_dir: Path,
+    file_stem: str,
+) -> None:
+    """Snapshot each decided terminal payload into its run's history slot.
+
+    Serialization failures and slot write errors are swallowed: history slots are
+    best-effort evidence and must never fail the report write that triggered them.
+    """
+    with _LOCK:
+        for payload in _decide_terminal_upserts(existing_payload, incoming_payload):
+            try:
+                text = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+            except (TypeError, ValueError):
+                continue
+            try:
+                _upsert_history_slot(text, history_dir=history_dir, file_stem=file_stem)
+            except OSError:
+                pass
+
+
 def upsert_terminal_report_history_slots(
     *,
     path: Path,
@@ -206,23 +230,12 @@ def upsert_terminal_report_history_slots(
     if existing_payload is None and incoming_payload is None:
         return
 
-    def _upsert(payload: Any) -> None:
-        try:
-            text = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-        except (TypeError, ValueError):
-            return
-        try:
-            _upsert_history_slot(
-                text,
-                history_dir=Path(path).parent / history_dir_name,
-                file_stem=file_stem,
-            )
-        except OSError:
-            pass
-
-    with _LOCK:
-        for payload in _decide_terminal_upserts(existing_payload, incoming_payload):
-            _upsert(payload)
+    _upsert_terminal_history_payloads(
+        existing_payload,
+        incoming_payload,
+        history_dir=Path(path).parent / history_dir_name,
+        file_stem=file_stem,
+    )
 
 
 def upsert_terminal_report_history_payloads(
@@ -242,20 +255,9 @@ def upsert_terminal_report_history_payloads(
     if Path(path).name not in report_names:
         return
 
-    def _upsert(payload: Any) -> None:
-        try:
-            text = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-        except (TypeError, ValueError):
-            return
-        try:
-            _upsert_history_slot(
-                text,
-                history_dir=Path(path).parent / history_dir_name,
-                file_stem=file_stem,
-            )
-        except OSError:
-            pass
-
-    with _LOCK:
-        for payload in _decide_terminal_upserts(existing_payload, incoming_payload):
-            _upsert(payload)
+    _upsert_terminal_history_payloads(
+        existing_payload,
+        incoming_payload,
+        history_dir=Path(path).parent / history_dir_name,
+        file_stem=file_stem,
+    )

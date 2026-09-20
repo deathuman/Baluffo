@@ -25,6 +25,9 @@ from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
+from src.jobs.adapters.plugins.provider_api.lifecycle import (
+    apply_provider_cache_decision as _apply_structured_cache_decision,
+)
 from src.jobs.adapters.plugins.provider_api.source_errors import (
     EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
     reraise_unexpected_provider_api_source_exception,
@@ -33,7 +36,6 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.registry import registry_entries
-from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text, normalize_url
 
 certifi: ModuleType | None
@@ -527,26 +529,6 @@ def _structured_entry_report(*, adapter_name: str, studio: str, source_name: str
         "error": "",
         "duplicateRate": 0.0,
     }
-
-
-def _apply_structured_cache_decision(
-    *,
-    entry_report: dict[str, Any],
-    source_name: str,
-    adapter_name: str,
-    source_state_rows: dict[str, dict[str, Any]] | None,
-    force_refresh_all: bool,
-) -> None:
-    cache_decision = get_incremental_cache_decision(
-        source_name,
-        source_state_rows or {},
-        adapter=adapter_name,
-        force_refresh_all=force_refresh_all,
-    )
-    entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-    entry_report["cacheDecisionReason"] = (
-        clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-    )
 
 
 def _skip_structured_for_cache(entry_report: dict[str, Any]) -> bool:

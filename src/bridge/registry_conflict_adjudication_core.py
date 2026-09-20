@@ -7,11 +7,11 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused registry adjudic
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from src.bridge.source_row_urls import urls_from_row as _urls_from_row
 from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _coerce_as_list
 from src.shared.coerce import as_text as _clean
@@ -54,30 +54,6 @@ def _row_adapter(row: dict[str, Any]) -> str:
         return adapter
     row_id = _row_id(row).lower()
     return row_id.split(":", 1)[0] if ":" in row_id else ""
-
-
-def _urls_from_row(row: dict[str, Any]) -> list[str]:
-    values = [
-        row.get(key)
-        for key in (
-            "api_url",
-            "feed_url",
-            "board_url",
-            "listing_url",
-            "careersUrl",
-            "url",
-            "sourceUrl",
-            "id",
-            "sourceId",
-        )
-    ]
-    urls: list[str] = []
-    for value in values:
-        for match in re.findall(r"https?://[^\s|]+", _clean(value)):
-            url = match.rstrip("),.;'\"")
-            if url and url not in urls:
-                urls.append(url)
-    return urls
 
 
 def _adapter_token(row: dict[str, Any], *keys: str) -> str:

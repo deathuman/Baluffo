@@ -8,7 +8,6 @@ AI boundary implement in: this leaf for merge preferences; identity/scoring live
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from src.jobs.canonicalize import (
@@ -31,6 +30,9 @@ from src.jobs.dedup_identity import (
     fingerprint_url,
 )
 from src.jobs.page_gating import looks_like_job_title_candidate
+from src.jobs.text_utils import (
+    title_identity_tokens as _title_tokens,
+)
 
 
 def _merge_output_fields(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
@@ -43,15 +45,6 @@ def _merge_output_fields(merged: dict[str, Any], other_dict: dict[str, Any]) -> 
             continue
         if not clean_text(merged.get(field)) and clean_text(other_dict.get(field)):
             merged[field] = other_dict[field]
-
-
-def _title_tokens(value: Any) -> list[str]:
-    raw = clean_text(value)
-    if not raw:
-        return []
-    return [
-        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
-    ]
 
 
 def _is_repairable_broad_sheet_title(value: Any) -> bool:

@@ -323,6 +323,14 @@ the test corpus or of the compatibility surfaces the guardrails exist to protect
 
 Landed so far: **−162 net** across W1, W5, W6, and W1b.
 
+Post-closeout follow-up (clone consolidation round): an exact-body structural
+scan of `src/` found 21 byte-identical pairs (235 nominal lines) after W1b.
+Worker-driven extraction merged the genuine clusters; the registry 5-helper
+group was rejected because its shared leaf nets **−4** (banner overhead
+erodes the win) and the social pair is cycle-blocked (`social.py` imports
+`register.py`). Landed net: **−76** (`db4f4db7` tip measurement moved
+`src` 173,519 → 173,443).
+
 
 ## Ownership
 
@@ -548,16 +556,36 @@ What the program did deliver, measured:
   preamble, boundary banner, compatibility `__all__`). Measured seven times.
   Decomposition is a legibility purchase, never a reduction lever.
 
-### Open question carried forward
+### Open question carried forward — resolved
 
 `startBootstrapWithConfirmation` in `frontend/jobs/app/feed-first-run-flow.js`
 had a guard that could never change its outcome; it has been removed
-behaviour-identically. But the guard may have been *intended* to do something on
-the no-evidence path — emit a metric, or refuse to silently accept an
-unconfirmed start — in which case the plain `return payload` was the bug. The
-evidence leans toward vestigial: the caller already throws when the payload
-shows no start, so the check appears to have migrated one frame up. Recorded
-rather than guessed at, because it is a behaviour question.
+behaviour-identically. The open question was whether the guard was *intended*
+to do something on the no-evidence path — emit a metric, or refuse to silently
+accept an unconfirmed start — in which case the plain `return payload` was the
+bug.
+
+Resolution: **vestigial, confirmed** — the guard was never a functioning
+check. `git log -L` shows it was introduced already in no-op form by
+`023131df` ("Fix v0.2.1 jobs startup regressions"):
+
+```js
+const payload = await startJobsBootstrap({ timeoutMs: bootstrapStartTimeoutMs });
+if (bootstrapStartHasRunningEvidence(payload)) return payload;
+return payload;
+```
+
+Both branches return `payload`, so the guard could never change control flow.
+An exhaustive 8/8 truth-table over the three evidence flags (`started`,
+`alreadyRunning`, `alreadyCompleted`) shows the guard's condition is exactly
+the complement of the caller's existing handling one frame up in
+`startBootstrapAndLoad` (`alreadyCompleted` early-return at L133, throw on
+`!started && !alreadyRunning` at L142-144). The real check had already
+migrated to the caller; the metric intent is likewise covered by the
+`requested`/`uncertain`/`confirmed` funnel that only ever fires on the confirm
+path. The `bootstrapStartHasRunningEvidence` predicate still lives in
+`feed-report-probe.js` because the sibling retry guard at L251 (which gates an
+actual `emitMetric`) still needs it.
 
 ### Pre-existing blockers — fixed after closeout
 
