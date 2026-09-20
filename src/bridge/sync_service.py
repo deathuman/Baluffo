@@ -242,7 +242,7 @@ class SyncService:
         surface: str,
         payload: dict[str, Any],
         *,
-        write: Callable[[TaskRuntimeStore, dict[str, Any]], None],
+        write: Callable[[TaskRuntimeStore, dict[str, Any]], object],
         ok_code: str,
         failed_code: str,
     ) -> None:

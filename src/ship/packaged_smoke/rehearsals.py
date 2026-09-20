@@ -9,7 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged rehears
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import rehearsal_browser as rehearsal_browser_mod
 from . import rehearsal_sync as rehearsal_sync_mod
@@ -278,10 +278,13 @@ def _make_rehearsal_runner(module: Any, scenario: str) -> Any:
         runtime_timeout_s: float,
     ) -> dict[str, Any]:
         _root()
-        return getattr(module, scenario)(
-            exe_path=exe_path,
-            artifacts_dir=artifacts_dir,
-            runtime_timeout_s=runtime_timeout_s,
+        return cast(
+            dict[str, Any],
+            getattr(module, scenario)(
+                exe_path=exe_path,
+                artifacts_dir=artifacts_dir,
+                runtime_timeout_s=runtime_timeout_s,
+            ),
         )
 
     return runner

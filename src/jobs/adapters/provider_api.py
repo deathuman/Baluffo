@@ -69,52 +69,32 @@ def _make_sources_runner(
     """Build a keyword-only provider-API source runner for one adapter key.
 
     Every ``run_*_sources_source`` wrapper below is this factory bound to a
-    different adapter key; the only other axis is whether the adapter accepts
-    the optional ``try_playwright`` seam.
+    different adapter key; ``accepts_try_playwright`` marks the adapters whose
+    plugin takes the optional browser-fallback seam. The runner always
+    advertises that seam so every generated runner shares one signature shape,
+    and forwards it only for the adapters that accept it.
     """
-    if accepts_try_playwright:
 
-        def runner(
-            *,
-            fetch_text: Callable[[str, int], str],
-            timeout_s: int,
-            retries: int,
-            backoff_s: float,
-            source_state_rows: dict[str, dict[str, Any]] | None = None,
-            force_refresh_all: bool = False,
-            try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-        ) -> list[RawJob]:
-            return _dispatch_provider_api(
-                adapter_key,
-                fetch_text=fetch_text,
-                timeout_s=timeout_s,
-                retries=retries,
-                backoff_s=backoff_s,
-                source_state_rows=source_state_rows,
-                force_refresh_all=force_refresh_all,
-                try_playwright=try_playwright,
-            )
-
-    else:
-
-        def runner(
-            *,
-            fetch_text: Callable[[str, int], str],
-            timeout_s: int,
-            retries: int,
-            backoff_s: float,
-            source_state_rows: dict[str, dict[str, Any]] | None = None,
-            force_refresh_all: bool = False,
-        ) -> list[RawJob]:
-            return _dispatch_provider_api(
-                adapter_key,
-                fetch_text=fetch_text,
-                timeout_s=timeout_s,
-                retries=retries,
-                backoff_s=backoff_s,
-                source_state_rows=source_state_rows,
-                force_refresh_all=force_refresh_all,
-            )
+    def runner(
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        source_state_rows: dict[str, dict[str, Any]] | None = None,
+        force_refresh_all: bool = False,
+        try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    ) -> list[RawJob]:
+        return _dispatch_provider_api(
+            adapter_key,
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            source_state_rows=source_state_rows,
+            force_refresh_all=force_refresh_all,
+            try_playwright=try_playwright if accepts_try_playwright else None,
+        )
 
     return runner
 

@@ -553,31 +553,76 @@ evidence leans toward vestigial: the caller already throws when the payload
 shows no start, so the check appears to have migrated one frame up. Recorded
 rather than guessed at, because it is a behaviour question.
 
-### Known, unrelated blockers
+### Pre-existing blockers — fixed after closeout
 
-Two pre-existing conditions will fail `git push` and are **not** from this work:
+Both conditions found during closeout were real pre-existing defects, and both
+are now fixed in a follow-up commit. Neither was introduced by this program.
 
-- **6 `mypy` errors** in `src/ship/packaged_smoke/rehearsals.py`,
-  `src/bridge/sync_service.py` (×2), `src/jobs/adapters/community/__init__.py`
-  (×2), and `src/jobs/adapters/provider_api.py`. No `src/` file is modified by
-  this program.
-- **6 `test_browser_fallback_pool.py` failures** from a Playwright version
-  mismatch: `@playwright/test` is pinned `1.63.0`, the installed module is
-  `1.58.2`, and the runner wants browser revision `1243` while the cache holds
-  `1208`/`1234`. Fixing it means reinstalling a dependency, which needs explicit
-  approval.
+**6 `mypy` errors**, all signature-contract mismatches rather than logic bugs:
+
+- `src/ship/packaged_smoke/rehearsals.py` — the generic runner returned the
+  dynamic `getattr(module, scenario)(...)` result as `Any`; wrapped in `cast`.
+- `src/bridge/sync_service.py` (×2) — `_write_shadow_surface` declared its
+  `write` callback as returning `None`, but both call sites pass store methods
+  returning `dict[str, Any]`. The callback's return value is never consumed
+  (sole call site is `write(runtime_store, payload)`), so the annotation was the
+  wrong side of the contract; widened to `object`.
+- `src/jobs/adapters/community/__init__.py` (×2) — `_run_multi_url_source`
+  called `parse_html(text, base_url=url)` while declaring
+  `Callable[[str, str], list[RawJob]]`. The declared type described a
+  positional-second-argument call the body never makes. Replaced with a
+  `_HtmlParser` Protocol whose keyword-only `base_url` matches the actual call
+  and is satisfied by both parser shapes in the package.
+- `src/jobs/adapters/provider_api.py` — `_make_sources_runner` defined two
+  `runner` variants with different signatures, which `mypy` rejects. Collapsed
+  to one signature that always advertises `try_playwright` and forwards it only
+  for accepting adapters. Behaviour-preserving: `_accepted_loader_kwargs`
+  (`src/jobs/pipeline_source_results.py:89`) already filtered kwargs against the
+  loader's own signature before the call, so a non-accepting adapter never
+  received the seam and still does not. Verified directly: omitting
+  `try_playwright` is byte-identical to passing `None`, a non-accepting adapter
+  still drops a real callable, and an accepting adapter still forwards it.
+
+**`test_browser_fallback_pool.py` failures** from a Playwright version mismatch.
+`@playwright/test` is pinned `1.63.0` in both `package.json` and
+`package-lock.json` (and `1.63.0` is the current published release); only
+`node_modules` held a stale `1.58.2` from an interrupted install. Reinstalling
+reconciled it with no manifest change, and the browser cache was completed for
+revision `1243`. Both Playwright installs are now consistent:
+
+| Install | Version | Drives |
+|---|---|---|
+| Node `@playwright/test` | 1.63.0 | `tests/frontend/smoke.spec.js`, `perf-trace.spec.js` |
+| Python `playwright` | 1.63.0 | `tests/test_browser_fallback_pool.py` |
+
+Verified: headless smoke 10/10, headed smoke 10/10, perf 3/3, and
+`test_browser_fallback_pool.py` 11 passed / 1 skipped — so that suite no longer
+needs excluding from the acceptance run.
+
+Note that `requirements-lock.txt:136` pins `playwright==1.58.0` for the
+`scrapy-playwright` path. That is a separate, tracked Python requirement and was
+not changed; the `1.63.0` install above is the untracked global one the browser
+pool test imports.
+
 
 ## Wave 4 Verification
 
 ```
-python -m pytest tests/ -q -k "not browser_fallback_pool"   # 5406 passed, 1 skipped
+python -m pytest tests/ -q                                  # 5417 passed, 2 skipped
 node --test --test-reporter=tap "tests/frontend/unit/*.test.mjs"   # 900/900
 python tools/repo_health/repo_guardrails.py                 # all 15 groups
 python -m ruff check src/ tests/ scripts/ tools/            # clean
 python -m vulture src/ whitelist.py --min-confidence=60     # clean
+python -m mypy --config-file mypy.ini                       # clean (0 errors)
 npx eslint . --ignore-pattern "_out/**" ...                 # 0 problems
 npx knip                                                    # clean
+npm run lint:precommit:ci                                   # exit 0
 ```
+
+The full suite now runs **unfiltered** — `test_browser_fallback_pool.py` is
+included (11 passed, 1 skipped) since the Playwright reconciliation above. The
+previously recorded figure of `5406 passed, 1 skipped` came from an acceptance
+run that had to exclude that file.
 
 Both new tests were confirmed to **fail against the unfixed code** before the
 fix landed. The dead-code gate was confirmed to **fail when the bug is

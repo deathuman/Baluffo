@@ -12,7 +12,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Protocol
 from urllib.parse import urljoin
 
 from src.exceptions import AdapterValidationError
@@ -236,9 +236,20 @@ def run_remotive_source(
     )
 
 
+class _HtmlParser(Protocol):
+    """HTML parser accepted by ``_run_multi_url_source``.
+
+    The keyword-only ``base_url`` matches the call the shared body makes and is
+    satisfied by both parser shapes in this package: keyword-only parsers and
+    parsers whose ``base_url`` is positional-or-keyword with a default.
+    """
+
+    def __call__(self, html_text: str, *, base_url: str) -> list[RawJob]: ...
+
+
 def _run_multi_url_source(
     urls: Sequence[str],
-    parse_html: Callable[[str, str], list[RawJob]],
+    parse_html: _HtmlParser,
     *,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
