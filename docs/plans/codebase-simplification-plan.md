@@ -39,13 +39,13 @@ are a pre-existing missing-Playwright-Chromium-binary environment issue in
 | W1 shared helper unification | `ab9d3481` | **−207** |
 | W6 scripts / tools | `9b5c1508` | **+1,391** |
 | W5 test consolidation | `df485e83` | **−444** |
-| W1b structural clones | `ebac6401` | **−894** |
-| W3 route de-chaining | `02a827af` | **+3** |
+| W1b structural clones | `ebac6401` | **−902** |
+| W3 route de-chaining | `02a827af` | **−8** |
 | W8 static plugin table | `02a827af` | **−89** |
-| W7 ops health split | `02a827af` | **+420** |
+| W7 ops health split | `02a827af` | **+414** |
 | W2a/W2b/W7b god files | `065e0712` | **+2,090** |
 | W2a remainder | `50b5fa6b` | **+573** |
-| **Net** | | **+2,843** |
+| **Net** | | **+2,818** |
 
 ### W1b: why the first scan missed most of the duplication
 
@@ -66,8 +66,8 @@ W1b consolidated the substantive subset (median body ≥8 lines):
 |---|---:|---:|
 | `src` | 18 | **−176** |
 | `frontend` | 19 | **−11** |
-| `tests/*.mjs` | 27 | **−707** |
-| **Total** | **64** | **−894** |
+| `tests/*.mjs` | 27 | **−715** |
+| **Total** | **64** | **−902** |
 
 The wins came from **parameterized factories and tables**, not from moving code:
 `_make_sources_runner` replaced 14 near-identical `run_*_sources_source`
@@ -96,7 +96,7 @@ Decomposition **costs** lines, measured three times over:
 | Workstream | Coordinator | Leaves | Net |
 |---|---:|---:|---:|
 | W6 `scripts/` (earlier) | −3,749 | +5,140 | **+1,391** |
-| W7 `health.js` | −938 | +1,358 | **+420** |
+| W7 `health.js` | −938 | +1,352 | **+414** |
 | W2a `gamedevmap_active_dry_run.py` | −737 | +1,045 | **+308** |
 | W2b shard + snapshot + normalization | −2,841 | +3,504 | **+663** |
 | W7b four frontend files | −3,645 | +4,754 | **+1,109** |
@@ -278,10 +278,10 @@ must record what protection is lost. This is the program's main risk.
 | W5 | Test consolidation | −23,000…−32,000 | **landed** `df485e83` — measured **−444** |
 | W2 | God-file decomposition (152 src files >400 LOC) | ±0 (legibility) | re-estimated **+0.5…+1.5%** (costs lines) |
 | W2b | `AI boundary` banner collapse | −900 | **declined** — see below |
-| W3 | Route de-chaining | −500…−1,500 | pending |
+| W3 | Route de-chaining | −500…−1,500 | **landed** `02a827af` — measured **−8** |
 | W7 | Frontend decomposition | −3,000…−5,000 | re-estimated **costs lines** (same as W6) |
 | W4 | Re-export shim + Protocol consolidation | −1,500…−3,000 | re-estimated **≤ −2,068** hard ceiling |
-| W8 | Static plugin table-ization | −800…−1,200 | pending |
+| W8 | Static plugin table-ization | −800…−1,200 | **landed** `02a827af` — measured **−89** |
 
 ### Why the remaining estimates were revised down
 
@@ -303,10 +303,16 @@ does not. Measured ceilings for what is left:
   not repeated boilerplate. Collapsing them to one line per file saves 910 lines
   (0.19%) and destroys the routing information that makes the codebase
   navigable. That is the opposite of the program's stated goal.
-- **W3 and W8 are the only untested levers** whose shape (branch chains →
-  declarative tables, N files → 1 table) genuinely converts many lines into few.
-  W8's static plugin family is 49 files / 6,635 lines, so its ceiling is real but
-  bounded at ~1,000.
+- **W3 and W8 were the two levers** whose shape (branch chains → declarative
+  tables, N files → 1 table) genuinely converts many lines into few. Both landed
+  in `02a827af` and both **underdelivered against projection by an order of
+  magnitude**: W3 measured −8 against a −500…−1,500 estimate, W8 measured −89
+  against −800…−1,200. W8's static plugin family is 49 files / 6,635 lines, so its
+  ceiling was real but bounded — and the 14 plugins that carried a branch chain
+  were already the ones worth converting; the other 35 had nothing to table-ize.
+  W3's routes were similarly already thin: de-chaining 90 lines of dispatch into
+  tables recovered 8, because the branch chains the projection counted had mostly
+  been de-chained in earlier work.
 
 ### Revised program ceiling
 
@@ -315,7 +321,7 @@ gives a realistic total of **−4,000 to −7,000 lines (0.8%–1.5%)** beyond w
 landed, with the *only* substantial further reduction available being deletion of
 the test corpus or of the compatibility surfaces the guardrails exist to protect.
 
-Landed so far: **−154 net** across W1, W5, W6, and W1b.
+Landed so far: **−162 net** across W1, W5, W6, and W1b.
 
 
 ## Ownership
