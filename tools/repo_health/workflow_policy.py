@@ -170,6 +170,165 @@ def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(
     assert package["engines"]["node"] == "25.8.0"
 
 
+def _playwright_install_markers(repo_root: Path) -> tuple[str, str, str]:
+    """Return the Python revision, Node revision, and Node install command markers."""
+    requirements = (repo_root / "requirements-lock.txt").read_text(encoding="utf-8")
+    package_lock = (repo_root / "package-lock.json").read_text(encoding="utf-8")
+    python_pin = ""
+    for line in requirements.splitlines():
+        if line.startswith("playwright=="):
+            python_pin = line.split("==", 1)[1].strip()
+            break
+    assert python_pin, "requirements-lock.txt should pin the Python Playwright version."
+    assert '"@playwright/test": "1.63.0"' in package_lock, (
+        "package-lock.json should pin the Node Playwright test runner the unit suite imports."
+    )
+    return python_pin, "1.63.0", "npx playwright install"
+
+
+def test_release_workflow_installs_both_playwright_runtimes(repo_root: Path) -> None:
+    """The Windows release workflow must satisfy both Playwright consumers.
+
+    The portable builder imports Python Playwright, while two tracked frontend unit
+    tests launch Node Playwright (``tests/frontend/unit/admin-authoritative-hydration-smoke.test.mjs``
+    and ``tests/frontend/unit/admin-schedule-partial-hydration-smoke.test.mjs``).
+    Each runtime resolves its own browser revision, so installing only one leaves the
+    other launching from an empty cache. That previously produced a 58-minute hang in
+    the release-gate step instead of a fast failure.
+    """
+    workflow_path = repo_root / ".github" / "workflows" / "build-portable-exe.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    _, _, node_install = _playwright_install_markers(repo_root)
+
+    assert "python -m playwright install chromium" in workflow_text, (
+        f"{workflow_path.name} should install the Python Playwright browser used by the portable build."
+    )
+    assert node_install in workflow_text, (
+        f"{workflow_path.name} should also install the Node Playwright browser; the frontend unit "
+        "lane imports @playwright/test and cannot launch Chromium without it."
+    )
+
+
+def test_workflows_running_frontend_unit_install_node_playwright(repo_root: Path) -> None:
+    """Any workflow that runs the frontend unit lane must install the Node browser."""
+    workflows = sorted((repo_root / ".github" / "workflows").glob("*.yml"))
+    _, _, node_install = _playwright_install_markers(repo_root)
+    unit_lanes = ("npm run test:frontend:unit", "npm run test:unit", "npm run test:smoke")
+
+    checked = 0
+    for workflow_path in workflows:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        if not any(lane in workflow_text for lane in unit_lanes):
+            continue
+        checked += 1
+        assert (
+            "npx playwright install" in workflow_text
+            or "playwright install --with-deps" in workflow_text
+        ), (
+            f"{workflow_path.relative_to(repo_root)} runs the frontend unit lane but never installs "
+            f"the Node Playwright browser (`{node_install}`); browser-backed unit tests will hang "
+            "instead of failing."
+        )
+    assert checked, "Expected at least one workflow to run the frontend unit lane."
+
+
+def test_release_workflow_passes_ship_zip_to_update_manifest(repo_root: Path) -> None:
+    """The release manifest must carry the ship recovery artifact, not just the portable ZIP.
+
+    ``docs/RELEASE.md`` requires the portable ZIP, ship recovery ZIP, and manifest to
+    publish together, and ``tests/test_build_desktop_update_release.py`` proves the
+    builder supports ``--ship-zip``. Omitting the flag ships a manifest with no
+    ``ship_recovery_artifact`` while the release still advertises one.
+    """
+    workflow_path = repo_root / ".github" / "workflows" / "build-portable-exe.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    assert "build_desktop_update_release.py" in workflow_text, (
+        f"{workflow_path.name} should build the desktop update manifest."
+    )
+    assert "--ship-zip" in workflow_text, (
+        f"{workflow_path.name} builds a ship bundle but does not pass `--ship-zip`, so the published "
+        "desktop update manifest would omit `ship_recovery_artifact`."
+    )
+    assert "--portable-zip" not in workflow_text, (
+        f"{workflow_path.name} should rely on the builder's versioned default portable ZIP rather "
+        "than hardcoding a path."
+    )
+
+
+def test_release_workflow_bounds_release_gate_runtime(repo_root: Path) -> None:
+    """A hung release gate must fail in minutes, not consume an hour of runner time.
+
+    The gate step runs a browser-backed unit lane plus a long packaged-smoke sequence.
+    Without a bound, a leaked listener left the runner idle for 58 minutes before manual
+    cancellation produced any artifact.
+    """
+    workflow_path = repo_root / ".github" / "workflows" / "build-portable-exe.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    assert "timeout-minutes:" in workflow_text, (
+        f"{workflow_path.name} should bound the release-gate step so a hang fails quickly "
+        "with uploaded artifacts instead of running until manual cancellation."
+    )
+    assert "steps.release_gates.outcome == 'failure'" in workflow_text, (
+        f"{workflow_path.name} should keep uploading smoke artifacts when the release gate fails."
+    )
+    assert "cancelled()" in workflow_text, (
+        f"{workflow_path.name} should also upload smoke artifacts when a hung gate is cancelled; "
+        "otherwise a bounded timeout leaves no diagnostic evidence. `failure()` is false on "
+        "cancellation, so the condition needs both clauses."
+    )
+    assert "if-no-files-found: ignore" in workflow_text, (
+        f"{workflow_path.name} should tolerate a missing smoke report; a bounded timeout can "
+        "cancel a step before it writes one."
+    )
+
+
+def test_precommit_gate_excludes_tracked_runtime_data(repo_root: Path) -> None:
+    """The local changed-mode gate must ignore tracked runtime artifacts.
+
+    The app rewrites these files during normal local use, and they are canonical
+    (`git ls-files data/`), so they are never deleted. CI scopes the same gate with
+    `--exclude-root data`; without an equivalent local list, `end-of-file-fixer`
+    rewrites them and the changed-mode gate fails on files the developer never touched,
+    blocking any commit made while the app had been running.
+    """
+    gate_text = (repo_root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
+    runtime_files = (
+        "data/desktop-startup-metrics.jsonl",
+        "data/jobs-fetch-tasks.json",
+        "data/jobs-success-cache.json",
+        "data/source-discovery-candidates.json",
+        "data/source-discovery-report.json",
+    )
+    for runtime_file in runtime_files:
+        assert f'"{runtime_file}"' in gate_text, (
+            f"scripts/precommit_gate.py should exclude the tracked runtime artifact "
+            f"{runtime_file} from changed-mode collection."
+        )
+    assert "EXCLUDED_ROOT_PREFIXES" in gate_text, (
+        "scripts/precommit_gate.py should keep its excluded-root mechanism alongside the "
+        "explicit runtime artifact list."
+    )
+
+
+def test_precommit_gate_reports_the_failing_stage() -> None:
+    """A nonzero gate exit should name the stage that produced it.
+
+    A failing CI lint run once exited 1 after every guardrail group printed "passed",
+    leaving no way to tell which stage failed from the log alone.
+    """
+    gate_text = (ROOT / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
+
+    assert "_report_failing_stage" in gate_text, (
+        "scripts/precommit_gate.py should report which stage failed before returning nonzero."
+    )
+    for stage in ("pre-commit", "repo-guardrails", "complexity-baseline"):
+        assert f'"{stage}"' in gate_text, (
+            f"scripts/precommit_gate.py should attribute failures to the {stage} stage."
+        )
+
+
 def test_lint_workflow_enforces_ruff_import_sorting() -> None:
     root = ROOT
     ruff_config = tomllib.loads((root / "ruff.toml").read_text(encoding="utf-8"))

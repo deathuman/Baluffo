@@ -67,7 +67,6 @@ async function serveFile(root, relativePath, res) {
     return false;
   }
 }
-
 async function serveStatic(req, res, url) {
   const pathname = decodeURIComponent(url.pathname === "/" ? "/admin.html" : url.pathname);
   const safeRelative = pathname.replace(/^\/+/, "");
@@ -267,13 +266,14 @@ async function withSmokePage(options, callback) {
   await buildContainerBundle();
   const server = createHydrationSmokeServer(options);
   const baseUrl = await server.start();
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  let browser = null;
   try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
     await page.goto(`${baseUrl}/admin.html?hydrationSmoke=1`);
     await callback({ page, requests: server.requests, requestEvents: server.requestEvents });
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
     await server.stop();
   }
 }

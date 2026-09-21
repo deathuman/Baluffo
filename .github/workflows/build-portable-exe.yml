@@ -51,10 +51,27 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: python -m playwright install chromium
+        shell: pwsh
+        run: |
+          # Two independent Playwright consumers share this runner:
+          #   - the portable builder imports Python Playwright (requirements-lock.txt)
+          #   - the frontend unit lane imports @playwright/test (package.json)
+          # Each resolves its own browser revision, so installing only one leaves the
+          # other launching from an empty cache. Keep both installs.
+          python -m playwright install chromium
+          npx playwright install chromium
 
-      - name: Install Node Playwright Chromium
-        run: npx playwright install chromium
+          $cacheRoot = Join-Path $env:LOCALAPPDATA "ms-playwright"
+          $shellDirs = @(Get-ChildItem -Path $cacheRoot -Directory -Filter "chromium_headless_shell-*" -ErrorAction SilentlyContinue)
+          $nodeDirs = @(Get-ChildItem -Path $cacheRoot -Directory -Filter "chromium-*" -Exclude "chromium_headless_shell-*" -ErrorAction SilentlyContinue)
+          if (-not $shellDirs) {
+            throw "Python Playwright headless shell cache is missing under $cacheRoot; the portable build will fail."
+          }
+          if (-not $nodeDirs) {
+            throw "Node Playwright Chromium cache is missing under $cacheRoot; the frontend unit lane will hang instead of failing."
+          }
+          "Python headless shell revisions: $($shellDirs.Name -join ', ')"
+          "Node Chromium revisions: $($nodeDirs.Name -join ', ')"
 
       - name: Resolve bundle version
         shell: pwsh
@@ -156,6 +173,7 @@ jobs:
 
       - name: Run release gates
         id: release_gates
+        timeout-minutes: 45
         run: |
           npm run test:frontend:unit
           npm run test:py:extended
@@ -175,7 +193,7 @@ jobs:
           npm run probe:desktop:startup:jobs:cold
 
       - name: Upload smoke test artifacts on failure
-        if: failure() && steps.release_gates.outcome == 'failure'
+        if: ${{ failure() && (steps.release_gates.outcome == 'failure' || cancelled()) }}
         uses: actions/upload-artifact@v7
         with:
           name: smoke-test-artifacts-${{ github.run_number }}
@@ -183,6 +201,7 @@ jobs:
             .tmp/packaged-desktop-smoke
             data/packaged-desktop-smoke-report.json
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}

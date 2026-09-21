@@ -21,9 +21,18 @@ def _default_pre_commit_home() -> Path:
 
 
 PRE_COMMIT_HOME = _default_pre_commit_home()
+# Tracked runtime artifacts that the app rewrites during normal local use. They are
+# canonical files (`git ls-files data/`), so they are never deleted, but their working-tree
+# churn must not gate a commit: CI runs the same gate with `--exclude-root data`, and
+# without this list the local changed-mode gate fails on `end-of-file-fixer` diffs in
+# files the developer never intended to touch.
 EXCLUDED_FILES = {
+    "data/desktop-startup-metrics.jsonl",
     "data/jobs-fetch-report.json",
     "data/jobs-fetch-tasks.json",
+    "data/jobs-success-cache.json",
+    "data/source-discovery-candidates.json",
+    "data/source-discovery-report.json",
 }
 EXCLUDED_ROOT_PREFIXES = (
     ".pre-commit-home",
@@ -210,12 +219,31 @@ def run_changed() -> int:
     if not files:
         print("No changed files found for pre-commit; skipping.")
         return 0
-    return_code = _run_precommit_command(build_changed_command(files))
+    command = build_changed_command(files)
+    return_code = _run_precommit_command(command)
     if return_code != 0:
+        _report_failing_stage("pre-commit", command, return_code)
         return return_code
     if should_run_repo_guardrails(files):
-        return run_repo_guardrails()
+        return_code = run_repo_guardrails()
+        if return_code != 0:
+            _report_failing_stage("repo-guardrails", [], return_code)
+        return return_code
     return 0
+
+
+def _report_failing_stage(stage: str, command: list[str], return_code: int) -> None:
+    """Print which stage failed and with what command.
+
+    Without this, a run whose guardrail groups all print "passed" and then exits
+    nonzero is not diagnosable from the log alone -- the exit code was the only
+    evidence of where the failure came from.
+    """
+    suffix = f" ({' '.join(command[1:])})" if command else ""
+    print(
+        f"pre-commit gate: stage={stage}{suffix} exit={return_code}",
+        file=sys.stderr,
+    )
 
 
 def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
@@ -226,11 +254,16 @@ def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
     for command in build_all_commands(files):
         return_code = _run_precommit_command(command)
         if return_code != 0:
+            _report_failing_stage("pre-commit", command, return_code)
             return return_code
     return_code = run_repo_guardrails()
     if return_code != 0:
+        _report_failing_stage("repo-guardrails", [], return_code)
         return return_code
-    return run_complexity_baseline()
+    return_code = run_complexity_baseline()
+    if return_code != 0:
+        _report_failing_stage("complexity-baseline", [], return_code)
+    return return_code
 
 
 def main() -> int:

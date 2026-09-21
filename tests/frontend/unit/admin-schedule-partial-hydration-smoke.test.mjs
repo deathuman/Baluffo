@@ -251,9 +251,12 @@ test("admin schedule smoke renders saved config while next-run details refresh",
   const harness = createServer();
   await new Promise(resolve => harness.server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${harness.server.address().port}`;
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  // Launch inside the try: a failed launch must still close the server, else the
+  // leaked listener keeps the runner alive and a failure becomes a hang.
+  let browser = null;
   try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
     await page.goto(`${baseUrl}/admin.html?partialScheduleSmoke=1`);
     await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15000 });
     await page.waitForFunction(() => (
@@ -313,7 +316,9 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       assert.equal(sawNext && !next, false, `Schedule model regressed after loading nextRunAt.\n${evidence(harness.events, harness.metrics)}`);
     }
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
     await new Promise(resolve => harness.server.close(resolve));
   }
 });
