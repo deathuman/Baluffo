@@ -207,7 +207,7 @@ jobs:
       - name: Build desktop update manifest
         shell: pwsh
         run: |
-          python scripts/build_desktop_update_release.py --version ${{ env.BALUFFO_VERSION }} --github-repo ${{ github.repository }} --key-id ${{ env.BALUFFO_DESKTOP_UPDATE_KEY_ID }}
+          python scripts/build_desktop_update_release.py --version ${{ env.BALUFFO_VERSION }} --github-repo ${{ github.repository }} --key-id ${{ env.BALUFFO_DESKTOP_UPDATE_KEY_ID }} --ship-zip "dist/baluffo-ship-${{ env.BALUFFO_VERSION }}.zip"
 
       - name: Upload portable artifact
         uses: actions/upload-artifact@v7
