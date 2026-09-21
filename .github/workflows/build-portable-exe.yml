@@ -49,7 +49,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: python -m playwright install chromium
 
       - name: Resolve bundle version
         shell: pwsh
