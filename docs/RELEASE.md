@@ -444,16 +444,20 @@ When one version is intended to be both the public desktop release and the Umbre
 
 Tracked `data/` files are canonical (see [`testing.md`](testing.md), "Tracked `data/` files"), and the app rewrites several of them during normal local use. They are **not** release content: never stage them in a release commit.
 
-`scripts/precommit_gate.py` excludes the runtime-churn set from its changed-mode collection, so an ordinary commit is no longer blocked by their working-tree churn. The set is:
+`scripts/precommit_gate.py` excludes the runtime-churn set from its changed-mode collection, so an ordinary commit is no longer blocked by their working-tree churn. The tracked set is:
 
 - `data/desktop-startup-metrics.jsonl`
-- `data/jobs-fetch-report.json`
 - `data/jobs-fetch-tasks.json`
+- `data/jobs-lifecycle-state.json`
+- `data/jobs-source-state.json`
 - `data/jobs-success-cache.json`
 - `data/source-discovery-candidates.json`
 - `data/source-discovery-report.json`
+- `data/source-registry-tombstones.json.gz`
 
-CI scopes the same gate with `--exclude-root data`, so both paths agree.
+`data/jobs-fetch-report.json` is also excluded when present, but it is untracked in this repo.
+
+CI scopes the same gate with `--exclude-root data`, so both paths agree. `tools/repo_health/workflow_policy.py` holds the declared set and fails if a tracked runtime artifact is dropped from `EXCLUDED_FILES`.
 
 When a release commit must be built from a clean tree, preserve local runtime state rather than discarding it:
 

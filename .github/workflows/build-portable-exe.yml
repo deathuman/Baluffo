@@ -193,7 +193,10 @@ jobs:
           npm run probe:desktop:startup:jobs:cold
 
       - name: Upload smoke test artifacts on failure
-        if: ${{ failure() && (steps.release_gates.outcome == 'failure' || cancelled()) }}
+        # `always()` is required: `failure()` is false when a run is cancelled, so
+        # `failure() && (... || cancelled())` can never fire on the cancelled case it is
+        # meant to cover. The outcome check keeps green runs from uploading junk.
+        if: ${{ always() && steps.release_gates.outcome != 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: smoke-test-artifacts-${{ github.run_number }}

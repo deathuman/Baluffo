@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -270,18 +271,78 @@ def test_release_workflow_bounds_release_gate_runtime(repo_root: Path) -> None:
         f"{workflow_path.name} should bound the release-gate step so a hang fails quickly "
         "with uploaded artifacts instead of running until manual cancellation."
     )
-    assert "steps.release_gates.outcome == 'failure'" in workflow_text, (
-        f"{workflow_path.name} should keep uploading smoke artifacts when the release gate fails."
-    )
-    assert "cancelled()" in workflow_text, (
-        f"{workflow_path.name} should also upload smoke artifacts when a hung gate is cancelled; "
-        "otherwise a bounded timeout leaves no diagnostic evidence. `failure()` is false on "
-        "cancellation, so the condition needs both clauses."
-    )
     assert "if-no-files-found: ignore" in workflow_text, (
         f"{workflow_path.name} should tolerate a missing smoke report; a bounded timeout can "
         "cancel a step before it writes one."
     )
+
+
+def test_release_workflow_uploads_smoke_artifacts_when_cancelled(repo_root: Path) -> None:
+    """The artifact upload must be reachable when a hung gate is cancelled.
+
+    GitHub's ``failure()`` is **false** on cancellation, so a condition of the form
+    ``failure() && (... || cancelled())`` can never fire on the cancelled case it was
+    written for. Cancelled run 35624613484 shows the consequence: the gate ran 57
+    minutes, concluded ``cancelled``, and the upload was ``skipped`` -- leaving no
+    artifact to diagnose. The condition must therefore be reachable without
+    ``failure()`` being true, and must still avoid uploading on a green run.
+    """
+    workflow_path = repo_root / ".github" / "workflows" / "build-portable-exe.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    upload_block = _guard_step_block(workflow_text, "Upload smoke test artifacts on failure")
+    assert upload_block, (
+        f"{workflow_path.name} should keep a smoke-artifact upload step for failed or "
+        "cancelled release gates."
+    )
+
+    condition = _guard_step_condition(upload_block)
+    assert condition, f"{workflow_path.name} upload step should declare an `if:` condition."
+
+    # `failure() &&` as the outer operator makes every trailing `cancelled()` unreachable.
+    assert not re.search(r"failure\(\)\s*&&", condition), (
+        f"{workflow_path.name} upload condition must not use `failure() &&` as its outer "
+        "operator: `failure()` is false on cancellation, so the cancelled path is dead "
+        "code. Use `always()` with an outcome check."
+    )
+    assert "always()" in condition, (
+        f"{workflow_path.name} upload condition should use `always()` so it is evaluated "
+        "on cancelled runs as well as failed ones."
+    )
+    assert "success" in condition, (
+        f"{workflow_path.name} upload condition should exclude green runs (for example "
+        "`steps.release_gates.outcome != 'success'`) so every successful release does not "
+        "attach smoke artifacts."
+    )
+
+
+def _guard_step_block(workflow_text: str, step_name: str) -> str:
+    """Return the YAML text of one named step, up to the next step or job boundary."""
+    lines = workflow_text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.strip() == f"- name: {step_name}":
+            start = index
+            break
+    if start is None:
+        return ""
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if re.match(r"^\s*- name: ", line):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
+def _guard_step_condition(step_block: str) -> str:
+    """Return the `if:` expression of a step block, with the `${{ }}` wrapper stripped."""
+    for line in step_block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("if:"):
+            expression = stripped[len("if:") :].strip()
+            match = re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", expression, re.DOTALL)
+            return match.group(1) if match else expression
+    return ""
 
 
 def test_precommit_gate_excludes_tracked_runtime_data(repo_root: Path) -> None:
@@ -294,14 +355,7 @@ def test_precommit_gate_excludes_tracked_runtime_data(repo_root: Path) -> None:
     blocking any commit made while the app had been running.
     """
     gate_text = (repo_root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
-    runtime_files = (
-        "data/desktop-startup-metrics.jsonl",
-        "data/jobs-fetch-tasks.json",
-        "data/jobs-success-cache.json",
-        "data/source-discovery-candidates.json",
-        "data/source-discovery-report.json",
-    )
-    for runtime_file in runtime_files:
+    for runtime_file in sorted(_runtime_written_tracked_data_files(repo_root)):
         assert f'"{runtime_file}"' in gate_text, (
             f"scripts/precommit_gate.py should exclude the tracked runtime artifact "
             f"{runtime_file} from changed-mode collection."
@@ -310,6 +364,72 @@ def test_precommit_gate_excludes_tracked_runtime_data(repo_root: Path) -> None:
         "scripts/precommit_gate.py should keep its excluded-root mechanism alongside the "
         "explicit runtime artifact list."
     )
+
+
+def _runtime_written_tracked_data_files(repo_root: Path) -> set[str]:
+    """Return the tracked ``data/`` files the changed-mode gate must ignore.
+
+    Only tracked files are returned, since untracked runtime artifacts cannot appear in a
+    `git`-driven file list. The set itself is declared rather than inferred: `src/` writes
+    these through path variables, and a string-matching heuristic over `src/` produced 7
+    false positives (contracts, default seeds, social config) while missing 9 real entries,
+    which is worse than an explicit list with a tracked-file guard behind it.
+    """
+    tracked = set(_git_lines(repo_root, "ls-files", "data/"))
+    return tracked & _RUNTIME_OWNED_DATA_FILES
+
+
+# Files the running app rewrites that are also tracked in git, so their working-tree churn
+# can reach a changed-files list. Verified against src/ writers:
+#   - src/bridge/job_availability_service.py:65, src/jobs/pipeline_bootstrap.py:42-43
+#   - src/bridge/routes/get_admin_ops_tab_counts.py:243 (jobs-source-state heartbeats)
+#   - src/source_registry_io_paths.py:34,50,78 (gzip-backed tombstones)
+#   - src/runtime_seed.py:89-104 (payload defaults for tasks/cache/report/candidates)
+#   - data/desktop-startup-metrics.jsonl is appended to by the desktop startup probe
+#
+# `data/jobs-fetch-report.json` is runtime-owned but deliberately absent: it is untracked,
+# so it can never appear in the git-driven changed list. It remains in
+# scripts/precommit_gate.py EXCLUDED_FILES for the directory-walk path.
+_RUNTIME_OWNED_DATA_FILES = frozenset(
+    {
+        "data/desktop-startup-metrics.jsonl",
+        "data/jobs-fetch-tasks.json",
+        "data/jobs-lifecycle-state.json",
+        "data/jobs-source-state.json",
+        "data/jobs-success-cache.json",
+        "data/source-discovery-candidates.json",
+        "data/source-discovery-report.json",
+        "data/source-registry-tombstones.json.gz",
+    }
+)
+
+
+def test_runtime_owned_data_files_are_tracked(repo_root: Path) -> None:
+    """Every declared runtime-owned artifact should still be a tracked file.
+
+    Keeps the exclusion list honest: if one of these stops being tracked (or is renamed),
+    the changed-mode gate would be silently excluding a path that no longer exists while
+    the real runtime artifact went missing from the list.
+    """
+    tracked = set(_git_lines(repo_root, "ls-files", "data/"))
+    for path in sorted(_RUNTIME_OWNED_DATA_FILES):
+        assert path in tracked, (
+            f"{path} is declared runtime-owned but is not tracked under data/; update "
+            "scripts/precommit_gate.py EXCLUDED_FILES and this list together."
+        )
+
+
+def _git_lines(repo_root: Path, *args: str) -> list[str]:
+    """Return non-empty stdout lines from a git command, or [] when it fails."""
+    completed = subprocess.run(  # noqa: S603
+        ["git", "-C", str(repo_root), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return []
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
 
 
 def test_precommit_gate_reports_the_failing_stage() -> None:

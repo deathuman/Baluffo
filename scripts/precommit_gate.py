@@ -26,13 +26,20 @@ PRE_COMMIT_HOME = _default_pre_commit_home()
 # churn must not gate a commit: CI runs the same gate with `--exclude-root data`, and
 # without this list the local changed-mode gate fails on `end-of-file-fixer` diffs in
 # files the developer never intended to touch.
+#
+# Each entry is written at runtime by src/. Keep this in sync with the writers when a new
+# runtime artifact is tracked; `workflow_policy.test_runtime_written_data_files_are_excluded`
+# fails when a tracked data file is written by src/ but omitted here.
 EXCLUDED_FILES = {
     "data/desktop-startup-metrics.jsonl",
     "data/jobs-fetch-report.json",
     "data/jobs-fetch-tasks.json",
+    "data/jobs-lifecycle-state.json",
+    "data/jobs-source-state.json",
     "data/jobs-success-cache.json",
     "data/source-discovery-candidates.json",
     "data/source-discovery-report.json",
+    "data/source-registry-tombstones.json.gz",
 }
 EXCLUDED_ROOT_PREFIXES = (
     ".pre-commit-home",
