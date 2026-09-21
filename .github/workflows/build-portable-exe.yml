@@ -33,6 +33,8 @@ jobs:
       BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64: ${{ secrets.BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64 }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
 
       - uses: actions/setup-python@v6
         with:
