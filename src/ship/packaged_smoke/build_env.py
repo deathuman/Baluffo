@@ -510,6 +510,7 @@ def packaged_runtime_env_overrides(
             overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] = fetch_mode
         bootstrap_mode = deps.packaged_bootstrap_smoke_mode(node_smoke_script)
         if bootstrap_mode:
+            overrides["BALUFFO_SYNC_DISABLE"] = "1"
             overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] = "1"
             overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE"] = bootstrap_mode
             overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS"] = (
@@ -531,6 +532,7 @@ def packaged_runtime_env_overrides(
         overrides["APPDATA"] = str(roaming_app_data)
         overrides["LOCALAPPDATA"] = str(local_app_data)
     if startup_probe:
+        overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] = "1"
         overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"
         overrides[deps.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] = (
             "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"

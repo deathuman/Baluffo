@@ -237,10 +237,18 @@ export async function collectAndAssertPopupStyles(page, styles, label, styleOpti
   return snapshot;
 }
 
-export async function dismissFirstRunNotice(page) {
-  const button = page.locator(".jobs-first-run-notice .local-auth-dialog-submit");
-  if (await button.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await button.click();
-    await page.locator(".jobs-first-run-notice").waitFor({ state: "detached", timeout: 10_000 });
+export async function dismissFirstRunNotice(page, { timeoutMs = 1000 } = {}) {
+  const overlay = page.locator("[data-jobs-first-run-notice='true']");
+  const timeout = Math.max(0, Number(timeoutMs) || 0);
+  if ((await overlay.count()) === 0) {
+    const startupDetail = await page.locator("body").getAttribute("data-jobs-startup-detail").catch(() => "");
+    if (startupDetail !== "first_run_bootstrap" || timeout <= 0) return false;
+    await overlay.waitFor({ state: "visible", timeout }).catch(() => {});
   }
+  const button = overlay.locator(".local-auth-dialog-submit");
+  await button.waitFor({ state: "visible", timeout: Math.max(1, timeout) }).catch(() => {});
+  if (!(await button.isVisible().catch(() => false))) return false;
+  await button.click();
+  await overlay.waitFor({ state: "detached", timeout: 10_000 });
+  return true;
 }

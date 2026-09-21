@@ -485,6 +485,7 @@ def test_packaged_pipeline_smoke_mode_is_enabled_for_pipeline_rehearsal_scripts(
         "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success",
     }
     assert smoke.packaged_runtime_env_overrides(smoke.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT) == {
+        "BALUFFO_SYNC_DISABLE": "1",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS": "12000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS": "1000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE": "controlled-heartbeat-success",
@@ -510,12 +511,14 @@ def test_packaged_first_run_bootstrap_smoke_mode_is_script_scoped() -> None:
     )
     assert smoke.packaged_bootstrap_smoke_mode(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == ""
     assert smoke.packaged_runtime_env_overrides(smoke.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT) == {
+        "BALUFFO_SYNC_DISABLE": "1",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS": "12000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS": "1000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE": "controlled-heartbeat-success",
         "BALUFFO_PACKAGED_SMOKE_RUNTIME": "1",
     }
     assert smoke.packaged_runtime_env_overrides(admin_active_run_script) == {
+        "BALUFFO_SYNC_DISABLE": "1",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS": "12000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS": "1000",
         "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE": "controlled-heartbeat-success",
@@ -569,6 +572,7 @@ def test_packaged_runtime_env_overrides_sets_startup_profile_mode_for_probes() -
                 profile_mode="warm",
             )
 
+        assert overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] == "1"
         assert overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
         assert overrides[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "warm"
 
@@ -586,6 +590,7 @@ def test_packaged_runtime_env_overrides_prefers_playwright_chromium_for_probes()
                 startup_probe=True,
             )
 
+    assert overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] == "1"
     assert overrides[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == browser_path
 
 

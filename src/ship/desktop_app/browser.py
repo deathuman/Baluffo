@@ -178,12 +178,11 @@ def build_browser_launch_command(
     ]
     if not bool(api._truthy_env(env_map.get(DISABLE_LEAN_BROWSER_FLAGS_ENV))):
         command[1:1] = list(LEAN_CHROMIUM_APP_FLAGS)
+    packaged_smoke_runtime = str(env_map.get("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
+    if packaged_smoke_runtime:
+        command.append("--no-sandbox")
     cdp_port = str(env_map.get("BALUFFO_PACKAGED_SMOKE_CDP_PORT") or "").strip()
-    if (
-        str(env_map.get("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
-        and cdp_port.isdigit()
-        and 0 < int(cdp_port) < 65536
-    ):
+    if packaged_smoke_runtime and cdp_port.isdigit() and 0 < int(cdp_port) < 65536:
         command.append(f"--remote-debugging-port={int(cdp_port)}")
         command.append("--remote-debugging-address=127.0.0.1")
     return command

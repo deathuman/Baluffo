@@ -10,14 +10,33 @@ def test_build_browser_launch_command_includes_lean_flags_without_risky_process_
         "C:/Edge/msedge.exe",
         "http://127.0.0.1:8080/jobs.html?desktop=1",
         Path("C:/Users/me/AppData/Local/Baluffo/desktop-browser-profile"),
+        env={},
     )
 
     for flag in desktop_app.LEAN_CHROMIUM_APP_FLAGS:
         assert flag in command
+    assert "--no-sandbox" not in command
     assert "--disable-background-mode" not in command
     assert "--single-process" not in command
     assert "--disable-gpu" not in command
     assert not any(part.startswith("--renderer-process-limit") for part in command)
+
+
+def test_build_browser_launch_command_uses_no_sandbox_for_packaged_smoke_cdp() -> None:
+    command = desktop_app.build_browser_launch_command(
+        "C:/Edge/msedge.exe",
+        "http://127.0.0.1:8080/jobs.html?desktop=1",
+        Path("C:/Users/me/AppData/Local/Baluffo/desktop-browser-profile"),
+        env={
+            "BALUFFO_PACKAGED_SMOKE_RUNTIME": "1",
+            "BALUFFO_PACKAGED_SMOKE_CDP_PORT": "8765",
+        },
+    )
+
+    assert "--no-sandbox" in command
+    assert "--remote-debugging-port=8765" in command
+    assert "--remote-debugging-address=127.0.0.1" in command
+    assert command.index("--no-sandbox") < command.index("--remote-debugging-port=8765")
 
 
 def test_build_browser_launch_command_can_disable_lean_flags_from_env() -> None:

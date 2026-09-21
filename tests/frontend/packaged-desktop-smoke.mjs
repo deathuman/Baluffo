@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request as playwrightRequest } from "@playwright/test";
+import { dismissFirstRunNotice } from "./helpers/packaged-first-run-smoke-helpers.mjs";
 import {
   buildGotoDesktop,
   buildWriteReport,
@@ -266,7 +267,7 @@ async function main() {
     }, scenarios);
 
     await runScenario("Desktop update UI is visible on jobs page", async () => {
-      await page.getByRole("button", { name: /Got it/i }).click({ timeout: 1000 }).catch(() => {});
+      await dismissFirstRunNotice(page);
       const updateToggle = page.locator("#desktop-update-toggle-btn");
       await updateToggle.waitFor({ state: "visible", timeout: 15_000 });
       assert.equal(await updateToggle.isEnabled(), true, "desktop update toggle should be enabled");
@@ -339,6 +340,7 @@ async function main() {
     }, scenarios);
 
     await runScenario("Navigate to Admin from jobs button", async () => {
+      await dismissFirstRunNotice(page);
       const adminPageBtn = page.locator("#admin-page-btn");
       if (await adminPageBtn.count()) {
         await page.waitForFunction(
