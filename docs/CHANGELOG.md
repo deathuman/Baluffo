@@ -9,6 +9,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ---
 
 ## [Unreleased]
+### Notes
+
+- Release recovery no longer requires moving a tag: `build-portable-exe.yml` can be dispatched from `main` with `release_tag`/`bundle_version` to rebuild an existing release's assets from fixed workflow code. Recovery and runtime-data preservation steps are documented in [`RELEASE.md`](RELEASE.md).
+- Process guards added after the v0.2.152 recovery: the Windows release workflow must install both Playwright runtimes (Python for the portable builder, Node for the frontend unit lane), pass `--ship-zip` to the desktop update manifest builder, and bound its release-gate step; the hydration smoke tests launch Chromium inside `try`/`finally` so a launch failure cannot leak a listening server and hang the runner.
 
 ## [0.2.152] - 2026-09-21
 ### Changed

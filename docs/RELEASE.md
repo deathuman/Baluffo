@@ -440,6 +440,47 @@ When one version is intended to be both the public desktop release and the Umbre
 9. Reconfirm live Umbrel on the shipped version with `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary`.
 10. Record commit, tag, release URL, workflow run ids, asset names/sizes, manifest evidence, GHCR digest/platforms, Umbrel endpoint status, and residual risks in Basic Memory, then commit and push the curated BaluffoMemory repo.
 
+### Protecting Repo-Local Runtime Data During Release Prep
+
+Tracked `data/` files are canonical (see [`testing.md`](testing.md), "Tracked `data/` files"), and the app rewrites several of them during normal local use. They are **not** release content: never stage them in a release commit.
+
+`scripts/precommit_gate.py` excludes the runtime-churn set from its changed-mode collection, so an ordinary commit is no longer blocked by their working-tree churn. The set is:
+
+- `data/desktop-startup-metrics.jsonl`
+- `data/jobs-fetch-report.json`
+- `data/jobs-fetch-tasks.json`
+- `data/jobs-success-cache.json`
+- `data/source-discovery-candidates.json`
+- `data/source-discovery-report.json`
+
+CI scopes the same gate with `--exclude-root data`, so both paths agree.
+
+When a release commit must be built from a clean tree, preserve local runtime state rather than discarding it:
+
+1. Stash only the runtime files before release prep:
+   `git stash push -m "pre-release local runtime data v<version>" -- data/`
+2. Do the release work on the clean tree.
+3. Restore afterwards with `git stash pop`, then verify each file matches the preserved blob:
+   `git rev-parse "stash@{0}:<path>"` against `git hash-object -- <path>`.
+4. Expect those files to stay dirty afterwards. Dirty runtime data is the normal local state, not a failed restore.
+
+### Recovering A Release Without Moving Its Tag
+
+Release tags are immutable. When a tagged workflow fails and the fix belongs on `main`, rebuild the release assets from `main` while keeping the original tag and commit:
+
+```powershell
+gh workflow run build-portable-exe.yml --ref main `
+  -f release_tag=v<version> -f bundle_version=<version>
+```
+
+- `--ref main` dispatches from the **fixed** `main`, not the tag, so the recovery run uses current workflow code. Dispatching without it checks out the tag's original commit and reproduces the same failure.
+- `release_tag` targets the existing release; nothing is deleted, moved, or recreated.
+- `bundle_version` must match the tag's version or the published asset names will disagree with the release.
+
+After the run completes, re-verify the published assets against the refreshed desktop update manifest: version, channel, schema, key id, signature, `portable_artifact` and `ship_recovery_artifact` URLs, checksums, and sizes.
+
+`docs/RELEASE.md` forbids moving or recreating tags for both desktop and container recovery; container-side fixes ship as a **new patch version** instead.
+
 ### Ship Bundle Verification
 
 1. Build the ship bundle for the target version.
@@ -518,6 +559,21 @@ For the canonical startup measurement architecture and the preferred `perf:start
 `npm run check:published-version` (lane 4 of preflight) queries GHCR for the current `APP_VERSION` and warns when that version is already published. It exists because the container version gate validates release *intent* but is deliberately offline — it cannot see whether the version it is asking you to publish has already shipped, which is the 0.2.140 reuse trap in another disguise. It is warn-only by default (republishing inside an open release window is sometimes intentional); `--strict` turns an already-published version into a failure. A network failure degrades to a "verify manually" notice rather than breaking preflight, and it is intentionally **not** part of the always-on `repo_guardrails` set so that gate stays fast and offline.
 
 Do not read "preflight passed" as "all gates passed"; the tag-push workflows run the remaining lanes.
+
+#### Local Preflight vs Tag Workflow: Known Divergences
+
+`release:preflight` and the tag workflow's `Run release gates` step are **not** the same command set, and a green preflight does not predict a green tag run. The concrete differences:
+
+| Lane | `release:preflight` | `build-portable-exe.yml` release gates |
+| --- | --- | --- |
+| `npm run security:js` | yes | no (owned by `lint.yml`) |
+| `npm run check:published-version` | yes | no |
+| Portable prepare (`--skip-zip`) | yes | yes |
+| Packaged smoke + rehearsal lanes | yes | yes |
+| `npm run probe:desktop:startup:jobs:cold` | yes | yes |
+| `npm run typecheck:py`, `lint:deadcode:js` | no | no (owned by `lint.yml`) |
+
+The Windows release runner needs **both** Playwright runtimes installed, because the frontend unit lane imports `@playwright/test` while the portable builder imports Python Playwright, and each resolves a different browser revision. `build-portable-exe.yml` installs both and fails fast naming a missing cache entry; a workflow that installs only one will hang the unit lane rather than fail it.
 
 Before running `python scripts/bump_version.py <version>`, author the release compatibility sentence (same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, desktop localhost bridge compatibility) into the `[Unreleased]` changelog section: `repo_guardrails` requires it in the new top release section, and bumping prose-free `[Unreleased]` content fails `release:preflight` on the docs guardrail.
 
