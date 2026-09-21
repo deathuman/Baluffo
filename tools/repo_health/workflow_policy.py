@@ -432,6 +432,39 @@ def _git_lines(repo_root: Path, *args: str) -> list[str]:
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
 
 
+def test_hooks_path_is_wired_and_bypass_is_prohibited(repo_root: Path) -> None:
+    """The repo must route git hooks through `.githooks` and forbid `--no-verify`.
+
+    `.githooks/pre-commit` runs the changed-mode gate and `.githooks/pre-push` runs the
+    full CI-parity gate before a push to `main`. Both are advisory at the client: a
+    `--no-verify` bypass leaves no detectable trace, because the fixer hooks are
+    idempotent and a bypassed tree is byte-identical to a clean one. The durable control
+    is CI re-running the same gate on every push to `main`, so this test asserts that
+    wiring exists and that the prohibition is documented where an agent will read it.
+    """
+    agents = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "--no-verify" in agents, "AGENTS.md should state the --no-verify prohibition explicitly."
+
+    hook_dir = repo_root / ".githooks"
+    for hook_name, gate_command in (
+        ("pre-commit", "lint:precommit:changed"),
+        ("pre-push", "lint:precommit:ci"),
+    ):
+        hook_path = hook_dir / hook_name
+        assert hook_path.is_file(), f".githooks/{hook_name} should exist and be tracked."
+        hook_text = hook_path.read_text(encoding="utf-8")
+        assert gate_command in hook_text, (
+            f".githooks/{hook_name} should run `{gate_command}` so the local gate matches CI."
+        )
+
+    # CI is the enforcement point a bypass cannot skip.
+    lint_workflow = (repo_root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+    assert "lint:precommit:ci" in lint_workflow, (
+        "lint.yml should re-run the CI-parity gate on push, which is what actually "
+        "enforces it when a local hook is bypassed."
+    )
+
+
 def test_precommit_gate_reports_the_failing_stage() -> None:
     """A nonzero gate exit should name the stage that produced it.
 

@@ -5,7 +5,9 @@ Always-loaded rules only. Keep detailed workflow in the owning docs.
 ## Hard Stops
 
 - Do not use destructive Git or file operations unless the user explicitly asks and the target is understood.
-- Do not submit changes with `--no-verify`.
+- Do not submit changes with `--no-verify`, under any circumstance, on any git command (`commit`, `push`, `merge`, `rebase`, `cherry-pick`, `am`). This is an absolute rule with no exceptions: not to land an amend, not to fix a message, not to get past a gate that seems wrong. A bypass is undetectable afterwards — the fixer hooks are idempotent, so a bypassed tree is byte-identical to a clean one — which means the only real control is CI re-running the same gate on push.
+  - When a gate blocks a commit, the gate is telling you the change does not belong in that commit. Fix the cause or split the commit; never silence the gate.
+  - Frequent cause worth recognising: editing a path that counts as *shipped container code* (`build-container.yml` `paths-ignore` omits `scripts/`, so a `scripts/` edit republishes the image and trips `container_version_policy`). The correct response is to move dev-only tooling under `tools/`, or to put the change in its own commit — not `--no-verify`, and not a decorative `Release-tag:` line declaring a release nobody intends to ship.
 - Do not add Python or Node dependencies without explicit user approval.
 - Repo source, tests, docs, and `AGENTS.md` are canonical; external memory is continuity only.
 - Never store secrets, tokens, credentials, private keys, or sensitive data in repo docs or memory.

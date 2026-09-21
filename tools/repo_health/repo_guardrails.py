@@ -710,6 +710,7 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_precommit_gate_excludes_tracked_runtime_data",
             "test_runtime_owned_data_files_are_tracked",
             "test_precommit_gate_reports_the_failing_stage",
+            "test_hooks_path_is_wired_and_bypass_is_prohibited",
             "test_lint_workflow_enforces_ruff_import_sorting",
             "test_lint_workflow_enforces_source_complexity_baseline",
             "test_package_json_exposes_repo_guardrails_entrypoint",
