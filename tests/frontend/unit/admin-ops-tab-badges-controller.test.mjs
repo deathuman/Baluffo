@@ -310,8 +310,12 @@ test("admin ops tab badges use pending state until bounded counts load", async (
 
   assert.equal(overviewBadge.textContent, "2");
   assert.equal(discoveryBadge.textContent, "0");
+  // Neither of these carries an `error` code, so both are still in flight and keep
+  // the pending dots. The terminal-failure case lives in
+  // admin-ops-tab-badges-state.test.mjs.
   assert.equal(sourcePolicyBadge.textContent, "...");
   assert.equal(registryConflictsBadge.textContent, "1");
   assert.equal(dedupBadge.textContent, "...");
   assert.equal(sourcePolicyBadge.attributes["data-tooltip"], "Loading Source Policy Review count");
+  assert.equal(dedupBadge.attributes["data-tooltip"], "Dedup count loads with dedup diagnostics");
 });

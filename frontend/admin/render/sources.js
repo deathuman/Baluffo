@@ -1,4 +1,13 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
+import { ACTION_CENTER_ICONS } from "./action-center.js";
+
+// The source-ID affordance used to render a literal ASCII `i` in a 14px circle —
+// the last ASCII glyph on the page, where every other icon is a monochrome inline
+// SVG. Same `viewBox`/`currentColor` contract as the Action Center's icons, so it
+// inherits the theme without per-theme overrides.
+function infoGlyphHtml() {
+  return `<svg class="admin-source-id-glyph" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false"><path fill="currentColor" d="${ACTION_CENTER_ICONS.info}" /></svg>`;
+}
 
 function formatCompactNumber(value) {
   const number = Number(value || 0);
@@ -258,7 +267,7 @@ export function renderSourcesTableHtml(
         <div>${leadHeader}</div>
         <div>Name</div>
         <div>Adapter</div>
-        <div>Studio</div>
+        <div>URL</div>
         <div>Status</div>
         <div>Jobs</div>
         <div>Approval</div>
@@ -280,7 +289,13 @@ export function renderSourcesTableHtml(
         );
         const name = escapeHtml(String(row.name || ""));
         const adapter = escapeHtml(String(row.adapter || ""));
-        const studio = escapeHtml(String(row.studio || ""));
+        // No Studio cell: the registry always appends the studio as the Name's
+        // trailing "(Source)" parenthetical, so the value was printed twice on
+        // every row (measured: 524/525 rows contain their studio verbatim). The URL
+        // took the freed track — it is the only field that distinguishes the
+        // near-duplicate rows (e.g. one studio listed five times across
+        // /careers, /jobs, /join-us), and it was previously reachable only from a
+        // hover tooltip.
         const resolvedStatus = typeof resolveSourceStatus === "function"
           ? resolveSourceStatus(row)
           : String(row._lastStatus || row.status || "not_run");
@@ -318,7 +333,7 @@ export function renderSourcesTableHtml(
           : "";
         const sourceIdTitle = sourceIdRaw || "missing source id";
         const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
-        const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}">i</span>`;
+        const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}">${infoGlyphHtml()}</span>`;
         const leadCell = isPending
           ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}" data-source-row-index="${rowIndex}"${checkedAttr}>${idIconHtml}</span>`
           : isRejected
@@ -331,7 +346,7 @@ export function renderSourcesTableHtml(
             <div class="admin-cell" data-label="${leadHeader}">${leadCell}</div>
             <div class="admin-cell" data-label="Name">${name}</div>
             <div class="admin-cell" data-label="Adapter">${adapter}</div>
-            <div class="admin-cell" data-label="Studio">${studio}</div>
+            <div class="admin-cell admin-source-url-cell" data-label="URL"><span class="admin-uid"${tooltipAttrs(sourceUrlRaw)}>${sourceUrl || "—"}</span></div>
             <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${statusClass}"${statusTitle}>${status}</span></div>
             <div class="admin-cell" data-label="Jobs">${jobsFound}</div>
             <div class="admin-cell" data-label="Approval"><span class="admin-status-chip ${approvalClass}"${approvalTitle}>${approvalLabel}</span></div>

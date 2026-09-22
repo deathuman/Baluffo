@@ -199,3 +199,29 @@ test("admin active-fetch browser proof treats full fetch report as heavy", () =>
   assert.match(activeFetchProofSource, /\/ops\\\/fetch-report/);
   assert.match(activeFetchProofSource, /view=\(\?:summary\|live\)/);
 });
+
+test("action center first poll is queued on the serial startup heavy lane", () => {
+  const actionCenterSource = readFileSync(
+    new URL("../../../frontend/admin/app/action-center.js", import.meta.url),
+    "utf8"
+  );
+  const heavyRoutes = readFileSync(
+    new URL("./admin-schedule-partial-hydration-smoke.test.mjs", import.meta.url),
+    "utf8"
+  ).match(/STARTUP_HEAVY_ROUTES = \[([\s\S]*?)\]/);
+  assert.ok(heavyRoutes, "expected the startup heavy route list");
+  // The action center's health route must be one the startup lane serializes, otherwise the
+  // overlap assertion in the smoke test cannot hold.
+  assert.match(heavyRoutes[1], /"\/ops\/fetch-kpis"/);
+
+  const signature = actionCenterSource.match(/export function createActionCenterController\(\{([\s\S]*?)\n\}\) \{/);
+  assert.ok(signature, "expected the action center controller signature");
+  assert.match(signature[1], /enqueueStartupTask = null/);
+  const startMatch = actionCenterSource.match(/function startPolling\(options = \{\}\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(startMatch, "expected the action center startPolling helper");
+  assert.match(startMatch[1], /enqueueStartupTask\(runInitialPoll\)/);
+
+  const compositionCall = compositionSource.match(/const actionCenterController = createActionCenterController\(\{([\s\S]*?)\n {2}\}\)/);
+  assert.ok(compositionCall, "expected the composed action center controller");
+  assert.match(compositionCall[1], /enqueueStartupTask:\s*enqueueAdminStartupBridgeTask/);
+});

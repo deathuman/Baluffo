@@ -245,7 +245,11 @@ export function composeAdminControllers({
     onSyncStatus: payload => {
       state.latestSyncStatusCache = payload || null;
       syncController.renderSyncStatus(payload || {});
-    }
+    },
+    // The first core poll reads HEALTH_ROUTE, which is a startup-heavy route: the bridge
+    // serves one gateway, so it must queue behind the bootstrap heavy loads instead of
+    // racing them. Enqueueing keeps the serial startup lane as the single owner of heavy GETs.
+    enqueueStartupTask: enqueueAdminStartupBridgeTask
   });
 
   const inspectorController = createAdminInspectorController({

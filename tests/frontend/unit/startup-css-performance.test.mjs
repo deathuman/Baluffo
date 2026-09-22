@@ -86,6 +86,32 @@ test("admin optional ops slots collapse when empty", () => {
   assert.match(adminCss, /\.admin-ops-alerts:empty,[\s\S]*#admin-ops-fetcher-metrics:empty\s*\{[\s\S]*margin-bottom:\s*0/);
 });
 
+test("admin log reservoirs collapse to a single placeholder row", () => {
+  // The 210px reservoir is right once there is real output to scroll, and wrong
+  // when the only child is the "not loaded yet" line — that measured 210px to show
+  // one 61-character sentence. The rule must be conditional (`:only-child`), not a
+  // blanket min-height removal: the box has to grow back as soon as a second row
+  // lands, or the log would clip its own output.
+  const rule = adminCss.match(/\.admin-fetcher-log:has\(> \.admin-fetcher-line:only-child\)\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.ok(rule, "the single-placeholder collapse rule must exist");
+  assert.match(rule, /min-height:\s*0/);
+
+  // The reservoir itself must stay, or the populated log jumps in height. Match
+  // the specific rule by its `max-height: 320px` companion: `.admin-fetcher-log`
+  // also appears in the scrollbar list and in a narrow-width override, so an
+  // unanchored first-match would assert against the wrong block.
+  const reservoir = adminCss.match(/\.admin-fetcher-log\s*\{[^}]*min-height:\s*210px[^}]*\}/)?.[0] || "";
+  assert.ok(reservoir, "the populated log must still declare its 210px reservoir");
+  assert.match(reservoir, /max-height:\s*320px/);
+
+  // The collapse must not be unconditional.
+  assert.doesNotMatch(
+    adminCss,
+    /\.admin-fetcher-log\s*\{[^}]*min-height:\s*0/,
+    "an unconditional min-height: 0 would break the populated log's stable height",
+  );
+});
+
 test("admin older runs use a bounded scroll area", () => {
   const rule = adminCss.match(/\.admin-ops-history-older \.admin-ops-history-older-scroll\s*\{[\s\S]*?\}/)?.[0] || "";
   assert.match(rule, /max-height:\s*clamp\(18rem,\s*52vh,\s*34rem\)/);

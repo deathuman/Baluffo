@@ -117,9 +117,18 @@ function delayedBadgeState(title = ACTIVE_PIPELINE_KPI_DELAYED_LABEL) {
 function normalizeBadgeState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.loaded === false) {
+    // `loaded: false` covers two different situations, and they must not render
+    // alike. A payload still in flight carries no `error` and should show the
+    // pending dots. A payload that *failed* carries an `error` code (the tab-counts
+    // route sends `dedup_evidence_missing`, `discovery_report_empty`, …) and is
+    // terminal: no amount of waiting will produce a count, so the pending dots
+    // would spin forever. That is what left the Dedup Lists tab reading "..." until
+    // the user clicked it. Terminal states get the same dash the delayed state
+    // uses, plus the backend's explanation as the tooltip.
+    const error = String(value.error || "").trim();
     return pendingBadgeState(String(value.title || "Loading count"), {
       tone: value.tone,
-      pendingText: value.pendingText
+      pendingText: error ? OPS_TAB_BADGE_DELAYED_TEXT : value.pendingText
     });
   }
   return {

@@ -29,10 +29,30 @@ function formatRegistryCountBasis(summary) {
   return "registry counts";
 }
 
+// Alerts the Action Center already owns. The Action Center is the page's single
+// place for "is a fetch overdue" — it renders the same condition as a signal row
+// with the age spelled out and its own Review / Run Jobs Fetcher / Dismiss
+// actions. Rendering the backend's version here too printed the same fact twice in
+// two different visual languages, so Ops now shows only Ops-specific alerts
+// (pipeline and social conditions) and defers these two to the Action Center.
+//
+// Suppression happens at render time, not in `state.latestOpsHealthCache`: that
+// cache is the authoritative health record other code reads, and
+// `admin-ops-kpis-controller.test.mjs` asserts a lightweight summary poll cannot
+// downgrade it.
+const ACTION_CENTER_OWNED_ALERT_IDS = new Set(["stale_fetch", "fetch_never_run"]);
+
 function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   if (!alertsEl) return;
   const canPatchInPlace = Boolean(alertsEl && alertsEl.dataset);
-  const rows = Array.isArray(alerts) ? alerts : [];
+  const incoming = Array.isArray(alerts) ? alerts : [];
+  const rows = incoming.filter(
+    alert => !ACTION_CENTER_OWNED_ALERT_IDS.has(String(alert?.id || ""))
+  );
+  // The signature is computed over the *filtered* rows, so a change that only
+  // affects a suppressed alert does not force a repaint, and — more importantly —
+  // the patch-in-place early return can never leave a stale banner up when the
+  // visible set changes.
   const signature = stableOpsSignature(rows.map(alert => ({
     id: String(alert?.id || ""),
     severity: String(alert?.severity || ""),

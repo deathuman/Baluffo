@@ -11,6 +11,27 @@ const POLL_INTERVAL_MS = 30000;
 const INITIAL_FULL_POLL_DELAY_MS = POLL_INTERVAL_MS;
 const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
 const MAX_ITEMS = 3;
+// The Action Center reads exactly two things off the health payload:
+// `alerts` (for `fetch_never_run` / `stale_fetch`) and `kpis`
+// (`lastSuccessfulFetchAge`, `failedSourceRatioLatest`). It used to poll
+// `/ops/health?view=ready`, which is built by `compute_ops_health_ready()`
+// (src/bridge/ops_api_health.py) and contains *neither* key — that payload is a
+// deliberate lightweight-startup shape, pinned by
+// tests/bridge/test_lightweight_startup_routes.py. So `evaluateStaleFetch` and
+// `evaluateFailedSources` could never fire: two of the four signals were dead.
+//
+// `/ops/fetch-kpis?view=summary` is the one cached route that carries both keys.
+// The alternatives do not:
+//   * `/ops/health?view=ready` — neither key (the original bug).
+//   * `/ops/dashboard-health?view=summary` — `alerts` yes, but its three KPI keys
+//     omit `lastSuccessfulFetchAge`, so the age reads as "unknown".
+//   * `/ops/dashboard-health` (full) — carries both, but is *uncached*, and the
+//     route module records 0.5-1.6s per uncached chain on idle low-end hardware.
+//     A 30s poll of it would reintroduce the load the summary caches exist to
+//     remove.
+// fetch-kpis also stays consistent with the Ops tab, whose fetch-KPI hydration
+// already polls this same path, and it is in the frontend in-flight dedupe set.
+const HEALTH_ROUTE = "/ops/fetch-kpis?view=summary";
 const CHECKING_SUMMARY = "Checking operational signals...";
 const PARTIAL_SUMMARY = "No immediate action from core signals. Storage check pending.";
 const ACTIVE_WORK_SUMMARY = "Operational checks delayed while job update is running.";
@@ -31,6 +52,12 @@ const SIGNAL_LABELS = {
 };
 
 function formatAge(hours) {
+  // `parseAge` returns Infinity for a missing or unparseable age. Without this
+  // guard the summary renders the literal string "Last successful fetch was
+  // Infinityd ago" — reachable whenever the polled health payload omits
+  // `kpis.lastSuccessfulFetchAge` (e.g. the `?view=summary` variant, which
+  // carries alerts but only three KPI keys).
+  if (!Number.isFinite(hours)) return "at an unknown time";
   if (hours < 1) return `${Math.round(hours * 60)}m ago`;
   if (hours < 24) return `${Math.round(hours)}h ago`;
   return `${Math.round(hours / 24)}d ago`;
@@ -236,7 +263,12 @@ export function createActionCenterController({
   logAdminError,
   onSyncStatus,
   shouldDeferCoreSignals = () => false,
-  shouldDeferStorageHealth = () => false
+  shouldDeferStorageHealth = () => false,
+  // HEALTH_ROUTE is a startup-heavy route (see STARTUP_HEAVY_ROUTES in
+  // tests/frontend/unit/admin-schedule-partial-hydration-smoke.test.mjs): the bridge has a
+  // single gateway, so heavy GETs must not overlap at boot. The composition root injects the
+  // serial startup lane here; without it (unit fixtures) the first poll stays immediate.
+  enqueueStartupTask = null
 }) {
   let pollTimer = null;
   let fullPollTimer = null;
@@ -436,7 +468,7 @@ export function createActionCenterController({
       const [health, sync, storage] = deferCore
         ? [pollCache.health || null, pollCache.sync || null, pollCache.storage || null]
         : await Promise.all([
-          getBridge("/ops/health?view=ready", { timeoutMs: 5000 }).catch(() => null),
+          getBridge(HEALTH_ROUTE, { timeoutMs: 5000 }).catch(() => null),
           getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
           includeStorage
             ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
@@ -497,12 +529,16 @@ export function createActionCenterController({
     if (refs.actionCenterStatusChipEl) {
       refs.actionCenterStatusChipEl.innerHTML = renderStatusChip({ state: "checking" });
     }
-    const runInitialPoll = () => {
-      pollActionCenter({ includeStorage: false }).then(() => {
-        bindEvents(itemsEl);
+    const runInitialPoll = () => pollActionCenter({ includeStorage: false }).then(() => {
+      bindEvents(itemsEl);
+    });
+    if (typeof enqueueStartupTask === "function") {
+      Promise.resolve(enqueueStartupTask(runInitialPoll)).catch(err => {
+        if (logAdminError) logAdminError("action_center_startup_poll", err);
       });
-    };
-    runInitialPoll();
+    } else {
+      runInitialPoll();
+    }
     const fullPollDelayMs = Math.max(0, Number(options?.fullPollDelayMs) || INITIAL_FULL_POLL_DELAY_MS);
     fullPollTimer = setTimeout(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});

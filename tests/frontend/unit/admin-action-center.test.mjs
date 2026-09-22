@@ -2,74 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createActionCenterController } from "../../../frontend/admin/app/action-center.js";
 import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
-
-function cleanHealthPayload() {
-  return { alerts: [], kpis: { lastSuccessfulFetchAge: "1h", failedSourceRatioLatest: 0 } };
-}
-
-function cleanSyncPayload() {
-  return {
-    config: { enabled: true, ready: true, state: "ready" },
-    runtime: { lastAction: "pull", lastResult: "ok", lastError: "" }
-  };
-}
-
-function cleanStoragePayload() {
-  return { ok: true, storage: { healthy: true, diagnostics: [] } };
-}
-
-function createFixture({
-  getBridge,
-  onSyncStatus,
-  shouldDeferStorageHealth,
-  shouldDeferCoreSignals,
-  showToast,
-  includeHeaderRefs = true
-} = {}) {
-  const refs = {
-    actionCenterItemsEl: createElement(),
-    actionCenterCopyBtnEl: createElement()
-  };
-  // The header chip and stamp are optional at runtime; the default fixture supplies
-  // them so their wiring is exercised, and `includeHeaderRefs: false` covers the
-  // legacy two-ref shape that must keep working.
-  if (includeHeaderRefs) {
-    refs.actionCenterStatusChipEl = createElement();
-    refs.actionCenterCheckedAtEl = createElement();
-  }
-  const calls = [];
-  const toasts = [];
-  const controller = createActionCenterController({
-    refs,
-    getBridge: getBridge || (async path => {
-      calls.push(path);
-      if (path === "/ops/health?view=ready") {
-        return cleanHealthPayload();
-      }
-      if (path === "/sync/status?view=summary") {
-        return cleanSyncPayload();
-      }
-      if (path === "/ops/storage-health") {
-        return cleanStoragePayload();
-      }
-      return null;
-    }),
-    postBridge: async () => ({}),
-    showToast: showToast || ((message, tone) => toasts.push([message, tone])),
-    logAdminError() {},
-    onSyncStatus,
-    shouldDeferCoreSignals,
-    shouldDeferStorageHealth
-  });
-  return { refs, calls, toasts, controller };
-}
+import { cleanHealthPayload, cleanStoragePayload, cleanSyncPayload, createActionCenterFixture as createFixture } from "./helpers/action-center-fixture.mjs";
 
 test("action center renders partial state after lightweight clean core poll", async () => {
   const { refs, calls, controller } = createFixture();
 
   await controller.pollActionCenter({ includeStorage: false });
 
-  assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
+  assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary"]);
   assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals\. Storage check pending\./);
   assert.doesNotMatch(refs.actionCenterItemsEl.innerHTML, /All systems operational/);
 });
@@ -79,7 +19,7 @@ test("action center renders healthy only after storage is checked", async () => 
 
   await controller.pollActionCenter({ includeStorage: true });
 
-  assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary", "/ops/storage-health"]);
+  assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary", "/ops/storage-health"]);
   assert.match(refs.actionCenterItemsEl.innerHTML, /All systems operational/);
 });
 
@@ -90,7 +30,7 @@ test("action center defers storage health while active work is known", async () 
 
   await controller.pollActionCenter({ includeStorage: true });
 
-  assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
+  assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary"]);
   assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals\. Storage check pending\./);
 });
 
@@ -138,7 +78,7 @@ test("action center startPolling runs first lightweight poll immediately", async
     refs,
     getBridge: async path => {
       calls.push(path);
-      if (path === "/ops/health?view=ready") return cleanHealthPayload();
+      if (path === "/ops/fetch-kpis?view=summary") return cleanHealthPayload();
       if (path === "/sync/status?view=summary") return cleanSyncPayload();
       if (path === "/ops/storage-health") return cleanStoragePayload();
       return null;
@@ -164,7 +104,7 @@ test("action center startPolling runs first lightweight poll immediately", async
     controller.startPolling({ initialDelayMs: 5000 });
     await new Promise(resolve => setImmediate(resolve));
 
-    assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
+    assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary"]);
     assert.equal(scheduledTimeouts[0]?.delayMs, 30000);
     assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals\. Storage check pending\./);
   } finally {
@@ -176,11 +116,51 @@ test("action center startPolling runs first lightweight poll immediately", async
   }
 });
 
+test("action center defers its first poll to the injected startup lane", async () => {
+  // The first poll reads the health route, which is startup-heavy: the bridge has one
+  // gateway, so the poll must queue on the serial lane instead of racing the bootstrap
+  // loads. Without the injection the poll stays immediate, which is what every other
+  // test in this file relies on.
+  const queued = [];
+  const { calls, refs, controller } = createFixture({
+    enqueueStartupTask: task => {
+      queued.push(task);
+      return Promise.resolve();
+    }
+  });
+  const previousSetTimeout = global.setTimeout;
+  const previousSetInterval = global.setInterval;
+  const previousClearTimeout = global.clearTimeout;
+  const previousClearInterval = global.clearInterval;
+  try {
+    global.setTimeout = () => 1;
+    global.setInterval = () => 1;
+    global.clearTimeout = () => {};
+    global.clearInterval = () => {};
+
+    controller.startPolling();
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(queued.length, 1, "the first poll must be handed to the startup lane");
+    assert.deepEqual(calls, [], "nothing may hit the bridge before the lane runs the task");
+
+    await queued[0]();
+    assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary"]);
+    assert.match(refs.actionCenterItemsEl.innerHTML, /Storage check pending/);
+  } finally {
+    controller.stopPolling();
+    global.setTimeout = previousSetTimeout;
+    global.setInterval = previousSetInterval;
+    global.clearTimeout = previousClearTimeout;
+    global.clearInterval = previousClearInterval;
+  }
+});
+
 test("action center renders remote sync conflict as reviewable warning", async () => {
   const { refs, calls, controller } = createFixture({
     getBridge: async path => {
       calls.push(path);
-      if (path === "/ops/health?view=ready") {
+      if (path === "/ops/fetch-kpis?view=summary") {
         return cleanHealthPayload();
       }
       if (path === "/sync/status?view=summary") {
@@ -199,7 +179,7 @@ test("action center renders remote sync conflict as reviewable warning", async (
 
   await controller.pollActionCenter({ includeStorage: false });
 
-  assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
+  assert.deepEqual(calls, ["/ops/fetch-kpis?view=summary", "/sync/status?view=summary"]);
   assert.match(refs.actionCenterItemsEl.innerHTML, /Sync needs attention/);
   assert.match(refs.actionCenterItemsEl.innerHTML, /Sync conflict needs review; data refresh can continue/);
   assert.match(refs.actionCenterItemsEl.innerHTML, /data-preset="sync_pull"/);
@@ -220,7 +200,7 @@ test("action center publishes fresh sync status for Source Sync panel hydration"
   let publishedSync = null;
   const { refs, controller } = createFixture({
     getBridge: async path => {
-      if (path === "/ops/health?view=ready") return cleanHealthPayload();
+      if (path === "/ops/fetch-kpis?view=summary") return cleanHealthPayload();
       if (path === "/sync/status?view=summary") return syncPayload;
       return null;
     },
@@ -298,7 +278,7 @@ test("action center header chip reflects state and issue count", async () => {
 
   const { refs: signalRefs, controller: signalController } = createFixture({
     getBridge: async path => {
-      if (path === "/ops/health?view=ready") {
+      if (path === "/ops/fetch-kpis?view=summary") {
         return { alerts: [{ id: "stale_fetch" }], kpis: { lastSuccessfulFetchAge: "30h", failedSourceRatioLatest: 0 } };
       }
       if (path === "/sync/status?view=summary") return cleanSyncPayload();
@@ -324,64 +304,4 @@ test("action center renders without the optional header refs", async () => {
   const { refs, controller } = createFixture({ includeHeaderRefs: false });
   await controller.pollActionCenter({ includeStorage: true });
   assert.match(refs.actionCenterItemsEl.innerHTML, /All systems operational/);
-});
-
-test("action center renders every reachable signal and no unreachable overflow row", async () => {
-  // Three is the ceiling: `stale_fetch` needs a fetch age above 12h and
-  // `failed_sources` needs one at or below 12h, so they are mutually exclusive. The
-  // reachable maximum is storage_health + sync_status + failed_sources, and all
-  // three must render. The "View all" row that used to follow them could never
-  // appear and has been removed.
-  const { refs, controller } = createFixture({
-    getBridge: async path => {
-      if (path === "/ops/health?view=ready") {
-        return { alerts: [], kpis: { lastSuccessfulFetchAge: "1h", failedSourceRatioLatest: 0.5 } };
-      }
-      if (path === "/sync/status?view=summary") {
-        return {
-          config: { enabled: true, ready: true, state: "remote_conflict" },
-          runtime: { lastAction: "push", lastResult: "error", lastError: "is at a but expected b" }
-        };
-      }
-      if (path === "/ops/storage-health") {
-        return { ok: true, storage: { healthy: false, diagnostics: [{ ok: false }] } };
-      }
-      return null;
-    }
-  });
-
-  await controller.pollActionCenter({ includeStorage: true });
-
-  const html = refs.actionCenterItemsEl.innerHTML;
-  for (const id of ["storage_health", "sync_status", "failed_sources"]) {
-    assert.match(html, new RegExp(`data-signal="${id}"`), `${id} must render`);
-  }
-  assert.equal((html.match(/class="action-center-signal /g) || []).length, 3);
-  assert.doesNotMatch(html, /view-all/);
-});
-
-test("stale_fetch and failed_sources are mutually exclusive in the live signal set", async () => {
-  // This is the invariant that makes the display cap unreachable. If a future change
-  // lets both fire together, the signal count reaches four, the cap binds, and the
-  // removed overflow row becomes necessary again — so this test is the tripwire.
-  const at = async (age, alerts, ratio) => {
-    const { refs, controller } = createFixture({
-      getBridge: async path => {
-        if (path === "/ops/health?view=ready") {
-          return { alerts, kpis: { lastSuccessfulFetchAge: age, failedSourceRatioLatest: ratio } };
-        }
-        if (path === "/sync/status?view=summary") return { config: { enabled: false }, runtime: {} };
-        if (path === "/ops/storage-health") return cleanStoragePayload();
-        return null;
-      }
-    });
-    await controller.pollActionCenter({ includeStorage: true });
-    return [...new Set([...refs.actionCenterItemsEl.innerHTML.matchAll(/data-signal="([^"]+)"/g)].map(m => m[1]))];
-  };
-
-  const stale = await at("30h", [{ id: "stale_fetch" }], 0.5);
-  assert.deepEqual(stale, ["stale_fetch"], "a stale fetch must not also report failed sources");
-
-  const fresh = await at("1h", [], 0.5);
-  assert.deepEqual(fresh, ["failed_sources"], "failed sources require a recent successful fetch");
 });

@@ -16,10 +16,19 @@
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
+/* One class is shared by the H2 section headings and the H4 sub-headings, and a
+   single flat size made every level the same size. Measured before this: H2 16.8px,
+   H3 16px, H4 16.8px — so the H4s nested *inside* an H3 section rendered larger than
+   their own parent, and the H2s beside those H3s were within half a pixel of them.
+   The outline is sized per element instead, descending H2 > H3 > H4. */
 .admin-section-title {
-  font-size: 1.05rem;
+  font-size: 1rem;
   margin: 0 0 0.8rem;
   color: var(--text-primary);
+}
+
+h2.admin-section-title {
+  font-size: 1.2rem;
 }
 
 #admin-source-status.source-status {
@@ -186,8 +195,20 @@
      the seven tracks could not shrink below the container, so each row clipped
      its own last column against its `overflow: hidden` — content the user could
      not reach, because the row never overflowed its parent and so the parent
-     never scrolled. */
+     never scrolled.
+     The URL column takes the track the dropped Studio column occupied, so the row
+     geometry is otherwise unchanged and Name keeps its previous width. */
   grid-template-columns: 52px minmax(0, 1fr) 96px minmax(0, 1fr) 84px 68px minmax(0, 0.9fr);
+}
+
+/* URLs are monospace and long, so they need the truncation affordance the other
+   cells get from `.admin-source-row .admin-cell` — the full value stays reachable
+   through the cell's tooltip. */
+.admin-source-url-cell .admin-uid {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-source-row {
@@ -254,10 +275,12 @@
        its 228px value, and `fr` resolves differently in the header's width than
        in the body's once the body is `max-content`. Fixed tracks are the only
        form that keeps the scrolled columns aligned.
-       Widths are the measured per-column content maxima across all 103 rows of
-       the three lists (Name 362, Studio 265, Approval 250), so nothing
-       truncates. */
-    grid-template-columns: 52px 23rem 96px 17rem 84px 68px 16rem;
+       Measured per-column content maxima: Name 431, Adapter 84, Status 78,
+       Jobs 29, Approval 302. The URL column is the exception — a single
+       Oracle-Cloud URL measures 1437px, and the long tail is what the horizontal
+       scroll this block exists for is *for*, so its track is deliberately capped
+       well below its maximum and the full value stays on the cell tooltip. */
+    grid-template-columns: 52px 27rem 96px 24rem 84px 68px 19rem;
     gap: 0.6rem;
     align-items: center;
     padding: 0.6rem 0.75rem;
@@ -489,11 +512,16 @@ body::-webkit-scrollbar-thumb:hover,
   color: color-mix(in srgb, #d8d8d8 80%, var(--text-primary));
   cursor: help;
   user-select: none;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 700;
   opacity: 0.45;
   transition: opacity 0.12s ease, border-color 0.12s ease;
+}
+
+/* The glyph is an inline SVG rather than the ASCII `i` this used to hold, so the
+   text-sizing properties are gone and the icon is centred by the flex box above.
+   `display: block` drops the inline baseline gap that would otherwise push an
+   11px icon off-centre inside a 14px circle. */
+.admin-source-id-glyph {
+  display: block;
 }
 
 .admin-source-row:hover .admin-source-id-inline {
@@ -2462,7 +2490,9 @@ body::-webkit-scrollbar-thumb:hover,
 .admin-fetcher-title {
   margin: 0;
   color: var(--text-primary);
-  font-size: 1rem;
+  /* Sits between the H2 section headings (1.2rem) and the H4 sub-headings (1rem),
+     so a section title never reads lighter than the sub-headings it contains. */
+  font-size: 1.1rem;
   letter-spacing: 0.35px;
 }
 
@@ -2857,11 +2887,15 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-discovery-bulk-card .admin-fetcher-actions .clear-filters-btn {
-  flex: 1 1 140px;
+  /* Content-sized, not stretched. `flex: 1 1 140px` grew this button to fill the
+     row: "Approve Selected" measured 527px to show 125px of text, so the label sat
+     at one edge of a mostly-empty bar and read as a full-width primary action.
+     Buttons here size to their label and wrap when the row runs out. */
+  flex: 0 1 auto;
 }
 
 .admin-discovery-bulk-card .admin-delete-sources-btn {
-  flex: 1 1 100%;
+  flex: 0 1 auto;
 }
 
 .admin-discovery-log-card {
@@ -2909,12 +2943,13 @@ body::-webkit-scrollbar-thumb:hover,
 .admin-discovery-filter-card .saved-custom-filter-actions {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(0, max-content));
+  justify-content: start;
   gap: 0.4rem;
 }
 
 .admin-discovery-filter-card .saved-custom-filter-actions .btn {
-  width: 100%;
+  width: auto;
   min-height: 2rem;
   text-align: center;
 }
@@ -3005,12 +3040,11 @@ body::-webkit-scrollbar-thumb:hover,
     width: 100%;
   }
 
-  .admin-discovery-bulk-card .admin-fetcher-actions .clear-filters-btn {
-    flex: 1 1 100%;
-  }
-
+  /* No `flex: 1 1 100%` here: at 520px it stretched "Approve Selected" to 357px for
+     125px of text. The action row already wraps, so content-sized buttons stack
+     naturally without a mostly-empty bar per button. */
   .admin-discovery-filter-card .saved-custom-filter-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(0, max-content));
   }
 
   .admin-source-policy-row-main {
@@ -3162,6 +3196,18 @@ body::-webkit-scrollbar-thumb:hover,
   font-size: 0.82rem;
   line-height: 1.45;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+/* A log holding a single placeholder line does not need a 210px reservoir: that
+   reserved box measured 210px to show one 61-character sentence. Collapse it to
+   the height of its one row and let it grow back the moment real entries arrive,
+   which is the same `:empty`-style trade the optional ops slots already make.
+   `:only-child` is the condition rather than a count because the placeholder is
+   always the sole row; two or more rows mean real log output.
+   The Discovery log carries the same `.admin-fetcher-log` class (only its id
+   differs), so this one selector covers both. */
+.admin-fetcher-log:has(> .admin-fetcher-line:only-child) {
+  min-height: 0;
 }
 
 .admin-fetcher-line {

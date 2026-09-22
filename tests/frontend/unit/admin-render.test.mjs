@@ -66,12 +66,46 @@ test("admin render: null KPI text fields use terminal fallback copy", () => {
 
 test("admin render: non-dismissible alerts omit dismiss control", () => {
   const alertsEl = makeEl();
+  // Uses an Ops-owned alert id. `fetch_never_run` is suppressed here now that the
+  // Action Center owns it, and this test is about the dismiss control, not ownership.
   renderAdminOpsAlerts(alertsEl, [
-    { id: "fetch_never_run", severity: "warning", message: "No successful fetch yet.", dismissible: false }
+    { id: "pipeline_never_run", severity: "warning", message: "No successful fetch yet.", dismissible: false }
   ]);
 
   assert.match(alertsEl.innerHTML, /No successful fetch yet/i);
   assert.doesNotMatch(alertsEl.innerHTML, /Dismiss/i);
+});
+
+test("admin render: ops alerts defer Action Center-owned fetch alerts", () => {
+  const alertsEl = makeEl();
+  renderAdminOpsAlerts(alertsEl, [
+    { id: "stale_fetch", severity: "warning", message: "Last successful fetch is older than 12h." },
+    { id: "fetch_never_run", severity: "warning", message: "No successful fetch has run yet." },
+    { id: "pipeline_never_run", severity: "warning", message: "No successful full pipeline has run yet." }
+  ]);
+
+  // The fetch-overdue conditions belong to the Action Center; only the Ops-specific
+  // pipeline alert renders here.
+  assert.doesNotMatch(alertsEl.innerHTML, /older than 12h/i);
+  assert.doesNotMatch(alertsEl.innerHTML, /No successful fetch has run yet/i);
+  assert.match(alertsEl.innerHTML, /No successful full pipeline has run yet/i);
+});
+
+test("admin render: suppressing every alert still clears the container", () => {
+  // The patch-in-place signature must be computed over the *filtered* rows: if it
+  // were computed over the incoming ones, a payload of only-suppressed alerts would
+  // keep a stale signature and leave the previous banner on screen.
+  const alertsEl = makeEl();
+  alertsEl.dataset = {};
+  renderAdminOpsAlerts(alertsEl, [
+    { id: "pipeline_never_run", severity: "warning", message: "Pipeline has not run." }
+  ]);
+  assert.match(alertsEl.innerHTML, /Pipeline has not run/i);
+
+  renderAdminOpsAlerts(alertsEl, [
+    { id: "stale_fetch", severity: "warning", message: "Last successful fetch is older than 12h." }
+  ]);
+  assert.equal(alertsEl.innerHTML, "", "a fully suppressed payload must clear the container");
 });
 
 test("admin render: fetcher metrics render failure buckets and examples", () => {

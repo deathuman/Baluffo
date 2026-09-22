@@ -44,6 +44,8 @@ const cardBand = mediaBlocks
 
 /** All rule bodies whose selector list contains `selector` exactly. */
 
+// Heading scale and action-button sizing live in admin-css-sizing-guards.test.mjs.
+
 test("admin table geometry stays behind the desktop guard", () => {
   // `.admin-row-header, .admin-user-row` (0,1,0) ties the shared stacked-card
   // rules in components.css (0,1,0) but admin.css loads after components.css,
