@@ -168,16 +168,24 @@ Cursor, Cline, and Windsurf are supported examples, but they are not the repo's 
 
 ### Cline
 
+Cline is a supported secondary client, not a repo primary standard. It reads **user-scope** MCP settings only — there is no project-scope `.cline/mcp.json` yet ([cline#13596](https://github.com/cline/cline/issues/13596)) — and the live settings file on CLI/desktop builds is `~/.cline/data/settings/cline_mcp_settings.json` (the `~/.cline/mcp.json` path in Cline's docs is stale per [cline#11671](https://github.com/cline/cline/issues/11671)). Register Serena there:
+
 ```json
 {
   "mcpServers": {
-    "baluffo-serena": {
-      "command": "serena",
-      "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"]
+    "serena": {
+      "command": "uvx",
+      "args": ["-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
 ```
+
+- The `uvx` form matches `.agents/mcp.json` and works even when `serena` is not installed as a `uv tool` on `PATH`.
+- Start Cline from the Baluffo repo root so `--project-from-cwd` activates the repo project, then run the same `get_current_config` / `activate_project project="Baluffo"` bootstrap as above.
+- Because Cline registration is user-scope, Serena also becomes available in unrelated workspaces opened in Cline. Toggle the server off in Cline's MCP panel when working outside Baluffo (the same trade-off accepted for the Freebuff Desktop user-scope config documented in [INDEX.md](INDEX.md)).
 
 ### Windsurf
 

@@ -141,16 +141,29 @@ Edit `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_con
 
 ### Cline
 
+Cline reads user-scope MCP settings only; the live file on CLI/desktop builds is
+`~/.cline/data/settings/cline_mcp_settings.json` (Cline's documented `~/.cline/mcp.json` path is
+stale per [cline#11671](https://github.com/cline/cline/issues/11671); project-scope MCP is not
+supported yet per [cline#13596](https://github.com/cline/cline/issues/13596)). Register Basic
+Memory there alongside Serena (see the Cline section in [SERENA.md](SERENA.md)):
+
 ```json
 {
   "mcpServers": {
-    "baluffo-basic-memory": {
+    "basic-memory": {
       "command": "basic-memory",
-      "args": ["mcp", "--project", "baluffo-memory"]
+      "args": ["mcp", "--project", "baluffo-memory"],
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
 ```
+
+`basic-memory` must be on `PATH` (see [Install Basic Memory](#install-basic-memory)); the
+`--project baluffo-memory` lock is the same intentional constraint described under
+[First-Class Clients](#first-class-clients). Keep `autoApprove` empty so `write_note` stays
+behind approval.
 
 ### VS Code
 

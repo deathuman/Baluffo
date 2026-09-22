@@ -9,6 +9,7 @@
 - Use [SERENA.md](SERENA.md) for the required repo AI tooling standard.
 - Use [BASIC_MEMORY.md](BASIC_MEMORY.md) for the required external AI continuity memory (cross-client handoff, project gotchas, current focus).
 - Use [PLAYWRIGHT.md](PLAYWRIGHT.md) only for the deprecated local Playwright MCP fallback when a non-Codex client lacks built-in browser control.
+- Use the Cline sections in [SERENA.md](SERENA.md) and [BASIC_MEMORY.md](BASIC_MEMORY.md) for the secondary Cline client; Cline also discovers this repo's `.agents/skills` natively, so the Codex repo-local skills are shared across clients.
 
 ## Start Here
 
