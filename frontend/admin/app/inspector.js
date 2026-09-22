@@ -1,8 +1,14 @@
 // Native-toggle and form elements must never be hijacked: clicking a <summary>
 // (Decision details, More row evidence, gate examples) must toggle in place.
+//
+// `details` is deliberately *not* excluded. Excluding the container made every
+// row inside a `<details>` (Recent Runs, Older runs, decision disclosures)
+// unreachable, because the click target is a descendant of that `<details>`.
+// `summary` is the actual toggle surface, so excluding it alone preserves the
+// toggle-in-place contract while letting the rows inside stay inspectable.
 export function isInspectorExcludedTarget(target) {
   return Boolean(
-    target?.closest?.("summary, details, label, input, select, textarea, button, a")
+    target?.closest?.("summary, label, input, select, textarea, button, a")
   );
 }
 
@@ -41,6 +47,12 @@ const ENTITY_TYPES = {  source: {
       const runKey = row.dataset.runKey || "";
       const rowArea = row.dataset.rowArea || "";
       if (!runKey) return null;
+      // The ops-history renderer stages its own rich body on the row it just
+      // painted, so the drawer does not have to re-derive detail from cell text
+      // (which is truncated by `text-overflow: ellipsis`).
+      if (typeof row.__runDetailHtml === "string" && row.__runDetailHtml) {
+        return { id: runKey, rowArea, html: row.__runDetailHtml };
+      }
       const typeCell = row.querySelector(".admin-cell:first-child");
       const statusChip = row.querySelector(".admin-status-chip");
       const cells = Array.from(row.querySelectorAll(".admin-cell"));
@@ -99,6 +111,13 @@ const ENTITY_TYPES = {  source: {
 function renderEntityContent(entityType, entityData) {
   const spec = ENTITY_TYPES[entityType];
   if (!spec) return "";
+
+  // A rich renderer (the operations run detail) may hand over a complete body.
+  // It owns its own header, fields and action row, so the generic shell below
+  // must not wrap it or append the default `recoveryActions` buttons.
+  if (typeof entityData?.html === "string" && entityData.html) {
+    return entityData.html;
+  }
 
   let html = `<div class="inspector-entity-header">
     <span class="inspector-entity-type">${spec.label}</span>
@@ -189,7 +208,14 @@ export function createAdminInspectorController({
   function showOverlay() {
     const overlay = refs.inspectorOverlayEl;
     const panel = refs.inspectorPanelEl;
-    if (overlay) overlay.classList.add("inspector-overlay-visible");
+    // `admin.html` ships the overlay as `inspector-overlay hidden`, and `.hidden`
+    // is `display: none !important`, which outranks `.inspector-overlay-visible`.
+    // Adding the visible class alone therefore left the panel permanently
+    // invisible; the `hidden` class has to come off (and go back on close).
+    if (overlay) {
+      overlay.classList.remove("hidden");
+      overlay.classList.add("inspector-overlay-visible");
+    }
     if (panel) panel.classList.add("inspector-panel-visible");
     open = true;
   }
@@ -197,7 +223,10 @@ export function createAdminInspectorController({
   function hideOverlay() {
     const overlay = refs.inspectorOverlayEl;
     const panel = refs.inspectorPanelEl;
-    if (overlay) overlay.classList.remove("inspector-overlay-visible");
+    if (overlay) {
+      overlay.classList.remove("inspector-overlay-visible");
+      overlay.classList.add("hidden");
+    }
     if (panel) panel.classList.remove("inspector-panel-visible");
     open = false;
     _currentEntityType = null;

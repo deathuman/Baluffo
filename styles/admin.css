@@ -1819,45 +1819,73 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-ops-history-header,
 .admin-ops-history-row {
-  /* Container-independent fixed tracks, for the same reason as the source
-     tables: the header and the rows are separate grids. The previous floors
-     summed to 872px, and the rows inherit `overflow: hidden` from
-     `.admin-source-row`, so between ~1000px and 521px the last column was
-     clipped *and* unreachable — the row never overflowed its own parent, so the
-     ancestor scroller had nothing to scroll. Measured clipping was 80px at
-     1000px, 175px at 905px, 252px at 810px and 462px at 600px. The 520px block
-     below drops two columns and already fits, so it is left alone. */
+  /* Container-independent tracks, for the same reason as the source tables: the
+     header and the rows are separate grids, so the only thing keeping them in step
+     is that both resolve against the same width with the same track list.
+
+     Each track is sized from the measured natural width of the widest value it has
+     to hold, at the cell's own font size, with a few pixels of headroom, so that
+     at or above the floor set below nothing is ellipsized:
+
+       col  need  track       widest value measured
+       1      58px  4.25rem   "Discovery"
+       2     160px  10.5rem   "completed with warnings" (the status chip, not the label)
+       3      62px  4.25rem   "1440.0m", the longest duration form
+       4     335px  21.5rem   the longest pipeline progress label
+       5      47px  3.5rem    "12,345"
+       6     114px  7.5rem     "21 Sept 2019 12:12"
+       7      63px  4.5rem     the Abort button
+
+     The last track is a single `fr` so the row fills the card. That is only safe
+     because the wrappers are sized to a definite width (see the guard below):
+     under intrinsic sizing an `fr` track contributes its own max-content, which
+     differs between a short header label and a long row value, and the two grids
+     then disagree. Measured with `width: max-content`, header and row resolved to
+     848px and 850px at 1000px, and the progress cell was ellipsized at every
+     width from 360px to 1600px.
+
+     `column-gap` is what separates the right-aligned FINISHED header from the
+     left-aligned ACTIONS header; at `0` the two read as one word. */
   grid-template-columns:
-    5rem
-    6.25rem
-    4.5rem
-    20rem
-    4.75rem
-    9rem
-    5rem;
-  column-gap: 0;
+    4.25rem
+    10.5rem
+    4.25rem
+    minmax(21.5rem, 1fr)
+    3.5rem
+    7.5rem
+    4.5rem;
+  column-gap: 0.5rem;
 }
 
 /* The horizontal scroller must be the `.admin-ops-*` wrapper, not the body.
    `.jobs-table-body` is `overflow-y: auto`, which also makes it a horizontal
    scroll container: at the container width it clips each row's last column, and
-   the wrapper never scrolls because the child never overflows. Sizing the header
-   and body to `max-content` moves the only horizontal scroller back to the
-   wrapper, which keeps the two in step.
+   the wrapper never scrolls because the child never overflows. Making both the
+   header and the body the full wrapper width moves the only horizontal scroller
+   back to the wrapper and keeps the two grids on the same definite width.
+
+   `min-width` is the track sum plus the six `0.5rem` gutters: 896px + 48px =
+   944px = 59rem. Below it the wrapper scrolls; at and above it the `fr` track
+   absorbs the card's slack rather than leaving it unallocated on the right, which
+   is what left the dead space there before.
+
+   The floor is wider than the old fixed 872px of tracks because the Status column
+   was reserving 100px for a 160px chip and the Finished column 144px for a date it
+   could not fit. Both were being ellipsized; sizing them honestly costs width and
+   buys legibility. The card is capped at 1060px, so this only scrolls below a
+   ~1150px viewport.
 
    Guarded to the range where the seven fixed tracks are in play. The `520px`
    block below replaces them with five fluid `fr` columns that already fit the
-   container, and `max-content` there would resolve those `fr` tracks against
-   their own content instead of the container — measured 1382px of row inside a
-   354px wrapper, i.e. a 1028px sideways scroll on a layout that needed none. */
+   container, and the floor there would force a sideways scroll on a layout that
+   needs none. */
 @media (min-width: 521px) {
   .admin-ops-current-runs > .jobs-table-header,
   .admin-ops-completed-runs > .jobs-table-header,
   .admin-ops-current-runs > .jobs-table-body,
-  .admin-ops-completed-runs > .jobs-table-body,
-  .admin-ops-history-run {
-    width: max-content;
-    min-width: 100%;
+  .admin-ops-completed-runs > .jobs-table-body {
+    width: 100%;
+    min-width: 59rem;
   }
 }
 
@@ -1882,22 +1910,9 @@ body::-webkit-scrollbar-thumb:hover,
   white-space: nowrap;
 }
 
-.admin-ops-history-header > div:nth-child(4),
-.admin-ops-history-row > .admin-cell:nth-child(4) {
-  justify-self: stretch;
-  text-align: left;
-  padding-left: 1.1rem;
-}
-
-.admin-ops-history-header > div:nth-child(6),
-.admin-ops-history-row > .admin-cell:nth-child(6) {
-  padding-left: 1.15rem;
-}
-
 .admin-ops-history-actions {
   display: flex;
   justify-content: flex-end;
-  padding-left: 0.6rem;
 }
 
 .admin-ops-run-abort-btn {
@@ -1921,13 +1936,15 @@ body::-webkit-scrollbar-thumb:hover,
     grid-template-columns: minmax(0, 0.75fr) minmax(0, 0.95fr) minmax(0, 0.8fr) minmax(0, 1.35fr) minmax(0, 0.7fr);
   }
 
-  .admin-ops-history-header > div:nth-child(4),
-  .admin-ops-history-row > .admin-cell:nth-child(4) {
-    padding-left: 0;
-  }
-
+  /* Five tracks for seven cells. Both trailing cells must be hidden together:
+     leaving one behind wraps it onto an implicit second grid row, which the
+     52px `overflow: hidden` on `.admin-source-row` then clips — the abort button
+     rendered but could not be seen or clicked. Abort stays reachable because the
+     run detail drawer carries its own Abort button. */
   .admin-ops-history-header > div:nth-child(6),
-  .admin-ops-history-row > .admin-cell:nth-child(6) {
+  .admin-ops-history-header > div:nth-child(7),
+  .admin-ops-history-row > .admin-cell:nth-child(6),
+  .admin-ops-history-row > .admin-cell:nth-child(7) {
     display: none;
   }
 }
@@ -1952,25 +1969,30 @@ body::-webkit-scrollbar-thumb:hover,
   vertical-align: middle;
 }
 
-.admin-ops-history-run {
-  border-bottom: 1px solid var(--surface-11);
-}
-
-.admin-ops-history-run > .admin-ops-history-row {
-  border-bottom: 0;
-}
-
 .admin-ops-current-runs,
 .admin-ops-completed-runs {
   margin: 0;
-  /* `overflow-x: auto` rather than `hidden`: the seven `max-content` tracks
-     overflow between 901px and ~1000px, and clipping here made that overflow
-     unreachable. `overflow-y` stays hidden to preserve the rounded corners. */
+  /* `overflow-x: auto` rather than `hidden`: the seven tracks are wider than a
+     narrow card, and clipping here made that overflow unreachable. `overflow-y`
+     stays hidden to preserve the rounded corners. */
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid color-mix(in srgb, var(--surface-11) 86%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--table-row-even) 56%, transparent);
+}
+
+/* The section labels ("Current Runs", "Recent Runs (2)", "Older runs (1)") are
+   children of the scroller above, so scrolling right used to carry them out of
+   view — at a 900px viewport the recent-runs label left the box entirely and the
+   row began with a bare "2) -". Pinning them to the scroller's left edge keeps the
+   label readable at any scroll offset. The box keeps its full width, so the
+   background band still spans the table; only the text is pinned. */
+.admin-ops-current-runs > .admin-ops-history-title,
+.admin-ops-completed-runs > summary {
+  position: sticky;
+  left: 0;
+  z-index: 2;
 }
 
 .admin-ops-history-title {
@@ -1999,28 +2021,69 @@ body::-webkit-scrollbar-thumb:hover,
   border-radius: 0;
 }
 
-.admin-ops-run-detail-head,
-.admin-ops-run-detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 0.35rem 0.75rem;
+/* Run detail body, rendered into the inspector drawer (400px wide, so every
+   block here is single-column and wraps rather than assuming table width). */
+.admin-ops-run-detail {
+  display: grid;
+  gap: 0.85rem;
 }
 
 .admin-ops-run-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
 }
 
-.admin-ops-run-detail-head span,
-.admin-ops-run-detail-meta,
-.admin-ops-run-detail-summary,
-.admin-ops-run-detail-hints,
+.admin-ops-run-detail-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+}
+
+.admin-ops-run-detail-type {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.admin-ops-run-detail-id {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+}
+
+.admin-ops-run-detail-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.35rem;
+}
+
+.admin-ops-run-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+}
+
+.admin-ops-run-detail-meta span,
 .admin-ops-run-detail-warning,
-.admin-ops-run-detail-failure {
+.admin-ops-run-detail-failure,
+.admin-ops-run-analysis-hint {
   overflow-wrap: anywhere;
   color: var(--text-secondary);
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.admin-ops-run-detail-meta strong {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .admin-ops-run-detail-warning {
@@ -2031,73 +2094,143 @@ body::-webkit-scrollbar-thumb:hover,
   color: color-mix(in srgb, var(--tint-critical) 82%, white 18%);
 }
 
-.admin-ops-run-detail-hints ul {
-  margin: 0.25rem 0 0;
-  padding-left: 1rem;
-}
-
-.admin-ops-selected-run-analysis {
-  margin-top: 0.9rem;
-  padding: 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--surface-11) 78%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-3) 72%, transparent);
-}
-
-.admin-ops-run-analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.55rem;
-  margin-top: 0.2rem;
-}
-
-.admin-ops-run-analysis-grid > div,
-.admin-ops-run-analysis-hint {
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  line-height: 1.35;
-}
-
-.admin-ops-run-analysis-grid ul {
-  margin: 0.25rem 0 0;
-  padding-left: 1rem;
-}
-
 .admin-ops-run-analysis-hint {
   color: color-mix(in srgb, var(--tint-warning) 82%, white 18%);
 }
 
-.admin-ops-run-timeline {
+.admin-ops-run-detail-section {
   display: grid;
-  gap: 0.35rem;
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  line-height: 1.35;
+  gap: 0.4rem;
 }
 
-.admin-ops-run-timeline-list {
+.admin-ops-run-detail-section-title {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-ops-run-detail-stats {
   display: grid;
-  gap: 0.28rem;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.4rem;
+}
+
+.admin-ops-run-detail-stat {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-3) 60%, transparent);
+}
+
+.admin-ops-run-detail-stat-wide {
+  grid-column: 1 / -1;
+}
+
+.admin-ops-run-detail-stat-label {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.admin-ops-run-detail-stat-value {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.admin-ops-run-detail-hints ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.admin-ops-run-detail-hints li {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.admin-ops-run-detail-rows {
+  display: grid;
+  gap: 0.3rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.admin-ops-run-timeline-item {
-  display: grid;
-  grid-template-columns: minmax(7.5rem, 0.85fr) auto minmax(0, 2fr);
-  align-items: start;
-  gap: 0.35rem;
+.admin-ops-run-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  min-width: 0;
 }
 
-.admin-ops-run-timeline-time,
-.admin-ops-run-timeline-message {
+.admin-ops-run-detail-row-name {
   overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+}
+
+.admin-ops-run-detail-row-status {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface-11) 60%, transparent);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.admin-ops-run-detail-row-id {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.68rem;
+}
+
+.admin-ops-run-detail-row-meta {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.admin-ops-run-timeline-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two rows per entry: the stamp and chip share the first, the message gets the
+   full drawer width on the second. The old three-column form squeezed the
+   message into ~110px of a 400px drawer. */
+.admin-ops-run-timeline-item {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
 }
 
 .admin-ops-run-timeline-time {
   color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.admin-ops-run-timeline-message {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .admin-ops-history-recent,
@@ -3071,6 +3204,12 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 /* ── Action Center ── */
+/* The panel previously rendered one full-width box containing a single sentence and
+   a full-size primary button, and all five states (checking / partial / healthy /
+   unavailable / delayed) shared one markup shape, so a passing check was visually
+   identical to a failed one. Now the header carries the status chip and a
+   checked-at stamp, the healthy case is one compact line, and each state and signal
+   carries a tone accent. */
 .action-center-panel {
   border: 1px solid var(--surface-11);
   border-radius: 12px;
@@ -3082,86 +3221,174 @@ body::-webkit-scrollbar-thumb:hover,
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
+/* Title left, status right — the same shape as .admin-fetcher-header. */
+.action-center-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.action-center-header .admin-section-title {
+  margin: 0;
+}
+
+.action-center-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.action-center-status-chip {
+  text-transform: none;
+}
+
+.action-center-checked-at {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .action-center-items {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  /* Kept for first-paint stability before the first poll resolves;
+     asserted by tests/frontend/unit/startup-css-performance.test.mjs. */
   min-height: 3.25rem;
 }
 
-.action-center-item {
-  border: 1px solid var(--surface-11);
-  border-radius: 10px;
-  padding: 0.55rem 0.7rem;
-  background: color-mix(in srgb, var(--table-row-even) 68%, transparent);
-}
-
-.action-center-item.action-center-item-ok {
-  border-color: color-mix(in srgb, var(--tint-ok) 55%, var(--surface-11));
-}
-
-.action-center-item.action-center-item-neutral {
-  color: var(--text-secondary);
-}
-
-.action-center-item.action-center-item-critical {
-  border-color: color-mix(in srgb, var(--tint-critical) 65%, var(--surface-11));
-}
-
-.action-center-item.action-center-item-warning {
-  border-color: color-mix(in srgb, var(--tint-warning) 60%, var(--surface-11));
-}
-
-.action-center-item-body {
+/* The compact state line (healthy / partial / checking / delayed / unavailable). */
+.action-center-status {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--surface-11);
+  border-left: 3px solid var(--surface-13);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 68%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
-.action-center-item-icon {
-  font-size: 1.1rem;
-  flex-shrink: 0;
-  width: 1.3rem;
-  text-align: center;
-}
-
-.action-center-item-content {
-  flex: 1;
+.action-center-status-text {
   min-width: 0;
 }
 
-.action-center-item-summary {
+.action-center-status-detail {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.action-center-status-ok {
+  border-left-color: var(--tint-ok);
+  background: color-mix(in srgb, var(--tint-ok) 10%, transparent);
+}
+
+.action-center-status-warning {
+  border-left-color: var(--tint-warning);
+  background: color-mix(in srgb, var(--tint-warning) 12%, transparent);
+}
+
+.action-center-status-critical {
+  border-left-color: var(--tint-critical);
+  background: color-mix(in srgb, var(--tint-critical) 12%, transparent);
+}
+
+.action-center-icon {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+/* A signal: severity chip, message, right-aligned actions. */
+.action-center-signal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--surface-11);
+  border-left: 3px solid var(--tint-warning);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 68%, transparent);
+}
+
+.action-center-signal-critical {
+  border-left-color: var(--tint-critical);
+}
+
+.action-center-signal-warning {
+  border-left-color: var(--tint-warning);
+}
+
+.action-center-signal-chip {
+  text-transform: capitalize;
+}
+
+.action-center-signal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.action-center-signal-label {
   font-size: 0.9rem;
   color: var(--text-primary);
   line-height: 1.35;
 }
 
-.action-center-item-actions {
-  display: flex;
-  gap: 0.35rem;
-  margin-top: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.action-center-footer {
-  margin-top: 0.6rem;
-}
-
-.action-center-view-all {
-  text-align: center;
-  padding: 0.3rem 0;
-}
-
-.action-center-view-all-btn {
+.action-center-signal-summary {
   font-size: 0.82rem;
-  color: var(--accent);
-  background: none;
-  border: none;
-  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
-.action-center-view-all-btn:hover {
-  text-decoration: underline;
+.action-center-signal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Icon + label, so the leading glyph is monochrome SVG rather than emoji. */
+.action-center-signal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.action-center-signal-btn .action-center-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* Below 520px the three-column signal grid stacks: the chip and actions move to
+   their own rows so a long message cannot squeeze the actions out of the card. */
+@media (max-width: 520px) {
+  .action-center-signal {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .action-center-signal-actions {
+    justify-content: flex-start;
+  }
+
+  .action-center-status {
+    flex-wrap: wrap;
+  }
+
+  .action-center-status-detail {
+    margin-left: 0;
+  }
 }
 
 /* ── Action Center: fetcher log error highlighting ── */

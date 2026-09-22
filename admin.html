@@ -24,17 +24,30 @@
     <p id="admin-source-status" data-ui="admin-source-status" class="source-status"></p>
 
     <section id="admin-action-center" data-ui="admin-action-center" class="action-center-panel">
-      <h2 class="admin-section-title">Action Center</h2>
-      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
-        <div class="action-center-item action-center-item-neutral" data-state="checking">
-          <div class="action-center-item-body">
-            <span class="action-center-item-icon">i</span>
-            <span class="action-center-item-summary">Checking operational signals...</span>
-          </div>
+      <div class="action-center-header">
+        <h2 class="admin-section-title">Action Center</h2>
+        <div class="action-center-header-actions">
+          <span id="admin-action-center-status-chip" data-ui="admin-action-center-status-chip" class="admin-status-chip action-center-status-chip"></span>
+          <span id="admin-action-center-checked-at" data-ui="admin-action-center-checked-at" class="action-center-checked-at"></span>
+          <button
+            id="admin-action-center-copy-btn"
+            data-ui="admin-action-center-copy-btn"
+            class="btn clear-filters-btn admin-fetcher-icon-btn"
+            type="button"
+            data-tooltip="Copy all health, sync, and storage diagnostics to clipboard"
+            aria-label="Copy all diagnostics"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11v14Z" />
+            </svg>
+          </button>
         </div>
       </div>
-      <div class="action-center-footer">
-        <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
+      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
+        <div class="action-center-status action-center-status-neutral" data-state="checking">
+          <svg class="action-center-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm1-13h-2v6l5 3 1-1.73-4-2.27V7Z" /></svg>
+          <span class="action-center-status-text">Checking operational signals...</span>
+        </div>
       </div>
     </section>
 
@@ -130,7 +143,7 @@
 
       <section id="admin-discovery-section" class="admin-fetcher-panel admin-discovery-panel">
         <div class="admin-fetcher-header">
-          <h3 class="admin-fetcher-title">Source Discovery <span id="admin-discovery-pending-badge" data-ui="discoveryPendingBadge" class="admin-discovery-pending-badge hidden"></span></h3>
+          <h3 class="admin-fetcher-title">Source Discovery <span id="admin-discovery-pending-badge" data-ui="admin-discovery-pending-badge" class="admin-discovery-pending-badge hidden"></span></h3>
         </div>
         <div class="admin-discovery-layout">
           <div class="admin-discovery-top-row">
@@ -286,13 +299,13 @@
     </div>
   </div>
 
-  <div id="admin-inspector-overlay" data-ui="inspectorOverlay" class="inspector-overlay hidden">
-    <div id="admin-inspector-panel" data-ui="inspectorPanel" class="inspector-panel" role="dialog" aria-modal="true" aria-label="Entity inspector">
+  <div id="admin-inspector-overlay" data-ui="admin-inspector-overlay" class="inspector-overlay hidden">
+    <div id="admin-inspector-panel" data-ui="admin-inspector-panel" class="inspector-panel" role="dialog" aria-modal="true" aria-label="Entity inspector">
       <div class="inspector-header">
-        <h3 id="admin-inspector-title" data-ui="inspectorTitle" class="inspector-title">Inspector</h3>
-        <button id="admin-inspector-close-btn" data-ui="inspectorCloseBtn" class="btn inspector-close-btn" aria-label="Close inspector">&times;</button>
+        <h3 id="admin-inspector-title" data-ui="admin-inspector-title" class="inspector-title">Inspector</h3>
+        <button id="admin-inspector-close-btn" data-ui="admin-inspector-close-btn" class="btn inspector-close-btn" aria-label="Close inspector">&times;</button>
       </div>
-      <div id="admin-inspector-content" data-ui="inspectorContent" class="inspector-content"></div>
+      <div id="admin-inspector-content" data-ui="admin-inspector-content" class="inspector-content"></div>
     </div>
   </div>
 

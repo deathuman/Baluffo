@@ -12,9 +12,17 @@ function el(tag) {
 }
 
 test("inspector delegate excludes native-toggle and form targets", () => {
-  for (const tag of ["summary", "details", "label", "input", "select", "textarea", "button", "a"]) {
+  for (const tag of ["summary", "label", "input", "select", "textarea", "button", "a"]) {
     assert.equal(isInspectorExcludedTarget(el(tag)), true, tag);
   }
+});
+
+// Excluding `details` made every row inside a disclosure unreachable, because a
+// click on a row is also a click on a descendant of that `<details>`. `summary`
+// is the real toggle surface, so it alone carries the toggle-in-place contract.
+test("inspector delegate keeps rows inside disclosures reachable", () => {
+  assert.equal(isInspectorExcludedTarget(el("details")), false);
+  assert.equal(isInspectorExcludedTarget(el("div")), false);
 });
 
 test("inspector delegate keeps plain card-body and row targets eligible", () => {

@@ -8,6 +8,22 @@ export function formatDateTime(value) {
   return new Date(parsed).toLocaleString();
 }
 
+// The run rows give "Finished" a narrow fixed track, and `toLocaleString()`
+// ("9/21/2026, 9:58:38 AM") cannot fit it — it was being ellipsized to nothing
+// useful. This is the compact form for that one cell; the full localized stamp
+// stays available in the tooltip and in the detail drawer. The year is omitted
+// only when the stamp is in the current year, so it never becomes ambiguous.
+export function formatCompactDateTime(value, nowMs = Date.now()) {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "unknown";
+  const date = new Date(parsed);
+  const sameYear = date.getFullYear() === new Date(nowMs).getFullYear();
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = date.toLocaleString(undefined, { month: "short" });
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return sameYear ? `${day} ${month} ${time}` : `${day} ${month} ${date.getFullYear()} ${time}`;
+}
+
 
 export function sanitizeSlowSourceName(value, maxLen = 64) {
   const text = String(value || "")

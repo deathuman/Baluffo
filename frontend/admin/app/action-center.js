@@ -1,4 +1,9 @@
 import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js";
+import {
+  renderActionCenterBody,
+  renderCheckedAt,
+  renderStatusChip
+} from "../render/action-center.js";
 
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;
@@ -23,13 +28,6 @@ const SIGNAL_LABELS = {
   stale_fetch: "Jobs fetch is stale",
   sync_status: "Sync needs attention",
   failed_sources: "Some sources failed in last fetch"
-};
-
-const SIGNAL_ICONS = {
-  storage_health: "\u26A0",
-  stale_fetch: "\u23F0",
-  sync_status: "\u2194\uFE0F",
-  failed_sources: "\u274C"
 };
 
 function formatAge(hours) {
@@ -124,9 +122,10 @@ function evaluateStorageHealth(storageData) {
   return {
     id: "storage_health",
     severity: "critical",
+    // Specific rather than "Storage is unhealthy", which only restated the label.
     summary: healthy
       ? `${diagFailures} storage diagnostic${diagFailures !== 1 ? "s" : ""} reported errors`
-      : "Storage is unhealthy",
+      : "SQLite integrity check failed",
     actions: ["review", "copy_diagnostics", "dismiss"]
   };
 }
@@ -241,9 +240,13 @@ export function createActionCenterController({
 }) {
   let pollTimer = null;
   let fullPollTimer = null;
+  let lastCheckedAtMs = 0;
   const pollCache = { health: null, sync: null, storage: null };
 
-  function orderedSignals(signalsMap) {
+  // Critical first, then warnings, in SIGNAL_ORDER. Deliberately *not* capped here:
+  // the cap is a display concern, and applying it before the `hasMore` comparison
+  // made the "View all" row unreachable.
+  function orderedSignalsAll(signalsMap) {
     const critical = [];
     const warning = [];
     for (const id of SIGNAL_ORDER) {
@@ -252,7 +255,7 @@ export function createActionCenterController({
       if (signal.severity === "critical") critical.push(signal);
       else warning.push(signal);
     }
-    return [...critical, ...warning].slice(0, MAX_ITEMS);
+    return [...critical, ...warning];
   }
 
   function evaluateAll(healthData, syncData, storageData) {
@@ -268,134 +271,65 @@ export function createActionCenterController({
     return map;
   }
 
-  function renderItemHtml(signal) {
-    const icon = SIGNAL_ICONS[signal.id] || "\u26A0";
-    const label = SIGNAL_LABELS[signal.id] || signal.id;
-    let actionsHtml = "";
-    const actions = Array.isArray(signal.actions) ? signal.actions : [];
+  // The label is domain copy, so it is attached here rather than in the renderer.
+  function withLabel(signal) {
+    return { ...signal, label: SIGNAL_LABELS[signal.id] || signal.id };
+  }
 
-    for (const action of actions) {
-      if (action === "review") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="review" data-signal="${signal.id}">\u25B6 Review</button>`;
-      } else if (action === "retry_fetch") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="default">\uD83D\uDD04 Run Jobs Fetcher</button>`;
-      } else if (action === "retry_failed") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="retry_failed">\uD83D\uDD04 Retry failed</button>`;
-      } else if (action === "retry_sync") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="retry" data-signal="${signal.id}" data-preset="sync_pull">\uD83D\uDD04 Retry sync</button>`;
-      } else if (action === "copy_diagnostics") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="copy-diagnostics" data-signal="${signal.id}">\uD83D\uDCCB Copy diagnostics</button>`;
-      } else if (action === "dismiss") {
-        actionsHtml += `<button class="btn clear-filters-btn" data-action="dismiss" data-signal="${signal.id}">\u2715 Dismiss</button>`;
-      }
+  // The five states used to render through one function, so a passing check was
+  // pixel-identical to a failed one. The renderer now owns state presentation and
+  // gives each its own tone, icon and chip.
+  function resolveStatusState(pollMeta = {}) {
+    if (pollMeta.activeWorkDeferred) {
+      return { state: "active-work-delayed", summary: ACTIVE_WORK_SUMMARY };
     }
-
-    const severityClass = signal.severity === "critical" ? "action-center-item-critical" : "action-center-item-warning";
-    return `<div class="action-center-item ${severityClass}" data-signal="${signal.id}">
-      <div class="action-center-item-body">
-        <span class="action-center-item-icon">${icon}</span>
-        <div class="action-center-item-content">
-          <span class="action-center-item-summary">${label} &mdash; ${signal.summary}</span>
-        </div>
-      </div>
-      <div class="action-center-item-actions">${actionsHtml}</div>
-    </div>`;
-  }
-
-  function renderStatusState({
-    className,
-    state,
-    icon,
-    summary
-  }) {
-    return `<div class="action-center-item ${className}" data-state="${state}">
-      <div class="action-center-item-body">
-        <span class="action-center-item-icon">${icon}</span>
-        <span class="action-center-item-summary">${summary}</span>
-      </div>
-    </div>`;
-  }
-
-  function renderCheckingState() {
-    return renderStatusState({
-      className: "action-center-item-neutral",
-      state: "checking",
-      icon: "i",
-      summary: CHECKING_SUMMARY
-    });
-  }
-
-  function renderPartialState() {
-    return renderStatusState({
-      className: "action-center-item-neutral",
-      state: "partial",
-      icon: "i",
-      summary: PARTIAL_SUMMARY
-    });
-  }
-
-  function renderActiveWorkState() {
-    return renderStatusState({
-      className: "action-center-item-neutral",
-      state: "active-work-delayed",
-      icon: "i",
-      summary: ACTIVE_WORK_SUMMARY
-    });
-  }
-
-  function renderUnavailableState() {
-    return renderStatusState({
-      className: "action-center-item-warning",
-      state: "unavailable",
-      icon: "\u26A0",
-      summary: UNAVAILABLE_SUMMARY
-    });
-  }
-
-  function renderHealthyState() {
-    return renderStatusState({
-      className: "action-center-item-ok",
-      state: "healthy",
-      icon: "\u2713",
-      summary: "All systems operational"
-    });
+    if (pollMeta.allRequiredChecked) {
+      return { state: "healthy", summary: "" };
+    }
+    if (pollMeta.coreChecked && pollMeta.storagePending) {
+      return { state: "partial", summary: PARTIAL_SUMMARY };
+    }
+    return { state: "unavailable", summary: UNAVAILABLE_SUMMARY };
   }
 
   function renderSignals(signals, pollMeta = {}) {
     const itemsContainer = refs.actionCenterItemsEl;
     if (!itemsContainer) return;
 
-    const signalList = orderedSignals(signals);
+    const allSignals = orderedSignalsAll(signals);
     const nowMs = Date.now();
     clearAllDismissed(nowMs);
 
-    const visible = signalList.filter(s => !isDismissed(s.id, nowMs));
-    const hasMore = signalList.length > MAX_ITEMS;
+    // The cap never binds today: `stale_fetch` (age > 12h) and `failed_sources`
+    // (age <= 12h) are mutually exclusive, so at most three signals can be active
+    // and MAX_ITEMS is 3. It is kept as a display contract so the panel cannot grow
+    // unbounded if the signal set ever expands. The "View all" overflow row that
+    // used to sit behind it was unreachable by construction and has been removed —
+    // if a fifth signal is added, that row should come back with a working cap.
+    const visible = allSignals.filter(s => !isDismissed(s.id, nowMs)).slice(0, MAX_ITEMS);
 
-    let html = "";
-    if (visible.length === 0) {
-      if (pollMeta.activeWorkDeferred) {
-        html = renderActiveWorkState();
-      } else if (pollMeta.allRequiredChecked) {
-        html = renderHealthyState();
-      } else if (pollMeta.coreChecked && pollMeta.storagePending) {
-        html = renderPartialState();
-      } else if (!pollMeta.anyChecked) {
-        html = renderUnavailableState();
-      } else {
-        html = renderUnavailableState();
-      }
-    } else {
-      for (const signal of visible) {
-        html += renderItemHtml(signal);
-      }
-      if (hasMore) {
-        html += `<div class="action-center-view-all">
-          <button class="btn action-center-view-all-btn" data-action="view-all">View all \u2192 Ops Health</button>
-        </div>`;
-      }
+    const status = resolveStatusState(pollMeta);
+    itemsContainer.innerHTML = renderActionCenterBody({
+      state: status.state,
+      summary: status.summary,
+      signals: visible.map(withLabel)
+    });
+
+    if (refs.actionCenterStatusChipEl) {
+      refs.actionCenterStatusChipEl.innerHTML = renderStatusChip({
+        state: status.state,
+        signals: visible
+      });
     }
-    itemsContainer.innerHTML = html;
+    if (refs.actionCenterCheckedAtEl) {
+      // Stamped only when a poll actually returned data, so a deferred poll leaves
+      // the previous timestamp in place and the stamp ages honestly rather than
+      // resetting to "just now" while showing stale signals.
+      if (pollMeta.anyChecked) lastCheckedAtMs = nowMs;
+      refs.actionCenterCheckedAtEl.innerHTML = lastCheckedAtMs
+        ? renderCheckedAt(lastCheckedAtMs, nowMs)
+        : "";
+    }
   }
 
   async function handleAction(action, signalId, preset) {
@@ -425,7 +359,7 @@ export function createActionCenterController({
       await pollActionCenter();
     } else if (action === "copy-diagnostics") {
       copySignalDiagnostics(signalId);
-    } else if (action === "review" || action === "view-all") {
+    } else if (action === "review") {
       const contentEl = document.querySelector("[data-ui=\"admin-content\"]");
       if (contentEl) {
         contentEl.scrollIntoView({ behavior: "smooth" });
@@ -557,7 +491,12 @@ export function createActionCenterController({
   function startPolling(options = {}) {
     stopPolling();
     const itemsEl = refs.actionCenterItemsEl;
-    if (itemsEl) itemsEl.innerHTML = renderCheckingState();
+    if (itemsEl) {
+      itemsEl.innerHTML = renderActionCenterBody({ state: "checking", summary: CHECKING_SUMMARY });
+    }
+    if (refs.actionCenterStatusChipEl) {
+      refs.actionCenterStatusChipEl.innerHTML = renderStatusChip({ state: "checking" });
+    }
     const runInitialPoll = () => {
       pollActionCenter({ includeStorage: false }).then(() => {
         bindEvents(itemsEl);

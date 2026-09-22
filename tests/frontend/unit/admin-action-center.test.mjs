@@ -23,12 +23,20 @@ function createFixture({
   onSyncStatus,
   shouldDeferStorageHealth,
   shouldDeferCoreSignals,
-  showToast
+  showToast,
+  includeHeaderRefs = true
 } = {}) {
   const refs = {
     actionCenterItemsEl: createElement(),
     actionCenterCopyBtnEl: createElement()
   };
+  // The header chip and stamp are optional at runtime; the default fixture supplies
+  // them so their wiring is exercised, and `includeHeaderRefs: false` covers the
+  // legacy two-ref shape that must keep working.
+  if (includeHeaderRefs) {
+    refs.actionCenterStatusChipEl = createElement();
+    refs.actionCenterCheckedAtEl = createElement();
+  }
   const calls = [];
   const toasts = [];
   const controller = createActionCenterController({
@@ -281,4 +289,99 @@ test("copy all diagnostics reports failure when no clipboard path works", async 
     if (typeof previousDocument === "undefined") delete globalThis.document;
     else globalThis.document = previousDocument;
   }
+});
+
+test("action center header chip reflects state and issue count", async () => {
+  const { refs, controller } = createFixture();
+  await controller.pollActionCenter({ includeStorage: true });
+  assert.match(refs.actionCenterStatusChipEl.innerHTML, /Healthy/, "clean poll shows the healthy chip");
+
+  const { refs: signalRefs, controller: signalController } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/health?view=ready") {
+        return { alerts: [{ id: "stale_fetch" }], kpis: { lastSuccessfulFetchAge: "30h", failedSourceRatioLatest: 0 } };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      if (path === "/ops/storage-health") return cleanStoragePayload();
+      return null;
+    }
+  });
+  await signalController.pollActionCenter({ includeStorage: true });
+  assert.match(signalRefs.actionCenterStatusChipEl.innerHTML, /1 issue/, "chip counts visible signals");
+  assert.match(signalRefs.actionCenterStatusChipEl.innerHTML, /warning/, "chip takes the worst severity");
+});
+
+test("action center checked-at stamp appears only after data arrives", async () => {
+  const { refs, controller } = createFixture();
+  assert.equal(refs.actionCenterCheckedAtEl.innerHTML, "", "no stamp before the first poll");
+
+  await controller.pollActionCenter({ includeStorage: false });
+  assert.match(refs.actionCenterCheckedAtEl.innerHTML, /checked just now/);
+});
+
+test("action center renders without the optional header refs", async () => {
+  // Guards the legacy two-ref construction: a missing chip or stamp must not throw.
+  const { refs, controller } = createFixture({ includeHeaderRefs: false });
+  await controller.pollActionCenter({ includeStorage: true });
+  assert.match(refs.actionCenterItemsEl.innerHTML, /All systems operational/);
+});
+
+test("action center renders every reachable signal and no unreachable overflow row", async () => {
+  // Three is the ceiling: `stale_fetch` needs a fetch age above 12h and
+  // `failed_sources` needs one at or below 12h, so they are mutually exclusive. The
+  // reachable maximum is storage_health + sync_status + failed_sources, and all
+  // three must render. The "View all" row that used to follow them could never
+  // appear and has been removed.
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/health?view=ready") {
+        return { alerts: [], kpis: { lastSuccessfulFetchAge: "1h", failedSourceRatioLatest: 0.5 } };
+      }
+      if (path === "/sync/status?view=summary") {
+        return {
+          config: { enabled: true, ready: true, state: "remote_conflict" },
+          runtime: { lastAction: "push", lastResult: "error", lastError: "is at a but expected b" }
+        };
+      }
+      if (path === "/ops/storage-health") {
+        return { ok: true, storage: { healthy: false, diagnostics: [{ ok: false }] } };
+      }
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: true });
+
+  const html = refs.actionCenterItemsEl.innerHTML;
+  for (const id of ["storage_health", "sync_status", "failed_sources"]) {
+    assert.match(html, new RegExp(`data-signal="${id}"`), `${id} must render`);
+  }
+  assert.equal((html.match(/class="action-center-signal /g) || []).length, 3);
+  assert.doesNotMatch(html, /view-all/);
+});
+
+test("stale_fetch and failed_sources are mutually exclusive in the live signal set", async () => {
+  // This is the invariant that makes the display cap unreachable. If a future change
+  // lets both fire together, the signal count reaches four, the cap binds, and the
+  // removed overflow row becomes necessary again — so this test is the tripwire.
+  const at = async (age, alerts, ratio) => {
+    const { refs, controller } = createFixture({
+      getBridge: async path => {
+        if (path === "/ops/health?view=ready") {
+          return { alerts, kpis: { lastSuccessfulFetchAge: age, failedSourceRatioLatest: ratio } };
+        }
+        if (path === "/sync/status?view=summary") return { config: { enabled: false }, runtime: {} };
+        if (path === "/ops/storage-health") return cleanStoragePayload();
+        return null;
+      }
+    });
+    await controller.pollActionCenter({ includeStorage: true });
+    return [...new Set([...refs.actionCenterItemsEl.innerHTML.matchAll(/data-signal="([^"]+)"/g)].map(m => m[1]))];
+  };
+
+  const stale = await at("30h", [{ id: "stale_fetch" }], 0.5);
+  assert.deepEqual(stale, ["stale_fetch"], "a stale fetch must not also report failed sources");
+
+  const fresh = await at("1h", [], 0.5);
+  assert.deepEqual(fresh, ["failed_sources"], "failed sources require a recent successful fetch");
 });

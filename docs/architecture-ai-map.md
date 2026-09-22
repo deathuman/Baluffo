@@ -134,6 +134,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 **Admin page:** `frontend/admin/app.js` -> `runtime.js` -> `runtime/{composition,overview,events,state,view,effects,actions}.js`, `app/{auth,fetcher,discovery,sync}.js`, `app/registry/{ui,load,mutations}.js`, `app/ops/{format,task-state,health,bridge-status}.js`
   -> render exports stay stable through `frontend/admin/render.js` -> `frontend/admin/render/ops.js`
   -> ops renderer ownership lives in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
+  -> run detail for the inspector drawer lives in `frontend/admin/render/ops-run-detail.js`, a pure HTML renderer imported by `ops-history.js` (never by `ops.js`, whose import list the frontend structure guardrails pin to `./ops-summary.js` and `./ops-history.js`); `ops-history.js` stages the rendered string on the clicked row and `app/inspector.js` paints it
+  -> Action Center presentation lives in `frontend/admin/render/action-center.js`, a pure HTML renderer imported by `app/action-center.js`. It owns the per-state tone/icon/chip table (`STATE_META`), the signal-name table (`ACTION_META`), and the SVG icon set (`ACTION_CENTER_ICONS`) — the controller keeps only polling, evaluation, dismissal and event delegation, and passes the domain label in via `SIGNAL_LABELS`
 
 **Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/runtime-context.js` (browser/desktop/container mode resolution), `frontend/shared/local-data/desktop-client.js` (stable bridge-local runtime root over `desktop/{api,lifecycle,navigation,state}.js`), `frontend/shared/local-data/browser-client.js` (browser-local runtime)
 
@@ -302,7 +304,7 @@ See [`testing.md`](testing.md) for more commands.
 
 **Leaf modules that are still safe extraction targets**
 - `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, `src/bridge/ops_live_payload.py`
-- `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
+- `frontend/admin/render/{ops-summary,ops-history,ops-shared,ops-run-detail}.js`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/pipeline_{run_setup,finalize}.py`
 - `src/jobs/pipeline_runtime_{writers,summary}.py`

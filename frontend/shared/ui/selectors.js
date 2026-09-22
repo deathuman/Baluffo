@@ -231,6 +231,8 @@ export const UI_TOKENS = Object.freeze({
     actionCenterPanel: "admin-action-center",
     actionCenterItems: "admin-action-center-items",
     actionCenterCopyBtn: "admin-action-center-copy-btn",
+    actionCenterStatusChip: "admin-action-center-status-chip",
+    actionCenterCheckedAt: "admin-action-center-checked-at",
     discoveryPendingBadge: "admin-discovery-pending-badge",
     inspectorOverlay: "admin-inspector-overlay",
     inspectorPanel: "admin-inspector-panel",

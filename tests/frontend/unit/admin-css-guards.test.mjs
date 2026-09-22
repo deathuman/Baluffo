@@ -198,23 +198,64 @@ test("admin user table cards out between 901px and 1100px", () => {
 });
 
 test("operations history keeps its header and rows aligned and reachable", () => {
-  // The header and rows are separate grids here too, and the rows inherit
-  // `overflow: hidden` from `.admin-source-row`. With the old fluid floors the
-  // seven tracks exceeded the container between ~1000px and 521px, so the last
-  // column was clipped *and* unreachable: the row never overflowed its own
-  // parent, so no ancestor scroller had anything to scroll. Measured clipping
-  // was 80px at 1000px, 175px at 905px, 252px at 810px, 462px at 600px.
+  // The header and the rows are separate grids here, so the only thing keeping
+  // them in step is that both declare the same tracks. Rows also inherit
+  // `overflow: hidden` from `.admin-source-row`, so a track list that exceeds the
+  // container clips its last column *and* leaves it unreachable: the row never
+  // overflows its own parent, so no ancestor scroller has anything to scroll.
+  //
   // Only the base (unguarded) track list is checked. The `520px` block
-  // deliberately replaces it with five fluid columns that fit the container, so
-  // `fr` is safe there and must not be flagged.
-  const opsTracks = ruleBodies(unguarded, ".admin-ops-history-row")
-    .filter((body) => /grid-template-columns:/.test(body));
-  assert.ok(opsTracks.length, "the ops-history track list must exist");
-  for (const body of opsTracks) {
-    const tracks = body.match(/grid-template-columns:([^;]+);/)?.[1] || "";
-    assert.doesNotMatch(tracks, /\d(?:\.\d+)?fr\b/, "ops tracks must not use fr: it desyncs header from rows");
+  // deliberately replaces it with five fluid columns that fit the container.
+  const tracksFor = (selector) => ruleBodies(unguarded, selector)
+    .filter((body) => /grid-template-columns:/.test(body))
+    .map((body) => (body.match(/grid-template-columns:([^;]+);/)?.[1] || "").replace(/\s+/g, " ").trim());
+
+  // `minmax(20rem, 1fr)` contains a space, so columns have to be split on paren
+  // depth rather than on whitespace.
+  const splitColumns = (tracks) => {
+    const columns = [];
+    let depth = 0;
+    let current = "";
+    for (const char of tracks) {
+      if (char === "(") depth += 1;
+      if (char === ")") depth -= 1;
+      if (/\s/.test(char) && depth === 0) {
+        if (current) columns.push(current);
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    if (current) columns.push(current);
+    return columns;
+  };
+
+  const rowTracks = tracksFor(".admin-ops-history-row");
+  assert.ok(rowTracks.length, "the ops-history track list must exist");
+  assert.deepEqual(
+    tracksFor(".admin-ops-history-header"),
+    rowTracks,
+    "header and rows must declare identical tracks, or the two grids desync"
+  );
+  for (const tracks of rowTracks) {
     assert.doesNotMatch(tracks, /max-content/, "ops tracks must not use max-content: it desyncs header from rows");
   }
+
+  // An `fr` track is only safe when both grids resolve against the same definite
+  // width. Under `width: max-content` an `fr` track contributes its own
+  // max-content size, which differs between a short header label and a long row
+  // value, and the two grids then disagree — measured 848px header against an
+  // 850px row at a 1000px viewport, with the progress cell ellipsized at every
+  // width from 360px to 1600px. Sizing both wrappers to the container width and
+  // giving them the same `min-width` floor keeps them on one definite width, so no
+  // item cap is needed and the `fr` track stays free to absorb the card's slack.
+  //
+  // A bounded `fr` track is what lets the row fill the card instead of leaving the
+  // leftover width unallocated on the right.
+  assert.ok(
+    rowTracks.some((tracks) => /\d(?:\.\d+)?fr\b/.test(tracks)),
+    "the ops tracks need a bounded fr column to absorb slack"
+  );
 
   // The wrapper must be the horizontal scroller, and the body must be allowed to
   // exceed it, or the body clips the last column instead of scrolling.
@@ -222,18 +263,83 @@ test("operations history keeps its header and rows aligned and reachable", () =>
     const selector = `.admin-ops-completed-runs > .${part}`;
     const bodies = ruleBodies(css, selector);
     assert.ok(bodies.length, `${selector} must be sized so its wrapper scrolls`);
-    assert.ok(bodies.some((body) => /width:\s*max-content/.test(body)), `${selector} must size to content`);
+    assert.ok(
+      bodies.some((body) => /width:\s*100%/.test(body) && /min-width:\s*[\d.]+rem/.test(body)),
+      `${selector} must take the container width with a min-width floor so both grids share one definite width`
+    );
   }
 
-  // Guarded away from the 520px block, where five fluid tracks already fit:
-  // `max-content` there resolved the `fr` tracks against their own content and
-  // measured 1382px of row inside a 354px wrapper.
-  const opsMaxContent = css.match(/@media\s*\(min-width:\s*521px\)\s*\{[\s\S]*?\.admin-ops-history-run\s*\{[\s\S]*?width:\s*max-content/);
-  assert.ok(opsMaxContent, "the ops max-content sizing must stay behind the 521px guard");
+  // Guarded away from the 520px block, where five fluid tracks already fit: the
+  // floor there would force a sideways scroll on a layout that needs none.
+  const opsSizing = css.match(/@media\s*\(min-width:\s*521px\)\s*\{[\s\S]*?\.admin-ops-completed-runs\s*>\s*\.jobs-table-body\s*\{[\s\S]*?min-width:\s*[\d.]+rem/);
+  assert.ok(opsSizing, "the ops width floor must stay behind the 521px guard");
+
+  // The floor must not be smaller than the track sum plus its gutters, or the
+  // tracks would be squeezed below the widths their content needs and the cells
+  // would ellipsize again. `column-gap: 0.5rem` across six gutters is 3rem.
+  const REM_PX = 16;
+  const opsRowTracks = tracksFor(".admin-ops-history-row")[0];
+  const opsColumns = splitColumns(opsRowTracks);
+  assert.equal(opsColumns.length, 7, "the ops row must declare seven tracks");
+  const opsGap = Number(
+    (ruleBodies(unguarded, ".admin-ops-history-row").find((body) => /column-gap:/.test(body))
+      ?.match(/column-gap:\s*([\d.]+)rem/)?.[1]) || 0
+  );
+  assert.ok(opsGap > 0, "the ops tracks need a non-zero column-gap or FINISHED and ACTIONS read as one word");
+  const trackSumRem = opsColumns.reduce((total, column) => {
+    const frFloor = column.match(/minmax\(\s*([\d.]+)rem/);
+    if (frFloor) return total + Number(frFloor[1]);
+    const fixed = column.match(/^([\d.]+)rem$/);
+    assert.ok(fixed, `every ops track must be a fixed rem length or a bounded minmax, got ${column}`);
+    return total + Number(fixed[1]);
+  }, 0);
+  const requiredFloorRem = trackSumRem + opsGap * (opsColumns.length - 1);
+  const declaredFloorRem = Number(
+    css.match(/\.admin-ops-completed-runs\s*>\s*\.jobs-table-body\s*\{[\s\S]*?min-width:\s*([\d.]+)rem/)?.[1]
+  );
+  assert.ok(
+    declaredFloorRem >= requiredFloorRem,
+    `the ops width floor (${declaredFloorRem}rem) must cover the tracks plus gutters (${requiredFloorRem}rem)`
+  );
+  assert.ok(
+    declaredFloorRem * REM_PX <= 1200,
+    `the ops width floor (${declaredFloorRem}rem) must stay within a usable viewport`
+  );
+
+  // The section labels are children of the `overflow-x: auto` wrapper, so without
+  // pinning they scroll out of the box: measured at a 900px viewport the
+  // recent-runs label left it entirely and the row read as a bare "2) -".
+  for (const [label, selector] of [
+    ["Current Runs", ".admin-ops-current-runs > .admin-ops-history-title"],
+    ["Recent Runs", ".admin-ops-completed-runs > summary"]
+  ]) {
+    const sticky = ruleBodies(css, selector).find((body) => /position:\s*sticky/.test(body));
+    assert.ok(sticky, `the ${label} label must be pinned so it stays readable while the table scrolls`);
+    assert.match(sticky, /left:\s*0/, `the ${label} label must pin to the scroller's left edge`);
+  }
 
   // The 520px block replaces the tracks with five fluid columns that fit.
   const narrowBlock = mediaBlocks.filter((b) => b.condition === "(max-width: 520px)").map((b) => b.body).join("\n");
   assert.match(narrowBlock, /\.admin-ops-history-row\s*\{[\s\S]*minmax\(0, 0\.75fr\)/);
+
+  // Five tracks for seven cells, so both trailing cells must be hidden together.
+  // Leaving one behind wraps it onto an implicit second grid row, which the 52px
+  // `overflow: hidden` on `.admin-source-row` then clips — the abort button
+  // rendered but could not be seen or clicked.
+  const hiddenInNarrow = new Set();
+  for (const match of narrowBlock.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/display:\s*none/.test(match[2])) continue;
+    match[1].split(",").map((part) => part.trim()).forEach((selector) => hiddenInNarrow.add(selector));
+  }
+  for (const nth of [6, 7]) {
+    for (const prefix of [".admin-ops-history-header > div", ".admin-ops-history-row > .admin-cell"]) {
+      const selector = `${prefix}:nth-child(${nth})`;
+      assert.ok(
+        hiddenInNarrow.has(selector),
+        `the narrow layout must hide ${selector} or it wraps onto a clipped second row`
+      );
+    }
+  }
 });
 
 test("admin source rows keep their virtualization height pinned", () => {

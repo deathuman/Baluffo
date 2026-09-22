@@ -4,18 +4,6 @@ import assert from "node:assert/strict";
 import { renderAdminOpsHistory } from "../../../frontend/admin/render.js";
 import { createRenderEl as makeEl } from "./helpers/dom-test-helpers.mjs";
 
-function makeButton(attributeValue) {
-  return {
-    onclick: null,
-    getAttribute(name) {
-      return name === "data-ops-run-diagnostics-copy" ? attributeValue : "";
-    },
-    click() {
-      if (typeof this.onclick === "function") this.onclick();
-    }
-  };
-}
-
 test("admin ops history: completed rows omit inline detail disclosures", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
@@ -73,65 +61,6 @@ test("admin ops history: completed rows omit inline detail disclosures", () => {
   assert.doesNotMatch(historyEl.innerHTML, /raw payload/i);
 });
 
-test("admin ops history: run diagnostics copy uses bounded payload without changing compact rows", () => {
-  const runKey = "current||fetch_live_1|fetch|2026-03-08T10:00:00.000Z||0";
-  const copyButton = makeButton(runKey);
-  const historyEl = {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll(selector) {
-      return selector === "[data-ops-run-diagnostics-copy]" ? [copyButton] : [];
-    }
-  };
-  const copied = [];
-
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [
-      {
-        type: "fetch",
-        runId: "fetch_live_1",
-        active: true,
-        isLive: true,
-        startedAt: "2026-03-08T10:00:00.000Z",
-        heartbeatAt: new Date().toISOString(),
-        summary: {
-          outputCount: 12,
-          failedSources: 0,
-          recommendedApiPayload: { hidden: true }
-        },
-        workItems: Array.from({ length: 8 }, (_row, index) => ({
-          id: `source_${index}`,
-          name: `Source ${index}`,
-          status: index === 0 ? "running" : "pending",
-          rawLargeThing: { hidden: true }
-        }))
-      }
-    ],
-    visibleCompletedRows: [],
-    olderCompletedRows: []
-  }, {
-    selectedRunKey: runKey,
-    onCopyRunDiagnostics: payload => copied.push(payload)
-  });
-
-  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.match(historyEl.innerHTML, /data-ops-run-diagnostics-copy=/);
-  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
-
-  copyButton.click();
-
-  assert.equal(copied.length, 1);
-  assert.equal(copied[0].kind, "admin_run_diagnostics");
-  assert.equal(copied[0].rowArea, "current");
-  assert.equal(copied[0].runId, "fetch_live_1");
-  assert.equal(copied[0].workItemExamples.length, 5);
-  const serialized = JSON.stringify(copied[0]);
-  assert.doesNotMatch(serialized, /recommendedApiPayload|rawLargeThing/i);
-  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
-});
-
 test("admin ops history: sync row without counts shows awaiting progress instead of zero tuple", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
@@ -162,134 +91,6 @@ test("admin ops history: sync row without counts shows awaiting progress instead
   assert.match(historyEl.innerHTML, /Sync pull \(awaiting progress\)/i);
   assert.doesNotMatch(historyEl.innerHTML, /0\/0\/0/);
   assert.doesNotMatch(historyEl.innerHTML, /active 0 \/ pending 0 \/ rejected 0/i);
-});
-
-test("admin ops history: selected run analysis renders bounded read-only evidence", () => {
-  const historyEl = makeEl();
-  const runKey = "current||fetch_selected_1|fetch|2026-03-08T10:00:00.000Z||0";
-
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [
-      {
-        type: "fetch",
-        runId: "fetch_selected_1",
-        active: true,
-        isLive: true,
-        startedAt: "2026-03-08T10:00:00.000Z",
-        heartbeatAt: new Date().toISOString(),
-        summary: {
-          outputCount: 42,
-          failedSources: 1,
-          slowestSources: Array.from({ length: 8 }, (_row, index) => ({
-            sourceId: `slow_${index}`,
-            durationMs: 1000 + index
-          }))
-        },
-        workItems: Array.from({ length: 8 }, (_row, index) => ({
-          id: `source_${index}`,
-          name: `Source ${index}`,
-          status: index === 0 ? "running" : index === 1 ? "failed" : "pending",
-          error: index === 1 ? "source failed after timeout" : "",
-          updatedAt: index === 1 ? "2026-03-08T10:03:00.000Z" : ""
-        })),
-        recentEvents: Array.from({ length: 8 }, (_row, index) => ({
-          at: `2026-03-08T10:0${Math.min(index, 5)}:00.000Z`,
-          level: "info",
-          message: `Event ${index}`
-        }))
-      }
-    ],
-    visibleCompletedRows: [
-      {
-        type: "sync",
-        status: "ok",
-        runId: "sync_done_1",
-        finishedAt: "2026-03-08T09:30:00.000Z",
-        durationMs: 1500,
-        summary: { action: "push", activeCount: 7, pendingCount: 2, rejectedCount: 1 }
-      }
-    ],
-    olderCompletedRows: []
-  }, {
-    selectedRunKey: runKey
-  });
-
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.match(historyEl.innerHTML, /admin-ops-history-row-selected/);
-  assert.match(historyEl.innerHTML, /fetch_selected_1/);
-  assert.match(historyEl.innerHTML, /slow_4/);
-  assert.doesNotMatch(historyEl.innerHTML, /slow_5/);
-  assert.match(historyEl.innerHTML, /source_4/);
-  assert.doesNotMatch(historyEl.innerHTML, /source_5/);
-  assert.match(historyEl.innerHTML, /Event 4/);
-  assert.doesNotMatch(historyEl.innerHTML, /Event 5/);
-  assert.match(historyEl.innerHTML, /Timeline/);
-  assert.match(historyEl.innerHTML, /source order|3\/8\/2026|2026/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-detail-head/);
-  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
-  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
-});
-
-test("admin ops history: selected run analysis stays hidden without selection", () => {
-  const historyEl = makeEl();
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [
-      {
-        type: "fetch",
-        runId: "fetch_live_1",
-        active: true,
-        isLive: true,
-        startedAt: "2026-03-08T10:00:00.000Z",
-        heartbeatAt: new Date().toISOString(),
-        summary: { outputCount: 12, failedSources: 0 }
-      }
-    ],
-    visibleCompletedRows: [],
-    olderCompletedRows: []
-  });
-
-  assert.doesNotMatch(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.doesNotMatch(historyEl.innerHTML, /Select a run row to inspect bounded run evidence/);
-  assert.doesNotMatch(historyEl.innerHTML, /Timeline/);
-  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-history-row-selected/);
-  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
-});
-
-test("admin ops history: active rows do not render stale finished timestamps", () => {
-  const historyEl = makeEl();
-  const runKey = "current||discovery_live_1|discovery|2026-03-08T10:00:00.000Z||0";
-
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [
-      {
-        type: "discovery",
-        runId: "discovery_live_1",
-        active: true,
-        isLive: true,
-        displayStatus: "running",
-        startedAt: "2026-03-08T10:00:00.000Z",
-        finishedAt: "2026-04-09T12:00:00.000Z",
-        summary: { queuedCandidateCount: 4, failedProbeCount: 0 },
-        taskProgress: {
-          active: true,
-          phaseKey: "probing",
-          phaseLabel: "Probing candidates",
-          counts: { queuedCandidates: 4 }
-        }
-      }
-    ],
-    visibleCompletedRows: [],
-    olderCompletedRows: []
-  }, {
-    selectedRunKey: runKey
-  });
-
-  assert.match(historyEl.innerHTML, /running/i);
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.doesNotMatch(historyEl.innerHTML, /<strong>Finished<\/strong>/);
-  assert.doesNotMatch(historyEl.innerHTML, /4\/9\/2026|Apr/i);
 });
 
 test("admin ops history: lifecycle statuses drive terminal chip labels", () => {
@@ -334,34 +135,6 @@ test("admin ops history: lifecycle statuses drive terminal chip labels", () => {
   assert.match(historyEl.innerHTML, />canceled</i);
   assert.match(historyEl.innerHTML, /admin-status-chip critical/i);
   assert.match(historyEl.innerHTML, /admin-status-chip warning/i);
-});
-
-test("admin ops history: selected run analysis renders timeline empty state", () => {
-  const historyEl = makeEl();
-  const runKey = "completed||sync_no_timeline|sync||2026-03-08T09:30:00.000Z|0";
-
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [],
-    visibleCompletedRows: [
-      {
-        type: "sync",
-        status: "ok",
-        runId: "sync_no_timeline",
-        finishedAt: "2026-03-08T09:30:00.000Z",
-        durationMs: 1500,
-        summary: { action: "push", activeCount: 7, pendingCount: 2, rejectedCount: 1 }
-      }
-    ],
-    olderCompletedRows: []
-  }, {
-    selectedRunKey: runKey
-  });
-
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.match(historyEl.innerHTML, /Timeline/);
-  assert.match(historyEl.innerHTML, /No timeline evidence recorded for this run/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-detail-head/);
-  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
 
 test("admin ops history: pipeline rows keep progress text visible and cap overflow rows", () => {
@@ -461,67 +234,33 @@ test("admin ops history: pipeline no-progress scenarios show neutral fallback", 
   }
 });
 
-test("admin ops history: selected completed pipeline analysis shows parent and child diagnostics", () => {
+// The Finished column is the one that used to be clamped: its track could not fit
+// `9/21/2026, 9:58:38 AM`, so every value ellipsized. The compact form fits, and
+// the full localized stamp rides along as a tooltip so nothing is lost.
+test("admin ops history: the finished column stays compact and keeps the full stamp", () => {
+  const nowMs = Date.now();
+  const recent = new Date(nowMs - (60 * 60 * 1000));
+  const previousYear = new Date("2019-09-21T14:53:00.000Z");
+
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [],
     visibleCompletedRows: [
-      {
-        type: "pipeline",
-        status: "ok",
-        startedAt: "2026-03-08T09:00:00.000Z",
-        finishedAt: "2026-03-08T10:00:00.000Z",
-        summary: {
-          baselineOutputCount: 120,
-          jobsPageLoadedCount: 150,
-          finalOutputCount: 175,
-          updatesFound: true
-        },
-        taskProgress: {
-          active: false,
-          phaseLabel: "Pipeline completed",
-          mode: "determinate",
-          ratio: 1,
-          counts: {
-            currentStep: 3,
-            totalSteps: 3,
-            baselineOutputCount: 120,
-            jobsPageLoadedCount: 150,
-            finalOutputCount: 175
-          }
-        },
-        pipelineChildren: [
-          {
-            type: "discovery",
-            status: "ok",
-            finishedAt: "2026-03-08T09:20:00.000Z",
-            summary: { queuedCandidateCount: 6, failedProbeCount: 1 },
-            taskProgress: {
-              counts: { generatedCandidates: 20, queuedCandidates: 6, failedProbes: 1 }
-            }
-          },
-          {
-            type: "fetch",
-            status: "ok",
-            finishedAt: "2026-03-08T09:50:00.000Z",
-            summary: { outputCount: 175, failedSources: 0 },
-            taskProgress: {
-              counts: { resolvedSources: 12, sourceCount: 12, outputCount: 175, failedSources: 0 }
-            }
-          }
-        ]
-      }
+      { type: "fetch", status: "ok", runId: "recent_1", startedAt: recent.toISOString(), finishedAt: recent.toISOString(), summary: { outputCount: 1 } },
+      { type: "fetch", status: "ok", runId: "old_1", startedAt: previousYear.toISOString(), finishedAt: previousYear.toISOString(), summary: { outputCount: 1 } }
     ],
     olderCompletedRows: []
-  }, {
-    selectedRunKey: "completed|||pipeline|2026-03-08T09:00:00.000Z|2026-03-08T10:00:00.000Z|0"
   });
 
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.match(historyEl.innerHTML, /Pipeline output 175 vs comparison base 150; updates found/);
-  assert.match(historyEl.innerHTML, /Discovery completed/);
-  assert.match(historyEl.innerHTML, /Fetch completed/);
-  assert.doesNotMatch(historyEl.innerHTML, /<details class="admin-ops-run-detail"/i);
-  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
-  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
+  const cells = Array.from(historyEl.innerHTML.matchAll(/<div class="admin-cell" data-tooltip="([^"]*)">([^<]*)<\/div>/g));
+  const finished = cells.map((match) => ({ title: match[1], text: match[2] }));
+
+  // The current-year stamp omits the year; an older one keeps it. The month is
+  // `\w{3,4}` because the locale abbreviation is not always three letters
+  // (September renders as "Sept").
+  const recentCell = finished.find((cell) => /^\d{2} \w{3,4} \d{2}:\d{2}$/.test(cell.text));
+  const oldCell = finished.find((cell) => /^21 \w{3,4} 2019 \d{2}:\d{2}$/.test(cell.text));
+  assert.ok(recentCell, `a current-year stamp must render as "dd Mon HH:MM", got ${JSON.stringify(finished)}`);
+  assert.ok(oldCell, `a prior-year stamp must carry its year, got ${JSON.stringify(finished)}`);
+  assert.ok(recentCell.title.length > recentCell.text.length, "the full stamp must survive in the tooltip");
 });

@@ -77,6 +77,8 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   actionCenterPanelEl: { token: "actionCenterPanel" },
   actionCenterItemsEl: { token: "actionCenterItems" },
   actionCenterCopyBtnEl: { token: "actionCenterCopyBtn" },
+  actionCenterStatusChipEl: { token: "actionCenterStatusChip" },
+  actionCenterCheckedAtEl: { token: "actionCenterCheckedAt" },
   discoveryPendingBadgeEl: { token: "discoveryPendingBadge" },
   inspectorOverlayEl: { token: "inspectorOverlay" },
   inspectorPanelEl: { token: "inspectorPanel" },

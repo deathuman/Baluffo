@@ -171,6 +171,11 @@ export function createOpsRenderHub({
     return {
       onCopyRunDiagnostics: handleCopyRunDiagnostics,
       onAbortRun: handleAbortRun,
+      // Run detail renders into the inspector drawer, which is a sibling of the
+      // history container rather than a child of it. Passing it in keeps the
+      // dependency explicit; `renderAdminOpsHistory` falls back to a document
+      // lookup so the renderer still works on its own.
+      runDetailHost: refs?.inspectorContentEl || null,
       waitingForTaskState: Boolean(state.waitingForTaskState),
       taskStateUnavailable: Boolean(state.taskStateUnavailable),
       taskStateError: String(state.lastTaskStateError || "").trim(),

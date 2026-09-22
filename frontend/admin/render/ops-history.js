@@ -11,11 +11,27 @@ import {
 } from "../../shared/task-progress.js";
 import {
   buildRunStatusTooltip,
+  formatCompactDateTime,
   formatDateTime,
   formatDuration,
   formatSignedInt,
   getRunStatusChipClass
 } from "./ops-shared.js";
+import { renderRunDetailHtml } from "./ops-run-detail.js";
+
+// The run detail body lives in the inspector drawer, which is a single stable
+// element in `admin.html` rather than a child of the history container. Callers
+// pass it in; the document lookup is only a fallback so the drawer still works if
+// a caller forgets the option.
+function resolveRunDetailHost(inspectorContentEl) {
+  if (inspectorContentEl && typeof inspectorContentEl.addEventListener === "function") {
+    return inspectorContentEl;
+  }
+  const doc = globalThis.document;
+  if (!doc || typeof doc.getElementById !== "function") return null;
+  const el = doc.getElementById("admin-inspector-content");
+  return el && typeof el.addEventListener === "function" ? el : null;
+}
 
 const TASK_TYPE_LABELS = new Map([
   ["discovery", "Discovery"],
@@ -167,12 +183,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const onCopyRunDiagnostics = typeof options?.onCopyRunDiagnostics === "function"
     ? options.onCopyRunDiagnostics
     : null;
-  const onSelectRun = typeof options?.onSelectRun === "function"
-    ? options.onSelectRun
-    : null;
   const onAbortRun = typeof options?.onAbortRun === "function"
     ? options.onAbortRun
     : null;
+  const runDetailHost = resolveRunDetailHost(options?.runDetailHost);
   const model = Array.isArray(runsOrModel)
     ? {
       currentRows: [],
@@ -376,7 +390,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       startedText: formatDateTime(row?.startedAt || ""),
       finishedText: statusToken === "running" || statusToken === "started"
         ? ""
-        : formatDateTime(row?.finishedAt || ""),
+        : formatCompactDateTime(row?.finishedAt || ""),
+      // The compact cell text is only a pointer to the real value, so the full
+      // localized stamp rides along as a tooltip and in the detail drawer.
+      finishedTitle: statusToken === "running" || statusToken === "started"
+        ? ""
+        : (String(row?.finishedAt || "").trim() ? formatDateTime(row.finishedAt) : ""),
       progressLabel: type === "pipeline"
         ? firstMeaningfulPipelineLabel(runView.progressLabel)
         : (runView.progressLabel || ""),
@@ -470,11 +489,59 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       cells[4].textContent = view.failedText;
       setTooltip(cells[4], view.failedTitle);
       cells[5].textContent = view.finishedText;
+      setTooltip(cells[5], view.finishedTitle);
     });
   };
-  const attachCopyHandlers = () => {
-    if (!onCopyRunDiagnostics || !historyEl || typeof historyEl.querySelectorAll !== "function") return;
-    historyEl.querySelectorAll("[data-ops-run-diagnostics-copy]").forEach(button => {
+  // Row buttons keep their per-element handlers, which are refreshed on every
+  // repaint. The drawer is different: it is a single long-lived element that the
+  // inspector controller paints asynchronously, so the ops renderer cannot reach
+  // its buttons with `querySelectorAll` at click time. It gets one delegated
+  // listener instead, and the WeakMap lets a repaint swap in fresh callbacks and
+  // payloads without stacking duplicate listeners.
+  const copyHosts = new WeakMap();
+  const bindCopyHost = root => {
+    if (!onCopyRunDiagnostics || !root || typeof root.addEventListener !== "function") return;
+    const existing = copyHosts.get(root);
+    if (existing) {
+      existing.onCopy = onCopyRunDiagnostics;
+      existing.payloads = copyPayloads;
+      return;
+    }
+    const binding = { onCopy: onCopyRunDiagnostics, payloads: copyPayloads };
+    copyHosts.set(root, binding);
+    root.addEventListener("click", event => {
+      const button = event?.target?.closest?.("[data-ops-run-diagnostics-copy]");
+      if (!button) return;
+      event?.stopPropagation?.();
+      const key = String(button.getAttribute("data-ops-run-diagnostics-copy") || "");
+      const payload = binding.payloads.get(key);
+      if (payload) binding.onCopy(payload);
+    });
+  };
+  const abortHosts = new WeakMap();
+  const bindAbortHost = root => {
+    if (!onAbortRun || !root || typeof root.addEventListener !== "function") return;
+    const existing = abortHosts.get(root);
+    if (existing) {
+      existing.onAbort = onAbortRun;
+      existing.views = viewByKey;
+      return;
+    }
+    const binding = { onAbort: onAbortRun, views: viewByKey };
+    abortHosts.set(root, binding);
+    root.addEventListener("click", event => {
+      const button = event?.target?.closest?.("[data-ops-run-abort]");
+      if (!button) return;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      const key = String(button.getAttribute("data-ops-run-abort") || "");
+      const view = binding.views.get(key);
+      if (view) binding.onAbort({ taskType: view.taskType, runId: view.runId, key: view.key });
+    });
+  };
+  const attachCopyHandlers = (root = historyEl) => {
+    if (!onCopyRunDiagnostics || !root || typeof root.querySelectorAll !== "function") return;
+    root.querySelectorAll("[data-ops-run-diagnostics-copy]").forEach(button => {
       button.onclick = event => {
         event?.stopPropagation?.();
         const key = String(button.getAttribute("data-ops-run-diagnostics-copy") || "");
@@ -483,9 +550,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       };
     });
   };
-  const attachAbortHandlers = () => {
-    if (!onAbortRun || !historyEl || typeof historyEl.querySelectorAll !== "function") return;
-    historyEl.querySelectorAll("[data-ops-run-abort]").forEach(button => {
+  const attachAbortHandlers = (root = historyEl) => {
+    if (!onAbortRun || !root || typeof root.querySelectorAll !== "function") return;
+    root.querySelectorAll("[data-ops-run-abort]").forEach(button => {
       button.onclick = event => {
         event?.preventDefault?.();
         event?.stopPropagation?.();
@@ -495,96 +562,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       };
     });
   };
-  const formatSummaryCounts = value => {
-    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-    const entries = Object.entries(source)
-      .filter(([_key, item]) => item !== "" && item !== null && item !== undefined)
-      .slice(0, 6);
-    return entries.length
-      ? entries.map(([key, item]) => `${key}: ${item}`).join(" | ")
-      : "No compact counts for this run.";
+  const attachRunDetailHostHandlers = () => {
+    bindCopyHost(runDetailHost);
+    bindAbortHost(runDetailHost);
   };
-  const formatAnalysisExamples = items => {
-    const rows = Array.isArray(items) ? items : [];
-    if (!rows.length) return '<div class="muted">No examples recorded.</div>';
-    return `<ul>${rows.slice(0, 5).map(item => `<li>${escapeHtml(formatSummaryCounts(item))}</li>`).join("")}</ul>`;
-  };
-  const renderTimelineEntries = entries => {
-    const rows = Array.isArray(entries) ? entries.slice(0, 5) : [];
-    if (!rows.length) return '<div class="muted">No timeline evidence recorded for this run.</div>';
-    return `
-      <ol class="admin-ops-run-timeline-list">
-        ${rows.map(entry => {
-          const timeLabel = entry.timestamp ? formatDateTime(entry.timestamp) : "source order";
-          const status = entry.status || entry.type || entry.source || "event";
-          const severity = ["critical", "warning", "healthy"].includes(String(entry.severity || ""))
-            ? entry.severity
-            : "muted";
-          return `
-            <li class="admin-ops-run-timeline-item">
-              <span class="admin-ops-run-timeline-time">${escapeHtml(timeLabel)}</span>
-              <span class="admin-status-chip ${severity}">${escapeHtml(status)}</span>
-              <span class="admin-ops-run-timeline-message">${escapeHtml(entry.label || "")}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ""}</span>
-            </li>
-          `;
-        }).join("")}
-      </ol>
-    `;
-  };
-  const renderSelectedRunAnalysis = view => {
-    if (!view) {
-      return "";
-    }
-    const analysis = view.analysisPayload || {};
-    const timingItems = [
-      analysis.timing?.startedAt ? `<span><strong>Started</strong> ${escapeHtml(formatDateTime(analysis.timing.startedAt))}</span>` : "",
-      view.isRunning || !analysis.timing?.finishedAt ? "" : `<span><strong>Finished</strong> ${escapeHtml(formatDateTime(analysis.timing.finishedAt))}</span>`,
-      analysis.timing?.durationLabel ? `<span><strong>Duration</strong> ${escapeHtml(analysis.timing.durationLabel)}</span>` : "",
-      analysis.timing?.elapsedLabel ? `<span><strong>Elapsed</strong> ${escapeHtml(analysis.timing.elapsedLabel)}</span>` : ""
-    ].filter(Boolean).join("");
-    const messageItems = [
-      analysis.warningSummary ? `<div class="admin-ops-run-detail-warning">${escapeHtml(analysis.warningSummary)}</div>` : "",
-      analysis.failureSummary ? `<div class="admin-ops-run-detail-failure">${escapeHtml(analysis.failureSummary)}</div>` : "",
-      analysis.remediationHint ? `<div class="admin-ops-run-analysis-hint">${escapeHtml(analysis.remediationHint)}</div>` : ""
-    ].filter(Boolean).join("");
-    const diagnosticHints = Array.isArray(analysis.diagnosticHints) ? analysis.diagnosticHints : [];
-    const hintHtml = diagnosticHints.length
-      ? `<ul>${diagnosticHints.slice(0, 5).map(hint => `<li>${escapeHtml(hint)}</li>`).join("")}</ul>`
-      : '<div class="muted">No diagnostic hints for this run.</div>';
-    return `
-      <div class="admin-ops-selected-run-analysis" data-ops-selected-run-analysis>
-        <div class="admin-ops-run-detail-head">
-          <div>
-            <div class="admin-ops-history-title">Selected Run Analysis</div>
-            <strong>${escapeHtml(analysis.title || view.title)}</strong>
-            ${analysis.primaryLabel ? `<span>${escapeHtml(analysis.primaryLabel)}</span>` : ""}
-            ${analysis.secondaryLabel ? `<span>${escapeHtml(analysis.secondaryLabel)}</span>` : ""}
-          </div>
-          <div>
-            <span class="admin-status-chip ${view.statusClass}">${escapeHtml(analysis.statusLabel || view.statusText)}</span>
-            ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}
-          </div>
-        </div>
-        <div class="admin-ops-run-detail-meta">${timingItems || '<span>No timing data.</span>'}</div>
-        <div class="admin-ops-run-detail-summary"><strong>Progress</strong> ${escapeHtml(analysis.progressLabel || view.outputOrQueuedText)}</div>
-        ${messageItems || '<div class="muted">No warnings or failures recorded for this run.</div>'}
-        <div class="admin-ops-run-analysis-grid">
-          <div><strong>Counts</strong><div>${escapeHtml(formatSummaryCounts(analysis.summaryCounts))}</div></div>
-          <div><strong>Slow examples</strong>${formatAnalysisExamples(analysis.slowExamples)}</div>
-          <div><strong>Work examples</strong>${formatAnalysisExamples(analysis.workItemExamples)}</div>
-          <div><strong>Event examples</strong>${formatAnalysisExamples(analysis.eventExamples)}</div>
-        </div>
-        <div class="admin-ops-run-timeline">
-          <strong>Timeline</strong>
-          ${renderTimelineEntries(analysis.timelineEntries)}
-        </div>
-        <div class="admin-ops-run-detail-hints">
-          <strong>Diagnostic hints</strong>
-          ${hintHtml}
-        </div>
-      </div>
-    `;
-  };
+  // Row click selects the run and publishes its detail body to the inspector
+  // drawer. The row handler runs before the document-level inspector delegate, so
+  // staging `__runDetailHtml` here is what lets `ENTITY_TYPES.task_run` render it.
+  // Rows keep no inline panel: the drawer is the single home for run detail.
   const attachSelectionHandlers = () => {
     if (!historyEl || typeof historyEl.querySelectorAll !== "function") return;
     const rows = Array.from(historyEl.querySelectorAll(".admin-ops-history-row[data-run-key]"));
@@ -594,13 +579,11 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         if (event?.target?.closest?.("[data-ops-run-diagnostics-copy],[data-ops-run-abort]")) return;
         if (historyEl.dataset) historyEl.dataset.opsSelectedRunKey = key;
         rows.forEach(item => item.classList?.toggle?.("admin-ops-history-row-selected", item === rowEl));
-        const slot = typeof historyEl.querySelector === "function"
-          ? historyEl.querySelector("[data-ops-selected-run-analysis-slot]")
-          : null;
         const view = viewByKey.get(key) || null;
-        if (slot) slot.innerHTML = renderSelectedRunAnalysis(view);
-        attachCopyHandlers();
-        if (view && onSelectRun) onSelectRun(view.analysisPayload);
+        if (!view) return;
+        rowEl.__runDetailHtml = renderRunDetailHtml(view, {
+          canCopyRunDiagnostics: Boolean(onCopyRunDiagnostics)
+        });
       };
       rowEl.onkeydown = event => {
         if (event?.key !== "Enter" && event?.key !== " ") return;
@@ -616,6 +599,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     updateExistingRows(olderCompletedViews, "completed_older");
     attachCopyHandlers();
     attachSelectionHandlers();
+    attachRunDetailHostHandlers();
     return;
   }
 
@@ -649,25 +633,24 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       ? `<button type="button" class="btn clear-filters-btn admin-ops-run-abort-btn" data-ops-run-abort="${escapeHtml(view.key)}" data-tooltip="Abort this task">Abort</button>`
       : "";
     return `
-      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0"${tooltipAttrs("Select this run for bounded analysis")}>
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0"${tooltipAttrs("Open this run's details in the inspector")}>
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
         <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${tooltipAttrs(view.statusTitle)}>${escapeHtml(view.statusText)}</span></div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
         <div class="admin-cell"${tooltipAttrs(outputOrQueuedTitle)}>${escapeHtml(view.outputOrQueuedText)}</div>
         <div class="admin-cell"${tooltipAttrs(view.failedTitle)}>${escapeHtml(view.failedText)}</div>
-        <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
+        <div class="admin-cell"${tooltipAttrs(view.finishedTitle)}>${escapeHtml(view.finishedText)}</div>
         <div class="admin-cell admin-ops-history-actions">${actionButton}</div>
       </div>
     `;
   }).join("");
 
-  const renderCompletedRows = views => views.map(view => {
-    return `
-      <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-        ${renderCompactRows([view])}
-      </div>
-    `;
-  }).join("");
+  // Completed rows are emitted flat. They used to be wrapped in a per-row
+  // `.admin-ops-history-run` block purely to give each row the max-content width
+  // the header grid also had; now that the row grid itself carries the tracks and
+  // the body is the sized element, the extra div only added a level for the row
+  // click handler to see through.
+  const renderCompletedRows = views => renderCompactRows(views);
 
   historyEl.innerHTML = `
     <div class="admin-ops-current-runs">
@@ -731,7 +714,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         </div>
       </details>
     ` : ""}
-    <div data-ops-selected-run-analysis-slot>${renderSelectedRunAnalysis(selectedView)}</div>
   `;
   if (canPatchInPlace) {
     const recentDetailsEl = historyEl.querySelector(".admin-ops-history-recent");
@@ -742,4 +724,5 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   attachCopyHandlers();
   attachAbortHandlers();
   attachSelectionHandlers();
+  attachRunDetailHostHandlers();
 }
