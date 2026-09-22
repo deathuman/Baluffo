@@ -726,6 +726,7 @@ export function createOpsHealthController({
     loadPipelineScheduleData,
     loadFetchKpisSummaryData,
     loadDashboardHealthSummaryData,
+    loadOpsHealthData,
     loadTaskStateSummaryData,
     loadOpsHistoryData,
     loadActiveOpsSummaryData,

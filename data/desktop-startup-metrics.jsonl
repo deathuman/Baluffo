@@ -941,3 +941,179 @@
 {"ts": "2026-04-10T15:27:37.556553+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 15}}
 {"ts": "2026-04-10T15:27:37.562862+00:00", "event": "admin_ready", "payload": {"elapsedMs": 15}}
 {"ts": "2026-04-10T15:27:37.565127+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 16}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.283070+00:00", "event": "admin_dom_cache_start", "category": "page", "payload": {"elapsedMs": 42}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.287395+00:00", "event": "admin_dom_cache_end", "category": "page", "payload": {"elapsedMs": 42}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.288212+00:00", "event": "admin_dom_cache", "category": "page", "payload": {"durationMs": 0, "elapsedMs": 42}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.288713+00:00", "event": "admin_auth_init_start", "category": "page", "payload": {"elapsedMs": 46}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.289099+00:00", "event": "admin_init_ready", "category": "page", "payload": {"elapsedMs": 53}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.293792+00:00", "event": "admin_ready", "category": "page", "payload": {"elapsedMs": 53}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.301359+00:00", "event": "admin_first_interactive", "category": "page", "payload": {"reason": "ready", "elapsedMs": 53}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.305026+00:00", "event": "admin_bootstrap_fetch_start", "category": "page", "payload": {"elapsedMs": 54}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.307772+00:00", "event": "admin_auth_init_end", "category": "page", "payload": {"elapsedMs": 54}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.309531+00:00", "event": "admin_auth_init", "category": "page", "payload": {"durationMs": 8, "elapsedMs": 54}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.611051+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 183}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.611505+00:00", "event": "admin_bootstrap_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 188}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:27.611842+00:00", "event": "admin_bootstrap_fetch", "category": "page", "payload": {"ok": true, "durationMs": 135, "elapsedMs": 189}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:28.603739+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 1094}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:28.644208+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 1128}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:28.644555+00:00", "event": "admin_registry_conflicts_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 1128}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:28.644887+00:00", "event": "admin_registry_conflicts_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 1176}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:28.647780+00:00", "event": "admin_registry_conflicts_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 49, "elapsedMs": 1176}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:36.903705+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 80, "elapsedMs": 9479}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:11:36.904117+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 80, "runCount": 80, "elapsedMs": 9506}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.992260+00:00", "event": "admin_ops_health_first_render_start", "category": "page", "payload": {"elapsedMs": 39566}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.992624+00:00", "event": "admin_ops_health_first_render_done", "category": "page", "payload": {"ok": true, "source": "degraded-active", "elapsedMs": 39599}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.992822+00:00", "event": "admin_ops_health_first_render", "category": "page", "payload": {"ok": true, "source": "degraded-active", "durationMs": 33, "elapsedMs": 39599}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.992997+00:00", "event": "admin_ops_task_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 39615}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.993152+00:00", "event": "admin_ops_task_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 39632}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:06.993326+00:00", "event": "admin_ops_task_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 17, "elapsedMs": 39632}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:25.070038+00:00", "event": "admin_ops_task_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 57641}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:25.070463+00:00", "event": "admin_ops_task_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 57687}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:25.070739+00:00", "event": "admin_ops_task_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 45, "elapsedMs": 57687}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.307195+00:00", "event": "admin_ops_task_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 59875}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.310279+00:00", "event": "admin_ops_task_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 59898}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.313546+00:00", "event": "admin_ops_task_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 23, "elapsedMs": 59898}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.317511+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 59934}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.320169+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 59963}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.322325+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 59963}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.323431+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 59963}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:12:27.323990+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 60024}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:48.997543+00:00", "event": "admin_dom_cache_start", "category": "page", "payload": {"elapsedMs": 158}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.001843+00:00", "event": "admin_dom_cache_end", "category": "page", "payload": {"elapsedMs": 158}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.007918+00:00", "event": "admin_dom_cache", "category": "page", "payload": {"durationMs": 0, "elapsedMs": 158}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.013245+00:00", "event": "admin_auth_init_start", "category": "page", "payload": {"elapsedMs": 161}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.014998+00:00", "event": "admin_init_ready", "category": "page", "payload": {"elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.019062+00:00", "event": "admin_ready", "category": "page", "payload": {"elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.023129+00:00", "event": "admin_first_interactive", "category": "page", "payload": {"reason": "ready", "elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.023785+00:00", "event": "admin_bootstrap_fetch_start", "category": "page", "payload": {"elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.024548+00:00", "event": "admin_auth_init_end", "category": "page", "payload": {"elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.025716+00:00", "event": "admin_auth_init", "category": "page", "payload": {"durationMs": 4, "elapsedMs": 165}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.365500+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 314}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.365845+00:00", "event": "admin_bootstrap_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 318}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:49.366167+00:00", "event": "admin_bootstrap_fetch", "category": "page", "payload": {"ok": true, "durationMs": 153, "elapsedMs": 318}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:50.262743+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 1198}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:50.263112+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 1233}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:50.263306+00:00", "event": "admin_registry_conflicts_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 1233}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:50.263468+00:00", "event": "admin_registry_conflicts_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 1290}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:31:50.263649+00:00", "event": "admin_registry_conflicts_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 56, "elapsedMs": 1290}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:32:12.878093+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 80, "elapsedMs": 23827}}
+{"schemaVersion": 1, "ts": "2026-09-22T14:32:12.878608+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 80, "runCount": 80, "elapsedMs": 23869}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.087004+00:00", "event": "admin_dom_cache_start", "category": "page", "payload": {"elapsedMs": 154}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.090824+00:00", "event": "admin_dom_cache_end", "category": "page", "payload": {"elapsedMs": 154}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.121497+00:00", "event": "admin_dom_cache", "category": "page", "payload": {"durationMs": 0, "elapsedMs": 154}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.124292+00:00", "event": "admin_auth_init_start", "category": "page", "payload": {"elapsedMs": 157}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.128124+00:00", "event": "admin_init_ready", "category": "page", "payload": {"elapsedMs": 160}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.131397+00:00", "event": "admin_ready", "category": "page", "payload": {"elapsedMs": 160}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.136483+00:00", "event": "admin_first_interactive", "category": "page", "payload": {"reason": "ready", "elapsedMs": 160}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.140640+00:00", "event": "admin_bootstrap_fetch_start", "category": "page", "payload": {"elapsedMs": 161}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.144508+00:00", "event": "admin_auth_init_end", "category": "page", "payload": {"elapsedMs": 161}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.147765+00:00", "event": "admin_auth_init", "category": "page", "payload": {"durationMs": 4, "elapsedMs": 161}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.650479+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 410}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.651107+00:00", "event": "admin_bootstrap_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 415}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:23.651347+00:00", "event": "admin_bootstrap_fetch", "category": "page", "payload": {"ok": true, "durationMs": 255, "elapsedMs": 415}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:24.162088+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 1014}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:24.162413+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 1044}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:24.162572+00:00", "event": "admin_registry_conflicts_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 1044}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:24.162732+00:00", "event": "admin_registry_conflicts_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 1086}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:12:24.162935+00:00", "event": "admin_registry_conflicts_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 42, "elapsedMs": 1086}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.311963+00:00", "event": "admin_dom_cache_start", "category": "page", "payload": {"elapsedMs": 80}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.324459+00:00", "event": "admin_dom_cache_end", "category": "page", "payload": {"elapsedMs": 80}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.334523+00:00", "event": "admin_dom_cache", "category": "page", "payload": {"durationMs": 0, "elapsedMs": 80}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.338906+00:00", "event": "admin_auth_init_start", "category": "page", "payload": {"elapsedMs": 81}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.341898+00:00", "event": "admin_init_ready", "category": "page", "payload": {"elapsedMs": 82}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.342484+00:00", "event": "admin_ready", "category": "page", "payload": {"elapsedMs": 82}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.345598+00:00", "event": "admin_first_interactive", "category": "page", "payload": {"reason": "ready", "elapsedMs": 82}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.346525+00:00", "event": "admin_bootstrap_fetch_start", "category": "page", "payload": {"elapsedMs": 83}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.348016+00:00", "event": "admin_auth_init_end", "category": "page", "payload": {"elapsedMs": 83}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.348653+00:00", "event": "admin_auth_init", "category": "page", "payload": {"durationMs": 1, "elapsedMs": 83}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.765855+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 182}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.784157+00:00", "event": "admin_bootstrap_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:11.784508+00:00", "event": "admin_bootstrap_fetch", "category": "page", "payload": {"ok": true, "durationMs": 101, "elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:12.303626+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 835}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:12.303974+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 864}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:12.304286+00:00", "event": "admin_registry_conflicts_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 864}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:12.304582+00:00", "event": "admin_registry_conflicts_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 898}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:13:12.304846+00:00", "event": "admin_registry_conflicts_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 34, "elapsedMs": 898}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.874541+00:00", "event": "admin_dom_cache_start", "category": "page", "payload": {"elapsedMs": 168}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.882576+00:00", "event": "admin_dom_cache_end", "category": "page", "payload": {"elapsedMs": 169}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.886390+00:00", "event": "admin_dom_cache", "category": "page", "payload": {"durationMs": 1, "elapsedMs": 169}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.887267+00:00", "event": "admin_auth_init_start", "category": "page", "payload": {"elapsedMs": 173}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.891243+00:00", "event": "admin_init_ready", "category": "page", "payload": {"elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.895035+00:00", "event": "admin_ready", "category": "page", "payload": {"elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.895635+00:00", "event": "admin_first_interactive", "category": "page", "payload": {"reason": "ready", "elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.899038+00:00", "event": "admin_bootstrap_fetch_start", "category": "page", "payload": {"elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.899570+00:00", "event": "admin_auth_init_end", "category": "page", "payload": {"elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:08.900359+00:00", "event": "admin_auth_init", "category": "page", "payload": {"durationMs": 11, "elapsedMs": 184}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.276064+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 296}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.386316+00:00", "event": "admin_bootstrap_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 301}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.386674+00:00", "event": "admin_bootstrap_fetch", "category": "page", "payload": {"ok": true, "durationMs": 116, "elapsedMs": 301}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.995484+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 1082}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.995825+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 1117}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.995984+00:00", "event": "admin_registry_conflicts_summary_fetch_start", "category": "page", "payload": {"elapsedMs": 1118}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.996134+00:00", "event": "admin_registry_conflicts_summary_fetch_done", "category": "page", "payload": {"ok": true, "elapsedMs": 1163}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:09.996263+00:00", "event": "admin_registry_conflicts_summary_fetch", "category": "page", "payload": {"ok": true, "durationMs": 46, "elapsedMs": 1163}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:20.149469+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 11231}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:20.149883+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 11232}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:20.150205+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 11257}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:20.150499+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 11261}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:20.150706+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 11261}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:30.227660+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 21312}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:30.228059+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 21312}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:30.228246+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 21339}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:30.228431+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 21339}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:30.228833+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 21339}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:40.337545+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 31424}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:40.337935+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 31424}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:40.338184+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 31448}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:40.338446+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 31454}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:40.338734+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 31454}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:50.458862+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 41538}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:50.459328+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 41538}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:50.459606+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 41568}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:50.459775+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 41574}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:43:50.459914+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 41574}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:00.579706+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 51663}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:00.580156+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 51663}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:00.580437+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 51689}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:00.580792+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 51698}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:00.581095+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 51698}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:11.388418+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 61797}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:11.388792+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 61797}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:11.388962+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 61830}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:11.389104+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 61835}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:11.389233+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 61835}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:20.852501+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 71940}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:20.852820+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 71941}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:20.853013+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 71965}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:20.853248+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 71969}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:20.853396+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 71969}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:32.385987+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 82788}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:32.386356+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 82788}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:32.386518+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 82811}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:32.386662+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 82814}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:32.386816+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 82814}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:43.392603+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 93810}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:43.393147+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 93810}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:43.393525+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 93841}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:43.393873+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 93846}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:43.394242+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 93846}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:54.391641+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 104785}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:54.392073+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 104785}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:54.392373+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 104809}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:54.392608+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 104812}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:44:54.392824+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 104812}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:05.391793+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 115790}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:05.392242+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 115790}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:05.392475+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 115830}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:05.392656+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 115830}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:05.392825+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 115830}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:16.382040+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 126793}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:16.382382+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 126793}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:16.382608+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 126815}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:16.382803+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 126817}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:16.382945+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 126817}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:27.378852+00:00", "event": "admin_pipeline_schedule_model_fetch_start", "category": "page", "payload": {"elapsedMs": 137796}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:27.379303+00:00", "event": "admin_ops_history_model_fetch_start", "category": "page", "payload": {"limit": 2, "elapsedMs": 137796}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:27.379564+00:00", "event": "admin_ops_history_model_fetch_done", "category": "page", "payload": {"ok": true, "limit": 2, "runCount": 2, "elapsedMs": 137819}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:27.379720+00:00", "event": "admin_pipeline_schedule_model_loaded", "category": "page", "payload": {"enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 137821}}
+{"schemaVersion": 1, "ts": "2026-09-22T16:45:27.379861+00:00", "event": "admin_pipeline_schedule_model_fetch_done", "category": "page", "payload": {"ok": true, "enabled": false, "intervalHours": 24, "nextRunAt": "", "elapsedMs": 137821}}

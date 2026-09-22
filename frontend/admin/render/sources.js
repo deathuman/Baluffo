@@ -6,7 +6,7 @@ import { ACTION_CENTER_ICONS } from "./action-center.js";
 // SVG. Same `viewBox`/`currentColor` contract as the Action Center's icons, so it
 // inherits the theme without per-theme overrides.
 function infoGlyphHtml() {
-  return `<svg class="admin-source-id-glyph" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false"><path fill="currentColor" d="${ACTION_CENTER_ICONS.info}" /></svg>`;
+  return `<svg class="admin-source-id-glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="${ACTION_CENTER_ICONS.info}" /></svg>`;
 }
 
 function formatCompactNumber(value) {
@@ -333,7 +333,7 @@ export function renderSourcesTableHtml(
           : "";
         const sourceIdTitle = sourceIdRaw || "missing source id";
         const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
-        const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}">${infoGlyphHtml()}</span>`;
+        const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}" tabindex="0" role="img">${infoGlyphHtml()}</span>`;
         const leadCell = isPending
           ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}" data-source-row-index="${rowIndex}"${checkedAttr}>${idIconHtml}</span>`
           : isRejected

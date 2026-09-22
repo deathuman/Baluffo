@@ -504,29 +504,33 @@ body::-webkit-scrollbar-thumb:hover,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 32px;
+  height: 32px;
+  margin: -8px;
+  flex-shrink: 0;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, #c7c7c7 68%, var(--surface-11));
-  background: color-mix(in srgb, #d0d0d0 16%, transparent);
-  color: color-mix(in srgb, #d8d8d8 80%, var(--text-primary));
+  color: var(--text-secondary);
   cursor: help;
   user-select: none;
-  opacity: 0.45;
-  transition: opacity 0.12s ease, border-color 0.12s ease;
+  transition: color 0.12s ease, background-color 0.12s ease;
 }
 
-/* The glyph is an inline SVG rather than the ASCII `i` this used to hold, so the
-   text-sizing properties are gone and the icon is centred by the flex box above.
-   `display: block` drops the inline baseline gap that would otherwise push an
-   11px icon off-centre inside a 14px circle. */
+/* Keep the icon readable in every theme while the surrounding inline affordance
+   supplies a larger keyboard/mouse target without changing the fixed table row. */
+.admin-source-id-inline:hover,
+.admin-source-id-inline:focus-visible {
+  color: var(--text-primary);
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .admin-source-id-glyph {
   display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .admin-source-row:hover .admin-source-id-inline {
-  opacity: 0.95;
-  border-color: color-mix(in srgb, #dddddd 82%, var(--surface-11));
+  color: var(--text-primary);
 }
 
 .admin-uid {
@@ -2276,6 +2280,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-ops-trends-details {
   padding: 0;
+  margin-bottom: 0.65rem;
 }
 
 .admin-ops-history-recent > summary,
@@ -2546,7 +2551,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-task-progress-label {
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   line-height: 1.35;
 }
 
@@ -2845,10 +2850,18 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .admin-advanced-bulk-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
   padding: 0.55rem 0.65rem;
   font-weight: 800;
   color: var(--text-primary);
+  list-style: none;
+}
+
+.admin-advanced-bulk-summary::marker {
+  content: "";
 }
 
 .admin-advanced-bulk-summary::-webkit-details-marker {
@@ -2857,7 +2870,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-advanced-bulk-summary::after {
   content: ">";
-  float: right;
+  flex-shrink: 0;
   color: var(--accent);
 }
 
