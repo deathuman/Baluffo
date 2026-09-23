@@ -712,7 +712,22 @@ def _classify_report_outcome(
             cls_context,
             zero_kept_classification.value,
         )
-    if report["status"] == "error" or report.get("error") or int(report.get("keptCount") or 0) == 0:
+    # ponytail: a source that SUCCEEDED and kept jobs must not inherit a failure
+    # bucket from a partial per-board error. Provider families aggregate many
+    # boards, and a single dead board (HTTP 404) puts that board's error text on
+    # the family row; "404" is in _has_site_changed_signal (taxonomy.py:156), so
+    # `bool(report.get("error"))` alone used to stamp the whole family
+    # `site_changed`. Observed on greenhouse_boards: status=ok, keptCount=1126,
+    # 61/61 boards refreshed, yet failureBucket=site_changed escalated to
+    # action=source_policy_review/priority=100 and a
+    # `hide_source_after_review` recommendation for a top-yielding source.
+    # Partial failures stay visible via providerUrl/partial errors and the
+    # board* counters, so suppressing the family-level bucket here loses no
+    # signal; a source that kept nothing or truly errored still gets its bucket.
+    succeeded_with_output = report["status"] == "ok" and int(report.get("keptCount") or 0) > 0
+    if (
+        report["status"] == "error" or report.get("error") or int(report.get("keptCount") or 0) == 0
+    ) and not succeeded_with_output:
         report["failureBucket"] = failure_bucket.value
     if int(report.get("keptCount") or 0) == 0 and report["status"] != "excluded":
         report["zeroKeptClassification"] = zero_kept_classification.value
