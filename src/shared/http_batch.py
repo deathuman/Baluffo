@@ -101,10 +101,12 @@ async def _fetch_pages_batched_async(
                     "error": "",
                 }
 
+    tasks: list[asyncio.Task[tuple[int, dict[str, Any]]]] = []
+
     async def _run(client: Any) -> list[dict[str, Any]]:
-        tasks = [
+        tasks.extend(
             asyncio.create_task(_fetch_one(index, job, client)) for index, job in enumerate(jobs)
-        ]
+        )
         completed = 0
         total = len(jobs)
         for future in asyncio.as_completed(tasks):
@@ -118,10 +120,46 @@ async def _fetch_pages_batched_async(
                     pass
         return [result for result in results if isinstance(result, dict)]
 
-    if callable(async_fetch) and httpx is not None:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-            return await _run(client)
-    return await _run(None)
+    # ponytail: httpx.Timeout(timeout_s) is a PER-OPERATION budget, not a total
+    # one -- the read timeout re-arms on every chunk received. A slow-drip server
+    # therefore holds a request open indefinitely: measured 40.7 s against a
+    # Timeout(2.0) (see tests/test_shared_http_batch_total_deadline.py). Because
+    # nothing raises, as_completed never yields, the per-host semaphores stay
+    # held, and the whole batch parks with no error -- exactly how a GameDevMap
+    # active-audit batch stalled at 1347/1349 in recovery_wave1_fetch and sat
+    # silent for 900 s until the discovery quiet-guard failed the run.
+    #
+    # The deadline must NOT be timeout_s: that is a per-request budget, and a
+    # legitimate batch is much larger. Measured batch 5 needed 20,117 ms for its
+    # wave-1 recovery fetch against a 5 s per-request timeout, so bounding the
+    # whole batch at 5 s would truncate healthy work. Instead allow every row to
+    # spend its own timeout, divided by the concurrency actually available, plus
+    # a small grace for scheduling.
+    per_row_s = max(1.0, float(timeout_s))
+    effective_concurrency = max(1, min(int(total_concurrency), max(1, len(jobs))))
+    total_deadline_s = per_row_s * (len(jobs) / effective_concurrency) + per_row_s
+    try:
+        if callable(async_fetch) and httpx is not None:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
+                return await asyncio.wait_for(_run(client), timeout=total_deadline_s)
+        return await asyncio.wait_for(_run(None), timeout=total_deadline_s)
+    except TimeoutError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        return [
+            result
+            if isinstance(result, dict)
+            else {
+                "job": job,
+                "payload": job.get("payload"),
+                "url": str(job.get("url") or "").strip(),
+                "ok": False,
+                "text": "",
+                "error": f"total batch deadline exceeded ({total_deadline_s:.0f}s)",
+            }
+            for result, job in zip(results, jobs, strict=False)
+        ]
 
 
 def fetch_pages_batched(
