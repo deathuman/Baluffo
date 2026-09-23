@@ -25,6 +25,7 @@ from src.jobs.common.contracts_source_policy_review_state import (
 from src.jobs.finalize_lifecycle import _runtime_timing_summary
 from src.jobs.pipeline_runtime_summary import build_detailed_source_rows
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_io import existing_json_candidate
 from src.shared.json_shapes import json_object_rows
 
 _EXPECTED_SOURCE_POLICY_EXPORT_EXCEPTIONS = (OSError, TypeError, ValueError)
@@ -72,10 +73,11 @@ def _update_runtime_timing_payload(
 
 
 def _output_sizes(paths) -> tuple[int, int]:
-    return (
-        paths.json_path.stat().st_size if paths.json_path.exists() else 0,
-        paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0,
-    )
+    def _size(path: Path) -> int:
+        candidate = existing_json_candidate(path)
+        return candidate.stat().st_size if candidate is not None else 0
+
+    return _size(paths.json_path), _size(paths.light_json_path)
 
 
 def _is_operational_excluded_row(row: dict[str, Any]) -> bool:
