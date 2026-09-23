@@ -37,7 +37,6 @@ from .canonicalize_google_sheets import (
     GoogleSheetsProviderTitleResolver,
     _derive_google_sheets_title_from_url,
     _is_google_sheets_category_label,
-    _is_google_sheets_repairable_broad_title,
     _looks_like_google_sheets_category_row_noise,
 )
 from .canonicalize_locations import canonicalize_job_with_reason
@@ -178,12 +177,17 @@ def _google_sheet_title_hydration_candidate_link(
     normalized_link = _google_sheet_final_link(raw, idx, resolved_links)
     if not title or not company or not normalized_link:
         return ""
+    # ponytail: this gate MUST stay in sync with the row loop's gate in
+    # _google_sheets_repaired_title_or_reason (canonicalize_google_sheets_title.py).
+    # The row loop calls resolve_title() exactly when title derivation FAILS
+    # (:228-248), so prefetch must cover those rows. Requiring derivation to
+    # FAIL here — not succeed — is what warms the feeds the row loop needs.
+    # Inverting this (the previous behaviour) made prefetch warm 0 feeds, so
+    # every feed was fetched serially inside the row loop: measured 142 serial
+    # fetches at 744ms = 105,579ms, matching serial prediction within 0.1%
+    # while the parallel path would take ~6.6s.
     if (
         not clean_text(source).startswith("google_sheets")
-        or (
-            not _is_google_sheets_category_label(title)
-            and not _is_google_sheets_repairable_broad_title(title)
-        )
         or looks_like_source_specific_static_noise_row(
             title=title,
             job_link=normalized_link,
@@ -195,12 +199,14 @@ def _google_sheet_title_hydration_candidate_link(
             company=company,
             job_link=normalized_link,
         )
-        or _derive_google_sheets_title_from_url(
-            source=source,
-            title=title,
-            company=company,
-            job_link=normalized_link,
-        )
+    ):
+        return ""
+    # Row loop only reaches resolve_title() when URL derivation yields nothing.
+    if _derive_google_sheets_title_from_url(
+        source=source,
+        title=title,
+        company=company,
+        job_link=normalized_link,
     ):
         return ""
     if not title_hydration_resolver.supports(normalized_link):
