@@ -39,6 +39,22 @@ ProbeFailedRejection = Callable[[dict[str, Any], str], dict[str, Any]]
 ZeroJobsRejection = Callable[[dict[str, Any], int], dict[str, Any]]
 ProbeNormalizer = Callable[[dict[str, Any], int], dict[str, Any]]
 
+# ponytail: mirrors probe.py's _EXPECTED_PROBE_FETCH_EXCEPTIONS. A probe failure
+# must degrade that one candidate, never the batch, so the batch loop catches the
+# same family. TimeoutError matters most: it is what a hung fetcher raises once
+# _call_fetch is bounded, and letting it escape used to abort every other
+# candidate's result.
+_EXPECTED_PROBE_BATCH_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    OSError,
+    TimeoutError,
+    RuntimeError,
+    KeyError,
+    ValueError,
+    json.JSONDecodeError,
+    ET.ParseError,
+    httpx.HTTPError,
+)
+
 
 @dataclass
 class ProbeClassification:
@@ -161,7 +177,19 @@ async def run_bounded_probe_batch_async(
     async def _call_fetch(url: str, call_timeout_s: int) -> str:
         if fetcher is default_fetcher:
             return await async_fetch_text_httpx(client, url, call_timeout_s)
-        return await asyncio.to_thread(fetcher, url, call_timeout_s)
+        # ponytail: the sync branch runs in a worker thread, which cannot be
+        # cancelled. The module has no wait_for anywhere, so a fetcher whose
+        # socket read never returns parks `_probe_one` forever: its semaphores
+        # stay held, as_completed never yields, and the whole probe batch stops
+        # with no error. Give the await its own deadline so a hung fetch becomes
+        # an ordinary per-candidate TimeoutError (already handled by the probe
+        # retry/except path) instead of an unbounded stall. The thread itself
+        # still runs to completion -- unavoidable for sync callables -- but the
+        # batch is no longer blocked by it.
+        return await asyncio.wait_for(
+            asyncio.to_thread(fetcher, url, call_timeout_s),
+            timeout=max(1.0, float(call_timeout_s)),
+        )
 
     async def _probe_one(row: dict[str, Any]) -> ProbeResult:
         bucket = probe_bucket_for(row)
@@ -169,12 +197,22 @@ async def run_bounded_probe_batch_async(
         async with total_sem:
             async with bucket_sem:
                 started = time.perf_counter()
-                ok, jobs_found, error = await async_probe(
-                    row,
-                    timeout_s,
-                    fetcher=_call_fetch,
-                    **probe_options,
-                )
+                # ponytail: a probe must never escape as an exception. Without
+                # this guard a failure raised out of async_probe (including the
+                # TimeoutError produced when the fetcher thread hangs) propagates
+                # through as_completed, aborts the whole batch, and returns no
+                # results at all. Converting it to an ordinary per-candidate
+                # failure keeps the one-result-per-candidate contract and lets
+                # the caller's normal rejection handling record it.
+                try:
+                    ok, jobs_found, error = await async_probe(
+                        row,
+                        timeout_s,
+                        fetcher=_call_fetch,
+                        **probe_options,
+                    )
+                except _EXPECTED_PROBE_BATCH_EXCEPTIONS as exc:
+                    ok, jobs_found, error = False, 0, str(exc)
                 return row, ok, jobs_found, error, audit_ledger.duration_ms(started)
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
