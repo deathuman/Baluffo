@@ -212,6 +212,72 @@ def test_run_selected_loaders_batches_futures_to_bound_live_set(
     assert live_peak <= 8, f"live futures peaked at {live_peak}, window is 8"
 
 
+def test_run_selected_loaders_refills_slots_instead_of_waiting_for_a_batch() -> None:
+    """A straggler must not idle the other workers.
+
+    Regression: the loop submitted a fixed window of futures and drained it with
+    ``as_completed`` before submitting the next window, so one slow source held
+    every other worker hostage until the whole batch resolved. Observed in a
+    container run as one ``google_sheets`` task running ~452s while 1857 sources
+    sat queued and ``runningTasks`` stayed at 1.
+
+    With continuous backfill the free workers must pick up backlog sources while
+    the straggler is still running.
+    """
+    import threading
+    import time
+
+    straggler_release = threading.Event()
+    started_lock = Lock()
+    started: list[str] = []
+
+    def fake_execute(source_name: str, _loader: Any) -> tuple[dict[str, Any], list[Any]]:
+        with started_lock:
+            started.append(source_name)
+        if source_name == "src_0000":
+            straggler_release.wait(timeout=5)
+        return ({"name": source_name}, [source_name])
+
+    loaders = [(f"src_{i:04d}", i) for i in range(30)]
+    rows: list[Any] = []
+    reports: list[dict[str, Any]] = []
+
+    worker = threading.Thread(
+        target=pipeline_source_loop._run_selected_loaders,
+        kwargs={
+            "selected_loaders": loaders,
+            "max_workers": 2,  # window = 8
+            "execute_loader_started": fake_execute,
+            "canonical_rows": rows,
+            "source_reports": reports,
+        },
+        daemon=True,
+    )
+    worker.start()
+    try:
+        # The straggler occupies one of the two workers. Give the run a moment to
+        # refill the other slot with work beyond the first window.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            with started_lock:
+                if len(started) > 8:  # past the first window of 8
+                    break
+            time.sleep(0.01)
+        with started_lock:
+            progressed_past_window = len(started)
+    finally:
+        straggler_release.set()
+        worker.join(timeout=10)
+
+    assert not worker.is_alive(), "loader loop did not finish after releasing the straggler"
+    assert progressed_past_window > 8, (
+        f"only {progressed_past_window} sources started while the straggler was running; "
+        "a fixed batch window would cap this at the window size (8)"
+    )
+    assert len(rows) == 30
+    assert len(reports) == 30
+
+
 def test_run_selected_loaders_sequential_path_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

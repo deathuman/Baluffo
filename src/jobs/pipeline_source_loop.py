@@ -12,7 +12,7 @@ import pathlib
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from threading import Lock
 from typing import Any, Protocol, cast
 
@@ -431,14 +431,30 @@ def _run_selected_loaders(
     # ponytail: bound the live future set. Submitting all 2k loaders at once pins
     # every queued adapter/future in memory and can push the fetch container over
     # the 1.5 GiB cap before fetch finishes.
+    #
+    # The bound is a *ceiling on live futures*, not a batch barrier. Refill a slot
+    # the moment any future resolves so idle workers pull from the backlog instead
+    # of waiting for the slowest task in a batch. A fixed window that drains fully
+    # before the next submit holds every other worker hostage to a straggler: a
+    # single long source (observed: one google_sheets task running ~452s) stalled
+    # the whole stage while 1857 sources sat queued.
     window = max(8, max_workers * 4)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for start in range(0, len(selected_loaders), window):
-            futures = {
-                executor.submit(execute_loader_started, source_name, loader): source_name
-                for source_name, loader in selected_loaders[start : start + window]
-            }
-            for future in as_completed(futures):
+        loader_iter = iter(selected_loaders)
+        pending: set[Future] = set()
+        exhausted = False
+        while not exhausted or pending:
+            while not exhausted and len(pending) < window:
+                try:
+                    source_name, loader = next(loader_iter)
+                except StopIteration:
+                    exhausted = True
+                    break
+                pending.add(executor.submit(execute_loader_started, source_name, loader))
+            if not pending:
+                break
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
                 _append_loader_result(
                     future.result(),
                     canonical_rows=canonical_rows,
