@@ -539,6 +539,15 @@ def _apply_csv_stage_timings(
             stats["redirect_cache_hits"] = int(
                 google_sheet_redirect_stats.get("redirect_cache_hits") or 0
             )
+            stats["redirect_transport_failures"] = int(
+                google_sheet_redirect_stats.get("redirect_transport_failures") or 0
+            )
+            stats["redirect_short_circuits"] = int(
+                google_sheet_redirect_stats.get("redirect_short_circuits") or 0
+            )
+            stats["redirect_unreachable_hosts"] = int(
+                google_sheet_redirect_stats.get("redirect_unreachable_hosts") or 0
+            )
             stats["redirect_resolve_ms"] = int(
                 google_sheet_redirect_stats.get("redirect_resolve_ms") or 0
             )

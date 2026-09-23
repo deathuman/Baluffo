@@ -13,6 +13,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
+from urllib.parse import urlparse
 
 from src.jobs.adapters import community
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
@@ -173,11 +174,20 @@ class PooledRedirectResolver:
         initial_cache: dict[str, str] | None = None,
     ) -> None:
         self._timeout_s = max(1, int(timeout_s or DEFAULT_TIMEOUT_S))
+        self._max_connections = max(1, int(max_connections or 1))
+        # Preserve transient redirects, but stop paying the full two-attempt
+        # timeout cost for every remaining URL after two full waves of
+        # response-less failures on the same host. Any HTTP response resets it.
+        self._transport_failure_threshold = max(2, self._max_connections * 2)
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, threading.Event] = {}
+        self._host_transport_failures: dict[str, int] = {}
+        self._unreachable_hosts: set[str] = set()
         self._lock = threading.Lock()
         self._cache_hits = 0
         self._resolved_count = 0
+        self._transport_failures = 0
+        self._short_circuits = 0
         self._client = None
         if httpx is not None:
             try:
@@ -187,8 +197,8 @@ class PooledRedirectResolver:
                         headers=DEFAULT_REDIRECT_HEADERS,
                         timeout=httpx.Timeout(float(self._timeout_s)),
                         limits=httpx.Limits(
-                            max_keepalive_connections=max(1, int(max_connections or 1)),
-                            max_connections=max(2, int(max_connections or 1) * 2),
+                            max_keepalive_connections=self._max_connections,
+                            max_connections=max(2, self._max_connections * 2),
                         ),
                         http2=True,
                     )
@@ -198,8 +208,8 @@ class PooledRedirectResolver:
                         headers=DEFAULT_REDIRECT_HEADERS,
                         timeout=httpx.Timeout(float(self._timeout_s)),
                         limits=httpx.Limits(
-                            max_keepalive_connections=max(1, int(max_connections or 1)),
-                            max_connections=max(2, int(max_connections or 1) * 2),
+                            max_keepalive_connections=self._max_connections,
+                            max_connections=max(2, self._max_connections * 2),
                         ),
                     )
             except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
@@ -209,27 +219,55 @@ class PooledRedirectResolver:
         if isinstance(initial_cache, dict) and initial_cache:
             self.seed_cache(initial_cache)
 
+    @staticmethod
+    def _redirect_host(url: str) -> str:
+        return (urlparse(url).hostname or "").strip().lower()
+
+    def _record_host_result(self, host: str, *, transport_failed: bool) -> None:
+        if not host:
+            return
+        with self._lock:
+            if not transport_failed:
+                self._host_transport_failures.pop(host, None)
+                self._unreachable_hosts.discard(host)
+                return
+            failures = self._host_transport_failures.get(host, 0) + 1
+            self._host_transport_failures[host] = failures
+            self._transport_failures += 1
+            if failures >= self._transport_failure_threshold:
+                self._unreachable_hosts.add(host)
+
     def _resolve_with_client(self, normalized: str) -> str:
+        host = self._redirect_host(normalized)
         if self._client is None:
-            return resolve_supported_redirect_url(normalized, timeout_s=self._timeout_s)
+            try:
+                resolved = resolve_supported_redirect_url(normalized, timeout_s=self._timeout_s)
+            except (OSError, RuntimeError):
+                self._record_host_result(host, transport_failed=True)
+                return normalized
+            self._record_host_result(host, transport_failed=False)
+            return resolved
         httpx_mod = httpx
         if httpx_mod is None:
             raise RuntimeError("httpx is not installed")
-        last_error: Exception | None = None
+        all_attempts_transport_failed = True
         for method in ("HEAD", "GET"):
             try:
                 response = self._client.request(method, normalized)
                 resolved = normalize_url(str(response.url))
+                self._record_host_result(host, transport_failed=False)
                 return resolved or normalized
             except httpx_mod.HTTPError as exc:
-                last_error = exc
                 status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
-                if method == "HEAD" and status_code in {400, 403, 405, 429, 500, 501, 503}:
-                    continue
+                if status_code:
+                    all_attempts_transport_failed = False
                 if method == "HEAD":
                     continue
                 break
-        _ = last_error
+        self._record_host_result(
+            host,
+            transport_failed=all_attempts_transport_failed,
+        )
         return normalized
 
     def resolve(self, url: str) -> str:
@@ -237,6 +275,7 @@ class PooledRedirectResolver:
         if not is_supported_redirect_url(normalized):
             return normalized
         owner = False
+        host = self._redirect_host(normalized)
         wait_event: threading.Event | None = None
         with self._lock:
             cached = self._cache.get(normalized)
@@ -245,6 +284,9 @@ class PooledRedirectResolver:
                 return cached
             wait_event = self._inflight.get(normalized)
             if wait_event is None:
+                if host in self._unreachable_hosts:
+                    self._short_circuits += 1
+                    return normalized
                 wait_event = threading.Event()
                 self._inflight[normalized] = wait_event
                 owner = True
@@ -269,6 +311,9 @@ class PooledRedirectResolver:
             return {
                 "cacheHits": int(self._cache_hits),
                 "resolvedCount": int(self._resolved_count),
+                "transportFailures": int(self._transport_failures),
+                "shortCircuits": int(self._short_circuits),
+                "unreachableHosts": len(self._unreachable_hosts),
             }
 
     def seed_cache(self, cache: dict[str, str] | None) -> None:

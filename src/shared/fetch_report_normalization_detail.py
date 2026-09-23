@@ -52,6 +52,9 @@ def normalize_fetch_report_detail_stats(
         "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
         "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
         "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
+        "redirect_transport_failures": _clamped_int(stats.get("redirect_transport_failures"), 0, 0),
+        "redirect_short_circuits": _clamped_int(stats.get("redirect_short_circuits"), 0, 0),
+        "redirect_unreachable_hosts": _clamped_int(stats.get("redirect_unreachable_hosts"), 0, 0),
         "title_hydration_candidates": _clamped_int(stats.get("title_hydration_candidates"), 0, 0),
         "title_hydration_feed_fetches": _clamped_int(
             stats.get("title_hydration_feed_fetches"), 0, 0

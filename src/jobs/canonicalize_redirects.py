@@ -429,6 +429,21 @@ def _google_sheet_redirect_stats(
             int(resolver_stats_after.get("cacheHits", 0))
             - int(resolver_stats_before.get("cacheHits", 0)),
         ),
+        "redirect_transport_failures": max(
+            0,
+            int(resolver_stats_after.get("transportFailures", 0))
+            - int(resolver_stats_before.get("transportFailures", 0)),
+        ),
+        "redirect_short_circuits": max(
+            0,
+            int(resolver_stats_after.get("shortCircuits", 0))
+            - int(resolver_stats_before.get("shortCircuits", 0)),
+        ),
+        "redirect_unreachable_hosts": max(
+            0,
+            int(resolver_stats_after.get("unreachableHosts", 0) or 0)
+            - int(resolver_stats_before.get("unreachableHosts", 0) or 0),
+        ),
         "redirect_resolve_ms": int(redirect_resolve_ms),
         "canonicalize_ms": int(canonicalize_ms),
     }
