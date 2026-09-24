@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.measurements.pipeline.full_pipeline_memory import _sampler_summary
+from tools.measurements.pipeline.full_pipeline_memory import (
+    _sampler_summary,
+    _trigger_accepted,
+)
 from tools.measurements.pipeline.memory_profile import (
     detect_cgroup_version,
     run_sampler,
@@ -105,6 +108,12 @@ def test_run_sampler_writes_bounded_ndjson_and_honors_stop_file(tmp_path: Path) 
     assert count == 1
     assert len(rows) == 1
     assert rows[0]["cgroup"]["memoryCurrentBytes"] == 1
+
+
+def test_trigger_acceptance_matches_real_pipeline_response_shape() -> None:
+    assert _trigger_accepted({"started": True, "runId": "pipeline_1"}) is True
+    assert _trigger_accepted({"ok": True, "runId": "pipeline_1"}) is True
+    assert _trigger_accepted({"started": False, "ok": False}) is False
 
 
 def test_sampler_summary_preserves_terminal_cgroup_evidence(tmp_path: Path) -> None:
