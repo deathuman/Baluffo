@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge.task_launch_api import (
     TaskLaunchApi,
@@ -165,8 +165,16 @@ def test_fetch_lifecycle_close_rolls_back_mismatch_after_live_cap() -> None:
         def upsert_source_runs(self, **_kwargs: Any) -> int:
             return 0
 
-        def source_runs_for_parity(self, **kwargs: Any) -> list[dict[str, Any]]:
-            return self._runtime.source_runs_for_parity(**kwargs)
+        def source_runs_for_parity(
+            self, *, run_id: str, expected_count: int
+        ) -> list[dict[str, Any]]:
+            return cast(
+                list[dict[str, Any]],
+                self._runtime.source_runs_for_parity(
+                    run_id=run_id,
+                    expected_count=expected_count,
+                ),
+            )
 
     with workspace_tmpdir("task-launch-source-runs-parity-mismatch") as data_dir:
         with BaluffoStore(data_dir) as store:
