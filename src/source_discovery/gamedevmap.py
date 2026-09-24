@@ -62,6 +62,9 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "activeAuditRecoveryTimeoutSeconds": max(
             0, int(cfg.get("activeAuditRecoveryTimeoutSeconds") or 0)
         ),
+        "activeAuditRecoveryCacheScope": str(cfg.get("activeAuditRecoveryCacheScope") or "run")
+        .strip()
+        .lower(),
         "maxRows": max(0, int(cfg.get("maxRows") or 0)),
         "maxHomepageFetches": max(0, int(cfg.get("maxHomepageFetches") or 0)),
         "allowedCategories": list(cfg.get("allowedCategories") or []),

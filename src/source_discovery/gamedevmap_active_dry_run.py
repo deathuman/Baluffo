@@ -250,6 +250,26 @@ def latest_gamedevmap_audit_report_summary() -> dict[str, Any]:
     return dict(LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY)
 
 
+def _gamedevmap_recovery_cache_scope(cfg: dict[str, Any]) -> str:
+    value = str(cfg.get("activeAuditRecoveryCacheScope") or "run").strip().lower()
+    return "batch" if value == "batch" else "run"
+
+
+def _with_batch_scoped_recovery_cache(
+    recovery_cache: dict[str, dict[str, Any]],
+    callback: Callable[[dict[str, Any]], None] | None,
+) -> Callable[[dict[str, Any]], None]:
+    """Clear recovery bodies between batches while preserving wave-local reuse."""
+
+    def progress_with_cache_scope(progress: dict[str, Any]) -> None:
+        if str(progress.get("phase") or "") == "batch_start":
+            recovery_cache.clear()
+        if callback is not None:
+            callback(progress)
+
+    return progress_with_cache_scope
+
+
 def _analyze_browser_recovery_fetches(
     *,
     fetch_results: list[tuple[dict[str, Any], str, str, int]],
@@ -1171,6 +1191,12 @@ def run_gamedevmap_active_source_dry_run(
                 "force": True,
             }
         )
+    strategy_progress_callback = subtask_progress_callback
+    if _gamedevmap_recovery_cache_scope(cfg) == "batch":
+        strategy_progress_callback = _with_batch_scoped_recovery_cache(
+            recovery_cache,
+            subtask_progress_callback,
+        )
     batch_strategy = _build_gamedevmap_active_batch_strategy(
         artifact=artifact,
         index_url=index_url,
@@ -1182,7 +1208,7 @@ def run_gamedevmap_active_source_dry_run(
         recovery_fetch_concurrency=recovery_fetch_concurrency,
         recovery_per_host_concurrency=recovery_per_host_concurrency,
         recovery_cache=recovery_cache,
-        progress_callback=subtask_progress_callback,
+        progress_callback=strategy_progress_callback,
     )
     loop_strategy = _build_gamedevmap_active_loop_strategy(
         artifact=artifact,
