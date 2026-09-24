@@ -65,6 +65,56 @@ class TaskProcessRegistry:
         with self._lock:
             return self._entries.get(self._key(task_type, run_id))
 
+    def inspect(self, task_type: str, run_id: str) -> dict[str, Any]:
+        """Return a bounded process observation without trusting a bare PID.
+
+        The registry keeps the actual :class:`subprocess.Popen` handle, which
+        avoids PID-reuse false positives while the bridge is alive. Missing or
+        invalid handles are deliberately reported as ``unknown`` so callers can
+        retain their existing timeout behavior.
+        """
+        entry = self.get(task_type, run_id)
+        if entry is None:
+            return {"state": "unknown", "identitySource": "unregistered"}
+        poll = getattr(entry.process, "poll", None)
+        if not callable(poll):
+            return {
+                "state": "unknown",
+                "pid": entry.pid,
+                "identitySource": "registered_popen",
+            }
+        try:
+            return_code = poll()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return {
+                "state": "unknown",
+                "pid": entry.pid,
+                "identitySource": "registered_popen",
+            }
+        if return_code is None:
+            return {
+                "state": "running",
+                "pid": entry.pid,
+                "identitySource": "registered_popen",
+            }
+        try:
+            normalized_return_code = int(return_code)
+        except (TypeError, ValueError):
+            return {
+                "state": "unknown",
+                "pid": entry.pid,
+                "identitySource": "registered_popen",
+            }
+        observation: dict[str, Any] = {
+            "state": "exited",
+            "pid": entry.pid,
+            "returnCode": normalized_return_code,
+            "identitySource": "registered_popen",
+        }
+        if normalized_return_code < 0:
+            observation["signal"] = -normalized_return_code
+        return observation
+
     def unregister(self, task_type: str, run_id: str) -> None:
         with self._lock:
             self._entries.pop(self._key(task_type, run_id), None)

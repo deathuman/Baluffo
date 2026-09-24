@@ -91,6 +91,7 @@ class PipelineService(
         start_sync_task: Callable[..., dict[str, Any]],
         get_app_version: Callable[[], str],
         child_run_is_live: Callable[[str, str], bool] | None = None,
+        get_child_process_state: Callable[[str, str], dict[str, Any]] | None = None,
         get_projected_run_history: Callable[[], Any] | None = None,
         run_registry_conflict_adjudication: Callable[[dict[str, Any]], dict[str, Any]]
         | None = None,
@@ -128,6 +129,7 @@ class PipelineService(
         self._start_sync_task = start_sync_task
         self._get_app_version = get_app_version
         self._child_run_is_live = child_run_is_live
+        self._get_child_process_state = get_child_process_state
         self._get_projected_run_history = get_projected_run_history
         self._run_registry_conflict_adjudication = run_registry_conflict_adjudication
         self._refresh_child_task_heartbeat = refresh_child_task_heartbeat

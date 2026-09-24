@@ -300,10 +300,21 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     snapshot=terminal_snapshot,
                     report=normalized_report,
                 )
+            process_observation = self._child_process_observation(task_type, task_run_id)
+            process_state = str(process_observation.get("state") or "unknown")
+            if process_state == "exited":
+                self._check_abort(pipeline_run_id)
+                self._raise_for_exited_child_without_report(
+                    report_name=report_name,
+                    task_type=task_type,
+                    task_run_id=task_run_id,
+                    observation=process_observation,
+                    report=normalized_report,
+                )
             refreshed_child_heartbeat = self._refresh_child_lifecycle_evidence(
                 task_type, task_run_id, started_at
             )
-            child_live = bool(
+            child_live = process_state == "running" or bool(
                 refreshed_child_heartbeat
                 or (
                     str(task_type or "").strip()

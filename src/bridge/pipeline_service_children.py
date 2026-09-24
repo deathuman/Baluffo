@@ -91,6 +91,71 @@ class _PipelineServiceChildCoordinationMixin(PipelineServiceState):
                 return False
         return self._child_task_is_active(task_type, run_id)
 
+    def _child_process_observation(self, task_type: str, run_id: str = "") -> dict[str, Any]:
+        callback = self._get_child_process_state
+        clean_task_type = str(task_type or "").strip().lower()
+        clean_run_id = str(run_id or "").strip()
+        if not callable(callback) or not clean_task_type or not clean_run_id:
+            return {"state": "unknown", "identitySource": "unavailable"}
+        try:
+            observation = callback(clean_task_type, clean_run_id)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return {"state": "unknown", "identitySource": "callback_error"}
+        if not isinstance(observation, dict):
+            return {"state": "unknown", "identitySource": "invalid_observation"}
+        state = str(observation.get("state") or "").strip().lower()
+        if state not in {"running", "exited", "unknown"}:
+            state = "unknown"
+        identity_source = str(observation.get("identitySource") or "").strip()[:64]
+        bounded: dict[str, Any] = {
+            "state": state,
+            "identitySource": identity_source,
+        }
+        for key in ("pid", "returnCode", "signal"):
+            if key not in observation:
+                continue
+            try:
+                numeric_value = int(observation[key])
+            except (TypeError, ValueError):
+                continue
+            bounded[key] = numeric_value
+        return bounded
+
+    def _raise_for_exited_child_without_report(
+        self,
+        *,
+        report_name: str,
+        task_type: str,
+        task_run_id: str,
+        observation: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        if self._child_abort_requested(task_type, task_run_id):
+            raise PipelineAbortRequested("pipeline child abort requested")
+        error = (
+            "owner_inactive_without_terminal_report: "
+            f"{report_name} child process exited before terminal report"
+        )
+        self._bridge_log(
+            "warn",
+            "jobs_pipeline_child_process_exited_without_terminal_report",
+            taskType=str(task_type or "").strip(),
+            childRunId=str(task_run_id or "").strip(),
+            reportName=report_name,
+            reportRunId=str((report or {}).get("runId") or ""),
+            processPid=observation.get("pid"),
+            processReturnCode=observation.get("returnCode"),
+            processSignal=observation.get("signal"),
+            processIdentitySource=str(observation.get("identitySource") or ""),
+        )
+        self._fail_child_lifecycle(
+            task_type,
+            task_run_id,
+            terminal_reason="owner_inactive_without_terminal_report",
+            error=error,
+        )
+        raise TimeoutError(error)
+
     def _child_terminal_snapshot(self, task_type: str, run_id: str = "") -> Any:
         snapshot = self._get_child_task_snapshot(task_type, run_id)
         if snapshot is None or bool(getattr(snapshot, "active", False)):

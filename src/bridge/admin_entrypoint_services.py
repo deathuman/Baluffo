@@ -705,6 +705,9 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                     return lifecycle_status in {"", "queued", "running", "started"}
                 return False
 
+            def pipeline_child_process_state(task_type: str, run_id: str) -> JsonObject:
+                return bridge_runtime_state.TASK_PROCESS_REGISTRY.inspect(task_type, run_id)
+
             def pipeline_refresh_child_task_heartbeat(
                 task_type: str, run_id: str, started_at: str
             ) -> bool:
@@ -778,6 +781,7 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 start_sync_task=pipeline_start_sync_task,
                 get_app_version=root_mod.get_app_version,
                 child_run_is_live=pipeline_child_run_is_live,
+                get_child_process_state=pipeline_child_process_state,
                 get_projected_run_history=root_mod._get_ops_api().get_projected_run_history,
                 run_registry_conflict_adjudication=pipeline_run_registry_conflict_adjudication,
                 refresh_child_task_heartbeat=pipeline_refresh_child_task_heartbeat,

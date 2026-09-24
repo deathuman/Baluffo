@@ -59,6 +59,7 @@ class PipelineServiceState:
     _start_sync_task: Callable[..., dict[str, Any]]
     _get_app_version: Callable[[], str]
     _child_run_is_live: Callable[[str, str], bool] | None
+    _get_child_process_state: Callable[[str, str], dict[str, Any]] | None
     _get_projected_run_history: Callable[[], Any] | None
     _run_registry_conflict_adjudication: Callable[[dict[str, Any]], dict[str, Any]] | None
     _refresh_child_task_heartbeat: Callable[[str, str, str], bool] | None
@@ -151,6 +152,20 @@ class PipelineServiceState:
         raise NotImplementedError
 
     def _child_task_has_live_evidence(self, task_type: str, run_id: str = "") -> bool:
+        raise NotImplementedError
+
+    def _child_process_observation(self, task_type: str, run_id: str = "") -> dict[str, Any]:
+        raise NotImplementedError
+
+    def _raise_for_exited_child_without_report(
+        self,
+        *,
+        report_name: str,
+        task_type: str,
+        task_run_id: str,
+        observation: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
         raise NotImplementedError
 
     def _child_terminal_snapshot(self, task_type: str, run_id: str = "") -> Any:
