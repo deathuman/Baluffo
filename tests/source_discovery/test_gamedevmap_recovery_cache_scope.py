@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
+from src.source_discovery.config import DEFAULT_DISCOVERY_CONFIG
 from src.source_discovery.directory_page_recovery import fetch_recovery_jobs
 
 from ._helpers import sd, workspace_tmpdir
@@ -101,7 +102,8 @@ def test_recovery_cache_preserves_wave_local_results_until_batch_reset() -> None
     assert calls[-1] == ["https://example.com/jobs"]
 
 
-def test_gamedevmap_recovery_cache_scope_defaults_to_run() -> None:
+def test_gamedevmap_recovery_cache_scope_default_and_compatibility_fallback() -> None:
+    assert DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["activeAuditRecoveryCacheScope"] == "batch"
     assert dry_run._gamedevmap_recovery_cache_scope({}) == "run"
     assert (
         dry_run._gamedevmap_recovery_cache_scope({"activeAuditRecoveryCacheScope": "batch"})

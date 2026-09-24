@@ -376,7 +376,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditRecoveryFetchConcurrency": 72,
         "activeAuditRecoveryPerHostConcurrency": 4,
         "activeAuditRecoveryTimeoutSeconds": 5,
-        "activeAuditRecoveryCacheScope": "run",
+        "activeAuditRecoveryCacheScope": "batch",
         "activeAuditBrowserRecoveryConcurrency": 2,
         "activeAuditBrowserRecoveryTimeoutSeconds": 15,
         "activeAuditBrowserRecoveryLimit": 0,
