@@ -15,6 +15,7 @@ def _wait_service(
     reports: list[dict[str, Any]],
     failures: list[dict[str, Any]],
     clock: dict[str, Any],
+    projection_active: bool = True,
 ) -> PipelineService:
     def process_state(_task_type: str, _run_id: str) -> dict[str, Any]:
         return process_observations.pop(0) if process_observations else {"state": "unknown"}
@@ -38,7 +39,7 @@ def _wait_service(
         get_projected_run_history=lambda: _projection_snapshot(
             task_type="discovery",
             run_id="discovery_1",
-            active=True,
+            active=projection_active,
         ),
         fail_lifecycle_run=record_failure,
     )
@@ -171,3 +172,35 @@ def test_running_process_keeps_wait_alive_without_report_liveness(monkeypatch, t
     assert report["finishedAt"] == "2026-09-24T12:00:03Z"
     assert len(waits) == 2
     assert failures == []
+
+
+def test_unknown_process_observation_retains_quiet_timeout_behavior(monkeypatch, tmp_path) -> None:
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-09-24T12:00:00Z")
+    failures: list[dict[str, Any]] = []
+    service = _wait_service(
+        process_observations=[{"state": "unknown", "identitySource": "unregistered"}],
+        reports=[
+            {
+                "runId": "discovery_1",
+                "startedAt": "2026-09-24T12:00:01Z",
+                "finishedAt": "",
+            }
+        ],
+        failures=failures,
+        clock=clock,
+        projection_active=False,
+    )
+
+    with pytest.raises(TimeoutError, match="no live evidence"):
+        service.wait_for_report_completion(
+            report_path=tmp_path / "discovery-report.json",
+            started_at="2026-09-24T12:00:01Z",
+            timeout_s=10.0,
+            report_name="discovery report",
+            load_json_object=service._load_json_object,
+            task_type="discovery",
+            task_run_id="discovery_1",
+        )
+
+    assert len(waits) == 10
+    assert failures[-1]["terminal_reason"] == "quiet_timeout_no_live_evidence"
