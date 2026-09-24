@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
+from src.source_discovery import recovery_escalation
 from src.source_discovery.config import DEFAULT_DISCOVERY_CONFIG
 from src.source_discovery.directory_page_recovery import fetch_recovery_jobs
 
@@ -12,6 +15,13 @@ from .gamedevmap_test_helpers import (
     gamedevmap_fetcher,
     gamedevmap_payloads,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_recovery_escalation_config():
+    recovery_escalation.set_escalation_config(None)
+    yield
+    recovery_escalation.set_escalation_config(None)
 
 
 def test_batch_scoped_recovery_cache_clears_at_batch_boundaries() -> None:
