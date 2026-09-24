@@ -104,6 +104,126 @@ def test_fetch_lifecycle_close_mirrors_source_runs() -> None:
             assert finished[0]["terminal_reason"] == "completed"
 
 
+def test_fetch_lifecycle_close_parity_reads_beyond_live_row_cap() -> None:
+    with workspace_tmpdir("task-launch-source-runs-parity") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("sourceRuns", "shadow", reason="parity-test")
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+                row_limit=500,
+                batch_size=1000,
+            )
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                source_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            sources = [
+                {
+                    "name": f"Studio {index}",
+                    "status": "ok",
+                    "adapter": "static",
+                    "fetchStrategy": "http",
+                    "keptCount": index,
+                }
+                for index in range(501)
+            ]
+            report = {
+                "runId": "fetch_parity",
+                "startedAt": "2026-05-12T11:00:00+00:00",
+                "finishedAt": "2026-05-12T11:02:00+00:00",
+                "summary": {"sourceCount": 501, "outputCount": 501},
+                "sources": sources,
+            }
+
+            closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+                run_id="fetch_parity",
+                normalize_fetch_report_contract=lambda payload: payload,
+                load_json_object=lambda _path, _default: report,
+                finish_lifecycle_run=lambda *_args, **_kwargs: {},
+                fail_lifecycle_run=lambda *_args, **_kwargs: {},
+            )
+
+            assert closed is True
+            assert len(runtime.source_runs(run_id="fetch_parity")) == 500
+            assert (
+                len(runtime.source_runs_for_parity(run_id="fetch_parity", expected_count=501))
+                == 501
+            )
+            assert store.get_authority_modes()["sourceRuns"] == "shadow"
+            assert diagnostics[-1]["code"] == "source_runs_projection_match"
+
+
+def test_fetch_lifecycle_close_rolls_back_mismatch_after_live_cap() -> None:
+    class PreloadedRuntime:
+        def __init__(self, store: BaluffoStore, runtime: SourceRuntimeStore) -> None:
+            self.store = store
+            self._runtime = runtime
+
+        def upsert_source_runs(self, **_kwargs: Any) -> int:
+            return 0
+
+        def source_runs_for_parity(self, **kwargs: Any) -> list[dict[str, Any]]:
+            return self._runtime.source_runs_for_parity(**kwargs)
+
+    with workspace_tmpdir("task-launch-source-runs-parity-mismatch") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("sourceRuns", "shadow", reason="parity-test")
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+                row_limit=500,
+                batch_size=1000,
+            )
+            sources = [
+                {
+                    "name": f"Studio {index}",
+                    "status": "ok",
+                    "adapter": "static",
+                    "fetchStrategy": "http",
+                    "keptCount": index,
+                }
+                for index in range(501)
+            ]
+            runtime.upsert_source_runs(run_id="fetch_parity_mismatch", rows=sources)
+            sources[-1]["keptCount"] = 999
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                source_runtime_store=lambda: PreloadedRuntime(store, runtime),
+                diagnostics=diagnostics,
+            )
+            report = {
+                "runId": "fetch_parity_mismatch",
+                "startedAt": "2026-05-12T11:00:00+00:00",
+                "finishedAt": "2026-05-12T11:02:00+00:00",
+                "summary": {"sourceCount": 501, "outputCount": 501},
+                "sources": sources,
+            }
+
+            closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+                run_id="fetch_parity_mismatch",
+                normalize_fetch_report_contract=lambda payload: payload,
+                load_json_object=lambda _path, _default: report,
+                finish_lifecycle_run=lambda *_args, **_kwargs: {},
+                fail_lifecycle_run=lambda *_args, **_kwargs: {},
+            )
+
+            assert closed is True
+            assert store.get_authority_modes()["sourceRuns"] == "json"
+            assert (
+                len(
+                    runtime.source_runs_for_parity(
+                        run_id="fetch_parity_mismatch", expected_count=501
+                    )
+                )
+                == 501
+            )
+            assert diagnostics[-1]["code"] == "source_runs_projection_mismatch"
+
+
 def test_fetch_lifecycle_close_rolls_source_runs_back_on_shadow_failure() -> None:
     class FailingSourceRuntime:
         def __init__(self, store: BaluffoStore) -> None:

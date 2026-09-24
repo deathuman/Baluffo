@@ -300,6 +300,27 @@ class SourceRuntimeStore:
         )
         return [_source_run_from_sql(row) for row in rows]
 
+    def source_runs_for_parity(self, *, run_id: str, expected_count: int) -> list[dict[str, Any]]:
+        """Read the full terminal report population for mirror parity checks.
+
+        Ordinary source-run reads remain bounded by ``row_limit``. Terminal
+        parity needs to detect rows beyond that live/read cap, so this method
+        reads at most ``expected_count + 1`` rows and lets the caller compare
+        the complete expected population.
+        """
+        normalized_run_id = _clean_text(run_id)
+        normalized_expected_count = max(1, _coerce_int(expected_count, 1))
+        rows = self.store.execute_read(
+            """
+            SELECT * FROM source_runs
+            WHERE run_id = ?
+            ORDER BY ordinal ASC, source_name ASC
+            LIMIT ? OFFSET 0
+            """,
+            (normalized_run_id, normalized_expected_count + 1),
+        )
+        return [_source_run_from_sql(row) for row in rows]
+
     def source_run_summary(self, *, run_id: str) -> dict[str, Any]:
         rows = self.store.execute_read(
             """

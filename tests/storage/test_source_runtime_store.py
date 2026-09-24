@@ -57,6 +57,34 @@ def test_source_runtime_store_bulk_upserts_and_queries_source_runs() -> None:
             assert summary["failedSources"] == 1
 
 
+def test_source_runtime_parity_read_can_cross_live_row_cap() -> None:
+    with workspace_tmpdir("source-runtime-parity-cap") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+                row_limit=500,
+                batch_size=1000,
+            )
+            rows = [
+                {
+                    "name": f"Studio {index}",
+                    "status": "ok",
+                    "adapter": "static",
+                    "fetchStrategy": "http",
+                    "keptCount": index,
+                }
+                for index in range(501)
+            ]
+
+            assert runtime.upsert_source_runs(run_id="fetch_parity", rows=rows) == 501
+            assert len(runtime.source_runs(run_id="fetch_parity")) == 500
+            parity_rows = runtime.source_runs_for_parity(run_id="fetch_parity", expected_count=501)
+
+            assert len(parity_rows) == 501
+            assert parity_rows[-1]["name"] == "Studio 500"
+
+
 def test_evidence_archive_store_writes_manifest_and_enforces_budget() -> None:
     with workspace_tmpdir("evidence-archive-store") as data_dir:
         archive = EvidenceArchiveStore(

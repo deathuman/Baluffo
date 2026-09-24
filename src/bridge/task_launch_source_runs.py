@@ -228,7 +228,11 @@ def mirror_fetch_source_runs(ctx: SourceRunContext, report: dict[str, Any]) -> b
             rows=source_rows,
             evidence_ref={"reportPath": str(ctx.jobs_fetch_report)},
         )
-        sqlite_rows = runtime_store.source_runs(run_id=run_id, limit=max(1, len(source_rows)))
+        parity_reader = getattr(runtime_store, "source_runs_for_parity", None)
+        if callable(parity_reader):
+            sqlite_rows = parity_reader(run_id=run_id, expected_count=len(source_rows))
+        else:
+            sqlite_rows = runtime_store.source_runs(run_id=run_id, limit=max(1, len(source_rows)))
         if _source_parity_rows(sqlite_rows) != _source_parity_rows(source_rows):
             _rollback_source_runs_to_json(
                 ctx,
