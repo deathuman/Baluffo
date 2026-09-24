@@ -83,13 +83,13 @@ def _start_sampler(
     module_path: Path,
     output_dir: str,
     interval_s: float,
+    stderr_path: Path,
 ) -> subprocess.Popen[str]:
     remote_module = f"/tmp/{SAMPLER_NAME}"
     _docker("cp", str(module_path), f"{container}:{remote_module}")
     command = [
         "docker",
         "exec",
-        "-i",
         container,
         "python",
         remote_module,
@@ -106,12 +106,18 @@ def _start_sampler(
         "--stop-file",
         f"{output_dir}/sampler.stop",
     ]
-    return subprocess.Popen(
-        command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
+    stderr_path.parent.mkdir(parents=True, exist_ok=True)
+    stderr_handle = stderr_path.open("a", encoding="utf-8")
+    try:
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_handle,
+            text=True,
+        )
+    finally:
+        stderr_handle.close()
 
 
 def _stop_sampler(
@@ -192,12 +198,15 @@ def run(args: argparse.Namespace) -> int:
     _write_json(run_dir / "phase.json", {})
     started_at = datetime.now(UTC)
     started = time.monotonic()
+    sampler_stderr_path = run_dir / "sampler.stderr.log"
     sampler = _start_sampler(
         container=args.container,
         module_path=module_path,
         output_dir=args.container_output_dir,
         interval_s=args.interval_s,
+        stderr_path=sampler_stderr_path,
     )
+    sampler_restarted = False
     run_id = ""
     status: dict[str, Any] = {}
     error = ""
@@ -226,6 +235,17 @@ def run(args: argparse.Namespace) -> int:
                 progress_handle.flush()
                 if not progress["active"] and progress["runId"] == run_id:
                     break
+                if sampler.poll() is not None:
+                    if sampler_restarted:
+                        raise RuntimeError("memory sampler exited twice before pipeline terminal")
+                    sampler_restarted = True
+                    sampler = _start_sampler(
+                        container=args.container,
+                        module_path=module_path,
+                        output_dir=args.container_output_dir,
+                        interval_s=args.interval_s,
+                        stderr_path=sampler_stderr_path,
+                    )
                 if args.timeout_s > 0 and time.monotonic() - started >= args.timeout_s:
                     raise TimeoutError("pipeline memory profile timeout")
                 if not _container_state(args.container).get("Running"):
@@ -247,6 +267,8 @@ def run(args: argparse.Namespace) -> int:
         "samplerModule": str(module_path),
         "containerOutputDir": args.container_output_dir,
         "sampler": _sampler_summary(run_dir),
+        "samplerRestarted": sampler_restarted,
+        "samplerStderr": str(sampler_stderr_path),
     }
     _write_json(run_dir / "meta.json", summary)
     if error:
