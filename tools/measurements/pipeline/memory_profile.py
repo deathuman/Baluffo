@@ -257,6 +257,7 @@ def sample_processes(proc_root: Path = Path("/proc"), *, limit: int = 100) -> li
 def _read_phase(path: Path | None) -> dict[str, Any] | None:
     if path is None or not path.is_file():
         return None
+    raw = ""
     try:
         raw = path.read_text(encoding="utf-8").strip()
         if raw.startswith("{"):

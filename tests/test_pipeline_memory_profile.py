@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.measurements.pipeline.full_pipeline_memory import (
     _sampler_summary,
     _trigger_accepted,
 )
 from tools.measurements.pipeline.memory_profile import (
+    _read_phase,
     detect_cgroup_version,
     run_sampler,
     sample_cgroup,
@@ -136,3 +139,20 @@ def test_sampler_summary_preserves_terminal_cgroup_evidence(tmp_path: Path) -> N
     assert summary["peakMemoryBytes"] == 1234
     assert summary["terminalCgroup"]["memoryEvents"]["oom_kill"] == 0
     assert summary["terminalProcesses"][0]["pid"] == 1
+
+
+def test_phase_reader_survives_atomic_replace_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    phase = tmp_path / "phase.json"
+    phase.write_text("{}", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def flaky_read_text(path: Path, *args: object, **kwargs: object) -> str:
+        if path == phase:
+            raise OSError("phase file replaced during read")
+        return original_read_text(path)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    assert _read_phase(phase) is None
