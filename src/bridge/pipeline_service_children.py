@@ -116,7 +116,7 @@ class _PipelineServiceChildCoordinationMixin(PipelineServiceState):
                 continue
             try:
                 numeric_value = int(observation[key])
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
             bounded[key] = numeric_value
         return bounded

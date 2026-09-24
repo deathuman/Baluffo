@@ -99,7 +99,7 @@ class TaskProcessRegistry:
             }
         try:
             normalized_return_code = int(return_code)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return {
                 "state": "unknown",
                 "pid": entry.pid,
