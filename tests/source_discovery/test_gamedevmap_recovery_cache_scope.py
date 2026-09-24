@@ -5,6 +5,13 @@ from typing import Any
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
 from src.source_discovery.directory_page_recovery import fetch_recovery_jobs
 
+from ._helpers import sd, workspace_tmpdir
+from .gamedevmap_test_helpers import (
+    gamedevmap_config,
+    gamedevmap_fetcher,
+    gamedevmap_payloads,
+)
+
 
 def test_batch_scoped_recovery_cache_clears_at_batch_boundaries() -> None:
     cache: dict[str, dict[str, Any]] = {"https://example.com/jobs": {"text": "cached"}}
@@ -104,3 +111,56 @@ def test_gamedevmap_recovery_cache_scope_defaults_to_run() -> None:
         dry_run._gamedevmap_recovery_cache_scope({"activeAuditRecoveryCacheScope": "other"})
         == "run"
     )
+
+
+def _without_volatile_timestamps(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _without_volatile_timestamps(item)
+            for key, item in value.items()
+            if key not in {"artifactSizeBytes", "discoveredAt", "lastProbedAt"}
+        }
+    if isinstance(value, list):
+        return [_without_volatile_timestamps(item) for item in value]
+    return value
+
+
+def test_batch_scoped_recovery_cache_preserves_fixture_outcomes() -> None:
+    payloads = gamedevmap_payloads()
+    with workspace_tmpdir("gamedevmap-recovery-cache-parity") as root:
+        run_output = root / "run.json"
+        batch_output = root / "batch.json"
+        run_config = gamedevmap_config(activeAuditRecoveryEscalationEnabled=False)
+        batch_config = gamedevmap_config(
+            activeAuditRecoveryEscalationEnabled=False,
+            activeAuditRecoveryCacheScope="batch",
+        )
+        common: dict[str, Any] = {
+            "timeout_s": 5,
+            "batch_size": 2,
+            "max_batches": 0,
+            "reset": True,
+        }
+        run_result = sd.run_gamedevmap_active_source_dry_run(
+            config=run_config,
+            fetcher=gamedevmap_fetcher(payloads),
+            output_path=run_output,
+            **common,
+        )
+        batch_result = sd.run_gamedevmap_active_source_dry_run(
+            config=batch_config,
+            fetcher=gamedevmap_fetcher(payloads),
+            output_path=batch_output,
+            **common,
+        )
+
+    for key in (
+        "summary",
+        "activeCandidates",
+        "zeroJobCandidates",
+        "rejectedForActivation",
+        "failures",
+    ):
+        assert _without_volatile_timestamps(batch_result[key]) == _without_volatile_timestamps(
+            run_result[key]
+        )
