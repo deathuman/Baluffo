@@ -26,6 +26,15 @@ Run it directly::
     python tools/repo_health/source_registry_preflight.py
     python tools/repo_health/source_registry_preflight.py --json
     python tools/repo_health/source_registry_preflight.py --strict
+    python tools/repo_health/source_registry_preflight.py \\
+        --worksheet _out/registry-repair/worksheet.json
+
+``--worksheet`` writes the per-row adjudication inventory: every structural
+finding and every live-versus-seed drift item, grouped by the decision each one
+implies, each carrying its evidence, suggested dispositions, and an explicit
+``disposition: "undecided"``. It records what is outstanding so a human can
+adjudicate 31 collisions and 165 seed-only rows in one pass instead of
+re-deriving them by hand; it deliberately does not decide any of them.
 """
 
 from __future__ import annotations
@@ -114,12 +123,28 @@ def _ids(rows: list[dict[str, Any]]) -> set[str]:
     return {str(row.get("id") or "").strip() for row in rows if str(row.get("id") or "").strip()}
 
 
+def load_known_collisions(data_root: Path) -> set[str]:
+    """The reviewed-collision baseline for *this* data root.
+
+    Resolved relative to ``data_root`` rather than the repository root, so a
+    preflight pointed at a different data directory is judged by that
+    directory's baseline. Hard-wiring the repo copy would make every other
+    data root look like it had seven stale baseline entries.
+    """
+    from src.source_registry_data import load_known_collision_urls
+
+    candidate = Path(data_root) / "defaults" / "source-registry-known-url-collisions.json"
+    if candidate.exists():
+        return load_known_collision_urls(candidate)
+    return _load_known_collisions(ROOT)
+
+
 def build_report(data_root: Path) -> dict[str, Any]:
     """Run every structural predicate plus a drift check over live rows."""
     data_root = Path(data_root)
     live_rows, live_warning = load_live_rows(data_root)
     seed_rows, seed_warning = load_seed_rows(data_root)
-    known = _load_known_collisions(ROOT) if (ROOT / "data" / "defaults").exists() else set()
+    known = load_known_collisions(data_root)
 
     live_ids, seed_ids = _ids(live_rows), _ids(seed_rows)
     live_only = sorted(live_ids - seed_ids)
@@ -133,22 +158,35 @@ def build_report(data_root: Path) -> dict[str, Any]:
 
     live_uncovered = _uncovered(live_rows)
     seed_uncovered = _uncovered(seed_rows)
+    live_only_collisions = [m for m in live_uncovered if m not in seed_uncovered]
+
+    # Every structural finding is a human repair decision, so the report carries
+    # the full per-item detail rather than a sample: an operator adjudicating
+    # 31 collisions and 165 seed-only rows needs the list, not a preview. These
+    # lists are bounded by the registry size, which is small and local.
+    definitionless = list_definitionless_static_rows(live_rows)
+    malformed = list_rows_with_malformed_page_refs(live_rows)
 
     return {
         "liveRowCount": len(live_rows),
         "seedRowCount": len(seed_rows),
         "liveOnlyRowCount": len(live_only),
         "seedOnlyRowCount": len(seed_only),
-        "liveOnlyRowIds": live_only[:_MAX_SAMPLES],
-        "seedOnlyRowIds": seed_only[:_MAX_SAMPLES],
+        "liveOnlyRowIds": live_only,
+        "seedOnlyRowIds": seed_only,
         "uncoveredCollisionsLive": len(live_uncovered),
         "uncoveredCollisionsSeed": len(seed_uncovered),
-        "uncoveredCollisionsLiveOnly": [
-            message for message in live_uncovered if message not in seed_uncovered
-        ][:_MAX_SAMPLES],
-        "definitionlessRows": list_definitionless_static_rows(live_rows),
+        "uncoveredCollisionsLiveOnly": live_only_collisions,
+        "definitionlessRows": definitionless,
+        "definitionlessSourceIds": [
+            str(row.get("id") or "").strip()
+            for row in live_rows
+            if str(row.get("id") or "").strip().startswith("static:")
+            and not str(row.get("listing_url") or "").strip()
+            and not any(str(page or "").strip() for page in (row.get("pages") or []))
+        ],
+        "malformedPageRows": malformed,
         "inlineAssetRows": list_rows_with_inline_asset_urls(live_rows),
-        "malformedPageRows": list_rows_with_malformed_page_refs(live_rows),
         "duplicateIdRows": list_duplicate_source_ids(live_rows),
         "staleBaselineEntries": list_stale_known_collisions(known, active_rows=live_rows),
         "warnings": [warning for warning in (live_warning, seed_warning) if warning],
@@ -210,16 +248,102 @@ def render_text(report: dict[str, Any], *, strict: bool) -> str:
     return "\n".join(lines)
 
 
+def write_worksheet(report: dict[str, Any], path: Path) -> None:
+    """Write the adjudication worksheet.
+
+    Grouped by decision rather than by check, because the operator's unit of
+    work is "decide what happens to these rows", not "satisfy this predicate".
+    Each item carries the evidence needed to decide without re-running the
+    tool, and an explicit ``disposition`` of ``undecided`` -- the worksheet
+    records what is outstanding, it does not pre-empt the call.
+    """
+    items: list[dict[str, Any]] = []
+    for source_id in report["definitionlessSourceIds"]:
+        items.append(
+            {
+                "kind": "definitionless_static_row",
+                "sourceId": source_id,
+                "evidence": "no listing_url and no pages; fetches nothing while reporting ok",
+                "suggestedDispositions": ["retire", "repoint"],
+            }
+        )
+    for message in report["uncoveredCollisionsLiveOnly"]:
+        items.append(
+            {
+                "kind": "uncovered_duplicate_url",
+                "sourceId": message.split(" is registered")[0],
+                "evidence": message,
+                "suggestedDispositions": ["baseline", "retire_one_twin"],
+            }
+        )
+    for source_id in report["seedOnlyRowIds"]:
+        items.append(
+            {
+                "kind": "seed_only_row",
+                "sourceId": source_id,
+                "evidence": "present in the committed seed but not live; a seed "
+                "restore would resurrect it",
+                "suggestedDispositions": ["prune_from_seed", "restore_to_live"],
+            }
+        )
+    for source_id in report["liveOnlyRowIds"]:
+        items.append(
+            {
+                "kind": "live_only_row",
+                "sourceId": source_id,
+                "evidence": "live but absent from the committed seed; a fresh install "
+                "would not have it",
+                "suggestedDispositions": ["add_to_seed", "retire_from_live"],
+            }
+        )
+    for entry in report["staleBaselineEntries"]:
+        items.append(
+            {
+                "kind": "stale_baseline_entry",
+                "sourceId": entry,
+                "evidence": entry,
+                "suggestedDispositions": ["prune_entry", "restore_twin"],
+            }
+        )
+
+    for item in items:
+        item["disposition"] = "undecided"
+        item["decidedBy"] = ""
+        item["decidedAt"] = ""
+        item["note"] = ""
+
+    payload = {
+        "schemaVersion": "1.0",
+        "summary": {
+            "liveRowCount": report["liveRowCount"],
+            "seedRowCount": report["seedRowCount"],
+            "undecidedCount": len(items),
+        },
+        "warnings": report["warnings"],
+        "items": items,
+    }
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-root", default=str(ROOT / "data"))
     parser.add_argument("--json", action="store_true", help="emit the raw report")
+    parser.add_argument(
+        "--worksheet",
+        metavar="PATH",
+        help="write a per-row adjudication worksheet for the human repair decision",
+    )
     parser.add_argument(
         "--strict", action="store_true", help="exit 1 when the live registry has findings"
     )
     args = parser.parse_args(argv)
 
     report = build_report(Path(args.data_root))
+    if args.worksheet:
+        write_worksheet(report, Path(args.worksheet))
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
