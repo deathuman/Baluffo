@@ -1,14 +1,12 @@
 # Registry Hygiene Follow-Up Plan
 
-> - **Status:** Phase 1 landed (4 commits); follow-up not started
+> - **Status:** Code work complete (P0, P1, P5, P6, P7); data reconciliation (P2, P3, P4) delivered as an adjudication worksheet, awaiting human dispositions
 > - **Use this when:** recording or applying a registry repair decision, reconciling live-registry drift from the committed seed, or extending the advisory/guard surfaces
 > - **Canonical for:** the human-approval gate's boundaries, the live-vs-seed authority question, and the ordered follow-up work
 > - **Not canonical for:** the advisory report shape (see `docs/DATA_CONTRACT.md`) or registry transition mechanics (see `src/source_registry_state.py`)
 > - **Last updated:** 2026-09-25
 
-## What already landed
-
-Four commits, in order, all read-only with respect to the registry:
+## What landed
 
 | Commit | Surface |
 |---|---|
@@ -16,140 +14,150 @@ Four commits, in order, all read-only with respect to the registry:
 | `180c3036` | Two hard commit-time guards: duplicate registry ids, malformed page refs. |
 | `9c9e5cd1` | `repair_candidate` — dead-domain signal under a repeated-evidence rule. |
 | `eec27403` | `data/registry-repair-review.json` — the human-approval gate. |
+| `12dbe58a` | `POST /registry/repair-review-action` — the gate's writer (P0+P1), plus the two `typecheck:py` fixes (P6). |
+| `fec4e443` | `tools/repo_health/source_registry_preflight.py` — the live-registry surface (P5). |
+| `6f564a6b` | `--worksheet` — the per-row adjudication inventory. |
 
-Live state at time of writing: 2,245 active rows, 206 flagged, 31 uncovered duplicate groups, 0 repair
-candidates (every dead source in state belongs to a row earlier repointing/pruning waves already removed).
+## The authority question: answered
 
-## The decision that gates most of this work
+**The live registry is authoritative; the committed seed is stale.** This was the fork gating P3/P4
+and it is now settled by evidence rather than assumption:
 
-**Is the live registry authoritative and the committed seed stale, or is the live registry polluted
-and the seed correct?**
+- The changelog records the invariant directly. Sanctioned mutations perform a **dual-path seed
+  swap** (`save_registry_state_atomic`), e.g. "runtime 2,167 → 2,168, seed 1,892 → 1,893" and "active
+  seed 1,890 → 1,882 with the High-5 promotion added". The seed is meant to *track* live, not to lag
+  it.
+- 426 of the 517 live-only rows are `static:` — the class the seed is dominated by and is supposed to
+  carry.
+- 21 of the 31 uncovered duplicate groups are **partly seeded**: one twin in the seed, its twin live
+  only. That is the signature of a row added live without the seed swap, not of a design where the
+  seed holds a subset.
+- Zero duplicate groups exist only in the seed.
 
-The live registry has drifted from `data/defaults/source-registry-active.seed.json`:
+So drift is a real defect and the seed is behind. What that does *not* settle is how to close it, and
+that remains a policy decision — see P2/P3/P4 below.
 
-- live 2,245 rows vs seed 1,893
-- 517 rows exist only live; 165 exist only in the seed
-- 31 duplicate-URL groups exist only in the live view; **0** uncovered groups in the seed
+## Delivered: the adjudication inventory
 
-Every structural guardrail reads the *seed*, so the commit-time gate is green while the registry the
-pipeline actually fetches carries 31 unbaselined collisions. Almost all are `www`/bare-domain twins.
+`python tools/repo_health/source_registry_preflight.py --worksheet <path>` writes 717 individually
+adjudicable items on the current tree:
 
-This fork is not resolvable from code. The answer decides whether the work is "regenerate the seed from
-live" (a mechanical export) or "reconcile 62 live rows against the seed" (a per-row adjudication). It
-also decides whether the 3 stale baseline entries below are a pruning task or a restore task.
+| Kind | Count | Why it is a human decision |
+|---|---|---|
+| `live_only_row` | 517 | Should the seed adopt it (a fresh install lacks it), or is it live-only pollution? |
+| `seed_only_row` | 165 | Prune (a seed restore would resurrect a retired source) or restore to live? |
+| `uncovered_duplicate_url` | 31 | Baseline the twin or retire one? Most are `www`/apex pairs of one board. |
+| `stale_baseline_entry` | 3 | Prune the entry or restore the twin? |
+| `definitionless_static_row` | 1 | The Miniclip row (P2). |
 
-**Nothing below should be actioned before this is answered.**
+Every item carries its evidence, suggested dispositions, and an explicit
+`disposition: "undecided"`. The tool does not decide any of them.
 
-## Ordered follow-up
+## Completed
 
-### P0 — Unblock the push: two dead functions in `src/`
+### P0 — Push blocker: two dead functions in `src/` — **done**
 
-`vulture --min-confidence=60 src whitelist.py` returns exactly two findings repo-wide, and both are
-from `eec27403`:
-
-```
-contracts_registry_repair_review.py:219: unused function 'find_registry_repair_review_row' (60%)
-contracts_registry_repair_review.py:265: unused function 'apply_registry_repair_review_action' (60%)
-```
-
-Vulture is a pre-push hook, so the branch cannot ship until this is resolved. Do **not** whitelist
-these: the finding is correct, and the fix is P1, which makes both live.
+`vulture --min-confidence=60 src whitelist.py` returned exactly two findings repo-wide, both from
+`eec27403`. Both are now resolved: `apply_registry_repair_review_action` is live via the new route,
+and `find_registry_repair_review_row` was **deleted** rather than whitelisted, because
+`registry_repair_review_status` already owns the fingerprint match and returns a superset. Vulture is
+back to **0** findings.
 
 Correction on my own earlier reporting: the `dead-code` guardrail group in
 `tools/repo_health/repo_guardrails.py` covers dead *branches* and leaked loop bindings. It does not
 run vulture and says nothing about unused functions. I previously treated "repo guardrails: dead-code
 passed" as if it covered this class; it does not.
 
-### P1 — Add the admin write route for recording a repair decision
+### P1 — Admin write route — **done**
 
-The gate is readable but **not writable through the product**: `apply_registry_repair_review_action`
-has no production caller. A recorded decision currently cannot be created except by hand-editing the
-artifact, which defeats the provenance the fingerprint depends on.
+`POST /registry/repair-review-action`, following the dedup pair review precedent. It records and never
+applies: there is no branch that writes, demotes, deletes, or repoints a row, the response carries
+`"applied": false`, and a test asserts the active registry file is byte-identical across a recorded
+`retire` approval. `REGISTRY_REPAIR_REVIEW_PATH` is threaded through `api.py`, `bootstrap.py`, the
+entrypoint api/runtime rebind, and `admin_bridge` — required rather than incidental, because the
+`api.py` class default is a relative path and the packaged app would otherwise read a stray file from
+the CWD.
 
-Precedent to follow exactly — the dedup pair review, where `apply_source_policy_review_action` is
-reached from `src/bridge/routes/post_routes_admin.py`:
+### P5 — Live-registry coverage gap — **done**
 
-- POST route alongside the existing admin review route
-- validate the decision through the existing bounded vocabulary; reject unknown values at the boundary
-- carry the evidence fingerprint from the report the operator was looking at, so the decision binds to
-  the defect on screen rather than a recomputed one
-- write the artifact atomically
+`tools/repo_health/source_registry_preflight.py` re-runs the existing, already-tested predicates
+against the live rows and adds a live-versus-seed drift comparison, so the two sides cannot disagree
+about what counts as a defect. Advisory by default with `--strict` to fail, because a gate that fails
+on every invocation until 31 collisions are adjudicated gets ignored.
 
-Out of scope for P1: applying the repair. That stays a separate operator action.
+Two runtime behaviors it surfaces that nothing else did:
 
-### P2 — Retire the superseded Miniclip row
+- A **missing** live registry resolves to the committed seed (correct for a fresh install).
+- A **corrupt** live registry *also* silently resolves to the seed. Right at runtime, wrong to hide:
+  the operator's live rows vanish while every count still looks plausible.
+
+### P6 — `typecheck:py` — **done**
+
+Green for the first time on this branch: 1381 source files, 0 errors. Both were pre-existing on
+`origin/main`. `npm run lint:repo-guardrails` 15/15 and `vulture` 0.
+
+## Awaiting human disposition
+
+These three are the same decision at three scales. Each is a registry-policy call about rows that are
+live and being fetched today, so none is mechanical and none is made unilaterally here.
+
+### P2 — The Miniclip row (1 item, strongest evidence of the three)
 
 `static:listing_url:https://www.miniclip.com/careers/vacancies` is active with no `listing_url` and no
 `pages`, so it fetches nothing while reporting ok. It is **not** a missing definition — it is a
-tombstone casualty:
+superseded intermediate:
 
 - `data/source-registry-tombstones.json.gz` records `corporate.miniclip.com/careers` as
   `superseded_by_promotion: ... the canonical www.miniclip.com/careers/vacancies registration was
   promoted from pending (live-verified board)`
-- the live active Miniclip row is now `static:listing_url:https://careers.miniclip.com/go/miniclip-all-jobs/9013655/`
-  (healthy, one page)
+- the live active Miniclip row is now
+  `static:listing_url:https://careers.miniclip.com/go/miniclip-all-jobs/9013655/` (healthy, one page)
 
-So the supersession chain was applied once too many times and the intermediate row was never retired.
-Correct action is `retire` via the P1 gate, then apply through the sanctioned transition. Record the
-decision; do not perform the transition unprompted.
+So the supersession chain was applied once too many times and the intermediate row was never retired
+— the missing tombstone *is* the defect. Record `retire` through the route, then apply through
+`transition_registry_to_pending` plus `add_tombstone`/`save_tombstones`.
 
-### P3 — Reconcile the 31 uncovered duplicate groups
+**Deliberately not applied here.** The write path has a documented corruption mode (a raw-gzip or
+non-`load_json_array` read makes the sanctioned save rebuild the metadata map from lean rows —
+"metadata 3,038 → 2 entries"), and the marginal gain from retiring one inert row does not justify
+paying that risk on its own. Apply it batched with P3/P4, once, with a read-back check.
 
-Blocked on the authority fork above. Also decide the grandfathering policy: these are `www`/apex
-twins of the same board, which is precisely what `data/defaults/source-registry-known-url-collisions.json`
-exists for. Whether to add entries or dedupe the rows is a policy choice, not a mechanical one.
+### P3 — The 31 uncovered duplicate groups
 
-### P4 — Resolve the 3 stale baseline entries
+Almost all are `www`/apex twins of one board — exactly what
+`data/defaults/source-registry-known-url-collisions.json` exists for. But they are heterogeneous (some
+are the same path, some are genuinely different windows on one host), so a blanket baseline would
+grandfather real duplication. Decide per group: baseline the twin, or retire one.
+
+Retiring is not free: these rows are being fetched today, so each decision trades duplicate output
+against losing a board.
+
+### P4 — The 3 stale baseline entries and the 165 seed-only rows
 
 Backed by only one live row each, though the seed still has two:
+`amazongamestudios.com/en-us/careers`, `careers.nintendo.com`, `waterproofstudios.com/careers`.
 
-- `amazongamestudios.com/en-us/careers`
-- `careers.nintendo.com`
-- `waterproofstudios.com/careers`
+The 165 seed-only rows are the larger half of this: 2 are tombstoned (definitely prune) and **163 have
+unknown provenance**, including `greenhouse:slug:examplestudio` — a literal placeholder row that
+should never have been seeded. They need per-row investigation, not a bulk prune; pruning blindly
+resurrects retired sources, which the changelog explicitly warns about ("removed ... so seed restores
+cannot resurrect them").
 
-Prune the entry or restore the twin. Which one is correct depends on P3's answer. The commit-time
-stale-baseline guard cannot see this because it reads the seed.
-
-### P5 — Close the live-registry coverage gap in CI
-
-The systemic cause of P3 and P4 recurring. Structural guardrails read the committed seed; the advisory
-monitor reads live but only when a pipeline run happens, so nothing gates a live-registry defect at
-commit time. Options, in rough order of cost:
-
-1. A pre-flight check over the live registry reusing the existing `list_*` predicates, runnable locally
-   and in CI where a live registry exists.
-2. An ops-health surface flag so drift is visible without opening a report.
-3. Nothing, and accept that drift is found by running the pipeline.
-
-Option 1 is the highest value per line: the predicates already exist and are already tested; they only
-need a live-registry entrypoint.
-
-### P6 — Clear the two pre-existing `typecheck:py` errors
-
-`npm run typecheck:py` has been red before this program started, on `origin/main`:
-
-- `tests/bridge/test_task_process_registry.py:119` — `append` used as a value
-- `tests/test_jobs_fetcher_google_sheets_redirect_stats.py:31` — unannotated `detail_rows`
-
-Small, independent of everything above, and worth doing so a green typecheck is a usable signal for
-the rest of the work. Confirmed pre-existing on a stashed tree at every step of this program.
-
-### P7 — Closeout
-
-- Refresh the Basic Memory handoff for the performance/reliability program; it still describes the
-  advisory report as the recommended next task, which is three commits stale.
-- Release decision on the branch (38+ commits ahead, intentionally unpushed).
+Note for whoever does this: a bulk seed sync is *not* the fix. Regenerating the seed from live would
+carry the 31 collisions into the seed and trip the commit-time guard, and it would change what a fresh
+install receives.
 
 ## Non-goals
 
 - **No automatic URL or host mutation.** The gate records decisions; applying one is a human action
-  through the existing sanctioned transition paths. P1 adds a way to *record*, not a way to *apply*.
+  through the existing sanctioned transition paths. P1 added a way to *record*, not a way to *apply*.
 - **No blanket suppression.** Every finding stays reportable; review state annotates a finding rather
-  than hiding it, and a changed defect reappears as `stale`.
+  than hiding it, and changed evidence reappears as `stale`.
+- **No bulk registry reconciliation without per-row evidence.**
 - **No new dependency.**
 
 ## Verification gates
 
 Each item: focused tests for the touched module, then `npm run test:py:extended` and
-`npm run test:py:linux`, plus `npm run lint:repo-guardrails` and `npm run typecheck:py`. P0 additionally
-requires `vulture --min-confidence=60 src whitelist.py` to return zero findings.
+`npm run test:py:linux`, plus `npm run lint:repo-guardrails`, `npm run typecheck:py`, and
+`python -m vulture --min-confidence=60 src whitelist.py` returning zero findings.

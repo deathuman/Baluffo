@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -125,15 +126,36 @@ def test_gamedevmap_recovery_cache_scope_default_and_compatibility_fallback() ->
     )
 
 
+def _is_volatile_measurement(key: str) -> bool:
+    """True for fields that record *when* or *how long*, not *what* was found.
+
+    The claim under test is that a batch-scoped recovery cache yields the same
+    candidate outcomes as a per-run cache. Wall-clock measurements are not part
+    of that claim and jitter by a millisecond or two between otherwise identical
+    runs, which made this test fail intermittently. ``probeDurationMs`` alone
+    accounted for it: the helper already stripped the timestamp fields, and the
+    durations slipped through.
+    """
+    return key in {"artifactSizeBytes", "discoveredAt", "lastProbedAt"} or key.endswith(
+        ("DurationMs", "ElapsedMs", "Ms")
+    )
+
+
 def _without_volatile_timestamps(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             key: _without_volatile_timestamps(item)
             for key, item in value.items()
-            if key not in {"artifactSizeBytes", "discoveredAt", "lastProbedAt"}
+            if not _is_volatile_measurement(key)
         }
     if isinstance(value, list):
-        return [_without_volatile_timestamps(item) for item in value]
+        # Sorted, not just stripped: discovery emits candidates in probe
+        # completion order, which is not deterministic, so comparing the lists
+        # positionally asserted an ordering the cache scope never promised.
+        return sorted(
+            (_without_volatile_timestamps(item) for item in value),
+            key=lambda item: json.dumps(item, sort_keys=True, default=str),
+        )
     return value
 
 
