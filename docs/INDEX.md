@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-08-28 (plans sweep: completed/closed plan docs archived from `docs/plans/` to `docs/archive/`, parked plan statuses refreshed; availability direct enforcement shipped in the published 0.2.140 container release)
+> - **Last updated:** 2026-09-25 (added `plans/registry-hygiene-followup-plan.md` for the registry repair-approval gate and live-vs-seed drift reconciliation)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -76,6 +76,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/art-title-repair-quality-gate-plan.md`](plans/art-title-repair-quality-gate-plan.md) | Plans / Follow-Ups | You are fixing Google Sheets title-column parsing, Grackle redirect `Unknown company` repair, misleading exact source-category titles such as `Art`, or the final job-title quality gate |
 | [`archive/provider-discovery-coverage-gap-plan.md`](archive/provider-discovery-coverage-gap-plan.md) | Archived Plan / Advisory | Historical ATS/provider discovery coverage strategy (closed as evidence-saturated); for current coverage work use [`plans/jobs-coverage-improvement-plan.md`](plans/jobs-coverage-improvement-plan.md) |
 | [`plans/jobs-coverage-improvement-plan.md`](plans/jobs-coverage-improvement-plan.md) | Plans / Follow-Ups | You are improving jobs feed coverage — zero-kept static recovery, provider coverage closure, provider adapter zero-yield triage, or sheet-dominance rebalancing |
+| [`plans/registry-hygiene-followup-plan.md`](plans/registry-hygiene-followup-plan.md) | Plans / Follow-Ups | You are recording or applying a registry repair decision, reconciling live-registry drift from the committed seed, or extending the advisory/guard surfaces; start here for the live-vs-seed authority fork |
 | [`plans/source-health-counter-collapse-plan.md`](plans/source-health-counter-collapse-plan.md) | Plans / Proposed Migration | You are touching `lastJobsKept`/`zeroJobStreak`/`failureCount` alias precedence, extending source-health fields, or executing the alias-collapse phases |
 | [`plans/hold-tail-repair-plan.md`](plans/hold-tail-repair-plan.md) | Plans / Proposed Repairs | You are adjudicating or repairing the 9 quarantined hold-tail sources behind the 31-row overdue floor, or landing the systemic fixes S1–S4 (details-broken attribution, no-openings marker guardrail, template-literal extraction rejection, cookie-jar retry) |
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
