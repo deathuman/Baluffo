@@ -313,16 +313,29 @@ def _handle_registry_repair_post(
     return True
 
 
+def _handle_review_post(
+    handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, data: dict[str, Any]
+) -> bool:
+    """Every route whose only effect is to *record* a human review decision.
+
+    Grouped so ``handle_post`` dispatches one review concern rather than growing
+    a branch per review artifact: the dedup pair review, the source-policy pair
+    review, and the registry repair review all read an artifact, append a
+    validated decision, and write it back atomically. None of them mutates the
+    registry or any other state, which is exactly why they belong together.
+    """
+    return _handle_source_policy_post(
+        handler, api=api, path=path, data=data
+    ) or _handle_registry_repair_post(handler, api=api, path=path, data=data)
+
+
 def handle_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
     state = api.load_state()
     data = as_json_object(payload)
 
-    if _handle_source_policy_post(handler, api=api, path=path, data=data):
-        return True
-
-    if _handle_registry_repair_post(handler, api=api, path=path, data=data):
+    if _handle_review_post(handler, api=api, path=path, data=data):
         return True
 
     if path == "/sources/manual":

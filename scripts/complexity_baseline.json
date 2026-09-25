@@ -6,7 +6,7 @@
     "src"
   ],
   "entries": {
-    "src/bridge/admin_entrypoint_services.py::get_pipeline_service": 19,
+    "src/bridge/admin_entrypoint_services.py::get_pipeline_service": 20,
     "src/bridge/api.py::__post_init__": 26,
     "src/bridge/desktop_attention.py::notify_pipeline_completion_attention": 13,
     "src/bridge/html_extractor.py::extract_embedded_job_urls": 12,
@@ -77,7 +77,7 @@
     "src/scrapers/domain_profiles.py::is_probable_job_detail_url": 13,
     "src/scrapers/runner.py::_run_scrapy": 21,
     "src/scrapers/runner.py::_validate_input": 15,
-    "src/shared/http_batch.py::_fetch_pages_batched_async": 12,
+    "src/shared/http_batch.py::_fetch_pages_batched_async": 15,
     "src/ship/desktop_app/_linux.py::_windows_try_reclaim_stale_bridge_process": 12,
     "src/ship/desktop_app/_linux.py::_windows_try_reclaim_stale_site_process": 11,
     "src/ship/desktop_app/_windows.py::_windows_try_reclaim_stale_bridge_process": 12,

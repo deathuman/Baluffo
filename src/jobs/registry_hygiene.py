@@ -336,6 +336,170 @@ def _review_urls_for_flag(finding_kind: str, entry: dict[str, Any]) -> list[str]
     return []
 
 
+def _new_entry(source_id: str, registry_state: str) -> dict[str, Any]:
+    """A blank finding entry. Every category fills its own fields in place."""
+    return {
+        "sourceId": source_id,
+        "registryState": registry_state,
+        "flags": set(),
+        "assetPageCount": 0,
+        "sampleAssetPages": [],
+        "duplicateGroupCount": 0,
+        "uncoveredDuplicateGroupCount": 0,
+        "sampleDuplicateUrls": [],
+        "unreachableEvidence": "",
+        "sampleUnreachablePages": [],
+        "consecutiveFailures": 0,
+        "outageDays": 0,
+        "observationAgeDays": -1,
+        "lastErrorSample": "",
+        "hostDriftCount": 0,
+        "sampleHostDriftUrls": [],
+    }
+
+
+def _apply_asset_and_host_findings(
+    entry: dict[str, Any], row: dict[str, Any], urls: list[str]
+) -> None:
+    """Flag asset pages in the window and cross-host fetch URLs."""
+    assets = [url for url in urls if looks_like_asset_url(url)]
+    if assets:
+        entry["flags"].add("asset_pages")
+        entry["assetPageCount"] = len(assets)
+        entry["sampleAssetPages"] = _sample(assets)
+
+    identity_host = _host(_identity_url(row))
+    if not identity_host:
+        return
+    foreign = [url for url in urls if _host(url) and _host(url) != identity_host]
+    if foreign:
+        entry["flags"].add("host_drift_candidate")
+        entry["hostDriftCount"] = len(foreign)
+        entry["sampleHostDriftUrls"] = _sample(foreign)
+
+
+def _apply_reachability_findings(
+    entry: dict[str, Any],
+    row: dict[str, Any],
+    urls: list[str],
+    state: dict[str, Any],
+    reference: Any,
+) -> None:
+    """Flag unreachable rows and, on the stricter bar, repair candidates."""
+    reachability = _reachability(state, reference)
+    evidence = reachability["evidence"]
+    if evidence:
+        entry["flags"].add("unreachable_page")
+        entry["unreachableEvidence"] = evidence
+        entry["consecutiveFailures"] = reachability["consecutiveFailures"]
+        entry["outageDays"] = reachability["outageDays"]
+        age = reachability["observationAgeDays"]
+        entry["observationAgeDays"] = age if age is not None else -1
+        # Provider rows often carry no careers page, so fall back to the API
+        # endpoint that actually failed rather than reporting an empty sample.
+        entry["sampleUnreachablePages"] = _sample(
+            _dedupe([*urls, clean_text(row.get("api_url")), _identity_url(row)])
+        )
+    if not reachability["isRepairCandidate"]:
+        return
+    entry["flags"].add("repair_candidate")
+    # Provenance for the repair decision: what actually failed, verbatim and
+    # bounded, so a reviewer does not have to re-run the source.
+    entry["lastErrorSample"] = clean_text(state.get("lastError") or state.get("error"))[
+        :REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
+    ]
+
+
+def _collect_findings(
+    source_rows: list[dict[str, Any]], source_state_rows: Any, reference: Any
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """Run the per-row categories, returning entries and canonical-URL groups."""
+    duplicate_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    findings: dict[str, dict[str, Any]] = {}
+    for row in source_rows:
+        source_id = clean_text(row.get("id"))
+        if not source_id:
+            continue
+        urls = _configured_urls(row)
+        entry = findings.setdefault(
+            source_id, _new_entry(source_id, clean_text(row.get("registryState")))
+        )
+        _apply_asset_and_host_findings(entry, row, urls)
+        canonical = _canonical_url(row)
+        if canonical:
+            duplicate_groups[canonical].append(row)
+        _apply_reachability_findings(
+            entry, row, urls, _state_for_row(row, source_state_rows), reference
+        )
+    return findings, duplicate_groups
+
+
+def _apply_duplicate_groups(
+    duplicate_groups: dict[str, list[dict[str, Any]]],
+    findings: dict[str, dict[str, Any]],
+    known: set[str],
+) -> dict[str, int]:
+    """Mark duplicate-candidate rows and total the group counts."""
+    counts = {
+        "duplicateGroupCount": 0,
+        "duplicateRowCount": 0,
+        "knownCollisionGroupCount": 0,
+        "uncoveredDuplicateGroupCount": 0,
+        "uncoveredDuplicateRowCount": 0,
+    }
+    for canonical, group in duplicate_groups.items():
+        if len(group) < 2:
+            continue
+        reviewed = canonical in known
+        counts["duplicateGroupCount"] += 1
+        counts["duplicateRowCount"] += len(group)
+        if reviewed:
+            counts["knownCollisionGroupCount"] += 1
+        else:
+            counts["uncoveredDuplicateGroupCount"] += 1
+            counts["uncoveredDuplicateRowCount"] += len(group)
+        for row in group:
+            candidate = findings.get(clean_text(row.get("id")))
+            if candidate is None:
+                continue
+            candidate["flags"].add("duplicate_candidate")
+            candidate["duplicateGroupCount"] += 1
+            if not reviewed:
+                candidate["uncoveredDuplicateGroupCount"] += 1
+            candidate["sampleDuplicateUrls"] = _sample(
+                [*candidate["sampleDuplicateUrls"], canonical]
+            )
+    return counts
+
+
+def _order_entries(
+    findings: dict[str, dict[str, Any]], repair_review: Any
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Project flagged entries into report order, annotated with review state."""
+    ordered: list[dict[str, Any]] = []
+    review_counts = {"reviewedFindingCount": 0, "staleReviewCount": 0}
+    for source_id in sorted(findings):
+        entry = findings[source_id]
+        flags = [flag for flag in REGISTRY_HYGIENE_FLAGS if flag in entry["flags"]]
+        if not flags:
+            continue
+        review = _review_state_for_entry(entry, repair_review)
+        review_state = review["reviewState"]
+        if review_state == "stale":
+            review_counts["staleReviewCount"] += 1
+        elif review_state != "new":
+            review_counts["reviewedFindingCount"] += 1
+        ordered.append({**entry, "flags": flags, **review})
+    return ordered, review_counts
+
+
+def _load_known_collisions(known_collision_urls: Any) -> set[str]:
+    """Coerce the reviewed-collision allowlist; junk means "nothing reviewed"."""
+    if not isinstance(known_collision_urls, (set, frozenset, list, tuple)):
+        return set()
+    return {url for url in (clean_text(item) for item in known_collision_urls) if url}
+
+
 def registry_hygiene_audit(
     rows: Any,
     *,
@@ -369,161 +533,23 @@ def registry_hygiene_audit(
     it defaults to now. Pass the run's start time so a report is reproducible
     from its own payload.
     """
-    known: set[str] = set()
-    if isinstance(known_collision_urls, (set, frozenset, list, tuple)):
-        known = {url for url in (clean_text(item) for item in known_collision_urls) if url}
+    known = _load_known_collisions(known_collision_urls)
     reference = parse_datetime(observed_at) or datetime.now(UTC)
-    source_rows = _rows(rows)
-    duplicate_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    findings: dict[str, dict[str, Any]] = {}
-    for row in source_rows:
-        source_id = clean_text(row.get("id"))
-        if not source_id:
-            continue
-        urls = _configured_urls(row)
-        entry = findings.setdefault(
-            source_id,
-            {
-                "sourceId": source_id,
-                "registryState": clean_text(row.get("registryState")),
-                "flags": set(),
-                "assetPageCount": 0,
-                "sampleAssetPages": [],
-                "duplicateGroupCount": 0,
-                "uncoveredDuplicateGroupCount": 0,
-                "sampleDuplicateUrls": [],
-                "unreachableEvidence": "",
-                "sampleUnreachablePages": [],
-                "consecutiveFailures": 0,
-                "outageDays": 0,
-                "observationAgeDays": -1,
-                "lastErrorSample": "",
-                "hostDriftCount": 0,
-                "sampleHostDriftUrls": [],
-            },
-        )
-        assets = [url for url in urls if looks_like_asset_url(url)]
-        if assets:
-            entry["flags"].add("asset_pages")
-            entry["assetPageCount"] = len(assets)
-            entry["sampleAssetPages"] = _sample(assets)
-        canonical = _canonical_url(row)
-        if canonical:
-            duplicate_groups[canonical].append(row)
-        identity_host = _host(_identity_url(row))
-        if identity_host:
-            foreign = [url for url in urls if _host(url) and _host(url) != identity_host]
-            if foreign:
-                entry["flags"].add("host_drift_candidate")
-                entry["hostDriftCount"] = len(foreign)
-                entry["sampleHostDriftUrls"] = _sample(foreign)
-        state = _state_for_row(row, source_state_rows)
-        reachability = _reachability(state, reference)
-        evidence = reachability["evidence"]
-        if evidence:
-            entry["flags"].add("unreachable_page")
-            entry["unreachableEvidence"] = evidence
-            entry["consecutiveFailures"] = reachability["consecutiveFailures"]
-            entry["outageDays"] = reachability["outageDays"]
-            age = reachability["observationAgeDays"]
-            entry["observationAgeDays"] = age if age is not None else -1
-            # Provider rows often carry no careers page, so fall back to the API
-            # endpoint that actually failed rather than reporting an empty sample.
-            entry["sampleUnreachablePages"] = _sample(
-                _dedupe([*urls, clean_text(row.get("api_url")), _identity_url(row)])
-            )
-        if reachability["isRepairCandidate"]:
-            entry["flags"].add("repair_candidate")
-            # Provenance for the repair decision: what actually failed, verbatim
-            # and bounded, so a reviewer does not have to re-run the source.
-            entry["lastErrorSample"] = clean_text(state.get("lastError") or state.get("error"))[
-                :REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
-            ]
-
-    duplicate_row_count = 0
-    duplicate_group_count = 0
-    known_group_count = 0
-    uncovered_group_count = 0
-    uncovered_row_count = 0
-    for canonical, group in duplicate_groups.items():
-        if len(group) < 2:
-            continue
-        duplicate_group_count += 1
-        duplicate_row_count += len(group)
-        reviewed = canonical in known
-        if reviewed:
-            known_group_count += 1
-        else:
-            uncovered_group_count += 1
-            uncovered_row_count += len(group)
-        for row in group:
-            source_id = clean_text(row.get("id"))
-            candidate = findings.get(source_id)
-            if candidate is None:
-                continue
-            candidate["flags"].add("duplicate_candidate")
-            candidate["duplicateGroupCount"] += 1
-            if not reviewed:
-                candidate["uncoveredDuplicateGroupCount"] += 1
-            candidate["sampleDuplicateUrls"] = _sample(
-                [*candidate["sampleDuplicateUrls"], canonical]
-            )
-
-    ordered = []
-    stale_review_count = 0
-    reviewed_count = 0
-    for source_id in sorted(findings):
-        entry = findings[source_id]
-        flags = [flag for flag in REGISTRY_HYGIENE_FLAGS if flag in entry["flags"]]
-        if not flags:
-            continue
-        review = _review_state_for_entry(entry, repair_review)
-        review_state = review["reviewState"]
-        if review_state == "stale":
-            stale_review_count += 1
-        elif review_state != "new":
-            reviewed_count += 1
-        ordered.append(
-            {
-                "sourceId": entry["sourceId"],
-                "registryState": entry["registryState"],
-                "flags": flags,
-                "assetPageCount": entry["assetPageCount"],
-                "sampleAssetPages": entry["sampleAssetPages"],
-                "duplicateGroupCount": entry["duplicateGroupCount"],
-                "uncoveredDuplicateGroupCount": entry["uncoveredDuplicateGroupCount"],
-                "sampleDuplicateUrls": entry["sampleDuplicateUrls"],
-                "unreachableEvidence": entry["unreachableEvidence"],
-                "sampleUnreachablePages": entry["sampleUnreachablePages"],
-                "consecutiveFailures": entry["consecutiveFailures"],
-                "outageDays": entry["outageDays"],
-                "observationAgeDays": entry["observationAgeDays"],
-                "lastErrorSample": entry["lastErrorSample"],
-                "hostDriftCount": entry["hostDriftCount"],
-                "sampleHostDriftUrls": entry["sampleHostDriftUrls"],
-                "reviewState": review_state,
-                "reviewDecisionAt": review["reviewDecisionAt"],
-                "reviewDecidedBy": review["reviewDecidedBy"],
-                "approvedAction": review["approvedAction"],
-                "reviewStaleReason": review["reviewStaleReason"],
-            }
-        )
+    findings, duplicate_groups = _collect_findings(_rows(rows), source_state_rows, reference)
+    duplicate_counts = _apply_duplicate_groups(duplicate_groups, findings, known)
+    ordered, review_counts = _order_entries(findings, repair_review)
+    flagged = [entry for entry in ordered if entry["flags"]]
     return {
-        "sourceCount": len(ordered),
-        "assetPageCount": sum(item["assetPageCount"] for item in ordered),
-        "duplicateGroupCount": duplicate_group_count,
-        "duplicateRowCount": duplicate_row_count,
-        "knownCollisionGroupCount": known_group_count,
-        "uncoveredDuplicateGroupCount": uncovered_group_count,
-        "uncoveredDuplicateRowCount": uncovered_row_count,
-        "unreachablePageCount": sum("unreachable_page" in item["flags"] for item in ordered),
-        "repairCandidateCount": sum("repair_candidate" in item["flags"] for item in ordered),
+        "sourceCount": len(flagged),
+        "assetPageCount": sum(item["assetPageCount"] for item in flagged),
+        **duplicate_counts,
+        "unreachablePageCount": sum("unreachable_page" in item["flags"] for item in flagged),
+        "repairCandidateCount": sum("repair_candidate" in item["flags"] for item in flagged),
         "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
         "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
         "repairCandidateMaxObservationAgeDays": REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
-        "reviewedFindingCount": reviewed_count,
-        "staleReviewCount": stale_review_count,
-        "hostDriftCount": sum("host_drift_candidate" in item["flags"] for item in ordered),
+        **review_counts,
+        "hostDriftCount": sum("host_drift_candidate" in item["flags"] for item in flagged),
         "sources": ordered[:REGISTRY_HYGIENE_SOURCE_LIMIT],
     }
 
