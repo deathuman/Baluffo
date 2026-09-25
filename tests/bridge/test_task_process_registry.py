@@ -112,12 +112,12 @@ def test_terminate_windows_uses_taskkill_and_releases_entry(
     process = _WaitableProcess(41, None)
     _register(registry, process)
     calls: list[tuple[Any, ...]] = []
+
+    def _record(args: Any, **kwargs: Any) -> None:
+        calls.append(tuple(args))
+
     monkeypatch.setattr(task_process_registry.os, "name", "nt")
-    monkeypatch.setattr(
-        task_process_registry.subprocess,
-        "run",
-        lambda args, **kwargs: calls.append(tuple(args)) or None,
-    )
+    monkeypatch.setattr(task_process_registry.subprocess, "run", _record)
 
     result = registry.terminate("discovery", "discovery_1")
 

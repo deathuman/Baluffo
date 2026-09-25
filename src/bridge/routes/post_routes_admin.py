@@ -33,6 +33,10 @@ from src.jobs.common.contracts_dedup_review_state import (
     apply_dedup_review_action,
     read_dedup_review_state_artifact,
 )
+from src.jobs.common.contracts_registry_repair_review import (
+    apply_registry_repair_review_action,
+    read_registry_repair_review_artifact,
+)
 from src.jobs.common.contracts_source_policy_review_state import (
     apply_source_policy_review_action,
     read_source_policy_review_state_artifact,
@@ -61,6 +65,7 @@ class _AdminPostRouteApi(Protocol):
     APPROVAL_STATE_PATH: Path
     DEDUP_REVIEW_STATE_PATH: Path
     JOBS_FETCH_REPORT_PATH: Path
+    REGISTRY_REPAIR_REVIEW_PATH: Path
     SOURCE_POLICY_REVIEW_STATE_PATH: Path
 
     def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
@@ -264,6 +269,50 @@ def _handle_source_policy_post(
     return False
 
 
+def _handle_registry_repair_post(
+    handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, data: dict[str, Any]
+) -> bool:
+    """Record one human decision about a registry-hygiene finding.
+
+    This route only *records* a decision. It deliberately has no branch that
+    writes, demotes, deletes, or repoints a registry row: applying an approved
+    repair is a separate operator action through the sanctioned registry
+    transition paths, and folding it in here would turn an approval record into
+    an unattended mutation.
+    """
+    if path != "/registry/repair-review-action":
+        return False
+
+    def _payload() -> dict[str, Any]:
+        prior_review_state, warning = read_registry_repair_review_artifact(
+            api.REGISTRY_REPAIR_REVIEW_PATH
+        )
+        review_state, row = apply_registry_repair_review_action(
+            prior_artifact=prior_review_state,
+            action_payload=data,
+            updated_at=str(getattr(api, "now_iso", lambda: "")() or ""),
+            default_decided_by="admin",
+        )
+        api.save_json_atomic(api.REGISTRY_REPAIR_REVIEW_PATH, review_state)
+        return {
+            "ok": True,
+            "row": row,
+            "summary": review_state.get("summary", {}),
+            "artifactPath": str(api.REGISTRY_REPAIR_REVIEW_PATH),
+            # "recorded" is deliberate: the decision is stored, not executed.
+            "applied": False,
+            **({"warning": warning} if warning else {}),
+        }
+
+    send_json_boundary(
+        handler,
+        _payload,
+        error_status=400,
+        error_payload=lambda exc: {"ok": False, "error": str(exc)},
+    )
+    return True
+
+
 def handle_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
@@ -271,6 +320,9 @@ def handle_post(
     data = as_json_object(payload)
 
     if _handle_source_policy_post(handler, api=api, path=path, data=data):
+        return True
+
+    if _handle_registry_repair_post(handler, api=api, path=path, data=data):
         return True
 
     if path == "/sources/manual":

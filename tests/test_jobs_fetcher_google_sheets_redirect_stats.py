@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.jobs.canonicalize_redirects import _google_sheet_redirect_stats
 from src.jobs.pipeline_source_results import _apply_csv_stage_timings
 from src.shared.fetch_report_normalization_detail import normalize_fetch_report_detail_stats
@@ -28,7 +30,7 @@ def test_redirect_transport_stats_survive_report_normalization() -> None:
         redirect_resolve_ms=1234,
         canonicalize_ms=56,
     )
-    detail_rows = [{"stats": {}}]
+    detail_rows: list[dict[str, Any]] = [{"stats": {}}]
     stage_timings: dict[str, int] = {}
 
     _apply_csv_stage_timings(

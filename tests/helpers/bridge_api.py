@@ -334,6 +334,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         source_policy_recommendations_path=admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
         source_policy_review_state_path=admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH,
         dedup_review_state_path=admin_bridge.DEDUP_REVIEW_STATE_PATH,
+        registry_repair_review_path=admin_bridge.REGISTRY_REPAIR_REVIEW_PATH,
         approval_state_path=admin_bridge.APPROVAL_STATE_PATH,
         discovery_log_path=admin_bridge.DISCOVERY_LOG_PATH,
         fetcher_log_path=admin_bridge.FETCHER_LOG_PATH,

@@ -216,28 +216,6 @@ def _fingerprint_matches(recorded: Any, observed: Any) -> bool:
     return bool(recorded_text) and recorded_text == observed_text
 
 
-def find_registry_repair_review_row(
-    review_state: Any,
-    *,
-    source_id: str,
-    finding_kind: str,
-    evidence_fingerprint: str = "",
-) -> dict[str, Any]:
-    """Return the recorded decision for a finding, or a ``new`` row.
-
-    A decision is honored only when its recorded fingerprint matches the
-    fingerprint of the finding as observed now. A mismatch returns ``new``,
-    which is what makes the gate mean anything: the review tracks the defect,
-    and evidence that has changed since the decision is unreviewed again.
-    """
-    row = _recorded_row(review_state, source_id=source_id, finding_kind=finding_kind)
-    if not row:
-        return normalize_registry_repair_review_row({})
-    if not _fingerprint_matches(row.get("evidenceFingerprint"), evidence_fingerprint):
-        return normalize_registry_repair_review_row({})
-    return row
-
-
 def registry_repair_review_status(
     review_state: Any,
     *,
@@ -248,10 +226,14 @@ def registry_repair_review_status(
     """Describe the review state of one finding, including staleness.
 
     The single place that decides whether a recorded decision still applies, so
-    a caller cannot disagree with itself about the match. ``isStale`` means a
-    decision exists but was made about different evidence: the operator needs to
-    see that the finding has returned to their queue, which is different from
-    both "reviewed" and "never looked at".
+    a caller cannot disagree with itself about the match. A decision is honored
+    only when its recorded fingerprint matches the fingerprint of the finding as
+    observed now; that is what makes the gate mean anything, because the review
+    tracks the defect rather than the row's continued existence.
+
+    ``isStale`` means a decision exists but was made about different evidence:
+    the operator needs to see that the finding has returned to their queue,
+    which is different from both "reviewed" and "never looked at".
     """
     row = _recorded_row(review_state, source_id=source_id, finding_kind=finding_kind)
     empty = normalize_registry_repair_review_row({})

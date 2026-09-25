@@ -337,6 +337,7 @@ class BridgeApi:
     SOURCE_POLICY_RECOMMENDATIONS_PATH: Path = Path("source-policy-recommendations.json")
     SOURCE_POLICY_REVIEW_STATE_PATH: Path = Path("source-policy-review-state.json")
     DEDUP_REVIEW_STATE_PATH: Path = Path("data") / "dedup-review-state.json"
+    REGISTRY_REPAIR_REVIEW_PATH: Path = Path("registry-repair-review.json")
     DISCOVERY_CANDIDATES_PATH: Path | None = None
     DESKTOP_UPDATE_STATE_PATH: Path | None = None
     app_version: str = ""

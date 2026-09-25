@@ -17,11 +17,11 @@ from src.jobs.common.contracts_registry_repair_review import (
     REGISTRY_REPAIR_ACTIONS,
     REGISTRY_REPAIR_REVIEW_DECISIONS,
     apply_registry_repair_review_action,
-    find_registry_repair_review_row,
     normalize_registry_repair_review_artifact,
     read_registry_repair_review_artifact,
     registry_finding_fingerprint,
     registry_repair_review_key,
+    registry_repair_review_status,
 )
 from src.jobs.registry_hygiene import registry_hygiene_audit
 
@@ -328,7 +328,7 @@ def test_apply_preserves_a_prior_fingerprint_when_omitted() -> None:
         action_payload={"sourceId": "a", "findingKind": "repair_candidate", "decision": "snoozed"},
         updated_at=_UPDATED_AT,
     )
-    row = find_registry_repair_review_row(
+    row = registry_repair_review_status(
         updated, source_id="a", finding_kind="repair_candidate", evidence_fingerprint="keep-me"
     )
     assert row["evidenceFingerprint"] == "keep-me"
@@ -349,10 +349,12 @@ def test_lookup_honors_a_matching_fingerprint() -> None:
         },
         updated_at=_UPDATED_AT,
     )
-    row = find_registry_repair_review_row(
+    row = registry_repair_review_status(
         artifact, source_id="a", finding_kind="repair_candidate", evidence_fingerprint="fp-1"
     )
     assert row["decision"] == "acknowledged"
+    assert row["isStale"] is False
+    assert row["hasDecision"] is True
 
 
 def test_lookup_refuses_a_decision_made_about_different_evidence() -> None:
@@ -367,11 +369,13 @@ def test_lookup_refuses_a_decision_made_about_different_evidence() -> None:
         },
         updated_at=_UPDATED_AT,
     )
-    row = find_registry_repair_review_row(
+    row = registry_repair_review_status(
         artifact, source_id="a", finding_kind="repair_candidate", evidence_fingerprint="fp-CHANGED"
     )
     assert row["decision"] == "new"
     assert row["approvedAction"] == ""
+    assert row["isStale"] is True
+    assert row["hasDecision"] is True
 
 
 def test_lookup_refuses_an_unfingerprinted_decision() -> None:
@@ -385,10 +389,11 @@ def test_lookup_refuses_an_unfingerprinted_decision() -> None:
         },
         updated_at=_UPDATED_AT,
     )
-    row = find_registry_repair_review_row(
+    row = registry_repair_review_status(
         artifact, source_id="a", finding_kind="repair_candidate", evidence_fingerprint="fp-1"
     )
     assert row["decision"] == "new"
+    assert row["isStale"] is True
 
 
 # audit integration --------------------------------------------------------
