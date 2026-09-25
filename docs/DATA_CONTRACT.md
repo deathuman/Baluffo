@@ -1497,19 +1497,50 @@ row, and a nonzero count is a review signal rather than an automatic failure.
 | `knownCollisionGroupCount` | `number` | Duplicate groups already grandfathered in `data/defaults/source-registry-known-url-collisions.json`. |
 | `uncoveredDuplicateGroupCount` | `number` | Duplicate groups with no reviewed-collision baseline entry. These are the actionable new-drift signal. |
 | `uncoveredDuplicateRowCount` | `number` | Rows participating in uncovered duplicate groups. |
-| `unreachablePageCount` | `number` | Rows with at least two consecutive permanent HTTP 404/410, DNS/TLS, or connection failures in prior source state. |
+| `unreachablePageCount` | `number` | Rows with at least two consecutive permanent HTTP 404/410, not-found, DNS/TLS, or connection failures in prior source state. |
+| `repairCandidateCount` | `number` | Rows promoted to a dead-domain repair candidate by the repeated-evidence rule below. |
+| `repairCandidateMinFailures` | `number` | Failure-count branch threshold, currently `3`. |
+| `repairCandidateMinOutageDays` | `number` | Outage-duration branch threshold, currently `7`. |
+| `repairCandidateMaxObservationAgeDays` | `number` | Maximum age of the last observation for a promotion to count, currently `30`. |
 | `hostDriftCount` | `number` | Rows with at least one configured fetch URL on a different host than the row identity URL; advisory because provider/redirect relationships can be legitimate. |
 | `sources` | `array` | At most 20 flagged rows, each with `registryState`, `flags`, per-category counts, and up to three sample URLs per category. |
 
-`flags` is a bounded allowlist of `asset_pages`, `duplicate_candidate`, `host_drift_candidate`, and
-`unreachable_page`. Counts stay exact when the source and sample lists are capped. Provenance and
-repeated evidence are still required before any host-drift or unreachable finding becomes a registry
-repair.
+`flags` is a bounded allowlist of `asset_pages`, `duplicate_candidate`, `host_drift_candidate`,
+`unreachable_page`, and `repair_candidate`. Counts stay exact when the source and sample lists are
+capped. Provenance and repeated evidence are still required before any host-drift or unreachable
+finding becomes a registry repair.
 
 `unreachable_page` requires at least two consecutive failures in prior source state and permanent
-HTTP 404/410, DNS/TLS, or connection evidence, so a single transient error never flags. Static rows
-are matched to source state by registry id (with or without the `static_source::` loader prefix) and
-provider rows by registry `name`.
+HTTP 404/410, not-found, DNS/TLS, or connection evidence, so a single transient error never flags.
+Static rows are matched to source state by registry id (with or without the `static_source::` loader
+prefix) and provider rows by registry `name`.
+
+### Repair candidates
+
+`repair_candidate` is the dead-domain signal for a human-approved repair workflow. It is strictly
+stronger than `unreachable_page` and still read-only: promotion means a row is *ready for a human to
+decide* whether to repoint, demote, or retire it, and never that anything is mutated automatically.
+
+A row is promoted when it has permanent-error evidence **and** repetition in *either* form **and** a
+recent observation:
+
+- **Repetition, either form.** `consecutiveFailures >= 3` **or** `outageDays >= 7`, where
+  `outageDays` is measured from `lastSuccessAt`. The two are alternatives, not a conjunction: the
+  failure counter is reset by the success applier and stops incrementing while a source is
+  circuit-broken or cadence-skipped, so a source dead for five months can sit at two recorded
+  failures. Requiring both would miss exactly the dead domains this signal exists to find.
+- **A recent observation.** `observationAgeDays <= 30`, measured from the last failure while failing
+  and otherwise the last run. Without this the promotion would fire on ancient bookkeeping — a source
+  last checked months ago is unproven, not dead. `-1` means no observation timestamp was recorded at
+  all, and never promotes.
+
+Each promoted row carries its provenance: `consecutiveFailures`, `outageDays`, `observationAgeDays`,
+`unreachableEvidence` (`http_404`, `http_410`, `not_found`, `dns_or_tls`, or `connection`), and
+`lastErrorSample` (the recorded error, verbatim, bounded to 200 characters).
+
+Source-state entries whose URL no longer matches any active registry row are deliberately not
+promoted. A retired or repointed board leaves a dead state record behind, and there is nothing left to
+repair — those entries are stale bookkeeping, not candidates.
 
 `uncoveredDuplicateGroupCount` is the field to alert on. The commit-time guardrail
 (`tools/repo_health/source_registry_duplicate_url_policy.py`) checks the committed seed, while this

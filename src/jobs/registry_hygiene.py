@@ -12,20 +12,45 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.page_gating import looks_like_asset_url
 from src.jobs.text_utils import clean_text
 from src.source_registry_identity import canonicalize_careers_url
 
 REGISTRY_HYGIENE_SOURCE_LIMIT = 20
 REGISTRY_HYGIENE_SAMPLE_LIMIT = 3
+REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT = 200
+
+# Repeated-evidence bar for promoting a permanently failing row from an advisory
+# "unreachable" finding to a "repair candidate" -- a row worth a human-approved
+# repoint/demote/retire decision.
+#
+# Repetition is accepted in *either* of two forms, and requiring both would
+# under-report exactly the worst rows. `consecutiveFailures` is incremented by
+# the error applier but the success applier resets it, and a circuit-broken or
+# cadence-skipped source simply stops running -- so a source dead for five
+# months can sit at two recorded failures. The outage span, measured from the
+# last success, is the surviving evidence for those rows. Requiring
+# `min_failures AND min_outage_days` therefore misses precisely the dead
+# domains this is meant to find.
+#
+# Either form alone is too weak, so a third condition is required: the last
+# observation must be recent. Without it the promotion would fire on ancient
+# bookkeeping -- a source last checked months ago is unproven, not dead.
+REGISTRY_REACHABILITY_MIN_FAILURES = 3
+REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS = 7
+REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS = 30
+
 REGISTRY_HYGIENE_FLAGS = (
     "asset_pages",
     "duplicate_candidate",
     "host_drift_candidate",
     "unreachable_page",
+    "repair_candidate",
 )
 _STATIC_LISTING_URL_RE = re.compile(
     r"^(?:static_source::)?static:listing_url:(?P<url>https?://\S+)$", re.IGNORECASE
@@ -154,6 +179,86 @@ def _unreachable_evidence(state: dict[str, Any]) -> str:
     return ""
 
 
+def _counter(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _days_between(earlier: datetime | None, reference: datetime | None) -> int | None:
+    """Whole days from ``earlier`` to ``reference``, or None when unparseable."""
+    if earlier is None or reference is None:
+        return None
+    return max(0, (reference - earlier).days)
+
+
+def _outage_days(state: dict[str, Any], reference: datetime | None) -> int:
+    """Whole days a row has been continuously failing, or 0 when unknowable.
+
+    ``consecutiveFailures`` is a cross-run counter -- the success applier resets
+    it to zero and drops ``lastError``/``lastFailureAt``, so a non-zero count
+    means the row has failed every run since it last succeeded.
+    ``lastSuccessAt`` is *not* cleared on failure, so it marks the start of the
+    current outage. A row that has never succeeded has no such anchor and
+    returns 0: the outage length is genuinely unknown, and guessing would
+    manufacture repair evidence out of nothing.
+    """
+    days = _days_between(
+        parse_datetime(state.get("lastSuccessAt") or state.get("lastSuccessfulFetchAt")),
+        reference,
+    )
+    return days or 0
+
+
+def _observation_age_days(state: dict[str, Any], reference: datetime | None) -> int | None:
+    """Days since the row was last actually looked at, or None when unrecorded.
+
+    The most recent observation is the last failure while it is failing, else
+    the last run. This is what separates "we just checked and it is dead" from
+    "we have not looked in months", which are very different claims.
+    """
+    last_observed = parse_datetime(state.get("lastFailureAt")) or parse_datetime(
+        state.get("lastRunAt") or state.get("lastCheckedAt")
+    )
+    return _days_between(last_observed, reference)
+
+
+def _reachability(state: dict[str, Any], reference: datetime | None) -> dict[str, Any]:
+    """Repeated-evidence reachability verdict for one source-state row.
+
+    Two thresholds, deliberately different:
+
+    * ``unreachable_page`` -- 2+ consecutive runs with a permanent error. An
+      early warning that something may be wrong.
+    * ``repair_candidate`` -- a permanent error plus repetition in *either*
+      form (recorded failures **or** a multi-day outage since the last success)
+      plus a recent observation. See the threshold constants for why the two
+      repetition forms are alternatives rather than a conjunction.
+
+    Both are advisory. A repair candidate only means a row is *ready for a
+    human-approved repair decision*; nothing here mutates the registry.
+    """
+    evidence = _unreachable_evidence(state)
+    failures = _counter(state.get("consecutiveFailures"))
+    outage_days = _outage_days(state, reference) if evidence else 0
+    observation_age = _observation_age_days(state, reference) if evidence else None
+    repeated = (
+        failures >= REGISTRY_REACHABILITY_MIN_FAILURES
+        or outage_days >= REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS
+    )
+    recently_observed = observation_age is not None and (
+        observation_age <= REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS
+    )
+    return {
+        "evidence": evidence,
+        "consecutiveFailures": failures,
+        "outageDays": outage_days,
+        "observationAgeDays": observation_age,
+        "isRepairCandidate": bool(evidence and repeated and recently_observed),
+    }
+
+
 def _sample(values: list[str]) -> list[str]:
     return values[:REGISTRY_HYGIENE_SAMPLE_LIMIT]
 
@@ -163,6 +268,7 @@ def registry_hygiene_audit(
     *,
     source_state_rows: Any = None,
     known_collision_urls: Any = None,
+    observed_at: Any = None,
 ) -> dict[str, Any]:
     """Return a bounded advisory hygiene report for registry rows.
 
@@ -177,10 +283,15 @@ def registry_hygiene_audit(
     grandfathered) and ``uncoveredDuplicateGroupCount`` (new drift). When it is
     ``None`` or empty, every duplicate is reported as uncovered so drift is never
     silently hidden by a baseline that failed to load.
+
+    ``observed_at`` is the reference instant for outage-length arithmetic;
+    it defaults to now. Pass the run's start time so a report is reproducible
+    from its own payload.
     """
     known: set[str] = set()
     if isinstance(known_collision_urls, (set, frozenset, list, tuple)):
         known = {url for url in (clean_text(item) for item in known_collision_urls) if url}
+    reference = parse_datetime(observed_at) or datetime.now(UTC)
     source_rows = _rows(rows)
     duplicate_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     findings: dict[str, dict[str, Any]] = {}
@@ -202,6 +313,10 @@ def registry_hygiene_audit(
                 "sampleDuplicateUrls": [],
                 "unreachableEvidence": "",
                 "sampleUnreachablePages": [],
+                "consecutiveFailures": 0,
+                "outageDays": 0,
+                "observationAgeDays": -1,
+                "lastErrorSample": "",
                 "hostDriftCount": 0,
                 "sampleHostDriftUrls": [],
             },
@@ -221,15 +336,28 @@ def registry_hygiene_audit(
                 entry["flags"].add("host_drift_candidate")
                 entry["hostDriftCount"] = len(foreign)
                 entry["sampleHostDriftUrls"] = _sample(foreign)
-        evidence = _unreachable_evidence(_state_for_row(row, source_state_rows))
+        state = _state_for_row(row, source_state_rows)
+        reachability = _reachability(state, reference)
+        evidence = reachability["evidence"]
         if evidence:
             entry["flags"].add("unreachable_page")
             entry["unreachableEvidence"] = evidence
+            entry["consecutiveFailures"] = reachability["consecutiveFailures"]
+            entry["outageDays"] = reachability["outageDays"]
+            age = reachability["observationAgeDays"]
+            entry["observationAgeDays"] = age if age is not None else -1
             # Provider rows often carry no careers page, so fall back to the API
             # endpoint that actually failed rather than reporting an empty sample.
             entry["sampleUnreachablePages"] = _sample(
                 _dedupe([*urls, clean_text(row.get("api_url")), _identity_url(row)])
             )
+        if reachability["isRepairCandidate"]:
+            entry["flags"].add("repair_candidate")
+            # Provenance for the repair decision: what actually failed, verbatim
+            # and bounded, so a reviewer does not have to re-run the source.
+            entry["lastErrorSample"] = clean_text(state.get("lastError") or state.get("error"))[
+                :REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
+            ]
 
     duplicate_row_count = 0
     duplicate_group_count = 0
@@ -278,6 +406,10 @@ def registry_hygiene_audit(
                 "sampleDuplicateUrls": entry["sampleDuplicateUrls"],
                 "unreachableEvidence": entry["unreachableEvidence"],
                 "sampleUnreachablePages": entry["sampleUnreachablePages"],
+                "consecutiveFailures": entry["consecutiveFailures"],
+                "outageDays": entry["outageDays"],
+                "observationAgeDays": entry["observationAgeDays"],
+                "lastErrorSample": entry["lastErrorSample"],
                 "hostDriftCount": entry["hostDriftCount"],
                 "sampleHostDriftUrls": entry["sampleHostDriftUrls"],
             }
@@ -291,14 +423,22 @@ def registry_hygiene_audit(
         "uncoveredDuplicateGroupCount": uncovered_group_count,
         "uncoveredDuplicateRowCount": uncovered_row_count,
         "unreachablePageCount": sum("unreachable_page" in item["flags"] for item in ordered),
+        "repairCandidateCount": sum("repair_candidate" in item["flags"] for item in ordered),
+        "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
+        "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
+        "repairCandidateMaxObservationAgeDays": REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
         "hostDriftCount": sum("host_drift_candidate" in item["flags"] for item in ordered),
         "sources": ordered[:REGISTRY_HYGIENE_SOURCE_LIMIT],
     }
 
 
 __all__ = [
+    "REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT",
     "REGISTRY_HYGIENE_FLAGS",
     "REGISTRY_HYGIENE_SAMPLE_LIMIT",
     "REGISTRY_HYGIENE_SOURCE_LIMIT",
+    "REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS",
+    "REGISTRY_REACHABILITY_MIN_FAILURES",
+    "REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS",
     "registry_hygiene_audit",
 ]

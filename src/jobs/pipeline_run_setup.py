@@ -580,6 +580,7 @@ def prepare_pipeline_run(
         STUDIO_SOURCE_REGISTRY,
         source_state_rows=source_state_rows,
         known_collision_urls=known_twin_career_urls() or (),
+        observed_at=started_at,
     )
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,

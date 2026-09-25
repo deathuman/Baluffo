@@ -12,8 +12,12 @@ from pathlib import Path
 
 from src.jobs.common.contracts_runtime import normalize_runtime_payload
 from src.jobs.registry_hygiene import (
+    REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT,
     REGISTRY_HYGIENE_SAMPLE_LIMIT,
     REGISTRY_HYGIENE_SOURCE_LIMIT,
+    REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
+    REGISTRY_REACHABILITY_MIN_FAILURES,
+    REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
     registry_hygiene_audit,
 )
 
@@ -199,6 +203,274 @@ def test_audit_separates_reviewed_collisions_from_new_drift() -> None:
     )
 
 
+def _failing_state(
+    *,
+    failures: int,
+    error: str = "HTTP 404 for https://gone.example/careers",
+    last_success_at: str = "2026-09-01T00:00:00+00:00",
+    last_failure_at: str = "2026-09-24T12:00:00+00:00",
+) -> dict[str, object]:
+    state: dict[str, object] = {
+        "lastStatus": "error",
+        "lastError": error,
+        "consecutiveFailures": failures,
+    }
+    if last_success_at:
+        state["lastSuccessAt"] = last_success_at
+    if last_failure_at:
+        state["lastFailureAt"] = last_failure_at
+    return state
+
+
+_OBSERVED_AT = "2026-09-25T00:00:00+00:00"
+
+
+def test_repair_candidate_promotes_on_either_repetition_form() -> None:
+    row = _row("static:listing_url:https://gone.example/careers", ["https://gone.example/careers"])
+    source_key = "static_source::static:listing_url:https://gone.example/careers"
+
+    # Repeated failures, short outage: promoted on the failure-count branch.
+    by_failures = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            source_key: _failing_state(
+                failures=9,
+                last_success_at="2026-09-24T00:00:00+00:00",
+                last_failure_at="2026-09-24T12:00:00+00:00",
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert by_failures["repairCandidateCount"] == 1
+    assert by_failures["sources"][0]["outageDays"] == 1
+
+    # Long outage, few recorded failures: promoted on the duration branch.
+    # This is the circuit-broken shape: a source dead for months stops being
+    # retried, so consecutiveFailures understates how dead it actually is.
+    by_duration = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            source_key: _failing_state(
+                failures=2,
+                last_success_at="2026-04-10T00:00:00+00:00",
+                last_failure_at="2026-09-09T00:00:00+00:00",
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert by_duration["repairCandidateCount"] == 1
+    entry = by_duration["sources"][0]
+    assert entry["consecutiveFailures"] == 2
+    assert entry["outageDays"] == 168
+    assert entry["observationAgeDays"] == 16
+    assert "repair_candidate" in entry["flags"]
+    assert "unreachable_page" in entry["flags"]
+    assert entry["lastErrorSample"] == "HTTP 404 for https://gone.example/careers"
+
+    # Neither form: two failures, one day down.
+    neither = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            source_key: _failing_state(
+                failures=2,
+                last_success_at="2026-09-24T00:00:00+00:00",
+                last_failure_at="2026-09-24T12:00:00+00:00",
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert neither["unreachablePageCount"] == 1
+    assert neither["repairCandidateCount"] == 0
+
+
+def test_repair_candidate_requires_a_recent_observation() -> None:
+    """A long outage nobody has re-checked is unproven, not dead."""
+    row = _row(
+        "static:listing_url:https://stale.example/careers", ["https://stale.example/careers"]
+    )
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://stale.example/careers": _failing_state(
+                failures=9,
+                last_success_at="2026-01-01T00:00:00+00:00",
+                last_failure_at="2026-05-01T00:00:00+00:00",
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["unreachablePageCount"] == 1
+    assert audit["repairCandidateCount"] == 0
+    assert audit["sources"][0]["observationAgeDays"] == 147
+
+
+def test_repair_candidate_needs_a_recorded_observation() -> None:
+    """No failure or run timestamp at all means no current evidence."""
+    row = _row(
+        "static:listing_url:https://undated.example/careers", ["https://undated.example/careers"]
+    )
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://undated.example/careers": _failing_state(
+                failures=9, last_failure_at=""
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["repairCandidateCount"] == 0
+    assert audit["sources"][0]["observationAgeDays"] == -1
+
+
+def test_repair_candidate_is_not_promoted_without_repeated_evidence() -> None:
+    """A week-long lastSuccessAt with zero failures is stale bookkeeping."""
+    row = _row(
+        "static:listing_url:https://quiet.example/careers", ["https://quiet.example/careers"]
+    )
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://quiet.example/careers": {
+                "lastStatus": "error",
+                "lastError": "HTTP 404 not found",
+                "consecutiveFailures": 0,
+                "lastSuccessAt": "2026-09-01T00:00:00+00:00",
+            }
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["repairCandidateCount"] == 0
+    assert audit["sources"] == []
+
+
+def test_repair_candidate_reports_no_outage_span_without_an_anchor() -> None:
+    """A row that never succeeded has no outage length; refuse to invent one.
+
+    40 consecutive permanent failures still promote on the failure-count
+    branch, so only the span is asserted here.
+    """
+    row = _row("static:listing_url:https://new.example/careers", ["https://new.example/careers"])
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://new.example/careers": _failing_state(
+                failures=40, last_success_at=""
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["unreachablePageCount"] == 1
+    assert audit["sources"][0]["outageDays"] == 0
+    assert audit["repairCandidateCount"] == 1
+
+
+def test_repair_candidate_ignores_transient_error_classes() -> None:
+    """A timeout repeated for a month is an outage, not a dead domain."""
+    row = _row("static:listing_url:https://slow.example/careers", ["https://slow.example/careers"])
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://slow.example/careers": _failing_state(
+                failures=30, error="read timeout after 30s"
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["unreachablePageCount"] == 0
+    assert audit["repairCandidateCount"] == 0
+
+
+def test_repair_candidate_bounds_the_error_sample() -> None:
+    row = _row("static:listing_url:https://big.example/careers", ["https://big.example/careers"])
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://big.example/careers": _failing_state(
+                failures=9, error="HTTP 404 " + ("x" * 5000)
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert len(audit["sources"][0]["lastErrorSample"]) == REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
+
+
+def test_repair_candidate_never_reports_a_negative_outage_span() -> None:
+    """A corrupt future lastSuccessAt clamps to zero rather than going negative."""
+    row = _row(
+        "static:listing_url:https://future.example/careers", ["https://future.example/careers"]
+    )
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://future.example/careers": _failing_state(
+                failures=9, last_success_at="2027-01-01T00:00:00+00:00"
+            )
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    assert audit["sources"][0]["outageDays"] == 0
+
+
+def test_repair_candidate_tolerates_junk_state_timestamps() -> None:
+    """An unparseable failure counter is treated as no evidence, not as evidence."""
+    row = _row("static:listing_url:https://junk.example/careers", ["https://junk.example/careers"])
+    audit = registry_hygiene_audit(
+        [row],
+        source_state_rows={
+            "static_source::static:listing_url:https://junk.example/careers": {
+                "lastStatus": "error",
+                "lastError": "HTTP 404 not found",
+                "consecutiveFailures": "many",
+                "lastSuccessAt": "not-a-timestamp",
+            }
+        },
+        observed_at="also-not-a-timestamp",
+    )
+    assert audit["unreachablePageCount"] == 0
+    assert audit["repairCandidateCount"] == 0
+    assert audit["sources"] == []
+
+
+def test_contracts_normalize_repair_candidate_fields() -> None:
+    normalized = normalize_runtime_payload(
+        {
+            "registryHygieneAudit": {
+                "repairCandidateCount": "3",
+                "repairCandidateMinFailures": 3,
+                "repairCandidateMinOutageDays": 7,
+                "repairCandidateMaxObservationAgeDays": 30,
+                "sources": [
+                    {
+                        "sourceId": "x",
+                        "flags": ["repair_candidate", "bogus_flag"],
+                        "consecutiveFailures": 5,
+                        "outageDays": -4,
+                        "observationAgeDays": -1,
+                        "lastErrorSample": "y" * 900,
+                    },
+                    {
+                        "sourceId": "y",
+                        "observationAgeDays": -9999,
+                    },
+                ],
+            }
+        },
+        selected_source_count=1,
+    )["registryHygieneAudit"]
+    assert normalized["repairCandidateCount"] == 3
+    assert normalized["repairCandidateMinFailures"] == 3
+    assert normalized["repairCandidateMinOutageDays"] == 7
+    assert normalized["repairCandidateMaxObservationAgeDays"] == 30
+    row = normalized["sources"][0]
+    assert row["flags"] == ["repair_candidate"]
+    assert row["consecutiveFailures"] == 5
+    assert row["outageDays"] == 0
+    assert len(row["lastErrorSample"]) == REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
+    # Only the exact -1 sentinel survives; other negatives clamp to 0.
+    assert row["observationAgeDays"] == -1
+    assert normalized["sources"][1]["observationAgeDays"] == 0
+
+
 def test_audit_is_zero_for_clean_rows() -> None:
     audit = registry_hygiene_audit(
         [
@@ -218,6 +490,10 @@ def test_audit_is_zero_for_clean_rows() -> None:
         "uncoveredDuplicateGroupCount": 0,
         "uncoveredDuplicateRowCount": 0,
         "unreachablePageCount": 0,
+        "repairCandidateCount": 0,
+        "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
+        "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
+        "repairCandidateMaxObservationAgeDays": REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
         "hostDriftCount": 0,
         "sources": [],
     }
@@ -305,6 +581,10 @@ def test_live_seed_audit_returns_stable_shape() -> None:
         "uncoveredDuplicateGroupCount",
         "uncoveredDuplicateRowCount",
         "unreachablePageCount",
+        "repairCandidateCount",
+        "repairCandidateMinFailures",
+        "repairCandidateMinOutageDays",
+        "repairCandidateMaxObservationAgeDays",
         "hostDriftCount",
         "sources",
     }

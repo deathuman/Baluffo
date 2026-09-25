@@ -12,6 +12,7 @@ from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.registry_hygiene import (
+    REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT,
     REGISTRY_HYGIENE_FLAGS,
     REGISTRY_HYGIENE_SAMPLE_LIMIT,
     REGISTRY_HYGIENE_SOURCE_LIMIT,
@@ -94,6 +95,20 @@ def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
                 "sampleDuplicateUrls": sample_fields["sampleDuplicateUrls"],
                 "unreachableEvidence": clean_text(row.get("unreachableEvidence")),
                 "sampleUnreachablePages": sample_fields["sampleUnreachablePages"],
+                "consecutiveFailures": _clamped_int(row.get("consecutiveFailures"), 0, 0),
+                "outageDays": _clamped_int(row.get("outageDays"), 0, 0),
+                # -1 is the producer's documented "never observed" sentinel and
+                # is the only negative value that survives; every other input
+                # clamps to a real non-negative day count, so a junk payload
+                # cannot forge an unobserved state.
+                "observationAgeDays": (
+                    -1
+                    if row.get("observationAgeDays") == -1
+                    else _clamped_int(row.get("observationAgeDays"), 0, 0)
+                ),
+                "lastErrorSample": clean_text(row.get("lastErrorSample"))[
+                    :REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT
+                ],
                 "hostDriftCount": _clamped_int(row.get("hostDriftCount"), 0, 0),
                 "sampleHostDriftUrls": sample_fields["sampleHostDriftUrls"],
             }
@@ -107,6 +122,12 @@ def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
         "uncoveredDuplicateGroupCount": _clamped_int(src.get("uncoveredDuplicateGroupCount"), 0, 0),
         "uncoveredDuplicateRowCount": _clamped_int(src.get("uncoveredDuplicateRowCount"), 0, 0),
         "unreachablePageCount": _clamped_int(src.get("unreachablePageCount"), 0, 0),
+        "repairCandidateCount": _clamped_int(src.get("repairCandidateCount"), 0, 0),
+        "repairCandidateMinFailures": _clamped_int(src.get("repairCandidateMinFailures"), 0, 0),
+        "repairCandidateMinOutageDays": _clamped_int(src.get("repairCandidateMinOutageDays"), 0, 0),
+        "repairCandidateMaxObservationAgeDays": _clamped_int(
+            src.get("repairCandidateMaxObservationAgeDays"), 0, 0
+        ),
         "hostDriftCount": _clamped_int(src.get("hostDriftCount"), 0, 0),
         "sources": sources,
     }
