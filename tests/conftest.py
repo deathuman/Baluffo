@@ -29,6 +29,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.discovery_artifact_hygiene import (
+    changed_discovery_audit_artifacts,
+    format_discovery_audit_change,
+    snapshot_discovery_audit_artifacts,
+)
 from tests.helpers.temp_paths import (
     TEST_TMP_ROOT,
     cleanup_stale_workspace_tmpdirs,
@@ -60,6 +65,15 @@ def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
     return REPO_ROOT
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _assert_tests_do_not_mutate_repo_discovery_audits() -> Generator[None]:
+    before = snapshot_discovery_audit_artifacts(REPO_ROOT)
+    yield
+    changed = changed_discovery_audit_artifacts(REPO_ROOT, before)
+    if changed:
+        pytest.fail(format_discovery_audit_change(REPO_ROOT, changed))
 
 
 @pytest.fixture()
