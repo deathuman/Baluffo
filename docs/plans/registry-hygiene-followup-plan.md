@@ -1,6 +1,6 @@
 # Registry Hygiene Follow-Up Plan
 
-> - **Status:** Code work complete (P0, P1, P5, P6, P7); data reconciliation (P2, P3, P4) delivered as an adjudication worksheet, awaiting human dispositions
+> - **Status:** Code work complete (P0, P1, P5, P6); data reconciliation (P2, P3, P4) delivered as an adjudication worksheet, awaiting human dispositions. Continuity handoff recorded in Basic Memory (`baluffo/registry-hygiene-program-closeout-2026-09-25`).
 > - **Use this when:** recording or applying a registry repair decision, reconciling live-registry drift from the committed seed, or extending the advisory/guard surfaces
 > - **Canonical for:** the human-approval gate's boundaries, the live-vs-seed authority question, and the ordered follow-up work
 > - **Not canonical for:** the advisory report shape (see `docs/DATA_CONTRACT.md`) or registry transition mechanics (see `src/source_registry_state.py`)
@@ -158,6 +158,18 @@ cannot resurrect them").
 Note for whoever does this: a bulk seed sync is *not* the fix. Regenerating the seed from live would
 carry the 31 collisions into the seed and trip the commit-time guard, and it would change what a fresh
 install receives.
+
+## Open decisions for the operator
+
+1. **Release.** 44 commits ahead of `origin/main`, intentionally unpushed. `vulture` is 0 and every
+   lane is green, so nothing technical blocks a push; the constraint is that nobody has asked for a
+   release. A push would also trip the container published-code gate, which is already satisfied for
+   this window by the existing `Release-tag: v0.2.153` intent, so no new declaration is needed.
+2. **The 717 worksheet dispositions**, then one batched verified apply through the sanctioned
+   transition paths.
+3. **Whether to schedule the 31 duplicate groups as policy.** They are mostly `www`/apex twins of a
+   single board, which is exactly what the reviewed-collision baseline exists for, but they are
+   heterogeneous enough that a blanket baseline would grandfather real duplication.
 
 ## Non-goals
 
