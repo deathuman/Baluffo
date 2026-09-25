@@ -139,6 +139,86 @@ def load_known_collisions(data_root: Path) -> set[str]:
     return _load_known_collisions(ROOT)
 
 
+def check_seed_store_split_consistency(
+    data_root: Path,
+    *,
+    live_rows: list[dict[str, Any]],
+    seed_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, list[str]]:
+    """Report rows whose store copy diverges from the committed seed.
+
+    The registry is stored as a lean core plus a metadata map
+    (``source-registry-active.json.gz`` + ``source-registry-metadata.json.gz``).
+    When a row is written through the wrong read path its payload is lost from
+    the metadata map while the lean record survives, so the row still exists and
+    still reports ``ok`` -- it simply has no ``listing_url`` or ``pages`` left to
+    fetch. Nothing caught that: the commit-time guards read the seed, where the
+    row is still healthy, and the runtime report had no flag for it until
+    2026-09-26. A live Miniclip row sat stripped for weeks this way, with the
+    seed holding the complete definition the whole time.
+
+    Three distinct failures, kept separate because they have different fixes:
+
+    ``stub_row_repairable``
+        live row lost its payload, seed still has it -- graft the seed's fields
+        back. Strictly additive, so this is the safe one to act on.
+    ``seed_row_missing_from_store``
+        seed row has no store entry at all, so a seed restore would add a row
+        the running registry does not have. Needs a human: the row may have been
+        deliberately retired, and the absence of a tombstone makes that unclear.
+    ``seed_active_but_store_pending``
+        the two views disagree about whether the row is active. A bulk state
+        decision, not a mechanical fix.
+    """
+    live_by_id = {str(row.get("id") or ""): row for row in live_rows if row.get("id")}
+    seed_by_id = {str(row.get("id") or ""): row for row in seed_rows if row.get("id")}
+    pending_by_id = {str(row.get("id") or ""): row for row in (pending_rows or []) if row.get("id")}
+
+    def _has_payload(row: dict[str, Any]) -> bool:
+        return bool(row.get("listing_url")) or bool(
+            [page for page in (row.get("pages") or []) if str(page or "").strip()]
+        )
+
+    stub_repairable = sorted(
+        source_id
+        for source_id, row in live_by_id.items()
+        if not _has_payload(row) and source_id in seed_by_id and _has_payload(seed_by_id[source_id])
+    )
+    # A seed row absent from the active view is one of two very different
+    # things, and lumping them together hides the actionable one:
+    #   - the store still has it, in the pending bucket -> the row was demoted
+    #     and the seed never learned, so the seed is stale
+    #   - the store has it nowhere -> the row was lost, and a seed restore
+    #     would add something the running registry does not have
+    absent_from_active = set(seed_by_id) - set(live_by_id)
+    demoted_in_store = sorted(
+        source_id for source_id in absent_from_active if source_id in pending_by_id
+    )
+    lost_from_store = sorted(
+        source_id for source_id in absent_from_active if source_id not in pending_by_id
+    )
+    state_divergent = sorted(
+        source_id
+        for source_id in set(seed_by_id) & set(live_by_id)
+        if str(seed_by_id[source_id].get("registryState") or "active")
+        != str(live_by_id[source_id].get("registryState") or "active")
+    )
+    return {
+        "stub_row_repairable": stub_repairable,
+        "seed_row_demoted_in_store": demoted_in_store,
+        "seed_row_lost_from_store": lost_from_store,
+        "seed_active_but_store_pending": state_divergent,
+    }
+
+
+def load_pending_rows(data_root: Path) -> list[dict[str, Any]]:
+    """The store's pending bucket, read the same way as the active one."""
+    from src.source_registry_io_load import load_json_array
+
+    return load_json_array(Path(data_root) / "source-registry-pending.json", [])
+
+
 def build_report(data_root: Path) -> dict[str, Any]:
     """Run every structural predicate plus a drift check over live rows."""
     data_root = Path(data_root)
@@ -189,6 +269,12 @@ def build_report(data_root: Path) -> dict[str, Any]:
         "inlineAssetRows": list_rows_with_inline_asset_urls(live_rows),
         "duplicateIdRows": list_duplicate_source_ids(live_rows),
         "staleBaselineEntries": list_stale_known_collisions(known, active_rows=live_rows),
+        "splitConsistency": check_seed_store_split_consistency(
+            data_root,
+            live_rows=live_rows,
+            seed_rows=seed_rows,
+            pending_rows=load_pending_rows(data_root),
+        ),
         "warnings": [warning for warning in (live_warning, seed_warning) if warning],
     }
 
@@ -203,6 +289,16 @@ def _has_structural_defects(report: dict[str, Any]) -> list[str]:
     found = [f"{count} {label}" for label, rows in sections.items() if (count := len(rows))]
     if report["uncoveredCollisionsLive"]:
         found.append(f"{report['uncoveredCollisionsLive']} uncovered duplicate-URL groups (live)")
+    split = report.get("splitConsistency") or {}
+    for label, hint in (
+        ("stub_row_repairable", "payload-stripped rows the seed can repair"),
+        ("seed_row_demoted_in_store", "seed rows the store has demoted"),
+        ("seed_row_lost_from_store", "seed rows absent from the store entirely"),
+        ("seed_active_but_store_pending", "rows the seed and store disagree on"),
+    ):
+        count = len(split.get(label) or [])
+        if count:
+            found.append(f"{count} {label} ({hint})")
     return found
 
 

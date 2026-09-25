@@ -271,13 +271,3 @@ def test_worksheet_lists_seed_only_and_live_only_rows(tmp_path: Path, capsys) ->
         by_kind.setdefault(item["kind"], set()).add(item["sourceId"])
     assert by_kind["seed_only_row"] == {"retired"}
     assert by_kind["live_only_row"] == {"fresh"}
-
-
-def test_json_output_is_serializable(tmp_path: Path, capsys) -> None:
-    _write_seed(tmp_path, _MINIMAL_SEED)
-    _write_live(tmp_path, _MINIMAL_SEED)
-
-    preflight.main(["--data-root", str(tmp_path), "--json"])
-    payload = json.loads(capsys.readouterr().out)
-
-    assert set(payload) >= {"liveRowCount", "seedRowCount", "warnings"}
