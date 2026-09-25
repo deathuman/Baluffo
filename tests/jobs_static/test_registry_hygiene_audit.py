@@ -431,6 +431,44 @@ def test_repair_candidate_tolerates_junk_state_timestamps() -> None:
     assert audit["sources"] == []
 
 
+def test_definitionless_static_rows_are_flagged_and_reachable() -> None:
+    """A row with no page at all is a finding, not invisible.
+
+    The commit-time definition guard already fails on this shape in the seed, but
+    a live-registry instance had no advisory flag and therefore could not be
+    reviewed through the approval gate at all.
+    """
+    audit = registry_hygiene_audit(
+        [
+            {"id": "static:listing_url:https://empty.example/careers", "pages": []},
+            {"id": "static:listing_url:https://blank.example/", "pages": ["  "]},
+        ]
+    )
+    assert audit["definitionlessRowCount"] == 2
+    assert all("definitionless_row" in s["flags"] for s in audit["sources"])
+
+
+def test_careers_url_alone_does_not_satisfy_a_definition() -> None:
+    """careersUrl is advisory metadata, matching the commit-time guard."""
+    audit = registry_hygiene_audit(
+        [
+            {
+                "id": "static:listing_url:https://a.example/careers",
+                "careersUrl": "https://a.example/careers",
+            }
+        ]
+    )
+    assert audit["definitionlessRowCount"] == 1
+
+
+def test_provider_rows_are_never_definitionless() -> None:
+    audit = registry_hygiene_audit(
+        [{"id": "lever:account:aofl", "adapter": "lever", "account": "aofl"}]
+    )
+    assert audit["definitionlessRowCount"] == 0
+    assert audit["sources"] == []
+
+
 def test_contracts_normalize_repair_candidate_fields() -> None:
     normalized = normalize_runtime_payload(
         {
@@ -490,6 +528,7 @@ def test_audit_is_zero_for_clean_rows() -> None:
         "uncoveredDuplicateGroupCount": 0,
         "uncoveredDuplicateRowCount": 0,
         "unreachablePageCount": 0,
+        "definitionlessRowCount": 0,
         "repairCandidateCount": 0,
         "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
         "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
@@ -583,6 +622,7 @@ def test_live_seed_audit_returns_stable_shape() -> None:
         "uncoveredDuplicateGroupCount",
         "uncoveredDuplicateRowCount",
         "unreachablePageCount",
+        "definitionlessRowCount",
         "repairCandidateCount",
         "repairCandidateMinFailures",
         "repairCandidateMinOutageDays",

@@ -1498,6 +1498,7 @@ row, and a nonzero count is a review signal rather than an automatic failure.
 | `uncoveredDuplicateGroupCount` | `number` | Duplicate groups with no reviewed-collision baseline entry. These are the actionable new-drift signal. |
 | `uncoveredDuplicateRowCount` | `number` | Rows participating in uncovered duplicate groups. |
 | `unreachablePageCount` | `number` | Rows with at least two consecutive permanent HTTP 404/410, not-found, DNS/TLS, or connection failures in prior source state. |
+| `definitionlessRowCount` | `number` | Static rows with neither `listing_url` nor a non-empty `pages` list. Such a row has no fetchable page, so it contributes nothing while reporting ok. `careersUrl` alone does not satisfy it, matching the commit-time definition guard. |
 | `repairCandidateCount` | `number` | Rows promoted to a dead-domain repair candidate by the repeated-evidence rule below. |
 | `repairCandidateMinFailures` | `number` | Failure-count branch threshold, currently `3`. |
 | `repairCandidateMinOutageDays` | `number` | Outage-duration branch threshold, currently `7`. |
@@ -1505,10 +1506,16 @@ row, and a nonzero count is a review signal rather than an automatic failure.
 | `hostDriftCount` | `number` | Rows with at least one configured fetch URL on a different host than the row identity URL; advisory because provider/redirect relationships can be legitimate. |
 | `sources` | `array` | At most 20 flagged rows, each with `registryState`, `flags`, per-category counts, and up to three sample URLs per category. |
 
-`flags` is a bounded allowlist of `asset_pages`, `duplicate_candidate`, `host_drift_candidate`,
-`unreachable_page`, and `repair_candidate`. Counts stay exact when the source and sample lists are
-capped. Provenance and repeated evidence are still required before any host-drift or unreachable
-finding becomes a registry repair.
+`flags` is a bounded allowlist of `asset_pages`, `definitionless_row`, `duplicate_candidate`,
+`host_drift_candidate`, `unreachable_page`, and `repair_candidate`. Counts stay exact when the source
+and sample lists are capped. Provenance and repeated evidence are still required before any
+host-drift or unreachable finding becomes a registry repair.
+
+`sources` is capped at 20 and ordered by **severity first, id second** — `repair_candidate`,
+`unreachable_page`, `definitionless_row`, `duplicate_candidate`, `host_drift_candidate`, then
+`asset_pages`. Ordering by id alone let a count be reported for a finding whose only row fell outside
+the sample: a live registry with exactly one definition-less row reported `1` and listed no row at
+all. Counts stay exact regardless of the cap.
 
 `unreachable_page` requires at least two consecutive failures in prior source state and permanent
 HTTP 404/410, not-found, DNS/TLS, or connection evidence, so a single transient error never flags.

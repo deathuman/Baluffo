@@ -51,6 +51,7 @@ REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS = 30
 
 REGISTRY_HYGIENE_FLAGS = (
     "asset_pages",
+    "definitionless_row",
     "duplicate_candidate",
     "host_drift_candidate",
     "unreachable_page",
@@ -272,6 +273,27 @@ def _sample(values: list[str]) -> list[str]:
 # "acknowledged" while a dead-domain repair candidate sits unreviewed on it.
 _REVIEW_PRIORITY = ("stale", "new", "repair_approved", "snoozed", "acknowledged")
 
+# The listed sources are capped, so they are ordered by severity first and id
+# second. Sorting by id alone meant a count could be reported for a finding whose
+# only row fell outside the sample: a live registry with exactly one
+# definition-less row reported "1" and showed no row at all, which is a worse
+# report than one that shows the finding and hides the alphabetical noise.
+_FLAG_SEVERITY = (
+    "repair_candidate",
+    "unreachable_page",
+    "definitionless_row",
+    "duplicate_candidate",
+    "host_drift_candidate",
+    "asset_pages",
+)
+
+
+def _severity_rank(flags: set[str] | list[str]) -> int:
+    for rank, flag in enumerate(_FLAG_SEVERITY):
+        if flag in flags:
+            return rank
+    return len(_FLAG_SEVERITY)
+
 
 def _review_state_for_entry(entry: dict[str, Any], repair_review: Any) -> dict[str, str]:
     """Resolve the strongest recorded review decision for one flagged row.
@@ -333,6 +355,7 @@ def _review_urls_for_flag(finding_kind: str, entry: dict[str, Any]) -> list[str]
         return list(entry["sampleDuplicateUrls"])
     if finding_kind == "asset_pages":
         return list(entry["sampleAssetPages"])
+    # definitionless_row carries no URL: the absence of one *is* the finding.
     return []
 
 
@@ -358,10 +381,28 @@ def _new_entry(source_id: str, registry_state: str) -> dict[str, Any]:
     }
 
 
+def _is_definitionless_static_row(row: dict[str, Any]) -> bool:
+    """A static row with no ``listing_url`` and no usable ``pages`` list.
+
+    Such a row has no fetchable page at all, so the pipeline silently
+    contributes nothing while reporting status ok. ``careersUrl`` is advisory
+    metadata and deliberately does not satisfy this, matching the commit-time
+    definition guard so the two sides cannot disagree.
+    """
+    if not clean_text(row.get("id")).startswith("static:"):
+        return False
+    if clean_text(row.get("listing_url")):
+        return False
+    return not any(clean_text(page) for page in (row.get("pages") or []))
+
+
 def _apply_asset_and_host_findings(
     entry: dict[str, Any], row: dict[str, Any], urls: list[str]
 ) -> None:
-    """Flag asset pages in the window and cross-host fetch URLs."""
+    """Flag definition-less rows, asset pages, and cross-host fetch URLs."""
+    if _is_definitionless_static_row(row):
+        entry["flags"].add("definitionless_row")
+
     assets = [url for url in urls if looks_like_asset_url(url)]
     if assets:
         entry["flags"].add("asset_pages")
@@ -478,7 +519,9 @@ def _order_entries(
     """Project flagged entries into report order, annotated with review state."""
     ordered: list[dict[str, Any]] = []
     review_counts = {"reviewedFindingCount": 0, "staleReviewCount": 0}
-    for source_id in sorted(findings):
+    for source_id in sorted(
+        findings, key=lambda key: (_severity_rank(findings[key]["flags"]), key)
+    ):
         entry = findings[source_id]
         flags = [flag for flag in REGISTRY_HYGIENE_FLAGS if flag in entry["flags"]]
         if not flags:
@@ -544,6 +587,7 @@ def registry_hygiene_audit(
         "assetPageCount": sum(item["assetPageCount"] for item in flagged),
         **duplicate_counts,
         "unreachablePageCount": sum("unreachable_page" in item["flags"] for item in flagged),
+        "definitionlessRowCount": sum("definitionless_row" in item["flags"] for item in flagged),
         "repairCandidateCount": sum("repair_candidate" in item["flags"] for item in flagged),
         "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
         "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,

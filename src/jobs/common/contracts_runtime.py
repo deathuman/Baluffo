@@ -146,6 +146,7 @@ def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
         "uncoveredDuplicateGroupCount": _clamped_int(src.get("uncoveredDuplicateGroupCount"), 0, 0),
         "uncoveredDuplicateRowCount": _clamped_int(src.get("uncoveredDuplicateRowCount"), 0, 0),
         "unreachablePageCount": _clamped_int(src.get("unreachablePageCount"), 0, 0),
+        "definitionlessRowCount": _clamped_int(src.get("definitionlessRowCount"), 0, 0),
         "repairCandidateCount": _clamped_int(src.get("repairCandidateCount"), 0, 0),
         "repairCandidateMinFailures": _clamped_int(src.get("repairCandidateMinFailures"), 0, 0),
         "repairCandidateMinOutageDays": _clamped_int(src.get("repairCandidateMinOutageDays"), 0, 0),
