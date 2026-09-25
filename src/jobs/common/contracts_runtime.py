@@ -11,6 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
+from src.jobs.registry_hygiene import (
+    REGISTRY_HYGIENE_FLAGS,
+    REGISTRY_HYGIENE_SAMPLE_LIMIT,
+    REGISTRY_HYGIENE_SOURCE_LIMIT,
+)
 from src.jobs.text_utils import clean_text
 from src.shared.coerce import as_float as _coerce_as_float
 from src.shared.fetch_report_normalization import (
@@ -48,6 +53,61 @@ def _normalize_registry_asset_page_audit(value: Any) -> dict[str, Any]:
     return {
         "sourceCount": _clamped_int(src.get("sourceCount"), 0, 0),
         "assetPageCount": _clamped_int(src.get("assetPageCount"), 0, 0),
+        "sources": sources,
+    }
+
+
+def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
+    """Allowlist-clamp the advisory registry hygiene block."""
+    src = as_json_object(value)
+    sources: list[dict[str, Any]] = []
+    allowed_flags = set(REGISTRY_HYGIENE_FLAGS)
+    for row in json_object_rows(src.get("sources"))[:REGISTRY_HYGIENE_SOURCE_LIMIT]:
+        flags = [
+            flag
+            for flag in (clean_text(item) for item in as_json_list(row.get("flags")))
+            if flag in allowed_flags
+        ][: len(REGISTRY_HYGIENE_FLAGS)]
+        sample_fields = {}
+        for field in (
+            "sampleAssetPages",
+            "sampleDuplicateUrls",
+            "sampleUnreachablePages",
+            "sampleHostDriftUrls",
+        ):
+            sample_fields[field] = [
+                clean_text(item)
+                for item in as_json_list(row.get(field))
+                if isinstance(item, str) and clean_text(item)
+            ][:REGISTRY_HYGIENE_SAMPLE_LIMIT]
+        sources.append(
+            {
+                "sourceId": clean_text(row.get("sourceId")),
+                "registryState": clean_text(row.get("registryState")),
+                "flags": flags,
+                "assetPageCount": _clamped_int(row.get("assetPageCount"), 0, 0),
+                "sampleAssetPages": sample_fields["sampleAssetPages"],
+                "duplicateGroupCount": _clamped_int(row.get("duplicateGroupCount"), 0, 0),
+                "uncoveredDuplicateGroupCount": _clamped_int(
+                    row.get("uncoveredDuplicateGroupCount"), 0, 0
+                ),
+                "sampleDuplicateUrls": sample_fields["sampleDuplicateUrls"],
+                "unreachableEvidence": clean_text(row.get("unreachableEvidence")),
+                "sampleUnreachablePages": sample_fields["sampleUnreachablePages"],
+                "hostDriftCount": _clamped_int(row.get("hostDriftCount"), 0, 0),
+                "sampleHostDriftUrls": sample_fields["sampleHostDriftUrls"],
+            }
+        )
+    return {
+        "sourceCount": _clamped_int(src.get("sourceCount"), 0, 0),
+        "assetPageCount": _clamped_int(src.get("assetPageCount"), 0, 0),
+        "duplicateGroupCount": _clamped_int(src.get("duplicateGroupCount"), 0, 0),
+        "duplicateRowCount": _clamped_int(src.get("duplicateRowCount"), 0, 0),
+        "knownCollisionGroupCount": _clamped_int(src.get("knownCollisionGroupCount"), 0, 0),
+        "uncoveredDuplicateGroupCount": _clamped_int(src.get("uncoveredDuplicateGroupCount"), 0, 0),
+        "uncoveredDuplicateRowCount": _clamped_int(src.get("uncoveredDuplicateRowCount"), 0, 0),
+        "unreachablePageCount": _clamped_int(src.get("unreachablePageCount"), 0, 0),
+        "hostDriftCount": _clamped_int(src.get("hostDriftCount"), 0, 0),
         "sources": sources,
     }
 
@@ -186,6 +246,7 @@ def normalize_runtime_payload(
         "registryAssetPageAudit": _normalize_registry_asset_page_audit(
             src.get("registryAssetPageAudit")
         ),
+        "registryHygieneAudit": _normalize_registry_hygiene_audit(src.get("registryHygieneAudit")),
         "staticDomainGateWaitMs": _clamped_int(src.get("staticDomainGateWaitMs"), 0, 0),
         "staticDetailBatchCount": _clamped_int(src.get("staticDetailBatchCount"), 0, 0),
         "staticAdaptiveStops": _clamped_int(src.get("staticAdaptiveStops"), 0, 0),

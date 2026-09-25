@@ -1480,6 +1480,44 @@ truthful `publishedOutputUnchanged` evidence; lifecycle cleanup's
 | `rawMarkerCount` | `number` | Count of source rows where `classification`, `failureBucket`, or `zeroKeptClassification` is `needs_review`. |
 | `includedCount` | `number` | Count of rows included in the shaped zero-kept static breakdown. |
 
+### Advisory registry hygiene audit
+
+Runtime payloads may include the additive `runtime.registryHygieneAudit` block. It generalizes the
+existing `registryAssetPageAudit` monitor with bounded, read-only evidence for configured asset pages,
+canonical-URL duplicate candidates, repeated unreachable source state, and host drift between a row's
+identity URL and its configured fetch URLs. It never demotes, deletes, hides, or rewrites a registry
+row, and a nonzero count is a review signal rather than an automatic failure.
+
+| Field | Type | Description |
+|---|---|---|
+| `sourceCount` | `number` | Exact number of registry rows with at least one advisory finding; the returned `sources` list is capped separately. |
+| `assetPageCount` | `number` | Exact number of configured asset URLs across flagged rows. |
+| `duplicateGroupCount` | `number` | Exact number of canonical-URL groups with two or more rows. |
+| `duplicateRowCount` | `number` | Exact number of rows participating in duplicate groups. |
+| `knownCollisionGroupCount` | `number` | Duplicate groups already grandfathered in `data/defaults/source-registry-known-url-collisions.json`. |
+| `uncoveredDuplicateGroupCount` | `number` | Duplicate groups with no reviewed-collision baseline entry. These are the actionable new-drift signal. |
+| `uncoveredDuplicateRowCount` | `number` | Rows participating in uncovered duplicate groups. |
+| `unreachablePageCount` | `number` | Rows with at least two consecutive permanent HTTP 404/410, DNS/TLS, or connection failures in prior source state. |
+| `hostDriftCount` | `number` | Rows with at least one configured fetch URL on a different host than the row identity URL; advisory because provider/redirect relationships can be legitimate. |
+| `sources` | `array` | At most 20 flagged rows, each with `registryState`, `flags`, per-category counts, and up to three sample URLs per category. |
+
+`flags` is a bounded allowlist of `asset_pages`, `duplicate_candidate`, `host_drift_candidate`, and
+`unreachable_page`. Counts stay exact when the source and sample lists are capped. Provenance and
+repeated evidence are still required before any host-drift or unreachable finding becomes a registry
+repair.
+
+`unreachable_page` requires at least two consecutive failures in prior source state and permanent
+HTTP 404/410, DNS/TLS, or connection evidence, so a single transient error never flags. Static rows
+are matched to source state by registry id (with or without the `static_source::` loader prefix) and
+provider rows by registry `name`.
+
+`uncoveredDuplicateGroupCount` is the field to alert on. The commit-time guardrail
+(`tools/repo_health/source_registry_duplicate_url_policy.py`) checks the committed seed, while this
+runtime block audits the live registry that the pipeline actually fetches, so a nonzero uncovered
+count can mean the live registry drifted from the seed rather than that a twin was newly introduced.
+Reconcile the two views before treating it as a regression. When the reviewed-collision baseline
+cannot be loaded, every duplicate is reported as uncovered so drift is never masked.
+
 ---
 
 ## 10. Social experiment report contract

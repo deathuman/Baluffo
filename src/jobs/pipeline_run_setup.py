@@ -62,6 +62,7 @@ from src.jobs.pipeline_stage_source_execution import (
     resolve_fetch_browser_fallback_helper,
 )
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
+from src.jobs.registry_hygiene import registry_hygiene_audit
 from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_incremental import (
     get_incremental_cache_decision,
@@ -93,6 +94,7 @@ from src.pipeline_io import (
 )
 from src.shared.json_io import read_json
 from src.shared.utils import env_flag, now_iso
+from src.source_registry_data import known_twin_career_urls
 
 
 @dataclass
@@ -574,6 +576,11 @@ def prepare_pipeline_run(
     # fetch waste; this monitor surfaces the stale registry rows so the data
     # gets repaired at the source. Nonzero sourceCount is the flag.
     runtime_payload["registryAssetPageAudit"] = registry_asset_page_audit(STUDIO_SOURCE_REGISTRY)
+    runtime_payload["registryHygieneAudit"] = registry_hygiene_audit(
+        STUDIO_SOURCE_REGISTRY,
+        source_state_rows=source_state_rows,
+        known_collision_urls=known_twin_career_urls() or (),
+    )
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,
         incremental_cache_enabled=incremental_cache_enabled,
