@@ -1542,6 +1542,45 @@ Source-state entries whose URL no longer matches any active registry row are del
 promoted. A retired or repointed board leaves a dead state record behind, and there is nothing left to
 repair — those entries are stale bookkeeping, not candidates.
 
+### Human repair review
+
+`data/registry-repair-review.json` records what a human decided about a finding. It is the **approval
+gate only** and is deliberately not a mutation path: reading it annotates the report, and nothing in
+it — or in the audit that reads it — writes, demotes, deletes, repoints, or tombstones a registry row.
+Applying an approved repair remains a separate operator action through the existing sanctioned
+registry transition paths. Recording `repair_approved` stores intent; it does not execute it.
+
+Decisions are recorded per `(sourceId, findingKind)` pair, because one row can carry several
+independent findings and approving a dead-domain repair says nothing about a duplicate-URL collision on
+the same row. Dispositions are a closed set: `acknowledged` (looked at, no action needed),
+`repair_approved` (a specific repair approved), `snoozed` (deferred). `approvedAction` is a closed set
+of `repoint`, `retire`, `reclassify` and is dropped unless the decision is `repair_approved`.
+
+| Field | Type | Description |
+|---|---|---|
+| `reviewedFindingCount` | `number` | Flagged rows carrying a recorded, still-matching decision. |
+| `staleReviewCount` | `number` | Rows where a decision exists but its evidence fingerprint no longer matches. |
+| `reviewState` | `string` | Per-row: `new`, the recorded disposition, or `stale`. |
+| `approvedAction` | `string` | Per-row recorded intent; empty unless a matching `repair_approved` decision exists. |
+| `reviewStaleReason` | `string` | Why a decision was rejected as stale. |
+
+**Evidence fingerprint binding** is what makes the gate mean anything. Each decision is bound to a
+fingerprint of *what the defect is*: the source id, finding kind, registry state, classified failure
+mode, and the affected URLs. A decision is honored only while that fingerprint still matches, and a
+mismatch surfaces as `stale` so the finding visibly returns to the operator's queue instead of
+inheriting an approval made about something else. A decision recorded without a fingerprint never
+matches, because it cannot be traced to any specific defect.
+
+The fingerprint deliberately **excludes** `consecutiveFailures`, `outageDays`, and
+`observationAgeDays`. Those climb on a source that stays broken; including them would silently
+invalidate a standing review after one more run and train the operator to re-approve forever, which
+is worse than having no review at all. A source that keeps failing the same way on the same URL stays
+reviewed; a source repointed elsewhere, or failing with a different error class, requires a new
+decision.
+
+A missing or malformed artifact degrades to "nothing reviewed" with a warning code rather than an
+exception, matching the source-policy review reader: a corrupt gate must never look like an approval.
+
 `uncoveredDuplicateGroupCount` is the field to alert on. The commit-time guardrail
 (`tools/repo_health/source_registry_duplicate_url_policy.py`) checks the committed seed, while this
 runtime block audits the live registry that the pipeline actually fetches, so a nonzero uncovered

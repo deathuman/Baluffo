@@ -10,6 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.jobs.common.contracts_registry_repair_review import (
+    REGISTRY_REPAIR_ACTIONS as ALLOWED_REPAIR_ACTIONS,
+)
+from src.jobs.common.contracts_registry_repair_review import (
+    REGISTRY_REPAIR_REVIEW_DECISIONS as _STORED_REVIEW_STATES,
+)
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.registry_hygiene import (
     REGISTRY_HYGIENE_ERROR_SAMPLE_LIMIT,
@@ -17,6 +23,11 @@ from src.jobs.registry_hygiene import (
     REGISTRY_HYGIENE_SAMPLE_LIMIT,
     REGISTRY_HYGIENE_SOURCE_LIMIT,
 )
+
+# "stale" is a report-level state, not a stored decision: it marks a recorded
+# decision whose evidence has since changed, so the operator sees it return to
+# the queue instead of inheriting an approval made about a different defect.
+ALLOWED_REVIEW_STATES = frozenset(_STORED_REVIEW_STATES | {"stale"})
 from src.jobs.text_utils import clean_text
 from src.shared.coerce import as_float as _coerce_as_float
 from src.shared.fetch_report_normalization import (
@@ -111,6 +122,19 @@ def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
                 ],
                 "hostDriftCount": _clamped_int(row.get("hostDriftCount"), 0, 0),
                 "sampleHostDriftUrls": sample_fields["sampleHostDriftUrls"],
+                "reviewState": (
+                    text
+                    if (text := clean_text(row.get("reviewState"))) in ALLOWED_REVIEW_STATES
+                    else "new"
+                ),
+                "reviewDecisionAt": clean_text(row.get("reviewDecisionAt")),
+                "reviewDecidedBy": clean_text(row.get("reviewDecidedBy")),
+                "approvedAction": (
+                    text
+                    if (text := clean_text(row.get("approvedAction"))) in ALLOWED_REPAIR_ACTIONS
+                    else ""
+                ),
+                "reviewStaleReason": clean_text(row.get("reviewStaleReason")),
             }
         )
     return {
@@ -128,6 +152,8 @@ def _normalize_registry_hygiene_audit(value: Any) -> dict[str, Any]:
         "repairCandidateMaxObservationAgeDays": _clamped_int(
             src.get("repairCandidateMaxObservationAgeDays"), 0, 0
         ),
+        "reviewedFindingCount": _clamped_int(src.get("reviewedFindingCount"), 0, 0),
+        "staleReviewCount": _clamped_int(src.get("staleReviewCount"), 0, 0),
         "hostDriftCount": _clamped_int(src.get("hostDriftCount"), 0, 0),
         "sources": sources,
     }

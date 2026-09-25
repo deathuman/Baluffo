@@ -25,6 +25,9 @@ from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
+from src.jobs.common.contracts_registry_repair_review import (
+    read_registry_repair_review_artifact,
+)
 from src.jobs.common.contracts_runtime import normalize_runtime_payload
 from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
@@ -581,6 +584,10 @@ def prepare_pipeline_run(
         source_state_rows=source_state_rows,
         known_collision_urls=known_twin_career_urls() or (),
         observed_at=started_at,
+        # Read-only: records which findings a human already adjudicated so they
+        # stop re-reporting as fresh work. Applying a repair is a separate
+        # operator action through the sanctioned registry transition paths.
+        repair_review=read_registry_repair_review_artifact(paths.registry_repair_review_path)[0],
     )
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,

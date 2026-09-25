@@ -494,6 +494,8 @@ def test_audit_is_zero_for_clean_rows() -> None:
         "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
         "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
         "repairCandidateMaxObservationAgeDays": REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
+        "reviewedFindingCount": 0,
+        "staleReviewCount": 0,
         "hostDriftCount": 0,
         "sources": [],
     }
@@ -585,6 +587,8 @@ def test_live_seed_audit_returns_stable_shape() -> None:
         "repairCandidateMinFailures",
         "repairCandidateMinOutageDays",
         "repairCandidateMaxObservationAgeDays",
+        "reviewedFindingCount",
+        "staleReviewCount",
         "hostDriftCount",
         "sources",
     }

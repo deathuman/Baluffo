@@ -16,6 +16,10 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from src.jobs.common.contracts_registry_repair_review import (
+    registry_finding_fingerprint,
+    registry_repair_review_status,
+)
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.page_gating import looks_like_asset_url
 from src.jobs.text_utils import clean_text
@@ -263,12 +267,82 @@ def _sample(values: list[str]) -> list[str]:
     return values[:REGISTRY_HYGIENE_SAMPLE_LIMIT]
 
 
+# One row can carry several independent findings. Each gets its own review, and
+# the most severe wins the row's summary state so a row is never reported as
+# "acknowledged" while a dead-domain repair candidate sits unreviewed on it.
+_REVIEW_PRIORITY = ("stale", "new", "repair_approved", "snoozed", "acknowledged")
+
+
+def _review_state_for_entry(entry: dict[str, Any], repair_review: Any) -> dict[str, str]:
+    """Resolve the strongest recorded review decision for one flagged row.
+
+    Reads the review artifact only. A recorded decision whose evidence
+    fingerprint no longer matches is surfaced as ``stale`` with a reason rather
+    than silently honored, so changed evidence visibly returns to the operator's
+    queue instead of inheriting an old approval.
+    """
+    best: dict[str, str] = {
+        "reviewState": "new",
+        "reviewDecisionAt": "",
+        "reviewDecidedBy": "",
+        "approvedAction": "",
+        "reviewStaleReason": "",
+    }
+    best_rank = len(_REVIEW_PRIORITY)
+    for finding_kind in entry["flags"]:
+        urls = _review_urls_for_flag(finding_kind, entry)
+        fingerprint = registry_finding_fingerprint(
+            source_id=entry["sourceId"],
+            finding_kind=finding_kind,
+            registry_state=entry["registryState"],
+            unreachable_evidence=entry["unreachableEvidence"],
+            affected_urls=urls,
+        )
+        recorded = registry_repair_review_status(
+            repair_review,
+            source_id=entry["sourceId"],
+            finding_kind=finding_kind,
+            evidence_fingerprint=fingerprint,
+        )
+        state = "stale" if recorded["isStale"] else recorded["decision"]
+        if state == "new":
+            continue
+        rank = _REVIEW_PRIORITY.index(state)
+        if rank < best_rank:
+            best_rank = rank
+            best = {
+                "reviewState": state,
+                "reviewDecisionAt": recorded["decisionAt"],
+                "reviewDecidedBy": recorded["decidedBy"],
+                "approvedAction": recorded["approvedAction"],
+                "reviewStaleReason": (
+                    "recorded decision no longer matches the observed evidence"
+                    if state == "stale"
+                    else ""
+                ),
+            }
+    return best
+
+
+def _review_urls_for_flag(finding_kind: str, entry: dict[str, Any]) -> list[str]:
+    if finding_kind in {"unreachable_page", "repair_candidate"}:
+        return list(entry["sampleUnreachablePages"])
+    if finding_kind == "host_drift_candidate":
+        return list(entry["sampleHostDriftUrls"])
+    if finding_kind == "duplicate_candidate":
+        return list(entry["sampleDuplicateUrls"])
+    if finding_kind == "asset_pages":
+        return list(entry["sampleAssetPages"])
+    return []
+
+
 def registry_hygiene_audit(
     rows: Any,
     *,
     source_state_rows: Any = None,
     known_collision_urls: Any = None,
     observed_at: Any = None,
+    repair_review: Any = None,
 ) -> dict[str, Any]:
     """Return a bounded advisory hygiene report for registry rows.
 
@@ -276,6 +350,13 @@ def registry_hygiene_audit(
     capped. All findings are candidates for review; this function performs no
     registry mutation and treats host drift as advisory because provider and
     redirect relationships can legitimately cross hosts.
+
+    ``repair_review`` is the human-approval artifact
+    (``contracts_registry_repair_review``). It is read, never written: a
+    recorded decision annotates a finding so an already-adjudicated row stops
+    re-reporting as fresh work, and a decision whose evidence has since changed
+    is reported as ``stale`` rather than honored. This function applies nothing
+    and mutates nothing.
 
     ``known_collision_urls`` is the reviewed-collision allowlist from
     ``source-registry-known-url-collisions.json``. When supplied, duplicate
@@ -389,11 +470,19 @@ def registry_hygiene_audit(
             )
 
     ordered = []
+    stale_review_count = 0
+    reviewed_count = 0
     for source_id in sorted(findings):
         entry = findings[source_id]
         flags = [flag for flag in REGISTRY_HYGIENE_FLAGS if flag in entry["flags"]]
         if not flags:
             continue
+        review = _review_state_for_entry(entry, repair_review)
+        review_state = review["reviewState"]
+        if review_state == "stale":
+            stale_review_count += 1
+        elif review_state != "new":
+            reviewed_count += 1
         ordered.append(
             {
                 "sourceId": entry["sourceId"],
@@ -412,6 +501,11 @@ def registry_hygiene_audit(
                 "lastErrorSample": entry["lastErrorSample"],
                 "hostDriftCount": entry["hostDriftCount"],
                 "sampleHostDriftUrls": entry["sampleHostDriftUrls"],
+                "reviewState": review_state,
+                "reviewDecisionAt": review["reviewDecisionAt"],
+                "reviewDecidedBy": review["reviewDecidedBy"],
+                "approvedAction": review["approvedAction"],
+                "reviewStaleReason": review["reviewStaleReason"],
             }
         )
     return {
@@ -427,6 +521,8 @@ def registry_hygiene_audit(
         "repairCandidateMinFailures": REGISTRY_REACHABILITY_MIN_FAILURES,
         "repairCandidateMinOutageDays": REGISTRY_REACHABILITY_MIN_OUTAGE_DAYS,
         "repairCandidateMaxObservationAgeDays": REGISTRY_REACHABILITY_MAX_OBSERVATION_AGE_DAYS,
+        "reviewedFindingCount": reviewed_count,
+        "staleReviewCount": stale_review_count,
         "hostDriftCount": sum("host_drift_candidate" in item["flags"] for item in ordered),
         "sources": ordered[:REGISTRY_HYGIENE_SOURCE_LIMIT],
     }
