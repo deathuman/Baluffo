@@ -1,9 +1,24 @@
-"""Source-registry duplicate-careers-URL guardrail.
+"""Source-registry structural guardrails.
 
-Repo guardrail that fails when two *active* registry rows resolve to the same
-canonicalized careers URL, so www/apex, scheme, trailing-slash and fragment
-twins that would double-emit jobs are caught in the tracked seeds before they
-reach the published registry.
+Repo guardrails that fail when the tracked registry seeds contain a structural
+defect which cannot be a legitimate configuration. Five checks, split by
+whether a reviewed exception is meaningful:
+
+* **No uncovered duplicate careers URL** -- two *active* rows resolving to the
+  same canonicalized careers URL, so www/apex, scheme, trailing-slash and
+  fragment twins that would double-emit jobs are caught before they reach the
+  published registry (`list_active_url_collisions`).
+* **No stale baseline entry** -- every reviewed-collision entry must still be
+  backed by at least two active rows (`list_stale_known_collisions`).
+* **No definition-less static row** -- a static row with neither ``listing_url``
+  nor a non-empty ``pages`` list fetches nothing while reporting ok
+  (`list_definitionless_static_rows`).
+* **No inline asset URLs** -- a ``data:`` URI inside a page list is page
+  content, not a fetchable page (`list_rows_with_inline_asset_urls`).
+* **No duplicate registry ids** -- one id claimed by several rows
+  (`list_duplicate_source_ids`).
+* **No malformed page references** -- any page entry that is not an absolute
+  http(s) URL with a host (`list_rows_with_malformed_page_refs`).
 
 The canonicalization rule lives in ``src.source_registry_identity`` (the
 single authoritative implementation shared with the runtime conflict
@@ -15,8 +30,8 @@ entry from that file requires the canonical URL to have at most one active
 row, so the baseline shrinks as the twins are reconciled and any *new* twin
 fails immediately.
 
-Two invariants are enforced together, so pruning and reconciliation stay in
-lockstep:
+Two invariants are enforced together for that baseline, so pruning and
+reconciliation stay in lockstep:
 
 * **No uncovered collision** -- every canonical URL registered by 2+ active
   rows must be in the baseline (`list_active_url_collisions`).
@@ -26,11 +41,19 @@ lockstep:
   keeping it would keep the guardrail permanently green for a normalized
   (now-single) URL and let future drift go unnoticed.
 
-Deliberate scope: the rule keys purely on URL and only looks at **active**
+Deliberate scope: the URL rule keys purely on URL and only looks at **active**
 rows. Legitimate same-board, different-studio rows (e.g. two studios on a
 shared parent board) collide by design; they belong in the baseline and are
 reviewed there. A demoted row lives in pending, not active, so active+pending
-overlap is intentionally not treated as a twin.
+overlap is intentionally not treated as a twin. The other checks have no
+allowlist by design: a duplicate id or an unfetchable page is a keying or
+fetchability defect, never a reviewed-and-accepted configuration.
+
+Scope limit worth stating plainly: these checks read the **committed seeds**
+(``data/defaults/*.seed.json``). The live registry that the pipeline actually
+fetches can drift from them, so a green run here is not proof the live
+registry is clean. The advisory ``registryHygieneAudit`` runtime block exists
+to cover that live surface.
 """
 
 from __future__ import annotations
@@ -40,6 +63,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from src.source_registry_data import (
     KNOWN_TWIN_URLS_DEFAULT_RELATIVE_PATH,
@@ -232,6 +256,95 @@ def check_active_seed_stale_baseline(repo_root: Path) -> list[str]:
         return rows
     known = _load_known_collisions(repo_root)
     return list_stale_known_collisions(known, active_rows=rows)
+
+
+def list_duplicate_source_ids(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Return failure messages for registry ids claimed by more than one row.
+
+    The id is the registry's primary key: it keys source state, tombstones,
+    saved suppression evidence, and every operator-facing row reference. Two
+    rows sharing an id make all of those lookups ambiguous, so one row silently
+    overwrites the other's state and a demote or approve applies to whichever
+    copy happened to be read. This is a pure keying defect with no legitimate
+    configuration -- unlike a shared careers URL, it can never be baselined
+    away -- so it is a hard failure with no allowlist.
+    """
+    counts: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or "").strip()
+        if not row_id:
+            continue
+        counts[row_id] = counts.get(row_id, 0) + 1
+    return [
+        f"registry id {row_id!r} is claimed by {count} active rows "
+        f"(ids must be unique: they key source state, tombstones, and suppression evidence)"
+        for row_id, count in sorted(counts.items())
+        if count > 1
+    ]
+
+
+def check_active_seed_duplicate_ids(repo_root: Path) -> list[str]:
+    """Guardrail entrypoint: fail when two active seed rows share a registry id."""
+    seed_path = _active_seed_path(repo_root)
+    rows = _load_active_seed(seed_path)
+    if isinstance(rows, list):
+        return list_duplicate_source_ids(rows)
+    return rows
+
+
+def list_rows_with_malformed_page_refs(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Return rows whose page lists carry unfetchable references.
+
+    A configured page must be an absolute ``http(s)`` URL with a host.
+    Anything else -- an empty entry, a relative path, a ``data:``/``blob:``/
+    ``javascript:`` URI, or a scheme-relative or hostless ``https:///...`` URL
+    -- cannot be fetched and makes the row silently contribute nothing on every
+    pass. This generalizes the inline-asset rule (which only matches ``data:``)
+    to the whole class of malformed page references, and unlike the inline-asset
+    check it is not limited to any single field.
+    """
+    failures: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or "").strip()
+        offending: list[str] = []
+        for field in ("pages", "detailPagesSample"):
+            values = row.get(field)
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                text = str(value or "").strip()
+                if not text:
+                    offending.append(f"{field}[<empty>]")
+                    continue
+                if not text.lower().startswith(("http://", "https://")):
+                    offending.append(f"{field}[{text[:32]}]")
+                    continue
+                try:
+                    if not urlparse(text).hostname:
+                        offending.append(f"{field}[{text[:32]}]")
+                except ValueError:
+                    offending.append(f"{field}[{text[:32]}]")
+        if offending:
+            failures.append(
+                f"{row_id} carries malformed page reference(s) "
+                f"({'; '.join(offending[:3])}) — every configured page must be an "
+                "absolute http(s) URL with a host; relative, inline, and hostless "
+                "entries fetch nothing"
+            )
+    return failures
+
+
+def check_active_seed_no_malformed_page_refs(repo_root: Path) -> list[str]:
+    """Guardrail entrypoint: fail when an active seed row has unfetchable pages."""
+    seed_path = _active_seed_path(repo_root)
+    rows = _load_active_seed(seed_path)
+    if isinstance(rows, list):
+        return list_rows_with_malformed_page_refs(rows)
+    return rows
 
 
 def _load_active_seed(seed_path: Path) -> list[dict[str, Any]] | list[str]:

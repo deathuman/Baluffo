@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from tools.repo_health import source_registry_duplicate_url_policy as policy
 
@@ -240,3 +240,105 @@ def test_definitionless_static_rows_ignores_careers_url_only() -> None:
 
 def test_definition_guardrail_passes_on_committed_seed() -> None:
     assert policy.check_active_seed_definitions(ROOT) == []
+
+
+# duplicate registry ids ------------------------------------------------------
+
+
+def test_duplicate_ids_flags_one_id_claimed_twice() -> None:
+    rows = [
+        _static_row("static:listing_url:https://a.example/jobs"),
+        _static_row("static:listing_url:https://a.example/jobs"),
+    ]
+    failures = policy.list_duplicate_source_ids(rows)
+    assert len(failures) == 1
+    assert "static:listing_url:https://a.example/jobs" in failures[0]
+    assert "claimed by 2" in failures[0]
+
+
+def test_duplicate_ids_accepts_distinct_ids_on_a_shared_url() -> None:
+    """A shared board is a reviewed URL collision, never an id collision."""
+    rows = [
+        _row("static:listing_url:https://ea.com/careers", "https://ea.com/careers"),
+        _row("static:listing_url:https://www.ea.com/careers", "https://www.ea.com/careers"),
+    ]
+    assert policy.list_duplicate_source_ids(rows) == []
+
+
+def test_duplicate_ids_ignores_blank_ids_and_junk_rows() -> None:
+    rows: list[object] = [{"id": ""}, {"id": "   "}, None, 42, "x"]
+    assert policy.list_duplicate_source_ids(cast(Any, rows)) == []
+
+
+def test_duplicate_ids_is_not_baselineable() -> None:
+    """Unlike a shared URL, a duplicate id has no allowlist escape hatch."""
+    rows = [_static_row("dup"), _static_row("dup")]
+    assert policy.list_duplicate_source_ids(rows) != []
+
+
+def test_duplicate_id_guardrail_passes_on_committed_seed() -> None:
+    assert policy.check_active_seed_duplicate_ids(ROOT) == []
+
+
+# malformed page references ---------------------------------------------------
+
+
+def test_malformed_page_refs_flags_relative_and_inline_entries() -> None:
+    rows = [
+        _static_row("static:listing_url:https://a.example/jobs", pages=["/jobs/team"]),
+        _static_row(
+            "static:listing_url:https://b.example/jobs", pages=["data:image/png;base64,AA"]
+        ),
+    ]
+    failures = policy.list_rows_with_malformed_page_refs(rows)
+    assert len(failures) == 2
+    assert any("a.example" in failure for failure in failures)
+    assert any("b.example" in failure for failure in failures)
+
+
+def test_malformed_page_refs_flags_empty_and_hostless_entries() -> None:
+    rows = [
+        _static_row("static:listing_url:https://a.example/jobs", pages=["  "]),
+        _static_row("static:listing_url:https://b.example/jobs", pages=["https:///jobs"]),
+    ]
+    failures = policy.list_rows_with_malformed_page_refs(rows)
+    assert len(failures) == 2
+    assert any("<empty>" in failure for failure in failures)
+    assert any("https:///jobs" in failure for failure in failures)
+
+
+def test_malformed_page_refs_covers_detail_pages_sample() -> None:
+    rows = [
+        _static_row(
+            "static:listing_url:https://a.example/jobs",
+            pages=["https://a.example/jobs"],
+            detailPagesSample=["blob:https://a.example/abc"],
+        )
+    ]
+    failures = policy.list_rows_with_malformed_page_refs(rows)
+    assert len(failures) == 1
+    assert "detailPagesSample" in failures[0]
+
+
+def test_malformed_page_refs_accepts_absolute_http_urls() -> None:
+    rows = [
+        _static_row(
+            "static:listing_url:https://a.example/jobs",
+            pages=["https://a.example/jobs", "http://b.example/careers"],
+        )
+    ]
+    assert policy.list_rows_with_malformed_page_refs(rows) == []
+
+
+def test_malformed_page_refs_ignores_non_list_fields_and_junk() -> None:
+    rows: list[object] = [
+        _static_row("static:listing_url:https://a.example/jobs", pages="https://a.example/jobs"),
+        _static_row("static:listing_url:https://b.example/jobs", pages=None),
+        None,
+        42,
+    ]
+    assert policy.list_rows_with_malformed_page_refs(cast(Any, rows)) == []
+
+
+def test_malformed_page_ref_guardrail_passes_on_committed_seed() -> None:
+    assert policy.check_active_seed_no_malformed_page_refs(ROOT) == []

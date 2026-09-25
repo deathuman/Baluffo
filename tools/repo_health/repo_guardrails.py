@@ -58,7 +58,9 @@ from release_artifacts_policy import (
 )
 from source_registry_duplicate_url_policy import (
     check_active_seed_definitions,
+    check_active_seed_duplicate_ids,
     check_active_seed_no_inline_asset_urls,
+    check_active_seed_no_malformed_page_refs,
     check_active_seed_stale_baseline,
     check_active_seed_twin_career_urls,
 )
@@ -938,7 +940,24 @@ def run_registry_group() -> list[GuardFailure]:
         "check_active_seed_no_inline_asset_urls",
         check_active_seed_no_inline_asset_urls(repo_root=ROOT),
     )
-    for failure in (uncovered, stale, definitions, inline_assets):
+    duplicate_ids = _failure_from_messages(
+        "registry",
+        "check_active_seed_duplicate_ids",
+        check_active_seed_duplicate_ids(repo_root=ROOT),
+    )
+    malformed_pages = _failure_from_messages(
+        "registry",
+        "check_active_seed_no_malformed_page_refs",
+        check_active_seed_no_malformed_page_refs(repo_root=ROOT),
+    )
+    for failure in (
+        uncovered,
+        stale,
+        definitions,
+        inline_assets,
+        duplicate_ids,
+        malformed_pages,
+    ):
         if failure is not None:
             failures.append(failure)
     return failures
