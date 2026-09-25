@@ -3,7 +3,7 @@
 // fetch-derived signals must stay mutually exclusive so the display cap is unreachable.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanHealthPayload, cleanStoragePayload, cleanSyncPayload, createActionCenterFixture as createFixture } from "./helpers/action-center-fixture.mjs";
+import { cleanStoragePayload, cleanSyncPayload, createActionCenterFixture as createFixture } from "./helpers/action-center-fixture.mjs";
 
 test("action center polls a route that actually carries alerts and kpis", async () => {
   // Regression guard. The controller used to poll `/ops/health?view=ready`, whose

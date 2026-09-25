@@ -30,11 +30,6 @@ function declaredTokens(html) {
   return tokens;
 }
 
-// The token *values* the registry can resolve, for one registry bucket.
-function registryValues(bucket) {
-  return new Set(Object.values(UI_TOKENS[bucket] || {}));
-}
-
 test("no admin handle is declared with a camelCase name the registry spells differently", () => {
   const html = read("admin.html");
   const declared = declaredTokens(html);

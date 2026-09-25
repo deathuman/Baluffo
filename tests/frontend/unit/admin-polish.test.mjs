@@ -37,8 +37,8 @@ test("source ID affordance uses a full-size theme-aware glyph and focus target",
 test("advanced bulk disclosure has one authored indicator", () => {
   const summary = css.match(/\.admin-advanced-bulk-summary\s*\{[\s\S]*?\n\}/)?.[0] || "";
   assert.match(summary, /display:\s*flex/);
-  assert.match(css, /\.admin-advanced-bulk-summary::marker\s*\{[\s\S]*?content:\s*[\"']?[\"']?/);
-  assert.match(css, /\.admin-advanced-bulk-summary::after\s*\{[\s\S]*?content:\s*[\"']?>[\"']/);
+  assert.match(css, /\.admin-advanced-bulk-summary::marker\s*\{[\s\S]*?content:\s*["']?["']?/);
+  assert.match(css, /\.admin-advanced-bulk-summary::after\s*\{[\s\S]*?content:\s*["']?>["']/);
   assert.match(css, /\.admin-advanced-bulk-summary::-webkit-details-marker\s*\{[\s\S]*?display:\s*none/);
 });
 

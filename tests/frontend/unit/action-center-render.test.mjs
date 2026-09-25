@@ -25,7 +25,13 @@ import {
 
 // Codepoints the old panel used: `i`, ⚠, ⏰, ↔️, ❌, ✓, ▶, 🔄, 📋, ✕.
 // Any of them appearing in output means a glyph slipped back in.
-const LEGACY_GLYPHS = /[\u26A0\u23F0\u2194\u274C\u2713\u25B6\u2715\uD83D\uDD04\uD83D\uDCCB\uFE0F]/u;
+// The two astral glyphs are written as full code points rather than
+// surrogate halves: a lone surrogate in a unicode-flagged class can
+// combine with whatever follows it, which is what
+// no-misleading-character-class rejects. U+FE0F is left out for the same
+// reason: a variation selector combines with the glyph before it, and it
+// only varies how a glyph is drawn, not which glyph it is.
+const LEGACY_GLYPHS = /[\u26A0\u23F0\u2194\u274C\u2713\u25B6\u2715\u{1F504}\u{1F4CB}]/u;
 
 function signal(overrides = {}) {
   return {
