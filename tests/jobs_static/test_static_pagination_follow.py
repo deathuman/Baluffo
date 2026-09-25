@@ -160,6 +160,11 @@ def test_pagination_anchors_malformed_html_never_raises() -> None:
     assert pagination_anchors_for_html(None, _BASE) == []  # type: ignore[arg-type]
 
 
+def test_pagination_anchors_skip_malformed_bracket_host_href() -> None:
+    html = '<a href="http://[cdn_template_directory]/jobs?page=2">template</a>'
+    assert pagination_anchors_for_html(html, _BASE) == []
+
+
 def test_pagination_kill_switch(monkeypatch) -> None:
     monkeypatch.setenv("BALUFFO_STATIC_PAGINATION_FOLLOW", "0")
     assert static_pagination_follow_enabled() is False

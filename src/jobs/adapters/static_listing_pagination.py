@@ -31,9 +31,10 @@ from __future__ import annotations
 
 import re
 from html import unescape
-from urllib.parse import ParseResult, parse_qsl, urljoin, urlparse
+from urllib.parse import ParseResult, parse_qsl, urlparse
 
 from src.jobs.adapters.html_parsers import iter_anchor_fragments
+from src.jobs.adapters.static_runtime_support import safe_page_urljoin
 from src.jobs.text_utils import clean_text
 from src.shared.utils import env_flag
 
@@ -324,7 +325,7 @@ def pagination_anchors_for_html(
         href = clean_text(anchor.get("href"))
         if not href:
             continue
-        absolute = urljoin(base_url, href)
+        absolute = safe_page_urljoin(base_url, href)
         normalized = _same_listing_page_url(base_url, absolute)
         if not normalized or normalized in seen:
             continue
