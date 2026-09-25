@@ -53,6 +53,18 @@ adjudicable items on the current tree:
 Every item carries its evidence, suggested dispositions, and an explicit
 `disposition: "undecided"`. The tool does not decide any of them.
 
+## Also fixed en route
+
+`test_batch_scoped_recovery_cache_preserves_fixture_outcomes` failed intermittently in the
+source-discovery lane — on `HEAD` as well as on this branch, roughly two runs in three, and it
+aborted `npm run test:py:linux` twice. Root cause found by diffing the two results field by field
+rather than reading the truncated pytest output: the parity helper stripped timestamp fields but not
+`probeDurationMs`, a wall-clock measurement that jitters by a millisecond or two between otherwise
+identical runs, and it compared the candidate lists positionally while discovery emits them in
+nondeterministic probe-completion order. Both are test defects, not product defects; the stripper now
+removes `*DurationMs`/`*ElapsedMs`/`*Ms` alongside the timestamps, sorts lists canonically, and still
+reports a genuine content change. Ten consecutive runs green afterwards.
+
 ## Completed
 
 ### P0 — Push blocker: two dead functions in `src/` — **done**
