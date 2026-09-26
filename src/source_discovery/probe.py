@@ -101,6 +101,69 @@ _BOARD_URL_HOST_SUFFIX_BY_ADAPTER = {
     "jazzhr": ".applytojob.com",
 }
 
+# The head segment of a same-host link that announces itself as a postings area. Boards disagree on
+# how they spell it: `/careers/<slug>`, `/career/<slug>`, `/job-listing/<slug>`,
+# `/career_listing/<id>`, `/open_positions`, `/jobdetails`. Requiring the child to sit under the exact
+# base path misses every board whose listing section is named differently from its landing page, or
+# whose landing page is not a listing path at all (Jyamma's `/careersjyamma`).
+_KEYWORD_HEADED_DETAIL_RE = re.compile(
+    r"(?i)^(?:jobs?|careers?|positions?|openings?|vacanc(?:y|ies)|job[-_]details?|jobdetails?"
+    r"|job-openings?|open[-_]positions?|job[-_]listings?|job[-_]listing|career[-_]listings?"
+    r"|career[-_]listing)$"
+)
+
+# A section tab, a programme page, or a nav target rather than a posting. Matched against the *last*
+# path segment, so `/careers/faq/` and `/careers/veterans` are refused while `/careers/vfx-artist/`
+# and `/careers/239898-lead-writer` are not. This is the guard that keeps a keyword-headed head from
+# turning every category page into a counted role.
+_SECTION_SEGMENT_TOKENS = frozenset(
+    {
+        "about",
+        "all",
+        "all-openings",
+        "all-openings-1",
+        "benefits",
+        "categories",
+        "category",
+        "commitment",
+        "community",
+        "contact",
+        "culture",
+        "early-careers",
+        "faq",
+        "faqs",
+        "graduates",
+        "internships",
+        "job-category",
+        "jobs",
+        "life",
+        "news",
+        "open-application",
+        "people",
+        "positions",
+        "press",
+        "students",
+        "teams",
+        "veterans",
+        "why-us",
+    }
+)
+
+
+# A posting leaf is a hyphenated slug (`vfx-artist`, `senior-game-programmer`, `flconcept-azk86`).
+# Counting hyphens is the wrong test -- `/careers/benefits-and-perks` has two of them -- so the leaf is
+# split on hyphens and refused if *any* part is a section word. A single bare word is not a posting
+# either: that is a section, and section pages are what this whole branch must not count.
+def _looks_like_posting_leaf(segment: str) -> bool:
+    lowered = segment.lower()
+    if lowered in _SECTION_SEGMENT_TOKENS:
+        return False
+    if "-" not in lowered:
+        return False
+    if any(part in _SECTION_SEGMENT_TOKENS for part in lowered.split("-")):
+        return False
+    return len(lowered) >= 10
+
 
 @dataclass(frozen=True)
 class StaticProbeEvidence:
@@ -181,6 +244,60 @@ def _is_same_listing_detail_link(base_url: str, absolute_url: str, label: str) -
     if len(str(label or "").split()) >= 2:
         return True
     return bool(_SLUG_LIKE_SEGMENT.match(detail_segment))
+
+
+def _is_keyword_headed_detail_link(absolute_url: str, label: str) -> bool:
+    """A same-host posting under a keyword-headed section the base path does not name.
+
+    The sibling rule above requires the child to sit under the board's own base path, which misses two
+    very common shapes. Either the landing page is not a listing path at all -- Jyamma Games serves its
+    master list at `/careersjyamma`, so the base check bails before a single link is examined, and the
+    probe reports `no_jobs` at `confidence=high` on a page carrying four real roles -- or the listing
+    section is spelled differently from the landing page, as with `/join-us` boards whose roles live
+    under `/career/<slug>`.
+
+    The head must be a postings keyword, including the compound spellings boards actually use
+    (`job-listing`, `career_listing`, `open_positions`, `jobdetails`). The last segment must then look
+    like a posting rather than a section: a long multi-hyphen slug, or a multi-word label that is not
+    itself a section word. That second test is the whole safety of this branch -- without it every
+    `/careers/faq/`, `/careers/veterans/` and `/careers/job-category/<dept>/` on the internet counts as
+    a role, which is how a category page ends up reported as an opening.
+    """
+    parsed = urlparse(absolute_url or "")
+    # A generic-application link is never a posting, whatever its path looks like. Checked before the
+    # shape tests because a slug like `speculative-application-2026` is otherwise a perfect posting
+    # shape, and `/careers/open-application` is a real 200 on at least one board.
+    if _is_generic_application_link(label, parsed.path):
+        return False
+    segments = [s for s in (parsed.path or "").split("/") if s]
+    if len(segments) < 2:
+        return False
+    head, last = segments[0], segments[-1]
+    if not _KEYWORD_HEADED_DETAIL_RE.match(unquote(head)):
+        return False
+    # A category path is a department index, not a role: `/careers/all-openings/job-category/<dept>/`
+    # is three segments deep and the one above the leaf is the giveaway. Without this the multi-word
+    # label rescue below admits every department on a board that uses that shape.
+    if len(segments) >= 3 and unquote(segments[-2]).lower() in _SECTION_SEGMENT_TOKENS:
+        return False
+
+    decoded_last = unquote(last).lower()
+    if decoded_last in _SECTION_SEGMENT_TOKENS:
+        return False
+    # A trailing extension is an asset or a document, never a posting page.
+    if re.search(r"\.(?:pdf|png|jpe?g|gif|svg|css|js|html?|php|docx?|xlsx?)$", decoded_last, re.I):
+        return False
+    # Template seams render as literal source; the fetched page is not a posting.
+    if any(token in decoded_last for token in ("<?", "${", "{{", "%7b")):
+        return False
+    if _looks_like_posting_leaf(decoded_last):
+        return True
+    # A multi-word label rescues a slug this branch cannot read (an opaque id such as `/careers/34124/`,
+    # whose own link text is "1 position available"), but only when the label is not a section word.
+    words = str(label or "").split()
+    if len(words) >= 2 and not _is_generic_application_link(label, parsed.path):
+        return not all(word.lower().strip(".,:;()") in _SECTION_SEGMENT_TOKENS for word in words)
+    return False
 
 
 def _normalized_listing_path(url: str) -> str:
@@ -269,6 +386,7 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
             not _STATIC_DETAIL_PATH_RE.search(parsed.path)
             and not _is_elevato_detail_link(absolute)
             and not _is_same_listing_detail_link(base_url, absolute, label)
+            and not _is_keyword_headed_detail_link(absolute, label)
             and not same_listing_query_detail
         ):
             continue

@@ -21,6 +21,8 @@
 | `4502437d` | P3 (31 duplicate groups demoted) and P4 (102-row seed prune). |
 | `9a69e33a` | Board-coverage preflight finding, 8 tests, and four hard stops for the trap classes that caused four wrong answers in this programme. |
 | this change | Phenom pagination decode; probe R1 singular/plural siblings; preflight id-case + split consistency; 227 non-page `pages` entries stripped; `hiddenFromDefault` cleared on promotion; conflict-demote provenance on inert fields plus `winnerId` in the run response. |
+| `57eef38e` | Probe R3: `vacancies?` could not match `/vacancy/`, so singular-path boards counted zero. |
+| pending | Probe R4: keyword-headed posting sections, 117 roles on 13 boards with 0 noise boards falsely gaining. |
 
 ## The authority question: answered
 
@@ -425,26 +427,85 @@ This affects every phenom tenant, not just RTL.
    **playground-games 0 → 12**, both entirely own-host; sega holds at 23 on the plural path. 170 probe
    tests and 1,369 static/discovery/admin tests pass, plus 8 new ones.
 
+   **Landed, R4:** `_is_keyword_headed_detail_link` admits a same-host posting whose *head* segment is a
+   postings keyword, including the compound spellings boards use (`job-listing`, `career_listing`,
+   `open_positions`, `job-details`). The sibling rule requires a posting to sit under the board's own
+   base path, which misses two measured shapes: a landing page that is not a listing path at all
+   (Jyamma serves its master list at `/careersjyamma`, so the base check bails before any link is
+   examined), and a listing section spelled differently from the landing page (`/join-us` boards whose
+   roles live under `/career/<slug>`).
+
+   Measured live, control first, **both directions**:
+
+   | | boards gaining | roles | noise boards falsely gaining |
+   |---|---:|---:|---:|
+   | R4 as proposed (admit on a multi-word label) | ~17 rows | ~120 | **~19** |
+   | R4 as landed (keyed on the last path segment) | **13/15** | **117** | **0/10** |
+
+   The whole safety of the branch is in refusing section pages, so the leaf is tested rather than the
+   label: a posting leaf is hyphenated and none of its hyphen parts is a section word. Counting hyphens
+   is the wrong test — `/careers/benefits-and-perks` has two of them and is a section, while
+   `/careers/vfx-artist/` has one and is a role. A category path (`/careers/all-openings/job-category/<dept>/`)
+   is refused on the segment above the leaf.
+
+   This also *strengthened* an existing pin rather than weakening it. The `listing-navigation-only`
+   fixture protected Krafton's `/careers/jobs/` and `/careers/people/` only because their labels were
+   single words; the landed rule refuses them on the **path**, and new multi-word-labelled section-tab
+   fixtures plus two end-to-end cases (a navigation-only board and a department-index board must still
+   report `no_jobs`) close the gap that fixture left open.
+
+   **Measured shortfall:** Buffalo Buffalo stays at 0 — its `/careers/3denvironmentartist` has no hyphen
+   and no job-like label — against the 2 a delegated analysis predicted. Left alone deliberately:
+   forcing it means loosening the leaf rule that is doing all the safety work.
+
+   ### The scale of the zero-count population, corrected twice
+
+   Both figures this section previously carried came from a **5% stride sample** and were wrong by large
+   factors:
+
+   | | previously stated | actual |
+   |---|---:|---:|
+   | active static rows probing zero | 85 | **1,600 of 2,039** |
+   | of those, JS-rendered | ~10 | **716 of the 1,522 that return 200** |
+   | boards needing Playwright and not covered | "10 boards" | **0 — all 716 are already covered** |
+
+   The Playwright fallback triggers automatically on `detect_js_shell` (`static_listing_runner.py:690-696`)
+   plus a second independent trigger at `:698-704`. It is not per-source opt-in, which is how this
+   section used to describe it.
+
+   **The caveat that matters more than the count:** `lastStatus` is `None` on 1,598 of those 1,600 rows.
+   Per the `excluded ≠ empty` rule, a probe count of 0 on a never-fetched row says nothing about yield,
+   so none of this establishes lost jobs. What R3 and R4 fix is a *counting* defect that misleads
+   discovery ranking — not collection.
+
+
    **What is deliberately still not fixed, and why:**
+
    - **carx-online is not a recovery.** Its probe count moves 0 → 1, but that one "detail link" is
-     `krasnodar.hh.ru/vacancy/137323128` — an hh.ru embed, not a carx posting. It is recorded as a
-     false positive rather than claimed as a win.
+     `krasnodar.hh.ru/vacancy/137323128` — an hh.ru embed on a 7.4 MB page, not a carx posting. It is
+     recorded as a false positive rather than claimed as a win.
    - **The probe has no off-host filter on this branch at all**, and never did: `hh.ru/jobs/123` was
-     already admitted before this change, because the netloc checks live only in the same-host listing
-     predicates. This change extends a pre-existing weakness to one more spelling rather than
-     introducing it. Fixing it properly means changing probe counting semantics and shifting many
-     boards' counts at once — a much larger change than adding one spelling, and not something to do
-     unvalidated. The fetch adapter's `KNOWN_NON_JOB_DETAIL_HOSTS` plus per-source curation is the real
-     defence against off-host junk, not the probe estimate.
-   - **8 boards are JS-rendered** and need the existing Playwright fallback, not a shape predicate:
-     `career.sharkmob.com`, `career.snowprintstudios.com`, `careers.ilogos.biz`,
-     `careers.foolstheory.com`, `careers.codewizards.io`, `sledgehammergames.com`, `catface.com`,
-     `musegames.com`.
-   - **Root-level slugs** are split: `/senior-programmer/` and `/senior-game-designer/` (futurats,
-     dynamicnext) are reachable by `detailPathTokens` because the trailing slash makes the token
-     match; `/2d-artist` and a bare `/26072` are not, having no slash-delimited segment.
-   - **`jyammagames.com/careersjyamma` is a malformed registry board URL**, not a shape problem — the
-     base fails `_STATIC_LISTING_PATH_RE` because the path is not a real path. A data defect.
+     already admitted before R3, because the netloc checks live only in the same-host listing
+     predicates. R3 extends a pre-existing weakness to one more spelling rather than introducing it.
+     Fixing it properly means changing probe counting semantics and shifting many boards' counts at
+     once — a much larger change than adding one spelling, and not something to do unvalidated. The
+     fetch adapter's `KNOWN_NON_JOB_DETAIL_HOSTS` plus per-source curation is the real defence against
+     off-host junk, not the probe estimate.
+   - **Root-level slugs are split:** `/senior-programmer/` and `/senior-game-designer/` (futurats,
+     dynamicnext) are reachable by `detailPathTokens` because the trailing slash makes the token match;
+     `/2d-artist` and a bare `/26072` are not, having no slash-delimited segment.
+   - **`jyammagames.com/careersjyamma` is not a malformed URL and the row is correct.** An earlier
+     revision of this section called it a data defect; measurement contradicted that. The registered
+     URL is the site's *master* list and its HTML carries all four role paths, and the row's
+     `jobsFound: 8` is direct evidence the fetch collects from it. The probe was reporting
+     `no_jobs` at `confidence=high` on a page with four real roles — a confident false negative, the
+     worst failure mode — purely because `/careersjyamma` fails `_STATIC_LISTING_PATH_RE` and
+     `_is_same_listing_detail_link` bails at `probe.py:218` before examining a link. R4 fixes it on the
+     probe side (0 → 4).
+
+     Repointing the row to `/careers` was measured and rejected: that URL 302s to `/careers-art/`,
+     whose HTML mentions only 1 of the 4 role paths, so the probe would report 4 while the board
+     yields 1 — trading a false negative for a false positive on the exact number discovery acts on.
    - **About Fun's `/jobs-<slug>` needs nothing.** Its 12 jobs are collected. Only its probe count is
      wrong, and fixing that needs a source-row parameter on `static_probe_evidence` plus six call-site
      changes — a separate change from any registry field, and correctly not started here. Note the
