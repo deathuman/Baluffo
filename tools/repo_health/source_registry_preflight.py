@@ -42,8 +42,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -60,6 +62,74 @@ from tools.repo_health.source_registry_duplicate_url_policy import (  # noqa: E4
 )
 
 _MAX_SAMPLES = 5
+
+# A board left with no active row is only a defect when a conflict resolution emptied it. The same
+# shape is the *normal* state for a deliberately parked source -- repeated zero jobs, a fetch
+# failure, a provider migration awaiting adjudication, a not-yet-promoted candidate -- so the two
+# cases are counted separately. Lumping them hides a real coverage gap; reporting only the defect
+# bucket's absence buries the operator in several hundred expected rows.
+CONFLICT_DEMOTE_REASONS = frozenset(
+    {
+        "registry_conflict_safe_auto_demote",
+        "registry_conflict_adjudication_auto_demote",
+    }
+)
+
+
+def board_host(row: dict[str, Any]) -> str:
+    """The host that identifies a board, www-insensitive.
+
+    Host rather than the studio label, because labels drift: the same board is registered as both
+    ``Lost Boys Interactive`` and ``Lost Boys Interactive (Embracer Group)``. A label-keyed coverage
+    test reads that as two studios and reports a covered board as stranded.
+    """
+    url = str(row.get("board_url") or row.get("listing_url") or row.get("careersUrl") or "").strip()
+    if not url:
+        return ""
+    return (urlparse(url).hostname or "").strip().lower().removeprefix("www.")
+
+
+def _host_is_covered(host: str, active_hosts: set[str]) -> bool:
+    """True when some active row registers this host, or a parent/child of it.
+
+    Plain host equality splits one board across ``10chambers.com`` and
+    ``careers.10chambers.com`` and calls it two boards, so both directions of suffix containment
+    count as covered. Deliberately not a public-suffix truncation to the registrable domain: that
+    would collapse every ``*.co.uk`` host onto ``co.uk`` and hide real gaps.
+    """
+    if host in active_hosts:
+        return True
+    return any(host.endswith(f".{other}") or other.endswith(f".{host}") for other in active_hosts)
+
+
+def find_boards_without_active_row(
+    active_rows: Iterable[dict[str, Any]],
+    pending_rows: Iterable[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Boards whose every registration sits in pending, split by why.
+
+    ``boardNoActiveRowConflictDemoted`` is the actionable bucket: reconciliation emptied the board
+    and left no winner. ``boardNoActiveRowParked`` is expected and informational.
+
+    Both counts are **advisory and an upper bound**, not a verdict. Host identity is a proxy for
+    "same board": it merges an apex host with its careers subdomain, and it can still split a board
+    served from two unrelated domains. Every row here is a human adjudication, which is what a
+    preflight is for -- but do not read the count as a confirmed number of stranded boards.
+    """
+    active_hosts = {host for row in active_rows if (host := board_host(row))}
+    emptied: list[str] = []
+    parked: list[str] = []
+    for row in pending_rows:
+        host = board_host(row)
+        row_id = str(row.get("id") or "").strip()
+        if not row_id or not host or _host_is_covered(host, active_hosts):
+            continue
+        reason = str(row.get("pendingReason") or "").strip()
+        (emptied if reason in CONFLICT_DEMOTE_REASONS else parked).append(row_id)
+    return {
+        "boardNoActiveRowConflictDemoted": sorted(emptied),
+        "boardNoActiveRowParked": sorted(parked),
+    }
 
 
 def load_live_rows(data_root: Path) -> tuple[list[dict[str, Any]], str]:
@@ -247,6 +317,8 @@ def build_report(data_root: Path) -> dict[str, Any]:
     definitionless = list_definitionless_static_rows(live_rows)
     malformed = list_rows_with_malformed_page_refs(live_rows)
 
+    uncovered_boards = find_boards_without_active_row(live_rows, load_pending_rows(data_root))
+
     return {
         "liveRowCount": len(live_rows),
         "seedRowCount": len(seed_rows),
@@ -269,6 +341,7 @@ def build_report(data_root: Path) -> dict[str, Any]:
         "inlineAssetRows": list_rows_with_inline_asset_urls(live_rows),
         "duplicateIdRows": list_duplicate_source_ids(live_rows),
         "staleBaselineEntries": list_stale_known_collisions(known, active_rows=live_rows),
+        "boardCoverage": uncovered_boards,
         "splitConsistency": check_seed_store_split_consistency(
             data_root,
             live_rows=live_rows,
@@ -299,6 +372,13 @@ def _has_structural_defects(report: dict[str, Any]) -> list[str]:
         count = len(split.get(label) or [])
         if count:
             found.append(f"{count} {label} ({hint})")
+    coverage = report.get("boardCoverage") or {}
+    emptied = len(coverage.get("boardNoActiveRowConflictDemoted") or [])
+    if emptied:
+        found.append(
+            f"{emptied} boards left with no active row by conflict demotion "
+            "(reconciliation emptied the board; promote one registration)"
+        )
     return found
 
 
@@ -313,6 +393,15 @@ def render_text(report: dict[str, Any], *, strict: bool) -> str:
         f"{report['uncoveredCollisionsSeed']} seed",
         f"  stale baseline       : {len(report['staleBaselineEntries'])}",
     ]
+    coverage = report.get("boardCoverage") or {}
+    emptied = coverage.get("boardNoActiveRowConflictDemoted") or []
+    parked = coverage.get("boardNoActiveRowParked") or []
+    lines.append(
+        f"  boards w/o active row: {len(emptied)} emptied by conflict demote / "
+        f"{len(parked)} parked by policy"
+    )
+    if emptied:
+        lines.append(f"  emptied sample       : {', '.join(emptied[:3])}")
     if report["liveOnlyRowIds"]:
         lines.append(f"  live-only sample     : {', '.join(report['liveOnlyRowIds'][:3])}")
     if report["seedOnlyRowIds"]:

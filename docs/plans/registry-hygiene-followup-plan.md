@@ -346,7 +346,24 @@ now **0**.
 
 ## Open items for the operator
 
-1. **`static_probe_evidence` under-reports, and discovery acts on that number.** This replaces an
+1. **21 further boards left with no active row by conflict demotion** — newly visible because
+   `source_registry_preflight.py` now reports it. This is the same defect class as the 16 already
+   repaired, and the reason the earlier count kept moving: the 452 figure counted *parked* sources
+   too, and the 33 counted rows rather than studios. The preflight splits the two:
+
+   ```
+   boards w/o active row: 21 emptied by conflict demote / 460 parked by policy
+   ```
+
+   Only the first bucket is a defect and only it fails `--strict`. **Treat 21 as an upper bound, not
+   a verdict**: board identity is matched on host, which merges an apex host with its careers
+   subdomain but can still split a board served from two unrelated domains. The samples
+   (`careers.rawpowergames.com/jobs`, `careers.sega.co.uk/vacancies`, `corporate.arkadium.com/careers/`)
+   are plausible, but each needs the adjudication every preflight finding is asking for. The 460
+   parked rows are expected and must **not** be promoted — they are the reason the 452 attempt was
+   wrong.
+
+2. **`static_probe_evidence` under-reports, and discovery acts on that number.** This replaces an
    earlier, wrong reading of the same evidence — see the correction below. It is a *discovery-side
    counting* bug, not a collection bug, and it is still worth fixing.
 
@@ -373,15 +390,15 @@ now **0**.
    `welcometothejungle.com` blog posts and `indeed.com` salary pages. Whatever fixes the
    under-counting must not widen collection, or it feeds the quality gate more of exactly this.
 
-2. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
-3. **The two latent same-studio duplicates** (`unknownworlds.com/careers` vs `/en/careers`,
+3. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
+4. **The two latent same-studio duplicates** (`unknownworlds.com/careers` vs `/en/careers`,
    `double11.com/join-us` vs `/vacancies`). The twin rule keys purely on canonical URL, so it will
    never flag path variants like these and the advisory audit inherits the blindness.
-4. **`duplicateOfSourceId` is still unset on conflict-demoted rows.** It is the obvious provenance
+5. **`duplicateOfSourceId` is still unset on conflict-demoted rows.** It is the obvious provenance
    fix, but it is *not* behaviour-neutral: `source_registry_io_load`, `registry_sync_summary` and the
    soak report all read that field as "this row is a duplicate", so stamping it would silently
    reclassify rows in reports. Deliberately left out of `62724469`; it needs its own change.
-5. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+6. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
 
 ### Correction: the "static parser is losing two-thirds of these boards" claim was wrong
 
