@@ -202,6 +202,43 @@ grandfather real duplication. Decide per group: baseline the twin, or retire one
 Retiring is not free: these rows are being fetched today, so each decision trades duplicate output
 against losing a board.
 
+**Resolved 2026-09-26: all 31 are the same board, and all 31 were reconciled by demotion.**
+
+Live evidence, with three working controls and certifi-anchored TLS:
+
+- **31/31 groups resolve to one board.** Compared on the registry's *own*
+  `canonicalize_careers_url` applied to the post-redirect final URL, not on raw URL strings. Raw
+  comparison invents differences that are not there — `http` vs `https`, an explicit `:443`, a
+  trailing slash and `www` vs apex are exactly what the canonicalizer collapses for the twin rule.
+- A first pass using a **content hash** called the scopely pair "different boards". Wrong: the page
+  embeds dynamic content. Both URLs redirect to the identical `careers.scopely.com/us/en` with the
+  same declared canonical. The fingerprint was the unreliable signal, not the boards.
+- The last 3 apparent differences (krafton ×2, rollicgames) were confirmed to be self-referential
+  links: each page links to its own alternate URL form and locale variants.
+
+Survivor authority, in order: **the row the committed seed already keeps** (19 groups — the shipped
+default is the deliberate shape, which is why the seed has zero collisions), else the row the other
+one redirects to (5), else the row matching the page's declared canonical (3), else the apex
+spelling (3). Every demoted row moves to pending, hidden, carrying `duplicateOfSourceId` back to an
+active survivor — not tombstoned, so the board stays covered and the change is reversible.
+
+Result: active 2,255 → 2,224, pending 840 → 871, `uncovered collisions 31 → 0`,
+`seed_row_demoted_in_store` unchanged at 152 (confirming no loser was a seed row).
+
+**Why not `demote_duplicate_active_variants` and why not the baseline file:**
+
+- The sanctioned bulk function sweeps the whole registry — **193 conflict cards** against 62 rows
+  under review — and its family grouping does not match the verified collision boundaries. For
+  `infinityward` and `mindstormstudios` it marks *both* twins as losers, because the family winner
+  is a third row outside the reviewed set; running it would have stripped those studios of their
+  board entirely. The per-row primitive it uses internally (`_demote_duplicate_variant`) was applied
+  to exactly the 31 verified losers instead.
+- Baselining was **not available**: the commit-time stale check runs against the *seed*
+  (`check_active_seed_stale_baseline`), so an entry needs 2+ active seed rows. The seed
+  deliberately keeps one row per board, so every one of these 31 URLs has ≤1 seed row. Baselining
+  them would have failed the guard immediately. Reconciling to one active row is the resolution the
+  seed's own shape implies.
+
 ### P4 — The 3 stale baseline entries and the 153 seed-only rows
 
 Backed by only one live row each, though the seed still has two:
@@ -209,31 +246,78 @@ Backed by only one live row each, though the seed still has two:
 
 The 153 seed-only rows are the larger half of this. Their provenance is now fully decomposed:
 **152 `seed_row_demoted_in_store`** (the store demoted them, so the seed copy is stale) and **1
-`seed_row_lost_from_store`** (RTL, held above). The earlier "163 unknown provenance" figure is
+`seed_row_lost_from_store`** (RTL, resolved below). The earlier "163 unknown provenance" figure is
 resolved — it was these two buckets plus the lost rows, not a third mystery class. The
 `greenhouse:slug:examplestudio` placeholder and the tombstoned inXile row are pruned.
 
-Pruning the 152 still needs per-row care rather than a blind bulk delete, because a wrong prune
-resurrects retired sources — the changelog explicitly warns about this ("removed ... so seed restores
-cannot resurrect them"). A tombstone check per row is the minimum bar.
+**Resolved 2026-09-26: 102 pruned, 50 deliberately kept.** The 152 were classified by *why* the
+store demoted them, because the store's reason decides whether the seed copy is stale or the store
+is merely retrying:
 
-Note for whoever does this: a bulk seed sync is *not* the fix. Regenerating the seed from live would
-carry the 31 collisions into the seed and trip the commit-time guard (seed collisions would go
-7 → 62), and it would change what a fresh install receives.
+| Bucket | Count | Disposition |
+|---|---:|---|
+| `registry_conflict_*_auto_demote` (parked losers) | 127 | prune where a live replacement is verified |
+| `sheet_directory` / `seed` / `provider_migration_candidate` (superseded) | 8 | prune |
+| `fetch_failure_demote` (retry state) | 13 | **keep** — a failed fetch is not a retirement |
+| `hidden:repeated_zero_jobs` (retry state) | 4 | **keep** — parked, deliberately retryable |
+| tombstoned | 0 | — |
 
-## Open decisions for the operator
+Of the 135 prune candidates, only **102** had a verified live replacement: 31 superseded by an active
+row on the same canonical board, 3 with an explicit `duplicateOfSourceId` winner, and 68 superseded
+by a provider-backed row for the same studio under a different adapter (whose canonical URL is the
+provider endpoint, not the careers page — which is why a same-board check alone undercounts).
 
-1. **The 31 duplicate groups (P3).** They are mostly `www`/apex twins of a single board, which is
-   exactly what the reviewed-collision baseline exists for, but they are heterogeneous enough that a
-   blanket baseline would grandfather real duplication. The classification into 9 `redundant_twin`,
-   12 `label_variant`, 9 `true_shared_board`, and 1 `distinct_windows` is in
-   `_out/registry-repair-20260925/duplicate-classification.json` with yield evidence per group. No row
-   in any group kept a job in the last run, so there is no live double-emission to stop — the decision
-   is purely about future coverage. All 62 rows are acknowledged in `data/registry-repair-review.json`.
-2. **The 152 demoted seed rows (P4).** Needs a per-row tombstone check, not a blind bulk prune.
-3. **RTL Enterprises (Phenom).** Held. The host answers 200 but renders client-side, so no job count
-   can be established from here, and it is the only restored-candidate with no `approvedBy` at all.
-   Needs a browser-rendered probe before it is restored or retired.
+**The other 33 must not be pruned, and this is the important finding of P4.** They have no active
+row on any adapter: `registry_conflict_*_auto_demote` demoted their *entire studio family*, leaving
+the studio with zero coverage. Several are whole clusters of one board's URL variants
+(Studio IGGYMOB ×5, Rogue Duck Interactive ×5, Proton Studio ×5, Clay Token ×5 — all `?l=thai` /
+`?ckattempt=1` variants of a single page). Affected studios include k-ID, Unknown Worlds
+Entertainment, Vertigo Games (PLAION), 4A Games, Frogwares, Double Eleven, Ever Curious
+Entertainment, Magnopus, Behaviour Interactive, Black Beach Studio, GigXR.
+
+This is the same pathology as the `infinityward`/`mindstormstudios` family, at scale: a conflict
+resolution that demotes every member of a family leaves the board uncovered rather than resolving
+the conflict. **Pruning those 33 seed rows would have silently retired 33 real boards** — the exact
+"prune blindly and you lose coverage" failure the plan warned about, and the reason a per-row
+tombstone check was the minimum bar. The seed rows stay, so a fresh install still activates them.
+
+Also pruned in the same change: the 3 stale collision-baseline entries. A baseline entry no longer
+backed by 2+ active rows would otherwise mask the URL permanently.
+
+Result: seed 1,890 → 1,788, collision baseline 7 → 4, every non-pruned row byte-identical and in
+order.
+
+### RTL Enterprises — not restored; the row is misconfigured
+
+`phenom:listing_url:https://jobsearch.createyourowncareer.com/RTL/` is alive but is **not a Phenom
+board**. A real browser render (not a plain fetch) shows a jobs2web (`j2w`) platform: search lives at
+`/RTL/content/search/?currentPage=1&pageSize=12`, and every same-host link is a
+`/RTL/content/<category>/` nav entry (`job-world-tech`, `entry-level`, …) with **zero job-posting
+links** on any category page.
+
+The phenom parser matches `^/[^/]+/job/[^/]+/\d+/?$` and paginates on `?startrow=`. Neither matches
+j2w's shape, so this row **provably cannot extract jobs** as configured — restoring it would add a
+row guaranteed to yield nothing. It is also the only candidate with no `approvedBy`; it was promoted
+by `phenom_adapter_migration` with no human approval.
+
+So it stays out of the store, and the follow-up is provider-coverage work, not a registry restore:
+either add a j2w adapter or re-point the row at a real Phenom tenant. `seed_row_lost_from_store` is
+now **0**.
+
+## Open items for the operator
+
+1. **The 33 uncovered studios** (P4). Real coverage gap created by whole-family conflict demotes.
+   The fix belongs in the conflict-resolution policy, not the registry: it should demote the losers
+   and keep one winner active, not demote every member. Needs a decision because changing it alters
+   runtime demotion behaviour.
+2. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
+3. **A static-parser gap found while probing**: `about-fun.com/jobs` serves 14 real postings
+   (`/jobs-<role>` slugs, read directly from the hrefs) that the pipeline's own
+   `static_probe_evidence` counts as **0**. Several of these boards are server-rendered and do have
+   openings, so `lastKeptCount: 0` on a duplicate row is not evidence of an empty board. That is a
+   parser-coverage task in its own right.
+4. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+
 
 ### Release state — no gate work needed
 

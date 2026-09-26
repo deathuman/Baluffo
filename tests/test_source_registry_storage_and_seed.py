@@ -1,9 +1,38 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from src import source_registry as sr
 from src.bridge.registry_conflicts import derive_registry_conflict_queue
 from tests.helpers.temp_paths import workspace_tmpdir
+
+
+def _seed_rows_by_id() -> dict[str, dict[str, Any]]:
+    rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    return {str(row.get("id") or ""): row for row in rows}
+
+
+def _superseded_static_row(
+    source_id: str, name: str, jobs_found: int, rank_score: int
+) -> dict[str, Any]:
+    """Stand-in for a static row the 2026-09-26 seed prune removed as provider-superseded.
+
+    These tests exercise ``derive_registry_conflict_queue``, so the static row is input, not a seed
+    assertion -- built inline for the same reason ``stale_homepage`` is. Values are what the
+    pruned rows carried.
+    """
+    return {
+        "id": source_id,
+        "name": name,
+        "studio": name.rsplit(" (", 1)[0],
+        "adapter": "static",
+        "registryState": "active",
+        "jobsFound": jobs_found,
+        "sampleCount": jobs_found,
+        "rankScore": rank_score,
+    }
 
 
 def test_save_json_atomic_removes_stale_plain_registry_snapshot() -> None:
@@ -58,12 +87,14 @@ def test_default_guerrilla_seed_uses_live_greenhouse_slug() -> None:
 
 
 def test_default_bandai_seed_has_provider_count_for_static_replacement() -> None:
-    active_rows = json.loads(
-        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
-    )
-    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    rows_by_id = _seed_rows_by_id()
     provider = rows_by_id["greenhouse:slug:bandainamco"]
-    static = rows_by_id["static:listing_url:https://www.bandainamcoent.com/careers#join"]
+    static = _superseded_static_row(
+        "static:listing_url:https://www.bandainamcoent.com/careers#join",
+        "Bandai Namco Entertainment America Inc. (Sheet)",
+        7,
+        48,
+    )
 
     assert provider["jobsFound"] == 7
     assert static["jobsFound"] == 7
@@ -81,12 +112,11 @@ def test_default_bandai_seed_has_provider_count_for_static_replacement() -> None
 
 
 def test_default_big_time_seed_lets_lever_provider_replace_static_board_link_page() -> None:
-    active_rows = json.loads(
-        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
-    )
-    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    rows_by_id = _seed_rows_by_id()
     provider = rows_by_id["lever:account:bigtime"]
-    static = rows_by_id["static:listing_url:https://www.bigtime.gg/careers"]
+    static = _superseded_static_row(
+        "static:listing_url:https://www.bigtime.gg/careers", "Big Time Studios (GameDevMap)", 0, 47
+    )
 
     assert provider["jobsFound"] == 2
     assert static["jobsFound"] == 0
@@ -104,11 +134,9 @@ def test_default_big_time_seed_lets_lever_provider_replace_static_board_link_pag
 
 
 def test_default_azra_seed_uses_current_static_count_for_provider_replacement() -> None:
-    active_rows = json.loads(
-        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    static = _superseded_static_row(
+        "static:listing_url:https://azragames.com/careers/#opening", "Azra Games (Sheet)", 1, 43
     )
-    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
-    static = rows_by_id["static:listing_url:https://azragames.com/careers/#opening"]
     provider = {
         "id": "greenhouse:slug:azragames",
         "name": "Azra Games (Greenhouse)",
@@ -134,14 +162,14 @@ def test_default_azra_seed_uses_current_static_count_for_provider_replacement() 
 
 
 def test_default_bonfire_seed_lets_provider_replace_static_aliases() -> None:
-    active_rows = json.loads(
-        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
-    )
-    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    rows_by_id = _seed_rows_by_id()
     provider = rows_by_id["greenhouse:slug:bonfirestudiosinc"]
-    default_static = rows_by_id[
-        "static:listing_url:https://bonfirestudios.com/work-with-us/index.html"
-    ]
+    default_static = _superseded_static_row(
+        "static:listing_url:https://bonfirestudios.com/work-with-us/index.html",
+        "Bonfire Studios (Sheet)",
+        6,
+        46,
+    )
     runtime_static_alias = {
         **default_static,
         "id": "static:listing_url:https://bonfirestudios.com/work-with-us",
@@ -169,23 +197,12 @@ def test_default_bonfire_seed_lets_provider_replace_static_aliases() -> None:
 
 
 def test_default_ten_chambers_seed_keeps_valid_empty_careers_source_over_homepage() -> None:
-    active_rows = json.loads(
-        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
-    )
-    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    rows_by_id = _seed_rows_by_id()
     careers_source_id = "teamtailor:listing_url:https://careers.10chambers.com/jobs"
     careers = rows_by_id[careers_source_id]
-    stale_homepage = {
-        "id": "static:listing_url:https://10chambers.com",
-        "name": "10 Chambers (GameDevMap)",
-        "studio": "10 Chambers",
-        "adapter": "static",
-        "registryState": "active",
-        "jobsFound": 2,
-        "sampleCount": 2,
-        "rankScore": 35,
-        "score": 22,
-    }
+    stale_homepage = _superseded_static_row(
+        "static:listing_url:https://10chambers.com", "10 Chambers (GameDevMap)", 2, 35
+    )
 
     assert careers["jobsFound"] == 0
     assert careers["sampleCount"] == 0
