@@ -108,31 +108,89 @@ Two runtime behaviors it surfaces that nothing else did:
 Green for the first time on this branch: 1381 source files, 0 errors. Both were pre-existing on
 `origin/main`. `npm run lint:repo-guardrails` 15/15 and `vulture` 0.
 
+## Resolved by operator decision
+
+### P2 — The Miniclip row — **repaired, and the original reading was wrong**
+
+`static:listing_url:https://www.miniclip.com/careers/vacancies` was active with no `listing_url` and no
+`pages`, so it fetched nothing while reporting ok. The first reading called it a superseded
+intermediate left unretired. That was wrong. The tombstone for `corporate.miniclip.com/careers`
+(`deletedBy repair_batch4_20260907`) records that batch 4 **promoted** this row from pending as the
+live-verified replacement, and the row's own `lastPromotedAt`/`stateChangedBy` carry the same batch-4
+stamp. So the promotion is what corrupted it: the store copy had 48 of 58 fields stripped, leaving a
+row with no definition. The seed held the complete definition and was used as the graft source.
+Repaired with the backup-and-verify procedure; the preflight now reports the seed/store split
+divergence rather than a definitionless row.
+
+The lesson generalises: the write path has a documented corruption mode (a raw-gzip or
+non-`load_json_array` read makes the sanctioned save rebuild the metadata map from lean rows —
+"metadata 3,038 → 2 entries"). Every store write since must be read back, not assumed.
+
+### The 13 `seed_row_lost_from_store` rows — **resolved, 1 deliberately held**
+
+Thirteen seed rows were absent from the store with no tombstone. Reported to the operator, who asked
+for the live boards to be checked rather than the seed metadata to be trusted. Probing the boards
+through the same endpoints the pipeline's own adapters use — validated against two working controls
+(`activategames` 38 jobs, `streamlinestudios` 16) — changed the answer completely:
+
+| Group | Count | Probe | Disposition |
+|---|---:|---|---|
+| Six BambooHR tenants + IllFonic (Breezy) | 7 | HTTP 200, structured zero | Restored |
+| TiMi Studio Group (Workday) | 1 | HTTP 200 **via certifi** | Restored |
+| Lucky VR (Breezy) | 1 | **HTTP 404 at the board root** (seed `jobsFound: 3`) | Retired |
+| Vivid Games (Teamtailor) | 1 | board root HTTP 200, ~93 KB | Restored |
+| RTL Enterprises (Phenom) | 1 | 200, but renders client-side | Held |
+| inXile (static) | 1 | already tombstoned 2026-09-07 | Seed pruned only |
+| `greenhouse:slug:examplestudio` | 1 | literal placeholder | Seed pruned only |
+
+**Restored (9).** Their absence was a *bug*, not a decision — the same store write that stripped
+Miniclip dropped them. The 2026-09-09 bamboo/breezy/workday wave promoted and deliberately kept these
+rows even when live-empty, and an empty board that answers with a clean structured zero is a
+legitimate row under the existing Steer precedent. Seed rows were grafted verbatim so the promotion
+metadata stays the truthful history. Active 2,246 → 2,255, metadata 3,086 → 3,095 (+9 each), zero
+unrelated rows changed. Vivid Games needed its store row grafted too, after the probe correction
+below — its seed row alone would have left it flagged as still lost.
+
+**Retired (1).** `/registry/delete` only tombstones rows it finds in a bucket, and Lucky VR is not in
+the store, so it would have been a no-op. The tombstone was written from the seed row — the only
+surviving definition — with `reason: dead_board_http_404`. The tombstone is what stops a later
+discovery pass resurrecting the board; the seed prune stops a fresh install shipping a dead row.
+
+### Three probe traps, each of which nearly caused a wrong retirement
+
+Every one of these produced a confident wrong answer first. This is the most important lesson from
+the pass:
+
+1. **Bare `urllib` vs certifi.** TiMi returned `CERTIFICATE_VERIFY_FAILED`, which reads exactly like
+   a dead board. It is alive, and the documented certifi-anchored fix for `*.myworkdayjobs.com` makes
+   it return 200. It was historically the group's largest contributor (197 feed rows), so retiring it
+   on that one probe would have been the most expensive available error.
+2. **The wrong endpoint 404s on healthy rows.** BambooHR's `/api/listed_jobs` 404s on *known-good*
+   tenants; the adapter's real endpoint is `/careers/list`. The Teamtailor `embed` endpoint 404s on a
+   live board, and `teamtailor_runner` never uses it — it parses listing links out of the board HTML.
+   **Vivid Games was retired on exactly this error** and had to be walked back: its board root
+   answers HTTP 200. The seed row was re-inserted at its original index and its tombstone removed,
+   leaving only the three genuinely-stale prunes. It is listed as "Restored" above.
+3. **An empty board is not a failure.** A 200 with a clean structured zero is a legitimate row under
+   the Steer precedent, not grounds for retirement.
+
+The rule: **probe the board root as well as the adapter endpoint, and always run a known-good
+control before believing a 404.** The control is what exposed trap 2 immediately.
+
+`seed_row_lost_from_store` is now **1** (RTL, held pending a rendered probe).
+
+### Two golden-seed tests had to be re-pinned
+
+`tests/test_source_registry_p1_operational_noise.py` uses the *committed* seed as its fixture, so
+retiring Lucky VR broke two tests that named it. Both were re-pinned to rows that are live today
+(`greenhouse:slug:bungie` for the static-residual pair, and the four remaining `antiBotBrowserRetry`
+rows), which is the correct fix: the tests were asserting seed history, not behaviour. Standing
+fragility — any future legitimate retirement of a pinned row will break them again.
+
 ## Awaiting human disposition
 
-These three are the same decision at three scales. Each is a registry-policy call about rows that are
-live and being fetched today, so none is mechanical and none is made unilaterally here.
-
-### P2 — The Miniclip row (1 item, strongest evidence of the three)
-
-`static:listing_url:https://www.miniclip.com/careers/vacancies` is active with no `listing_url` and no
-`pages`, so it fetches nothing while reporting ok. It is **not** a missing definition — it is a
-superseded intermediate:
-
-- `data/source-registry-tombstones.json.gz` records `corporate.miniclip.com/careers` as
-  `superseded_by_promotion: ... the canonical www.miniclip.com/careers/vacancies registration was
-  promoted from pending (live-verified board)`
-- the live active Miniclip row is now
-  `static:listing_url:https://careers.miniclip.com/go/miniclip-all-jobs/9013655/` (healthy, one page)
-
-So the supersession chain was applied once too many times and the intermediate row was never retired
-— the missing tombstone *is* the defect. Record `retire` through the route, then apply through
-`transition_registry_to_pending` plus `add_tombstone`/`save_tombstones`.
-
-**Deliberately not applied here.** The write path has a documented corruption mode (a raw-gzip or
-non-`load_json_array` read makes the sanctioned save rebuild the metadata map from lean rows —
-"metadata 3,038 → 2 entries"), and the marginal gain from retiring one inert row does not justify
-paying that risk on its own. Apply it batched with P3/P4, once, with a read-back check.
+Both remaining items are registry-policy calls about rows that are live and being fetched today, so
+neither is mechanical and neither is made unilaterally here.
 
 ### P3 — The 31 uncovered duplicate groups
 
@@ -144,32 +202,47 @@ grandfather real duplication. Decide per group: baseline the twin, or retire one
 Retiring is not free: these rows are being fetched today, so each decision trades duplicate output
 against losing a board.
 
-### P4 — The 3 stale baseline entries and the 165 seed-only rows
+### P4 — The 3 stale baseline entries and the 153 seed-only rows
 
 Backed by only one live row each, though the seed still has two:
 `amazongamestudios.com/en-us/careers`, `careers.nintendo.com`, `waterproofstudios.com/careers`.
 
-The 165 seed-only rows are the larger half of this: 2 are tombstoned (definitely prune) and **163 have
-unknown provenance**, including `greenhouse:slug:examplestudio` — a literal placeholder row that
-should never have been seeded. They need per-row investigation, not a bulk prune; pruning blindly
-resurrects retired sources, which the changelog explicitly warns about ("removed ... so seed restores
-cannot resurrect them").
+The 153 seed-only rows are the larger half of this. Their provenance is now fully decomposed:
+**152 `seed_row_demoted_in_store`** (the store demoted them, so the seed copy is stale) and **1
+`seed_row_lost_from_store`** (RTL, held above). The earlier "163 unknown provenance" figure is
+resolved — it was these two buckets plus the lost rows, not a third mystery class. The
+`greenhouse:slug:examplestudio` placeholder and the tombstoned inXile row are pruned.
+
+Pruning the 152 still needs per-row care rather than a blind bulk delete, because a wrong prune
+resurrects retired sources — the changelog explicitly warns about this ("removed ... so seed restores
+cannot resurrect them"). A tombstone check per row is the minimum bar.
 
 Note for whoever does this: a bulk seed sync is *not* the fix. Regenerating the seed from live would
-carry the 31 collisions into the seed and trip the commit-time guard, and it would change what a fresh
-install receives.
+carry the 31 collisions into the seed and trip the commit-time guard (seed collisions would go
+7 → 62), and it would change what a fresh install receives.
 
 ## Open decisions for the operator
 
-1. **Release.** 44 commits ahead of `origin/main`, intentionally unpushed. `vulture` is 0 and every
-   lane is green, so nothing technical blocks a push; the constraint is that nobody has asked for a
-   release. A push would also trip the container published-code gate, which is already satisfied for
-   this window by the existing `Release-tag: v0.2.153` intent, so no new declaration is needed.
-2. **The 717 worksheet dispositions**, then one batched verified apply through the sanctioned
-   transition paths.
-3. **Whether to schedule the 31 duplicate groups as policy.** They are mostly `www`/apex twins of a
-   single board, which is exactly what the reviewed-collision baseline exists for, but they are
-   heterogeneous enough that a blanket baseline would grandfather real duplication.
+1. **The 31 duplicate groups (P3).** They are mostly `www`/apex twins of a single board, which is
+   exactly what the reviewed-collision baseline exists for, but they are heterogeneous enough that a
+   blanket baseline would grandfather real duplication. The classification into 9 `redundant_twin`,
+   12 `label_variant`, 9 `true_shared_board`, and 1 `distinct_windows` is in
+   `_out/registry-repair-20260925/duplicate-classification.json` with yield evidence per group. No row
+   in any group kept a job in the last run, so there is no live double-emission to stop — the decision
+   is purely about future coverage. All 62 rows are acknowledged in `data/registry-repair-review.json`.
+2. **The 152 demoted seed rows (P4).** Needs a per-row tombstone check, not a blind bulk prune.
+3. **RTL Enterprises (Phenom).** Held. The host answers 200 but renders client-side, so no job count
+   can be established from here, and it is the only restored-candidate with no `approvedBy` at all.
+   Needs a browser-rendered probe before it is restored or retired.
+
+### Release state — no gate work needed
+
+The commit carrying the store/seed repair touches `data/defaults/` and `data/source-registry-tombstones.json.gz`,
+which are shipped paths, so it republishes the container. That does **not** need a new `Release-tag`
+line: the window since anchor `f704cdae` (v0.2.152, 53 commits) already carries `Release-tag: v0.2.153`
+intent on `fa573231` and `13a11206`, and the gate passes if *any* commit in the window declares valid
+intent. A decorative tag on a data repair would misdeclare a release, so none was added.
+
 
 ## Non-goals
 

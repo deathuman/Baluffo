@@ -140,11 +140,11 @@ BROWSER_REQUIRED_STATIC_IDS = {
     "static:listing_url:https://www.rollicgames.com/jobs",
 }
 
+# The active-seed rows carrying `antiBotBrowserRetry`; must track the seed, not history.
 ANTI_BOT_BROWSER_RETRY_IDS = {
     "static:listing_url:https://corp.worldwinner.com/careers/",
     "static:listing_url:https://stairwaygames.com/careers",
     "static:listing_url:https://www.creative-assembly.com/careers",
-    "breezy:board_url:https://lucky-vr.breezy.hr/",
     "static:listing_url:https://hadean.com/careers/",
 }
 
@@ -229,12 +229,11 @@ def test_static_residual_cleanup_preserves_rows_outside_active_defaults() -> Non
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
 
-    assert "static:listing_url:https://lucky-vr.breezy.hr/" not in active_by_id
-    assert active_by_id["breezy:board_url:https://lucky-vr.breezy.hr/"]["adapter"] == "breezy"
-    assert (
-        active_by_id["breezy:board_url:https://lucky-vr.breezy.hr/"]["board_url"]
-        == "https://lucky-vr.breezy.hr/"
-    )
+    # Pinned to rows live in the committed seed; re-pick if a fixture row is retired.
+    assert "static:listing_url:https://careers.bungie.com/" not in active_by_id
+    assert "static:listing_url:https://careers.bungie.com/" in pending_by_id
+    assert active_by_id["greenhouse:slug:bungie"]["adapter"] == "greenhouse"
+    assert active_by_id["greenhouse:slug:bungie"]["slug"] == "bungie"
 
     assert UNSUPPORTED_STATIC_IDS.isdisjoint(active_by_id)
     assert UNSUPPORTED_STATIC_IDS <= pending_by_id.keys()
