@@ -385,14 +385,14 @@ def _runtime_written_tracked_data_files(repo_root: Path) -> set[str]:
 #   - src/bridge/routes/get_admin_ops_tab_counts.py:243 (jobs-source-state heartbeats)
 #   - src/source_registry_io_paths.py:34,50,78 (gzip-backed tombstones)
 #   - src/runtime_seed.py:89-104 (payload defaults for tasks/cache/report/candidates)
-#   - data/desktop-startup-metrics.jsonl is appended to by the desktop startup probe
 #
-# `data/jobs-fetch-report.json` is runtime-owned but deliberately absent: it is untracked,
-# so it can never appear in the git-driven changed list. It remains in
-# scripts/precommit_gate.py EXCLUDED_FILES for the directory-walk path.
+# Runtime-owned but untracked, EXCLUDED_FILES only: `data/jobs-fetch-report.json` and
+# `data/desktop-startup-metrics.jsonl` are written every time the app runs and would
+# otherwise churn the working tree on every session. The metrics file was deliberately
+# untracked on 2026-09-26 because every desktop start rewrites it and `git status` was
+# producing misleading noise.
 _RUNTIME_OWNED_DATA_FILES = frozenset(
     {
-        "data/desktop-startup-metrics.jsonl",
         "data/jobs-fetch-tasks.json",
         "data/jobs-lifecycle-state.json",
         "data/jobs-source-state.json",
