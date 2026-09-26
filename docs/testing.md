@@ -312,6 +312,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - Keep pytest temp roots under `.tmp/pytest`; the repo disables pytest's cacheprovider by default so unreadable `pytest-cache-files-*` debris does not accumulate in the workspace.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
+- **Never run a second pytest process while a full suite is in flight** on this machine. The suites share `.tmp/pytest/basetemp`, and any second pytest start or Windows tmp-root race can fault an in-flight `tmp_path` mid-write — surfacing as a flake in a test that has nothing to do with your change (observed 2026-09-26: one-off failures in `test_transient_get_error_retries_with_backoff` and `test_bridge_profile_summary_records_external_sample_failure` only on runs where a concurrent pytest start happened). If it happens: rerun the test in isolation, keep the **full** traceback (do not pipe through `Select-Object -Last`), and only re-run the suite after the first one has completely exited.
 
 **Discovery audit artifact hygiene:**
 

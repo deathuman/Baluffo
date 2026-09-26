@@ -43,6 +43,12 @@ function normalizeBundleList(sourceBundle) {
 
 const STATIC_ADAPTERS = ["csv", "static", "scrapy_static"];
 
+// Adapters that name a shared hiring *platform*, not an employer-specific board.
+// `phenom` is the J2W/Phenom multi-tenant platform: the tenant — not the adapter —
+// is the employer, so a phenom bundle item alone cannot certify game provenance.
+// Mirror of src/jobs/game_detection.py; keep the two in sync.
+const PLATFORM_ADAPTERS = ["phenom"];
+
 // Tokens too generic to tie two employer names together.
 const GENERIC_EMPLOYER_TOKENS = new Set([
   "games", "game", "gaming", "entertainment", "interactive", "studios", "studio",
@@ -63,6 +69,22 @@ function studioConsistentWithCompany(studio, company) {
   if (studioNorm.includes(companyNorm) || companyNorm.includes(studioNorm)) return true;
   const studioSet = new Set(employerTokens(studio));
   return employerTokens(company).some(token => studioSet.has(token));
+}
+
+// Mirror of GAME_KEYWORDS in src/jobs/game_detection.py. The title regex below is a
+// superset of this list (frontend-only legacy); the studio-scope rescue must match
+// Python exactly, so it uses this list and not that regex.
+const GAME_KEYWORDS = [
+  "game", "gaming", "unity", "unreal", "gamedev", "gameplay",
+  "technical artist", "tech art", "tech artist", "shader", "shader artist",
+  "material artist", "world artist", "terrain artist", "environment art",
+  "environment artist", "character artist", "engine programmer", "graphics programmer"
+];
+
+function studioCarriesGameScope(studio) {
+  const text = String(studio || "").toLowerCase();
+  return GAME_KEYWORDS.some(keyword => text.includes(keyword)) ||
+    GAME_EMPLOYER_NAME_HINTS.some(hint => text.includes(hint));
 }
 
 // Provider provenance is scoped for multi-board static rows: when the bundle
@@ -92,6 +114,11 @@ function hasGameSourceProvenance(source = "", sourceBundle = [], company = "") {
     }
     const studio = String(item.studio || "").trim().toLowerCase();
     if (!studio) continue;
+    if (PLATFORM_ADAPTERS.includes(adapter) && !studioCarriesGameScope(studio)) {
+      // A shared-platform tenant is not employer-specific evidence; ask the
+      // studio name instead, and do not count it as a static item either.
+      continue;
+    }
     sawProviderItem = true;
     if (!studioConsistentWithCompany(studio, company)) {
       providerInconsistent = true;

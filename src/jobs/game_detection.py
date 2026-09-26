@@ -68,6 +68,14 @@ NON_GAME_INDUSTRY_HINTS = {
 # boards. Their studio fields never assert game provenance.
 STATIC_ADAPTERS = {"csv", "static", "scrapy_static"}
 
+# Adapters that name a shared hiring *platform*, not an employer-specific board.
+# `phenom` is the J2W/Phenom multi-tenant platform: the tenant -- not the adapter --
+# is the employer, so a phenom bundle item alone cannot certify game provenance
+# (a media conglomerate like RTL Enterprises inherits `sector: Game` otherwise,
+# the defect that put 25 controlling/editorial/retail roles into the Game bucket).
+# A platform item only counts when the studio name itself carries game scope.
+PLATFORM_ADAPTERS = {"phenom"}
+
 # Tokens too generic to tie two employer names together ("Sony Interactive
 # Entertainment" vs "PlayStation Global" share none of these).
 _GENERIC_EMPLOYER_TOKENS = {
@@ -110,10 +118,39 @@ def _studio_consistent_with_company(studio: str, company: str) -> bool:
     return bool(_employer_tokens(studio) & _employer_tokens(company))
 
 
+def _bundle_adapter_role(adapter: str, studio: str, company_text: str) -> str:
+    """Classify one bundle item for provenance: "static", "provider", "foreign", or "" (neutral).
+
+    A platform item with a plain studio name is neutral rather than static: it must neither count
+    as a provider nor switch multi-board scoping on if counted as static.
+    """
+    if adapter in STATIC_ADAPTERS:
+        return "static"
+    if not studio:
+        return ""
+    if adapter in PLATFORM_ADAPTERS and not _studio_carries_game_scope(studio):
+        return ""
+    return "foreign" if not _studio_consistent_with_company(studio, company_text) else "provider"
+
+
 def _flatten_source_bundle(source_bundle: Any) -> list[dict[str, Any]]:
     if not isinstance(source_bundle, list):
         return []
     return [item for item in source_bundle if isinstance(item, dict)]
+
+
+def _studio_carries_game_scope(studio: str) -> bool:
+    """Whether a studio name alone asserts game-employer scope.
+
+    The tight rescue platform_adapter tenants get: the curated names plus the
+    keyword table against the studio name only. A tenant whose name carries
+    neither (a media or manufacturing conglomerate's J2W board) must not be
+    certified Game by the adapter it happens to share.
+    """
+    text = studio.lower()
+    return any(keyword in text for keyword in GAME_KEYWORDS) or any(
+        hint in text for hint in GAME_EMPLOYER_NAME_HINTS
+    )
 
 
 def has_game_source_provenance(
@@ -149,14 +186,15 @@ def has_game_source_provenance(
         adapter = str(item.get("adapter") or "").strip().lower()
         if not adapter:
             continue
-        if adapter in STATIC_ADAPTERS:
+        studio = str(item.get("studio") or "").strip().lower()
+        role = _bundle_adapter_role(adapter, studio, str(company_text))
+        if role == "static":
             saw_static_item = True
             continue
-        studio = str(item.get("studio") or "").strip().lower()
-        if not studio:
+        if not role:
             continue
         saw_provider_item = True
-        if not _studio_consistent_with_company(studio, company_text):
+        if role == "foreign":
             provider_inconsistent = True
     if not saw_provider_item:
         return False

@@ -167,6 +167,53 @@ test("multi-board static with a foreign provider studio loses provenance", () =>
   );
 });
 
+// A multi-tenant platform adapter (`phenom`, the J2W platform) names the platform, not the
+// employer, so the adapter alone cannot certify game provenance. Mirror of
+// tests/test_game_detection_platform_adapter_provenance.py — the two verdicts must agree, or the
+// UI and the feed disagree about the same row.
+
+const RTL_BUNDLE = [
+  { source: "phenom_sources", adapter: "phenom", studio: "RTL Enterprises" }
+];
+
+test("a platform-adapter tenant without game scope classifies Tech", () => {
+  assert.equal(
+    normalizeSector("Game", "RTL Enterprises", "Working Student - Financial Controlling", "phenom_sources", "https://jobsearch.createyourowncareer.com/RTL/", RTL_BUNDLE),
+    "Tech"
+  );
+  assert.equal(
+    classifyCompanyType("RTL Enterprises", "Payroll Officer", "phenom_sources", "https://jobsearch.createyourowncareer.com/RTL/", RTL_BUNDLE),
+    "Tech"
+  );
+});
+
+test("a platform-adapter tenant with a game-named studio still classifies Game", () => {
+  const bundle = [
+    { source: "phenom_sources", adapter: "phenom", studio: "BoomBit Games" }
+  ];
+  assert.equal(
+    normalizeSector("Tech", "BoomBit Games", "Senior Backend Developer", "phenom_sources", "https://phenom.example/boombit/jobs/x", bundle),
+    "Game"
+  );
+  assert.equal(
+    classifyCompanyType("Metacore", "Office Manager", "phenom_sources", "https://phenom.example/metacore/jobs/x", [
+      { source: "phenom_sources", adapter: "phenom", studio: "Metacore" }
+    ]),
+    "Game"
+  );
+});
+
+test("a skipped platform item is neutral, not static, for multi-board scoping", () => {
+  const bundle = [
+    { source: "static_source::static:listing_url:https://acme.example/jobs", adapter: "static", studio: "Acme Aggregated Jobs" },
+    { source: "phenom_sources", adapter: "phenom", studio: "RTL Enterprises" }
+  ];
+  assert.equal(
+    classifyCompanyType("Acme Aggregated Jobs", "Marketing Manager", "static_sources", "https://acme.example/listing/x", bundle),
+    "Tech"
+  );
+});
+
 test("multi-board static with employer-consistent provider studios keeps provenance", () => {
   const bundle = [
     { source: "static_source::static:listing_url:https://sonysandiego.example/careers", adapter: "static", studio: "Sony Interactive Entertainment San Diego Studio" },

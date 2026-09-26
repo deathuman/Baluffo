@@ -308,6 +308,42 @@ def load_pending_rows(data_root: Path) -> list[dict[str, Any]]:
     return load_json_array(Path(data_root) / "source-registry-pending.json", [])
 
 
+def load_rejected_rows(data_root: Path) -> list[dict[str, Any]]:
+    """The store's rejected bucket, read the same way as the active one."""
+    from src.source_registry_io_load import load_json_array
+
+    return load_json_array(Path(data_root) / "source-registry-rejected.json", [])
+
+
+def find_resurrected_rejected_rows(
+    live_rows: list[dict[str, Any]], rejected_rows: list[dict[str, Any]]
+) -> list[str]:
+    """Rows that are active *and* rejected at once -- the recurrence signal.
+
+    A row rejected by a human decision (non-game employer scope, dead board, junk
+    listing) is removed from the *seed*, so a fresh install cannot resurrect it. But
+    no tombstone records the decision in the store, so if discovery re-approves the
+    same source id the row lands back in the active bucket while the rejected row
+    stays put -- and nothing flags it. The RTL non-game rejection of 2026-09-26 is
+    the motivating case: without this finding, discovery re-adding the tenant would
+    silently reinstate 25 rows an adjudication had already rejected.
+
+    Matched on a case-folded id for the same reason as the seed/store split check:
+    case drift between discovery and the store is the same row, not two.
+    """
+    if not live_rows or not rejected_rows:
+        return []
+    live_folded = {str(row.get("id") or "").strip().lower() for row in live_rows if row.get("id")}
+    if not live_folded:
+        return []
+    hits = {
+        str(row.get("id") or "").strip()
+        for row in rejected_rows
+        if str(row.get("id") or "").strip().lower() in live_folded
+    }
+    return sorted(hits)
+
+
 def build_report(data_root: Path) -> dict[str, Any]:
     """Run every structural predicate plus a drift check over live rows."""
     data_root = Path(data_root)
@@ -361,6 +397,9 @@ def build_report(data_root: Path) -> dict[str, Any]:
         "duplicateIdRows": list_duplicate_source_ids(live_rows),
         "staleBaselineEntries": list_stale_known_collisions(known, active_rows=live_rows),
         "boardCoverage": uncovered_boards,
+        "resurrectedRejectedRows": find_resurrected_rejected_rows(
+            live_rows, load_rejected_rows(data_root)
+        ),
         "splitConsistency": check_seed_store_split_consistency(
             data_root,
             live_rows=live_rows,
@@ -398,6 +437,12 @@ def _has_structural_defects(report: dict[str, Any]) -> list[str]:
         found.append(
             f"{emptied} boards left with no active row by conflict demotion "
             "(reconciliation emptied the board; promote one registration)"
+        )
+    resurrected = len(report.get("resurrectedRejectedRows") or [])
+    if resurrected:
+        found.append(
+            f"{resurrected} rejected row(s) reappeared in the live active store "
+            "(the rejection was not tombstoned; discovery may have re-added it)"
         )
     return found
 
