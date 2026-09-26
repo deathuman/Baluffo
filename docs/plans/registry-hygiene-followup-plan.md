@@ -346,24 +346,32 @@ now **0**.
 
 ## Open items for the operator
 
-1. **The static-parser gap is the biggest remaining item, and it is not a registry problem.**
-   A sizing sweep of 40 GameDevMap-sourced active static boards (two controls passing) found
-   **26 of 39 reachable boards where the pipeline reports 0 postings while real job links exist**,
-   plus 8 more that undercount — 122 postings lost in that sample alone. Sledgehammer Games (13),
-   Invoke Studios (14), Mundfish (36), High 5 Games (13 missed of 14), Sumo Digital (9 missed),
-   Konami, Playdemic/EA, Firesprite, Nnooo.
+1. **`static_probe_evidence` under-reports, and discovery acts on that number.** This replaces an
+   earlier, wrong reading of the same evidence — see the correction below. It is a *discovery-side
+   counting* bug, not a collection bug, and it is still worth fixing.
 
-   Two caveats bound that number: the sweep's own posting counter is a heuristic and can over-count
-   category pages, so 67% is an upper bound on the rate; and the sample is GameDevMap-sourced static
-   rows only, so it is not a registry-wide rate. But `probe = 0` while job links exist is not in
-   doubt. The dominant pattern is WordPress `/jobs-<role>` permalink slugs.
+   The signal: boards where the probe returns 0 while an actual pipeline run collects jobs. Verified
+   by running the real fetcher, isolated with `--output-dir` (a targeted run *without* it writes stub
+   state into live `data/`):
 
-   **Do the sizing properly before fixing.** The next step is validating the count against jobs the
-   pipeline actually extracts on a handful of boards, so the rate is trustworthy rather than
-   heuristic. A rushed fix against a two-thirds-affected surface trades a visible bug for invisible
-   damage. Consequence for everything else: `lastKeptCount: 0` on a row is *not* evidence of an empty
-   board, which is why the duplicate-row yield evidence in
-   `_out/registry-repair-20260925/duplicate-classification.json` should be re-read with that caveat.
+   | Board | probe | real fetch | jobs |
+   |---|---:|---|---|
+   | About Fun | 0 | `ok 12/12` | 12 real roles (`/jobs-<role>` slugs) |
+   | Sledgehammer Games | 0 | `ok 7/7` | 7 real roles, real req IDs |
+   | Gamebee Studio | 0 | `ok 3/3` | 3 |
+   | Invoke Studios / Konami / Firesprite | 0 | `ok 0/0` | genuinely nothing |
+   | Mundfish | 0 | `error` | upstream HTTP 500 on a detail page |
+   | Novaquark | 0 | `ok 27/27` | 27 **junk** — see below |
+
+   So the fetch adapter handles the `/jobs-<role>` hyphen slugs the probe's
+   `_STATIC_DETAIL_PATH_RE` misses; the regex is not the collection mechanism. The cost lands at
+   discovery: a candidate whose probe count is 0 can be mis-promoted, or parked as empty by the
+   repeated-zero-jobs policy, which is plausibly how so many rows ended up with
+   `lastKeptCount: 0`.
+
+   **Counter-risk found in the same run:** Novaquark's 27 "jobs" are all off-site junk —
+   `welcometothejungle.com` blog posts and `indeed.com` salary pages. Whatever fixes the
+   under-counting must not widen collection, or it feeds the quality gate more of exactly this.
 
 2. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
 3. **The two latent same-studio duplicates** (`unknownworlds.com/careers` vs `/en/careers`,
@@ -374,6 +382,29 @@ now **0**.
    soak report all read that field as "this row is a duplicate", so stamping it would silently
    reclassify rows in reports. Deliberately left out of `62724469`; it needs its own change.
 5. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+
+### Correction: the "static parser is losing two-thirds of these boards" claim was wrong
+
+An earlier sweep of 40 GameDevMap-sourced static boards reported 26 of 39 reachable boards at zero
+postings and claimed 122 lost. **That did not survive validation**, and the reason is worth keeping:
+
+- The sweep's posting counter was a heuristic that counts same-host job-ish links. It cannot tell a
+  posting from a category page, so it over-counts — Novaquark's 85 "links" are mostly not postings.
+- `lastStatus: excluded` on those rows does **not** mean "fetched and found nothing". In
+  `static_listing_flow._handle_skip_and_revalidation` it means *not fetched this run*: a cache
+  `skip_fresh`/`cooldown_skip`, an HTTP 304, or `structured_migration_promoted`. Their state entries
+  corroborate it — `lastDurationMs: 0`, `lastFetchedCount: 0`, and `lastFingerprint` equal to
+  `da39a3ee…`, the SHA-1 of the empty string.
+- So `lastKeptCount: 0` on those rows is **not evidence of collection failure**, and neither is a
+  probe count of 0. Running the actual fetcher is the only thing that settles it, and when I did,
+  the boards collected fine.
+
+The one durable takeaway is narrower than the original claim: **probe count and actual collection
+disagree, and only a real fetch tells you which is right.** The yield columns in
+`_out/registry-repair-20260925/duplicate-classification.json` should be read with that caveat — though
+the P3 demotions themselves are unaffected, since every one of those 31 was a same-board
+reconciliation established by redirect and content evidence, not by yield.
+
 
 
 ### Release state — no gate work needed
