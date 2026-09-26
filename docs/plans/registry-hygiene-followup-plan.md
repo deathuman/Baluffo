@@ -383,38 +383,73 @@ This affects every phenom tenant, not just RTL.
 
 ## Open items for the operator
 
-1. **`static_probe_evidence` under-reports, and discovery acts on that number — partly fixed, and
-   the remainder is not fixable with a regex.** This replaces an earlier, wrong reading of the same
-   evidence — see the correction below. It is a *discovery-side counting* bug, not a collection bug.
+1. **`static_probe_evidence` under-reports, and discovery acts on that number — converged. It is a
+   discovery-side *counting* bug, never a collection bug, and most of it is not fixable in the probe.**
 
-   The signal: boards where the probe returns 0 while an actual pipeline run collects jobs. Verified
-   by running the real fetcher, isolated with `--output-dir` (a targeted run *without* it writes stub
-   state into live `data/`):
+   **The central correction:** the jobs are already collected. About Fun is the clean proof — the board
+   is `www.about-fun.com` (not `aboutfun.com`, which is a different dead host), and
+   `data/jobs-fetcher.log` records `DONE source=static_source::static:listing_url:https://www.about-fun.com/jobs
+   status=ok fetched=12 kept=12`. All 12 titles match the feed exactly, they share one `fetchedAt`, and
+   their descriptions are synthetic (`"<title> at About Fun"`), i.e. **no detail page was ever
+   fetched**. They arrive through `extract_rendered_card_jobs` (the rendered-card lane), which emits a
+   job from a job-like anchor *without consulting the detail predicate at all*. So the probe counting
+   zero is harmless to collection. Only the discovery-side number is wrong.
 
-   | Board | probe | real fetch | jobs |
-   |---|---:|---|---|
-   | About Fun | 0 | `ok 12/12` | 12 real roles (`/jobs-<role>` slugs) |
-   | Sledgehammer Games | 0 | `ok 7/7` | 7 real roles, real req IDs |
-   | Gamebee Studio | 0 | `ok 3/3` | 3 |
-   | Invoke Studios / Konami / Firesprite | 0 | `ok 0/0` | genuinely nothing |
-   | Mundfish | 0 | `error` | upstream HTTP 500 on a detail page |
-   | Novaquark | 0 | `ok 27/27` | 27 **junk** — see below |
+   **The mechanism I had assumed does not exist.** There are four lanes, not one, and the per-source
+   opt-in reaches only two of them:
+   - `add_detail_link` (`src/jobs/adapters/static_detail_heuristics_filter.py:261`) is the predicate
+     gate for the detail-traversal lane, but it is only a *narrower*: `static_listing_runner.py:851-855`
+     narrows to probable links **only when that set is non-empty**, so an empty set means every link
+     passes through unfiltered.
+   - The traversal lane (`_append_detail_candidate`) never calls the predicate at all.
+   - The rendered-card lane calls it only for *provisional* rows.
+   - `static_probe_evidence(text, base_url)` has **no source-row parameter**, so per-source config
+     cannot reach the probe without changing the signature and all six call sites.
 
-   **Landed (R1):** `_listing_path_variants` accepts the singular/plural sibling of a recognised
-   detail path, checked inside `_is_same_listing_detail_link` rather than by widening
-   `_STATIC_DETAIL_PATH_RE` (every widening of that regex broke a pinned test). Bandai Namco MY
-   went 0 → 20 roles; 551/551 probe tests pass. R2, the slug-shaped variant, **recovered nothing
-   measurable** — `freelanceconceptartist` has no separator, which the candidate regex also rejects —
-   so it was dropped rather than kept on a hopeful theory. The honest total is +20 on one board, not
-   +40.
+   And `detailPathTokens` structurally cannot express the shape anyway: tokens are slash-wrapped
+   (`src/jobs/adapters/static_detail_heuristics_filter.py:240-242`), so the best any token can produce
+   is `/jobs-/` — which never occurs in `/jobs-junior-creative-video-creator`. Verified for
+   `['jobs-']`, `['jobs']`, `['/jobs-/']` and `['jobs-freelance-concept-artist']`: all `False`. **The
+   recommendation this section used to make was not implementable.**
 
-   **Not fixable in the probe:** an audit of the 85 zero-count boards found only ~4 that a shape
-   change would reach. 10 are JS-rendered and need the existing Playwright fallback (Sledgehammer,
-   Gamebee among them). About Fun's `/jobs-<slug>` is inseparable from `/jobs-category/` by any shape
-   predicate — `detailPathTokens` is the per-source opt-in, not a regex. Novaquark's junk is a
-   listing-URL curation problem, not a counting one: its row's `pages` list points at other sites,
-   including a *different company* (`in.indeed.com/cmp/Tara-Gaming-Ltd/jobs`). Widening the probe
-   without fixing that would feed the quality gate more of exactly that junk.
+   **Landed, R1:** `_listing_path_variants` accepts the singular/plural sibling of a recognised
+   listing path inside `_is_same_listing_detail_link` — not by widening `_STATIC_DETAIL_PATH_RE`,
+   because every widening of that pattern broke a pinned test. Bandai Namco MY 0 → 20 roles.
+   R2, the slug-shaped variant, recovered nothing measurable (`freelanceconceptartist` has no
+   separator) and was dropped rather than kept on a hopeful theory.
+
+   **Landed, R3:** `_STATIC_DETAIL_PATH_RE` and `_STATIC_LISTING_PATH_RE` said `vacancies?`, which
+   expands to "vacanc" + "ie" + "s" + an optional "s" — so they accepted `/vacancies/<slug>` and
+   `/vacanciess/<slug>` but **not** `/vacancy/<slug>`. Two-token change to `vacanc(?:y|ies)`, with the
+   detail segment left untouched. Measured live against a control: **gismart 0 → 26** and
+   **playground-games 0 → 12**, both entirely own-host; sega holds at 23 on the plural path. 170 probe
+   tests and 1,369 static/discovery/admin tests pass, plus 8 new ones.
+
+   **What is deliberately still not fixed, and why:**
+   - **carx-online is not a recovery.** Its probe count moves 0 → 1, but that one "detail link" is
+     `krasnodar.hh.ru/vacancy/137323128` — an hh.ru embed, not a carx posting. It is recorded as a
+     false positive rather than claimed as a win.
+   - **The probe has no off-host filter on this branch at all**, and never did: `hh.ru/jobs/123` was
+     already admitted before this change, because the netloc checks live only in the same-host listing
+     predicates. This change extends a pre-existing weakness to one more spelling rather than
+     introducing it. Fixing it properly means changing probe counting semantics and shifting many
+     boards' counts at once — a much larger change than adding one spelling, and not something to do
+     unvalidated. The fetch adapter's `KNOWN_NON_JOB_DETAIL_HOSTS` plus per-source curation is the real
+     defence against off-host junk, not the probe estimate.
+   - **8 boards are JS-rendered** and need the existing Playwright fallback, not a shape predicate:
+     `career.sharkmob.com`, `career.snowprintstudios.com`, `careers.ilogos.biz`,
+     `careers.foolstheory.com`, `careers.codewizards.io`, `sledgehammergames.com`, `catface.com`,
+     `musegames.com`.
+   - **Root-level slugs** are split: `/senior-programmer/` and `/senior-game-designer/` (futurats,
+     dynamicnext) are reachable by `detailPathTokens` because the trailing slash makes the token
+     match; `/2d-artist` and a bare `/26072` are not, having no slash-delimited segment.
+   - **`jyammagames.com/careersjyamma` is a malformed registry board URL**, not a shape problem — the
+     base fails `_STATIC_LISTING_PATH_RE` because the path is not a real path. A data defect.
+   - **About Fun's `/jobs-<slug>` needs nothing.** Its 12 jobs are collected. Only its probe count is
+     wrong, and fixing that needs a source-row parameter on `static_probe_evidence` plus six call-site
+     changes — a separate change from any registry field, and correctly not started here. Note the
+     latent risk if it ever is: `/jobs-open-application` is a real 200 on that site and is inseparable
+     from a role by shape, and `add_detail_link` never consults `_GENERIC_APPLICATION_TOKENS`.
 
 2. **Non-game jobs carried `sector: "Game"` — resolved as a rejection, and the cause was not the
    parser.** `docs/notes/t3-workday-promotion-2026-09-05.md:62` had already settled the policy for a
@@ -460,7 +495,22 @@ This affects every phenom tenant, not just RTL.
    discovery could re-add the tenant — and the honest guard is a preflight finding, not an artifact
    nobody reads.
 
-3. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+3. **Optional D — a frontend surface for `POST /registry/repair-review-action` — closed as out of
+   scope, with the reasoning recorded.** The route exists (`12dbe58a`) and is the sanctioned way to
+   record a repair decision; what does not exist is Admin UI for it. Two reasons to leave it there.
+   First, this programme's own non-goal is that the gate *records* decisions while applying one stays a
+   human action through the existing transition paths — P1 deliberately built a way to record, not a
+   way to apply, and a one-click UI would erode exactly that boundary. Second, the need it was meant
+   to serve is demonstrably already met: the advisory monitor plus per-row repair scripts applied
+   several hundred row changes during this programme without any UI, each with a plan assertion, a
+   backup, and a read-back check. An Admin surface is a product-surface decision that belongs with
+   whoever owns Admin, and it should be scoped against real usage of the route rather than invented
+   here. Revisit if the route starts being driven from scripts in a way that needs operator visibility
+   in the product.
+
+   If it is ever built, two constraints carry over from this work: a repair view must key rows by
+   **host**, not studio label (`Lost Boys Interactive` vs `Lost Boys Interactive (Embracer Group)` are
+   one board), and must never match by truncated public suffix (that would collapse every `*.co.uk`).
 
 ## Resolved since the last update
 

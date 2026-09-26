@@ -49,10 +49,10 @@ _EXPECTED_PROBE_FETCH_EXCEPTIONS = (
     httpx.HTTPError,
 )
 
-_STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
+_STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacanc(?:y|ies))/[^/?#]+")
 _ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
 _STATIC_LISTING_PATH_RE = re.compile(
-    r"(?i)/(?:careers?|jobs?|positions?|openings?|vacancies?|work-with-us|join-us)(?:/|$)"
+    r"(?i)/(?:careers?|jobs?|positions?|openings?|vacanc(?:y|ies)|work-with-us|join-us)(?:/|$)"
 )
 _STATIC_RESULT_COUNT_RE = re.compile(
     r"(?i)\b(\d{1,5})\s+(?:results?\s+found|jobs?(?:\s+found)?|openings?|positions?|vacancies?)\b"
