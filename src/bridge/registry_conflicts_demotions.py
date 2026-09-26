@@ -143,12 +143,50 @@ def _eligible_safe_demotion_cards(
     return eligible_by_id
 
 
+def _card_winner_id(card: dict[str, Any]) -> str:
+    winner = _as_dict(card.get("winner"))
+    if not winner:
+        return ""
+    return _clean_text(winner.get("id")) or _row_identity(winner)
+
+
 def _safe_demotion_applied_entry(row_id: str, card: dict[str, Any]) -> dict[str, str]:
     return {
         "id": row_id,
         "familyKey": _clean_text(card.get("familyKey")),
         "action": _clean_text(_as_dict(card.get("safeAutomation")).get("action")),
+        # The row this one lost to. Without it the `applied` record says what moved but not what
+        # it moved behind, which is the one fact an operator reviewing a run cannot otherwise get.
+        "winnerId": _card_winner_id(card),
     }
+
+
+def _stamp_conflict_provenance(row: dict[str, Any], card: dict[str, Any]) -> dict[str, Any]:
+    """Record which family and which winner this row was demoted behind.
+
+    `duplicateOfSourceId` would be the obvious field, but it is not provenance-only: the admin
+    summaries and the soak report read it as "this row is a duplicate", so stamping it here would
+    move the documented `duplicatePendingCount` KPI from its real duplicate count to include every
+    conflict-demoted row, and would add a `duplicate_static_row` score penalty to rows that were
+    not duplicates. `hiddenFromDefault` is worse still: it is a live gate, so a stamped row would
+    vanish from admin pending listings and from the pending provider-migration fetch lane.
+
+    `conflictFamilyKey` and `supersededBySourceId` are read by nothing, so the row gains durable,
+    offline-joinable provenance -- surviving the journal, the sqlite `payload_json` mirror, and
+    remote sync -- without disturbing a single consumer.
+    """
+    winner_id = _card_winner_id(card)
+    family_key = _clean_text(card.get("familyKey"))
+    stamped = dict(row)
+    if family_key:
+        stamped["conflictFamilyKey"] = family_key
+    # A demoted row that is its own family's winner (the restore path re-promotes) keeps no
+    # superseded pointer; a stale one would misreport the row as a loser.
+    if winner_id and winner_id != source_identity(stamped):
+        stamped["supersededBySourceId"] = winner_id
+    else:
+        stamped.pop("supersededBySourceId", None)
+    return stamped
 
 
 def _apply_state_transition_targets(
@@ -175,15 +213,19 @@ def _apply_state_transition_targets(
         if row_id not in target_ids:
             remaining.append(row)
             continue
+        card = eligible_by_id.get(row_id) or {}
         transitioned.append(
-            transition(
-                row,
-                reason=SAFE_AUTO_DEMOTE_REASON,
-                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
-                at=now or None,
+            _stamp_conflict_provenance(
+                transition(
+                    row,
+                    reason=SAFE_AUTO_DEMOTE_REASON,
+                    actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                    at=now or None,
+                ),
+                card,
             )
         )
-        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
+        applied.append(_safe_demotion_applied_entry(row_id, card))
     return remaining, transitioned, applied
 
 
@@ -393,14 +435,16 @@ def _restore_families_left_without_active_rows(
             continue
         winner = _best_restore_candidate(candidates)
         winner_id = source_identity(winner)
-        next_active.append(
-            transition_registry_to_active(
-                dict(winner),
-                reason=SAFE_AUTO_DEMOTE_RESTORE_REASON,
-                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
-                at=now or None,
-            )
+        promoted = transition_registry_to_active(
+            dict(winner),
+            reason=SAFE_AUTO_DEMOTE_RESTORE_REASON,
+            actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+            at=now or None,
         )
+        # The row is the family's survivor again, so the pointer recorded when it was demoted is
+        # stale and would misreport an active row as a loser.
+        promoted.pop("supersededBySourceId", None)
+        next_active.append(promoted)
         next_pending = [row for row in next_pending if source_identity(row) != winner_id]
         active_ids.add(winner_id)
         pending_ids.discard(winner_id)

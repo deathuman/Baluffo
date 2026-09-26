@@ -33,13 +33,22 @@ def is_phenom_job_href(href: str) -> bool:
 
 
 def _phenom_pagination_url(absolute: str) -> str | None:
-    """Return the absolute URL if it is a search page with a startrow param."""
+    """Return the fetchable absolute URL if it is a search page with a startrow param.
+
+    The href on a search-results page carries HTML-escaped separators (``&amp;startrow=25``), so the
+    raw string must not be handed to the fetcher: the server then reads the parameter name as
+    ``amp;startrow``, falls back to page 1, and the adapter re-fetches the first page instead of
+    advancing. Unverified against RTL this capped the tenant at 25 of 43 jobs while still reporting
+    100 kept. Return the unescaped form, which is also what the ``_STARTROW_RE`` test already
+    inspects, so the URL we detect and the URL we fetch cannot disagree.
+    """
     parsed = urlparse(absolute)
     if not parsed.path.lower().rstrip("/").endswith("/search"):
         return None
-    if not _STARTROW_RE.search(unescape(absolute)):
+    decoded = unescape(absolute)
+    if not _STARTROW_RE.search(decoded):
         return None
-    return absolute
+    return decoded
 
 
 def _phenom_anchor_title(anchor: dict[str, str], parsed_path: str) -> str:
@@ -108,8 +117,12 @@ def parse_phenom_jobs_html(
         path = parsed.path or ""
         if not is_phenom_job_href(path):
             # pagination: /<tenant>/search/?...startrow=25...
-            if _phenom_pagination_url(absolute) and absolute not in next_pages:
-                next_pages.append(absolute)
+            # Append the helper's *return value*, not `absolute`: the href on the page is
+            # HTML-escaped, so the raw string is not fetchable (the server reads `amp;startrow`
+            # as the parameter name and re-serves page 1).
+            next_page = _phenom_pagination_url(absolute)
+            if next_page and next_page not in next_pages:
+                next_pages.append(next_page)
             continue
         if absolute in seen_links:
             continue

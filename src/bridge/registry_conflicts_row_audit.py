@@ -43,6 +43,8 @@ CONFLICT_DIFF_FIELDS = (
     "duplicateFamilyKey",
     "duplicateOfSourceId",
     "duplicateOfSourceName",
+    "conflictFamilyKey",
+    "supersededBySourceId",
     "adapter",
     "jobsFound",
     "rankScore",
@@ -89,6 +91,8 @@ _FIELD_LABELS = {
     "duplicateFamilyKey": "Duplicate family",
     "duplicateOfSourceId": "Duplicate of source ID",
     "duplicateOfSourceName": "Duplicate of source name",
+    "conflictFamilyKey": "Conflict family",
+    "supersededBySourceId": "Superseded by source ID",
     "adapter": "Adapter",
     "jobsFound": "Jobs found",
     "rankScore": "Rank score",
@@ -129,7 +133,7 @@ def _source_identity_counts(rows: list[dict[str, Any]]) -> Counter[str]:
 
 
 def _safe_auto_demoted_pending_audit_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    audit = {
         "id": _row_identity(row),
         "name": _clean_text(row.get("name")),
         "registryState": _row_state(row),
@@ -137,6 +141,13 @@ def _safe_auto_demoted_pending_audit_row(row: dict[str, Any]) -> dict[str, Any]:
         "stateChangedAt": _clean_text(row.get("stateChangedAt")),
         "stateChangedBy": _clean_text(row.get("stateChangedBy")),
     }
+    # Provenance, when the demotion recorded it. Keys are added only if present so a row demoted
+    # before this field existed keeps the exact audit shape it always had.
+    for key in ("conflictFamilyKey", "supersededBySourceId"):
+        value = _clean_text(row.get(key))
+        if value:
+            audit[key] = value
+    return audit
 
 
 def _build_pending_audit_section(cards: list[dict[str, Any]]) -> dict[str, Any]:

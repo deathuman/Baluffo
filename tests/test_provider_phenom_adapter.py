@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -81,6 +82,29 @@ def test_parse_phenom_search_page_extracts_jobs_and_pagination() -> None:
     # all rows carry unique stable ids
     ids = {row["sourceJobId"] for row in jobs}
     assert len(ids) == len(jobs)
+
+
+def test_phenom_pagination_next_page_is_unescaped_so_the_server_sees_startrow() -> None:
+    """A next page must be fetchable, not merely contain the substring ``startrow=``.
+
+    The fixture's hrefs are HTML-escaped (``&amp;startrow=25``), so a substring assertion passes
+    either way. Handing the escaped string to the fetcher makes the server read the parameter as
+    ``amp;startrow``, re-serve page 1, and cap the tenant at its first page -- measured on RTL as
+    25 of 43 jobs collected while still reporting 100 kept. Assert the decoded form instead.
+    """
+    html = _fixture("phenom_rtl_search.html")
+    assert "&amp;startrow=" in html, "fixture must keep the escaped hrefs that caused this"
+
+    _jobs, next_pages = parse_phenom_jobs_html(html, SEARCH_URL, fallback_company="RTL")
+    assert next_pages
+
+    for page in next_pages:
+        assert "&amp;" not in page, f"next page still HTML-escaped: {page}"
+        query = parse_qs(urlparse(page).query)
+        assert "startrow" in query, f"server would not see a startrow param: {page}"
+        assert not [key for key in query if key.startswith("amp;")], (
+            f"escaped separator leaked into a parameter name: {sorted(query)}"
+        )
 
 
 def test_parse_phenom_ignores_non_job_and_sort_anchors() -> None:

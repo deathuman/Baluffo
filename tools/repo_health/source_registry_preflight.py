@@ -244,6 +244,18 @@ def check_seed_store_split_consistency(
     live_by_id = {str(row.get("id") or ""): row for row in live_rows if row.get("id")}
     seed_by_id = {str(row.get("id") or ""): row for row in seed_rows if row.get("id")}
     pending_by_id = {str(row.get("id") or ""): row for row in (pending_rows or []) if row.get("id")}
+    # A row whose id differs only in case between the seed and the store is the *same* row, so it
+    # must not be reported as lost. RTL is the live example: the seed spells the tenant
+    # `.../RTL/` and the store `.../rtl/`, which read as "seed row absent from the store entirely"
+    # and sent a healthy, actively-fetching row down the lost-row path. Reported separately
+    # because the disagreement is real -- restoring the seed verbatim would add a second row for
+    # one board.
+    #
+    # Only the *active* view is folded. Folding pending as well was tried and reverted: it is far
+    # too loose, because a seed id that case-matches any parked row then reads as a case mismatch
+    # (40 spurious findings on the live registry) and a genuinely demoted row stops being reported
+    # as demoted.
+    live_folded = {source_id.lower() for source_id in live_by_id}
 
     def _has_payload(row: dict[str, Any]) -> bool:
         return bool(row.get("listing_url")) or bool(
@@ -261,7 +273,13 @@ def check_seed_store_split_consistency(
     #     and the seed never learned, so the seed is stale
     #   - the store has it nowhere -> the row was lost, and a seed restore
     #     would add something the running registry does not have
-    absent_from_active = set(seed_by_id) - set(live_by_id)
+    # A seed id whose only difference from a live id is letter case is present, not absent.
+    id_case_mismatch = sorted(
+        source_id
+        for source_id in set(seed_by_id) - set(live_by_id)
+        if source_id.lower() in live_folded
+    )
+    absent_from_active = (set(seed_by_id) - set(live_by_id)) - set(id_case_mismatch)
     demoted_in_store = sorted(
         source_id for source_id in absent_from_active if source_id in pending_by_id
     )
@@ -279,6 +297,7 @@ def check_seed_store_split_consistency(
         "seed_row_demoted_in_store": demoted_in_store,
         "seed_row_lost_from_store": lost_from_store,
         "seed_active_but_store_pending": state_divergent,
+        "seed_row_id_case_mismatch": id_case_mismatch,
     }
 
 
@@ -368,6 +387,7 @@ def _has_structural_defects(report: dict[str, Any]) -> list[str]:
         ("seed_row_demoted_in_store", "seed rows the store has demoted"),
         ("seed_row_lost_from_store", "seed rows absent from the store entirely"),
         ("seed_active_but_store_pending", "rows the seed and store disagree on"),
+        ("seed_row_id_case_mismatch", "seed/store id differs only in letter case"),
     ):
         count = len(split.get(label) or [])
         if count:

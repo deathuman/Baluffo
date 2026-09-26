@@ -622,8 +622,10 @@ Registry rows are normalized around these canonical fields:
 | `stateChangedBy` | `string` | Actor or route that performed the transition |
 | `lastPromotedAt` | `string` (ISO 8601) | Last time the row was promoted into `active` |
 | `lastDemotedAt` | `string` (ISO 8601) | Last time the row was demoted into `pending` or `rejected` |
-| `hiddenFromDefault` | `boolean` | Optional pending-row flag for recoverable rows hidden from default review views |
-| `duplicateOfSourceId` | `string` | Optional pointer to the active winner when a duplicate-family row is demoted |
+| `hiddenFromDefault` | `boolean` | Optional pending-row flag for recoverable rows hidden from default review views. Cleared on promotion to `active`, because `is_hidden_from_default` reads it and an enabled active row that also sets it is inert |
+| `duplicateOfSourceId` | `string` | Optional pointer to the active winner when a duplicate-family row is demoted. Set only by the duplicate-URL policy: it is read as "this row is a duplicate" by the registry summaries (`duplicatePendingCount`), the source-policy soak report (`duplicate_static_row`), and candidate review, so it must not be used for other kinds of demotion |
+| `conflictFamilyKey` | `string` | Optional conflict-family key recorded on a row demoted by safe conflict auto-demotion. Inert: nothing gates on it, so it records which family moved the row without changing any count or filter |
+| `supersededBySourceId` | `string` | Optional pointer to the row a conflict-demoted row lost to. Inert, and cleared when the row is re-promoted, because a restored row is its family's survivor again |
 
 Legacy lifecycle fields such as `candidateState`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, and `quarantineReason` remain populated for compatibility, but they should be treated as compatibility mirrors rather than the canonical source of truth.
 

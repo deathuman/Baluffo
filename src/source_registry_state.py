@@ -194,6 +194,12 @@ def _transition_state_metadata(
         updated["liveAt"] = str(updated.get("liveAt") or at)
         updated["quarantinedAt"] = ""
         updated["quarantineReason"] = ""
+        # An active, enabled row cannot also be hidden from the default set: `is_hidden_from_default`
+        # reads this flag, and the admin pending listings and the pending provider-migration fetch
+        # lane both drop on it, so leaving it set makes a promoted row inert. Promotion out of a
+        # duplicate-family demotion inherits the flag, which is how 37 repaired rows ended up with
+        # `enabledByDefault: True` and `hiddenFromDefault: True` at once.
+        updated["hiddenFromDefault"] = False
     elif registry_state == REGISTRY_STATE_PENDING:
         updated["lastDemotedAt"] = at
         prior_candidate_state = str(updated.get("candidateState") or "").strip().lower()

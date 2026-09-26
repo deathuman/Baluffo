@@ -137,6 +137,24 @@ def _is_generic_application_link(label: str, parsed_path: str) -> bool:
     return any(token in text for token in _GENERIC_APPLICATION_TOKENS)
 
 
+_SLUG_LIKE_SEGMENT = re.compile(r"^[a-z0-9]*[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+$", re.I)
+
+
+def _listing_path_variants(base_path: str) -> tuple[str, ...]:
+    """The listing path plus its singular/plural sibling.
+
+    A board's landing page and its listing section are routinely `/careers` and `/career/...` (or the
+    reverse). Requiring the child to sit under the exact base path silently dropped every role on
+    Bandai Namco Malaysia's `/career/<slug>` while the base is `/careers` -- 20 real openings.
+    """
+    variants = [base_path]
+    if base_path.endswith("s") and len(base_path) > 1:
+        variants.append(base_path[:-1])
+    else:
+        variants.append(f"{base_path}s")
+    return tuple(variants)
+
+
 def _is_same_listing_detail_link(base_url: str, absolute_url: str, label: str) -> bool:
     base = urlparse(base_url or "")
     parsed = urlparse(absolute_url or "")
@@ -150,12 +168,19 @@ def _is_same_listing_detail_link(base_url: str, absolute_url: str, label: str) -
     parsed_path = (parsed.path or "/").rstrip("/")
     if not base_path or base_path == "/" or not _STATIC_LISTING_PATH_RE.search(base_path):
         return False
-    if not parsed_path.startswith(f"{base_path}/"):
+    detail_segment = ""
+    for variant in _listing_path_variants(base_path):
+        if parsed_path.startswith(f"{variant}/"):
+            detail_segment = parsed_path[len(variant) + 1 :].strip("/").split("/", 1)[0]
+            break
+    if not detail_segment or len(detail_segment) < 4:
         return False
-    detail_segment = parsed_path[len(base_path) + 1 :].strip("/").split("/", 1)[0]
-    if len(detail_segment) < 4:
-        return False
-    return len(str(label or "").split()) >= 2
+    # A multi-word label is the strong signal. A single-token label still qualifies when the detail
+    # segment is itself slug-like, because plenty of boards render the slug as the link text and some
+    # emit a zero-width space that `str.split()` cannot see (buffalobuffalo.ca/careers/<slug>).
+    if len(str(label or "").split()) >= 2:
+        return True
+    return bool(_SLUG_LIKE_SEGMENT.match(detail_segment))
 
 
 def _normalized_listing_path(url: str) -> str:

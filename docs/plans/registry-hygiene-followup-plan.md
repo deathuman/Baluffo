@@ -1,10 +1,10 @@
 # Registry Hygiene Follow-Up Plan
 
-> - **Status:** Code work complete (P0, P1, P5, P6); data reconciliation (P2, P3, P4) delivered as an adjudication worksheet, awaiting human dispositions. Continuity handoff recorded in Basic Memory (`baluffo/registry-hygiene-program-closeout-2026-09-25`).
+> - **Status:** Code work complete (P0, P1, P5, P6). Data reconciliation applied: the 13 lost rows, P3's 31 duplicate groups, P4's 102-row seed prune, and the stranded-family repair (37 promotions) are all in the store and the seed. The preflight is clean — 0 uncovered collisions, 0 stale baseline, 0 boards emptied — and the only remaining finding is 39 expected `seed_row_demoted_in_store`. Three items are genuinely open and are listed under *Open items for the operator*: the residue of the probe under-count, the `sector: "Game"` mislabelling (a product decision), and Optional D. Continuity handoff in Basic Memory (`baluffo/registry-hygiene-p3-p4-closeout-2026-09-26`).
 > - **Use this when:** recording or applying a registry repair decision, reconciling live-registry drift from the committed seed, or extending the advisory/guard surfaces
 > - **Canonical for:** the human-approval gate's boundaries, the live-vs-seed authority question, and the ordered follow-up work
 > - **Not canonical for:** the advisory report shape (see `docs/DATA_CONTRACT.md`) or registry transition mechanics (see `src/source_registry_state.py`)
-> - **Last updated:** 2026-09-25
+> - **Last updated:** 2026-09-26
 
 ## What landed
 
@@ -17,6 +17,10 @@
 | `12dbe58a` | `POST /registry/repair-review-action` — the gate's writer (P0+P1), plus the two `typecheck:py` fixes (P6). |
 | `fec4e443` | `tools/repo_health/source_registry_preflight.py` — the live-registry surface (P5). |
 | `6f564a6b` | `--worksheet` — the per-row adjudication inventory. |
+| `62724469` | Stranded-family guard: safe auto-demote can no longer empty a board. |
+| `4502437d` | P3 (31 duplicate groups demoted) and P4 (102-row seed prune). |
+| `9a69e33a` | Board-coverage preflight finding, 8 tests, and four hard stops for the trap classes that caused four wrong answers in this programme. |
+| this change | Phenom pagination decode; probe R1 singular/plural siblings; preflight id-case + split consistency; 227 non-page `pages` entries stripped; `hiddenFromDefault` cleared on promotion; conflict-demote provenance on inert fields plus `winnerId` in the run response. |
 
 ## The authority question: answered
 
@@ -327,45 +331,61 @@ Both are one studio registered at two paths. The twin rule keys purely on canoni
 never flag them, and the advisory audit inherits that blindness. Resolving them needs a per-studio
 path decision plus a probe, so they are recorded here rather than folded into the P3 reconciliation.
 
-### RTL Enterprises — not restored; the row is misconfigured
+### RTL Enterprises — the row was never lost, and it works (correction)
 
-`phenom:listing_url:https://jobsearch.createyourowncareer.com/RTL/` is alive but is **not a Phenom
-board**. A real browser render (not a plain fetch) shows a jobs2web (`j2w`) platform: search lives at
-`/RTL/content/search/?currentPage=1&pageSize=12`, and every same-host link is a
-`/RTL/content/<category>/` nav entry (`job-world-tech`, `entry-level`, …) with **zero job-posting
-links** on any category page.
+An earlier revision of this document claimed the RTL row was misconfigured, could not extract jobs,
+and was correctly left out of the store. **All three claims were wrong**, and they rested on two
+mistakes worth recording:
 
-The phenom parser matches `^/[^/]+/job/[^/]+/\d+/?$` and paginates on `?startrow=`. Neither matches
-j2w's shape, so this row **provably cannot extract jobs** as configured — restoring it would add a
-row guaranteed to yield nothing. It is also the only candidate with no `approvedBy`; it was promoted
-by `phenom_adapter_migration` with no human approval.
+- **The row was never absent from the store.** It was reported as
+  `seed_row_lost_from_store` only because the seed spells the tenant `.../RTL/` and the store
+  `.../rtl/`, and the preflight compared ids case-sensitively. The row is active and has been
+  collecting. The preflight now folds case and reports the disagreement as its own
+  `seed_row_id_case_mismatch` finding, and the seed id has been aligned to the store's canonical
+  form so a seed restore cannot add a second row for one board.
+- **The probe used the wrong URL.** A browser render of `/RTL/` and `/RTL/content/search/` shows the
+  new jobs2web front end, which genuinely has no server-rendered postings. But the phenom runner
+  rewrites the registry row to `/RTL/search/` — a separate, still-live legacy j2w endpoint serving
+  the classic `searchresults` table. Probing the URL the registry lists rather than the URL the
+  runner fetches is what produced the wrong answer.
 
-So it stays out of the store, and the follow-up is provider-coverage work, not a registry restore:
-either add a j2w adapter or re-point the row at a real Phenom tenant. `seed_row_lost_from_store` is
-now **0**.
+The board is a jobs2web tenant, and the phenom parser's `^/[^/]+/job/[^/]+/\d+/?$` **does** match its
+legacy listing. No new adapter is needed and no re-point is warranted: RTL has no greenhouse, lever,
+teamtailor, breezy or workable board, and the one Workday host that resolved rejected the request
+unauthenticated (inconclusive).
+
+What the board *did* have wrong was pagination — see the phenom fix below.
+
+### Phenom pagination never advanced — 42% of a tenant's jobs uncollected
+
+`src/jobs/adapters/parsers/phenom.py`. The next-page href on a search-results page carries
+HTML-escaped separators (`&amp;startrow=25`). `_phenom_pagination_url` unescaped for its own
+`startrow` test but returned the **escaped** string, and `parse_phenom_jobs_html` appended the raw
+`absolute` rather than the helper's return value. The server therefore read the parameter as
+`amp;startrow`, fell back to page 1, and the adapter re-fetched the first page instead of advancing.
+
+Measured on RTL with the repo's own parser:
+
+| | |
+|---|---|
+| page 1 | 25 jobs |
+| emitted next page, as-is | 25 rows, **overlap 25, new 0** — page 1 again |
+| emitted next page, de-escaped | 18 rows, **overlap 0, new 18** |
+| unique jobs before / after | 25 → **43** |
+
+`lastKeptCount` read 100 for 25 unique jobs, which is the fingerprint of the same page being fetched
+repeatedly. The existing tests could not catch it: the fixture hrefs *are* escaped, but the
+assertion was `all("startrow=" in page for page in next_pages)`, and the escaped string contains
+that substring. The new test asserts the decoded form and that the parsed query has a real `startrow`
+key and no `amp;`-prefixed names.
+
+This affects every phenom tenant, not just RTL.
 
 ## Open items for the operator
 
-1. **21 further boards left with no active row by conflict demotion** — newly visible because
-   `source_registry_preflight.py` now reports it. This is the same defect class as the 16 already
-   repaired, and the reason the earlier count kept moving: the 452 figure counted *parked* sources
-   too, and the 33 counted rows rather than studios. The preflight splits the two:
-
-   ```
-   boards w/o active row: 21 emptied by conflict demote / 460 parked by policy
-   ```
-
-   Only the first bucket is a defect and only it fails `--strict`. **Treat 21 as an upper bound, not
-   a verdict**: board identity is matched on host, which merges an apex host with its careers
-   subdomain but can still split a board served from two unrelated domains. The samples
-   (`careers.rawpowergames.com/jobs`, `careers.sega.co.uk/vacancies`, `corporate.arkadium.com/careers/`)
-   are plausible, but each needs the adjudication every preflight finding is asking for. The 460
-   parked rows are expected and must **not** be promoted — they are the reason the 452 attempt was
-   wrong.
-
-2. **`static_probe_evidence` under-reports, and discovery acts on that number.** This replaces an
-   earlier, wrong reading of the same evidence — see the correction below. It is a *discovery-side
-   counting* bug, not a collection bug, and it is still worth fixing.
+1. **`static_probe_evidence` under-reports, and discovery acts on that number — partly fixed, and
+   the remainder is not fixable with a regex.** This replaces an earlier, wrong reading of the same
+   evidence — see the correction below. It is a *discovery-side counting* bug, not a collection bug.
 
    The signal: boards where the probe returns 0 while an actual pipeline run collects jobs. Verified
    by running the real fetcher, isolated with `--output-dir` (a targeted run *without* it writes stub
@@ -380,25 +400,134 @@ now **0**.
    | Mundfish | 0 | `error` | upstream HTTP 500 on a detail page |
    | Novaquark | 0 | `ok 27/27` | 27 **junk** — see below |
 
-   So the fetch adapter handles the `/jobs-<role>` hyphen slugs the probe's
-   `_STATIC_DETAIL_PATH_RE` misses; the regex is not the collection mechanism. The cost lands at
-   discovery: a candidate whose probe count is 0 can be mis-promoted, or parked as empty by the
-   repeated-zero-jobs policy, which is plausibly how so many rows ended up with
-   `lastKeptCount: 0`.
+   **Landed (R1):** `_listing_path_variants` accepts the singular/plural sibling of a recognised
+   detail path, checked inside `_is_same_listing_detail_link` rather than by widening
+   `_STATIC_DETAIL_PATH_RE` (every widening of that regex broke a pinned test). Bandai Namco MY
+   went 0 → 20 roles; 551/551 probe tests pass. R2, the slug-shaped variant, **recovered nothing
+   measurable** — `freelanceconceptartist` has no separator, which the candidate regex also rejects —
+   so it was dropped rather than kept on a hopeful theory. The honest total is +20 on one board, not
+   +40.
 
-   **Counter-risk found in the same run:** Novaquark's 27 "jobs" are all off-site junk —
-   `welcometothejungle.com` blog posts and `indeed.com` salary pages. Whatever fixes the
-   under-counting must not widen collection, or it feeds the quality gate more of exactly this.
+   **Not fixable in the probe:** an audit of the 85 zero-count boards found only ~4 that a shape
+   change would reach. 10 are JS-rendered and need the existing Playwright fallback (Sledgehammer,
+   Gamebee among them). About Fun's `/jobs-<slug>` is inseparable from `/jobs-category/` by any shape
+   predicate — `detailPathTokens` is the per-source opt-in, not a regex. Novaquark's junk is a
+   listing-URL curation problem, not a counting one: its row's `pages` list points at other sites,
+   including a *different company* (`in.indeed.com/cmp/Tara-Gaming-Ltd/jobs`). Widening the probe
+   without fixing that would feed the quality gate more of exactly that junk.
 
-3. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
-4. **The two latent same-studio duplicates** (`unknownworlds.com/careers` vs `/en/careers`,
-   `double11.com/join-us` vs `/vacancies`). The twin rule keys purely on canonical URL, so it will
-   never flag path variants like these and the advisory audit inherits the blindness.
-5. **`duplicateOfSourceId` is still unset on conflict-demoted rows.** It is the obvious provenance
-   fix, but it is *not* behaviour-neutral: `source_registry_io_load`, `registry_sync_summary` and the
-   soak report all read that field as "this row is a duplicate", so stamping it would silently
-   reclassify rows in reports. Deliberately left out of `62724469`; it needs its own change.
-6. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+2. **Non-game jobs carry `sector: "Game"`, and the cause is not the parser.** A full read of the
+   sector pipeline found the original attribution wrong in a way that changes the fix:
+
+   - `src/jobs/adapters/parsers/phenom.py:147` hard-codes `"sector": "Game"`, but that line is inert.
+     `normalize_sector` (`src/jobs/normalizers.py:129-139`) **discards its `value` argument** and
+     returns `"Game"` iff `has_positive_game_evidence(...)`, else `"Tech"`. `canonicalize_locations.py:577`
+     and the frontend mirror `frontend/jobs/domain/feed.js:151` both pass the parser value in and it
+     is ignored. Editing the parser changes nothing but one test.
+   - The real cause is `has_game_source_provenance` (`src/jobs/game_detection.py:161-165`): any bundle
+     item whose adapter is not in `STATIC_ADAPTERS` counts as games-industry provenance, with no games
+     check on the source or studio. `phenom` is a *multi-tenant platform* adapter, so the tenant —
+     not the platform — is the employer, and every tenant inherits `sector: Game`. That branch is also
+     the sole provenance for ~133 legitimately-game rows, so deleting it wholesale is too blunt.
+   - Blast radius: **25 rows, 1 source, 1 company** (RTL Enterprises), latent for any future j2w
+     tenant. There is no reusable "not a game job" predicate in the repo — the audit skill requires
+     explicit product approval before adding one.
+   - The narrow fix is a `PLATFORM_ADAPTERS` concept in `game_detection.py` requiring corroboration
+     before a platform adapter alone counts, mirrored in `frontend/jobs/domain/feed.js`. But the
+     frontend mirror is *already* stale (it lacks the `NON_GAME_INDUSTRY_HINTS` veto and uses a
+     broader keyword regex), so a backend-only fix desynchronizes backend and UI sector for these
+     rows.
+   - **Why it is not being changed here:** `sector` is a public persisted job field in
+     `REQUIRED_FIELDS`, and whether RTL's media and corporate roles should be *reclassified* to
+     `Tech` or the *source rejected* is a product decision, not a code fact. It routes through the
+     job-data-quality audit.
+
+3. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+
+## Resolved since the last update
+
+### The two latent same-studio duplicates — only one of them was real
+
+Probed both pairs with a known-good control first (supercell and playstation, both 200), so a 404
+could not be mistaken for a dead board:
+
+| Pair | Content | Declared canonical | Verdict |
+|---|---|---|---|
+| `www.unknownworlds.com/careers` → `/en/careers` | identical (93,828 b, same fingerprint) | `/careers` | **one board, registered twice** |
+| `double11.com/join-us` (203,067 b) vs `/vacancies` (105,038 b) | different | `/join-us/` vs `/vacancies/` | **two different pages** |
+
+`/careers` redirects to `/en/careers` and serves the same bytes, so one registration is redundant.
+The survivor is the pre-existing `www.unknownworlds.com/careers` row (rank 59, 6 jobs) over the
+stranded-family promotion `unknownworlds.com/en/careers` (rank 0, 4 jobs); the latter is now pending
+via `_demote_duplicate_variant`, so it carries `duplicateOfSourceId` and the family key.
+
+Double Eleven is **not** a duplicate and was left alone: "Join us" and "Vacancies" are different
+pages with different canonicals and different sizes. The genuine Double Eleven redundancy is a
+different pair — `www.double11.com/vacancies/` is pending from a conflict demote while
+`double11.com/vacancies/` is active, which is the correct end state, not a defect. Note the twin rule
+inherently cannot see *path* variants, so this class stays a per-row judgement rather than something
+the advisory audit can automate.
+
+### Conflict-demoted rows now record what they lost to — on inert fields
+
+Open item 4 is closed, and the obvious implementation was rejected on evidence. Stamping
+`duplicateOfSourceId` would have:
+
+- moved the documented `duplicatePendingCount` KPI (`registry_service.py:623`,
+  `registry_sync_summary.py:173`, `source_registry_io_load.py:247`) from 32 real duplicates to ~194,
+  a 6× jump attributed to a change nobody asked for;
+- subtracted 25 `evidenceScore` and appended a `duplicate_static_row` blocker per row in
+  `scripts/source_policy_soak_report_links.py:226`;
+- carried a deferred regression, because `transition_registry_to_active` does not clear the field, so
+  a stamped row that was later re-promoted would become an *active* row every one of those readers
+  now treats as a duplicate.
+
+So provenance lands on `conflictFamilyKey` and `supersededBySourceId`, which **nothing reads** —
+verified across `src/`, `scripts/` and `tools/`. Durable, offline-joinable, and behaviour-neutral.
+`hiddenFromDefault` was ruled out for the same reason and harder: it is a live gate, so a stamped row
+would drop out of the admin pending listings and the pending provider-migration fetch lane.
+
+The winner also belongs in the run response, where it costs one key: `applied[]` entries now carry
+`winnerId`, which is where an operator reviewing a run learns what each row moved behind. Both are
+visible in the admin conflict diff via `CONFLICT_DIFF_FIELDS` + `_FIELD_LABELS`, so no frontend change
+was needed. `DATA_CONTRACT.md` documents the new fields and, more usefully, now says explicitly that
+`duplicateOfSourceId` is the duplicate-policy field and must not be reused for other demotions.
+
+### 227 registry `pages` entries were not pages
+
+`pages` is the list of URLs the fetcher requests, and 227 of them could never yield a posting: 135
+asset extensions, 46 `wp-json`/`oembed` REST endpoints, 46 CDN-host entries — across 63 rows.
+Bungie's row listed `favicon.ico` and four social SVGs, EA's listed `favicon.png`, King and TT Games
+listed dozens of `cdn.phenompeople.com` resources. Stripped, with one guard: a row is never left
+without pages *and* without a `listing_url` (the `definitionless_row` defect), and rows that would
+have been are left untouched and reported. Row counts unchanged; 0 survivors; 0 new definitionless
+rows; every kept page byte-identical to a page that was there before.
+
+**Counter-check worth keeping:** the first framing of this audit was "493 off-site page entries" and
+it was mostly *legitimate* — Bethesda→`jobs.zenimax.com`, BKOM→its own Zoho tenant, Kakao→
+`careers.kakao.com`, JoyBits→`joybits.games`, Coldwood→its parent's board. "Off-site" is the wrong
+discriminator: a studio's jobs often live on a different domain than its homepage. A naive
+registrable-domain helper made it worse by calling `activision.com` and `careers.activision.com`
+different sites. Only the asset/REST class is unambiguous, which is exactly the class fixed.
+
+### `hiddenFromDefault` was not cleared on promotion — a bug in the stranded-family repair
+
+`transition_registry_to_active` set `enabledByDefault: True` but left `hiddenFromDefault` alone, and
+`is_hidden_from_default` reads that flag. So a row promoted out of a demotion was *active, enabled,
+and hidden at once* — dropped from admin pending listings and from the pending provider-migration
+fetch lane. **34 active rows were in that state**, including one of the 37 stranded-family
+promotions (`glera-games.com/jobs/`), i.e. the repair restored the row and left it inert.
+
+The cause was verified rather than assumed: only two places set the flag
+(`_demote_duplicate_variant` and the repeated-zero-jobs auto-demote) and both are demotion paths,
+neither of which can leave a row active; and every one of the 34 has `lastPromotedAt` after
+`lastDemotedAt` with an empty `pendingReason`. So the flag was inherited 34 times over.
+
+Fixed in two parts, because the code fix alone would not have helped rows already stranded:
+promotion now clears the flag (3 tests), and the 34 active rows plus 2 seed rows were cleaned up
+under an asserted plan with a backup and a read-back check. The cleanup adds `hiddenFlagClearedBy` /
+`hiddenFlagClearedAt` to each repaired row so the change is attributable. Row counts unchanged, 0
+unrelated rows touched.
 
 ### Correction: the "static parser is losing two-thirds of these boards" claim was wrong
 

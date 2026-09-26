@@ -21,6 +21,13 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
+def _expected_applied(
+    row_id: str, winner_id: str, family_key: str, action: str
+) -> list[dict[str, str]]:
+    """The exact `applied` record a safe demotion returns, winner included."""
+    return [{"id": row_id, "familyKey": family_key, "action": action, "winnerId": winner_id}]
+
+
 def test_registry_service_auto_heals_duplicate_active_pending_source_id(
     tmp_path: Path,
 ) -> None:
@@ -133,13 +140,9 @@ def test_registry_service_auto_demotes_safe_static_url_alias_on_load(tmp_path: P
     assert report["duplicateSourceIdCount"] == 0
     assert report["safeAutomation"]["autoDemoted"] is True
     assert report["safeAutomation"]["demoted"] == 1
-    assert report["safeAutomation"]["applied"] == [
-        {
-            "id": loser_id,
-            "familyKey": "static studio",
-            "action": "auto_demote_static_normalized_url_alias",
-        }
-    ]
+    assert report["safeAutomation"]["applied"] == _expected_applied(
+        loser_id, winner_id, "static studio", "auto_demote_static_normalized_url_alias"
+    )
 
 
 # ── shared base + journal-overlay scenarios ───────────────────────────────────
@@ -499,13 +502,9 @@ def test_registry_service_auto_demotes_safe_static_listing_variant_on_load(
     assert [row["id"] for row in state["active"]] == [winner_id]
     assert [row["id"] for row in state["pending"]] == [loser_id]
     assert report["safeAutomation"]["demoted"] == 1
-    assert report["safeAutomation"]["applied"] == [
-        {
-            "id": loser_id,
-            "familyKey": "rockstar games",
-            "action": "auto_demote_static_same_host_listing_variant",
-        }
-    ]
+    assert report["safeAutomation"]["applied"] == _expected_applied(
+        loser_id, winner_id, "rockstar games", "auto_demote_static_same_host_listing_variant"
+    )
 
 
 def test_registry_service_shadow_writes_sqlite_projection(tmp_path: Path) -> None:

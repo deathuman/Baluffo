@@ -235,6 +235,7 @@ def test_safe_auto_demote_route_demotes_static_normalized_url_aliases(tmp_path: 
             "id": STATIC_SAFE_ID,
             "familyKey": "4a games",
             "action": "auto_demote_static_normalized_url_alias",
+            "winnerId": "static:listing_url:https://4a-games.com.mt/careers",
         }
     ]
     state = api.load_state()
@@ -265,6 +266,7 @@ def test_safe_auto_demote_route_promotes_pending_provider_replacement(
             "id": PENDING_PROVIDER_ID,
             "familyKey": "replace static",
             "action": "auto_promote_pending_provider_higher_jobs",
+            "winnerId": PENDING_PROVIDER_ID,
         }
     ]
     state = api.load_state()
@@ -301,6 +303,7 @@ def test_safe_auto_demote_route_promotes_pending_static_jobs_fragment(
             "id": PENDING_STATIC_FRAGMENT_ID,
             "familyKey": "theorycraft games",
             "action": "auto_promote_pending_static_jobs_fragment",
+            "winnerId": PENDING_STATIC_FRAGMENT_ID,
         }
     ]
     state = api.load_state()
@@ -333,6 +336,7 @@ def test_safe_auto_demote_route_rejects_pending_static_bare_alias(
             "id": PENDING_STATIC_BARE_ID,
             "familyKey": "overwolf",
             "action": "auto_reject_pending_static_bare_alias",
+            "winnerId": ACTIVE_STATIC_FRAGMENT_ID,
         }
     ]
     state = api.load_state()

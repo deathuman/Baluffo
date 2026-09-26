@@ -181,6 +181,7 @@ def test_split_consistency_is_empty_when_the_views_agree(tmp_path: Path) -> None
         "seed_row_demoted_in_store": [],
         "seed_row_lost_from_store": [],
         "seed_active_but_store_pending": [],
+        "seed_row_id_case_mismatch": [],
     }
     assert preflight._has_structural_defects(report) == []
 

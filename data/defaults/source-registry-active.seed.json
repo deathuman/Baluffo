@@ -2610,8 +2610,6 @@
     "pages": [
       "https://www.littlechicken.nl/about-us/jobs/",
       "https://www.littlechicken.nl/jobs/",
-      "https://www.littlechicken.nl/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.littlechicken.nl%2Fjobs%2F",
-      "https://www.littlechicken.nl/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.littlechicken.nl%2Fjobs%2F&",
       "https://www.littlechicken.nl/job/3d-artist-internship/",
       "https://www.littlechicken.nl/job/2d-artist-internship/",
       "https://www.littlechicken.nl/job/qa-tester-internship/"
@@ -25284,7 +25282,6 @@
     "adapter": "static",
     "pages": [
       "https://careers.ea.com/careers",
-      "https://careers.ea.com/assets/images/favicon.png",
       "https://careers.ea.com/games/apex-legends",
       "https://careers.ea.com/ea-partners",
       "https://careers.ea.com/commitments/positive-play",
@@ -26466,9 +26463,7 @@
       "https://jobs.kevurugames.com/ua/",
       "https://jobs.kevurugames.com/",
       "https://jobs.kevurugames.com/feed/",
-      "https://jobs.kevurugames.com/comments/feed/",
-      "https://jobs.kevurugames.com/wp-content/plugins/contact-form-7/includes/css/styles.css?ver=5.7.4",
-      "https://jobs.kevurugames.com/wp-content/themes/job/css/styles.css?ver=47"
+      "https://jobs.kevurugames.com/comments/feed/"
     ],
     "listing_url": "https://jobs.kevurugames.com/vacancy/",
     "nlPriority": false,
@@ -29433,8 +29428,6 @@
       "https://www.gaslampgames.com/jobs",
       "https://archive-gaslamp.dredmor.com/2012/01/10/jobs-jobs-jobs/",
       "https://archive-gaslamp.dredmor.com/2012/01/10/jobs-jobs-jobs/feed/",
-      "https://archive-gaslamp.dredmor.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Farchive-gaslamp.dredmor.com%2F2012%2F01%2F10%2Fjobs-jobs-jobs%2F",
-      "https://archive-gaslamp.dredmor.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Farchive-gaslamp.dredmor.com%2F2012%2F01%2F10%2Fjobs-jobs-jobs%2F&",
       "https://archive-gaslamp.dredmor.com/2012/01/10/jobs-jobs-jobs/?replytocom=5038",
       "https://archive-gaslamp.dredmor.com/2012/01/10/jobs-jobs-jobs/?replytocom=5040"
     ],
@@ -30605,10 +30598,12 @@
     "lastPromotedAt": "2026-04-26T20:23:21.870094+00:00",
     "lastDemotedAt": "2026-04-26T00:00:00Z",
     "promotionReason": "skipped_existing_family_match",
-    "hiddenFromDefault": true,
+    "hiddenFromDefault": false,
     "duplicateFamilyKey": "larian studios",
     "duplicateOfSourceId": "lever:account:larian",
-    "duplicateOfSourceName": "Larian Studios (Lever)"
+    "duplicateOfSourceName": "Larian Studios (Lever)",
+    "hiddenFlagClearedBy": "ai_registry_active_hidden_flag_repair_20260926",
+    "hiddenFlagClearedAt": "2026-09-26T13:18:43.198200+00:00"
   },
   {
     "name": "Nintendo (Sheet)",
@@ -30672,10 +30667,12 @@
     "lastDemotedAt": "2026-04-26T00:00:00Z",
     "enabledByDefault": true,
     "promotionReason": "manual_review_only",
-    "hiddenFromDefault": true,
+    "hiddenFromDefault": false,
     "duplicateFamilyKey": "nintendo",
     "duplicateOfSourceId": "static:listing_url:https://careers.nintendo.com/jobs",
-    "duplicateOfSourceName": "Nintendo (Manual Website)"
+    "duplicateOfSourceName": "Nintendo (Manual Website)",
+    "hiddenFlagClearedBy": "ai_registry_active_hidden_flag_repair_20260926",
+    "hiddenFlagClearedAt": "2026-09-26T13:18:43.198231+00:00"
   },
   {
     "name": "UMX Studio (GameDevMap)",
@@ -31083,13 +31080,7 @@
     "company": "Madcake Studios",
     "adapter": "static",
     "pages": [
-      "https://www.madcakestudios.com",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/admin/css/blocks.min.css?ver=1.3.5",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/common/libs/fontawesome/css/v4-shims.min.css?ver=5.13.0",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/common/libs/fontawesome/css/regular.min.css?ver=5.13.0",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/common/libs/fontawesome/css/solid.min.css?ver=5.13.0",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/common/libs/fontawesome/css/brands.min.css?ver=5.13.0",
-      "https://www.madcakestudios.com/wp-content/plugins/jobboardwp/assets/common/libs/fontawesome/css/fontawesome.min.css?ver=5.13.0"
+      "https://www.madcakestudios.com"
     ],
     "listing_url": "https://www.madcakestudios.com",
     "nlPriority": false,
@@ -34827,12 +34818,7 @@
     "company": "Scimob",
     "adapter": "static",
     "pages": [
-      "https://www.scimob.net/reference_projet_6_title_Trouver1Job.html",
-      "https://www.scimob.net/images/trouver1job/grande/1RR.png",
-      "https://www.scimob.net/images/trouver1job/grande/2.png",
-      "https://www.scimob.net/images/trouver1job/grande/3.png",
-      "https://www.scimob.net/images/trouver1job/grande/4.png",
-      "https://www.scimob.net/images/trouver1job/grande/5.png"
+      "https://www.scimob.net/reference_projet_6_title_Trouver1Job.html"
     ],
     "listing_url": "https://www.scimob.net/reference_projet_6_title_Trouver1Job.html",
     "nlPriority": false,
@@ -34925,11 +34911,7 @@
     "adapter": "static",
     "pages": [
       "https://gasketgames.com",
-      "https://gasketgames.bamboohr.com/jobs/",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.DisableDocumentScrollWhenLightBoxOpen%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dom_store%2C.dontApplyDacOverridesOnBoBApps%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.imageEncodingAVIF%2C.isClassNameToRootEnabled%2C.motionTimeAnimationsCSS%2C.overrideFloatInDistance%2C.shouldUseResponsiveImages%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useResponsiveImgClassicFixed%2C.useSvgLoaderFeature%2C.useSvgLoaderFeatureOnBuilderComps%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&deviceType=Desktop&dfCk=6&dfVersion=1.5347.0&disableStaticPagesUrlHierarchy=false&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.gasketgames.com&fileId=f363aa87.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isMultilingualEnabled=false&isPremiumDomain=true&isTrackClicksAnalyticsEnabled=false&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&languageResolutionMethod=QueryParam&metaSiteId=8dcf6a7e-cf04-4ea5-b691-45a2f9cf3a81&module=thunderbolt-features&originalLanguage=en&pageId=2f80af_c2a6225bbdab5a2d8595910e420735bb_358.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=30eac3a5-ecac-43f9-badd-f602d1ccd354&siteRevision=358&staticHTMLComponentUrl=https%3A%2F%2Fwww-gasketgames-com.filesusr.com%2F&useSandboxInHTMLComp=false&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.DisableDocumentScrollWhenLightBoxOpen%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dom_store%2C.dontApplyDacOverridesOnBoBApps%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.imageEncodingAVIF%2C.isClassNameToRootEnabled%2C.motionTimeAnimationsCSS%2C.overrideFloatInDistance%2C.shouldUseResponsiveImages%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useResponsiveImgClassicFixed%2C.useSvgLoaderFeature%2C.useSvgLoaderFeatureOnBuilderComps%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&deviceType=Desktop&dfCk=6&dfVersion=1.5347.0&disableStaticPagesUrlHierarchy=false&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.gasketgames.com&fileId=f363aa87.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isMultilingualEnabled=false&isPremiumDomain=true&isTrackClicksAnalyticsEnabled=false&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&languageResolutionMethod=QueryParam&metaSiteId=8dcf6a7e-cf04-4ea5-b691-45a2f9cf3a81&module=thunderbolt-features&originalLanguage=en&pageId=2f80af_49c58b5fe643f0bd67df3158cdc7e80f_357.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=30eac3a5-ecac-43f9-badd-f602d1ccd354&siteRevision=358&staticHTMLComponentUrl=https%3A%2F%2Fwww-gasketgames-com.filesusr.com%2F&useSandboxInHTMLComp=false&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.isClassNameToRootEnabled%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&dfCk=6&dfVersion=1.5347.0&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.gasketgames.com&fileId=6423959b.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isPremiumDomain=true&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&metaSiteId=8dcf6a7e-cf04-4ea5-b691-45a2f9cf3a81&module=thunderbolt-platform&originalLanguage=en&pageId=2f80af_c2a6225bbdab5a2d8595910e420735bb_358.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=30eac3a5-ecac-43f9-badd-f602d1ccd354&siteRevision=358&staticHTMLComponentUrl=https%3A%2F%2Fwww-gasketgames-com.filesusr.com%2F&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.isClassNameToRootEnabled%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&dfCk=6&dfVersion=1.5347.0&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.gasketgames.com&fileId=6423959b.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isPremiumDomain=true&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&metaSiteId=8dcf6a7e-cf04-4ea5-b691-45a2f9cf3a81&module=thunderbolt-platform&originalLanguage=en&pageId=2f80af_49c58b5fe643f0bd67df3158cdc7e80f_357.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=30eac3a5-ecac-43f9-badd-f602d1ccd354&siteRevision=358&staticHTMLComponentUrl=https%3A%2F%2Fwww-gasketgames-com.filesusr.com%2F&viewMode=desktop"
+      "https://gasketgames.bamboohr.com/jobs/"
     ],
     "listing_url": "https://gasketgames.com",
     "nlPriority": false,
@@ -36251,11 +36233,7 @@
     "company": "Miami Avalon",
     "adapter": "static",
     "pages": [
-      "https://miamiavalon.com",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.DisableDocumentScrollWhenLightBoxOpen%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dom_store%2C.dontApplyDacOverridesOnBoBApps%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.imageEncodingAVIF%2C.isClassNameToRootEnabled%2C.motionTimeAnimationsCSS%2C.overrideFloatInDistance%2C.shouldUseResponsiveImages%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useResponsiveImgClassicFixed%2C.useSvgLoaderFeature%2C.useSvgLoaderFeatureOnBuilderComps%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&deviceType=Desktop&dfCk=6&dfVersion=1.5347.0&disableStaticPagesUrlHierarchy=false&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.miamiavalon.com&fileId=f363aa87.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isMultilingualEnabled=false&isPremiumDomain=true&isTrackClicksAnalyticsEnabled=false&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&languageResolutionMethod=QueryParam&metaSiteId=6ab9c9b0-92d3-4122-81b9-b635ee2ebdba&module=thunderbolt-features&originalLanguage=en&pageId=961e6e_0d96edf070b3f81c929349e4cba95159_406.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=49067677-d8af-427e-8b85-d53d172e62d4&siteRevision=406&staticHTMLComponentUrl=https%3A%2F%2Fwww-miamiavalon-com.filesusr.com%2F&useSandboxInHTMLComp=false&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.DisableDocumentScrollWhenLightBoxOpen%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dom_store%2C.dontApplyDacOverridesOnBoBApps%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.imageEncodingAVIF%2C.isClassNameToRootEnabled%2C.motionTimeAnimationsCSS%2C.overrideFloatInDistance%2C.shouldUseResponsiveImages%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useResponsiveImgClassicFixed%2C.useSvgLoaderFeature%2C.useSvgLoaderFeatureOnBuilderComps%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&deviceType=Desktop&dfCk=6&dfVersion=1.5347.0&disableStaticPagesUrlHierarchy=false&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.miamiavalon.com&fileId=f363aa87.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isMultilingualEnabled=false&isPremiumDomain=true&isTrackClicksAnalyticsEnabled=false&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&languageResolutionMethod=QueryParam&metaSiteId=6ab9c9b0-92d3-4122-81b9-b635ee2ebdba&module=thunderbolt-features&originalLanguage=en&pageId=961e6e_b6eeb53421009eac6c65b2f7368e5043_404.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=49067677-d8af-427e-8b85-d53d172e62d4&siteRevision=406&staticHTMLComponentUrl=https%3A%2F%2Fwww-miamiavalon-com.filesusr.com%2F&useSandboxInHTMLComp=false&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.isClassNameToRootEnabled%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&dfCk=6&dfVersion=1.5347.0&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.miamiavalon.com&fileId=6423959b.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isPremiumDomain=true&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&metaSiteId=6ab9c9b0-92d3-4122-81b9-b635ee2ebdba&module=thunderbolt-platform&originalLanguage=en&pageId=961e6e_0d96edf070b3f81c929349e4cba95159_406.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=49067677-d8af-427e-8b85-d53d172e62d4&siteRevision=406&staticHTMLComponentUrl=https%3A%2F%2Fwww-miamiavalon-com.filesusr.com%2F&viewMode=desktop",
-      "https://siteassets.parastorage.com/pages/pages/thunderbolt?appDefinitionIdToSiteRevision=%7B%2214271d6f-ba62-d045-549b-ab972ae1f70e%22%3A%2225%22%7D&beckyExperiments=.DatePickerPortal%2C.EnableCustomCSSVarsForLoginSocialBar%2C.FreemiumBannerOdeditor%2C.LoginBarEnableLoggingInStateInSSR%2C.TextInputAutoFillFix%2C.UseLoginSocialBarCustomMenu%2C.UseNewLoginBarDropdownMenuAlignment%2C.UseNewLoginSocialBarCustomMenuPositioning%2C.UseNewLoginSocialBarElementStructure%2C.UseNewLoginSocialBarMemberInitialsAvatar%2C.WixFreeSiteBannerDesktop%2C.WixFreeSiteBannerMobile%2C.addIdAsClassName%2C.buttonUdp%2C.calculateCollapsibleTextLineHeightByFont%2C.disableBuilderWixComponents%2C.dynamicSlots%2C.fiveGridLineStudioSkins%2C.isClassNameToRootEnabled%2C.svgResolver_2%2C.updateRichTextSemanticClassNamesOnCorvid%2C.useClassnameInResponsiveAppWidget%2C.useImageAvifFormatInNativeProGallery%2C.useWowImageInFastGallery&blocksBuilderManifestGeneratorVersion=1.129.0&contentType=application%2Fjson&dfCk=6&dfVersion=1.5347.0&editorName=Unknown&experiments=dm_bgScrubToMotionFixer%2Cdm_masterPageVariablesQueryFixer%2Cdm_migrateOldHoverBoxToNewFixer&externalBaseUrl=https%3A%2F%2Fwww.miamiavalon.com&fileId=6423959b.bundle.min&formFactor=desktop&hasTPAWorkerOnSite=false&hasUserDomainMedia=false&isBuilderComponentModel=false&isHttps=true&isInSeo=false&isPremiumDomain=true&isUrlMigrated=true&isWixCodeOnPage=false&isWixCodeOnSite=false&language=en&metaSiteId=6ab9c9b0-92d3-4122-81b9-b635ee2ebdba&module=thunderbolt-platform&originalLanguage=en&pageId=961e6e_b6eeb53421009eac6c65b2f7368e5043_404.json&pilerExperiments=specs.piler.useEditorReactComponents&quickActionsMenuEnabled=false&registryLibrariesTopology=%5B%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22wixui%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%2C%7B%22artifactId%22%3A%22editor-elements%22%2C%22namespace%22%3A%22dsgnsys%22%2C%22url%22%3A%22https%3A%2F%2Fstatic.parastorage.com%2Fservices%2Feditor-elements%2F1.15063.0%22%7D%5D&remoteWidgetStructureBuilderVersion=1.251.0&siteId=49067677-d8af-427e-8b85-d53d172e62d4&siteRevision=406&staticHTMLComponentUrl=https%3A%2F%2Fwww-miamiavalon-com.filesusr.com%2F&viewMode=desktop"
+      "https://miamiavalon.com"
     ],
     "listing_url": "https://miamiavalon.com",
     "nlPriority": false,
@@ -36344,11 +36322,7 @@
     "company": "Lightbulb Crew",
     "adapter": "static",
     "pages": [
-      "https://lightbulbcrew.fr",
-      "https://lightbulbcrew.fr/wp-content/plugins/simple-job-board/sjb-block/dist/blocks.style.build.css",
-      "https://lightbulbcrew.fr/wp-content/plugins/simple-job-board/public/css/font-awesome.min.css?ver=4.7.0",
-      "https://lightbulbcrew.fr/wp-content/plugins/simple-job-board/public/css/jquery-ui.css?ver=1.12.1",
-      "https://lightbulbcrew.fr/wp-content/plugins/simple-job-board/public/css/simple-job-board-public.css?ver=3.0.0"
+      "https://lightbulbcrew.fr"
     ],
     "listing_url": "https://lightbulbcrew.fr",
     "nlPriority": false,
@@ -36718,8 +36692,6 @@
     "pages": [
       "https://atvis.com/index.php/jobba-hos-oss/",
       "https://atvis.com/index.php/jobba-hos-oss/",
-      "https://atvis.com/index.php/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fatvis.com%2Findex.php%2Fjobba-hos-oss%2F",
-      "https://atvis.com/index.php/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fatvis.com%2Findex.php%2Fjobba-hos-oss%2F&",
       "https://www.linkedin.com/jobs/view/4292601640/"
     ],
     "listing_url": "https://atvis.com/index.php/jobba-hos-oss/",
@@ -42046,8 +42018,6 @@
     "adapter": "static",
     "pages": [
       "https://www.vanguardgames.net/jobs",
-      "https://www.vertigo-games.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.vertigo-games.com%2Fjobs%2F",
-      "https://www.vertigo-games.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.vertigo-games.com%2Fjobs%2F&",
       "https://www.vertigo-games.com/jobs/"
     ],
     "listing_url": "https://www.vanguardgames.net/jobs",
@@ -42594,8 +42564,6 @@
     "adapter": "static",
     "pages": [
       "https://larvagamestudios.com",
-      "https://radientgamestudio.com/wp-content/plugins/wp-job-openings/assets/css/general.min.css?ver=3.6.0",
-      "https://radientgamestudio.com/wp-content/plugins/wp-job-openings/assets/css/style.min.css?ver=3.6.0",
       "https://radientgamestudio.com/job-openings/"
     ],
     "listing_url": "https://larvagamestudios.com",
@@ -42684,9 +42652,7 @@
     "company": "JoyBits",
     "adapter": "static",
     "pages": [
-      "https://joybits.games/jobs/",
-      "https://joybits.games/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fjoybits.games%2Fjobs%2F",
-      "https://joybits.games/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fjoybits.games%2Fjobs%2F&"
+      "https://joybits.games/jobs/"
     ],
     "listing_url": "https://joybits.games/jobs/",
     "nlPriority": false,
@@ -42777,8 +42743,6 @@
     "adapter": "static",
     "pages": [
       "https://www.whatsthehubbub.nl/join-us",
-      "https://whatsthehubbub.nl/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwhatsthehubbub.nl%2Fblog%2F2010%2F07%2Fjoin-us-for-a-game-of-bocce-drift%2F",
-      "https://whatsthehubbub.nl/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwhatsthehubbub.nl%2Fblog%2F2010%2F07%2Fjoin-us-for-a-game-of-bocce-drift%2F&",
       "https://whatsthehubbub.nl/blog/2010/07/join-us-for-a-game-of-bocce-drift/"
     ],
     "listing_url": "https://www.whatsthehubbub.nl/join-us",
@@ -44282,10 +44246,6 @@
     "company": "Just Add Water (Developments)",
     "adapter": "static",
     "pages": [
-      "https://justaddwaterdevelopment.com/wp-content/plugins/wp-job-openings/assets/css/general.min.css?ver=3.3.3",
-      "https://justaddwaterdevelopment.com/wp-content/plugins/wp-job-openings/assets/css/style.min.css?ver=3.3.3",
-      "https://justaddwaterdevelopment.com/wp-content/plugins/pro-pack-for-wp-job-openings/assets/css/intlTelInput.min.css?ver=17.0.16",
-      "https://justaddwaterdevelopment.com/wp-content/plugins/pro-pack-for-wp-job-openings/assets/css/style.min.css?ver=3.2.1",
       "https://justaddwaterdevelopment.com/careers/"
     ],
     "listing_url": "https://justaddwaterdevelopment.com/careers/",
@@ -91430,9 +91390,7 @@
     "company": "U-Play Online",
     "adapter": "static",
     "pages": [
-      "https://www.uplayonline.com/work-with-us",
-      "https://www.uplayonline.com/wp-json/oembed/1.0/embed%3Furl=https:%252F%252Fwww.uplayonline.com%252Fwork-with-us%252F",
-      "https://www.uplayonline.com/wp-json/oembed/1.0/embed%3Furl=https:%252F%252Fwww.uplayonline.com%252Fwork-with-us%252F&amp;format=xml"
+      "https://www.uplayonline.com/work-with-us"
     ],
     "listing_url": "https://www.uplayonline.com/work-with-us",
     "nlPriority": false,
@@ -91700,7 +91658,6 @@
     "adapter": "static",
     "pages": [
       "https://www.twopointstudios.com",
-      "https://www.twopointstudios.com/core/modules/system/css/components/position-container.module.css?te2qpo",
       "https://www.twopointstudios.com/en/the-studio/career-opportunities"
     ],
     "listing_url": "https://www.twopointstudios.com",
@@ -92277,9 +92234,7 @@
     "company": "Thunderbox Entertainment",
     "adapter": "static",
     "pages": [
-      "https://www.thunderboxentertainment.com/jobs",
-      "https://thunderboxentertainment.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fthunderboxentertainment.com%2Fjobs%2F",
-      "https://thunderboxentertainment.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fthunderboxentertainment.com%2Fjobs%2F&"
+      "https://www.thunderboxentertainment.com/jobs"
     ],
     "listing_url": "https://www.thunderboxentertainment.com/jobs",
     "nlPriority": false,
@@ -93528,8 +93483,7 @@
     "adapter": "static",
     "pages": [
       "https://www.superhotgame.com/jobs",
-      "https://jobs.superhotgame.com",
-      "https://static.homerun.co/employers/v3/job-list.css?id=618b5837181bbb1174f26bf6a1df6031"
+      "https://jobs.superhotgame.com"
     ],
     "listing_url": "https://www.superhotgame.com/jobs",
     "nlPriority": false,
@@ -101232,9 +101186,7 @@
     "company": "Futurats",
     "adapter": "static",
     "pages": [
-      "https://futurats.com/work-with-us",
-      "https://futurats.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Ffuturats.com%2Fwork-with-us%2F",
-      "https://futurats.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Ffuturats.com%2Fwork-with-us%2F&"
+      "https://futurats.com/work-with-us"
     ],
     "listing_url": "https://futurats.com/work-with-us",
     "nlPriority": false,
@@ -103740,7 +103692,6 @@
     "adapter": "static",
     "pages": [
       "https://www.crystald.com",
-      "https://www.crystaldynamics.com/content/mu-plugins/cd-job-openings-table/build/style-index.css?ver=1717603234",
       "https://www.crystaldynamics.com/careers/"
     ],
     "listing_url": "https://www.crystald.com",
@@ -125217,8 +125168,6 @@
     "adapter": "static",
     "pages": [
       "https://www.eville-game.com",
-      "https://eville-game.com/wp-content/plugins/wp-job-openings/assets/css/general.min.css?ver=3.6.0",
-      "https://eville-game.com/wp-content/plugins/wp-job-openings/assets/css/style.min.css?ver=3.6.0",
       "https://eville-game.com/job-openings/"
     ],
     "listing_url": "https://www.eville-game.com",
@@ -125307,9 +125256,7 @@
     "adapter": "static",
     "pages": [
       "https://www.todco.ir/jobs",
-      "https://www.tod.ir/jobs/",
-      "https://www.tod.ir/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.tod.ir%2Fjobs%2F",
-      "https://www.tod.ir/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwww.tod.ir%2Fjobs%2F&"
+      "https://www.tod.ir/jobs/"
     ],
     "listing_url": "https://www.todco.ir/jobs",
     "nlPriority": false,
@@ -125581,8 +125528,6 @@
     "adapter": "static",
     "pages": [
       "https://www.ereban.com/careers",
-      "https://www.ereban.com/_nuxt/static/1776426441/careers/state.js",
-      "https://www.ereban.com/_nuxt/static/1776426441/careers/payload.js",
       "https://www.ereban.com/careers/open-position"
     ],
     "listing_url": "https://www.ereban.com/careers",
@@ -125757,8 +125702,7 @@
     "adapter": "static",
     "pages": [
       "https://boon.ie",
-      "https://boon.ie/careers/index.html",
-      "https://boon.ie/wp-content/uploads/2015/12/Boon-Studios-Boon-Job-2015-IMG_2958-020_Alt-683x1024.jpg"
+      "https://boon.ie/careers/index.html"
     ],
     "listing_url": "https://boon.ie",
     "nlPriority": false,
@@ -127218,13 +127162,7 @@
     "company": "LightFury Games",
     "adapter": "static",
     "pages": [
-      "https://lightfurygames.com/careers",
-      "https://lightfurygames.com/careers/studio/office1.jpg",
-      "https://lightfurygames.com/careers/studio/office2.jpg",
-      "https://lightfurygames.com/careers/studio/office3.jpg",
-      "https://lightfurygames.com/careers/studio/office4.jpg",
-      "https://lightfurygames.com/careers/studio/office5.jpg",
-      "https://lightfurygames.com/careers/studio/office6.jpg"
+      "https://lightfurygames.com/careers"
     ],
     "listing_url": "https://lightfurygames.com/careers",
     "nlPriority": false,
@@ -128261,8 +128199,7 @@
       "https://careers.activision.com",
       "https://careers.activision.com/students",
       "https://activision.com/careers/veterans",
-      "https://activision.com/careers/faq",
-      "https://activision.com/apps/atvi/activision/activision-touchui/atvi-2021/components/content/global/jobOppsClientlibs.323a71dc0100a5e5b5e1d005c5ec2f9f.css"
+      "https://activision.com/careers/faq"
     ],
     "listing_url": "https://activision.com",
     "nlPriority": false,
@@ -133619,7 +133556,7 @@
     "lastDemotedAt": "2026-09-07T11:55:14.799733+00:00"
   },
   {
-    "id": "phenom:listing_url:https://jobsearch.createyourowncareer.com/RTL/",
+    "id": "phenom:listing_url:https://jobsearch.createyourowncareer.com/rtl/",
     "name": "RTL Enterprises (Phenom)",
     "studio": "RTL Enterprises",
     "adapter": "phenom",
