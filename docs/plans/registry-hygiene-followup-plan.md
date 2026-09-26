@@ -1,6 +1,6 @@
 # Registry Hygiene Follow-Up Plan
 
-> - **Status:** Code work complete (P0, P1, P5, P6). Data reconciliation applied: the 13 lost rows, P3's 31 duplicate groups, P4's 102-row seed prune, and the stranded-family repair (37 promotions) are all in the store and the seed. The preflight is clean — 0 uncovered collisions, 0 stale baseline, 0 boards emptied — and the only remaining finding is 39 expected `seed_row_demoted_in_store`. Three items are genuinely open and are listed under *Open items for the operator*: the residue of the probe under-count, the `sector: "Game"` mislabelling (a product decision), and Optional D. Continuity handoff in Basic Memory (`baluffo/registry-hygiene-p3-p4-closeout-2026-09-26`).
+> - **Status:** Code work complete (P0, P1, P5, P6). Data reconciliation applied: the 13 lost rows, P3's 31 duplicate groups, P4's 102-row seed prune, the stranded-family repair (37 promotions), the non-page `pages` cleanup, and the RTL non-game rejection are all in the store and the seed. The preflight is clean — 0 uncovered collisions, 0 stale baseline, 0 boards emptied. Remaining open items are the residue of the probe under-count, the `sector` provenance signal in `game_detection.py` (recorded, needs product sign-off), and Optional D. Continuity handoff in Basic Memory (`baluffo/registry-hygiene-p3-p4-closeout-2026-09-26`).
 > - **Use this when:** recording or applying a registry repair decision, reconciling live-registry drift from the committed seed, or extending the advisory/guard surfaces
 > - **Canonical for:** the human-approval gate's boundaries, the live-vs-seed authority question, and the ordered follow-up work
 > - **Not canonical for:** the advisory report shape (see `docs/DATA_CONTRACT.md`) or registry transition mechanics (see `src/source_registry_state.py`)
@@ -416,35 +416,66 @@ This affects every phenom tenant, not just RTL.
    including a *different company* (`in.indeed.com/cmp/Tara-Gaming-Ltd/jobs`). Widening the probe
    without fixing that would feed the quality gate more of exactly that junk.
 
-2. **Non-game jobs carry `sector: "Game"`, and the cause is not the parser.** A full read of the
-   sector pipeline found the original attribution wrong in a way that changes the fix:
+2. **Non-game jobs carried `sector: "Game"` — resolved as a rejection, and the cause was not the
+   parser.** `docs/notes/t3-workday-promotion-2026-09-05.md:62` had already settled the policy for a
+   board whose `has_positive_game_evidence` is contaminated: measure how many rows a *correct* game
+   filter would keep, and if it is ~nothing, reject the whole company as `non_game_employer_scope`
+   rather than promote it with a filter. Intel kept 0/36, SciGames 0/34, L&W 1/23 — all three
+   rejected.
 
-   - `src/jobs/adapters/parsers/phenom.py:147` hard-codes `"sector": "Game"`, but that line is inert.
-     `normalize_sector` (`src/jobs/normalizers.py:129-139`) **discards its `value` argument** and
-     returns `"Game"` iff `has_positive_game_evidence(...)`, else `"Tech"`. `canonicalize_locations.py:577`
-     and the frontend mirror `frontend/jobs/domain/feed.js:151` both pass the parser value in and it
-     is ignored. Editing the parser changes nothing but one test.
-   - The real cause is `has_game_source_provenance` (`src/jobs/game_detection.py:161-165`): any bundle
-     item whose adapter is not in `STATIC_ADAPTERS` counts as games-industry provenance, with no games
-     check on the source or studio. `phenom` is a *multi-tenant platform* adapter, so the tenant —
-     not the platform — is the employer, and every tenant inherits `sector: Game`. That branch is also
-     the sole provenance for ~133 legitimately-game rows, so deleting it wholesale is too blunt.
-   - Blast radius: **25 rows, 1 source, 1 company** (RTL Enterprises), latent for any future j2w
-     tenant. There is no reusable "not a game job" predicate in the repo — the audit skill requires
-     explicit product approval before adding one.
-   - The narrow fix is a `PLATFORM_ADAPTERS` concept in `game_detection.py` requiring corroboration
-     before a platform adapter alone counts, mirrored in `frontend/jobs/domain/feed.js`. But the
-     frontend mirror is *already* stale (it lacks the `NON_GAME_INDUSTRY_HINTS` veto and uses a
-     broader keyword regex), so a backend-only fix desynchronizes backend and UI sector for these
-     rows.
-   - **Why it is not being changed here:** `sector` is a public persisted job field in
-     `REQUIRED_FIELDS`, and whether RTL's media and corporate roles should be *reclassified* to
-     `Tech` or the *source rejected* is a product decision, not a code fact. It routes through the
-     job-data-quality audit.
+   Measured against that test, on the **live** board and through the repo's own parser
+   (`parse_phenom_jobs_html` over the 185,358-byte response from the search URL the runner rewrites
+   to): **25 rows, 0 of them a game role.** Controlling, accounting, editorial, media production, HR,
+   legal, retail, advertising, SAP support, backend IT. Not one borderline title. The row is now
+   rejected in the live store and removed from the committed seed, exactly as the precedent was
+   applied — and the seed removal is the part that matters, since all three t3 boards are absent from
+   the seed and a fresh install would otherwise resurrect the row.
+
+   Two corrections this forced, both against the earlier reading in this plan:
+
+   - The hard-coded `"sector": "Game"` at `phenom.py:147` is **inert**. `normalize_sector`
+     (`src/jobs/normalizers.py:129-139`) discards its `value` argument and returns `"Game"` iff
+     `has_positive_game_evidence(...)`; `canonicalize_locations.py:577` and the frontend mirror
+     `frontend/jobs/domain/feed.js:151` both pass the parser value in and it is ignored. The real
+     cause is `has_game_source_provenance` (`src/jobs/game_detection.py:161-165`), where any bundle
+     item whose adapter is not in `STATIC_ADAPTERS` counts as games-industry provenance with no games
+     check on the source or studio — so a multi-tenant *platform* adapter lends game provenance to
+     every tenant. Deleting that branch is too blunt: it is also the sole provenance for ~133
+     legitimately-game rows.
+   - The rows are **not** location-broken. They carry `country: 'DE'` and `city: 'Hamburg'` live. The
+     empty locations were stale stored-feed data, so the "these rows are also low-quality" claim was
+     wrong.
+
+   **The signal fix is still open, and deliberately so.** A `PLATFORM_ADAPTERS` concept in
+   `game_detection.py` requiring corroboration before a platform adapter alone counts is the narrow
+   fix, and it stays recorded rather than applied — the same way t3 recorded the filter concept in T13
+   for future genuinely mixed boards. It is not a one-liner: it changes a public field in
+   `REQUIRED_FIELDS`, and `frontend/jobs/domain/feed.js` is *already* stale against Python (it lacks
+   the `NON_GAME_INDUSTRY_HINTS` veto and uses a broader keyword regex), so a backend-only change
+   would desynchronize backend and UI sector. It also needs the job-data-quality skill's approval,
+   which requires explicit product sign-off for any new sector gate. No tombstone was written for the
+   rejection: the t3 precedent did not use one, and `TOMBSTONES_PATH` resolves to a gitignored
+   `data/*.json` that does not exist while the real store is `.json.gz`/`.jsonl`, so a default-path
+   write would be a silent no-op that looks like protection. **Recurrence is therefore possible** —
+   discovery could re-add the tenant — and the honest guard is a preflight finding, not an artifact
+   nobody reads.
 
 3. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
 
 ## Resolved since the last update
+
+### A test fixture was registered as a live source
+
+Reconciling the preflight's live-row headline against the store showed they disagreed by one
+(2,260 vs 2,259). The preflight deliberately delegates to the runtime loader so it cannot disagree
+with the fetcher, so the difference was a row the pipeline cannot see — and it was
+`greenhouse:slug:examplestudio`, studio **"Example Studio GmbH"**: present only in the live active
+store (the P4 seed prune had already removed it from the seed), `boards-api.greenhouse.com` 404 for
+that board, `enabledByDefault: true`, credited with a fabricated `jobsFound: 2`, and pointing at a
+gamesmap *example* page. Retired as `test_fixture_row_never_a_real_board`.
+
+The lesson generalises past this row: a summary count I read without reconciling against its source is
+a number I had not actually checked, and it hid a fictional employer in the default fetch set.
 
 ### The two latent same-studio duplicates — only one of them was real
 

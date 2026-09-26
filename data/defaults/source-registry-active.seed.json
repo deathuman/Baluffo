@@ -133556,24 +133556,6 @@
     "lastDemotedAt": "2026-09-07T11:55:14.799733+00:00"
   },
   {
-    "id": "phenom:listing_url:https://jobsearch.createyourowncareer.com/rtl/",
-    "name": "RTL Enterprises (Phenom)",
-    "studio": "RTL Enterprises",
-    "adapter": "phenom",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-09-07T22:47:20.190902+00:00",
-    "stateChangedBy": "phenom_adapter_migration",
-    "lastPromotedAt": "2026-09-07T22:47:20.190914+00:00",
-    "lastDemotedAt": "",
-    "listing_url": "https://jobsearch.createyourowncareer.com/RTL/",
-    "careersUrl": "https://jobsearch.createyourowncareer.com/RTL/",
-    "discoveryMethod": "adapter_migration",
-    "discoveryStage": "adapter_migration",
-    "enabledByDefault": true,
-    "migrationSourceId": "static:listing_url:https://company.rtl.com/de/career/job-worlds-at-rtl/entertainment/"
-  },
-  {
     "id": "static:listing_url:https://www.blastworksinc.com/careers/",
     "name": "Blastworks (Sheet)",
     "adapter": "static",
