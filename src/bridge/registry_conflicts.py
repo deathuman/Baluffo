@@ -39,6 +39,7 @@ from src.bridge.registry_conflicts_demotions import (
     _apply_safe_demotion_targets,
     _eligible_safe_demotion_cards,
     _empty_safe_demotion_result,
+    _restore_families_left_without_active_rows,
     _safe_demotion_state,
 )
 
@@ -245,6 +246,14 @@ def apply_registry_conflict_safe_demotions(
 
     state["active"] = active_remaining
     state["pending"] = _unique_registry_rows([*state["pending"], *moved])
+    active_after, restored = _restore_families_left_without_active_rows(
+        state,
+        eligible_by_id=eligible_by_id,
+        moved_ids=moved_ids,
+        now=now,
+        actor=actor,
+    )
+    state["active"] = active_after
     return {
         "ok": True,
         "demoted": (
@@ -252,6 +261,7 @@ def apply_registry_conflict_safe_demotions(
         ),
         "skipped": len(skipped_rows),
         "applied": [*promoted_applied, *fragment_applied, *rejection_applied, *applied],
+        "restored": restored,
         "skippedRows": skipped_rows,
         "state": state,
     }

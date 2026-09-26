@@ -20,6 +20,7 @@ from src.bridge.registry_conflicts_automation import (
 from src.bridge.registry_conflicts_row import (
     SAFE_AUTO_DEMOTE_ACTIONS,
     SAFE_AUTO_DEMOTE_REASON,
+    SAFE_AUTO_DEMOTE_RESTORE_REASON,
     _active_same_adapter_provider_rows,
     _adjudicated_independent_provider_loser_ids,
     _adjudication_proves_independent_provider_boards,
@@ -322,3 +323,93 @@ def _apply_pending_rejection_targets(
         actor=actor,
         transition=transition_registry_to_rejected,
     )
+
+
+def _restore_sort_number(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _best_restore_candidate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pick the registration most worth keeping active: rank first, then yield, then stable id."""
+    return sorted(
+        rows,
+        key=lambda row: (
+            -_restore_sort_number(row.get("rankScore")),
+            -_restore_sort_number(row.get("jobsFound")),
+            source_identity(row),
+        ),
+    )[0]
+
+
+def _families_demoted_from(
+    moved_ids: set[str], eligible_by_id: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """The conflict cards this call demoted from, keyed by family."""
+    families: dict[str, dict[str, Any]] = {}
+    for row_id in moved_ids:
+        card = eligible_by_id.get(row_id) or {}
+        family_key = _clean_text(card.get("familyKey"))
+        if family_key:
+            families.setdefault(family_key, card)
+    return families
+
+
+def _restore_families_left_without_active_rows(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    eligible_by_id: dict[str, dict[str, Any]],
+    moved_ids: set[str],
+    now: str,
+    actor: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Put one registration back for any family this call left with no active row.
+
+    The demotion helpers above move rows without checking the result, so a target set covering every
+    active row of a board strips that board of coverage with nothing in the response saying so --
+    the same shape as the duplicate-URL policy's "no stale baseline entry" rule. Only families this
+    call demoted from are considered, so a deliberately parked board is never resurrected.
+    """
+    families = _families_demoted_from(moved_ids, eligible_by_id)
+    next_active = [dict(row) for row in state["active"]]
+    if not families:
+        return next_active, []
+
+    next_pending = [dict(row) for row in state["pending"]]
+    active_ids = {source_identity(row) for row in next_active}
+    pending_ids = {source_identity(row) for row in next_pending}
+    restored: list[dict[str, Any]] = []
+
+    for family_key in sorted(families):
+        card_rows = [
+            row for row in _as_list(families[family_key].get("rows")) if isinstance(row, dict)
+        ]
+        if any(source_identity(row) in active_ids for row in card_rows):
+            continue
+        candidates = [row for row in card_rows if source_identity(row) in pending_ids]
+        if not candidates:
+            continue
+        winner = _best_restore_candidate(candidates)
+        winner_id = source_identity(winner)
+        next_active.append(
+            transition_registry_to_active(
+                dict(winner),
+                reason=SAFE_AUTO_DEMOTE_RESTORE_REASON,
+                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                at=now or None,
+            )
+        )
+        next_pending = [row for row in next_pending if source_identity(row) != winner_id]
+        active_ids.add(winner_id)
+        pending_ids.discard(winner_id)
+        restored.append(
+            {
+                "id": winner_id,
+                "familyKey": family_key,
+                "reason": "restored_family_left_without_active_row",
+            }
+        )
+
+    return next_active, restored

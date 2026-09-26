@@ -129,6 +129,11 @@ SAFE_AUTO_DEMOTE_REASON = "registry_conflict_safe_auto_demote"
 
 ADJUDICATION_AUTO_DEMOTE_REASON = "registry_conflict_adjudication_auto_demote"
 
+# Recorded when a safe demotion would have left a family with no active row, so one registration
+# is put back. Distinct from the demote reasons on purpose: it is a restore, and it must not be
+# mistaken for a resolved demotion by the pending-reason consumers.
+SAFE_AUTO_DEMOTE_RESTORE_REASON = "registry_conflict_safe_auto_demote_restore"
+
 RESOLVED_PENDING_DEMOTION_REASONS = frozenset(
     {
         SAFE_AUTO_DEMOTE_REASON,
