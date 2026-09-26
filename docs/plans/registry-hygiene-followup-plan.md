@@ -275,17 +275,57 @@ the studio with zero coverage. Several are whole clusters of one board's URL var
 Entertainment, Vertigo Games (PLAION), 4A Games, Frogwares, Double Eleven, Ever Curious
 Entertainment, Magnopus, Behaviour Interactive, Black Beach Studio, GigXR.
 
-This is the same pathology as the `infinityward`/`mindstormstudios` family, at scale: a conflict
-resolution that demotes every member of a family leaves the board uncovered rather than resolving
-the conflict. **Pruning those 33 seed rows would have silently retired 33 real boards** — the exact
-"prune blindly and you lose coverage" failure the plan warned about, and the reason a per-row
-tombstone check was the minimum bar. The seed rows stay, so a fresh install still activates them.
+**Correction (2026-09-26): that figure was 33 _rows_, not 33 studios**, drawn from a subset — the
+authoritative count over all pending rows is **17 studios / 33 rows**. Pruning those seed rows would
+have silently retired real boards, so they stay and a fresh install still activates them.
 
 Also pruned in the same change: the 3 stale collision-baseline entries. A baseline entry no longer
 backed by 2+ active rows would otherwise mask the URL permanently.
 
 Result: seed 1,890 → 1,788, collision baseline 7 → 4, every non-pruned row byte-identical and in
 order.
+
+### Stranded families: guard added, then repaired
+
+`62724469` added a post-condition to the safe auto-demote: after the demotion steps, any family left
+with no active row gets its best remaining registration put back. Root cause was that
+`_apply_safe_demotion_targets` moved rows with no post-condition, and the demoted rows came back with
+`duplicateOfSourceId` **unset** — no recorded winner, and nothing in the response saying a board had
+been emptied.
+
+The guard prevents recurrence but cannot repair the damage: verified that **0** of the stranded
+families still have a safe-eligible conflict card, and most have no card at all, because with no
+active row there is no active-side conflict left to detect.
+
+So the repair was a data pass: one registration promoted per stranded studio, chosen by the same
+rule the guard uses (rankScore, then jobsFound, then id), siblings left parked. **16 studios
+repaired** — active 2,224 → 2,240, `seed_row_demoted_in_store` 52 → 40, uncovered collisions still 0.
+
+Two derivations had to be corrected on the way, and both are worth recording:
+
+- **"No active row + has a pending row" is not a defect.** It is the normal state for a parked
+  source. 523 pending rows have no active row, but they are 305 `gamedevmap` candidate backlog, 107
+  `sheet_directory`, 18 fetch-failure, 12 repeated-zero, 9 operator-`manual`, and 14
+  `duplicate_family_weaker_variant` (including the rows P3 deliberately demoted). Promoting on that
+  test alone would have activated **452** rows — a draft of that script did exactly that and was
+  rolled back from backup.
+- **Studio labels are not a safe identity.** The pass promoted a `static` row for Lost Boys
+  Interactive next to an already-active `jazzhr` row, because the labels differ
+  (`Lost Boys Interactive` vs `Lost Boys Interactive (Embracer Group)`) and the normalizer does not
+  strip that suffix. The preflight's uncovered-collision count caught it; the static row was reverted
+  and the jazzhr row kept. **Match on host, not on studio label.**
+
+### Latent same-studio duplicates the canonicalizer cannot see
+
+Auditing the repairs surfaced two pairs that are the same board twice but do not collide, because
+`canonicalize_careers_url` does not collapse these path variants:
+
+- `unknownworlds.com/careers` (Unknown Worlds (Krafton)) vs `unknownworlds.com/en/careers`
+- `double11.com/join-us` vs `double11.com/vacancies`
+
+Both are one studio registered at two paths. The twin rule keys purely on canonical URL, so it will
+never flag them, and the advisory audit inherits that blindness. Resolving them needs a per-studio
+path decision plus a probe, so they are recorded here rather than folded into the P3 reconciliation.
 
 ### RTL Enterprises — not restored; the row is misconfigured
 
@@ -306,26 +346,44 @@ now **0**.
 
 ## Open items for the operator
 
-1. **The 33 uncovered studios** (P4). Real coverage gap created by whole-family conflict demotes.
-   The fix belongs in the conflict-resolution policy, not the registry: it should demote the losers
-   and keep one winner active, not demote every member. Needs a decision because changing it alters
-   runtime demotion behaviour.
+1. **The static-parser gap is the biggest remaining item, and it is not a registry problem.**
+   A sizing sweep of 40 GameDevMap-sourced active static boards (two controls passing) found
+   **26 of 39 reachable boards where the pipeline reports 0 postings while real job links exist**,
+   plus 8 more that undercount — 122 postings lost in that sample alone. Sledgehammer Games (13),
+   Invoke Studios (14), Mundfish (36), High 5 Games (13 missed of 14), Sumo Digital (9 missed),
+   Konami, Playdemic/EA, Firesprite, Nnooo.
+
+   Two caveats bound that number: the sweep's own posting counter is a heuristic and can over-count
+   category pages, so 67% is an upper bound on the rate; and the sample is GameDevMap-sourced static
+   rows only, so it is not a registry-wide rate. But `probe = 0` while job links exist is not in
+   doubt. The dominant pattern is WordPress `/jobs-<role>` permalink slugs.
+
+   **Do the sizing properly before fixing.** The next step is validating the count against jobs the
+   pipeline actually extracts on a handful of boards, so the rate is trustworthy rather than
+   heuristic. A rushed fix against a two-thirds-affected surface trades a visible bug for invisible
+   damage. Consequence for everything else: `lastKeptCount: 0` on a row is *not* evidence of an empty
+   board, which is why the duplicate-row yield evidence in
+   `_out/registry-repair-20260925/duplicate-classification.json` should be re-read with that caveat.
+
 2. **RTL / jobs2web** needs an adapter or a re-point before the row can be restored.
-3. **A static-parser gap found while probing**: `about-fun.com/jobs` serves 14 real postings
-   (`/jobs-<role>` slugs, read directly from the hrefs) that the pipeline's own
-   `static_probe_evidence` counts as **0**. Several of these boards are server-rendered and do have
-   openings, so `lastKeptCount: 0` on a duplicate row is not evidence of an empty board. That is a
-   parser-coverage task in its own right.
-4. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
+3. **The two latent same-studio duplicates** (`unknownworlds.com/careers` vs `/en/careers`,
+   `double11.com/join-us` vs `/vacancies`). The twin rule keys purely on canonical URL, so it will
+   never flag path variants like these and the advisory audit inherits the blindness.
+4. **`duplicateOfSourceId` is still unset on conflict-demoted rows.** It is the obvious provenance
+   fix, but it is *not* behaviour-neutral: `source_registry_io_load`, `registry_sync_summary` and the
+   soak report all read that field as "this row is a duplicate", so stamping it would silently
+   reclassify rows in reports. Deliberately left out of `62724469`; it needs its own change.
+5. **Optional D:** a frontend surface for `POST /registry/repair-review-action` (no UI exists).
 
 
 ### Release state — no gate work needed
 
-The commit carrying the store/seed repair touches `data/defaults/` and `data/source-registry-tombstones.json.gz`,
-which are shipped paths, so it republishes the container. That does **not** need a new `Release-tag`
-line: the window since anchor `f704cdae` (v0.2.152, 53 commits) already carries `Release-tag: v0.2.153`
-intent on `fa573231` and `13a11206`, and the gate passes if *any* commit in the window declares valid
-intent. A decorative tag on a data repair would misdeclare a release, so none was added.
+The commits carrying the store/seed repair touch `data/defaults/` and
+`data/source-registry-tombstones.json.gz`, which are shipped paths, so they republish the container.
+That does **not** need a new `Release-tag` line: the window since anchor `f704cdae` (v0.2.152) already
+carries `Release-tag: v0.2.153` intent on `fa573231` and `13a11206`, and the gate passes if *any*
+commit in the window declares valid intent. A decorative tag on a data repair would misdeclare a
+release, so none was added.
 
 
 ## Non-goals
