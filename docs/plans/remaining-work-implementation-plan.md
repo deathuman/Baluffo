@@ -18,7 +18,7 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 
 | # | Item | Size | Risk | Verdict |
 |---|---|---|---|---|
-| 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | low | **do it** — real coverage repair |
+| 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | **higher than stated** | **BLOCKED** — method unsafe, 0 repointed |
 | 2 | Duplicate board rows | 2 groups, ~4 rows | low | **DONE** `6822e3b8` — 1 collapsed, 3 kept |
 | 3 | `tmp/` retention | 752 MB claimed | none | **DONE** `50c28c1f` — 139 MB, not 752 |
 | 4 | 2 retained stashes | 84 KB, unrecoverable | high if applied | **leave archived** |
@@ -26,34 +26,68 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 
 ---
 
-## 1. Repoint the 23 moved boards
+## 1. Repoint the 23 moved boards — BLOCKED, and the method in this plan is unsafe
 
-**What is known.** A 404/410 filter over the September sweep produced 28 candidates. A control-first
-root-and-path probe (supercell and careers.sega.co.uk both 200 first) reduced that to 4 genuine
-deaths — retired in `408ce3d9` — and **23 `root_alive_404_path`**, where the studio is up and the
-registered board path moved or is UA-gated. Affected studios include Nintendo, EA, Square Enix,
-Pocket Gems, Ludia, Amplitude Studios, Arte, Reply.com and WBD.
+**Status: no repoint was made. Do not run the method below.** The classification is sound; the
+*candidate discovery* is not, and it produces confidently wrong answers.
 
-**What is not known.** Where each of the 23 moved *to*. That is the work.
+### What is established
 
-**Method, per board.**
-1. Fetch the board root. Locate the careers link in the returned HTML — a `href` matching
-   `career|job|vacanc|position`, following only same-host links first.
-2. If no careers link is in the root HTML, try the two conventional fallbacks
-   (`<root>/careers`, `<root>/jobs`) and record which resolved.
-3. Only if none resolve, record `no-board-found` and leave the row alone. Do **not** retire — the
-   studio is demonstrably alive.
-4. Re-fetch the candidate URL and confirm it is a listings page, not a marketing page. A 200 that
-   renders no postings is not a repair.
+The control-first root-and-path probe reproduces exactly: **23 `root_alive_404_path`**, 4
+`root_dead`, 1 `junk_row`. And all **4 `root_dead` rows are the boards already retired in
+`408ce3d9`** — so that retirement was complete, and this sweep contributes no new deaths.
 
-**Stop conditions.** Abort the sweep if the control fails. Do not mutate any row whose replacement
-URL was not itself fetched and confirmed. If a board has no findable replacement, that is a finding
-to record, not a retirement.
+### Why the method fails
 
-**Verification.** Per repaired row: fetch the new URL, confirm postings, then repoint
-`listing_url`/`pages` and re-run `tools/repo_health/source_registry_preflight.py`. Expect
-`uncoveredCollisions` to stay 0 — if a repointed row collides with an existing row for the same host,
-that is a duplicate (item 2), not a repair.
+The control gate did its job by failing quietly. Both known-good controls returned
+**`joblinks=0`**:
+
+```
+[OK ] 200  77086b joblinks=0  https://www.supercell.com/en/careers
+[OK ] 200  60188b joblinks=0  https://careers.sega.co.uk/vacancies
+```
+
+A detector that sees zero job links on Supercell and Sega cannot be trusted to say a candidate
+"is not a board". Both verdicts are unreliable, so `confirmed` is not evidence and `not_a_board`
+is not evidence either. The gates above only asserted `status == 200 and len > 1000`, which is why
+the control printed `OK` while its own job-link signal was dead.
+
+Of 10 proposals, **4 would cause real damage** — all verified, not suspected:
+
+| Row | Proposal | Why it is not a repair |
+|---|---|---|
+| EA ×3 | all three → `jobs.ea.com/en_US/careers/Home` | **1 distinct target for 3 rows.** Collapses rows the feed measured as carrying 27 and 35 unique job detail pages, losing 62 links, and re-creates the twin condition just cleaned up in `6822e3b8` |
+| Impact Reality | → `flat2vrstudios.com/careers` | **Different registrable domain.** The Neon Play → `iscoolentertainment.com` precedent says refuse: a sister brand is not a rename, and this ships another company's jobs under the studio's name |
+| WBD | → `careers.wbd.com/global/en/home` | Registered URL is a **single job detail page** (`/job/r000087820/lead-environment-artist`, `jobsFound=1`). Repointing to the board home silently turns one job into the whole board |
+| Square Enix | → `square-enix-games.com/en_EU/careers` | A **locale switch** (`/en_us/` → `/en_eu/`), not a board move. Changes which jobs are visible — a public job-data contract concern |
+
+The remaining 6 proposals are unverified, and **13 of the 23 boards yielded no candidate at all**
+(their root pages do not link a careers board in raw HTML). Per the rule below those 13 are a
+legitimate recorded outcome, not a failure: the studio is demonstrably alive, so the row stays.
+
+### The rule that must hold
+
+**A studio that is provably alive is never retired.** If no replacement board can be found, that
+is a finding to record, not a retirement. All 23 rows remain active and untouched.
+
+### What is actually required
+
+Candidate discovery has to come from evidence this repo already trusts, not from a regex over raw
+HTML. In order of preference:
+
+1. **The curated decision list first.** `data/defaults/` and the September artifacts carry
+   hand-adjudicated targets. Checked: only **1 of 23** has an entry, so this population is
+   disjoint from the 210-row chronic list — but always check before probing.
+2. **A real isolated fetch per candidate**, which is the only thing that settles what a board
+   collects: `python src/jobs_fetcher.py --only-sources static_source::<id>
+   --ignore-circuit-breaker --force-refresh-all --output-dir <dir>`. **`--output-dir` is
+   mandatory** — omitting it writes stub state into live `data/`.
+3. **A working job-link detector**, validated against the controls *before* use. The current
+   attempt's failure was not that it found nothing, it is that nobody checked it against a board
+   known to be good.
+
+Do this in batches of 3–5 boards with a human confirming each target. A confidently wrong repoint
+costs coverage and creates duplicate rows; a recorded `no-board-found` costs nothing.
 
 ---
 
