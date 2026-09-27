@@ -18,7 +18,7 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 
 | # | Item | Size | Risk | Verdict |
 |---|---|---|---|---|
-| 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | **higher than stated** | **BLOCKED** — method unsafe, 0 repointed |
+| 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | **higher than stated** | **BLOCKED** — 0 repointed, 22 need the rendered path |
 | 2 | Duplicate board rows | 2 groups, ~4 rows | low | **DONE** `6822e3b8` — 1 collapsed, 3 kept |
 | 3 | `tmp/` retention | 752 MB claimed | none | **DONE** `50c28c1f` — 139 MB, not 752 |
 | 4 | 2 retained stashes | 84 KB, unrecoverable | high if applied | **leave archived** |
@@ -65,29 +65,63 @@ The remaining 6 proposals are unverified, and **13 of the 23 boards yielded no c
 (their root pages do not link a careers board in raw HTML). Per the rule below those 13 are a
 legitimate recorded outcome, not a failure: the studio is demonstrably alive, so the row stays.
 
+### What is actually required
+
+**Two findings from a second attempt (2026-09-28). No repoint was made; the registry is unchanged.**
+
+**1. Use the repo's detector, not a hand-rolled one.** `static_probe_evidence`
+(`src/source_discovery/probe.py:400`) returns **42 postings on Supercell and 23 on Sega**, where
+the hand-rolled regex used above returned **0 on both**. This is the R3/R4 detector already covered
+by the repo's tests. Stop re-implementing it.
+
+**2. It is a positive-only signal, and that asymmetry decides the whole item.** Scored against 18
+active rows with `jobsFound >= 10` — boards known to actually collect jobs — the distribution is:
+
+```
+0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 8, 9, 13, 18, 31, 50, 88
+```
+
+**Eight of seventeen genuinely-yielding boards score zero.** They are JS-rendered and reach their
+postings through the browser-fallback lane, not raw HTML. So a high score is real evidence and a
+zero means *nothing at all*. **Never conclude "no board found" from a zero.**
+
+Applied honestly, that yields: of the 23 boards, **one** candidate (Nintendo, 51 postings) cleared
+the observed non-zero floor of 7. The other 22 scored 0–3 — the noise band — and are *inconclusive*,
+not absent. They need the pipeline's own rendered path:
+
+```
+python src/jobs_fetcher.py --only-sources static_source::<id> \
+  --ignore-circuit-breaker --force-refresh-all --output-dir <dir>
+```
+
+`--output-dir` is mandatory; omitting it writes stub state into live `data/`.
+
+### The near-miss, and the check that would have caught it
+
+The one confirmed repoint was applied and then reverted. `careers.nintendo.com/job-openings/` had a
+stale id and had drifted to the bare host (`jobsFound=3`, nav links), and `/jobs/` was a real board
+with 51 postings — but **a healthy row for that board was already registered** at
+`static:listing_url:https://careers.nintendo.com/jobs`, no trailing slash, **`jobsFound=59`**,
+stamped `discovery_auto_approve`. Canonicalization strips the trailing slash, so the repoint made a
+twin. The preflight reported it immediately as `uncovered duplicate-URL groups (live): 1` — the
+exact regression `6822e3b8` removed.
+
+The guard that should have stopped it compared **`NEW_ID` for exact equality** and never compared
+**canonical forms**. Every id-collision check in this programme has made that exact-vs-canonical
+slip in some form. **Before repointing a row onto a URL, check whether any active row already
+canonicalizes to it** — and note that the row being repaired may be a redundant registration of a
+board another row already covers, in which case the disposition is a duplicate adjudication, not
+a repoint.
+
+A related control-design error: the first version of the control list included two URLs *from the
+candidate set* (`careers.nintendo.com/job-openings/`, `badrobotgames.com/job-openings`), both of
+which are 404 by definition. Calling those controls tested nothing and made a working detector look
+blind. **Controls must be verified healthy independently of the set under test.**
+
 ### The rule that must hold
 
 **A studio that is provably alive is never retired.** If no replacement board can be found, that
 is a finding to record, not a retirement. All 23 rows remain active and untouched.
-
-### What is actually required
-
-Candidate discovery has to come from evidence this repo already trusts, not from a regex over raw
-HTML. In order of preference:
-
-1. **The curated decision list first.** `data/defaults/` and the September artifacts carry
-   hand-adjudicated targets. Checked: only **1 of 23** has an entry, so this population is
-   disjoint from the 210-row chronic list — but always check before probing.
-2. **A real isolated fetch per candidate**, which is the only thing that settles what a board
-   collects: `python src/jobs_fetcher.py --only-sources static_source::<id>
-   --ignore-circuit-breaker --force-refresh-all --output-dir <dir>`. **`--output-dir` is
-   mandatory** — omitting it writes stub state into live `data/`.
-3. **A working job-link detector**, validated against the controls *before* use. The current
-   attempt's failure was not that it found nothing, it is that nobody checked it against a board
-   known to be good.
-
-Do this in batches of 3–5 boards with a human confirming each target. A confidently wrong repoint
-costs coverage and creates duplicate rows; a recorded `no-board-found` costs nothing.
 
 ---
 
