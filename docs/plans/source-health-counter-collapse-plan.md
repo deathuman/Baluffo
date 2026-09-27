@@ -25,7 +25,7 @@
 
 ### Phase-4 acceptance audit (forced full pass, 2026-09-09) — two funnel defects found and fixed
 
-The forced full pass (`tmp/alias-collapse-20260910/run1.log`, output 42,114, 72 failed sources, verdict healthy 100/22/Δ−1) wrote state at 18:35:26Z — and the audit found **all 4,989 rows still carrying all three alias keys**, fully synced to canonical. Root cause was the plan's own heal definition, not the derive:
+The forced full pass (`_out/evidence/alias-collapse-20260910/run1.log`, output 42,114, 72 failed sources, verdict healthy 100/22/Δ−1) wrote state at 18:35:26Z — and the audit found **all 4,989 rows still carrying all three alias keys**, fully synced to canonical. Root cause was the plan's own heal definition, not the derive:
 
 1. **Alias re-add through the funnel.** `heal_counter_aliases` fused both heal directions; its alias-fill branch re-added alias keys on every normalize+save cycle, re-emitting what the derive no longer writes. Fix: persistence uses the new `fill_canonical_counters` (canonical := alias, alias keys **consumed**); alias-fill is reserved for the display/wire join (`heal_counter_aliases`, kept for the Phase-5 surface).
 2. **Vacuous Phase-2 heal.** The state normalizer's whitelist reads canonical keys only and coerces absent → 0, so the post-whitelist heal arrived too late: alias-only legacy rows were silently zeroed (the Phase-2 convergence test passed on all-zeros and asserted the wrong final shape). Fix: `fill_canonical_counters` runs **before** the whitelist (copying each raw row first), plus a real value-preservation round-trip test and a persisted-text alias guard.

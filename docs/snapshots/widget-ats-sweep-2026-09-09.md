@@ -1,7 +1,7 @@
 # Embedded-ATS Widget Signature Sweep — 2026-09-09
 
 > - **Status:** Read-only evidence sweep + executed 5-repair staging wave. The sweep fetched static listing pages only (no registry mutations); the follow-on wave staged 5 pending provider rows through the sanctioned lane (runtime pending registry only, seed untouched).
-> - **Basis:** all 1,972 active static registry rows (listing pages, bounded 14s, CERT_NONE, 6 workers, resume-safe) against 20 provider-widget signature families; join basis run5 slot `jobs-fetch-report-run-20260908-155153`. Raw artifacts: `tmp/widget-sweep-20260909/` (`results.jsonl`, `findings.json`); wave artifacts: `tmp/widget-wave-20260909/` (`stage_five.py`, `EXECUTION-ADDENDUM.md`, evidence slot `jobs-fetch-report-run-20260909-093844`).
+> - **Basis:** all 1,972 active static registry rows (listing pages, bounded 14s, CERT_NONE, 6 workers, resume-safe) against 20 provider-widget signature families; join basis run5 slot `jobs-fetch-report-run-20260908-155153`. Raw artifacts: `_out/evidence/widget-sweep-20260909/` (`results.jsonl`, `findings.json`); wave artifacts: `_out/evidence/widget-wave-20260909/` (`stage_five.py`, `EXECUTION-ADDENDUM.md`, evidence slot `jobs-fetch-report-run-20260909-093844`).
 > - **Canonical for:** the 2026-09-09 embedded-widget audit measurements, Tier-1 adjudication, and the executed 5-repair staging wave with its corrections.
 > - **Then inspect:** `docs/CHANGELOG.md` ([Unreleased] Fixed entries), `scripts/provider_migration_staging_refresh.py` (staging conventions), `docs/source-policy-runbook.md` (`--include-pending-provider-migration` validation path).
 
@@ -63,7 +63,7 @@ All 5 staged rows promoted pending → active through the sanctioned flow (wave-
 - `transition_registry_to_active` (reason `manual_source_promotion`, actor `ai_widget_wave_promotion_20260909`): `registryState=active`, `candidateState=live`, `enabledByDefault=true`; pending 853 → 848.
 - Superseded static rows retired from active + tombstoned via sanctioned `add_tombstone`/`save_tombstones` (bucket `active`, reason `superseded_by_provider`; tombstones 131 → 136): `grand.gs/careers`, `www.riftgaming.gg/careers`, `www.wetaworkshop.com/about-us/careers`, `tornbanner.com/careers/`, `voldex.com/careers/#jobs`.
 - Seed swap (`data/defaults/source-registry-active.seed.json`): the 4 seed-member static rows removed, the 5 promoted rows added in their promoted shape; active seed 1,889 → 1,890. Pending seed unchanged (the staged rows were never seed members; RiftGaming's static was not a seed member).
-- Executor + evidence: `tmp/widget-wave-20260909/promote_five.py` (+ `promotion-run.log`, `promotion-result.json`); every read-back check OK — promoted rows active/live/enabled, statics absent AND tombstoned, zero pending leaks, exact count deltas.
+- Executor + evidence: `_out/evidence/widget-wave-20260909/promote_five.py` (+ `promotion-run.log`, `promotion-result.json`); every read-back check OK — promoted rows active/live/enabled, statics absent AND tombstoned, zero pending leaks, exact count deltas.
 
 Verification pass in the **regular lane** (no `--include-pending-provider-migration` — that is the promotion proof): `python src/jobs_fetcher.py --only-sources "lever_sources,teamtailor_sources,bamboohr_sources,ashby_sources"` → exit 0, **0 failed sources**, output 41,295 (slot `jobs-fetch-report-run-20260909-162440`).
 

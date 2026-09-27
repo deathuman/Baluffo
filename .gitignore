@@ -31,6 +31,22 @@ tmp-pytest-bridge/
 # Repo-root agent scratch (never tracked; the documented artifact root is .tmp/).
 # Unignored it is ~3k files / 740 MB of logs, JSON dumps, and registry backups,
 # which trips check-added-large-files for any `git add -A` submit.
+#
+# Convention, established 2026-09-27: do NOT cite a path under /tmp/ from a tracked doc, and do
+# not put durable evidence there. 47 of the 87 directories in tmp/ turned out to be provenance
+# cited by docs/CHANGELOG.md and the plan/snapshot docs; all 47 now live in _out/evidence/<name>/
+# with every citation rewritten. tmp/ reads as scratch and is the first thing anyone purges, so
+# anything a shipped change points at belongs in _out/ (ignored, so local-only either way -- the
+# move changes intent, not durability).
+#
+# /tmp/ is NOT all disposable. These are operational runtime paths the application itself
+# resolves, and rewriting them to another root breaks the app. They are excluded from the
+# evidence relocation on purpose:
+#   tmp/baluffo-ship            desktop runtime data root
+#   tmp/desktop.lock            desktop single-instance lock
+#   tmp/pytest                  pytest temp root
+#   tmp/packaged-desktop-smoke  packaged smoke output (and -pair)
+#   tmp/availability-preflight-diagnostics.json   written by src code on a failed run
 /tmp/
 release-notes.md
 .container-frontend/

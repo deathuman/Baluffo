@@ -1,6 +1,6 @@
 """Dayforce (CANDIDATEPORTAL) provider adapter tests: URL shapes, normalization, client.
 
-Contract captured live in tmp/holdtail-wave2-20260910/dayforce-findings.md:
+Contract captured live in _out/evidence/holdtail-wave2-20260910/dayforce-findings.md:
 GET /api/auth/csrf (cookie jar) -> csrfToken; POST /api/geo/{ns}/jobposting/search
 with x-csrf-token + the SAME client's cookies (cookieless replay 403s).
 Runner end-to-end tests: tests/test_provider_dayforce_runner.py.

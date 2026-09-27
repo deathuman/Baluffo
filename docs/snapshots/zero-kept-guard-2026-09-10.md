@@ -6,7 +6,7 @@ blanket-classified `status=error` ("no jobs extracted from source pages"),
 which the availability drain treats as broken evidence — rows sourced from
 such a page could never be marked missing, so they persisted as
 `verification_overdue` forever. Executors and evidence:
-`tmp/zeroguard-20260910/` (`run1.log`–`run4.log`, `targeted.log`).
+`_out/evidence/zeroguard-20260910/` (`run1.log`–`run4.log`, `targeted.log`).
 
 ## The guard (`src/jobs/adapters/static_zero_kept_guard.py`)
 

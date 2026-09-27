@@ -3,7 +3,7 @@
 > - **Status:** Wave 0 (read-only re-evidence) executed 2026-09-10 — see "Wave-0 execution" below; **Wave 1 (S1/S2/S3) landed 2026-09-10** — see "Wave-1 execution"; S4 and every registry mutation remain separate (operator-approved) work
 > - **Use this when:** adjudicating or repairing the 9 hold-tail sources (Mundfish, Steer, Reflector, Big Moxi, Exit VR, Astrum, Konami, Inverge, SNK), lowering the overdue floor below 31, or extending the systemic fixes S1–S4
 > - **Canonical for:** per-source repair designs, wave sequencing, and acceptance criteria for the 31-row floor
-> - **Not canonical for:** the guard's promotion/refusal mechanics (`docs/snapshots/zero-kept-guard-2026-09-10.md`), the 2026-09-09 triage verdicts it builds on (`tmp/overdue-triage-20260909/dispositions.json`), or adapter-family approval authority (iCIMS/Dayforce decisions stay in their own thread)
+> - **Not canonical for:** the guard's promotion/refusal mechanics (`docs/snapshots/zero-kept-guard-2026-09-10.md`), the 2026-09-09 triage verdicts it builds on (`_out/evidence/overdue-triage-20260909/dispositions.json`), or adapter-family approval authority (iCIMS/Dayforce decisions stay in their own thread)
 > - **Then inspect:** `src/jobs/adapters/static_zero_kept_guard.py`, `src/jobs/page_gating.py` (`looks_like_server_template_artifact`), `docs/adapter-plugin-inventory.md` (targeted-run commands)
 > - **Last updated:** 2026-09-10 (Wave 0 executed)
 
@@ -30,7 +30,7 @@ re-quarantining (3-consecutive-error cycle) without intervention.
 | `static:listing_url:https://invergestudios.com/jobs/` | 1 | Bot-wall 403 interstitial ("Checking your browser…", Cloudflare-class), degraded from Sep-6 live-200 with 10 job links; detail candidates 404 → site_changed/needs_review. |
 | `static:listing_url:https://www.snk-corp.co.jp/recruit/` | 1 | Real board is SNK's axol ATS (`job.axol.jp/pm/c/snk-corp`, 5 category links server-rendered, jobs behind JS); no axol adapter; extracted detail URL stale-404s. |
 
-Totals: 31 rows / 9 sources. Probe evidence: `tmp/overdue-triage-20260909/probe-results.json`;
+Totals: 31 rows / 9 sources. Probe evidence: `_out/evidence/overdue-triage-20260909/probe-results.json`;
 targeted-pass adjudication: `docs/snapshots/zero-kept-guard-2026-09-10.md` (the guard refused
 all 9 — correctly, none is a legitimate empty).
 
@@ -50,10 +50,10 @@ all 9 — correctly, none is a legitimate empty).
 
 ## Wave-0 execution (2026-09-10, read-only)
 
-Probes: `tmp/holdtail-20260910/probe-results.json` (33 probes incl. the 10 Mundfish
+Probes: `_out/evidence/holdtail-20260910/probe-results.json` (33 probes incl. the 10 Mundfish
 detail URLs, the steer bamboo JSON endpoint, Konami/Dayforce/axol discovery guesses);
-row inventory: `tmp/holdtail-20260910/overdue-rows.json`; refreshed verdicts:
-`tmp/holdtail-20260910/dispositions.json`; summary: `tmp/holdtail-20260910/SUMMARY.md`.
+row inventory: `_out/evidence/holdtail-20260910/overdue-rows.json`; refreshed verdicts:
+`_out/evidence/holdtail-20260910/dispositions.json`; summary: `_out/evidence/holdtail-20260910/SUMMARY.md`.
 No registry mutations, no runtime passes.
 
 1. **S2 resolved without a repo change:** Astrum's Sep-09 `noOpeningsMarker: true` was
@@ -80,7 +80,7 @@ No registry mutations, no runtime passes.
 
 Updated floor projection: 31 → **~20 after Wave 1** → **~6 after Wave 2** (the plan's
 earlier ~5 becomes ~6 because of the Steer internship row). Verdict table and per-source
-deltas live in `tmp/holdtail-20260910/dispositions.json`.
+deltas live in `_out/evidence/holdtail-20260910/dispositions.json`.
 
 ## Wave-1 execution (2026-09-10, code-only)
 
@@ -149,7 +149,7 @@ refusal unchanged under the new bucket; `overdueBySource` attribution unchanged.
 ### S2 — no-openings marker: non-English false-positive guardrail
 
 **Finding:** the Astrum probe returned `noOpeningsMarker: true` **alongside 19 job links**
-(`tmp/overdue-triage-20260909/probe-results.json`). Either the probe's marker heuristic or
+(`_out/evidence/overdue-triage-20260909/probe-results.json`). Either the probe's marker heuristic or
 the guard's `contains_no_openings_marker` (likely tuned on English phrases) fires on a
 Russian-language page. A false-positive marker on a page whose job links the parser missed
 (encode/charset issues) is exactly the input the guard promotes to a fabricated empty.
@@ -318,7 +318,7 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   the listing 200s with the same ~1KB JS shell; the fallback pool fired 3×
   (`js_shell`, `empty_page`) and **got HTML every time** (pool acquisitions=2, no relaunches
   — the render lane itself is healthy). An independent real-browser probe
-  (`tmp/holdtail-wave2b-20260912/probe_render.py`, Playwright Chromium,
+  (`_out/evidence/holdtail-wave2b-20260912/probe_render.py`, Playwright Chromium,
   `domcontentloaded` + 6s hydration — `networkidle` never settles on this site) confirms
   the automation-visible page is **genuinely empty**: status 200, title rendered
   ("Big Moxi — Scale Game Development Smarter"), **0 body text, 0 links, 0 console errors**,
@@ -332,7 +332,7 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   No registry action.
 - **Adjudication #2 (2026-09-12, forced targeted pass #2 — rendered-empty ×2 confirmed
   evidentially, but the automatic drain lane does not exist in code; HOLD stands, no
-  registry action):** pass #2 (isolated output dir `tmp/holdtail-wave2b-20260912/bigmoxi2/`,
+  registry action):** pass #2 (isolated output dir `_out/evidence/holdtail-wave2b-20260912/bigmoxi2/`,
   live `data/` state untouched by targeted runs — they write state into their own output
   dir) reproduced #1 exactly: listing 200 with the ~1KB shell, fallback pool fired 2×
   (`js_shell`, `empty_page`), HTML every time, 0 extracted, generic zero error; detail-level
@@ -407,7 +407,7 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   reads trusted-empty (200, repo `contains_no_openings_marker` → **True**, 0 real job
   hrefs out of 70 — nav/self only), but the stale-detail demotion built for exactly this
   shape never fires. Two blockers, confirmed by running the real source through the real
-  runner with the guard instrumented (`tmp/holdtail-wave2-20260910/konami-guard-debug.py`:
+  runner with the guard instrumented (`_out/evidence/holdtail-wave2-20260910/konami-guard-debug.py`:
   **0 guard calls**): (1) Konami rides the plugin fast path, where
   `_probe_empty_plugin_listing` classifies the nav-only listing `dead_listing_page` and
   `_record_empty_plugin_result` early-returns before `promote_clean_zero_kept` — the
@@ -488,7 +488,7 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   (listing 200s, dead links fall out) — no code work, the S5 pattern covers it.
   Wait-and-reverify: either SNK restores a board or the listing eventually reads
   trusted-empty and the guard path takes over.
-  **Re-probe with the dayforce two-step (2026-09-12, `tmp/snk-axol-reprobe/`):
+  **Re-probe with the dayforce two-step (2026-09-12, `_out/evidence/snk-axol-reprobe/`):
   record-only disposition stands — the tenant is gone, and the CSRF hypothesis is now
   empirically closed, not just header-exonerated.** The platform's real CSRF surface is
   a form token, not NextAuth: the live marv board (`/qd/c/marv/job/search`) embeds an
@@ -503,7 +503,7 @@ stays a documented client limitation (record-only, like the Sep-09 hold).
   row's drain lane is unchanged (finalize missing path on a full pass with the source
   eligible).
 
-**Axol adapter sketch and build decision (2026-09-12, `tmp/axol-adapter-sketch/`):
+**Axol adapter sketch and build decision (2026-09-12, `_out/evidence/axol-adapter-sketch/`):
 reads need no CSRF at all — and for marv alone, no-build.** Probing the live marv
 tenant for the sketch produced a platform contract that supersedes the Wave-3
 "CSRF-gated SPA" framing twice over: the `fb_csrf` hidden input belongs to the
@@ -540,7 +540,7 @@ reads every live axol board fine.
 
 | Wave | Contents | Mutations | Expected floor effect |
 |---|---|---|---|
-| **0. Read-only re-evidence** | Fresh probes: Mundfish listing + 10 details, Steer bamboo recheck, Konami real-board discovery, Reflector endpoint discovery, SNK axol endpoints, Inverge/Big Moxi interstitial status. Refresh dispositions into `tmp/holdtail-20260910/`. | None | Decision basis only |
+| **0. Read-only re-evidence** | Fresh probes: Mundfish listing + 10 details, Steer bamboo recheck, Konami real-board discovery, Reflector endpoint discovery, SNK axol endpoints, Inverge/Big Moxi interstitial status. Refresh dispositions into `_out/evidence/holdtail-20260910/`. | None | Decision basis only |
 | **1. No-mutation repairs** | S1 (details_broken), S2 (reduced to a guardrail test — Wave 0 cleared the detector), S3 (EJS/template seams), S4 (cookie-jar experiment); Konami trusted-read drain after S3 | None (code only) | 31 → ~20 (Konami 1, Astrum 1) |
 | **2. Registry adjudications (operator-approved per action)** | Steer bamboo twin staging→promotion (**−9**; the WP /internship row tracks the WP site, not the twin); Big Moxi + Inverge browser-fallback forced runs | Steer stage/promote/tombstone | 31 → ~6 (Reflector 3, SNK 1, Exit VR 2 remain; Big Moxi/Inverge drain if rendered-empty ×2) |
 | **3. Adapter decisions** | Reflector dayforce (browser-context endpoint discovery — guessable paths are 404) into the iCIMS/Dayforce thread; SNK axol **re-verification first** (tenant/platform currently 404) | None in this plan | Potential −4 (Reflector 3 + SNK 1) if both adapters materialize |
@@ -555,7 +555,7 @@ criteria eventually apply.
 
 ```bash
 # Wave 0 probes (read-only, bounded, no registry writes)
-#   reuse the triage probe shape: tmp/overdue-triage-20260909/probe.py
+#   reuse the triage probe shape: _out/evidence/overdue-triage-20260909/probe.py
 
 # Forced targeted runs (per adjudication; bypasses circuit breaker explicitly)
 python src/jobs_fetcher.py --only-sources "static_source::static:listing_url:https://mundfish.com/en/careers" --ignore-circuit-breaker
@@ -569,7 +569,7 @@ python scripts/precommit_gate.py --mode changed
 # Floor tracking after each wave: overdueBySource top-N + availability verdict on the next full pass
 ```
 
-### Wave-1 live verification record (2026-09-10, forced targeted pass ×3, `tmp/mundfish-verify-20260910/`)
+### Wave-1 live verification record (2026-09-10, forced targeted pass ×3, `_out/evidence/mundfish-verify-20260910/`)
 
 The first forced pass verified the health side (overdue 31/9, Mundfish 10 in `overdueBySource`, Δ0) but
 stamped Mundfish `js_required` with all-zero detail stats: production Mundfish runs the **generic runner**
@@ -608,7 +608,7 @@ classification) carry them; the detail entry stays authoritative. Tests: `tests/
 end-to-end details_broken, no-evidence → js_required separator, projection surface + inertness,
 normalizer round-trip); 378 static tests + pipeline/taxonomy/enrichment suites green; changed-mode gate exit 0.
 
-### Wave-2 execution record (2026-09-10, operator-approved: the Steer provider-twin migration; evidence `tmp/holdtail-wave2-20260910/`)
+### Wave-2 execution record (2026-09-10, operator-approved: the Steer provider-twin migration; evidence `_out/evidence/holdtail-wave2-20260910/`)
 
 **Steer (#2, the plan's single registry mutation) — executed end-to-end through the sanctioned lanes:**
 
@@ -659,7 +659,7 @@ Floor projection: 31 → ~22 once the steer sweep drains (Reflector 3, Exit VR 2
 `/internship` 1, plus Mundfish 10 pending origin recovery — Wave-2 target ~6 reachable
 only if Mundfish's details recover).
 
-### Wave-2 drain verification (2026-09-11, full default-loader pass; evidence `tmp/holdtail-wave2-20260910/`)
+### Wave-2 drain verification (2026-09-11, full default-loader pass; evidence `_out/evidence/holdtail-wave2-20260910/`)
 
 **The steer drain landed: overdue floor 31 → 21 (`overdueDelta: −10`), steer overdue 0.**
 All 10 WP-attributed overdue rows (the `view.php?id=…` bamboo-provenance URLs) closed
@@ -702,7 +702,7 @@ step 5 above — right outcome, different lane):
 
 Executed with the repo's bundled Playwright Chromium (pool-identical launch profile;
 request/response listeners — the pool's `fetch()` returns rendered HTML only). Evidence:
-`tmp/holdtail-wave2-20260910/dayforce-findings.md` (+ `dayforce_capture.py`,
+`_out/evidence/holdtail-wave2-20260910/dayforce-findings.md` (+ `dayforce_capture.py`,
 `dayforce_replay.py`, raw captures `dayforce-capture.json`/`dayforce-search-capture.json`).
 
 Findings:
@@ -739,7 +739,7 @@ two-request contract — the axol (SNK) deferral should be re-probed with the CS
 two-step before calling the platform dead.
 
 **Adapter built and Reflector migrated (2026-09-12, Wave-3 execution; evidence
-`tmp/dayforce-wave/`):**
+`_out/evidence/dayforce-wave/`):**
 
 1. **The leaf** (`src/jobs/adapters/plugins/provider_api/dayforce.py`): the runner owns
    the two-request contract with a self-contained cookie-jar urllib client (the
@@ -765,7 +765,7 @@ two-step before calling the platform dead.
    validation against the real endpoint: **3/3 postings fetched and normalized**
    (161 Programmer Engine and Tools, 149 Technical Animator Senior, 115 VFX Artist
    Expert) — matches the Wave-3 capture.
-2. **Staging** (`tmp/dayforce-wave/stage_reflector.py`, dry-run then `--apply`):
+2. **Staging** (`_out/evidence/dayforce-wave/stage_reflector.py`, dry-run then `--apply`):
    staged `dayforce:client_namespace:ref` (listing_url
    `https://jobs.dayforcehcm.com/en-CA/ref/CANDIDATEPORTAL`) via
    `transition_registry_to_pending(provider_migration_candidate)` with
@@ -878,7 +878,7 @@ the recovery, not a reclassification.
 
 **Design as recorded vs. what the trace found.** The §7 adjudication's path (a) said
 "extend the demotion to the plugin empty-result path" — but the instrumented pipeline
-trace (`tmp/konami-s7-pipeline-spy.py`) found Konami rides the **generic** funnel, and
+trace (`_out/evidence/konami-s7-pipeline-spy.py`) found Konami rides the **generic** funnel, and
 the real blockers were three, not one:
 
 1. **Generic finish gate** (`_finish_generic_source`): the zero-kept guard chance
@@ -907,7 +907,7 @@ The plugin funnel got the same guard-first ordering fix (the original §7 findin
 real for that funnel too) — the dead-listing short-circuit no longer shadows the guard;
 the promote-first/fall-through shape preserves every prior outcome on decline.
 
-**Live verification** (`tmp/konami-s7-pass2/`, targeted forced pass): the guard was
+**Live verification** (`_out/evidence/konami-s7-pass2/`, targeted forced pass): the guard was
 reached with zero refusals, the raw-URL fallback read the real 86,844-char listing,
 `no_openings_marker` evidence fired, the stale 404 line was demoted (no
 `AdapterValidationError`), and the source state landed **`lastStatus: ok`,
@@ -966,7 +966,7 @@ producer stamp/fail-closed shapes, persistence round-trip and clear, guard promo
 two, single-confirmation and challenge-shell fail-closed pins). 427 static + 38
 fetcher/dayforce tests green; changed-mode gate exit 0.
 
-### Drains verified (2026-09-12/13, forced passes; evidence `tmp/holdtail-drain-20260912/`): floor 9 → 6, exactly the projection
+### Drains verified (2026-09-12/13, forced passes; evidence `_out/evidence/holdtail-drain-20260912/`): floor 9 → 6, exactly the projection
 
 The S7 Konami drain (−1) and the S6 Big Moxi drain (−2) both landed through the finalize
 missing-universe path, with the health verdict healthy throughout.
@@ -1003,7 +1003,7 @@ missing-universe path, with the health verdict healthy throughout.
 
 ### External-trigger re-verify sweep (2026-09-13): the monitoring leaf for the remaining floor
 
-`tmp/external-trigger-sweep/sweep.py` — a read-only, single-request-per-trigger probe of
+`_out/evidence/external-trigger-sweep/sweep.py` — a read-only, single-request-per-trigger probe of
 the four upstream conditions this plan's dispositions wait on, one JSON verdict record
 per run appended to `history.jsonl` (diffable recovery evidence, no re-derivation):
 
@@ -1039,7 +1039,7 @@ chance didn't promote — the promote path's live re-read returned no bodies tha
 (`status=ok fetched 0 / kept 0`, state `ok`/`no_openings`/`consecutiveZeroKept: 2`).
 Observed operational rule, refined: **targeted runs never erase accumulated stamps and
 the promotion can land in the second targeted pass itself** — a full pass is then only
-needed for the row drain, not the promotion. Evidence `tmp/bigmoxi-restamp-20260913/`
+needed for the row drain, not the promotion. Evidence `_out/evidence/bigmoxi-restamp-20260913/`
 (stamp1/stamp2 logs, render.html/text of the 1.2 KB shell, 0 visible chars,
 challenge-free). The 2 rows drain on the next full pass with the source eligible.
 
@@ -1047,7 +1047,7 @@ challenge-free). The 2 rows drain on the next full pass with the source eligible
 
 The first post-drain full pass aged in a new overdue cohort (6 → 47, all Fusebox Games
 (Nazara) (GameDevMap); health degraded/`overdue_rising`). Adjudicated from live evidence
-(`tmp/fusebox-adjudication-20260913/`):
+(`_out/evidence/fusebox-adjudication-20260913/`):
 
 - **Not the Scrapy 2.19 bump and not a source outage**: the WP careers page serves 200
   (332 KB, healthy, `Careers | Fusebox Games`); the source fails `no jobs extracted` /
@@ -1090,7 +1090,7 @@ systemic fix (Konami's "Community" row and these 41 share the shape). No code la
 Fusebox today; the 41 rows re-verify naturally if the source ever keeps >0 again.
 
 **Guard exercised + verification-pass defect record (2026-09-14, evidence
-`tmp/guest-junk-drain-20260913/`)**: the guard landed 09-13 (`1c00dd68`) and the forced
+`_out/evidence/guest-junk-drain-20260913/`)**: the guard landed 09-13 (`1c00dd68`) and the forced
 full-universe verification pass proved the drain lane and wire contract end-to-end —
 `guestJunkDrainedCount: 1541` on the wire and 124 fresh `guest_junk_provenance` markers
 (skybound 62 — its 63 active search-result junk rows, the audit's frozen stock, plus
@@ -1114,7 +1114,7 @@ Verified live: identical render conditions now `fetched=0 kept=0`; Fusebox banke
 universe path on the next full pass (Big Moxi/Konami precedent, no promotion gate
 needed).
 
-**Drain landed (2026-09-14, pass #3, evidence `tmp/guest-junk-drain-20260913/pass3.log`)**:
+**Drain landed (2026-09-14, pass #3, evidence `_out/evidence/guest-junk-drain-20260913/pass3.log`)**:
 the forced full-universe pass closed the loop end-to-end. Fusebox ran `ok fetched=0
 kept=0` (zero-kept streak 3) and all 66 revived rows exited via the eligible-missing
 universe path: `status=likely_removed`, `availabilityEvidence.kind=source_absent`,

@@ -1,8 +1,8 @@
 # Overdue repair/prune wave — 2026-09-09/10
 
 Canonical execution record for the 23-source chronic-overdue triage
-(`tmp/overdue-triage-20260909/dispositions.json`, read-only). Executors:
-`tmp/overdue-wave-20260909/` (`wave.py`, `promote_high5.py`, `reprobe.py`,
+(`_out/evidence/overdue-triage-20260909/dispositions.json`, read-only). Executors:
+`_out/evidence/overdue-wave-20260909/` (`wave.py`, `promote_high5.py`, `reprobe.py`,
 `run1.log`, `run2.log`, `high5-validate.log`, backups).
 
 ## What executed

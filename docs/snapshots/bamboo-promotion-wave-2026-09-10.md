@@ -2,7 +2,7 @@
 
 Canonical execution record for the 9 remaining provider-migration candidates
 (the widget-audit mis-registered boards). Executors and evidence:
-`tmp/bamboo-wave-20260910/` (`promote_nine.py`, `validate.log`,
+`_out/evidence/bamboo-wave-20260910/` (`promote_nine.py`, `validate.log`,
 `tenant_probe.py`, `tenant-probe.json`, `run1.log`, backups).
 
 ## The candidates

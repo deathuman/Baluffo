@@ -100,7 +100,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
   - `json_feed.py` owns shared JSON feed providers.
   - `html_board.py` owns shared HTML board providers.
   - `provider_personio.py`, `provider_structured_listing.py`, and `oracle_hcm.py` remain specialized provider owners behind registered plugin entries.
-  - `dayforce.py` owns the Dayforce CANDIDATEPORTAL runner: a self-contained cookie-jar urllib client executes the NextAuth CSRF two-step (GET `/api/auth/csrf` -> `x-csrf-token` POST `/api/geo/{clientNamespace}/jobposting/search`; the cookie pair must ride the same client — a cookieless replay 403s) and normalizes `jobPostings[]` with full descriptions and `postingLocations` (Wave-3 contract, `tmp/holdtail-wave2-20260910/dayforce-findings.md`; pilot `dayforce:client_namespace:ref`).
+  - `dayforce.py` owns the Dayforce CANDIDATEPORTAL runner: a self-contained cookie-jar urllib client executes the NextAuth CSRF two-step (GET `/api/auth/csrf` -> `x-csrf-token` POST `/api/geo/{clientNamespace}/jobposting/search`; the cookie pair must ride the same client — a cookieless replay 403s) and normalizes `jobPostings[]` with full descriptions and `postingLocations` (Wave-3 contract, `_out/evidence/holdtail-wave2-20260910/dayforce-findings.md`; pilot `dayforce:client_namespace:ref`).
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:

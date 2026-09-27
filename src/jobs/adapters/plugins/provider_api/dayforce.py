@@ -11,7 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Dayforce provide
 Dayforce-hosted career sites (jobs.dayforcehcm.com/{culture}/{clientNamespace}/
 CANDIDATEPORTAL) render the board entirely from XHR — the SPA shell carries zero
 job links. The structured feed is a two-request contract per tenant (Wave-3
-capture, `tmp/holdtail-wave2-20260910/dayforce-findings.md`):
+capture, `_out/evidence/holdtail-wave2-20260910/dayforce-findings.md`):
 
 1. ``GET /api/auth/csrf`` (cookie jar on) -> ``{"csrfToken": ...}``
    (NextAuth sets the ``__Host-next-auth.csrf-token`` cookie pair).
