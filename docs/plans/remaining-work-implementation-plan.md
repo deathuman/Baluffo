@@ -21,7 +21,7 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 | 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | **higher than stated** | **BLOCKED** — 0 repointed, 22 need the rendered path |
 | 2 | Duplicate board rows | 2 groups, ~4 rows | low | **DONE** `6822e3b8` — 1 collapsed, 3 kept |
 | 3 | `tmp/` retention | 752 MB claimed | none | **DONE** `50c28c1f` — 139 MB, not 752 |
-| 4 | 2 stashes | 1 dropped, 1 superseded | — | **CLOSED** — feature already shipped |
+| 4 | 15 stashes | all resolved | — | **CLOSED** — 15 dropped, 0 remaining |
 | 5 | 2 undiagnosed flakes | 0 | none | **watch** — rule already documented |
 
 ---
@@ -207,19 +207,22 @@ is about normalisation on commit, not a signal that the working tree is acceptab
 
 ---
 
-## 4. The stashes — one superseded, one dropped
+## 4. The stashes — CLOSED, all 15 resolved
 
-**`stash@{1}` (`424348ba`, "codex-temp-before-branch-switch") — DROPPED 2026-09-28.** SHA-verified
-before the drop. It bundled two unrelated things under a branch-switch temp label: a
-`.githooks/pre-commit` rewrite adding `set -eu` plus `npm run lint:precommit:changed`, and ~583
-lines of registry merge logic in `source_sync.py` / `post_routes.py`
-(`_canonicalize_snapshot_rows`, `_row_transition_score`, `_row_bucket_rank`, `_row_merge_key`,
-`_choose_more_recent_row`). The `set -eu` makes any non-zero exit anywhere in the chain abort the
-commit, and `_choose_more_recent_row` reads as last-write-wins between two registry rows — a
-semantics decision from the era that produced the lean-registry corruption bug. Neither is worth a
-five-month-stale hand-port.
+**All stashes are now resolved. The list is empty.** Thirteen were dropped earlier in the programme;
+these two were adjudicated on 2026-09-28 and both dropped, SHA-verified immediately before each
+drop.
 
-**`stash@{0}` (`40e3e6b4`) — SUPERSEDED, not lost. Do not re-implement.**
+**`stash@{1}` (`424348ba`, "codex-temp-before-branch-switch") — DROPPED.** It bundled two unrelated
+things under a branch-switch temp label: a `.githooks/pre-commit` rewrite adding `set -eu` plus
+`npm run lint:precommit:changed`, and ~583 lines of registry merge logic in `source_sync.py` /
+`post_routes.py` (`_canonicalize_snapshot_rows`, `_row_transition_score`, `_row_bucket_rank`,
+`_row_merge_key`, `_choose_more_recent_row`). The `set -eu` makes any non-zero exit anywhere in the
+chain abort the commit, and `_choose_more_recent_row` reads as last-write-wins between two registry
+rows — a semantics decision from the era that produced the lean-registry corruption bug. Confirmed
+with the operator: that merge behaviour was **not** wanted.
+
+**`stash@{0}` (`40e3e6b4`) — DROPPED as fully superseded. Do not re-implement.**
 
 An earlier version of this section claimed the feature "never shipped" because `linkedCandidates`
 and `recommendedAction` were "absent from `main`". **That was wrong**, and wrong in the expensive
@@ -233,17 +236,15 @@ direction: it would have had someone build a feature that already exists. Checke
 | 5 tests | **All 5 present**, plus 6 further test files; 6 + 5 cases in the two matching files |
 
 All five of the stash's test intents resolve to live tests today, including the two that carry its
-actual policy: `..._marks_non_admin_owned_links_not_clearable` and `...action visibility allows
-only admin-owned clear`. The route logic was also extracted out of `get_routes.py` into
+actual policy: `..._marks_non_admin_owned_links_not_clearable` and `...action visibility allows only
+admin-owned clear`. The route logic was also extracted out of `get_routes.py` into
 `get_source_policy.py` / `source_policy_link_backfill.py`, which is why the original symbols no
-longer appear where the stash put them — the feature moved, it did not vanish.
+longer appear where the stash put them — the feature moved, it did not vanish. Confirmed with the
+operator that today's build covers the intent, including the apply side the stash lacked.
 
 **The lesson is the same one as the EA rows and the Nintendo repoint:** a claim of absence was
-inherited from an earlier summary and never checked against the tree. Absence of a *symbol* is not
-absence of a *feature*.
-
-**Action:** none. Read the patch for historical intent if useful; do not re-implement and do not
-resurrect it.
+inherited from an earlier summary and never checked against the tree. **Absence of a symbol is not
+absence of a feature** — check the behaviour, not the identifier.
 
 ---
 
