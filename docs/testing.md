@@ -595,6 +595,21 @@ Equivalent direct command:
 python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --color=no
 ```
 
+This lane needs the `pytest-cov` plugin, which is **not** pinned in `requirements.txt` /
+`requirements-lock.txt` — those carry runtime and shipping tooling only, and adding a test-runner
+plugin there would pull it into the runtime pin and the `pip-audit` scope. Install it locally the
+same way `pip-audit` is handled above:
+
+```bash
+python -m pip install pytest-cov==7.1.0
+```
+
+Without it, `--cov=src` fails with `unrecognized arguments`, which reads as a broken test lane
+rather than a missing dev dependency. For machine-readable output add
+`--cov-report=json:<path>` (and/or `--cov-report=html:<dir>`) so a coverage sweep can be post-processed
+without scraping the terminal table. For test-reduction work see
+[`plans/test-reduction-triage.md`](plans/test-reduction-triage.md).
+
 ## Type Check
 
 The mypy gate is **cross-platform**: `python -m mypy --config-file mypy.ini` must pass on both Windows and Linux (WSL). Each platform's typeshed has mirror-image blind spots — Windows lacks POSIX-only attributes (`fcntl`, `os.killpg`, `pwd`, `os.sysconf`, …), Linux lacks Windows-only ones (`ctypes.windll`, `msvcrt`, …) — so run the command in **both** environments after touching platform-conditional code. `mypy.ini` sets `warn_unused_ignores = True` and the tree carries **zero** suppressions, so any `type: ignore`/`noqa` you add is flagged as unused on one of the two platforms. Both runs must report `Success: no issues found`. mypy is pinned in `requirements-lock.txt`, so a normal `pip install -r requirements-lock.txt` provides it on both platforms. See [`WSL_SETUP.md`](WSL_SETUP.md) (Cross-platform type check) for the exact WSL command; Linux CI also runs the gate via `npm run typecheck:py` in the `build-linux` workflow.
