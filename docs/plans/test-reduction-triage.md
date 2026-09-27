@@ -18,11 +18,36 @@ plugin install):
 
 | Measure | Value |
 |---|---|
-| Python collection (`-m "not slow and not packaging and not release"`) | 5,452 tests across 686 files |
+| Python collection (`-m "not slow and not packaging and not release"`) | 5,450 tests across 685 files |
 | Full-lane run | 5,513 passed, 1 skipped, 134 deselected |
+| Collected Python test lines | 151,524 |
+| Tests area line count (`loc_budget.py`, all tracked languages) | 212,502 |
 | `src/` files measured | 635 |
 | `src/` files with **zero** covered lines | **3** |
-| Tests area line count (`loc_budget.py`) | 212,502 |
+
+The two line totals differ because `loc_budget.py` counts every tracked source file under `tests/`
+(including the `.mjs` frontend units), while the 151,524 figure is the collected Python test files
+only. Neither is wrong; do not compare them directly.
+
+### Bucket distribution — the merge hypothesis is dead
+
+Classified structurally from the collection node ids (a `--cov=src` run only reports `src/**`, so it
+cannot answer "did this test file cover any src line" — do not gate a bucket on it):
+
+| Bucket | Files | Lines | % of lines | Tests |
+|---|---:|---:|---:|---:|
+| `behavior` | 585 | 116,924 | 77% | 4,471 |
+| `mock-bound` | 95 | 33,784 | 22% | 934 |
+| `table-heavy` | **5** | **816** | **0.5%** | 45 |
+
+The `table-heavy` bucket — the merge-candidate class the reduction plan was built around — is
+essentially **empty**: 5 files, 816 lines. The largest is
+`tests/jobs_static/test_static_pagination_follow.py` (600 lines, 29 tests). There is no bulk
+parameterised-table reduction to make.
+
+`mock-bound` at 22% is the only bucket of any size, and mock-heavy is not the same as
+restating-implementation: those files exercise real behaviour through injected doubles, and the
+retained boundaries below cover exactly that class. Do not treat "mock-heavy" as a deletion signal.
 
 The three uncovered `src/` files are `src/ship/desktop_app/__main__.py`,
 `src/ship/desktop_app/cli.py`, and `src/source_discovery.py`. All three are bootstrap shims that
