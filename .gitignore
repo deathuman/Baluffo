@@ -19,6 +19,20 @@ coverage/
 pytest-cache-files-*/
 support/
 logs/
+# Local artifact root. Retention convention established 2026-09-27:
+#   _out/evidence/<name>/   durable evidence a tracked doc or a Basic Memory note points at
+#   _out/preserved-*/       keepers moved out of a scratch tree rather than deleted
+#   _out/perf-runs/         per-run perf/benchmark output -- SEED STATE AND RAW DUMPS ARE
+#                           REGENERABLE, reports are not. A retention pass on 2026-09-27 removed
+#                           8,504.8 MB (79%) of per-run baluffo-runtime.db copies, their -wal/-shm
+#                           sidecars, replicated seed-data/jobs-fetch-report.json, and raw
+#                           measurement dumps, while preserving all 7 cited run directories whole.
+#                           Deleted paths are recorded in
+#                           _out/perf-runs-retention-20260927/deleted-manifest.json.
+#                           Rule: keep every .md and every cited path. The .db files are each run's
+#                           end state (their hashes differ), so deleting them discards results
+#                           rather than duplicates -- which is why the cited runs were kept whole.
+#   Never purge _out/ by name or age. Decide by reference, and write a manifest of what went.
 _out/
 .state/
 .cursor/
