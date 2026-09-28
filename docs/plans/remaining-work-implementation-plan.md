@@ -384,3 +384,47 @@ elsewhere in the same session. It surfaced as "inconclusive", which reads like a
 like a crash. The fix was to call `_static_detail_links` directly instead of reverse-engineering the
 evidence object. **A helper that returns an empty set on every input is more dangerous than one that
 raises**, because it produces plausible-looking verdicts.
+
+### Step 3 — the card extractor is not the missing instrument either (2026-09-28)
+
+`extract_rendered_card_jobs` (`_rendered_cards.py:893`) takes plain HTML and a `page_url`, so it is
+callable as a read-only measurement with no runner state. Tested against controls chosen for the
+mechanism: boards scoring **0** on the detail-link extractor while the registry records real
+`jobsFound`.
+
+| Control | detail | cards | jobsFound |
+|---|---:|---:|---:|
+| careers.wildlifestudios.com/search-jobs/ | 0 | **1** | 21 |
+| madbox.teamtailor.com/jobs | 0 | **1** | 16 |
+| gaslampgames.com/jobs | 0 | 0 | 34 |
+| runawayplay.com/careers | 0 | 0 | 20 |
+| careers.radicalforge.com/jobs | 0 | 0 | 19 |
+
+**2 of 5, and the two successes return 1 card where the pipeline recorded 16–21 jobs.** The gate only
+withdrew on `lifted == 0`, so it passed at 2 — but 1-versus-21 is not a pass, and reporting the
+resulting 14 "none confirmed" results would be fourteen false negatives from an under-powered
+instrument. **The verdicts are withdrawn, not reported.**
+
+Likely cause: the pipeline calls the extractor with source-specific `href_tokens` and
+`allow_any_anchor`, on rendered rather than raw HTML. Calling it with defaults strips the
+configuration that makes it work — the *fourth* shortcut instrument this programme has
+misconfigured relative to the pipeline while looking like a clean measurement.
+
+### The pattern, which is now the real finding
+
+Every instrument built to avoid the sanctioned fetch has misfired, each looking like a result:
+
+1. Hand-rolled job-link regex — **0** on Supercell and Sega, two known-good boards.
+2. `static_probe_evidence` (detail-link) — **1** where the feed measures **27** on Criterion.
+3. Guessed attribute names on `StaticProbeEvidence` — silent empty set; reported `postings=0` for a
+   page measured at **51** in the same session.
+4. `extract_rendered_card_jobs` with defaults — **1** where the pipeline records **21**.
+
+Each was caught only by a control, and each control was itself wrong at least once: asserting
+`status == 200`; picking a 3.7 KB shell as a known-good board; drawing controls from the set under
+test; `registrable()` returning `com.tr` for `maglab.com.tr`.
+
+**Conclusion: stop building instruments.** The isolated pipeline fetch is the only measurement this
+programme has trusted correctly. The remaining 19 boards should each be settled by one, in batches of
+3–5, reading the report for `status` / `fetchedCount` / `keptCount`. There is no faster route to the
+same confidence, and three of the four shortcuts above would have deleted coverage.
