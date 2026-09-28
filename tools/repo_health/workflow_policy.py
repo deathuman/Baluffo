@@ -390,16 +390,33 @@ def _runtime_written_tracked_data_files(repo_root: Path) -> set[str]:
 # `data/desktop-startup-metrics.jsonl` are written every time the app runs and would
 # otherwise churn the working tree on every session. The metrics file was deliberately
 # untracked on 2026-09-26 because every desktop start rewrites it and `git status` was
-# producing misleading noise.
+# producing misleading noise. The two ledgers below followed on 2026-09-28 for the same
+# reason plus size: `jobs-lifecycle-state.json` is 35.2 MB of remembered jobs whose
+# committed snapshot was frozen at 2026-04-10, so every clone, CI run, and image carried
+# a five-month-old memory that `git` also re-stored on each of its 29 commits. It is
+# runtime state per `docs/DATA_CONTRACT.md`, `src/runtime_seed.py` seeds its sibling
+# `jobs-source-state.json` from code, and readers default to an empty ledger when the
+# file is absent (`read_job_lifecycle_state` -> `read_json_object(state_path, {})`), so a
+# fresh install starts with no memory and rebuilds it as it runs.
 _RUNTIME_OWNED_DATA_FILES = frozenset(
     {
         "data/jobs-fetch-tasks.json",
-        "data/jobs-lifecycle-state.json",
-        "data/jobs-source-state.json",
         "data/jobs-success-cache.json",
         "data/source-discovery-candidates.json",
         "data/source-discovery-report.json",
         "data/source-registry-tombstones.json.gz",
+    }
+)
+
+# Runtime-owned artifacts that must stay out of git for the reasons recorded above. They
+# are still rewritten during normal use, so they must remain in
+# `scripts/precommit_gate.py` EXCLUDED_FILES even though no tracked-file guard covers them.
+_RUNTIME_OWNED_UNTRACKED_DATA_FILES = frozenset(
+    {
+        "data/jobs-lifecycle-state.json",
+        "data/jobs-source-state.json",
+        "data/jobs-fetch-report.json",
+        "data/desktop-startup-metrics.jsonl",
     }
 )
 
@@ -416,6 +433,29 @@ def test_runtime_owned_data_files_are_tracked(repo_root: Path) -> None:
         assert path in tracked, (
             f"{path} is declared runtime-owned but is not tracked under data/; update "
             "scripts/precommit_gate.py EXCLUDED_FILES and this list together."
+        )
+
+
+def test_runtime_owned_untracked_data_files_stay_untracked(repo_root: Path) -> None:
+    """Deliberately untracked runtime artifacts must stay untracked and stay excluded.
+
+    These are rewritten by normal use and are covered by the `data/*.json`/`data/*.jsonl`
+    ignore rules, so a stray `git add -f` would silently re-track them — which is how a
+    35 MB lifecycle snapshot frozen months earlier ended up in every clone, CI checkout,
+    and container image. They stay in `EXCLUDED_FILES` because the app still rewrites
+    them locally, and the changed-mode gate must keep ignoring that churn.
+    """
+    tracked = set(_git_lines(repo_root, "ls-files", "data/"))
+    gate_text = (repo_root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
+    for path in sorted(_RUNTIME_OWNED_UNTRACKED_DATA_FILES):
+        assert path not in tracked, (
+            f"{path} is tracked again after being deliberately untracked; run "
+            f"`git rm --cached {path}` to restore the intended runtime-owned state."
+        )
+        assert f'"{path}"' in gate_text, (
+            f"scripts/precommit_gate.py should keep {path} in EXCLUDED_FILES: the app "
+            "rewrites it at runtime, and the changed-mode gate would otherwise fail on "
+            "files the developer never touched."
         )
 
 

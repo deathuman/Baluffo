@@ -711,6 +711,7 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_release_workflow_uploads_smoke_artifacts_when_cancelled",
             "test_precommit_gate_excludes_tracked_runtime_data",
             "test_runtime_owned_data_files_are_tracked",
+            "test_runtime_owned_untracked_data_files_stay_untracked",
             "test_precommit_gate_reports_the_failing_stage",
             "test_hooks_path_is_wired_and_bypass_is_prohibited",
             "test_lint_workflow_enforces_ruff_import_sorting",
