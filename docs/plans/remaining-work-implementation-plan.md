@@ -341,3 +341,46 @@ is inference, not diagnosis. The rule that follows from the inference is already
 - **Re-ratchet `loc_baseline.py --update` only after staging a change** — the ratchet compares the
   index against the baseline, so updating first records the pre-change count and the pre-commit gate
   fails on a stale baseline.
+
+---
+
+## Step 2 result — one row qualified, eight did not (2026-09-28)
+
+Both sides of every same-host pair were fetched and compared on the posting set produced by the
+repo's own extractor (`probe._static_detail_links`). **One pair of nine came back `identical`:**
+
+| Studio | A | B | Verdict |
+|---|---|---|---|
+| ARTE France | `jobs.arte.tv/Jobs` — 200, 7 postings | `arte.tv/jobs` — 200, 7 postings | **identical** |
+
+Demoted `static:listing_url:https://jobs.arte.tv/jobs` to pending with the existing
+`duplicate_family_weaker_variant` reason, recording `duplicateOfSourceId` and the live evidence.
+Verified: active 2,253 -> 2,252, pending 836 -> 837, 0 uncovered collisions, 0 stale baseline,
+0 boards emptied, 0 unrelated rows changed. The row was not in the seed, so no tracked data file
+changed - a runtime-only mutation.
+
+**The other eight did not qualify, and the reasons are the valuable part.**
+
+- **EA x3 - the near-miss, avoided again.** The extractor reports Criterion and Glu at **1** posting
+  against **25** on the unfiltered board, which reads as a subset and therefore as redundancy. It is
+  not evidence of that: the studio-scoped Workday views are JS-rendered, so a detail-link extractor
+  sees almost nothing, while the 2026-09-15 feed measured **27** (Criterion) and **35** (Glu) unique
+  job detail pages on those same rows. Acting on the extractor's count would have deleted 62 links
+  and repeated exactly the regression reverted in `37302c18`. **Not acted on.** This is the concrete
+  cost of a detail-link detector being the wrong instrument, and it is why the feed comparison, not
+  a live count, is the authority for these rows.
+- **Nintendo** - A (the bare host) yields **0** postings, B yields **51**. That proves A is *not a
+  board*, not that A duplicates B. The accurate reason is "contributes nothing", which is not
+  `duplicate_family_weaker_variant`, and the rejection vocabulary is not forked to accommodate it.
+  Held for a decision.
+- **Wbd** - A returns **HTTP 410**. The single job it was registered against is gone, so this is a
+  death, not a duplicate, and takes a different disposition entirely.
+- **Forge Reply** - A yields 0, B yields 1. Too little signal; needs a real fetch.
+
+**A silent-zero bug worth recording.** The first version of the comparison guessed attribute names
+on `StaticProbeEvidence` (`detail_links`, `detail_link_urls`, `links`) that do not exist, so the set
+was always empty - and it reported `postings=0` for Nintendo `/jobs`, a page measured at **51**
+elsewhere in the same session. It surfaced as "inconclusive", which reads like a finding rather than
+like a crash. The fix was to call `_static_detail_links` directly instead of reverse-engineering the
+evidence object. **A helper that returns an empty set on every input is more dangerous than one that
+raises**, because it produces plausible-looking verdicts.
