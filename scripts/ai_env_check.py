@@ -20,6 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_NODE = "25.8.0"
 REQUIRED_PYTHON = (3, 13)
 SERENA_PACKAGE = "serena-agent"
+SERENA_CLIENT_CONFIG = "opencode.json"
+# uvx options that consume the following argument, so the probe parser can tell a
+# flag's value from the tool name uvx is about to run.
+UVX_VALUE_FLAGS = frozenset({"-p", "--python", "--from", "--with", "--index", "--python-version"})
 MEMORY_VAULT_DIR_NAME = "BaluffoMemory"
 MEMORY_VAULT_ENV_VAR = "BALUFFO_MEMORY_VAULT"
 
@@ -97,13 +101,78 @@ def _latest_pypi_version(package: str) -> str | None:
     return version if isinstance(version, str) and version else None
 
 
+def _uvx_tool_prefix(command: list[str]) -> list[str] | None:
+    """Trim ``uvx [flags] <tool> <subcommand...>`` down to the prefix that runs ``<tool>``.
+
+    Returns None when the command is not uvx-shaped or carries no bare tool name.
+    """
+    skip_value = False
+    for index, token in enumerate(command[1:], start=1):
+        if skip_value:
+            skip_value = False
+            continue
+        if token in UVX_VALUE_FLAGS:
+            skip_value = True
+            continue
+        if not token.startswith("-"):
+            return command[: index + 1]
+    return None
+
+
+def _serena_uvx_probe() -> list[str] | None:
+    """Build a ``serena --version`` probe from the client registration in opencode.json.
+
+    Both first-class clients register Serena through ``uvx`` (tools/mcp/SERENA.md), which
+    resolves the tool per launch and never puts a ``serena`` executable on PATH. A
+    PATH-only lookup therefore reports a Serena whose MCP is connected and serving tool
+    calls as a hard failure, which trains the reader to ignore the check.
+
+    Both ``mcp.servers.<name>`` and the flat ``mcp.<name>`` layouts are accepted, because
+    the committed config and locally normalised copies of it differ.
+    """
+    try:
+        mcp = json.loads((ROOT / SERENA_CLIENT_CONFIG).read_text(encoding="utf-8"))["mcp"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(mcp, dict):
+        return None
+    servers = mcp.get("servers") if isinstance(mcp.get("servers"), dict) else mcp
+    entry = servers.get("serena")
+    command = entry.get("command") if isinstance(entry, dict) else None
+    if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
+        return None
+    prefix = _uvx_tool_prefix(command)
+    if prefix is None:
+        return None
+    launcher = shutil.which(prefix[0])
+    if launcher is None:
+        return None
+    return [launcher, *prefix[1:], "--version"]
+
+
 def _check_serena(check_updates: bool) -> Check:
     serena = shutil.which("serena.exe") or shutil.which("serena")
     if serena is None:
+        probe = _serena_uvx_probe()
+        if probe is None:
+            return Check(
+                "serena",
+                "fail",
+                "serena not resolvable: no executable on PATH and no uvx registration in "
+                f"{SERENA_CLIENT_CONFIG}; install with uv tool install -p 3.13 "
+                f"{SERENA_PACKAGE}@latest --prerelease=allow",
+            )
+        # uvx resolves the tool on demand, so this probe can be slow on a cold cache.
+        resolved = _capture(*probe, timeout=90)
+        if resolved is None or resolved.returncode != 0:
+            return Check("serena", "fail", _first_line(resolved))
+        version = _extract_version(_first_line(resolved)) or "unknown"
         return Check(
             "serena",
-            "fail",
-            "serena not found; install with uv tool install -p 3.13 serena-agent@latest --prerelease=allow",
+            "warn",
+            f"{version} via uvx ({SERENA_CLIENT_CONFIG}), not a uv tool install; the MCP "
+            "works, but tools/mcp/SERENA.md's uv-tool baseline and its "
+            f"`uv tool install --force -p 3.13 {SERENA_PACKAGE}` update path do not apply",
         )
     completed = _capture(serena, "--version")
     if completed is None or completed.returncode != 0:
