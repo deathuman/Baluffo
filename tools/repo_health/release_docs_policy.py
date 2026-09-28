@@ -327,7 +327,7 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "required Serena setup" in tools_text
     assert "deprecated non-Codex Playwright MCP fallback" in tools_text
     assert "OpenCode" in tools_text
-    assert opencode["mcp"]["serena"]["command"] == [
+    assert opencode["mcp"]["servers"]["serena"]["command"] == [
         "uvx",
         "-p",
         "3.13",
@@ -339,7 +339,7 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
         "ide",
         "--project-from-cwd",
     ]
-    assert opencode["mcp"]["basic-memory"]["command"] == [
+    assert opencode["mcp"]["servers"]["basic-memory"]["command"] == [
         "uvx",
         "basic-memory@latest",
         "mcp",

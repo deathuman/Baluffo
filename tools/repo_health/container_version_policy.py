@@ -58,6 +58,11 @@ VERSION_FILES = (
 # re-triggered Build Container and retagged the current version with newer code
 # while umbrel-app.yml still declared the old version -- exactly the 0.2.140
 # reuse trap this gate exists to prevent.
+#
+# `opencode.json` is the OpenCode client/agent config (MCP launchers). It is
+# not a runtime input either -- nothing under src/ or scripts/ reads it -- so
+# an MCP launcher edit must not re-trigger Build Container and retag the
+# current version the same way.
 NON_SHIPPED_PATTERNS = (
     "docs/**",
     "tests/**",
@@ -68,6 +73,7 @@ NON_SHIPPED_PATTERNS = (
     "CONTRIBUTING.md",
     "SECURITY.md",
     "AGENTS.md",
+    "opencode.json",
     "LICENSE",
     "release-notes.md",
     "umbrel-app-store.yml",

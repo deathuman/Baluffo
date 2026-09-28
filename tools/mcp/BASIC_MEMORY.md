@@ -89,28 +89,37 @@ Baluffo already commits the `basic-memory` entry in `opencode.json`:
 ```json
 {
   "mcp": {
-    "basic-memory": {
-      "type": "local",
-      "command": ["basic-memory", "mcp", "--project", "baluffo-memory"],
-      "enabled": true
+    "servers": {
+      "basic-memory": {
+        "type": "local",
+        "command": ["uvx", "basic-memory@latest", "mcp", "--project", "baluffo-memory"]
+      }
     }
   }
 }
 ```
 
+OpenCode v2 also still accepts the V1 `mcp.<name>` shape with `"enabled": true`, but the tracked
+file uses the native V2 shape with `mcp.servers` and no `enabled` key.
 Install Basic Memory once, then run OpenCode from the repo root so it can use the committed repo config.
-The committed config expects `basic-memory` on `PATH`.
-If OpenCode cannot resolve `basic-memory`, restart your shell/session, add the user-local tool directory
-to `PATH`, or override the command in machine-local client configuration. Do not commit absolute
+The launcher resolves Basic Memory through `uvx`, so it needs `uvx` on `PATH` rather than a
+`basic-memory` tool install; a stale `basic-memory.exe` install is not required.
+If OpenCode cannot start Basic Memory, restart your shell/session so `uvx` is resolvable, or override
+the command in machine-local client configuration. Do not commit absolute
 `basic-memory.exe` paths to `opencode.json`; the tracked file stays portable across machines.
 
 Verified OpenCode health should show both required MCPs connected:
 
 ```powershell
 opencode mcp list
-# basic-memory connected: basic-memory mcp --project baluffo-memory
-# serena connected: serena start-mcp-server --context ide --project-from-cwd
+# basic-memory connected: uvx basic-memory@latest mcp --project baluffo-memory
+# serena connected: uvx -p 3.13 --from serena-agent@latest serena start-mcp-server --context ide --project-from-cwd
 ```
+
+On OpenCode v2.0.18, a directory the background service has not loaded yet can show an empty
+`opencode mcp list` while the location starts its servers; repeat the command after a moment, or
+run `opencode reload`, before treating the servers as missing (see the same note in
+[SERENA.md](SERENA.md)).
 
 ## Secondary Clients
 

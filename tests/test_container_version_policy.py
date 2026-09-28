@@ -67,6 +67,7 @@ def test_is_shipped_path_classifies_docs_vs_code() -> None:
     assert not _is_shipped_path("tests/test_foo.py")
     assert not _is_shipped_path("tools/repo_health/repo_guardrails.py")
     assert not _is_shipped_path(".github/workflows/lint.yml")
+    assert not _is_shipped_path("opencode.json")
     assert not _is_shipped_path("README.md")
     assert not _is_shipped_path("release-notes.md")
 

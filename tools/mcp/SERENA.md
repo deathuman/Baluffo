@@ -78,25 +78,34 @@ OpenCode is the other first-class client for this repo.
 Baluffo already commits an `opencode.json` reference config that expects Serena on `PATH`.
 Use Serena's generic `ide` context here; upstream Serena does not publish an OpenCode-specific context today.
 
-Current repo launch shape:
+Current repo launch shape (OpenCode v2 native `mcp.servers`):
 
 ```json
 {
   "mcp": {
-    "serena": {
-      "type": "local",
-      "command": ["uvx", "-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
-      "enabled": true
+    "servers": {
+      "serena": {
+        "type": "local",
+        "command": ["uvx", "-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"]
+      }
     }
   }
 }
 ```
 
+OpenCode v2 also still accepts the V1 `mcp.<name>` shape with `"enabled": true`, but the tracked
+file uses the native V2 shape with `mcp.servers` and no `enabled` key.
 Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
-Unlike Codex's registered MCP entry, this committed OpenCode config still expects `serena` on `PATH`.
-If OpenCode cannot resolve `serena`, restart your shell/session, add the user-local tool directory to
-`PATH`, or override the command in machine-local client configuration. Do not commit absolute
+The launcher resolves Serena through `uvx`, so it needs `uvx` on `PATH` rather than a `serena`
+tool install; a stale `serena.exe` install is not required.
+If OpenCode cannot start Serena, restart your shell/session so `uvx` is resolvable, or override the
+command in machine-local client configuration. Do not commit absolute
 `serena.exe` paths to `opencode.json`; the tracked file stays portable across machines.
+
+Verified on OpenCode v2.0.18 (2026-09-28): the first MCP query for a directory the background
+service has not loaded yet can report `No MCP servers configured` while the location is still
+starting its servers. Repeat `opencode mcp list` after a moment, or run `opencode reload`, before
+treating the servers as missing.
 
 ## Baluffo Local Project Setup
 
