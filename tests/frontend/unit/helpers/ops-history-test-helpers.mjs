@@ -7,7 +7,7 @@
 // row, and the drawer host gets one delegated click listener that resolves
 // Copy/Abort.
 
-export function makeRowStub(runKey, rowArea) {
+function makeRowStub(runKey, rowArea) {
   return {
     dataset: { runKey, rowArea },
     classList: { toggle() {}, add() {}, remove() {}, contains: () => false },

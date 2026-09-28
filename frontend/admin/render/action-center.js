@@ -123,7 +123,7 @@ function renderActionButton(action, signalId) {
   return `<button class="btn clear-filters-btn action-center-signal-btn" type="button" data-action="${escapeHtml(meta.dataAction)}" data-signal="${escapeHtml(String(signalId || ""))}"${presetAttr}>${actionCenterIcon(meta.icon)}<span>${escapeHtml(meta.label)}</span></button>`;
 }
 
-export function renderStatusLine({ state, summary, detail = "" }) {
+function renderStatusLine({ state, summary, detail = "" }) {
   const meta = STATE_META.get(state) || STATE_META.get("unavailable");
   const detailHtml = detail
     ? `<span class="action-center-status-detail">${escapeHtml(detail)}</span>`
