@@ -241,6 +241,27 @@ if [ "$need_gate" -eq 1 ]; then
     exit "$lint_status"
   fi
 
+  # knip is CI's "Run JavaScript dead-code scan" step, and it used to be the only
+  # gate with no local counterpart: `.pre-commit-config.yaml` and
+  # scripts/precommit_gate.py never selected it, so a dead JS export could not fail
+  # a push and only surfaced in `.github/workflows/lint.yml` afterwards. That let
+  # `Unused exports (6)` sit red on main for 21 consecutive pushes. Running the same
+  # script here gives the default push path the same coverage CI has, which is the
+  # one-script-per-surface shape the `lint:precommit:ci` call above already uses.
+  echo "Running the JavaScript dead-code scan before pushing to main..."
+  if run_timed_command "lint:deadcode:js" npm run lint:deadcode:js; then
+    deadcode_status=0
+  else
+    deadcode_status=$?
+  fi
+  if [ "$deadcode_status" -ne 0 ]; then
+    hook_end_ms="$(ms_now)"
+    end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+    log_timing "pre-push-end" "$deadcode_status" "$end_elapsed_ms"
+    log_timing_csv "pre-push-end" "$end_elapsed_ms" "$deadcode_status" "$branch_ref"
+    exit "$deadcode_status"
+  fi
+
   gate_status=0
   if [ "$full_ci_enabled" -eq 1 ]; then
     if run_full_ci_checks; then

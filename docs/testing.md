@@ -192,7 +192,7 @@ The repo-specific tuning lives in `.gitleaks.toml`, with filename-aware hook rou
 
 The tracked Git pre-push hook keeps the default local push path narrow and makes the full local CI-equivalent gate explicit.
 
-- Normal push to `main`: runs only `npm run lint:precommit:ci`.
+- Normal push to `main`: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`.
 - Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`.
 - Optional hook warmup: set `PRE_PUSH_WARM_HOOKS=1` or run `npm run prepush:warm`.
 - Optional timing CSV log: set `PRE_PUSH_TIMING_LOG=1`.
@@ -206,7 +206,7 @@ The hook emits lightweight console timing lines in this format:
 
 Measured baseline on the primary Windows development machine:
 
-- Default `main` lint gate: about `31s`
+- Default `main` lint gate: about `33s` (`lint:precommit:ci` plus about `2s` for `lint:deadcode:js`)
 - Full local CI mode: about `109s`
 - Warmup path after environments exist: under `1s`
 
@@ -621,6 +621,8 @@ Two details worth keeping in mind. `pre-commit run` accepts only a **single** ho
 Still run `npm run typecheck:py` yourself before pushing Python changes, especially new test files, where `getattr(module, "x", None)` infers as `None` and reads as `"None" not callable`; the gate now catches that class locally, but CI remains the backstop.
 
 `eslint` is enforced by that local gate, which is the same entry point CI and the push hook use: `.github/workflows/lint.yml` runs `npm run lint:precommit:ci`, `.githooks/pre-push` runs the same script, and `release:preflight` runs `lint:precommit` (an alias for it). So a single gate fix propagated to all three surfaces at once; the only bypass is `--no-verify`, which is forbidden. `eslint.config.js` ignores vendored and generated JavaScript (`.venv/**`, `.container-frontend/**`, `_out/**`, `dist/**`, `node_modules/**`, and the agent-tool directories); without those ignores the hook reported 7,118 errors, 7,063 of them from vendored/built files. The tree is at **0 errors** (19 pre-existing `no-unused-vars` warnings), so the hook is a real gate rather than noise — but treat the remaining warnings as a warning budget, not a licence to add more.
+
+`npm run lint:deadcode:js` (knip) now follows that same one-script-per-surface shape, having been the one gate that was CI-only. It is not a `.pre-commit-config.yaml` hook and is not in `PRE_PUSH_HOOK_IDS`, so nothing local could fail a push on it: `Unused exports (6)` sat red on the `Lint` lane for 21 consecutive pushes before `2b2148c8` fixed the six names and `.githooks/pre-push` gained the call. The first of those runs failed an *earlier* step instead (`check_container_shipped_code_version_gate`), and because pre-commit runs before the scan and short-circuits on failure, that masked the knip failure entirely until the version gate cleared on 25/09. Both surfaces now invoke the identical script, so a dead JS export fails before the push rather than after it. Knip is deliberately still **not** part of `release:preflight` — see the local-preflight coverage list in `RELEASE.md`.
 
 ## Refactor Guard
 
