@@ -18,7 +18,7 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 
 | # | Item | Size | Risk | Verdict |
 |---|---|---|---|---|
-| 1 | 23 `root_alive_404_path` boards | 23 rows, needs a per-root scan | **higher than stated** | **BLOCKED** — 0 repointed, 22 need the rendered path |
+| 1 | 23 `root_alive_404_path` boards | 23 rows | **higher than stated** | **Step 0 done** — 3 need adjudication, 14 uncovered; Step 1 disproved the rendering theory |
 | 2 | Duplicate board rows | 2 groups, ~4 rows | low | **DONE** `6822e3b8` — 1 collapsed, 3 kept |
 | 3 | `tmp/` retention | 752 MB claimed | none | **DONE** `50c28c1f` — 139 MB, not 752 |
 | 4 | 15 stashes | all resolved | — | **CLOSED** — 15 dropped, 0 remaining |
@@ -122,6 +122,61 @@ blind. **Controls must be verified healthy independently of the set under test.*
 
 **A studio that is provably alive is never retired.** If no replacement board can be found, that
 is a finding to record, not a retirement. All 23 rows remain active and untouched.
+
+### Progress: Step 0 done, Step 1 disproves the rendering hypothesis (2026-09-28)
+
+**Step 0 (free, registry-only) is complete and changed the shape of the work.** All 23 candidates
+are still active; the September list needed no re-derivation. Partition:
+
+| Bucket | Count | Meaning |
+|---|---:|---|
+| `canonical_twin` | **0** | no row would be made a twin by a repoint |
+| `same_host` | 7 | another active row on the same registrable domain |
+| `same_studio_label` | 2 | weak signal only — labels are not a safe identity |
+| `uncovered` | 14 | genuinely need candidate discovery |
+
+Three of the same-host rows are **already covered** and need *duplicate adjudication, not a
+repoint* — in each case the sibling carries the same studio label **and the same `jobsFound`**:
+
+| Studio | Broken row | Sibling |
+|---|---|---|
+| Forge Reply | `careers.reply.com` — 28 | `www.reply.com/en/about/careers` — 28 |
+| Nintendo | `careers.nintendo.com` — 3 | `careers.nintendo.com/jobs` — 59 |
+| ARTE France | `jobs.arte.tv/Jobs` — 13 | `arte.tv/jobs` — 13 |
+
+**A hypothesis of mine that did not survive measurement.** Four of the five rows that first looked
+"gone" had a stale id *and* a bare-host `listing_url`, which looked systemic. It is not: across
+**2,034** static rows only **27** have a stale id, **143** sit on a bare host, and only **6** combine
+both — of which exactly **one** (Nintendo) is a redundant weak registration. PlayStation's stale-id
+row collects **71 jobs**, so a bare host is not automatically weak. The impression was selection
+bias: the 404-candidate set is enriched for precisely that shape.
+
+**Step 1 disproves the rendering hypothesis.** The plan assumed candidate discovery fails because
+the root page's careers link is JS-rendered, so a rendered fetch would surface it. Tested with
+`try_fetch_with_playwright` (the repo's own renderer, the one the bridge injects into the probe):
+
+- **Playwright does render.** Byte deltas are real and non-zero: 57,835 → 58,468 and
+  77,086 → 79,129. So the browser is running.
+- **It changes nothing the detector can see.** All three positive controls — boards *measured* to
+  score 0 on raw HTML while yielding jobs (`gaslampgames` 34, `wildlifestudios` 21, `runawayplay`
+  20) — still score 0 after rendering. The negative control (a board retired in `408ce3d9`) stayed 0.
+
+So the 13 boards are not hiding links behind JS. The likely reason is that `static_probe_evidence`
+is a **detail-link** detector, and those boards do not express postings as detail links at all — the
+pipeline picks them up through card extraction instead. **A detail-link detector is the wrong
+instrument for them, not a missing browser.**
+
+**What this redirects.** Discovery should use the repo's card extractor
+(`extract_rendered_card_jobs` / `_extract_listing_candidates`) rather than the detail-link detector,
+and **verification should be the real isolated fetch**, which is the only thing AGENTS.md accepts as
+settling what a board collects. The 22 boards are therefore not a discovery problem at all for the
+7 same-host rows: 3 need adjudication and 4 need a fetch to tell same-board from different-board.
+
+**Two control-design errors worth not repeating**, both mine, both caught only because the control
+was asserted rather than assumed: a control that checked only `status == 200` (verifying
+reachability, not the signal), a second that used a studio root which turned out to be a 3.7 KB
+shell, and a `registrable()` helper that returned `com.tr` for `maglab.com.tr` — a public suffix,
+not a registrable domain — producing a false `same_host` match against an unrelated company.
 
 ---
 
