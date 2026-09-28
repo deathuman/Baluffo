@@ -18,7 +18,7 @@ items that ran out of session, plus two the earlier scoping got wrong. In order 
 
 | # | Item | Size | Risk | Verdict |
 |---|---|---|---|---|
-| 1 | 23 `root_alive_404_path` boards | 23 rows | **higher than stated** | **Step 0 done** — 3 need adjudication, 14 uncovered; Step 1 disproved the rendering theory |
+| 1 | 23 `root_alive_404_path` boards | 23 rows | **higher than stated** | **CLOSED** — 4 disposed, 6 working, 13 recorded `no-board-found`; 0 repoints justified |
 | 2 | Duplicate board rows | 2 groups, ~4 rows | low | **DONE** `6822e3b8` — 1 collapsed, 3 kept |
 | 3 | `tmp/` retention | 752 MB claimed | none | **DONE** `50c28c1f` — 139 MB, not 752 |
 | 4 | 15 stashes | all resolved | — | **CLOSED** — 15 dropped, 0 remaining |
@@ -428,3 +428,39 @@ test; `registrable()` returning `com.tr` for `maglab.com.tr`.
 programme has trusted correctly. The remaining 19 boards should each be settled by one, in batches of
 3–5, reading the report for `status` / `fetchedCount` / `keptCount`. There is no faster route to the
 same confidence, and three of the four shortcuts above would have deleted coverage.
+
+### Step 4 — the 19 settled by the sanctioned fetch, and none needs a repoint (2026-09-28)
+
+One isolated run over all 19 remaining rows — the instrument this programme has trusted correctly.
+**191 jobs collected, 11 sources failed.**
+
+| Outcome | n | Detail |
+|---|---:|---|
+| Working now | 6 | EA 145, Glu Mobile 79, Criterion 78, Square Enix 15, Amplitude 4, Superhot 3 |
+| `no jobs extracted` | 11 | Bamtang, Code Horizon, Endnight, Ever Curious, GSC, Impactreality, Ludia, MagicLab, Pocket Gems, Rising Pixel, Salt Free |
+| Healthy-empty | 2 | Bad Robot, Pathos — fetch ok, zero jobs, no error |
+
+**The result inverts the premise that started this item.** These rows were on the list because a
+404/410 filter over a September sweep flagged their registered paths. The fetch shows most of them
+are simply *working*: EA, Criterion, Glu, Square Enix, Amplitude and Superhot collect normally and
+need nothing.
+
+**EA ×3 is the near-miss vindicated a third time.** The sanctioned run returns **145 / 79 / 78** for
+the three rows. The detail-link extractor reported **1 / 1 / 25** on the same rows minutes earlier,
+which reads as "Criterion and Glu are subsets of the unfiltered board, collapse them" — and acting on
+that would have deleted **62** job links. Three instruments, three different answers, and only the
+pipeline's own fetch is right.
+
+**The 11 failures are `no jobs extracted`, not dead boards.** They fetch and parse successfully and
+yield nothing. The studio is up; the board has either moved behind JS rendering or is genuinely
+empty. Under the rule that a provably-alive studio is never retired, these are **recorded findings,
+not mutations** — and no URL may be repointed without a replacement that is itself fetched and
+confirmed. None was found.
+
+Two rows (Square Enix, Superhot) carry an error string alongside kept jobs — a non-terminal advisory,
+not a failure.
+
+**Net for item 1: 23 candidate rows, 4 disposed (2 demotions, 1 demotion, 1 retirement), 6 confirmed
+working untouched, 13 recorded as `no-board-found` or healthy-empty.** No repoint was made, and none
+is currently justified. The 13 need a discovery capability this session could not build reliably;
+attempting it with a fifth shortcut would repeat the failure pattern documented above.
