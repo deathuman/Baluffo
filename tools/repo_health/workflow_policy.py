@@ -400,10 +400,13 @@ def _runtime_written_tracked_data_files(repo_root: Path) -> set[str]:
 # fresh install starts with no memory and rebuilds it as it runs.
 _RUNTIME_OWNED_DATA_FILES = frozenset(
     {
-        "data/jobs-fetch-tasks.json",
-        "data/jobs-success-cache.json",
-        "data/source-discovery-candidates.json",
-        "data/source-discovery-report.json",
+        # Tombstones stay tracked on purpose. Unlike the runtime artifacts below,
+        # they have no seed: `src/runtime_seed.py` copies
+        # `data/defaults/source-registry-{active,pending}.seed.json` and the URL
+        # collision file, but nothing seeds tombstones. They record which source
+        # URLs were already examined and rejected, and ~11 modules under `src/`
+        # read them, so a fresh install with no tombstone file would start
+        # re-proposing rejected boards. 33 KB is cheap enough to keep shipping.
         "data/source-registry-tombstones.json.gz",
     }
 )
@@ -411,12 +414,21 @@ _RUNTIME_OWNED_DATA_FILES = frozenset(
 # Runtime-owned artifacts that must stay out of git for the reasons recorded above. They
 # are still rewritten during normal use, so they must remain in
 # `scripts/precommit_gate.py` EXCLUDED_FILES even though no tracked-file guard covers them.
+#
+# Split rule: a runtime artifact is untrackable when `src/runtime_seed.py` can create its
+# starting shape from code (`payloads` covers the tasks, cache, candidates, report and
+# ledger entries below) and its readers tolerate absence. A runtime artifact that carries
+# accumulated curation with no seed behind it stays tracked.
 _RUNTIME_OWNED_UNTRACKED_DATA_FILES = frozenset(
     {
         "data/jobs-lifecycle-state.json",
         "data/jobs-source-state.json",
         "data/jobs-fetch-report.json",
         "data/desktop-startup-metrics.jsonl",
+        "data/jobs-fetch-tasks.json",
+        "data/jobs-success-cache.json",
+        "data/source-discovery-candidates.json",
+        "data/source-discovery-report.json",
     }
 )
 
