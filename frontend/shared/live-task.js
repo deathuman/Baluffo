@@ -34,3 +34,28 @@ export function isActiveTaskStateRow(task) {
 export function hasActiveTaskStateRows(payload) {
   return getTaskStateRows(payload).some(isActiveTaskStateRow);
 }
+
+/**
+ * Split a raw bridge log chunk into complete log lines.
+ *
+ * Bridge log reads are bounded byte windows, so a chunk can end in the middle of
+ * a line the writer is still flushing. `carry` holds that trailing fragment back
+ * so it is never rendered as its own row (which would show no log timestamp);
+ * it is prepended to the next chunk instead.
+ *
+ * @param {string} text
+ * @param {{ carry?: string }} [options]
+ * @returns {{ lines: string[], carry: string }}
+ */
+export function splitServerLogChunk(text, options = {}) {
+  const chunk = String(options?.carry || "") + String(text || "");
+  if (!chunk) {
+    return { lines: [], carry: "" };
+  }
+  const parts = chunk.split(/\r?\n/);
+  const carry = parts.pop() || "";
+  return {
+    lines: parts.filter(line => String(line || "").trim()),
+    carry
+  };
+}

@@ -2,7 +2,8 @@ import {
   loadLiveTaskLogChunk,
   markLiveTaskActivity,
   runGuardedLiveTaskPoll,
-  resetLiveTaskPlaceholder
+  resetLiveTaskPlaceholder,
+  splitServerLogChunk
 } from "../live-task.js";
 
 export function createAdminDiscoveryLogController({
@@ -14,6 +15,8 @@ export function createAdminDiscoveryLogController({
   setDiscoveryProgress,
   updateDiscoveryProgressFromReport
 }) {
+  let serverLogCarry = "";
+
   function appendDiscoveryLog(message, level = "info") {
     if (!refs.adminDiscoveryLogEl) return;
     const event = createLogEvent("discovery", message, level);
@@ -76,11 +79,10 @@ export function createAdminDiscoveryLogController({
   }
 
   function appendDiscoveryServerLogText(text) {
-    const payload = String(text || "");
-    if (!payload) return;
-    payload.split(/\r?\n/).forEach(line => {
+    const chunk = splitServerLogChunk(text, { carry: serverLogCarry });
+    serverLogCarry = chunk.carry;
+    chunk.lines.forEach(line => {
       const trimmed = String(line || "").trim();
-      if (!trimmed) return;
       const match = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
       const normalizedLine = normalizeDiscoveryServerLine(match ? match[2] : trimmed);
       if (!normalizedLine) return;
@@ -106,6 +108,7 @@ export function createAdminDiscoveryLogController({
       logEl: refs.adminDiscoveryLogEl,
       clearOffset: () => {
         state.discoveryLogRemoteOffset = 0;
+        serverLogCarry = "";
       },
       setProgress: view => setDiscoveryProgress(view),
       appendLog: appendDiscoveryLog,

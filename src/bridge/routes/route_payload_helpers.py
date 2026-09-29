@@ -71,19 +71,67 @@ def _decode_utf8_log_bytes(raw: bytes) -> tuple[str, int]:
         return raw.decode("utf-8", errors="replace"), len(raw)
 
 
-def _read_utf8_log_slice(path: Path, offset: int, limit: int) -> tuple[str, int, int]:
+def _align_log_slice_start(raw: bytes) -> tuple[bytes, int]:
+    """Drop a leading partial line so the slice starts on a line boundary.
+
+    Returns the trimmed bytes plus how many were dropped. Content without any
+    newline is returned untouched so single-line logs still read in full.
+    """
+    newline_index = raw.find(b"\n")
+    if newline_index < 0:
+        return raw, 0
+    return raw[newline_index + 1 :], newline_index + 1
+
+
+def _align_log_slice_end(raw: bytes) -> bytes:
+    """Drop a trailing partial line the writer has not finished yet.
+
+    A log line is only renderable once its newline has landed. Content without
+    any newline is returned untouched.
+    """
+    if not raw or raw.endswith(b"\n"):
+        return raw
+    last_newline = raw.rfind(b"\n")
+    if last_newline < 0:
+        return raw
+    return raw[: last_newline + 1]
+
+
+def _read_utf8_log_slice(
+    path: Path,
+    offset: int,
+    limit: int,
+    *,
+    align_start: bool = False,
+    align_end: bool = False,
+) -> tuple[str, int, int, int]:
+    """Read a bounded log slice.
+
+    Returns ``(text, next_offset, read_end, start_offset)``. ``start_offset`` is
+    the byte position the returned text actually begins at; it drifts past the
+    requested offset when ``align_start`` snaps to a line boundary.
+    """
     bounded_offset = max(0, int(offset or 0))
     bounded_limit = max(0, int(limit or 0))
     if bounded_limit <= 0:
-        return "", bounded_offset, bounded_offset
+        return "", bounded_offset, bounded_offset, bounded_offset
     try:
         with path.open("rb") as handle:
             handle.seek(bounded_offset)
             raw = handle.read(bounded_limit)
     except OSError:
-        return "", 0, 0
+        return "", 0, 0, 0
+    read_end = bounded_offset + len(raw)
+    start_offset = bounded_offset
+    if align_start and start_offset > 0:
+        # Byte 0 is always a line boundary, so only a mid-file window can be
+        # split. Skipping there would drop a whole first line.
+        raw, skipped = _align_log_slice_start(raw)
+        start_offset += skipped
+    if align_end:
+        raw = _align_log_slice_end(raw)
     text, consumed_bytes = _decode_utf8_log_bytes(raw)
-    return text, bounded_offset + consumed_bytes, bounded_offset + len(raw)
+    return text, start_offset + consumed_bytes, read_end, start_offset
 
 
 def safe_query_int(
@@ -127,7 +175,9 @@ def log_chunk_payload_from_path(
             minimum=4096,
             maximum=default_offset_limit_bytes,
         )
-        text, next_offset, read_end = _read_utf8_log_slice(path, bounded_offset, limit)
+        text, next_offset, read_end, _start_offset = _read_utf8_log_slice(
+            path, bounded_offset, limit, align_end=True
+        )
         return {
             "text": text,
             "offset": bounded_offset,
@@ -142,13 +192,19 @@ def log_chunk_payload_from_path(
             minimum=4096,
             maximum=131072,
         )
-        offset = max(0, size - limit_chars)
-        text, next_offset, read_end = _read_utf8_log_slice(path, offset, limit_chars)
+        requested_offset = max(0, size - limit_chars)
+        text, next_offset, read_end, start_offset = _read_utf8_log_slice(
+            path,
+            requested_offset,
+            limit_chars,
+            align_start=True,
+            align_end=True,
+        )
         return {
             "text": text,
-            "offset": offset,
+            "offset": start_offset,
             "nextOffset": next_offset,
-            "hasMore": offset > 0 or read_end < size,
+            "hasMore": requested_offset > 0 or read_end < size,
         }, 200
     return {
         "ok": False,

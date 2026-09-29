@@ -1313,3 +1313,31 @@ test("admin fetcher controller forwards uncapped preset payload", async () => {
 
   assert.ok(calls.includes('/tasks/run-fetcher:{"preset":"uncapped"}'));
 });
+
+test("admin fetcher log holds back a half-written line until its newline lands", () => {
+  const rows = [];
+  const fixture = createFetcherControllerFixture();
+  // A real client-clock stamp is what made truncated rows read as out-of-order.
+  fixture.options.createLogEvent = (scope, message, level) => ({ scope, message, level, timestamp: "CLIENT-CLOCK" });
+  fixture.options.appendLogRow = (_container, event) => rows.push(event);
+  const controller = createAdminFetcherController(fixture.options);
+
+  controller.appendFetcherServerLogText(
+    "[2026-03-08T10:01:01.000Z] Fetching studio careers page 41/612 pages"
+  );
+  assert.equal(rows.length, 0, "an unterminated line must not be rendered on its own");
+
+  controller.appendFetcherServerLogText(
+    ".\n[2026-03-08T10:01:02.000Z] Fetching studio careers page 42/612 pages.\n"
+  );
+
+  assert.deepEqual(rows.map(row => row.message), [
+    "Fetching studio careers page 41/612 pages.",
+    "Fetching studio careers page 42/612 pages."
+  ]);
+  assert.deepEqual(rows.map(row => row.timestamp), [
+    "2026-03-08T10:01:01.000Z",
+    "2026-03-08T10:01:02.000Z"
+  ]);
+  assert.ok(rows.every(row => row.timestamp !== "CLIENT-CLOCK"));
+});

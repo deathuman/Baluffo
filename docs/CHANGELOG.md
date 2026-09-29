@@ -17,6 +17,9 @@ record what was written at the time.
 ---
 
 ## [Unreleased]
+### Fixed
+
+- **The fetch and discovery log boxes no longer show chopped-up half lines.** During a busy run the two log panels interleaved intact lines with fragments such as `325/612 pages.` or `ages.` — leftovers from a line whose start had been cut off. Because those fragments carried no timestamp of their own, they were stamped with the time the page happened to redraw, so they also appeared out of order among the correct entries. Both boxes now show whole lines in the right order, and a line appears only once the run has finished writing it.
 
 ## [0.3.0] - 2026-09-29
 ### Changed

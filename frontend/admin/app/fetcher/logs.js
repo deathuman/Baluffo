@@ -5,7 +5,8 @@ import {
   markLiveTaskActivity,
   resetLiveTaskPlaceholder,
   runGuardedLiveTaskPoll,
-  scheduleAsyncWatchTimer
+  scheduleAsyncWatchTimer,
+  splitServerLogChunk
 } from "../live-task.js";
 
 const FETCHER_LOG_POLL_TIMEOUT_MS = 3500;
@@ -20,6 +21,8 @@ export function createAdminFetcherLogController({
   appendLogRow,
   setFetcherProgress
 }) {
+  let serverLogCarry = "";
+
   function appendFetcherLogEvent(eventLike, fallbackLevel = "muted") {
     if (!refs.adminFetcherLogEl) return;
     const event = (eventLike && typeof eventLike === "object" && !Array.isArray(eventLike))
@@ -58,11 +61,10 @@ export function createAdminFetcherLogController({
   }
 
   function appendFetcherServerLogText(text) {
-    const payload = String(text || "");
-    if (!payload) return;
-    payload.split(/\r?\n/).forEach(line => {
+    const chunk = splitServerLogChunk(text, { carry: serverLogCarry });
+    serverLogCarry = chunk.carry;
+    chunk.lines.forEach(line => {
       const trimmed = String(line || "").trim();
-      if (!trimmed) return;
       const match = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
       const normalizedLine = normalizeFetcherServerLine(match ? match[2] : trimmed);
       if (!normalizedLine) return;
@@ -89,6 +91,7 @@ export function createAdminFetcherLogController({
       logEl: refs.adminFetcherLogEl,
       clearOffset: () => {
         state.fetcherLogRemoteOffset = 0;
+        serverLogCarry = "";
       },
       setProgress: view => setFetcherProgress(view),
       appendLog: appendFetcherLog,

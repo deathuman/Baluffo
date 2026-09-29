@@ -1,5 +1,7 @@
-import { getLiveTaskWorkItems } from "../../shared/live-task.js";
+import { getLiveTaskWorkItems, splitServerLogChunk } from "../../shared/live-task.js";
 import { maybeUnrefTimer } from "../../shared/ui-helpers.js";
+
+export { splitServerLogChunk };
 
 const DEFAULT_SIGNATURE_TRACKER_CAP = 256;
 const DEFAULT_POLL_BACKOFF_BASE_MS = 500;

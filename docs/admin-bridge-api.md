@@ -95,7 +95,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/discovery/report?view=summary` | Bounded discovery status/counter/log-tail summary for lightweight status surfaces. It does not return full candidate or failure arrays |
 | GET | `/discovery/candidates` | Persisted discovery review candidates, including queued and deferred rows |
 | GET | `/discovery/config` | Saved Source Discovery admin preferences |
-| GET | `/discovery/log` | Discovery log (supports `?offset=`) |
+| GET | `/discovery/log` | Discovery log (supports `?offset=`, or `?view=tail&limitChars=`) |
 | POST | `/discovery/check-source` | Check specific source (`{sourceId: ""}`) |
 | POST | `/discovery/config` | Update Source Discovery admin preferences (`{autoApproveHealthyPendingOnComplete: true|false}`) |
 | POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`); `default` now uses the former uncapped-lite behavior, while `uncapped` is the stronger exploration preset with higher queue caps, and both keep evidence/probe safety guardrails |
@@ -104,7 +104,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/fetcher/log` | Fetcher log (supports `?offset=`) |
+| GET | `/fetcher/log` | Fetcher log (supports `?offset=`, or `?view=tail&limitChars=`) |
 | GET | `/ops/fetch-report` | Last fetch report |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher performance metrics |
 | POST | `/tasks/run-jobs-bootstrap` | First-run/retry sheet-limited bootstrap fetch. Returns `{started, runId, task: "jobs_bootstrap", taskType: "fetch", preset: "bootstrap_sheets", coverageScope: "bootstrap_sheets"}` and no-ops/rejects after an existing runtime feed or full pipeline success |
@@ -196,6 +196,24 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `offset`: Log byte offset for pagination
 - `limit`: Result limit (default varies)
 - `includeFiles`: Include attachment files in backup (`0`/`1`)
+
+## Log Reads
+
+`/discovery/log` and `/fetcher/log` share one bounded read contract and return
+`{text, offset, nextOffset, hasMore}`.
+
+- `view=offset` (default) resumes from a byte cursor; `view=tail` returns the last
+  `limitChars` bytes of the file.
+- `text` is always whole lines. A window that would begin mid-line is advanced to
+  the next newline, and a final line whose newline has not been written yet is
+  withheld until it is complete. `nextOffset` therefore always points at a line
+  start, so a client can resume without reassembling fragments. Byte 0 counts as a
+  line start.
+- Logs with no newline at all are returned verbatim rather than trimmed, so
+  single-line files still read in full.
+
+Consumers should treat `offset` as the position `text` actually starts at, which
+can be greater than the requested offset.
 
 ## Notes
 
