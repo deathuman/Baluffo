@@ -3178,22 +3178,23 @@ body::-webkit-scrollbar-thumb:hover,
   animation: adminBridgePulseOpacity 0.45s ease-out;
 }
 
+/* The bridge badge is `position: fixed` at the top-left (see
+   .admin-bridge-floating), and the theme toggle is fixed top-right, so this
+   banner is in normal flow and starts below the badge's reserved band rather
+   than sitting under it. --admin-bridge-float-reserve must exceed
+   .admin-bridge-floating's top offset plus its height. */
 .admin-bridge-reconnect-banner {
-  position: fixed;
-  top: 0.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1991;
+  --admin-bridge-float-reserve: 3.5rem;
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  max-width: min(38rem, calc(100vw - 2rem));
+  flex-wrap: wrap;
+  margin: var(--admin-bridge-float-reserve) 0 0.75rem;
   padding: 0.6rem 0.9rem;
   border: 1px solid var(--contract-temporary-border);
   border-radius: 0.5rem;
   background-color: var(--contract-temporary-bg);
   color: var(--contract-temporary-text);
-  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.18);
 }
 
 .admin-bridge-reconnect-banner.hidden {

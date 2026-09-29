@@ -38,7 +38,6 @@ const RETRY_BUSY_MS = 400;
 /**
  * @param {object} params
  * @param {object} params.refs - Cached admin DOM refs.
- * @param {Function} params.getBridgeStatus - Returns the last badge state.
  * @param {Function} params.getBootstrapStatus - Returns the local-data bootstrap status.
  * @param {Function} params.onRetryNow - Invoked when the user asks to retry now.
  * @param {Function} [params.nowFn] - Injectable clock for tests.
@@ -46,7 +45,6 @@ const RETRY_BUSY_MS = 400;
  */
 export function createBridgeReconnectBanner({
   refs,
-  getBridgeStatus,
   getBootstrapStatus,
   onRetryNow,
   nowFn = () => Date.now()
@@ -55,10 +53,16 @@ export function createBridgeReconnectBanner({
   let gateStartedAt = null;
   let tickTimer = 0;
   let retryTimer = 0;
+  // Reachability is pushed in, not derived from the DOM. The badge label is
+  // driven by every bridge call, but reading it back means depending on a CSS
+  // class that setBridgeStatusBadge rewrites on each render, and on the bridge
+  // status controller's own last-status, which only advances when its watch
+  // runs (the Admin runtime does not start one). Owning the flag keeps the
+  // banner and the badge reading the same signal.
+  let bridgeReachable = true;
 
   const isBootstrapPending = () => getBootstrapStatus() === "pending";
-  const isBridgeUnreachable = () => getBridgeStatus() === "offline";
-  const isWaiting = () => isBootstrapPending() || isBridgeUnreachable();
+  const isWaiting = () => isBootstrapPending() || !bridgeReachable;
 
   function elapsedLabel() {
     if (bannerShownAt === null) return "";
@@ -129,6 +133,14 @@ export function createBridgeReconnectBanner({
     }
   }
 
+  function setBridgeReachable(nextReachable) {
+    if (Boolean(nextReachable) === bridgeReachable) {
+      return;
+    }
+    bridgeReachable = Boolean(nextReachable);
+    sync();
+  }
+
   function sync() {
     if (isWaiting()) {
       if (bannerShownAt === null) bannerShownAt = nowFn();
@@ -170,6 +182,7 @@ export function createBridgeReconnectBanner({
   return {
     sync,
     render,
+    setBridgeReachable,
     get isWaiting() {
       return isWaiting();
     },

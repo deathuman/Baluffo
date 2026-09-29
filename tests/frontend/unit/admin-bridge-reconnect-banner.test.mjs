@@ -18,10 +18,12 @@ import {
   createOpsState
 } from "./helpers/admin-controller-test-helpers.mjs";
 
-function createFixture({ bootstrapStatus = "ready", bridgeStatus = "online" } = {}) {
+// Reachability is pushed into the banner, the same way runtime.js pushes it
+// from every bridge call.
+function createFixture({ bootstrapStatus = "ready", bridgeReachable = true } = {}) {
   const clicks = [];
   const listeners = {};
-  const state = { bootstrapStatus, bridgeStatus };
+  const state = { bootstrapStatus };
   const refs = {
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["checking"]) }),
     bridgeReconnectBannerEl: createElement({ classList: createClassList(["hidden"]) }),
@@ -40,11 +42,11 @@ function createFixture({ bootstrapStatus = "ready", bridgeStatus = "online" } = 
   };
   const banner = createBridgeReconnectBanner({
     refs,
-    getBridgeStatus: () => state.bridgeStatus,
     getBootstrapStatus: () => state.bootstrapStatus,
     onRetryNow: () => clicks.push("retry"),
     nowFn: () => 1_000_000
   });
+  banner.setBridgeReachable(bridgeReachable);
   return { banner, refs, state, clicks, listeners };
 }
 
@@ -70,7 +72,7 @@ describe("admin bridge reconnect banner", () => {
   });
 
   it("names the wait and marks the badge reconnecting while the bridge is offline", () => {
-    const { banner, refs, state } = createFixture({ bridgeStatus: "offline" });
+    const { banner, refs } = createFixture({ bridgeReachable: false });
     banner.sync();
 
     assert.equal(refs.bridgeReconnectBannerEl.classList.contains("hidden"), false);
@@ -79,10 +81,28 @@ describe("admin bridge reconnect banner", () => {
     // It must never claim the bridge is healthy while waiting on it.
     assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("online"), false);
 
-    state.bridgeStatus = "online";
-    banner.sync();
+    banner.setBridgeReachable(true);
     assert.equal(refs.bridgeReconnectBannerEl.classList.contains("hidden"), true);
     assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("reconnecting"), false);
+  });
+
+  it("follows reachability without depending on a status watch or CSS classes", () => {
+    // Regression: the banner originally read the bridge status controller's
+    // internal last-status, which only advances when startBridgeStatusWatch
+    // runs. The Admin runtime never starts that watch, so the controller read
+    // "checking" forever and the banner stayed hidden while the badge read
+    // "Bridge Offline" - the exact silent failure this feature prevents. It
+    // then briefly read back the badge's CSS class, which setBridgeStatusBadge
+    // rewrites on every render. Reachability is now pushed in explicitly.
+    const { banner, refs } = createFixture();
+    banner.sync();
+    assert.equal(refs.bridgeReconnectBannerEl.classList.contains("hidden"), true);
+
+    // A plain reachability drop, with no controller and no class changes.
+    banner.setBridgeReachable(false);
+    assert.equal(refs.bridgeReconnectBannerEl.classList.contains("hidden"), false);
+    assert.equal(refs.bridgeReconnectLabelEl.textContent, "Reconnecting to the Baluffo bridge...");
+    assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("reconnecting"), true);
   });
 
   it("reports the bootstrap wait separately from a reconnect", () => {
@@ -111,7 +131,6 @@ describe("admin bridge reconnect banner", () => {
         bridgeReconnectRetryBtnEl: createElement({ dataset: {}, addEventListener() {} }),
         adminContentEl: contentEl
       },
-      getBridgeStatus: () => "checking",
       getBootstrapStatus: () => "pending",
       onRetryNow() {},
       nowFn: () => clock
@@ -140,7 +159,6 @@ describe("admin bridge reconnect banner", () => {
     };
     const banner = createBridgeReconnectBanner({
       refs,
-      getBridgeStatus: () => "checking",
       getBootstrapStatus: () => "pending",
       onRetryNow() {},
       nowFn: () => clock
@@ -156,7 +174,6 @@ describe("admin bridge reconnect banner", () => {
 
     const settled = createBridgeReconnectBanner({
       refs,
-      getBridgeStatus: () => "checking",
       getBootstrapStatus: () => "ready",
       onRetryNow() {},
       nowFn: () => clock
@@ -167,10 +184,11 @@ describe("admin bridge reconnect banner", () => {
   });
 
   it("reads bridge status from the ops controller the runtime passes", async () => {
-    // Regression: the runtime wires the banner's getBridgeStatus to
+    // Regression: the banner originally read reachability from
     // opsController.getBridgeStatus. If the ops controller does not expose it,
-    // the banner silently reads "checking" forever and never shows, which is
-    // exactly the failure this feature exists to prevent.
+    // the read silently falls back to a non-offline value. The banner now keys
+    // off the rendered badge, but the controller is still the retry path, so
+    // both must be exported and pollable.
     const ops = await import("../../../frontend/admin/app/ops.js");
     const refs = { adminBridgeStatusBadgeEl: createElement({ classList: createClassList([]) }) };
     const controller = ops.createAdminOpsController({

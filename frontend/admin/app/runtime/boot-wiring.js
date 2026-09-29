@@ -16,14 +16,16 @@ import { getDesktopBootstrapStatus } from "../../../shared/local-data/desktop-cl
 function wireReconnectBanner({ state, refs, getOpsController, awaitBridgeReady, logAdminError }) {
   const banner = createBridgeReconnectBanner({
     refs,
-    getBridgeStatus: () => getOpsController()?.getBridgeStatus?.() || "checking",
     getBootstrapStatus: getDesktopBootstrapStatus,
     onRetryNow: () => {
       void getOpsController()?.pollBridgeStatus?.({ forceChecking: true });
     }
   });
   state.bridgeReconnectBanner = banner;
-  banner.sync();
+  // The badge starts on "checking" until the first bridge call reports, so the
+  // banner must start in the waiting state or it would flash hidden and then
+  // appear if the bridge turns out to be down.
+  banner.setBridgeReachable(false);
   void Promise.resolve(awaitBridgeReady())
     .then(() => banner.sync())
     .catch(err => logAdminError("Admin desktop bootstrap failed", err));

@@ -83,11 +83,12 @@ const startupMetrics = createAdminStartupMetrics({
   emitStartupMetricsBatch: metrics => emitAdminStartupMetricsBatchFromData(ADMIN_BRIDGE_BASE, metrics)
 });
 const adminPerfMarks = createPerfMarks(startupMetrics);
-// Reaching the bridge sets the badge and re-syncs the reconnect banner, so the
-// first successful call after a refusal is what dismisses the wait.
-const setBridgeBadge = (s, l) => {
-  opsController?.setBridgeStatusBadge(s, l);
-  state.bridgeReconnectBanner?.sync();
+// Every bridge call reports reachability here, so the first success after a
+// refusal is what dismisses the wait, and the first failure raises it. This is
+// the single signal the badge label and the reconnect banner both read.
+const setBridgeBadge = (badgeState, label) => {
+  opsController?.setBridgeStatusBadge(badgeState, label);
+  state.bridgeReconnectBanner?.setBridgeReachable(badgeState !== "offline");
 };
 const callBridge = createBridgeCaller({
   setBridgeOnline: () => setBridgeBadge("online", "Bridge Online"),
