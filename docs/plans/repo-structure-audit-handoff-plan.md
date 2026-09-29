@@ -1,6 +1,6 @@
 # Repo Structure & Test Audit Handoff
 
-> - **Status:** Active — 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, and **Q6 landed** (guardrail orphan cleanup, this change). Figures re-anchored to HEAD `8ede5716` + this change. Q2–Q5 remain; **Q4/Q5 are blocked on a shipped-code release**, not on analysis — see *Why Q4 Cannot Land Alone*.
+> - **Status:** Active — 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, and **Q6 landed** (guardrail orphan cleanup, this change). Figures re-anchored to the post-Q6 tree (`03bb67c3`). Q2–Q5 remain and **Q7 is queued** (a completeness check so the Q6 class cannot recur); **Q4/Q5 are blocked on a shipped-code release**, not on analysis — see *Why Q4 Cannot Land Alone*.
 > - **Use this when:** a LOC-reduction, dead-code, or "merge these families" report arrives and you need to know whether it is real, or when you want to execute or extend the verified remaining reduction queue without re-measuring the repo from zero
 > - **Canonical for:** the 2026-09-28 corrected structure/test audit as re-measured on 2026-09-29, the refuted-claim list, and the ranked implementation queue derived from it
 > - **Not canonical for:** test delete/merge safety rules and retained-test boundaries (see [`test-reduction-triage.md`](test-reduction-triage.md)), the Wave 1–4 program record and its measured yield rates (see [`codebase-simplification-plan.md`](codebase-simplification-plan.md)), or verification command ownership (see [`../testing.md`](../testing.md))
@@ -54,10 +54,10 @@ guardrail groups (`_out/ws-verify/oq2_v3.py` is the recount that scoped it).
 
 The 2026-09-29 column is today's `--report` output verbatim, taken **after** the Q6 deletion, and every area
 reports `delta +0` against `loc_baseline.json` — the committed baseline is in sync with the tree, so the
-report can be read as current without re-baselining. **Re-anchor before quoting it:** the tree has moved five
+report can be read as current without re-baselining. **Re-anchor before quoting it:** the tree has moved six
 times since this audit started. `2ee26c03` → `ebaff931` (v0.3.0 + two hook/CI fixes) took the total from
 488,761 to 489,028; `3c2c7e8f`, `d94ba61d`, `27535f72` and `8ede5716` took it to **489,066**; the Q6 change
-here brings it back down to **488,995** (`tools` 15,618 → 15,547, and `loc_baseline.json` re-ratcheted in the
+(`03bb67c3`) brings it back down to **488,995** (`tools` 15,618 → 15,547, and `loc_baseline.json` re-ratcheted in the
 same commit). A doc that cites an absolute LOC total without naming the commit is citing a number that has
 already expired. (The 2026-09-18 column is the closed programme's own starting table,
 `codebase-simplification-plan.md` lines 20-25.)
@@ -290,7 +290,9 @@ banner, and `__all__`. Do not plan against the nominal column.
 | Q4 | Delete the **18** CSS selectors with no reachable producer (2 literal-dead + 16 proven unreachable by the per-selector read) | 236 rule lines | −120…−236 | medium (visual) | `loc_budget.py --update` |
 | Q5 | Remove the 2 unreferenced CSS custom properties (`--bg-overlay`, `--surface-17`) | ~10 | −10…−40 | low | `loc_budget.py --update` |
 | Q6 | ✅ **Landed 2026-09-29** — deleted the **2** un-wireable never-run policy copies (68 ln) and **registered** the 1 unique one (25 ln); see *Correction 5* | 93 lines | **−71 realised** (−72 deleted, +1 line listing the new check; the registered check costs one line and buys a live gate) | low | `loc_baseline.json` re-ratcheted (`tools` 15,618 → 15,547); `duplication` group unaffected |
-| | **Total still open (Q2–Q5)** | | **−600…−1,036** | | |
+| Q7 | **Completeness check for policy wiring** — nothing asserts that every `test_*` in `tools/repo_health/*_policy.py` is wired into a group, so three functions went unexecuted until an audit found them by hand, and that fix has now been done by hand twice (`3c2c7e8f` for `release_docs_policy.py`, then `03bb67c3` for `workflow_policy.py`, whose own message asks for this check). It should also assert the reverse (no listed name without a definition) and, for the two explicit-list modules, that every `test_*` is callable with `repo_root` alone — the signature rule that made the two dead copies un-wireable rather than merely unlisted | 0 LOC (+~25 new) | ~0 (closes the class) | low | *Verify:* passes at HEAD; deleting any name from `run_workflow_group`'s list fails it **by name**; adding a `tmp_path`-taking `test_*` to `workflow_policy.py` fails it |
+
+| | **Total still open (Q2–Q5)** | | **−600…−1,036** | | *Q7 is additive: ~25 guardrail lines, no reduction, and it closes the class Q6 found.* |
 | | *Optional upside:* table-drive the five analyzer test files | 1,100 test lines | *further −250…−300* | low-med | same `compat` wiring |
 
 Re-measured upward from the first draft of this doc, and downward in one place: Q2 originally covered only
@@ -679,12 +681,22 @@ fail automatically if a property is removed while still in use — the visual ch
 - **Do not wire an orphan policy function into a group list without reading its signature and its twin.**
   Q6 landed this correctly and the rule is the residue: `_run_python_check` calls `check(repo_root=ROOT)`
   only, so a `tmp_path`-taking policy function **cannot** be wired at all — it is dead by signature, and the
-  two that were (`workflow_policy.py:934`, `:966`) got deleted. Of the ones that *can* be wired, decide by
+  two that were (the `workflow_policy.py` copies once at `:934` and `:966`, now deleted — those line numbers
+  no longer exist in the file). Of the ones that *can* be wired, decide by
   reading the running pytest twin: duplicate → delete the policy copy; unique → register it. Blindly listing
   a drifted copy turns a hidden hole into a red run and hides the real question, *which assertion is right*.
   The one that used to be listed here as "failing, so do not wire it"
   (`release_docs_policy.py:407`, the `release:preflight` pin) was re-pinned and registered upstream in
   `3c2c7e8f`. See *Correction 5*.
+- **Do not assume a `test_*` in a policy module is either wired or dead — the two registration styles differ,
+  and nothing checks completeness until Q7 lands.** `run_workflow_group` and `run_release_group` name their
+  checks explicitly (an unlisted function never runs), while `run_compat_group` enumerates
+  `suite_contract_policy.py` by introspection and auto-joins everything except two named exclusions (so a
+  function added there runs immediately, and a script that greps only for explicit lists reports all 21 of its
+  functions as never-run — this audit's first pass did exactly that). Three unexecuted functions reached an
+  audit to be found instead of being caught at commit time, and the wiring has since been done by hand twice:
+  `3c2c7e8f`, then `03bb67c3`. **Q7** is the check that ends that.
+
 - **Do not re-open the closed Wave 1–4 program.** Nothing here contradicts its outcome; it is a smaller,
   separate hygiene queue.
 
@@ -840,7 +852,7 @@ line-budget, loc, release, registry, bundle, duplication, dead-code`.
 ## Resume Protocol
 
 1. Read this doc, then [`test-reduction-triage.md`](test-reduction-triage.md) if the item touches tests.
-2. Pick **one** queue item (Q1 is free; Q2 is the best value-to-risk ratio; **Q4/Q5 need both a browser check
+2. Pick **one** queue item (Q1 and **Q7** are free — Q7 is the check that stops this audit's dead-code finding recurring; Q2 is the best value-to-risk ratio; **Q4/Q5 need both a browser check
    and a release window** — nothing gates `styles/` automatically, so the visual check is the test, and
    `styles/**` is shipped code, so the container version gate is the calendar — see
    *Why Q4 Cannot Land Alone*).
