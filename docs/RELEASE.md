@@ -45,18 +45,22 @@ Every release must track these versions explicitly:
 - The public release history should follow the same `app_version` line; updater/schema versions are documented separately and should not introduce a second public version family.
 - GitHub release notes must be generated from the matching versioned section of `docs/CHANGELOG.md`; `Unreleased` may sit above tagged releases, but the versioned section remains the single release-note source of truth.
 
-Baluffo `0.1.x` release ordering:
+Baluffo release ordering (train-agnostic, implemented in `src/baluffo_version.py`):
 
-- The first two segments still compare numerically.
+- The first two segments compare numerically, so a higher minor is newer regardless of the last segment.
 - The final dotted segment is Baluffo-specific:
-  - first digit = release-major within the `0.1` train
+  - first digit = release-major within that train
   - remaining digits = sub-increment within that release-major
-- Examples:
-  - `0.1.3` => patch rank `(3, 0)`
-  - `0.1.23` => patch rank `(2, 3)`
-  - `0.1.29` => patch rank `(2, 9)`
-- Under this rule, `0.1.3` is newer than `0.1.24` through `0.1.29`, and `0.1.31` is newer than `0.1.23`, `0.1.3`, and `0.1.29`.
-- `v0.1.31` is the compatibility bridge release that both the older semver clients and the newer Baluffo-order clients must accept; the desktop updater, downgrade checks, recovery selection, and release tooling must all use the same ordering.
+- Examples (patch rank shown alongside the full comparison key):
+  - `0.2.3` => patch rank `(3, 0)`, key `(0, 2, 3, 0, 1)`
+  - `0.2.25` => patch rank `(2, 5)`, key `(0, 2, 2, 5, 2)`
+  - `0.2.83` => patch rank `(8, 3)`, key `(0, 2, 8, 3, 2)`
+  - `0.2.152` => patch rank `(1, 52)`, key `(0, 2, 1, 52, 3)`
+  - `0.3.0` => patch rank `(0, 0)`, key `(0, 3, 0, 0, 1)`
+- Two consequences worth internalising before picking a version:
+  - `0.2.3` is newer than `0.2.25` through `0.2.29`, because a single-digit release-major outranks a two-digit one.
+  - `0.3.0` is newer than **every** `0.2.x`, because the minor segment decides first. A version is not "bigger" because its last segment has more digits: `0.2.200` parses to key `(0, 2, 2, 0, 3)` and is *older* than the already-published `0.2.25`.
+- `v0.1.31` is the historical compatibility bridge release that both the older semver clients and the newer Baluffo-order clients must accept; the desktop updater, downgrade checks, recovery selection, and release tooling must all use the same ordering.
 
 Compatibility rules:
 
@@ -402,6 +406,8 @@ Before any release:
    - `npm run test:frontend:unit`
    - `npm run security:js`
    - `npm run test:frontend:packaged`
+   - `npm run test:frontend:packaged:admin-startup`
+   - `npm run test:frontend:packaged:fetch-evidence`
    - `npm run test:frontend:packaged:sync-rehearsal`
    - `npm run test:frontend:packaged:update-rehearsal`
    - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
@@ -432,7 +438,7 @@ When one version is intended to be both the public desktop release and the Umbre
 1. Confirm `main`, `origin/main`, `src/app_version.py`, `docs/CHANGELOG.md`, and release metadata all name the same version, and confirm the target tag/release does not already exist.
 2. Run `npm run release:preflight` on the exact commit to tag, then confirm the repo is still clean.
 3. Build local desktop artifacts for the same version: `npm run build:portable-exe -- --bundle-version <version>` and `npm run build:ship-bundle -- --bundle-version <version>`, then verify the portable ZIP and ship ZIP embed `app/current.txt == <version>` and `APP_VERSION = "<version>"`.
-4. Create an annotated `v<version>` tag only after local gates and artifact checks pass, push only that tag, and watch every tag-triggered workflow that can publish artifacts: `build-portable-exe`, `Build Container`, and `build-linux`.
+4. Create an annotated `v<version>` tag only after local gates and artifact checks pass, push only that tag, and watch every tag-triggered workflow that can publish artifacts: `build-portable-exe`, `Build Container`, and `build-linux`. Pushing the tag now runs the same pre-push gate as `main` (`lint:precommit:ci` plus `lint:deadcode:js`), so a green local run is still the only thing standing between you and a published release — the tag push is not a bypass.
 5. Verify the GitHub release is published, not draft, not prerelease, and that release notes came from the matching `docs/CHANGELOG.md` version section.
 6. Verify release assets: portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when the Linux workflow publishes it.
 7. Download `baluffo-desktop-update-manifest.json` and confirm its version, channel, schema, key id, signature, minimum updater version, rollback flag, portable artifact URL, checksum, and size match the release asset.
@@ -442,22 +448,16 @@ When one version is intended to be both the public desktop release and the Umbre
 
 ### Protecting Repo-Local Runtime Data During Release Prep
 
-Tracked `data/` files are canonical (see [`testing.md`](testing.md), "Tracked `data/` files"), and the app rewrites several of them during normal local use. They are **not** release content: never stage them in a release commit.
+Runtime-owned `data/` files are rewritten by the app during normal local use, so they are **not** release content: never stage them in a release commit.
 
-`scripts/precommit_gate.py` excludes the runtime-churn set from its changed-mode collection, so an ordinary commit is no longer blocked by their working-tree churn. The tracked set is:
+`scripts/precommit_gate.py` excludes this set from its changed-mode collection, so an ordinary commit is no longer blocked by their working-tree churn. Seven of the eight are **untracked** — they were deliberately untracked so a stale multi-megabyte ledger can never be committed or shipped — and only the tombstones file is still tracked, because it is canonical registry state that must survive:
 
-- `data/desktop-startup-metrics.jsonl`
-- `data/jobs-fetch-tasks.json`
-- `data/jobs-lifecycle-state.json`
-- `data/jobs-source-state.json`
-- `data/jobs-success-cache.json`
-- `data/source-discovery-candidates.json`
-- `data/source-discovery-report.json`
-- `data/source-registry-tombstones.json.gz`
+- untracked: `data/desktop-startup-metrics.jsonl`, `data/jobs-fetch-tasks.json`, `data/jobs-lifecycle-state.json`, `data/jobs-source-state.json`, `data/jobs-success-cache.json`, `data/source-discovery-candidates.json`, `data/source-discovery-report.json`
+- tracked: `data/source-registry-tombstones.json.gz`
 
-`data/jobs-fetch-report.json` is also excluded when present, but it is untracked in this repo.
+`data/jobs-fetch-report.json` is also excluded when present, and is untracked in this repo.
 
-CI scopes the same gate with `--exclude-root data`, so both paths agree. `tools/repo_health/workflow_policy.py` holds the declared set and fails if a tracked runtime artifact is dropped from `EXCLUDED_FILES`.
+CI scopes the same gate with `--exclude-root data`, so both paths agree. `tools/repo_health/workflow_policy.py` holds both declared sets and fails if a runtime artifact is re-tracked (`test_runtime_owned_untracked_data_files_stay_untracked`) or if a genuinely tracked one is dropped from `EXCLUDED_FILES` (`test_runtime_owned_data_files_are_tracked`).
 
 When a release commit must be built from a clean tree, preserve local runtime state rather than discarding it:
 
@@ -554,11 +554,11 @@ For the canonical startup measurement architecture and the preferred `perf:start
 
 ### Local Preflight vs CI Gate Coverage
 
-`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, the published-version check, the portable EXE build, the packaged smoke and rehearsal lanes above, and the cold Jobs startup probe. It intentionally does not run every release gate:
+`npm run release:preflight` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, the published-version check, the portable EXE build, the 17 packaged smoke and rehearsal lanes above (including `admin-startup`, `admin-active-run` and `fetch-evidence`), and the cold Jobs startup probe. It intentionally does not run every release gate:
 
-- `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) run on every push and pull request in `.github/workflows/lint.yml`; mypy runs again at tag time in `build-linux.yml` together with the Linux AppImage build and AppImage smoke, which have no local preflight lane. Neither is part of `release:preflight`, but they are not both equally unowned locally: mypy is a `stages: [pre-push]` hook selected by `PRE_PUSH_HOOK_IDS`, and since `2b2148c8` knip runs in the tracked `.githooks/pre-push` gate too, so both fail a push before it reaches the remote. Before that commit knip was CI-only and could turn `main` red without any local signal.
+- `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) are not part of `release:preflight`, but neither is unowned locally. Both are `stages: [pre-push]` hooks selected by `PRE_PUSH_HOOK_IDS` in `scripts/precommit_gate.py`, and `run_changed` (the commit path) runs them too, so a type or lint error fails the **commit** rather than surfacing seconds later at push. knip is additionally called directly by `.githooks/pre-push`, because it is not a `.pre-commit-config.yaml` hook at all. Both therefore stop a push to `main` or to a `v*` release tag before it reaches the remote; feature branches and `rollback-*` tags are deliberately ungated.
 - The container Jobs boot performance gate (`jobs-boot-perf.yml`) builds and runs the real container; it is deliberately not part of local preflight because preflight has no live container.
-- `eslint` runs inside the pre-commit gate: `.pre-commit-config.yaml` declares it `stages: [pre-push]` and `scripts/precommit_gate.py` selects that stage explicitly, so it is enforced by `lint:precommit:ci` in CI, by the `.githooks/pre-push` hook, and here. The only bypass is `--no-verify`, which is forbidden.
+- `eslint` has one definition: `.pre-commit-config.yaml` declares it `stages: [pre-push]` with `entry: npm run lint:js`, and `scripts/precommit_gate.py` selects that stage explicitly. The hook used to carry its own `npx eslint . --ignore-pattern ...` line whose patterns were already a strict subset of `eslint.config.js`, so it could drift away from the config it shadowed; it now calls the same npm script everything else uses. It is enforced by the commit hook (`lint:precommit:changed`), by `lint:precommit:ci` in CI, on `main` and `v*` tag pushes, and by preflight. The only bypass is `--no-verify`, which is forbidden.
 
 `npm run check:published-version` (lane 4 of preflight) queries GHCR for the current `APP_VERSION` and warns when that version is already published. It exists because the container version gate validates release *intent* but is deliberately offline — it cannot see whether the version it is asking you to publish has already shipped, which is the 0.2.140 reuse trap in another disguise. It is warn-only by default (republishing inside an open release window is sometimes intentional); `--strict` turns an already-published version into a failure. A network failure degrades to a "verify manually" notice rather than breaking preflight, and it is intentionally **not** part of the always-on `repo_guardrails` set so that gate stays fast and offline.
 
@@ -568,18 +568,27 @@ Do not read "preflight passed" as "all gates passed"; the tag-push workflows run
 
 `release:preflight` and the tag workflow's `Run release gates` step are **not** the same command set, and a green preflight does not predict a green tag run. The concrete differences:
 
-| Lane | `release:preflight` | `build-portable-exe.yml` release gates |
-| --- | --- | --- |
-| `npm run security:js` | yes | no (owned by `lint.yml`) |
-| `npm run check:published-version` | yes | no |
-| Portable prepare (`--skip-zip`) | yes | yes |
-| Packaged smoke + rehearsal lanes | yes | yes |
-| `npm run probe:desktop:startup:jobs:cold` | yes | yes |
-| `npm run typecheck:py`, `lint:deadcode:js` | no | no (owned by `lint.yml`) |
+| Lane | `release:preflight` | `build-portable-exe.yml` release gates | Enforced elsewhere |
+| --- | --- | --- | --- |
+| `npm run lint:precommit` (all-files gate) | yes | no | `lint.yml` runs `lint:precommit:ci`; the pre-push hook runs it on `main` and `v*` tags |
+| `npm run security:js` | yes | no | `lint.yml` |
+| `npm run check:published-version` | yes | no | **nowhere — manual lanes only** |
+| Portable prepare (`--skip-zip`) | yes | yes | — |
+| `test:frontend:unit`, `test:py:extended` | yes | yes | `test.yml` also runs both |
+| Packaged smoke + rehearsal lanes (17 commands) | yes | yes | **nowhere else — tag-time only, by decision** |
+| `npm run probe:desktop:startup:jobs:cold` | yes | yes | — |
+| `npm run typecheck:py`, `lint:deadcode:js` | no | no | `lint.yml`, plus the commit hook and the pre-push hook on `main` and `v*` tags |
+
+Two rows deserve to be read as decisions, not gaps:
+
+- **`check:published-version` has no automated home.** It is the one lane that exists only in the manual preflight. It is warn-only by design and cannot meaningfully gate an automated run, so this is intentional — but it means the "is this version already published?" question is asked by a human, before tagging, and nowhere else.
+- **The 17 packaged desktop lanes run only at tag time.** This is a deliberate trade-off, not an oversight: they are the slowest and most environment-sensitive lanes (measured `Run release gates` at 17m26s in CI), and the cost of running them on every push was judged higher than the benefit. The accepted consequence is that a regression in packaged desktop behaviour can reach `main` and is only caught by the next tag's release gate. If a packaged regression ever ships, that is where to look first.
 
 The Windows release runner needs **both** Playwright runtimes installed, because the frontend unit lane imports `@playwright/test` while the portable builder imports Python Playwright, and each resolves a different browser revision. `build-portable-exe.yml` installs both and fails fast naming a missing cache entry; a workflow that installs only one will hang the unit lane rather than fail it.
 
-Before running `python scripts/bump_version.py <version>`, author the release compatibility sentence (same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, desktop localhost bridge compatibility) into the `[Unreleased]` changelog section: `repo_guardrails` requires it in the new top release section, and bumping prose-free `[Unreleased]` content fails `release:preflight` on the docs guardrail.
+Before running `python scripts/bump_version.py <version>`, author the release compatibility phrases into the `[Unreleased]` changelog section. `repo_guardrails` does not require a "compatibility sentence": `test_release_docs_cover_the_current_public_release_line` asserts six literal substrings — `same-origin Linux container`, `Umbrel raw-LAN installs`, `GHCR multi-arch image publishing`, `private community app-store metadata`, `wildcard browser CORS allow headers`, `desktop localhost bridge compatibility` — inside the new `## [<app_version>] - <date>` section, which must also carry a Keep-a-Changelog `###` subsection and at least one `- ` bullet. Bumping prose-free `[Unreleased]` content therefore fails `release:preflight` on the docs guardrail.
+
+`test_top_release_notes_stay_user_readable` additionally bounds the shape of that top section — at most 2,000 words and no bullet over 1,200 characters — and prints a non-blocking advisory when implementation detail leaks in. It never scans historical sections.
 
 ### Container / Umbrel Verification
 

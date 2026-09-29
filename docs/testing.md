@@ -192,7 +192,7 @@ The repo-specific tuning lives in `.gitleaks.toml`, with filename-aware hook rou
 
 The tracked Git pre-push hook keeps the default local push path narrow and makes the full local CI-equivalent gate explicit.
 
-- Normal push to `main`: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`.
+- Normal push to `main` **or a `v*` release tag**: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`. Tag gating matters because a tag publishes the GitHub release, the signed desktop update manifest, and the GHCR image. Feature branches and `refs/tags/rollback-*` are deliberately not gated; `test_pre_push_hook_gates_release_tags` pins that distinction by running the hook's real ref-detection block.
 - Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`.
 - Optional hook warmup: set `PRE_PUSH_WARM_HOOKS=1` or run `npm run prepush:warm`.
 - Optional timing CSV log: set `PRE_PUSH_TIMING_LOG=1`.
@@ -204,9 +204,10 @@ The hook emits lightweight console timing lines in this format:
 [timing] phase=<name> status=<code> elapsed_ms=<n>
 ```
 
-Measured baseline on the primary Windows development machine:
+Measured baseline on the primary Windows development machine, re-measured 2026-09-29 after mypy/eslint/vulture moved to the commit path and `v*` tags became gated:
 
-- Default `main` lint gate: about `33s` (`lint:precommit:ci` plus about `2s` for `lint:deadcode:js`)
+- Commit gate (`lint:precommit:changed`): about `35s` (was about `24s` before the pre-push hooks joined it; ~+10.5s)
+- Default `main` **or `v*` tag** push gate: about `80s` (`lint:precommit:ci` plus about `2s` for `lint:deadcode:js`)
 - Full local CI mode: about `109s`
 - Warmup path after environments exist: under `1s`
 
@@ -321,7 +322,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 **`data/` directory hygiene (runtime state vs regenerable artifacts):**
 
-- Tracked `data/` files (`git ls-files data/`) are canonical — never delete them in cleanup: `.gitkeep`, `contracts/`, `defaults/`, `adapter-audit-report.md`, `pipeline-audit-report.md`, `release-repeatability-report.md`, `desktop-startup-metrics.jsonl`, `jobs-fetch-tasks.json`, `jobs-lifecycle-state.json`, `jobs-source-state.json`, `jobs-success-cache.json`, `social-sources-config.json`, `source-discovery-candidates.json`, `source-discovery-config.json`, `source-discovery-report.json`.
+- Tracked `data/` files (`git ls-files data/`) are canonical - never delete them in cleanup: `.gitkeep`, `contracts/`, `defaults/`, `adapter-audit-report.md`, `pipeline-audit-report.md`, `release-repeatability-report.md`, `social-sources-config.json`, `source-discovery-config.json`, `source-registry-tombstones.json.gz`. The runtime-owned set below is **untracked** even though it is listed in the next bullet, so it never appears here and must never be re-committed.
 - Everything else under `data/` is gitignored (`data/*.json`, `*.csv`, `*.log`, `*.md`, `*.jsonl`, `*.jsonl.gz`, `*.json.gz`, `*.lock`, `*.db`, `local-user-data/`). Among ignored files, only these are **regenerable** one-shot artifacts — the safe cleanup candidates: the five discovery audits (`gameprog-`/`gamesmap-`/`web-search-`/`sheet-directory-discovery-audit.json`, `gamedevmap-active-source-dry-run.json`), `m5-strategic-backlog.json`, `packaged-desktop-smoke-report.json`, `source-policy-recommendations.json`. Real discovery runs rewrite the audit files into `data/` by design (the ops UI reads them there), so their presence alone is not a pollution signal.
 - The root pytest session fixture snapshots those five known audit files and fails if a test creates, deletes, or changes one under the repository `data/` directory. Unchanged pre-existing runtime artifacts are allowed; test callers must pin `activeAuditPath` to a repo-local test root.
 - Everything else ignored is **live runtime state** the app reads/writes every run — keep it: `baluffo-runtime.db`, `source-registry-*`, `jobs-unified*` feeds, `jobs-fetch-report.json` + `-summary.json`, `jobs-lifecycle-state.json.gz` + archive, `jobs-source-state.json.gz`, `jobs-availability-*`, `jobs-parser-regression-queue.json`, `admin-*` journals, `storage-metrics.jsonl`, `sync-live-task.json`, `sync-timing-history.json`, `source-sync-runtime.json`, `url-patch-manifest.json`, `registry-conflicts-summary.json` + `-full.json` (route caches), `source-approval-state.json`, `social-experiment-review.json`, `runtime/`, `local-user-data/`.
@@ -615,7 +616,7 @@ The mypy gate is **cross-platform**: `python -m mypy --config-file mypy.ini` mus
 
 **The local gate runs the `pre-push` hooks too.** `scripts/precommit_gate.py` first invokes the framework with the **default `pre-commit` stage** (`--files …` / `--all-files`, no `--hook-stage`), then runs one `pre_commit run <hook-id> --all-files --hook-stage pre-push` command per entry in its `PRE_PUSH_HOOK_IDS` (`vulture`, `mypy`, `eslint`). Until that second pass existed, the three `pre-push`-only hooks were dead configuration locally, so a green `npm run lint:precommit` said nothing about types — `e696be64` landed two mypy errors on `main` that CI's `Lint` lane caught. `tests/test_precommit_gate.py` pins both the command shape and the hook list against `.pre-commit-config.yaml`, so adding a `stages: [pre-push]` hook without selecting it fails the suite.
 
-Two details worth keeping in mind. `pre-commit run` accepts only a **single** hook id, hence one command per hook. And each of those commands uses `--all-files` rather than the gate's chunked file list because `mypy` and `eslint` both set `pass_filenames: false` and scan the whole repo regardless; passing chunks would multiply the cost by the chunk count. `run_changed` (the commit-time path) deliberately stays on the default stage so commits stay fast — the type and lint sweeps happen at `--mode all`, matching the `pre-push` declaration.
+Two details worth keeping in mind. `pre-commit run` accepts only a **single** hook id, hence one command per hook. And each of those commands uses `--all-files` rather than the gate's chunked file list because `mypy` and `eslint` both set `pass_filenames: false` and scan the whole repo regardless; passing chunks would multiply the cost by the chunk count. `run_changed` (the commit-time path) runs the file-scoped hooks on the default stage **and then** one `--hook-stage pre-push` command per `PRE_PUSH_HOOK_IDS` entry, so a type or lint error fails the commit instead of surfacing at push time. That is a deliberate change: measured on this tree the three hooks cost 2.5s / 1.0s / 3.1s in isolation but moved the whole commit gate from 24.4s to ~34.9s, so ~+10.5s end to end, because each is a separate `pre-commit` process. Against a ~108s push gate that already ran them, that is cheap enough to close the hole at its source.
 
 Still run `npm run typecheck:py` yourself before pushing Python changes, especially new test files, where `getattr(module, "x", None)` infers as `None` and reads as `"None" not callable`; the gate now catches that class locally, but CI remains the backstop.
 
