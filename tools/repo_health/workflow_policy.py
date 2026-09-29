@@ -7,8 +7,6 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -257,9 +255,6 @@ def test_release_workflow_playwright_cache_guard_selects_both_consumers(repo_roo
     )
 
 
-@pytest.mark.skipif(
-    sys.platform != "win32", reason="PowerShell selection semantics are Windows-specific."
-)
 def test_release_workflow_playwright_cache_guard_passes_and_fails_correctly(
     repo_root: Path,
 ) -> None:
@@ -267,9 +262,19 @@ def test_release_workflow_playwright_cache_guard_passes_and_fails_correctly(
 
     A gate that has only ever been observed passing proves nothing, so this drives
     the real expression from the workflow against synthetic cache layouts.
+
+    Windows-only: the defect is PowerShell's ``-Exclude`` handling, which is
+    evaluated by a real PowerShell. Returns early elsewhere rather than importing
+    pytest, because the CI Lint lane runs the guardrail group without pytest
+    installed and a module-level import would break the whole group there.
     """
+    if sys.platform != "win32":
+        return
+
     script = _playwright_cache_selection_script()
     pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    if not pwsh:
+        return
 
     def _select(cache_root: Path) -> tuple[int, int]:
         completed = subprocess.run(
