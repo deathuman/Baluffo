@@ -230,8 +230,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Full suite / release lane | `npm run test:py:extended` |
 | Release preflight | `npm run release:preflight` |
 | Local pre-commit gate | `npm run lint:precommit:changed` |
-| Full pre-commit sweep | `npm run lint:precommit:all` |
-| CI pre-commit sweep | `npm run lint:precommit:ci` |
+| Full pre-commit sweep (local and CI; identical command) | `npm run lint:precommit:ci` |
 | Repository policy guardrails | `npm run lint:repo-guardrails` |
 | Frontend unit tests | `npm run test:frontend:unit` |
 | Python dependency security audit | `npm run security:python` |

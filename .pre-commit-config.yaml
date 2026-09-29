@@ -54,7 +54,12 @@ repos:
 
       - id: eslint
         name: eslint
-        entry: npx eslint . --ignore-pattern "_out/**" --ignore-pattern "dist/**" --ignore-pattern "node_modules/**" --ignore-pattern ".codex/**" --ignore-pattern ".serena/**"
+        # Single definition of the eslint command. The ignore list lives in
+        # eslint.config.js, which is a superset of the patterns this hook used to
+        # pass inline (it also covers .venv/ and .container-frontend/), so the
+        # duplicated --ignore-pattern args were redundant and could drift away
+        # from the config they shadowed.
+        entry: npm run lint:js
         language: system
         pass_filenames: false
         stages: [pre-push]

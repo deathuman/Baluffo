@@ -21,6 +21,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:packaged",
         "npm run test:frontend:packaged:admin-startup",
         "npm run test:frontend:packaged:admin-active-run",
+        "npm run test:frontend:packaged:fetch-evidence",
         "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:update-rehearsal",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
