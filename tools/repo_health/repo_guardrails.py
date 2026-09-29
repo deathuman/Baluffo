@@ -680,6 +680,7 @@ def run_docs_group() -> list[GuardFailure]:
             "test_ai_docs_classify_compatibility_surfaces",
             "test_ai_docs_use_exact_frontend_syntax_example",
             "test_readme_is_product_overview_not_ai_entrypoint",
+            "test_package_json_build_aliases_use_leaf_builders",
             "test_release_and_setup_docs_use_canonical_packaged_smoke_commands",
             "test_testing_doc_owns_verification_matrix",
             "test_release_guide_uses_canonical_release_preflight",

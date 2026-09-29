@@ -236,8 +236,12 @@ def run_changed() -> int:
     # commit could be green with a mypy error, an eslint finding, or a dead-code
     # finding and the operator hit it seconds later at push time. They are
     # whole-repo scans, so the cost is the same whether one file or the tree
-    # changed; measured at ~6.6s total, against a ~24s commit and a ~108s push
-    # gate, which is cheap enough to close the hole at its source.
+    # changed. Measured on this tree: the hooks cost 2.5s (vulture) / 1.0s (mypy)
+    # / 3.1s (eslint) in isolation, but the commit gate as a whole moved from
+    # 24.4s to 34.1/33.5/37.0s across three runs, so ~+10.5s end to end. That is
+    # higher than the 6.6s sum of the parts because each hook is a separate
+    # `pre-commit` process. Against a ~108s push gate that already runs them,
+    # this is cheap enough to close the hole at its source.
     for hook_command in _pre_push_hook_commands():
         return_code = _run_precommit_command(hook_command)
         if return_code != 0:
