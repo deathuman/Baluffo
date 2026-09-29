@@ -1,8 +1,8 @@
 # Codebase Simplification Program
 
-Active plan. Tracks the LOC-reduction, de-duplication, and legibility program for
-Baluffo, with the measured baseline, the guardrail constraints that bound it, and
-the per-workstream evidence.
+Closed program — see *Program Outcome* below for the measured result. The
+follow-up verification queue that superseded its remaining candidates lives in
+[`repo-structure-audit-handoff-plan.md`](repo-structure-audit-handoff-plan.md).
 
 ## Goal
 
@@ -541,6 +541,14 @@ The 30% goal is **closed as unreachable**, for the reason recorded in *The 30%
 Arithmetic Problem*: it requires ~142,000 lines, and canonical `data/` alone is
 1,000,391 tracked lines (65.5% of the repo) and cannot be deleted. No
 combination of real levers reaches it.
+
+On 2026-09-28 an external report claimed a further **−15,000 lines** from this
+program's unfinished business. Every claim in it was measured against the tree and
+most were refuted (cited files that do not exist, 3–4× line-count errors, a
+similarity metric that flags unrelated files). The verified residue is a −600…−1,036
+hygiene queue (one item — −71 lines of never-run guardrail checks — has since landed),
+recorded in
+[`repo-structure-audit-handoff-plan.md`](repo-structure-audit-handoff-plan.md).
 
 What the program did deliver, measured:
 

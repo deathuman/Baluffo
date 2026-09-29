@@ -1,6 +1,6 @@
 # Test Reduction Triage
 
-> - **Status:** Active — standing rules for reducing the test corpus, plus the 2026-09-27 coverage-verified baseline
+> - **Status:** Active — standing rules for reducing the test corpus, plus the 2026-09-27 coverage-verified baseline. The 2026-09-28 clone re-sweep found **no further safe test reductions** beyond local-fixture extraction (see [`repo-structure-audit-handoff-plan.md`](repo-structure-audit-handoff-plan.md) Q3); the rules below remain the gate for any future sweep
 > - **Use this when:** deciding whether a test can be deleted or merged, or starting a new coverage-backed reduction sweep
 > - **Canonical for:** the delete/merge safety rules and the retained-test boundaries
 > - **Not canonical for:** verification command ownership (see [`../testing.md`](../testing.md)), product/runtime contracts, or the history of past campaigns (git history, `docs/archive/`)
