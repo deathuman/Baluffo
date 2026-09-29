@@ -64,6 +64,9 @@ export function createAdminRuntimeState() {
     discoveryLogUserToggled: false,
     discoveryLogPreferredOpen: true,
     adminInteractiveMetricSent: false,
+    // Owns the reconnecting badge, banner, and bounded boot gate. Set by
+    // bootAdminPage once the DOM is cached.
+    bridgeReconnectBanner: null,
     adminBusyState: createAdminBusyState()
   };
 }

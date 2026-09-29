@@ -28,6 +28,7 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
+  onBridgeStatusSettled,
   attachToActiveFetchRun,
   loadLatestFetcherSummary,
   _loadLatestFetcherReport,
@@ -46,7 +47,12 @@ export function createAdminOpsController({
     state,
     refs,
     getBridge,
-    onBridgeStatusChange,
+    // The status watch is the authority on reachability, so it is also what
+    // dismisses the reconnect banner once a poll succeeds.
+    onBridgeStatusChange: status => {
+      onBridgeStatusChange?.(status);
+      onBridgeStatusSettled?.();
+    },
     bridgeStatusPollIntervalMs
   });
 

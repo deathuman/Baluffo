@@ -69,6 +69,7 @@ export function composeAdminControllers({
   jobsFetcherTaskLabel,
   requestConfirmationDialog,
   awaitBridgeReady = async () => true,
+  onBridgeStatusSettled = null,
   activeHydrationPolicy = "protected"
 }) {
   const adminDispatch = createAdminDispatcher();
@@ -116,6 +117,7 @@ export function composeAdminControllers({
     adminActions: ADMIN_ACTIONS,
     escapeHtml,
     onBridgeStatusChange: () => {},
+    onBridgeStatusSettled: (...args) => onBridgeStatusSettled?.(...args),
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     onActivePipelineIdle: (...args) => runActivePipelineIdleRecovery(...args),
     attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
@@ -478,6 +480,7 @@ export function composeAdminControllers({
 
   async function loadAdminBootstrap() {
     let payload;
+    let bootstrapReachable = true;
     try {
       payload = await getBridge("/admin/bootstrap", { timeoutMs: 10000 });
     } catch (err) {
@@ -486,6 +489,11 @@ export function composeAdminControllers({
       const appReady = await getBridge("/app/ready", { timeoutMs: 3500 }).catch(() => ({}));
       const pipeline = await getBridge("/tasks/run-jobs-pipeline-status", { timeoutMs: 3500 })
         .catch(() => ({ active: false, stage: "idle" }));
+      // A successful /admin/bootstrap always carries a summary flag; the
+      // fallback below never sets one. This is what lets the caller report an
+      // honest bridge state instead of claiming "Bridge Online" for a
+      // bootstrap that failed outright.
+      bootstrapReachable = payload?.summaryView === true;
       payload = {
         ok: true,
         degraded: true,
@@ -545,7 +553,12 @@ export function composeAdminControllers({
     scheduleBootstrapSourceTablesLoad();
     scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh });
     markAdminStartupBootstrapSettled();
-    return payload || null;
+    return {
+      ...(payload || {}),
+      // Consumed by the auth controller to decide the badge, and by the
+      // reconnect banner. Stays out of the rendered payload shape.
+      bridgeReachable: bootstrapReachable
+    };
   }
 
   authController = createAdminAuthController({

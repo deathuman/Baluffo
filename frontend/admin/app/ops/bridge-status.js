@@ -21,7 +21,13 @@ export function createOpsBridgeStatusController({
   function setBridgeStatusBadge(stateValue, label) {
     if (!refs.adminBridgeStatusBadgeEl) return;
     const normalized = String(stateValue || "checking").toLowerCase();
-    refs.adminBridgeStatusBadgeEl.classList.remove("online", "offline", "checking", "degraded");
+    refs.adminBridgeStatusBadgeEl.classList.remove(
+      "online",
+      "offline",
+      "checking",
+      "degraded",
+      "reconnecting"
+    );
     refs.adminBridgeStatusBadgeEl.classList.add(
       normalized === "online"
         ? "online"
@@ -87,6 +93,8 @@ export function createOpsBridgeStatusController({
       if (serviceName && !["baluffo-bridge", "baluffo-container-gateway"].includes(serviceName)) {
         throw new Error("Bridge health response mismatch");
       }
+      // Reaching here proves the bridge is reachable again, which is what
+      // dismisses the reconnect banner.
       bridgeStatusFailureCount = 0;
       const readyStatus = String(healthPayload?.status || "").trim().toLowerCase();
       const nextStatus = readyStatus === "degraded" ? "degraded" : "online";
@@ -111,7 +119,15 @@ export function createOpsBridgeStatusController({
         // Fall through to normal offline handling.
       }
       bridgeStatusFailureCount += 1;
-      if (lastBridgeStatus === "online" && bridgeStatusFailureCount < 2) {
+      // One failed poll is not a dead bridge. This watch runs on its own
+      // interval, and `createBridgeCaller` already flips the badge on the
+      // first failed call, so without hysteresis a single bad tick was
+      // immediately overwritten to Offline by the next healthy one.
+      if (bridgeStatusFailureCount < 2) {
+        if (lastBridgeStatus !== "online") {
+          lastBridgeStatus = "checking";
+          onBridgeStatusChange?.("checking");
+        }
         setBridgeStatusBadge("checking", "Bridge Checking");
         return;
       }

@@ -142,7 +142,15 @@ export function createAdminAuthController({
         }
         try {
           const payload = await loadAdminBootstrap();
-          setBridgeStatusBadge("online", "Bridge Online");
+          // loadAdminBootstrap resolves with a synthetic degraded payload when
+          // the bridge is unreachable, so resolving is not evidence the bridge
+          // answered. Claiming "Bridge Online" here is what made a fully
+          // broken page report itself as healthy.
+          if (payload?.bridgeReachable === false) {
+            setBridgeStatusBadge("degraded", "Bridge Degraded");
+          } else {
+            setBridgeStatusBadge("online", "Bridge Online");
+          }
           return payload;
         } catch (err) {
           setBridgeStatusBadge("degraded", "Bridge Degraded");

@@ -3163,8 +3163,75 @@ body::-webkit-scrollbar-thumb:hover,
   background-color: var(--contract-temporary-text);
 }
 
+.admin-bridge-badge.reconnecting {
+  border-color: var(--contract-temporary-border);
+  background-color: var(--contract-temporary-bg);
+  color: var(--contract-temporary-text);
+}
+
+.admin-bridge-badge.reconnecting::before {
+  background-color: var(--contract-temporary-text);
+  animation: adminBridgePulseOpacity 1.1s ease-in-out infinite;
+}
+
 .admin-bridge-badge.refresh-pulse {
   animation: adminBridgePulseOpacity 0.45s ease-out;
+}
+
+.admin-bridge-reconnect-banner {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1991;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(38rem, calc(100vw - 2rem));
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--contract-temporary-border);
+  border-radius: 0.5rem;
+  background-color: var(--contract-temporary-bg);
+  color: var(--contract-temporary-text);
+  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.18);
+}
+
+.admin-bridge-reconnect-banner.hidden {
+  display: none;
+}
+
+.admin-bridge-reconnect-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.admin-bridge-reconnect-elapsed {
+  opacity: 0.75;
+  font-size: 0.78rem;
+}
+
+.admin-bridge-reconnect-spinner {
+  flex: 0 0 auto;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: adminBridgeReconnectSpin 0.8s linear infinite;
+}
+
+@keyframes adminBridgeReconnectSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-bridge-reconnect-spinner,
+  .admin-bridge-badge.reconnecting::before {
+    animation: none;
+  }
 }
 
 .admin-bridge-floating {

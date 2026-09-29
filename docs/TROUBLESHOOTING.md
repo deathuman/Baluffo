@@ -39,6 +39,34 @@
 | Wrong port | Check `baluffo.config.json` for bridge port (default 8877) |
 | Port in use | Kill existing process or change port in config |
 
+### Admin page stalls, then appears to recover on its own
+
+Symptom on packaged Windows: opening Admin leaves every bridge request failing
+as `net::ERR_CONNECTION_REFUSED` for a while, the page looks broken, and it
+fills in later without user action.
+
+The Admin page now shows this state honestly rather than as an empty shell: a
+`Bridge Starting` or `Bridge Reconnecting` badge, a banner naming the wait with
+an elapsed timer and a **Retry now** button, and a bounded boot gate that shows
+the page anyway once the wait expires. If you see the banner, the bridge was
+not answering at that moment.
+
+This is a connection-acceptance failure, not a crash. Confirm before
+investigating further:
+
+| Check | How to read it |
+|-------|----------------|
+| Bridge still alive | Bridge PID in `%LOCALAPPDATA%\Baluffo\desktop-session.json` matches the running `Baluffo.exe`; a restart is logged as a new `desktop_bridge_spawned` startup-trace event |
+| Not a cold-start race | The launcher already waits for bridge startup readiness before opening the window, so a fresh launch cannot produce this |
+| Not a site failure | `:8080` staying healthy while only `:8877` fails isolates it to the bridge listener |
+| Accept stalls | `GET /ops/performance-profile` returns `acceptMetrics`; a non-zero `stallCount` or a raised `maxAcceptWaitMs` confirms the acceptor was descheduled under load |
+| Connection churn | `Get-NetTCPConnection -LocalPort 8877 \| Group-Object State`; a large `TimeWait` count means requests were not reusing sockets |
+
+Local listeners now use a 128-deep listen backlog and HTTP/1.1 keep-alive (see
+`src/shared/http_server_capacity.py`), so a page-load burst should not overflow
+the backlog. If the banner still appears, capture `acceptMetrics` before
+changing anything else.
+
 ### Saved jobs not persisting
 
 | Possible Cause | Solution |

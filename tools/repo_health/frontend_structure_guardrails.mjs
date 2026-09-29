@@ -158,6 +158,11 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
   const allowedImportPattern = /^(\.\.\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js)$/;
   const allowedSharedRuntimeImportPattern = /^\.\.\/\.\.\/\.\.\/shared\/[A-Za-z0-9_/-]+\.js$/;
   const allowedCompositionSliceImportPattern = /^\.\.\/\.\.\/(actions|domain|render|services)\.js$/;
+  // A runtime helper may reach one level into its own slice's subdirectory when
+  // it wires a controller that slice/app/runtime.js must not inline (it has a
+  // 320-line budget). Slice-internal only: jobs/, saved/, and admin/ stay
+  // blocked, as does anything reaching a sibling slice.
+  const allowedSliceSubdirPattern = /^\.\.\/(ops|render|domain|state-sync|app)\/[A-Za-z0-9-]+\.js$/;
   const blockedCrossSlicePattern = /^(\.\.\/)+(jobs|saved|admin)\//;
 
   for (const slice of slices) {
@@ -176,6 +181,7 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
         assert.equal(
           allowedImportPattern.test(specifier) ||
             allowedSharedRuntimeImportPattern.test(specifier) ||
+            allowedSliceSubdirPattern.test(specifier) ||
             (isCompositionHelper && allowedCompositionSliceImportPattern.test(specifier)) ||
             specifier.startsWith("/"),
           true,

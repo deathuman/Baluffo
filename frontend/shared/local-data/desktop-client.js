@@ -2,14 +2,14 @@ import { createDesktopLocalDataApi, commitAuthState, refreshCurrentUser, toError
 import {
   bootstrapDesktopApi,
   getDesktopBootstrapStats,
+  getDesktopBootstrapStatus,
   stopDesktopLifecycle,
   waitForDesktopBootstrap
 } from "./desktop/lifecycle.js";
 import { clearDesktopNavigationBypass, navigateDesktopPage } from "./desktop/navigation.js";
 import { desktopState } from "./desktop/state.js";
 const desktopApi = createDesktopLocalDataApi();
-export { navigateDesktopPage };
-export { getDesktopBootstrapStats };
+export { navigateDesktopPage, getDesktopBootstrapStats, getDesktopBootstrapStatus };
 export async function awaitDesktopBootstrap({ enableLifecycle = true } = {}) {
   if (!desktopState.desktopApiInitialized || desktopState.desktopBoundWindow !== window) {
     initDesktopLocalDataClient({ enableLifecycle });

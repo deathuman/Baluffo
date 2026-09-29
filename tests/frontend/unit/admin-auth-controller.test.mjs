@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminAuthController } from "../../../frontend/admin/app/auth.js";
 import {
+  bridgeBadgeAfterBootstrap,
   createClassList,
   createElement
-} from "./helpers/admin-controller-test-helpers.mjs";
+} from "./helpers/admin-auth-controller-test-helpers.mjs";
 
 test("admin auth controller initializes the composed admin view immediately", async () => {
   const dispatched = [];
@@ -252,6 +253,27 @@ test("admin bootstrap does not wait on the old local data readiness path", async
   await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.equal(calls.includes("refreshOverview"), false);
+});
+
+test("admin auth reports a degraded bridge when bootstrap fell back", async () => {
+  const calls = await bridgeBadgeAfterBootstrap({
+    ok: true,
+    degraded: true,
+    summaryView: true,
+    source: "frontend-bootstrap-fallback",
+    bridgeReachable: false
+  });
+
+  // loadAdminBootstrap resolves with a synthetic payload when the bridge is
+  // unreachable, so resolving is not evidence the bridge answered. Claiming
+  // "Bridge Online" here is what made a broken page report itself healthy.
+  assert.equal(calls.includes("bridge:online:Bridge Online"), false);
+  assert.ok(calls.includes("bridge:degraded:Bridge Degraded"));
+});
+
+test("admin auth reports an online bridge when bootstrap answered", async () => {
+  const calls = await bridgeBadgeAfterBootstrap({ ok: true, summaryView: true, bridgeReachable: true });
+  assert.ok(calls.includes("bridge:online:Bridge Online"));
 });
 
 test("admin auth does not schedule deferred diagnostics during startup", async () => {

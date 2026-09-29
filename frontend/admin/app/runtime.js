@@ -53,6 +53,7 @@ import { createAdminRuntimeState } from "./runtime/state.js";
 import { composeAdminControllers } from "./runtime/composition.js";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
+import { wireAdminBoot } from "./runtime/boot-wiring.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindAdminRuntimeEvents } from "./runtime/events.js";
@@ -74,17 +75,23 @@ const UNKNOWN_ERROR_TEXT = "unknown error";
 const state = createAdminRuntimeState();
 
 let refs = {};
-let authController, syncController, opsController, fetcherController, discoveryController;
-let registryController, overviewController, actionCenterController, inspectorController;
-let restoreActiveRunWatches;
+// Only opsController escapes composition: the reconnect banner needs it to
+// read bridge status and trigger a retry before composition has finished.
+let opsController;
 const startupMetrics = createAdminStartupMetrics({
   emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload),
   emitStartupMetricsBatch: metrics => emitAdminStartupMetricsBatchFromData(ADMIN_BRIDGE_BASE, metrics)
 });
 const adminPerfMarks = createPerfMarks(startupMetrics);
+// Reaching the bridge sets the badge and re-syncs the reconnect banner, so the
+// first successful call after a refusal is what dismisses the wait.
+const setBridgeBadge = (s, l) => {
+  opsController?.setBridgeStatusBadge(s, l);
+  state.bridgeReconnectBanner?.sync();
+};
 const callBridge = createBridgeCaller({
-  setBridgeOnline: () => opsController?.setBridgeStatusBadge("online", "Bridge Online"),
-  setBridgeOffline: () => opsController?.setBridgeStatusBadge("offline", "Bridge Offline")
+  setBridgeOnline: () => setBridgeBadge("online", "Bridge Online"),
+  setBridgeOffline: () => setBridgeBadge("offline", "Bridge Offline")
 });
 
 function emitAdminStartupMetric(event, payload = {}) {
@@ -244,19 +251,7 @@ function cacheDom() {
 function bootAdminPage() {
   state.activeSourceFilter = normalizeSourceFilterFromModule(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
   cacheDom();
-  void waitForAdminBridgeReady().catch(err => logAdminError("Admin desktop bootstrap failed", err));
-  ({
-    authController,
-    syncController,
-    opsController,
-    fetcherController,
-    discoveryController,
-    registryController,
-    overviewController,
-    actionCenterController,
-    inspectorController,
-    restoreActiveRunWatches
-  } = composeAdminControllers({
+  const controllers = composeAdminControllers({
     state,
     refs,
     getBridge,
@@ -291,28 +286,26 @@ function bootAdminPage() {
     jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
     requestConfirmationDialog,
     awaitBridgeReady: waitForAdminBridgeReady,
+    onBridgeStatusSettled: () => state.bridgeReconnectBanner?.sync(),
     activeHydrationPolicy: resolveDesktopRuntimeMode() ? "desktop" : "protected"
-  }));
-  fetcherController.applyFetcherPresetMetadata();
-  bindAdminRuntimeEvents({
+  });
+  opsController = wireAdminBoot({
     state,
     refs,
-    onRestoreActiveRunWatches: restoreActiveRunWatches,
-    getLastJobsUrl,
-    onRefreshOverview: overviewController.refreshOverview,
-    fetcherController,
-    discoveryController,
-    registryController,
-    opsController,
-    syncController,
-    readShowZeroJobs,
-    writeShowZeroJobs,
-    showZeroJobsKey: ADMIN_SHOW_ZERO_JOBS_KEY,
-    onSyncDiscoveryLogDisclosure: syncDiscoveryLogDisclosure,
-    onSetSourceFilter: setSourceFilter
+    controllers,
+    bindAdminRuntimeEvents,
+    getOpsController: () => opsController,
+    awaitBridgeReady: waitForAdminBridgeReady,
+    logAdminError,
+    helpers: {
+      getLastJobsUrl,
+      readShowZeroJobs,
+      writeShowZeroJobs,
+      showZeroJobsKey: ADMIN_SHOW_ZERO_JOBS_KEY,
+      onSyncDiscoveryLogDisclosure: syncDiscoveryLogDisclosure,
+      onSetSourceFilter: setSourceFilter
+    }
   });
-  authController.initAdminPage();
-  actionCenterController.startPolling(); inspectorController.init();
 }
 
 export { bootAdminPage as boot };

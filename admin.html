@@ -12,6 +12,26 @@
 <body>
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" data-ui="theme-toggle-btn" type="button" aria-label="Switch theme">Theme</button>
   <span id="admin-bridge-status-badge" data-ui="admin-bridge-status-badge" class="admin-bridge-badge admin-bridge-floating checking hidden" data-tooltip="Local admin bridge status">Bridge Checking</span>
+  <div
+    id="admin-bridge-reconnect-banner"
+    data-ui="admin-bridge-reconnect-banner"
+    class="admin-bridge-reconnect-banner hidden"
+    role="status"
+    aria-live="polite"
+    aria-hidden="true"
+  >
+    <span class="admin-bridge-reconnect-spinner" aria-hidden="true"></span>
+    <span class="admin-bridge-reconnect-text">
+      <span id="admin-bridge-reconnect-label" data-ui="admin-bridge-reconnect-label">Starting the Baluffo bridge...</span>
+      <span id="admin-bridge-reconnect-elapsed" data-ui="admin-bridge-reconnect-elapsed" class="admin-bridge-reconnect-elapsed"></span>
+    </span>
+    <button
+      id="admin-bridge-reconnect-retry-btn"
+      data-ui="admin-bridge-reconnect-retry-btn"
+      class="btn clear-filters-btn"
+      type="button"
+    >Retry now</button>
+  </div>
   <div class="jobs-container">
     <div class="jobs-header">
       <h1>Administration</h1>

@@ -84,6 +84,13 @@ export function getDesktopBootstrapStats() {
   return desktopBootstrapStats ? { ...desktopBootstrapStats } : null;
 }
 
+// "idle" | "pending" | "ready" | "failed". The Admin reconnect banner reads this
+// so it can show a wait for the bridge instead of rendering an empty page while
+// the bootstrap retry window is still open.
+export function getDesktopBootstrapStatus() {
+  return desktopState.desktopBootstrapStatus;
+}
+
 async function refreshDesktopActiveWorkSnapshot() {
   if (!desktopState.desktopLifecycleEnabled) {
     return;

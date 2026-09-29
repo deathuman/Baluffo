@@ -158,7 +158,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/ops/task-state?view=summary` | Compact hot-path task projection preserving active task identity/progress while omitting full work items and bounding recent events |
 | GET | `/ops/fetch-report` | Last fetch summary |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
-| GET | `/ops/performance-profile` | Bounded in-memory bridge route and backend operation timing aggregates; route labels redact query strings and dynamic path segments, and no raw samples or payload bodies are returned |
+| GET | `/ops/performance-profile` | Bounded in-memory bridge route and backend operation timing aggregates, plus `acceptMetrics` (listener backlog in use and accept-stall counters); route labels redact query strings and dynamic path segments, and no raw samples or payload bodies are returned |
 | GET | `/ops/storage-metrics` | Runtime storage write, registry journal, source-sync size, and route timing diagnostics |
 | GET | `/ops/storage-health` | SQLite runtime storage health, migration version, authority modes, WAL mode, busy counters, and quick_check status |
 | GET | `/ops/discovery-audit-artifacts` | Bounded diagnostics for known discovery audit artifacts under the active data dir; returns existence, size, hash, top-level keys, compact summary, and warnings without exposing full JSON bodies |
