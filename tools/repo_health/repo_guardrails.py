@@ -723,6 +723,7 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_lint_workflow_enforces_ruff_import_sorting",
             "test_lint_workflow_enforces_source_complexity_baseline",
             "test_package_json_exposes_repo_guardrails_entrypoint",
+            "test_package_json_uses_direct_frontend_unit_discovery",
             "test_package_json_exposes_python_security_audit_entrypoint",
             "test_package_json_exposes_js_security_audit_entrypoint",
             "test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode",
