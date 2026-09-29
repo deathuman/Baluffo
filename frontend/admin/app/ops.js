@@ -115,6 +115,7 @@ export function createAdminOpsController({
     loadOpsOverviewDetailData: healthController.loadOpsOverviewDetailData,
     loadRegistrySyncDiagnosticsData: healthController.loadRegistrySyncDiagnosticsData,
     setBridgeStatusBadge: bridgeStatusController.setBridgeStatusBadge,
+    getBridgeStatus: bridgeStatusController.getBridgeStatus,
     startBridgeStatusWatch: bridgeStatusController.startBridgeStatusWatch,
     stopBridgeStatusWatch: bridgeStatusController.stopBridgeStatusWatch,
     pollBridgeStatus: bridgeStatusController.pollBridgeStatus

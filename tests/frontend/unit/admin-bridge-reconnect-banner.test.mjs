@@ -11,7 +11,12 @@ import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 
 import { createBridgeReconnectBanner } from "../../../frontend/admin/app/ops/bridge-reconnect-banner.js";
-import { createClassList, createElement } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  createClassList,
+  createElement,
+  createOpsRefs,
+  createOpsState
+} from "./helpers/admin-controller-test-helpers.mjs";
 
 function createFixture({ bootstrapStatus = "ready", bridgeStatus = "online" } = {}) {
   const clicks = [];
@@ -159,6 +164,56 @@ describe("admin bridge reconnect banner", () => {
     settled.sync();
     assert.equal(contentEl.classList.contains("hidden"), false);
     assert.equal(refs.bridgeReconnectBannerEl.classList.contains("hidden"), true);
+  });
+
+  it("reads bridge status from the ops controller the runtime passes", async () => {
+    // Regression: the runtime wires the banner's getBridgeStatus to
+    // opsController.getBridgeStatus. If the ops controller does not expose it,
+    // the banner silently reads "checking" forever and never shows, which is
+    // exactly the failure this feature exists to prevent.
+    const ops = await import("../../../frontend/admin/app/ops.js");
+    const refs = { adminBridgeStatusBadgeEl: createElement({ classList: createClassList([]) }) };
+    const controller = ops.createAdminOpsController({
+      state: createOpsState(),
+      refs: { ...createOpsRefs(), ...refs },
+      getBridge: async () => {
+        throw new TypeError("Failed to fetch");
+      },
+      postBridge: async () => ({}),
+      deriveAdminRunsModel: () => ({}),
+      getOpsPollIntervalMs: () => 1000,
+      renderAdminOpsAlerts() {},
+      renderAdminOpsKpis() {},
+      renderAdminOpsSchedule() {},
+      renderAdminOpsDedupLists() {},
+      renderAdminOpsFetcherMetrics() {},
+      renderAdminSourcePolicyReview() {},
+      renderAdminRegistryConflicts() {},
+      renderAdminOpsTrends() {},
+      renderAdminOpsHistory() {},
+      setBusyFlag() {},
+      showToast() {},
+      getErrorMessage: () => "err",
+      adminDispatch: { dispatch() {} },
+      adminActions: {},
+      escapeHtml: v => String(v),
+      idlePollIntervalMs: 1000,
+      taskStateController: {},
+      loadLatestDiscoveryReport: async () => ({}),
+      onActivePipelineIdle() {},
+      bridgeStatusPollIntervalMs: 1000,
+      markAdminStep() {},
+      measureAdminStep() {}
+    });
+    assert.equal(typeof controller.getBridgeStatus, "function", "ops controller must expose getBridgeStatus");
+    assert.equal(typeof controller.pollBridgeStatus, "function");
+
+    // Two failed polls are required before the status reads offline, so one
+    // bad tick does not make a healthy bridge look dead.
+    await controller.pollBridgeStatus();
+    assert.equal(controller.getBridgeStatus(), "checking");
+    await controller.pollBridgeStatus();
+    assert.equal(controller.getBridgeStatus(), "offline");
   });
 
   it("invokes the retry handler and disables the button while it runs", () => {
