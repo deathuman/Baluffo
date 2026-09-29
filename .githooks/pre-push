@@ -201,6 +201,23 @@ do
       need_gate=1
       branch_ref="${remote_ref}"
       ;;
+    refs/tags/v*)
+      # A release tag is the highest-stakes push in the repo: it publishes the
+      # GitHub release, the signed desktop update manifest, and the GHCR image.
+      # It used to match no case here, so pushing a vX.Y.Z tag ran no gate at
+      # all. Gate tags exactly like main, but never let a branch push piggyback
+      # on a tag push in the same invocation (a multi-ref push would otherwise be
+      # reported against the wrong ref).
+      #
+      # NOTE: do not use backticks in a comment inside a case branch. bash
+      # evaluates them as command substitution, so a comment quoting a git
+      # command actually runs it. Verified on bash 5.3: it attempted a real push
+      # and left need_gate empty. See test_shell_hooks_have_no_backticks_in_comments.
+      if [ "$need_gate" -eq 0 ]; then
+        need_gate=1
+        branch_ref="${remote_ref}"
+      fi
+      ;;
   esac
 done
 
@@ -210,7 +227,7 @@ echo "[timing] pre-push-context remote=${remote_name} refs=${refs_context:-<none
 
 if [ "$need_gate" -eq 1 ]; then
   gate_start_ms="$(ms_now)"
-  echo "[timing] pre-push-gate: main branch push detected"
+  echo "[timing] pre-push-gate: gated ref push detected (${branch_ref})"
   log_timing "pre-push-gate-start" 0 0
   log_timing_csv "pre-push-gate-start" 0 0 "$branch_ref"
 

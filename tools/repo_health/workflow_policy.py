@@ -745,6 +745,116 @@ def test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode() -> No
     assert package["scripts"]["prepush:full"] == ("python scripts/run_pre_push_hook.py --full-ci")
 
 
+def _bash_executable() -> str | None:
+    """Return a bash that honours argv/stdin, or None.
+
+    On Windows, ``shutil.which("bash")`` can resolve to the WSL launcher
+    (``C:\\Windows\\System32\\bash.exe``), which accepts ``-c`` but silently drops
+    positional arguments and stdin -- so a behavioural check written against it
+    passes vacuously or fails for the wrong reason. Prefer Git Bash.
+    """
+    for candidate in (
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    found = shutil.which("bash")
+    if not found:
+        return None
+    normalized = Path(found).as_posix().lower()
+    if "system32/bash" in normalized or "system32\\bash" in normalized:
+        # The WSL launcher drops argv/stdin; fall back to no behavioural check.
+        return None
+    return found
+
+
+def test_pre_push_hook_gates_release_tags(repo_root: Path) -> None:
+    """A release-tag push must run the same gate as a push to main.
+
+    The hook's ref-detection loop only matched ``refs/heads/main``, so
+    ``git push origin vX.Y.Z`` matched no case and ran no gate at all -- measured
+    at 104 ms on the real v0.3.0 tag push. A tag publishes the GitHub release,
+    the signed desktop update manifest, and the GHCR image, so it is the
+    highest-stakes push in the repo.
+
+    This executes the shipped ``case`` block with synthetic ref lines rather than
+    asserting on its text, so a refactor that keeps the strings but drops the
+    behaviour still fails.
+    """
+    hook_path = repo_root / ".githooks" / "pre-push"
+    hook_text = hook_path.read_text(encoding="utf-8")
+    case_block = re.search(r"case \"\$remote_ref\" in.*?esac\n", hook_text, re.DOTALL)
+    assert case_block, f"{hook_path.name} should still classify pushed refs in a case block."
+    assert "refs/tags/v*" in case_block.group(0), (
+        f"{hook_path.name} must gate release tags (`refs/tags/v*`), not only `refs/heads/main`; "
+        "an ungated tag push publishes the release, the signed manifest, and the image."
+    )
+
+    shell = _bash_executable()
+    if not shell:
+        return
+
+    script = (
+        "need_gate=0\nbranch_ref=''\n"
+        'for remote_ref in "$@"; do\n'
+        + case_block.group(0)
+        + "done\n"
+        + 'echo "$need_gate|$branch_ref"\n'
+    )
+
+    def _detect(refs: list[str]) -> str:
+        # Refs are passed as positional arguments rather than stdin: the WSL
+        # launcher accepts `-c` but drops stdin, which would make every
+        # assertion below pass for the wrong reason.
+        completed = subprocess.run(
+            [shell, "-c", script, "--", *refs],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        return completed.stdout.strip()
+
+    assert _detect(["refs/tags/v0.3.0"]) == "1|refs/tags/v0.3.0", "a release tag must be gated"
+    assert _detect(["refs/heads/main"]) == "1|refs/heads/main", "main must stay gated"
+    assert _detect(["refs/heads/feature/x"]) == "0|", "a feature branch must not be gated"
+    assert _detect(["refs/tags/rollback-2026-09-25"]) == "0|", (
+        "a rollback tag is not a release and must not be gated"
+    )
+    assert _detect(["refs/tags/v1.2.3", "refs/heads/main"]).startswith("1|"), (
+        "a multi-ref push containing a release must be gated"
+    )
+
+
+def test_shell_hooks_have_no_backticks_in_case_branch_comments(repo_root: Path) -> None:
+    """Reject backticks in comments inside a shell ``case`` branch.
+
+    bash performs command substitution inside a ``case`` branch's comments, so a
+    comment that quotes a command runs it. Verified on Git Bash 5.3: a comment
+    reading ``git push origin vX.Y.Z`` inside a case branch issued a real push
+    attempt against the live remote and left ``need_gate`` empty, silently
+    disabling the gate it was documenting. The same backticks outside a case
+    branch are inert (verified), so this only scans case blocks.
+    """
+    offenders: list[str] = []
+    for hook_path in sorted((repo_root / ".githooks").glob("*")):
+        if not hook_path.is_file():
+            continue
+        text = hook_path.read_text(encoding="utf-8")
+        for block in re.finditer(r"case\s+.*?\n.*?\besac\n", text, re.DOTALL):
+            start_line = text[: block.start()].count("\n") + 1
+            for offset, line in enumerate(block.group(0).splitlines()):
+                stripped = line.lstrip()
+                if stripped.startswith("#") and "`" in stripped:
+                    offenders.append(f"{hook_path.name}:{start_line + offset}")
+    assert not offenders, (
+        "Backticks in a comment inside a shell `case` branch are executed as command "
+        "substitution by bash, which can silently disable a gate or run the quoted "
+        f"command: {offenders}"
+    )
+
+
 def test_pre_commit_hook_runs_lint_gate() -> None:
     root = ROOT
     hook_path = root / ".githooks" / "pre-commit"

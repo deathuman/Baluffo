@@ -338,6 +338,47 @@ def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:
     assert "No changed files found for pre-commit; skipping." in capsys.readouterr().out
 
 
+def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
+    """The commit path must run the pre-push-stage hooks, not just on push.
+
+    ``PRE_PUSH_HOOK_IDS`` used to be consumed only by ``build_all_commands``, so a
+    commit could be green with a mypy error, an eslint finding, or a dead-code
+    finding and the operator hit it seconds later at push time.
+    """
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> int:
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
+    assert precommit_gate.run_changed() == 0
+
+    staged = [c for c in seen if "--hook-stage" in c]
+    # Hook id is the token before --all-files, independent of base-arg positions.
+    selected = {c[c.index("--all-files") - 1] for c in staged}
+    assert selected == set(precommit_gate.PRE_PUSH_HOOK_IDS), (
+        f"commit path misses: {sorted(set(precommit_gate.PRE_PUSH_HOOK_IDS) - selected)}"
+    )
+    assert all("--all-files" in c for c in staged), (
+        "these hooks set pass_filenames: false, so a file list would not narrow them"
+    )
+
+
+def test_run_changed_fails_when_a_pre_push_hook_fails(monkeypatch, capsys) -> None:
+    """A pre-push hook failure must block the commit, and name the stage."""
+    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda c: 1 if "mypy" in c else 0)
+    monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
+
+    assert precommit_gate.run_changed() == 1
+    err = capsys.readouterr().err
+    assert "stage=pre-commit --hook-stage pre-push" in err
+    assert "mypy" in err
+
+
 def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch) -> None:
     guardrails_called = False
 

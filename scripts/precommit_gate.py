@@ -156,6 +156,21 @@ def build_changed_command(files: list[str]) -> list[str]:
 PRE_PUSH_HOOK_IDS = ("vulture", "mypy", "eslint")
 
 
+def _pre_push_hook_commands() -> list[list[str]]:
+    """One command per pre-push-stage hook, scanned repo-wide.
+
+    ``pre-commit run`` takes exactly one hook id, so each hook gets its own
+    command. ``--all-files`` is required rather than a chunked file list: mypy and
+    eslint both set ``pass_filenames: false`` and scan the whole repo regardless,
+    so running them once per 200-file chunk would multiply that cost by the chunk
+    count.
+    """
+    return [
+        [*_precommit_base_command(), hook_id, "--all-files", "--hook-stage", "pre-push"]
+        for hook_id in PRE_PUSH_HOOK_IDS
+    ]
+
+
 def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     commands: list[list[str]] = []
     if files:
@@ -169,21 +184,7 @@ def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
             )
     else:
         commands.append([*_precommit_base_command(), "--all-files"])
-    # `pre-commit run` takes exactly one hook id, so each pre-push hook gets its
-    # own command. `--all-files` is required rather than the chunked file list:
-    # mypy and eslint both set pass_filenames: false and scan the whole repo
-    # regardless, and running them once per 200-file chunk would multiply that
-    # cost by the chunk count.
-    for hook_id in PRE_PUSH_HOOK_IDS:
-        commands.append(
-            [
-                *_precommit_base_command(),
-                hook_id,
-                "--all-files",
-                "--hook-stage",
-                "pre-push",
-            ]
-        )
+    commands.extend(_pre_push_hook_commands())
     return commands
 
 
@@ -231,6 +232,17 @@ def run_changed() -> int:
     if return_code != 0:
         _report_failing_stage("pre-commit", command, return_code)
         return return_code
+    # The pre-push-stage hooks used to run only in the all-files path, so a
+    # commit could be green with a mypy error, an eslint finding, or a dead-code
+    # finding and the operator hit it seconds later at push time. They are
+    # whole-repo scans, so the cost is the same whether one file or the tree
+    # changed; measured at ~6.6s total, against a ~24s commit and a ~108s push
+    # gate, which is cheap enough to close the hole at its source.
+    for hook_command in _pre_push_hook_commands():
+        return_code = _run_precommit_command(hook_command)
+        if return_code != 0:
+            _report_failing_stage("pre-commit --hook-stage pre-push", hook_command, return_code)
+            return return_code
     if should_run_repo_guardrails(files):
         return_code = run_repo_guardrails()
         if return_code != 0:
