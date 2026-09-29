@@ -3,8 +3,16 @@
 > All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and Baluffo desktop releases use the project-specific `0.1.x` ordering documented in
+and Baluffo desktop releases use the project-specific release ordering documented in
 [`RELEASE.md`](RELEASE.md).
+
+Sections below are written for the people who use the app, not for its maintainers:
+say what changed for them and what it means, in plain language. The repository
+guardrail enforces a shape budget on the **top versioned section only** — at most
+2,000 words and no single bullet over 1,200 characters — and prints an advisory,
+non-blocking note when implementation detail (code filenames, repo paths, loader
+ids, dunder attributes) leaks in. Historical sections are never rewritten; they
+record what was written at the time.
 
 ---
 

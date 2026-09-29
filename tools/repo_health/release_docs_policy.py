@@ -1,7 +1,27 @@
 import json
+import re
 from pathlib import Path
 
 from src.app_version import get_app_version
+
+# Release notes are the only changelog surface a user is expected to read. These
+# budgets stop a release section drifting back into a work log. Calibrated from
+# the two real sections: 0.2.152 measured 4,131 words with a 7,054-character
+# bullet, and 0.3.0 measured 1,143 words with a 773-character maximum, so the
+# thresholds clear the good one with real headroom and reject the bad one.
+RELEASE_NOTE_WORD_BUDGET = 2000
+RELEASE_NOTE_BULLET_CHAR_BUDGET = 1200
+
+# Advisory only. A jargon blocklist cannot be made false-positive-free, and a
+# gate that is always red gets ignored -- the same failure mode that let the
+# broken Playwright cache check look healthy. These patterns are the concrete
+# "implementation detail leaked into release notes" smell; a human decides.
+_ADVISORY_INTERNAL_LEAK_PATTERNS = (
+    (r"`[^`]*\.(?:py|mjs|cjs|js|ts|css|yml|yaml|json|gz)`", "code filename"),
+    (r"`(?:src|tools|tests|frontend|docs|scripts|deathuman-baluffo)/", "repo path"),
+    (r"static_source::", "loader id"),
+    (r"\b__[a-z]+__\b", "dunder attribute"),
+)
 
 
 def _section(text: str, heading: str) -> str:
@@ -64,6 +84,50 @@ def test_changelog_keeps_unreleased_above_versioned_rollup(repo_root: Path) -> N
         f"`## [{app_version}]` (Keep a Changelog convention). Move the Unreleased heading above "
         "the versioned sections so in-progress changes accumulate at the top of the file."
     )
+
+
+def test_top_release_notes_stay_user_readable(repo_root: Path) -> None:
+    """The shipped release section must read as release notes, not as a work log.
+
+    Scoped to the TOP versioned section only. History is never scanned: older
+    sections record what was actually written at the time, and rewriting them is
+    not this gate's business. The 0.2.152 section is the counterexample this
+    exists for -- 3,032 accumulated words in `[Unreleased]`, then a 4,131-word
+    release section whose bullets ran to 7,054 characters each and read as
+    engineering notes ("registryHygieneAudit", "consecutiveFailures",
+    "observationAgeDays") rather than as what changed for a user.
+
+    Blocking: total word count and longest single bullet.
+    Advisory: an internal-detail leak list, printed but never fatal.
+    """
+    changelog_text = (repo_root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    app_version = get_app_version()
+    top_release = _section(changelog_text, f"## [{app_version}]")
+
+    words = len(top_release.split())
+    assert words <= RELEASE_NOTE_WORD_BUDGET, (
+        f"The `## [{app_version}]` release section is {words} words, over the "
+        f"{RELEASE_NOTE_WORD_BUDGET}-word budget for user-facing release notes. Summarise the "
+        "change for someone who uses the app; the engineering detail belongs in the commit "
+        "message and the linked evidence, not in the shipped notes."
+    )
+
+    bullets = [line for line in top_release.splitlines() if line.startswith("- ")]
+    assert bullets, f"The `## [{app_version}]` section has no `- ` bullets."
+    longest = max(bullets, key=len)
+    assert len(longest) <= RELEASE_NOTE_BULLET_CHAR_BUDGET, (
+        f"A bullet in `## [{app_version}]` is {len(longest)} characters, over the "
+        f"{RELEASE_NOTE_BULLET_CHAR_BUDGET}-character budget. Longest offender: "
+        f"{longest[:90]!r}... Split it into a short statement plus a short consequence."
+    )
+
+    # Advisory: report, never block.
+    for pattern, label in _ADVISORY_INTERNAL_LEAK_PATTERNS:
+        hits = sorted({m.group(0) for m in re.finditer(pattern, top_release)})
+        if hits:
+            print(
+                f"  [advisory] {label} in the {app_version} release notes: " + ", ".join(hits[:5])
+            )
 
 
 def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> None:
