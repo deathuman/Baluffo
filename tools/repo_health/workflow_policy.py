@@ -3,8 +3,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -208,6 +211,98 @@ def test_release_workflow_installs_both_playwright_runtimes(repo_root: Path) -> 
         f"{workflow_path.name} should also install the Node Playwright browser; the frontend unit "
         "lane imports @playwright/test and cannot launch Chromium without it."
     )
+
+
+def _playwright_cache_selection_script() -> str:
+    """Extract the two cache-selection expressions from the release workflow.
+
+    Reading the step out of the workflow keeps the test honest: it executes the
+    shipped expression instead of a copy that can drift away from the YAML.
+    """
+    workflow_path = Path(__file__).resolve().parents[2] / ".github/workflows/build-portable-exe.yml"
+    text = workflow_path.read_text(encoding="utf-8")
+    shell_expr = re.search(r"^\s*\$shellDirs\s*=.*$", text, re.MULTILINE)
+    node_expr = re.search(r"^\s*\$nodeDirs\s*=.*$", text, re.MULTILINE)
+    assert shell_expr and node_expr, (
+        "build-portable-exe.yml should select the Python and Node Playwright caches "
+        "into $shellDirs and $nodeDirs."
+    )
+    return f"{shell_expr.group(0).strip()}\n{node_expr.group(0).strip()}"
+
+
+def test_release_workflow_playwright_cache_guard_selects_both_consumers(repo_root: Path) -> None:
+    """The Playwright cache guard must actually find the Node browser when present.
+
+    The guard shipped as ``Get-ChildItem -Filter "chromium-*" -Exclude
+    "chromium_headless_shell-*"``. On pwsh 7, ``-Exclude`` combined with ``-Filter``
+    and a non-wildcard ``-Path`` silently drops every child, so the expression
+    returned 0 with a real ``chromium-1243`` on disk and the release workflow threw
+    "Node Playwright Chromium cache is missing" on every run. The substring-only
+    assertions next to it could not see that: they check that the install commands
+    are mentioned, never that the verification selects anything.
+
+    This asserts the selection form itself, so the broken combination cannot return.
+    """
+    script = _playwright_cache_selection_script()
+    assert "-Exclude" not in script, (
+        "Get-ChildItem -Exclude combined with -Filter and a literal -Path drops every "
+        "child on pwsh 7, which made the Playwright cache guard throw unconditionally. "
+        "Select with Where-Object -like/-notlike instead."
+    )
+    assert "chromium_headless_shell-" in script, (
+        "The cache guard must recognise the Python Playwright headless shell directory."
+    )
+    assert "chromium-" in script, (
+        "The cache guard must recognise the Node Playwright chromium directory."
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="PowerShell selection semantics are Windows-specific."
+)
+def test_release_workflow_playwright_cache_guard_passes_and_fails_correctly(
+    repo_root: Path,
+) -> None:
+    """Exercise the shipped guard both ways: it must pass on a full cache and fail without Node.
+
+    A gate that has only ever been observed passing proves nothing, so this drives
+    the real expression from the workflow against synthetic cache layouts.
+    """
+    script = _playwright_cache_selection_script()
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+
+    def _select(cache_root: Path) -> tuple[int, int]:
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-Command",
+                f"$installed = @(Get-ChildItem -Path '{cache_root}' -Directory "
+                f"-ErrorAction SilentlyContinue)\n{script}\n"
+                'Write-Output "$($shellDirs.Count) $($nodeDirs.Count)"',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        shell_count, node_count = completed.stdout.split()
+        return int(shell_count), int(node_count)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        full = root / "full"
+        (full / "chromium-1243").mkdir(parents=True)
+        (full / "chromium_headless_shell-1243").mkdir()
+        (full / "ffmpeg-1011").mkdir()
+        assert _select(full) == (1, 1), "Guard must find both consumers on a complete cache."
+
+        python_only = root / "python-only"
+        (python_only / "chromium_headless_shell-1243").mkdir(parents=True)
+        assert _select(python_only) == (1, 0), (
+            "Guard must fail when the Node Playwright browser is missing, or the frontend "
+            "unit lane hangs for an hour instead of failing fast."
+        )
 
 
 def test_workflows_running_frontend_unit_install_node_playwright(repo_root: Path) -> None:

@@ -705,6 +705,8 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_lint_workflow_uses_canonical_precommit_entrypoints",
             "test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner",
             "test_release_workflow_installs_both_playwright_runtimes",
+            "test_release_workflow_playwright_cache_guard_selects_both_consumers",
+            "test_release_workflow_playwright_cache_guard_passes_and_fails_correctly",
             "test_workflows_running_frontend_unit_install_node_playwright",
             "test_release_workflow_passes_ship_zip_to_update_manifest",
             "test_release_workflow_bounds_release_gate_runtime",

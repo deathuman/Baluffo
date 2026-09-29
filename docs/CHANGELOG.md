@@ -45,6 +45,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 - A release that fails partway through no longer requires deleting and re-creating its tag. The release workflow can be re-run from the main branch to rebuild the files for an existing release, and the recovery steps are documented in [`RELEASE.md`](RELEASE.md).
 - Release automation no longer stalls on a missing browser or loses its diagnostics: it installs both browser runtimes the release needs, includes the recovery download in the update manifest, and cannot hang indefinitely. If a browser fails to start, the test runner now shuts down cleanly instead of leaving a stuck process.
+- The release workflow's browser-cache check no longer fails every run. It looked for the test-runner browser using a PowerShell filter-and-exclude combination that silently discards every match on a non-wildcard path, so it reported the browser missing even when it was installed correctly. The check now selects the two browser caches properly, and a repository test drives the shipped check both ways — confirming it passes on a complete browser cache and still fails when the test-runner browser is genuinely absent.
 - Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.152] - 2026-09-21

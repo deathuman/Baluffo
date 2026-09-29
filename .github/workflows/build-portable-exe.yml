@@ -61,9 +61,14 @@ jobs:
           python -m playwright install chromium
           npx playwright install chromium
 
+          # Select with Where-Object rather than Get-ChildItem -Exclude: on pwsh 7,
+          # -Exclude combined with -Filter and a non-wildcard -Path silently drops
+          # every child, so `-Filter "chromium-*" -Exclude "chromium_headless_shell-*"`
+          # returned 0 even with chromium-1243 present and this step could never pass.
           $cacheRoot = Join-Path $env:LOCALAPPDATA "ms-playwright"
-          $shellDirs = @(Get-ChildItem -Path $cacheRoot -Directory -Filter "chromium_headless_shell-*" -ErrorAction SilentlyContinue)
-          $nodeDirs = @(Get-ChildItem -Path $cacheRoot -Directory -Filter "chromium-*" -Exclude "chromium_headless_shell-*" -ErrorAction SilentlyContinue)
+          $installed = @(Get-ChildItem -Path $cacheRoot -Directory -ErrorAction SilentlyContinue)
+          $shellDirs = @($installed | Where-Object { $_.Name -like "chromium_headless_shell-*" })
+          $nodeDirs = @($installed | Where-Object { $_.Name -like "chromium-*" -and $_.Name -notlike "chromium_headless_shell-*" })
           if (-not $shellDirs) {
             throw "Python Playwright headless shell cache is missing under $cacheRoot; the portable build will fail."
           }
