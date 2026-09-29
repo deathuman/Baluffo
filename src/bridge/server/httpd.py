@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import Any, Protocol
+
+from src.shared.http_server_capacity import CapacityThreadingHTTPServer
 
 
 class HttpServerApi(Protocol):
@@ -10,6 +12,12 @@ class HttpServerApi(Protocol):
 
 
 _EXPECTED_ON_STARTED_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+
+
+class _BridgeHttpServer(CapacityThreadingHTTPServer):
+    """Bridge listener: default 5-deep backlog could not absorb a page-load burst."""
+
+    accept_metrics_name = "bridge"
 
 
 def run_http_server(
@@ -21,7 +29,7 @@ def run_http_server(
     on_started: Callable[[], Any] | None = None,
 ) -> int:
     try:
-        server = ThreadingHTTPServer((host, port), handler_cls)
+        server = _BridgeHttpServer((host, port), handler_cls)
     except OSError as exc:
         api.bridge_log(
             "error",

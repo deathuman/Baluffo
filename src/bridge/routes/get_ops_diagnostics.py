@@ -72,6 +72,9 @@ def handle_ops_diagnostic_routes(
         return True
 
     if path == "/ops/performance-profile":
+        # snapshot_performance_profile already includes acceptMetrics, so a
+        # listener accept stall is visible next to the route timings that
+        # explain it.
         handler.send_json(snapshot_performance_profile(runtime=_performance_profile_runtime(api)))
         return True
 

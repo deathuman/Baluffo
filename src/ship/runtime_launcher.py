@@ -20,7 +20,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler
 from os import PathLike
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -33,6 +33,7 @@ from typing import Any
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults
+from src.shared.http_server_capacity import CapacityThreadingHTTPServer
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate
 from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
@@ -122,6 +123,12 @@ class RuntimeLayout:
     current_version: str
     active_root: Path
     data_dir: Path
+
+
+class _DesktopSiteServer(CapacityThreadingHTTPServer):
+    """Desktop site listener: default 5-deep backlog could not absorb page asset bursts."""
+
+    accept_metrics_name = "site"
 
 
 class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
@@ -930,7 +937,7 @@ def run_site_server(
         desktop_bridge_port=desktop_bridge_port or os.environ.get(DESKTOP_BRIDGE_PORT_ENV),
         jobs_cold_start=jobs_cold_start,
     )
-    server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
+    server = _DesktopSiteServer(("127.0.0.1", int(port)), handler)
     _append_runtime_startup_trace(
         "desktop_site_server_listening",
         bindHost="127.0.0.1",

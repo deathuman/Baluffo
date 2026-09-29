@@ -674,7 +674,7 @@ def test_run_site_server_reports_app_version() -> None:
             mock.patch("builtins.print") as print_mock,
             mock.patch.object(
                 rl,
-                "ThreadingHTTPServer",
+                "_DesktopSiteServer",
                 side_effect=_StopServer,
             ),
         ):
@@ -702,7 +702,7 @@ def test_run_site_server_marks_jobs_cold_start_before_sync_can_mutate_data() -> 
 
         with (
             mock.patch.object(rl, "build_site_request_handler", side_effect=capture_handler),
-            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+            mock.patch.object(rl, "_DesktopSiteServer", side_effect=_StopServer),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)
@@ -730,7 +730,7 @@ def test_run_site_server_continues_when_jobs_quarantine_raises() -> None:
                 "_append_runtime_startup_trace",
                 side_effect=lambda event, **fields: events.append((event, dict(fields))),
             ),
-            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+            mock.patch.object(rl, "_DesktopSiteServer", side_effect=_StopServer),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)
@@ -751,7 +751,7 @@ def test_run_site_server_skips_heal_when_active_version_is_healthy() -> None:
                 rl.update_manager, "health_check_version", return_value=(True, "")
             ) as health_mock,
             mock.patch.object(rl, "heal_active_ship_version") as heal_mock,
-            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+            mock.patch.object(rl, "_DesktopSiteServer", side_effect=_StopServer),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)
@@ -775,7 +775,7 @@ def test_run_site_server_heals_when_active_version_is_unhealthy() -> None:
                 return_value=(False, "missing_required_file:index.html"),
             ) as health_mock,
             mock.patch.object(rl, "heal_active_ship_version") as heal_mock,
-            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+            mock.patch.object(rl, "_DesktopSiteServer", side_effect=_StopServer),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)
@@ -807,7 +807,7 @@ def test_run_site_server_emits_bootstrap_trace_events_for_startup_probe() -> Non
                 },
                 clear=False,
             ),
-            mock.patch.object(rl, "ThreadingHTTPServer", return_value=server),
+            mock.patch.object(rl, "_DesktopSiteServer", return_value=server),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)

@@ -19,6 +19,7 @@ from threading import Lock
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.http_server_capacity import snapshot_accept_metrics
 from src.shared.utils import coerce_non_negative_int as _safe_status
 
 MAX_SAMPLES_PER_CATEGORY = 500
@@ -197,6 +198,10 @@ def snapshot_performance_profile(
             "windowSize": int(MAX_SAMPLES_PER_CATEGORY),
             "operations": _sorted_summaries(operation_snapshot),
         },
+        # Listener accept stalls are reported here because this is the only
+        # place a slow route becomes a *refused connection*, which no per-route
+        # duration can explain. See src/shared/http_server_capacity.py.
+        "acceptMetrics": snapshot_accept_metrics(),
     }
 
 

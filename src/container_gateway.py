@@ -12,7 +12,7 @@ import threading
 import time
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -35,6 +35,7 @@ from src.bridge.pipeline_control_files import (
 )
 from src.bridge.server.static_files import StaticFileService
 from src.runtime_seed import seed_runtime_data
+from src.shared.http_server_capacity import CapacityThreadingHTTPServer
 
 DEFAULT_INTERNAL_BRIDGE_PORT = 18080
 DEFAULT_PROXY_TIMEOUT_SECONDS = 8.0
@@ -142,6 +143,12 @@ def _forwardable_headers(headers: Any) -> dict[str, str]:
         if value:
             forwarded[name.title()] = str(value)
     return forwarded
+
+
+class _GatewayHttpServer(CapacityThreadingHTTPServer):
+    """Gateway listener: default 5-deep backlog could not absorb asset bursts."""
+
+    accept_metrics_name = "gateway"
 
 
 class _GatewayState:
@@ -1079,7 +1086,7 @@ def main(argv: list[str] | None = None) -> int:
         bridge_process=bridge,
     )
     handler_cls = _make_gateway_handler(state)
-    server = ThreadingHTTPServer((str(config.host), int(config.port)), handler_cls)
+    server = _GatewayHttpServer((str(config.host), int(config.port)), handler_cls)
     server.daemon_threads = True
     try:
         server.serve_forever()

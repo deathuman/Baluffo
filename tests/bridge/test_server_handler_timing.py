@@ -357,7 +357,7 @@ def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) ->
         def should_exit_for_owner_timeout(self) -> bool:
             return True
 
-    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
     assert (
@@ -405,7 +405,7 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
     def fail_on_started() -> None:
         raise OSError("startup maintenance unavailable")
 
-    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
     assert (
@@ -452,7 +452,7 @@ def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -
     def fail_on_started() -> None:
         raise TypeError("unexpected callback bug")
 
-    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
     with pytest.raises(TypeError, match="unexpected callback bug"):
@@ -492,7 +492,7 @@ def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) 
     def interrupt_on_started() -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
     with pytest.raises(KeyboardInterrupt):
