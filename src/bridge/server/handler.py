@@ -407,6 +407,35 @@ def _handle_options_request(handler: Any, api: ServerHandlerApi) -> None:
             )
 
 
+def _serve_one_request(handler: Any) -> None:
+    """Run one request, treating an idle keep-alive socket as a normal close.
+
+    A read timeout between keep-alive requests is an idle pooled connection,
+    not a client error, so it closes quietly rather than escaping as a
+    traceback. An expected client disconnect is handled the same way; anything
+    else still propagates.
+    """
+    try:
+        BaseHTTPRequestHandler.handle_one_request(handler)
+    except TimeoutError:
+        handler.close_connection = True
+    except OSError as exc:
+        if _is_expected_client_disconnect(exc):
+            handler.close_connection = True
+            return
+        raise
+
+
+def _apply_idle_timeout(handler: Any) -> None:
+    """Bound how long a pooled keep-alive connection may sit idle.
+
+    A per-connection read timeout lets a parked pooled socket release its
+    worker thread instead of pinning it forever. It must run after
+    ``setup()``, which is what assigns the connection.
+    """
+    handler.connection.settimeout(HANDLER_IDLE_TIMEOUT_S)
+
+
 def make_handler(
     *,
     api: ServerHandlerApi,
@@ -419,25 +448,12 @@ def make_handler(
         protocol_version = HANDLER_PROTOCOL_VERSION
 
         def setup(self) -> None:
-            # Keep-alive needs a per-connection read timeout so a parked pooled
-            # socket releases its worker thread instead of pinning it forever.
             # super().setup() is what assigns self.connection, so it must run first.
-            super().setup()
-            self.connection.settimeout(HANDLER_IDLE_TIMEOUT_S)
+            BaseHTTPRequestHandler.setup(self)
+            _apply_idle_timeout(self)
 
         def handle_one_request(self) -> None:
-            # A read timeout between keep-alive requests is an idle pooled
-            # connection, not a client error. Close it quietly rather than
-            # letting the timeout escape as a traceback.
-            try:
-                super().handle_one_request()
-            except TimeoutError:
-                self.close_connection = True
-            except OSError as exc:
-                if _is_expected_client_disconnect(exc):
-                    self.close_connection = True
-                    return
-                raise
+            _serve_one_request(self)
 
         def _request_timing_category(self, method: str, path: str = "") -> str:
             return _request_timing_category(self, method, path)

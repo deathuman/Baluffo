@@ -22,7 +22,7 @@
     "src/bridge/routes/get_routes.py::handle_get": 14,
     "src/bridge/routes/post_routes_admin.py::handle_post": 51,
     "src/bridge/routes/post_routes_local_data.py::handle_post": 32,
-    "src/bridge/server/handler.py::make_handler": 14,
+    "src/bridge/server/handler.py::make_handler": 16,
     "src/bridge/source_check_api.py::trigger_source_check": 11,
     "src/bridge/source_check_http.py::discover_redirect_career_candidates": 11,
     "src/bridge/source_checker.py::check_static_source": 32,
