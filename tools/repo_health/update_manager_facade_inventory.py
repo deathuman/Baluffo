@@ -9,8 +9,6 @@ try:
         PathModuleLineCategoriesRow,
         check_import_inventory,
         collect_import_inventory,
-        facade_import_references,
-        iter_python_paths,
         run_inventory_main,
     )
 except ImportError:  # direct script execution puts this directory on sys.path
@@ -19,8 +17,6 @@ except ImportError:  # direct script execution puts this directory on sys.path
         PathModuleLineCategoriesRow,
         check_import_inventory,
         collect_import_inventory,
-        facade_import_references,
-        iter_python_paths,
         run_inventory_main,
     )
 
@@ -69,15 +65,17 @@ def _spec(repo_root: Path) -> ImportInventorySpec:
         row_type=UpdateManagerFacadeImport,
         label=_LABEL,
         entity=_ENTITY,
-        expected_name="EXPECTED_FACADE_IMPORT_COUNT",
+        count_hint=(
+            "Update EXPECTED_FACADE_IMPORT_COUNT and review facade consumer classifications."
+        ),
         expected_count=EXPECTED_FACADE_IMPORT_COUNT,
         classified=CLASSIFIED_IMPORTS,
         known_categories=frozenset(CATEGORIES),
         allowlist=frozenset(RUNTIME_IMPORT_ALLOWLIST),
         allowlist_message=_ALLOWLIST_MESSAGE,
         include_categories=True,
-        detect=lambda path: facade_import_references(path, frozenset({FACADE_MODULE}), "src.ship"),
-        iter_paths=lambda root: iter_python_paths(root),
+        facade_targets=frozenset({FACADE_MODULE}),
+        facade_parent="src.ship",
     )
 
 

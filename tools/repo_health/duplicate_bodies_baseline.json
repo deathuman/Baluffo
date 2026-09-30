@@ -8,6 +8,11 @@
     {
       "digest": "81362ab4777d",
       "max_copies": 3
+    },
+    {
+      "digest": "2b772028e1e9",
+      "max_copies": 3,
+      "reason": "The three public collect_*_inventory wrappers are one-line delegations to the shared core. They cannot be consolidated: the names are imported by repo_guardrails.compat and by each tool's own tests, and the bodies differ only in the row type they return. Baselined at the current count so a fourth copy still fails."
     }
   ]
 }

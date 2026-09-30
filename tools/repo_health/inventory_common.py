@@ -97,20 +97,42 @@ class PathModuleLineCategoriesRow:
 
 @dataclass(frozen=True)
 class ImportInventorySpec:
-    """One ``(path, module, line, categories)`` import inventory."""
+    """One ``(path, module, line, categories)`` import inventory.
+
+    ``count_hint`` is the sentence that follows "expected N." and is per-tool
+    because the tests assert these messages verbatim. ``extra_row_check`` exists
+    for the one tool whose per-row rule is not the shared allowlist: the runtime
+    facade inventory fails on *every* row, because any import of the facade from
+    ``src/ship`` is the defect it exists to catch.
+    """
 
     row_type: type[Any]
     label: str
     entity: str
-    expected_name: str
+    count_hint: str
     expected_count: int
     classified: dict[str, set[str]]
     known_categories: frozenset[str]
     allowlist: frozenset[str]
     allowlist_message: str
     include_categories: bool
-    detect: Callable[[Path], list[tuple[str, int]]]
-    iter_paths: Callable[[Path], list[Path]]
+    iter_paths: Callable[[Path], list[Path]] = iter_python_paths
+    # The common case is "match these modules", which the core can build itself.
+    # A tool whose pattern is genuinely different passes `detect` instead; the
+    # runtime facade inventory does, because it must also catch bare and
+    # relative imports.
+    facade_targets: frozenset[str] = frozenset()
+    facade_parent: str = ""
+    detect: Callable[[Path], list[tuple[str, int]]] | None = None
+    enforce_allowlist: bool = True
+    extra_row_check: Callable[[Any], list[str]] | None = None
+
+    def detector(self) -> Callable[[Path], list[tuple[str, int]]]:
+        if self.detect is not None:
+            return self.detect
+        targets = self.facade_targets
+        parent = self.facade_parent
+        return lambda path: facade_import_references(path, targets, parent)
 
 
 def collect_import_inventory(spec: ImportInventorySpec, repo_root: Path) -> tuple[Any, ...]:
@@ -119,7 +141,7 @@ def collect_import_inventory(spec: ImportInventorySpec, repo_root: Path) -> tupl
     for path in spec.iter_paths(repo_root):
         relative = relative_posix(path, repo_root)
         categories = tuple(sorted(spec.classified.get(relative, set())))
-        for module, line in spec.detect(path):
+        for module, line in spec.detector()(path):
             fields: dict[str, object] = {"path": relative, "module": module, "line": line}
             if spec.include_categories:
                 fields["categories"] = categories
@@ -140,8 +162,7 @@ def check_import_inventory(spec: ImportInventorySpec, repo_root: Path) -> list[s
     if len(inventory) != spec.expected_count:
         failures.append(
             f"{spec.label} has {len(inventory)} import records; "
-            f"expected {spec.expected_count}. Update {spec.expected_name} and review "
-            "facade consumer classifications."
+            f"expected {spec.expected_count}. {spec.count_hint}"
         )
 
     unknown_categories = {
@@ -162,7 +183,10 @@ def check_import_inventory(spec: ImportInventorySpec, repo_root: Path) -> list[s
             failures.append(
                 f"{spec.entity} import is unclassified: {row.path}:{row.line} imports {row.module}."
             )
-        if row.path.startswith("src/") and row.path not in spec.allowlist:
+        if not spec.enforce_allowlist:
+            if spec.extra_row_check is not None:
+                failures.extend(spec.extra_row_check(row))
+        elif row.path.startswith("src/") and row.path not in spec.allowlist:
             failures.append(
                 f"{spec.allowlist_message}: {row.path}:{row.line} imports {row.module}."
             )
