@@ -734,6 +734,17 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_package_json_perf_scripts_reuse_existing_perf_entrypoints",
         )
     ]
+    # Q7: a test_* in a policy module is not a test until a group names it. Three
+    # such functions went unexecuted here before this check existed, and the fix
+    # had to be made by hand twice.
+    checks += [
+        ("policy_wiring_policy", name)
+        for name in (
+            "test_every_policy_check_is_registered_in_a_group",
+            "test_registered_policy_checks_all_exist",
+            "test_registered_policy_checks_are_callable_by_the_runner",
+        )
+    ]
     failures = _run_python_checks("workflow", checks)
     workflow_syntax_failure = _failure_from_messages(
         "workflow", "check_workflow_syntax", check_workflow_syntax()
