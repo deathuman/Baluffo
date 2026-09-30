@@ -1,6 +1,6 @@
 # Repo Structure & Test Audit Handoff
 
-> - **Status:** Active — 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, and **Q6 landed** (guardrail orphan cleanup, this change). Figures re-anchored to the post-Q6 tree (`03bb67c3`). Q2–Q5 remain and **Q7 is queued** (a completeness check so the Q6 class cannot recur); **Q4/Q5 are blocked on a shipped-code release**, not on analysis — see *Why Q4 Cannot Land Alone*.
+> - **Status:** Active — 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, **Q6 landed** 2026-09-29, and **Q2 + Q7 landed 2026-09-30** (`f33d783e`/`7051947e`/`ccaa1603` and `0c3e0372`). **Q3–Q5 remain.** Figures re-anchored to the post-Q7 tree. **Q4/Q5 are blocked on a shipped-code release**, not on analysis — see *Why Q4 Cannot Land Alone*. Q2 and Q7 rows below now carry what actually landed, including two places where this doc's own prediction was wrong.
 > - **Use this when:** a LOC-reduction, dead-code, or "merge these families" report arrives and you need to know whether it is real, or when you want to execute or extend the verified remaining reduction queue without re-measuring the repo from zero
 > - **Canonical for:** the 2026-09-28 corrected structure/test audit as re-measured on 2026-09-29, the refuted-claim list, and the ranked implementation queue derived from it
 > - **Not canonical for:** test delete/merge safety rules and retained-test boundaries (see [`test-reduction-triage.md`](test-reduction-triage.md)), the Wave 1–4 program record and its measured yield rates (see [`codebase-simplification-plan.md`](codebase-simplification-plan.md)), or verification command ownership (see [`../testing.md`](../testing.md))
@@ -106,7 +106,7 @@ re-measure before repeating the 65%.
 | Three named "truly orphan" heavies: `source_policy_soak_report_sections.py` (1,447), `perf_complete_profiles.py` (754), `perf_complete_bench.py` (535) = **2,736 deletable lines** | **All three are imported by live siblings**; deleting them breaks `scripts/` on the next import: `scripts/source_policy_soak_report.py:140`, `scripts/source_policy_soak_report_links.py:28`, `scripts/perf_complete.py:56`, `scripts/perf_complete_summary.py:20`, `scripts/perf_complete.py:26`. They are intra-package modules, not orphans — and the two chains are covered by **14 test files / 4,562 lines** of meta-tests (`test_source_policy_soak_report*.py`: 9 files / 3,453 lines; `test_perf_complete*.py`: 5 files / 1,109 lines), an earlier revision of this row having guessed "~2,778 lines in 5 files" | `git grep -n source_policy_soak_report_sections -- . ":(exclude)scripts/source_policy_soak_report_sections.py"` ; `git ls-files tests \| Select-String "soak_report\|perf_complete"` |
 | `src/frontend/styles.css` is dead | That path does not exist — **`src/frontend/` has no tracked files at all**. The stylesheets are at root **`styles/`: 5 files, 10,182 lines**, and the report's line citations were right: `admin.html:8-10`, `index.html:27-29`, `jobs.html:8-10`, `saved.html:8-10` each carry `<link rel="stylesheet" href="styles/…">`. Reachability is 100%; only the *path* in the claim is wrong | `git ls-files styles` ; `git grep -n "stylesheet" -- "*.html"` |
 | Large near-clone population in the test corpus | Across the **222** files in `tests/frontend/unit` (44,096 lines) exactly **2** pairs exceed 0.60 normalized-sequence similarity, and they share a file: `admin-ops-audit-artifacts-controller.test.mjs` ↔ `admin-ops-dedup-lists-controller.test.mjs` (0.695) and `admin-ops-dedup-lists-controller.test.mjs` ↔ `admin-ops-run-diagnostics-controller.test.mjs` (0.623) — one file sitting between two neighbours, not a clone population. The `tests/test_jobs_fetcher*` cluster (38 files / 9,546 lines) shows **zero** pairs above 0.55. A strict AST clone scan of all Python finds **38 groups / 676 redundant lines**, of which `tests/*.py` is 29 groups / **532 lines**, mostly duplicated local fixtures — not 15k. (An earlier revision of this row attributed the two 0.60 pairs to "198 vs 382 lines" files — those are the Python inventory tools, a different corpus) | `_out/audit_verify/ws4.out.txt`, `_out/audit_verify/ws10.out.txt` |
-| 15,000 LOC removable | The verified queue that is still open sums to **−600…−1,036** realistic (plus an optional −250…−300 from table-driving the analyzer tests) — about **0.12–0.21%** of the 488,995-line tree; Q6 has already landed a further −71. Its largest item was found by *building a prototype*, not by the report's similarity metric. Four- and five-figure targets are unsupported by anything in the tree | *Implementation Queue* |
+| 15,000 LOC removable | The verified queue **still open (Q3–Q5) sums to −220…−416** realistic — about **0.05–0.09%** of the 488,995-line tree. Already landed from this queue: **−71** (Q6), **−677 headroom** (Q1), **−137** (Q2, re-measured), and Q7's additive gate. Its largest item was found by *building a prototype*, not by the report's similarity metric. Four- and five-figure targets are unsupported by anything in the tree | *Implementation Queue* |
 
 ## Corrections To The External Audit (and To This Doc's First Pass)
 
@@ -284,16 +284,16 @@ banner, and `__all__`. Do not plan against the nominal column.
 
 | ID | Item | Identified | Realistic | Risk | Gate edits required |
 |---|---|---:|---:|---|---|
-| Q1 | Retire 24 stale grandfathered test caps | 0 LOC (679 headroom) | hygiene only | none | none (`line-budget` group verifies) |
-| Q2 | Parameterise the **five** inventory analyzers over one SPEC-driven core (prototype built, parity PASS) | 920 tool lines + 1,100 test lines | −380…−620 | low-med | `loc_budget.py --update`, preserve `compat` wiring + 6 `compat_group_runs` tests. **No `duplicate_bodies_baseline.json` edit** — the 2 baselined patterns are `_path_size` (`src/bridge/storage_health.py`, `src/storage/baluffo_store.py`, `src/storage_metrics.py`) and `_require_root` (3 × `src/source_discovery/orchestrator_*.py`), both outside Q2's scope; pruning either one trips the stale-baseline check and fails the run |
+| Q1 | ✅ **Landed 2026-09-29** — retired the stale grandfathered test caps (identified 24 at `2ee26c03`; see *Q1* below for why the landed set differs and how it was verified) | 0 LOC (679 headroom identified) | **−677 headroom realised** across 23 caps | none | none (`line-budget` group verifies). *Landed inside `e7dfe33c`, not its own commit — both sessions write the same baseline file* |
+| Q2 | ✅ **Landed 2026-09-30** across `f33d783e`, `7051947e`, `ccaa1603` — all five analyzers converted; see *Q2* below for why it became **two** cores, not one | 800 tool lines (re-measured, not the 920 first recorded) + 941 test lines (not 1,100) | **−137 realised** (800 → 663) against a projected floor of 20 and ceiling of 362 | low-med | `loc_budget.py --update`; preserve `compat` wiring + 6 `compat_group_runs` tests. **The "no `duplicate_bodies_baseline.json` edit" claim above was wrong** — a third entry was needed, see *Q2* |
 | Q3 | Extract duplicated local test fixtures (`ok_loader`, `check`, `fake_run`) | 282 cross-file + 250 same-file | −90…−140 | medium | none (cap shrink is free) |
 | Q4 | Delete the **18** CSS selectors with no reachable producer (2 literal-dead + 16 proven unreachable by the per-selector read) | 236 rule lines | −120…−236 | medium (visual) | `loc_budget.py --update` |
 | Q5 | Remove the 2 unreferenced CSS custom properties (`--bg-overlay`, `--surface-17`) | ~10 | −10…−40 | low | `loc_budget.py --update` |
 | Q6 | ✅ **Landed 2026-09-29** — deleted the **2** un-wireable never-run policy copies (68 ln) and **registered** the 1 unique one (25 ln); see *Correction 5* | 93 lines | **−71 realised** (−72 deleted, +1 line listing the new check; the registered check costs one line and buys a live gate) | low | `loc_baseline.json` re-ratcheted (`tools` 15,618 → 15,547); `duplication` group unaffected |
-| Q7 | **Completeness check for policy wiring** — nothing asserts that every `test_*` in `tools/repo_health/*_policy.py` is wired into a group, so three functions went unexecuted until an audit found them by hand, and that fix has now been done by hand twice (`3c2c7e8f` for `release_docs_policy.py`, then `03bb67c3` for `workflow_policy.py`, whose own message asks for this check). It should also assert the reverse (no listed name without a definition) and, for the two explicit-list modules, that every `test_*` is callable with `repo_root` alone — the signature rule that made the two dead copies un-wireable rather than merely unlisted | 0 LOC (+~25 new) | ~0 (closes the class) | low | *Verify:* passes at HEAD; deleting any name from `run_workflow_group`'s list fails it **by name**; adding a `tmp_path`-taking `test_*` to `workflow_policy.py` fails it |
+| Q7 | ✅ **Landed 2026-09-30** as `0c3e0372` — `tools/repo_health/policy_wiring_policy.py`, three checks registered in the `workflow` group; mutation-verified, see *Q7* below | 0 LOC (+322 new, 1 pre-existing unused helper deleted) | ~0 (closes the class) | low | *Verify, all three confirmed by mutation:* deleting a name from `run_workflow_group` fails **by name**; registering a name with no definition fails by name; a `tmp_path`-taking `test_*` is rejected as un-callable |
 
-| | **Total still open (Q2–Q5)** | | **−600…−1,036** | | *Q7 is additive: ~25 guardrail lines, no reduction, and it closes the class Q6 found.* |
-| | *Optional upside:* table-drive the five analyzer test files | 1,100 test lines | *further −250…−300* | low-med | same `compat` wiring |
+| | **Total still open (Q3–Q5)** | | **−220…−416** | | *Q2 and Q7 are closed. Q4/Q5 remain blocked on a release window, not on analysis.* |
+| | *Optional upside, not taken:* table-drive the five analyzer test files | 941 test lines (re-measured, not 1,100) | *further −250…−300* | low-med | same `compat` wiring. **Deferred rather than folded into Q2:** the five files carry 37 distinct `test_*` functions whose monkeypatch targets and asserted failure strings differ per tool, so a table would have to encode each variation anyway. Q2 took the orchestration and left the tests alone. |
 
 Re-measured upward from the first draft of this doc, and downward in one place: Q2 originally covered only
 the one clone *pair* (−120…−150), and prototyping the shared core across all five analyzers proved a much
@@ -330,12 +330,14 @@ proven dead, listed in *Q4*, and **blocked on a release, not on evidence**. Whoe
 inside the next `release(vX.Y.Z)` window, run `npm run test:frontend:unit` (969 tests) plus a load of the four
 HTML entrypoints, and ratchet `styles` in the same commit.
 
-### Q1 — Retire 24 stale test-budget caps
+### Q1 — Retire the stale test-budget caps ✅ landed
 
 `tools/repo_health/test_line_budget_baseline.json` maps 55 files to caps and `check_line_budget` is a
-**max-only** ratchet, so 24 entries sit above their file's real length and 679 lines of unearned
-headroom remain. Tightening them is the cheapest item in the repo and makes every future test shrink
-visible instead of silently absorbed.
+**max-only** ratchet, so entries can sit far above their file's real length and absorb shrinkage in
+silence. At audit time 24 entries carried **679** lines of unearned headroom. Tightening them is the
+cheapest item in the repo and makes every future test shrink visible instead of silently absorbed.
+
+The table below is the audit-time view at `2ee26c03`. It is kept as evidence, not as the landed diff:
 
 | File | Cap | Actual | Slack |
 |---|---:|---:|---:|
@@ -351,18 +353,57 @@ visible instead of silently absorbed.
 | `tests/test_pipeline_runtime.py` | 407 | 395 | 12 |
 | `tests/source_discovery/test_web_search_directory_audit.py` | 816 | 805 | 11 |
 
-The other 13 stale entries each carry ≤9 lines of slack (`admin-ops-controller`,
+The remaining stale entries each carry ≤9 lines of slack (`admin-ops-controller`,
 `test_source_registry_seed_runtime`, `test_discovery_service`, `test_ship_update_manager`,
 `test_routes_get`, `test_runtime_launcher`, the three `test_source_policy_soak_report*`,
-`test_browser_session_watch`, `admin-fetcher-controller`, `test_pipeline_stage_source_execution`,
-`admin-ops-history-render`). Total slack across all 24 is **679**; 31 entries are already tight or over.
+`test_browser_session_watch`, `test_pipeline_stage_source_execution`,
+`admin-ops-history-render`).
 
-**Steps:** (1) `suite_contract_policy.py` enforces a second class of line ceilings — diff its view of
-these files before editing so the two owners do not disagree; (2) set each cap to the file's current
-line count; (3) verify with
+**Landed: 23 caps, 677 lines retired, not 24/679.** The set drifts because the baseline tracks *live file
+length*, and between the audit and the landing the tree moved: `tests/frontend/unit/admin-fetcher-controller.test.mjs`
+was raised to exact by concurrent log-tailing work, so it left the stale set. Re-measure rather than
+re-apply a recorded list:
+
+```bash
+python tools/repo_health/repo_guardrails.py --group line-budget      # green baseline
+# then, from a clean tree, set every cap to its file's current length and re-run the group
+```
+
+Four things worth keeping from doing this properly, all measured rather than assumed:
+
+1. **A naive regeneration drops somebody else's raises.** While Q1 was being applied, another session
+   raised two caps to match test files it had grown: `admin-discovery-controller.test.mjs` 1237→1283 and
+   `admin-fetcher-controller.test.mjs` 1317→1343. A tightening tool that rebuilds the file from `HEAD` plus
+   measured lengths silently drops those raises and leaves the *other* session's tree red, because the cap
+   then sits below its file. The safe shape is what the applied edit did: load the **current** file, lower
+   only caps strictly above a live length, never raise a cap you did not measure — then diff the result
+   against `HEAD` and read every changed line before committing. That diff is exactly how the two foreign
+   raises were found here.
+2. **The group is not vacuous** — proved without touching the tree: point the module's baseline path at a
+   copy in `_out/` with one cap set to `actual − 1`; `check_line_budget()` then fails naming that file, and
+   passes again with the real baseline. Lowering a stale cap by one does *not* trip it (it is still above
+   the file), which is the trap that makes a naive "lower by one" probe look like a pass.
+3. **Both baseline JSONs are shared write-targets.** Any session that stages with `git add -A` absorbs
+   another session's caps, so a hygiene-only item can land inside an unrelated commit — which is what
+   happened here: Q1's 23 caps are in `e7dfe33c` (`fix(admin): stop the fetch/discovery log boxes rendering
+   chopped half lines`) rather than in a commit of its own. The ratchet is safe (a cap never becomes
+   silently looser than the tree), but the attribution is not. Land Q1-class items from a clean tree, and
+   expect to co-author when another session is mid-edit on the same files.
+4. **`loc` blocks unrelated commits while a neighbour's refactor is half-finished in the same checkout.**
+   Measured while committing this doc: the pre-commit gate exited 1 with
+   `src is 175549 lines; baseline says 175677` and `tests is 212887 lines; baseline says 213171` — numbers
+   from a concurrent session's in-flight `src`/`tests` edits, none of them by this change, which touches only
+   a markdown file. The telling part: `python tools/repo_health/repo_guardrails.py --group loc` **passes** in
+   the shell at the same moment it **fails** inside the hook of `git commit -- docs/<one file>`. The hook
+   pairs the *committed* `loc_baseline.json` with the *worktree's* file lengths, so it has no notion of "the
+   lines you are committing" — it has a notion of "this checkout is mid-edit". Neither remedy is acceptable:
+   `--no-verify` is barred outright, and `loc_budget.py --update` would write a baseline another session is
+   actively editing *and* ratchet it to a half-finished tree. The correct move is to wait for the other
+   commit to land, or work in a second checkout. Scope the commit itself with `git commit -F msg -- <paths>`
+   so a neighbour's staged files are not swept in while you retry.
+
+Zero LOC change, so no `loc_budget` edit. Verify with
 `python tools/repo_health/repo_guardrails.py --group line-budget`.
-Expected: group passes, and overshooting below any file's real length fails it. Zero LOC change, so no
-`loc_budget` edit.
 
 ### Q2 — Parameterise the five inventory analyzers over one SPEC core
 
@@ -379,6 +420,56 @@ from spec dicts and prints `parity: PASS` — identical row output (2/0/0/1/0 ro
 calls returning `[]`. So 920 → ~362 plus thin per-spec wrappers. Strictly byte-identical removable
 top-level units total only **20 lines**: that is the floor, the prototype is the ceiling, and the truth
 falls between them.
+
+#### What actually landed, and why the prototype's number was a ceiling
+
+Landed in three commits — `f33d783e` (core + one caller, to prove the seam before
+four dependents), `7051947e` (the other two facade tools), `ccaa1603` (both
+root-dependency tools). **Re-measured first, and the sizes above were stale:** the
+five tools are **800** lines, not 920, and their tests **941**, not 1,100.
+
+**It became two cores, not one.** `ImportInventorySpec` and `RootDependencySpec`
+both live in `inventory_common.py`, because the import family and the dependency
+family share no row shape, no detector, and no failure vocabulary. The prototype
+assumed one SPEC-driven core could serve all five; it could not, and forcing it
+would have meant a spec with a flag per axis. Realised: **800 → 663, −137**, against
+a projected floor of 20 and ceiling of 362. The 362 was an upper bound, not an estimate.
+
+**The binding constraint was the monkeypatch surface, not the duplication.** The tests
+patch **seven** module-level names on the wrapper modules (`CLASSIFIED_IMPORTS`,
+`DEPENDENCY_CATEGORIES`, `EXPECTED_DEPENDENCY_COUNT`, `EXPECTED_FACADE_IMPORT_COUNT`,
+`EXPECTED_REFERENCE_COUNT`, `LEAF_FACADE_IMPORT_ALLOWLIST`, `RUNTIME_IMPORT_ALLOWLIST`).
+The prototype bakes `expected_records=2` into a `SPECS` dict **at import**, which
+would have ignored every one of those patches and left the drift tests green while
+testing nothing. So each tool builds its spec **inside the function, from module
+globals, on every call**. Check that before "simplifying" a spec into a module-level
+constant.
+
+**The `duplicate_bodies_baseline.json` claim above was wrong.** It predicted no edit
+was needed. One was: the three public `collect_*_inventory` wrappers — one-line
+delegations, which cannot be consolidated because `repo_guardrails.compat` and each
+tool's own tests import those names — hash as three identical 4-line bodies, and
+`MIN_AVERAGE_LINES` is 4. Baselined at 3 copies **with the reason recorded in the
+file**, so a fourth copy still fails. The 2 pre-existing patterns (`_path_size`,
+`_require_root`) were left untouched and the stale-baseline check passes.
+
+**Verify, and note it is a byte comparison, not a test pass.** A golden capture of
+all five `--check` outputs was taken *before the first edit*; all five are byte-identical
+after, and all still exit 0. That is what makes this refactor safe — the tests alone
+would not catch a row-ordering or JSON-shape change. All 37 tests across the five test
+files (7/8/11/7/4) pass, `compat` passes, and ruff/mypy/vulture/complexity are clean.
+
+**Two escape hatches, both earned.** `update_manager_runtime_facade_inventory` must
+also catch bare `import update_manager` and relative imports, and its per-row rule is
+not the shared `src/` allowlist — any `src/ship` import *is* the defect. The updater
+dependency tool sees bindings through `getattr(module, "name")` and through test
+monkeypatches. Both are spec hooks, not forks of the collection loop.
+
+**Two labels per tool, and the tests pin every message verbatim.** Count and
+unknown-category messages use the `<thing> inventory` label; stale-classification and
+unclassified messages use the bare entity. One label field produced
+"Update manager facade **inventory** import is unclassified" and failed two tests. Both
+labels, plus the per-tool message tails, are spec fields.
 
 **Blast radius is smaller than it looks.** The five module names appear only in their own file and
 `tools/repo_health/repo_guardrails.py` — **nothing** in `.github/`, `docs/`, `scripts/`, or `package.json`
@@ -688,14 +779,31 @@ fail automatically if a property is removed while still in use — the visual ch
   The one that used to be listed here as "failing, so do not wire it"
   (`release_docs_policy.py:407`, the `release:preflight` pin) was re-pinned and registered upstream in
   `3c2c7e8f`. See *Correction 5*.
-- **Do not assume a `test_*` in a policy module is either wired or dead — the two registration styles differ,
-  and nothing checks completeness until Q7 lands.** `run_workflow_group` and `run_release_group` name their
-  checks explicitly (an unlisted function never runs), while `run_compat_group` enumerates
-  `suite_contract_policy.py` by introspection and auto-joins everything except two named exclusions (so a
-  function added there runs immediately, and a script that greps only for explicit lists reports all 21 of its
-  functions as never-run — this audit's first pass did exactly that). Three unexecuted functions reached an
-  audit to be found instead of being caught at commit time, and the wiring has since been done by hand twice:
-  `3c2c7e8f`, then `03bb67c3`. **Q7** is the check that ends that.
+- **A `test_*` in a policy module is not a test until a group names it — now enforced, not remembered.**
+  `run_workflow_group` and `run_release_group` name their checks explicitly (an unlisted function never
+  runs), while `run_compat_group` enumerates `suite_contract_policy.py` by introspection and auto-joins
+  everything except two named exclusions (so a function added there runs immediately, and a script that
+  greps only for explicit lists reports all 21 of its functions as never-run — this audit's first pass
+  did exactly that). Three unexecuted functions reached an audit to be found instead of being caught at
+  commit time, and the wiring had been done by hand twice: `3c2c7e8f`, then `03bb67c3`.
+
+  **Q7 landed as `0c3e0372`**: `tools/repo_health/policy_wiring_policy.py`, three checks registered in the
+  `workflow` group. It reads the group lists out of `repo_guardrails.py` **by AST**, so it audits the real
+  thing rather than a re-derivation that could itself drift, and models both registration styles — a
+  discovery group counts as registered-by-construction, or `compat`'s 59 functions would all report as
+  never-run. The three properties: every defined `test_*` is registered; every registered name has a
+  definition; every registered check is callable the way the runner calls it. That last one is what turns
+  "unlisted" into "un-wireable" — the real contract is narrower than "takes `repo_root`":
+  `_run_python_check` does `check(repo_root=ROOT)` *if* the signature has `repo_root` and `check()`
+  otherwise, so a registered check may require no parameter other than `repo_root`, and zero-argument
+  checks are legitimate. My first draft required exactly `["repo_root"]` and rejected a dozen working
+  checks; the mutation test caught it immediately, which is the reason to run one.
+
+  Mutation-verified one at a time from a pristine tree: remove a name from `run_workflow_group`'s list →
+  caught by name; register a name with no definition → caught by name; add a `tmp_path`-taking check and
+  register it → caught as un-callable. My first harness chained four `-replace` operations that cancelled
+  two of the three mutations, nearly proving a false pass — **a mutation harness is itself code and needs
+  the same scepticism as the guard.**
 
 - **Do not re-open the closed Wave 1–4 program.** Nothing here contradicts its outcome; it is a smaller,
   separate hygiene queue.
@@ -852,13 +960,19 @@ line-budget, loc, release, registry, bundle, duplication, dead-code`.
 ## Resume Protocol
 
 1. Read this doc, then [`test-reduction-triage.md`](test-reduction-triage.md) if the item touches tests.
-2. Pick **one** queue item (Q1 and **Q7** are free — Q7 is the check that stops this audit's dead-code finding recurring; Q2 is the best value-to-risk ratio; **Q4/Q5 need both a browser check
-   and a release window** — nothing gates `styles/` automatically, so the visual check is the test, and
-   `styles/**` is shipped code, so the container version gate is the calendar — see
-   *Why Q4 Cannot Land Alone*).
-3. Re-measure before editing — baselines moved **+15,262** lines in eleven days (473,733 → 488,995), so any
+2. Pick **one** queue item. **Q2 and Q7 are closed** (2026-09-30), so the queue is **Q3–Q5**:
+   Q3 is self-contained; **Q4/Q5 need both a browser check and a release window** — nothing gates
+   `styles/` automatically, so the visual check is the test, and `styles/**` is shipped code, so the
+   container version gate is the calendar — see *Why Q4 Cannot Land Alone*. A release window is now
+   available (0.3.001's container is published), so Q4/Q5 can be *landed*; what remains is shipping them,
+   which means they ride with the next version bump.
+3. Re-measure before editing — baselines moved **+15,262** lines in eleven days (473,733 → 488,995), and the
+   re-measurement on 2026-09-30 found this doc's Q2 sizes overstated (920/1,100 against a real 800/941). Any
    number here older than a week is a hypothesis. Use the *Reproduction Kit*.
-4. Implement, then run the item's **Verify** command plus the groups in the *Gate Cheat-Sheet*.
+4. Implement, then run the item's **Verify** command plus the groups in the *Gate Cheat-Sheet*. Commit
+   hygiene items from a clean tree: `loc_baseline.json` and `test_line_budget_baseline.json` are shared
+   write-targets, and a session that stages with `git add -A` absorbs another session's caps — Q1 landed
+   inside `e7dfe33c` that way rather than in a commit of its own.
 5. Update this doc's queue table with what actually landed (identified vs realised), then close the item —
    Q6 is the worked example (93 lines identified, −71 realised, table row flipped to ✅ with the numbers that
    actually shipped). Record durable gotchas in Basic Memory per `tools/mcp/BASIC_MEMORY.md`; repo source
