@@ -12,7 +12,7 @@ def test_load_baseline_rejects_duplicate_json_keys(tmp_path) -> None:
     baseline_path.write_text(
         """
 {
-  "ruff_version": "0.15.14",
+  "ruff_version": "9.9.9",
   "rule": "C901",
   "threshold": 10,
   "scope": ["src"],
@@ -31,20 +31,20 @@ def test_load_baseline_rejects_duplicate_json_keys(tmp_path) -> None:
 
 def test_validate_baseline_requires_explicit_metadata() -> None:
     baseline = {
-        "ruff_version": "0.15.14",
+        "ruff_version": "9.9.9",
         "rule": "C901",
         "threshold": 10,
         "scope": ["src"],
         "entries": {"src/example.py::target": 11},
     }
 
-    assert complexity.validate_baseline(baseline, ruff_version="0.15.14") == {
+    assert complexity.validate_baseline(baseline, ruff_version="9.9.9") == {
         "src/example.py::target": 11
     }
 
     baseline["threshold"] = 11
     with pytest.raises(complexity.ComplexityBaselineError, match="threshold"):
-        complexity.validate_baseline(baseline, ruff_version="0.15.14")
+        complexity.validate_baseline(baseline, ruff_version="9.9.9")
 
 
 def test_findings_by_key_rejects_duplicate_effective_findings() -> None:
@@ -88,7 +88,11 @@ def test_compare_findings_fails_new_and_worsened_hotspots() -> None:
 
 def test_checked_in_baseline_schema_is_valid() -> None:
     baseline = complexity.load_baseline()
-    entries = complexity.validate_baseline(baseline, ruff_version="0.15.14")
+    # Validate against the ruff that is actually installed rather than a
+    # hardcoded string: this asserts the checked-in baseline and the toolchain
+    # pin agree, and hardcoding the version made every ruff bump break here
+    # instead of at the gate that owns the mismatch.
+    entries = complexity.validate_baseline(baseline, ruff_version=complexity._ruff_version())
 
     assert baseline["rule"] == "C901"
     assert baseline["threshold"] == 10

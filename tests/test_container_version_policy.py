@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]  # tools/ is outside mypy's file set; this test parses workflow YAML
+import yaml
 
 from tools.repo_health.container_version_policy import (
     NON_SHIPPED_PATTERNS,

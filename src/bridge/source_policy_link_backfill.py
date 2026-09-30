@@ -54,7 +54,7 @@ def load_provider_coverage_link_backfill(api: Any) -> tuple[dict[str, Any], str]
     section = _as_dict(_as_dict(payload.get("sections")).get("providerCoverageLinkBackfill"))
     if not section:
         return empty_payload, ""
-    result = {
+    result: dict[str, Any] = {
         key: section.get(key)
         for key in (
             "activeProviderWithoutMigrationIdentityCount",

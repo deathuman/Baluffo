@@ -48,7 +48,7 @@ def test_install_git_hooks_sets_core_hooks_path_after_mypy_check(monkeypatch, ca
 
         class Result:
             returncode = 0
-            stdout = "mypy 1.20.2"
+            stdout = "mypy 2.3.1"
             stderr = ""
 
         return Result()

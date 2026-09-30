@@ -89,7 +89,7 @@ def _summary_automation(value: Any) -> dict[str, Any]:
 
 def _summary_adjudication(value: Any) -> dict[str, Any]:
     adjudication = _as_dict(value)
-    payload = {
+    payload: dict[str, Any] = {
         key: adjudication.get(key)
         for key in (
             "ok",

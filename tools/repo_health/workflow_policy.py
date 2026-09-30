@@ -93,7 +93,7 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
         "so npm advisories surface on PRs and main pushes, not only on release "
         "pushes when Dependabot rescans the default-branch manifest."
     )
-    assert "ruff==0.15.14" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
+    assert "ruff==0.16.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
 
 def test_package_json_exposes_js_security_audit_entrypoint(repo_root: Path) -> None:
@@ -647,7 +647,7 @@ def test_lint_workflow_enforces_ruff_import_sorting() -> None:
 
     assert "I" in ruff_config["lint"]["select"]
     assert "id: ruff-check" in pre_commit_text
-    assert "rev: v0.15.14" in pre_commit_text
+    assert "rev: v0.16.9" in pre_commit_text
     assert package["scripts"]["lint:precommit:ci"] == (
         "python scripts/precommit_gate.py --mode all --exclude-root data"
     )
@@ -660,7 +660,7 @@ def test_lint_workflow_enforces_source_complexity_baseline() -> None:
     )
     precommit_gate = (root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
 
-    assert baseline["ruff_version"] == "0.15.14"
+    assert baseline["ruff_version"] == "0.16.9"
     assert baseline["rule"] == "C901"
     assert baseline["threshold"] == 10
     assert baseline["scope"] == ["src"]
