@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import ast
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,20 +7,22 @@ from pathlib import Path
 try:
     from tools.repo_health.inventory_common import (
         NameCategoriesReferencesRow,
+        RootDependencySpec,
+        check_root_dependency_inventory,
+        collect_root_dependency_inventory,
         parse_python,
         relative_posix,
-    )
-    from tools.repo_health.inventory_common import (
-        print_inventory as _print_inventory,
+        run_inventory_main,
     )
 except ImportError:  # direct script execution puts this directory on sys.path
     from inventory_common import (
         NameCategoriesReferencesRow,
+        RootDependencySpec,
+        check_root_dependency_inventory,
+        collect_root_dependency_inventory,
         parse_python,
         relative_posix,
-    )
-    from inventory_common import (
-        print_inventory as _print_inventory,
+        run_inventory_main,
     )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +66,7 @@ RELEASE_HELPERS: set[str] = set()
 INSTALL_HELPERS: set[str] = set()
 
 SHARED_HELPERS: set[str] = set()
+
 STATE_HELPERS: set[str] = set()
 
 UPDATE_MANAGER_COMPAT: set[str] = set()
@@ -99,33 +101,47 @@ for _name in UPDATE_MANAGER_COMPAT:
 for _name in MUTABLE_COMPAT_HOOKS:
     DEPENDENCY_CATEGORIES.setdefault(_name, set()).add("mutable-compat-hook")
 
+# The receiver whose attributes are the root bindings under audit, and the one
+# dynamic form this tool must also catch: `getattr(module, "name")`.
+RECEIVER = "module"
+MONKEYPATCH_CATEGORY = "facade-monkeypatch-compat"
+_LABEL = "Desktop updater root dependency inventory"
+_ENTITY = "Desktop updater root dependency"
+_COUNT_HINT = (
+    "Update the classification inventory after reviewing updater helper root-binding compatibility."
+)
+_REFERENCE_HINT = "Review new or removed module.<name> usages."
+
 
 @dataclass(frozen=True)
 class DesktopUpdaterRootDependency(NameCategoriesReferencesRow):
+    """One §module.<name>§ root binding and where it is referenced."""
+
     name: str
     categories: tuple[str, ...]
     references: tuple[str, ...]
 
 
-def _iter_dependency_references(path: Path, repo_root: Path) -> list[tuple[str, str]]:
+def _iter_getattr_references(path: Path, repo_root: Path) -> list[tuple[str, str]]:
+    """`getattr(module, "name")` reads the same binding as `module.name` does.
+
+    A dynamic read is invisible to the attribute walk, so without this a binding
+    could be used and the inventory would report it unused.
+    """
     tree = parse_python(path)
-    references: list[tuple[str, str]] = []
     relative = relative_posix(path, repo_root)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-            if node.value.id == "module":
-                references.append((node.attr, f"{relative}:{node.lineno}"))
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "getattr"
-            and len(node.args) >= 2
-            and isinstance(node.args[0], ast.Name)
-            and node.args[0].id == "module"
-            and isinstance(node.args[1], ast.Constant)
-            and isinstance(node.args[1].value, str)
-        ):
-            references.append((node.args[1].value, f"{relative}:{node.lineno}"))
+    references = [
+        (node.args[1].value, f"{relative}:{node.lineno}")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == RECEIVER
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+    ]
     return sorted(references, key=lambda item: (item[0], item[1]))
 
 
@@ -201,94 +217,55 @@ def _iter_facade_monkeypatch_names(repo_root: Path) -> set[str]:
     return monkeypatched
 
 
+def _extra_references(repo_root: Path) -> list[tuple[str, str]]:
+    """The dynamic `getattr(module, ...)` reads across the tracked modules."""
+    references: list[tuple[str, str]] = []
+    for relative in TRACKED_MODULES:
+        references.extend(_iter_getattr_references(repo_root / relative, repo_root))
+    return references
+
+
+def _spec(repo_root: Path) -> RootDependencySpec:
+    """Build the spec from this module's globals on every call, so the drift
+    tests' ``monkeypatch.setattr`` calls on the module constants still bite."""
+    return RootDependencySpec(
+        row_type=DesktopUpdaterRootDependency,
+        label=_LABEL,
+        entity=_ENTITY,
+        dependency_name=RECEIVER,
+        tracked_modules=TRACKED_MODULES,
+        expected_dependency_count=EXPECTED_DEPENDENCY_COUNT,
+        expected_reference_count=EXPECTED_REFERENCE_COUNT,
+        categories=DEPENDENCY_CATEGORIES,
+        known_categories=frozenset(CATEGORIES),
+        count_hint=_COUNT_HINT,
+        reference_hint=_REFERENCE_HINT,
+        extra_references=_extra_references,
+        extra_category_names=_iter_facade_monkeypatch_names,
+        extra_category=MONKEYPATCH_CATEGORY,
+    )
+
+
 def collect_desktop_updater_root_dependency_inventory(
     repo_root: Path = ROOT,
 ) -> tuple[DesktopUpdaterRootDependency, ...]:
-    references_by_name: dict[str, list[str]] = {}
-    for relative in TRACKED_MODULES:
-        path = repo_root / relative
-        for name, reference in _iter_dependency_references(path, repo_root):
-            references_by_name.setdefault(name, []).append(reference)
-
-    facade_monkeypatch_names = _iter_facade_monkeypatch_names(repo_root)
-    rows: list[DesktopUpdaterRootDependency] = []
-    for name, references in sorted(references_by_name.items()):
-        categories = set(DEPENDENCY_CATEGORIES.get(name, set()))
-        if name in facade_monkeypatch_names:
-            categories.add("facade-monkeypatch-compat")
-        rows.append(
-            DesktopUpdaterRootDependency(
-                name=name,
-                categories=tuple(sorted(categories)),
-                references=tuple(sorted(references)),
-            )
-        )
-    return tuple(rows)
+    return collect_root_dependency_inventory(_spec(repo_root), repo_root)
 
 
 def check_desktop_updater_root_dependency_inventory(
     repo_root: Path | None = None,
 ) -> list[str]:
-    root = repo_root or ROOT
-    inventory = collect_desktop_updater_root_dependency_inventory(root)
-    failures: list[str] = []
-    dependency_count = len(inventory)
-    reference_count = sum(len(row.references) for row in inventory)
-    if dependency_count != EXPECTED_DEPENDENCY_COUNT:
-        failures.append(
-            f"Desktop updater root dependency inventory has {dependency_count} dependencies; "
-            f"expected {EXPECTED_DEPENDENCY_COUNT}. Update the classification inventory "
-            "after reviewing updater helper root-binding compatibility."
-        )
-    if reference_count != EXPECTED_REFERENCE_COUNT:
-        failures.append(
-            f"Desktop updater root dependency inventory has {reference_count} references; "
-            f"expected {EXPECTED_REFERENCE_COUNT}. Review new or removed module.<name> usages."
-        )
-    unknown_categories = {
-        category
-        for categories in DEPENDENCY_CATEGORIES.values()
-        for category in categories
-        if category not in CATEGORIES
-    }
-    if unknown_categories:
-        failures.append(
-            "Desktop updater root dependency inventory has unknown categories: "
-            f"{sorted(unknown_categories)}."
-        )
-    discovered_names = {row.name for row in inventory}
-    configured_names = set(DEPENDENCY_CATEGORIES)
-    for missing in sorted(configured_names - discovered_names):
-        failures.append(
-            f"Desktop updater root dependency classification for {missing} has no matching "
-            "module.<name> reference."
-        )
-    for row in inventory:
-        if not row.categories:
-            failures.append(
-                f"Desktop updater root dependency is unclassified: {row.name} "
-                f"referenced at {', '.join(row.references)}."
-            )
-    return failures
+    return check_root_dependency_inventory(_spec(repo_root or ROOT), repo_root or ROOT)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Inventory desktop updater helper dependencies on facade root bindings."
+    return run_inventory_main(
+        description="Inventory desktop updater helper dependencies on facade root bindings.",
+        check_flag_help="Fail if dependency inventory drifted.",
+        collect=lambda: collect_desktop_updater_root_dependency_inventory(ROOT),
+        check=lambda: check_desktop_updater_root_dependency_inventory(ROOT),
+        root=ROOT,
     )
-    parser.add_argument(
-        "--check", action="store_true", help="Fail if dependency inventory drifted."
-    )
-    args = parser.parse_args()
-
-    inventory = collect_desktop_updater_root_dependency_inventory(ROOT)
-    failures = check_desktop_updater_root_dependency_inventory(ROOT) if args.check else []
-    if failures:
-        for failure in failures:
-            print(failure)
-        return 1
-    _print_inventory(inventory)
-    return 0
 
 
 if __name__ == "__main__":

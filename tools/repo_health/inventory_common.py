@@ -199,14 +199,22 @@ class RootDependencySpec:
 
     row_type: type[Any]
     label: str
+    entity: str
     dependency_name: str
-    reference_name: str
     tracked_modules: tuple[str, ...]
     expected_dependency_count: int
     expected_reference_count: int
     categories: dict[str, set[str]]
     known_categories: frozenset[str]
-    extra_categories: Callable[[Path], set[str]] | None = None
+    count_hint: str
+    reference_hint: str
+    # The updater tool sees bindings two extra ways: a dynamic
+    # ``getattr(module, "name")`` read, and a name that only a test monkeypatches
+    # onto the facade. Both are expressed as hooks rather than by forking the
+    # whole collection loop.
+    extra_references: Callable[[Path], list[tuple[str, str]]] | None = None
+    extra_category_names: Callable[[Path], set[str]] | None = None
+    extra_category: str = ""
 
 
 def collect_root_dependency_inventory(spec: RootDependencySpec, repo_root: Path) -> tuple[Any, ...]:
@@ -217,12 +225,18 @@ def collect_root_dependency_inventory(spec: RootDependencySpec, repo_root: Path)
         for name, reference in iter_root_binding_references(path, repo_root, spec.dependency_name):
             references_by_name.setdefault(name, []).append(reference)
 
-    extra = spec.extra_categories(repo_root) if spec.extra_categories is not None else set()
+    if spec.extra_references is not None:
+        for name, reference in spec.extra_references(repo_root):
+            references_by_name.setdefault(name, []).append(reference)
+
+    extra_names = (
+        spec.extra_category_names(repo_root) if spec.extra_category_names is not None else set()
+    )
     rows: list[Any] = []
     for name, references in sorted(references_by_name.items()):
         found = set(spec.categories.get(name, set()))
-        if name in extra:
-            found |= extra
+        if name in extra_names:
+            found.add(spec.extra_category)
         rows.append(
             spec.row_type(
                 name=name,
@@ -243,14 +257,12 @@ def check_root_dependency_inventory(spec: RootDependencySpec, repo_root: Path) -
     if dependency_count != spec.expected_dependency_count:
         failures.append(
             f"{spec.label} has {dependency_count} dependencies; "
-            f"expected {spec.expected_dependency_count}. Update the classification inventory "
-            "after reviewing updater root-binding compatibility."
+            f"expected {spec.expected_dependency_count}. {spec.count_hint}"
         )
     if reference_count != spec.expected_reference_count:
         failures.append(
             f"{spec.label} has {reference_count} references; "
-            f"expected {spec.expected_reference_count}. Review new or removed "
-            f"{spec.dependency_name}.<name> usages."
+            f"expected {spec.expected_reference_count}. {spec.reference_hint}"
         )
 
     unknown_categories = {
@@ -265,14 +277,14 @@ def check_root_dependency_inventory(spec: RootDependencySpec, repo_root: Path) -
     discovered_names = {row.name for row in inventory}
     for missing in sorted(set(spec.categories) - discovered_names):
         failures.append(
-            f"{spec.label} classification for {missing} has no matching "
+            f"{spec.entity} classification for {missing} has no matching "
             f"{spec.dependency_name}.<name> reference."
         )
 
     for row in inventory:
         if not row.categories:
             failures.append(
-                f"{spec.label} is unclassified: {row.name} "
+                f"{spec.entity} is unclassified: {row.name} "
                 f"referenced at {', '.join(row.references)}."
             )
     return failures
