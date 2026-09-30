@@ -1448,19 +1448,6 @@
   color: var(--saved-phase-active-time);
 }
 
-.phase-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin-top: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.phase-hint {
-  color: var(--text-subtle);
-  font-size: 0.74rem;
-}
-
 .saved-page .jobs-table-header,
 .saved-job-block {
   border: 1px solid color-mix(in srgb, var(--surface-15) 74%, transparent);
@@ -2093,10 +2080,6 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 0.85rem;
   align-items: start;
-}
-
-.saved-workspace-layout.timeline-open {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .saved-main-column {

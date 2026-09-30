@@ -12,7 +12,6 @@ html {
 
 :root {
   --bg-page: #121212;
-  --bg-overlay: rgba(0, 0, 0, 0.8);
   --surface-0: #0d0d0d;
   --surface-1: #1b1b1b;
   --surface-2: #1e1e1e;
@@ -30,7 +29,6 @@ html {
   --surface-14: #3d2f4f;
   --surface-15: #3d3d3d;
   --surface-16: #404040;
-  --surface-17: #432626;
   --surface-18: #444444;
   --surface-19: #4a3232;
   --surface-20: #666666;
@@ -111,7 +109,6 @@ html {
 
 [data-theme="light"] {
   --bg-page: #f4f5f8;
-  --bg-overlay: rgba(15, 18, 25, 0.45);
   --surface-0: #dfe3ea;
   --surface-1: #ffffff;
   --surface-2: #ffffff;
@@ -129,7 +126,6 @@ html {
   --surface-14: #ede7ff;
   --surface-15: #d7deea;
   --surface-16: #d2dae8;
-  --surface-17: #ffe2e2;
   --surface-18: #c8d0de;
   --surface-19: #ffdddd;
   --surface-20: #a5b1c8;

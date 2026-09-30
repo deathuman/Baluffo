@@ -578,22 +578,6 @@ h1 {
   gap: 0.65rem;
 }
 
-.popup-description {
-  font-size: 1.1rem;
-  line-height: 1.6;
-  margin-bottom: 1.5rem;
-  color: var(--text-primary);
-}
-
-.btn-close {
-  background-color: var(--surface-18);
-  color: var(--text-primary);
-}
-
-.btn-close:hover {
-  background-color: var(--surface-20);
-}
-
 .jobs-container {
   width: min(1200px, 100%);
   margin: 0 auto;
@@ -601,12 +585,6 @@ h1 {
   min-height: calc(100vh - 2rem);
   display: flex;
   flex-direction: column;
-}
-
-.jobs-top-nav {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.45rem;
 }
 
 .jobs-header {
@@ -1196,12 +1174,6 @@ h1 {
   min-height: 120px;
 }
 
-.country-selection-badge {
-  color: var(--text-subtle);
-  font-size: 0.78rem;
-  margin-top: 0.1rem;
-}
-
 .filter-group select:focus,
 .filter-group input:focus {
   outline: none;
@@ -1514,17 +1486,6 @@ h1 {
   color: var(--text-subtle);
   font-size: 0.82rem;
   padding: 0 0.2rem;
-}
-
-.jobs-pipeline-group {
-  grid-column: -2 / -1;
-  align-self: end;
-  justify-self: end;
-  min-width: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.45rem;
 }
 
 .jobs-pipeline-btn {
@@ -1873,12 +1834,6 @@ h1 {
   background: color-mix(in srgb, #d17f66 76%, var(--surface-11) 24%);
 }
 
-.job-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
 .job-new-badge {
   display: inline;
   padding: 0;
@@ -1951,14 +1906,6 @@ h1 {
 .job-location {
   color: var(--text-muted);
   font-size: 0.9rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.job-sector {
-  color: #b7c5db;
-  font-size: 0.86rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2310,10 +2257,6 @@ h1 {
     padding: 1rem;
   }
 
-  .jobs-top-nav {
-    margin-bottom: 0.32rem;
-  }
-
   .auth-profile-shell {
     width: 100%;
     flex-wrap: wrap;
@@ -2419,7 +2362,6 @@ h1 {
 
   .job-title-compact,
   .job-company-compact,
-  .job-sector,
   .job-location {
     white-space: normal;
   }
@@ -2468,10 +2410,6 @@ h1 {
   }
 
   .saved-workspace-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .saved-workspace-layout.timeline-open {
     grid-template-columns: 1fr;
   }
 

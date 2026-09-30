@@ -35,13 +35,6 @@ h2.admin-section-title {
   min-height: 1.35rem;
 }
 
-.admin-pin-row {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
 .admin-pin-input {
   flex: 1 1 240px;
   max-width: 360px;
@@ -933,8 +926,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-dedup-audit-gate-status,
 .admin-dedup-audit-gate-ready,
-.admin-dedup-audit-gate-chip,
-.admin-dedup-audit-gate-flag-label {
+.admin-dedup-audit-gate-chip {
   display: inline-flex;
   align-items: center;
   padding: 0.12rem 0.42rem;
@@ -961,7 +953,6 @@ body::-webkit-scrollbar-thumb:hover,
   line-height: 1.35;
 }
 
-.admin-dedup-audit-gate-flags,
 .admin-dedup-audit-gate-chips,
 .admin-dedup-audit-gate-example-chips {
   display: flex;
@@ -995,20 +986,6 @@ body::-webkit-scrollbar-thumb:hover,
 
 .admin-dedup-review-evidence-line {
   font-size: 0.74rem;
-  line-height: 1.35;
-}
-
-.admin-dedup-audit-gate-flag {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.admin-dedup-audit-gate-flag-value {
-  min-width: 0;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
   line-height: 1.35;
 }
 
@@ -3071,46 +3048,6 @@ body::-webkit-scrollbar-thumb:hover,
   flex-wrap: wrap;
   align-items: center;
 }
-.admin-task-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-right: 0.2rem;
-  padding: 0.34rem 0.62rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background-color: var(--surface-8);
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-
-.admin-task-badge::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background-color: var(--text-subtle);
-}
-
-.admin-task-badge.idle {
-  border-color: var(--surface-15);
-  background-color: var(--surface-8);
-  color: var(--text-secondary);
-}
-
-.admin-task-badge.running {
-  border-color: var(--contract-temporary-border);
-  background-color: var(--contract-temporary-bg);
-  color: var(--contract-temporary-text);
-}
-
-.admin-task-badge.running::before {
-  background-color: var(--contract-temporary-text);
-  animation: adminTaskPulse 1s ease-in-out infinite;
-}
 
 @keyframes adminTaskPulse {
   0%, 100% {
@@ -3421,11 +3358,6 @@ body::-webkit-scrollbar-thumb:hover,
 .action-center-status-warning {
   border-left-color: var(--tint-warning);
   background: color-mix(in srgb, var(--tint-warning) 12%, transparent);
-}
-
-.action-center-status-critical {
-  border-left-color: var(--tint-critical);
-  background: color-mix(in srgb, var(--tint-critical) 12%, transparent);
 }
 
 .action-center-icon {

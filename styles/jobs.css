@@ -336,10 +336,6 @@
   opacity: 1;
 }
 
-.jobs-page .jobs-pipeline-group {
-  min-width: 280px;
-}
-
 /* ponytail: the toolbar is two structurally fixed rows — the actions row
    (Reload + Update-jobs + badge) and this always-rendered status row. The
    running caption and the Last-updated timestamp live here and swap via
@@ -602,8 +598,7 @@
   font-size: 0.86rem;
 }
 
-.jobs-page .job-location,
-.jobs-page .job-sector {
+.jobs-page .job-location {
   color: var(--text-muted);
   font-size: 0.84rem;
 }
@@ -950,12 +945,6 @@
     justify-self: start;
   }
 
-  .jobs-pipeline-group {
-    grid-column: auto;
-    justify-self: stretch;
-    min-width: 0;
-  }
-
   .jobs-page .jobs-pipeline-btn {
     inline-size: 100%;
     width: 100%;
@@ -1038,21 +1027,6 @@
   font-weight: 600;
   color: var(--text-subtle);
   margin-right: 0.25rem;
-}
-
-.saved-view-preset-btn {
-  font-size: 0.78rem;
-  padding: 0.2rem 0.45rem;
-  background-color: var(--surface-5);
-  color: var(--text-primary);
-  border: 1px solid var(--border-default);
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.saved-view-preset-btn:hover {
-  background-color: var(--surface-9);
 }
 
 .saved-view-dropdown {
