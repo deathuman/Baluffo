@@ -2,8 +2,8 @@
  * Shared fixture for `createAdminAuthController` tests.
  *
  * The controller has a wide option surface and each test only exercises a slice
- * of it, so a full literal per test dominated the file. `createAuthControllerFixture`
- * supplies the inert majority and lets a test override just what it asserts on.
+ * of it, so a full literal per test dominated the file. `createAuthControllerOptions`
+ * supplies the inert majority and lets a caller override just what it asserts on.
  */
 
 import { createAdminAuthController } from "../../../../frontend/admin/app/auth.js";
@@ -14,7 +14,7 @@ export { createClassList, createElement };
 const NOOP = () => {};
 const NOOP_ASYNC = async () => {};
 
-export function createAuthControllerRefs() {
+function createAuthControllerRefs() {
   return {
     adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
@@ -22,7 +22,7 @@ export function createAuthControllerRefs() {
   };
 }
 
-export function createAuthControllerOptions(overrides = {}) {
+function createAuthControllerOptions(overrides = {}) {
   return {
     emitAdminStartupMetric: NOOP,
     markAdminFirstInteractive: NOOP,
@@ -52,19 +52,6 @@ export function createAuthControllerOptions(overrides = {}) {
     showToast: NOOP,
     ...overrides
   };
-}
-
-/**
- * @param {object} [overrides] - Controller option overrides.
- * @returns {object} Controller plus `refs` and `calls` for assertions.
- */
-export function createAuthControllerFixture(overrides = {}) {
-  const calls = [];
-  const refs = createAuthControllerRefs();
-  const controller = createAdminAuthController(
-    createAuthControllerOptions({ refs, ...overrides })
-  );
-  return { controller, refs, calls };
 }
 
 /**

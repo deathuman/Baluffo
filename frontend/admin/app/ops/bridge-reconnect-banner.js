@@ -25,9 +25,7 @@
  * hydration behaviour the packaged startup probes measure.
  */
 
-export const RECONNECTING_LABEL = "Bridge Reconnecting";
-const ONLINE_LABEL = "Bridge Online";
-const OFFLINE_LABEL = "Bridge Offline";
+const RECONNECTING_LABEL = "Bridge Reconnecting";
 
 // Long enough that a normal bridge start (~6s cold on this hardware) is never
 // gated, short enough that a dead bridge does not hold the page hostage.
@@ -191,5 +189,3 @@ export function createBridgeReconnectBanner({
     }
   };
 }
-
-export { BOOTSTRAP_GATE_MS, OFFLINE_LABEL, ONLINE_LABEL };
