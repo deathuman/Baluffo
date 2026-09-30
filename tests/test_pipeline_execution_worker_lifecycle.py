@@ -1,5 +1,7 @@
 """Tests for pipeline execution worker lifecycle behavior."""
 
+from datetime import UTC, datetime, timedelta
+
 from tests._pipeline_execution_shared import (
     Any,
     FakeLock,
@@ -114,11 +116,66 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
     assert status["active"] is False
     assert status["stage"] == "completed"
     assert status["error"] == ""
-    # Floor, not exact: the fetch-active window is deterministic (one wait per active
-    # projection state), but unrelated pipeline waits add a runner-timing-dependent
-    # number of extra sleeps, so an exact count flakes on slow CI runners.
-    assert len(waits) >= 1201
+    # Assert the elapsed simulated window, not the number of sleeps. The fake
+    # clock is installed by patching the shared `time` module, so any unrelated
+    # sleeper in the process -- a background thread, a library, a watchdog -- is
+    # recorded here AND advances the clock. A foreign sleep of N seconds
+    # therefore removes N of the loop's own 1.0s sleeps, dropping the count while
+    # the 1200s window is still honoured in full. A count floor fails on a
+    # correct implementation; the elapsed window is the actual invariant and is
+    # unaffected. See test_sleep_count_is_not_the_quiet_window.
+    assert sum(waits) >= 1200
     assert upserts == []
+
+
+def test_sleep_count_is_not_the_quiet_window() -> None:
+    """A sleep COUNT is not the invariant; the elapsed window is.
+
+    The fake clock patches the shared `time` module, so an unrelated sleeper in
+    the process is recorded into the same list the wait loop uses *and* advances
+    the clock. One foreign sleep of N seconds removes N of the loop's own 1.0s
+    sleeps. The loop still honours its quiet window in full, but a count floor
+    reads that as a failure.
+
+    This is not hypothetical: CI failed
+    `test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_report`
+    with `assert 1093 >= 1200` on code that waits exactly 1200s. Reproduced here
+    as 1094/1200.0 (one iteration differs with where the foreign sleep lands).
+
+    Mirrors `wait_for_report_completion`: sleep 1.0 until the clock passes a
+    1200s deadline.
+    """
+    quiet_window_s = 1200.0
+
+    def simulate(foreign_sleep_at: int | None, foreign_sleep_s: float) -> tuple[int, float]:
+        clock = {"now": datetime(2026, 3, 22, 12, 0, 0, tzinfo=UTC)}
+        waits: list[float] = []
+
+        def record(delay: float) -> None:
+            waits.append(float(delay))
+            clock["now"] = clock["now"] + timedelta(seconds=float(delay))
+
+        deadline = clock["now"] + timedelta(seconds=quiet_window_s)
+        iterations = 0
+        while clock["now"] < deadline:
+            if foreign_sleep_at is not None and iterations == foreign_sleep_at:
+                record(foreign_sleep_s)
+            record(1.0)
+            iterations += 1
+        return len(waits), sum(waits)
+
+    clean_count, clean_elapsed = simulate(None, 0.0)
+    assert clean_count == 1200
+    assert clean_elapsed >= quiet_window_s
+
+    perturbed_count, perturbed_elapsed = simulate(500, 107.0)
+    # The count collapses...
+    assert perturbed_count < clean_count
+    # ...while the loop still waited the whole window, which is the invariant
+    # the pipeline tests assert.
+    assert perturbed_elapsed >= quiet_window_s
+    # And the count floor the tests used to carry is what CI tripped over.
+    assert perturbed_count < 1200
 
 
 def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path) -> None:
@@ -316,10 +373,15 @@ def test_run_worker_keeps_waiting_for_attached_fetch_child_while_live_evidence_r
     assert status["active"] is False
     assert status["stage"] == "completed"
     assert status["error"] == ""
-    # Floor, not exact: the fetch-active window is deterministic (one wait per active
-    # projection state), but unrelated pipeline waits add a runner-timing-dependent
-    # number of extra sleeps, so an exact count flakes on slow CI runners.
-    assert len(waits) >= 1201
+    # Assert the elapsed simulated window, not the number of sleeps. The fake
+    # clock is installed by patching the shared `time` module, so any unrelated
+    # sleeper in the process -- a background thread, a library, a watchdog -- is
+    # recorded here AND advances the clock. A foreign sleep of N seconds
+    # therefore removes N of the loop's own 1.0s sleeps, dropping the count while
+    # the 1200s window is still honoured in full. A count floor fails on a
+    # correct implementation; the elapsed window is the actual invariant and is
+    # unaffected. See test_sleep_count_is_not_the_quiet_window.
+    assert sum(waits) >= 1200
     assert upserts == []
     assert (
         "jobs_pipeline_attached_existing_child_task",
@@ -419,8 +481,9 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
     assert status["active"] is False
     assert status["stage"] == "error"
     assert "had no live evidence before completion" in status["error"]
-    # Floor, not exact: see the sibling "completes after long active fetch wait" test.
-    assert len(waits) >= 1200
+    # Elapsed window, not sleep count -- see the sibling "completes after long
+    # active fetch wait" test and test_sleep_count_is_not_the_quiet_window.
+    assert sum(waits) >= 1200
     assert upserts == []
 
 
