@@ -8,6 +8,33 @@ from src import jobs_fetcher as jf
 from src.jobs.interfaces import SourceLoader
 from tests.helpers.temp_paths import workspace_tmpdir
 
+_REFRESH_JOB: dict[str, object] = {
+    "title": "Engine Programmer",
+    "company": "Refresh Studio",
+    "city": "Remote",
+    "country": "Remote",
+    "workType": "Remote",
+    "contractType": "Full-time",
+    "jobLink": "https://example.com/refresh/engine-programmer",
+    "sector": "Game",
+    "sourceJobId": "refresh-1",
+    "postedAt": "2026-03-01",
+}
+
+
+def _once_loader(calls: dict[str, int], job: dict[str, object] = _REFRESH_JOB) -> SourceLoader:
+    """A loader that yields ``job`` on its first call and nothing after.
+
+    Two tests below needed byte-identical copies of this; the row and the
+    call counter are the only parts that varied, so both are parameters.
+    """
+
+    def loader(**_: object) -> list[dict[str, object]]:
+        calls["count"] += 1
+        return [dict(job)] if calls["count"] == 1 else []
+
+    return cast("SourceLoader", loader)
+
 
 def test_should_skip_source_by_ttl_honors_recent_success_and_failure_state() -> None:
     now = jf.now_iso()
@@ -173,25 +200,7 @@ def test_run_pipeline_force_refresh_all_bypasses_incremental_skip() -> None:
 
 def test_run_pipeline_force_refresh_all_without_seed_env_drops_existing_output() -> None:
     calls = {"count": 0}
-
-    def loader(**_: object):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            return [
-                {
-                    "title": "Engine Programmer",
-                    "company": "Refresh Studio",
-                    "city": "Remote",
-                    "country": "Remote",
-                    "workType": "Remote",
-                    "contractType": "Full-time",
-                    "jobLink": "https://example.com/refresh/engine-programmer",
-                    "sector": "Game",
-                    "sourceJobId": "refresh-1",
-                    "postedAt": "2026-03-01",
-                }
-            ]
-        return []
+    loader = _once_loader(calls)
 
     with workspace_tmpdir("jobs-fetcher-force-refresh-no-seed") as tmp:
         out = Path(tmp)
@@ -215,25 +224,7 @@ def test_run_pipeline_force_refresh_all_without_seed_env_drops_existing_output()
 
 def test_run_pipeline_force_refresh_all_can_seed_existing_output_via_env() -> None:
     calls = {"count": 0}
-
-    def loader(**_: object):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            return [
-                {
-                    "title": "Engine Programmer",
-                    "company": "Refresh Studio",
-                    "city": "Remote",
-                    "country": "Remote",
-                    "workType": "Remote",
-                    "contractType": "Full-time",
-                    "jobLink": "https://example.com/refresh/engine-programmer",
-                    "sector": "Game",
-                    "sourceJobId": "refresh-1",
-                    "postedAt": "2026-03-01",
-                }
-            ]
-        return []
+    loader = _once_loader(calls)
 
     with workspace_tmpdir("jobs-fetcher-force-refresh-seeded") as tmp:
         out = Path(tmp)
