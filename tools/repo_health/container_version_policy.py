@@ -77,6 +77,19 @@ NON_SHIPPED_PATTERNS = (
     "LICENSE",
     "release-notes.md",
     "umbrel-app-store.yml",
+    # A lockfile edit is usually a dev-dependency edit -- a linter, a type
+    # checker -- and those install into the image's *build* stage only.
+    # `Dockerfile` runs `npm ci` in a frontend stage and copies forward just the
+    # built `.container-frontend` bundle, so a dev-dep bump changes the build
+    # stage without changing the published image. Treating the lockfile as
+    # shipped code republished the version tag for no content change, which is
+    # how 0.3.001 reached five distinct digests in one session.
+    #
+    # Nothing is lost: every release bumps `src/app_version.py`, which *is* a
+    # shipped path, so the image still rebuilds when a rebuild is wanted. What
+    # this buys is that a routine dependency bump needs neither a version bump
+    # nor release-tag intent to land.
+    "package-lock.json",
 )
 
 _APP_VERSION_RE = re.compile(r'APP_VERSION\s*=\s*"([^"]+)"')
