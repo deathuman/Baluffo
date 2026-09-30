@@ -714,6 +714,30 @@ use, (b) the fact that `styles/` has no gate, so run `npm run test:frontend:unit
 this pass) plus a load of `index.html`, `jobs.html`, `admin.html`, `saved.html` to catch anything a static
 read of a stylesheet cannot see.
 
+**Re-verified 2026-09-30, after the 0.3.0 Admin rebuild and the reconnect banner.**
+This analysis predates both, and the Admin rebuild in particular touched
+`styles/admin.css`, so the deletion set was re-checked against the current tree
+rather than trusted. **All 18 still have no reachable producer.** 15 return zero
+hits outside `styles/` across 2,285 tracked consumers; the other three are the
+documented non-obvious ones and all still hold:
+
+| Selector | Why it is still dead |
+|---|---|
+| `.phase-hint` | its only non-`styles` hits are still the two **test-case ids** in `admin-domain.test.mjs` (`phase-hint-before-report-progress`, `phase-hint-overrides-stale-starting-shell`) — JS option names, never class lists |
+| `.action-center-status-critical` | the only producer is still `action-center.js:131` `action-center-status-${meta.tone}`, and `STATE_META` (`action-center.js:19-25`) still admits exactly `ok` / `neutral` ×3 / `warning`. Never `critical` |
+| `.job-sector` | every hit is the **distinct, live** `job-sector-line` class (`saved/render.js:133`, `JobRow.js:160`, plus two test assertions) or the `custom-job-sector` `<select>` id in `saved.html:152`. CSS class selectors match whole tokens, so none of those can attach `.job-sector` |
+
+`.btn-close` now has **zero** hits outside `styles/` at all. Note the trap this
+table exists to catch: `job-sector` was originally "cleared" by the composition
+filter purely because `job-sector-line` shares its dash-prefix — clearing is not
+being alive.
+
+**The browser pass is still the one outstanding step for Q4.** Nothing above
+substitutes for it: `styles/**` has no gate, and a static read of a stylesheet
+cannot see a cascade interaction. And `styles/**` is **shipped code**, so the
+commit must carry `Release-tag: v0.3.002` intent — **not** `v0.3.001`, whose
+image is already published and can never contain this change.
+
 **Method for any future sweep:** extract values of `class="…"`, `className`, and `classList.*` arguments
 — not identifiers — then find the *producer* of each candidate and read its value domain. A prefix hit in an
 unrelated string is not life; a template whose interpolated domain cannot contain the tail is not life
