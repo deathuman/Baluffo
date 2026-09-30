@@ -113,13 +113,20 @@ def test_tracked_docs_restore_is_byte_identical(repo_root: Path) -> None:
 #
 # The repo is LF-only (.gitattributes: `* text=auto eol=lf`). Path.write_text()
 # with the default newline=None applies os.linesep translation, so on Windows
-# these scripts emitted CRLF and `ruff format --check` then failed on
+# these writers emitted CRLF and `ruff format --check` then failed on
 # src/app_version.py -- a confusing failure that looks unrelated to the bump.
 # These tests pin the newline="\n" argument so the bug cannot return silently.
+#
+# loc_budget.py is here for the same reason and was missed by the original
+# sweep: it rewrote a tracked baseline as CRLF, so every `--update` on Windows
+# produced a whole-file diff for a one-number change. Three writers have now
+# needed this fix, which is why the list is pinned by test rather than by
+# remembering.
 
 _LF_SENSITIVE_WRITE_SITES = (
     ("scripts/bump_version.py", "_write"),
     ("scripts/extract_release_notes.py", "build_release_notes"),
+    ("tools/repo_health/loc_budget.py", "write_baseline"),
 )
 
 
@@ -177,4 +184,31 @@ def test_bump_version_writes_lf_on_this_platform(repo_root: Path, tmp_path: Path
 
     raw = target.read_bytes()
     assert b"\r\n" not in raw, f"bump_version._write emitted CRLF: {raw!r}"
+    assert raw.endswith(b"\n")
+
+
+def test_loc_budget_writes_lf_baseline_on_this_platform(tmp_path: Path) -> None:
+    """The loc baseline writer must not rewrite a tracked file as CRLF.
+
+    Behavioural rather than AST-only, because the damage is in the bytes on
+    disk: an LF-only tree plus a CRLF baseline means the next `git add` shows a
+    whole-file diff, and the worktree copy stops matching the committed one.
+    """
+    import importlib.util
+
+    repo_root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "loc_budget_under_test", repo_root / "tools" / "repo_health" / "loc_budget.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # write_baseline targets a nested relative path and does not mkdir; the real
+    # repo always has the file, so the fixture has to mirror the layout.
+    (tmp_path / module.BASELINE_RELATIVE_PATH).parent.mkdir(parents=True)
+    module.write_baseline(tmp_path, {"src": 1, "tests": 2})
+
+    raw = (tmp_path / module.BASELINE_RELATIVE_PATH).read_bytes()
+    assert b"\r\n" not in raw, f"loc_budget wrote CRLF into the baseline: {raw!r}"
     assert raw.endswith(b"\n")

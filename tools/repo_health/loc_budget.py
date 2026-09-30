@@ -192,7 +192,12 @@ def write_baseline(repo_root: Path, areas: Mapping[str, int]) -> Path:
         "Regenerate with: python tools/repo_health/loc_budget.py --update"
     )
     payload["areas"] = dict(sorted(areas.items()))
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # newline="\n" is load-bearing: the default newline=None applies os.linesep
+    # translation, so on Windows this rewrote a tracked baseline as CRLF. The
+    # tree is LF-only (.gitattributes: `* text=auto eol=lf`), so the next
+    # `git add` produced a whole-file diff for a one-number change and the
+    # worktree file stopped matching what was committed.
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
     return path
 
 
