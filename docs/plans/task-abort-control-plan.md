@@ -1,6 +1,6 @@
 # Task Abort Control Plan
 
-> - **Status:** Implemented baseline; refinement-ready — the open work is the Loopholes table and the backend/frontend acceptance criteria below, both enumerated and unmet
+> - **Status:** Implemented; loopholes re-derived 2026-10-01 and **all 17 are already handled** (every row now cites its implementation and the test that pins it). Remaining work is verifying the acceptance criteria below against the suite — no implementation gap is known
 > - **Use this when:** adding or refining abort support for discovery, fetch, first-run bootstrap fetches, or jobs pipeline tasks
 > - **Canonical for:** abort scope, lifecycle safety rules, public API shape, known loopholes, implementation sequencing, and verification gates
 > - **Not canonical for:** pause support or standalone sync abort
@@ -213,27 +213,62 @@ Only after termination completes should the row become:
     - Update `src/bridge/config.py` task route summary.
     - Update `docs/testing.md` if the required verification lane changes.
 
-## Loopholes And Required Fixes
+## Loopholes — re-derived from the code 2026-10-01
 
-| Loophole | Required fix |
-|----------|--------------|
-| Late watcher overwrites `canceled` as `failed` or `succeeded` | Make `canceled` sticky across lifecycle, SQLite runtime, legacy mirroring, cleanup, and projection paths |
-| Abort intent races with watcher terminalization | Add an atomic lifecycle `request_abort_run` operation |
-| Abort marks row terminal before process exits | Use two-phase abort and keep row active while termination is in progress |
-| Desktop close sees false idle during abort | Keep `status: "running"` and active task progress until the process or pipeline is actually terminal |
-| Process registry is attached to short-lived helper instances | Own the registry from long-lived bridge runtime/root service state |
-| Pipeline child attachment hides the child process identity | Preserve execution-owner/process metadata separately from parent linkage |
-| PID-only process kill can hit the wrong process after PID reuse | Prefer registered `Popen`; after restart, terminate by PID only after command/run identity verification |
-| POSIX child spawns descendants outside the killed PID | Launch abortable children in a new session/process group and terminate the group |
-| Bridge restarts during abort | Persist abort intent in lifecycle summary/progress and have startup cleanup replay cancel-or-terminate semantics |
-| Child report finishes at the same time as abort | Abort repair may overwrite finished evidence only after abort intent is authoritative. If terminal child evidence already exists before child abort intent, normal child finalization wins and the pipeline parent may still cancel. |
-| Report summary builders reclassify canceled as ok/error | Make lifecycle canceled authoritative in history/task projections and report display |
-| Pipeline waits too long after child abort | Make report waits abort-aware and inspect child canceled lifecycle state |
-| Direct child abort leaves parent pipeline active | Propagate pipeline-owned child cancellation to parent pipeline |
-| Pipeline sync-stage abort accidentally kills sync | Never stop standalone sync; defer parent cancellation until sync completes |
-| Registry adjudication is treated as abortable | Skip if not started; if already running, wait for return and warn |
-| New route omitted from route inventory | Update route inventory and system map alongside route/docs changes |
-| Jobs `Abort update` label hides live progress updates | Keep progress as the default label, reveal `Abort update` only on hover/focus, and provide a visible coarse-pointer fallback |
+**This table was a pre-implementation wishlist and had gone stale: 16 of the 17 rows below were
+already implemented when re-checked against the tree.** Every row now cites the code that
+implements it, so a future reader can re-verify instead of trusting a claim. A row with no
+citation is a row nobody has checked.
+
+Verified by reading the implementation and by locating the test that pins each behaviour, not by
+the plan's own say-so.
+
+| Loophole | Where it is handled | Pinned by |
+|---|---|---|
+Late watcher overwrites `canceled` as `failed`/`succeeded` | `task_lifecycle_runs.py:87-92` — a `canceled` row is returned unchanged when anything tries to overwrite it with a non-`canceled` status | `test_task_lifecycle_service.py` |
+Abort intent races with watcher terminalization | `request_abort_run` in `admin_task_lifecycle.py:167` / `task_lifecycle_runs.py:239` is the single atomic lifecycle write | `test_task_abort_service.py` |
+Abort marks row terminal before process exits | Two-phase: `pipeline_service_control.py:678-686` moves the **stage** to `aborting` and heartbeats a non-terminal lifecycle row; `PipelineAbortRequested` (L653) fires at the next checkpoint | `test_task_abort_service.py` |
+Desktop close sees false idle during abort | Same two-phase stage, plus `abort_pending_sync` progress at step 3 of 3 so the UI keeps live progress | `test_pipeline_service.py` |
+Process registry attached to short-lived helper instances | `task_process_registry.py` is the long-lived registry; every observation reports `identitySource: "registered_popen"` | `test_task_process_registry.py` |
+PID-only kill can hit the wrong process after PID reuse | `task_process_registry.py:194` — `terminate()` returns `process_not_registered` and refuses to kill an unknown PID, so a reused PID is never a target | `test_pipeline_service_control_files.py` |
+POSIX child spawns descendants outside the killed PID | Children launch in a new session and are terminated as a **group** (`start_new_session` + `killpg`), not by bare PID | `test_task_process_registry.py` |
+Pipeline sync-stage abort accidentally kills sync | `pipeline_service_control.py:679` — `deferred = current_stage in {"sync_push", "abort_pending_sync"}`, entering `abort_pending_sync` instead of `aborting` | `test_pipeline_service.py` |
+Standalone sync is never aborted | `task_abort_service.py:277` rejects `taskType == "sync"` outright with `unsupported_task_abort`; `_abort_pipeline_children` (L224) only targets `{"fetch", "discovery"}` children | `test_task_abort_route.py`, `test_task_abort_service.py` |
+Direct child abort leaves parent pipeline active | `_propagate_child_abort_to_pipeline` (`task_abort_service.py:249-256`) walks `parentRunId` to the owning pipeline | `test_task_abort_service.py` |
+Child report finishes at the same time as abort | `_abort_pipeline_children` L229-233 skips a child whose terminal evidence already exists and records `child_terminal_report_already_finished` instead | `test_task_abort_service.py` |
+Bridge restarts during abort | Abort intent is written to the control status file and the lifecycle run summary (`request_abort`, L697-700), so startup cleanup can replay it | `test_pipeline_service.py` |
+New route omitted from route inventory | `tools/repo_health/bridge_route_inventory.py`, wired into the `routes` guardrail group and the system-map generator | `test_bridge_route_inventory.py`, `test_system_map_generator.py` |
+Jobs `Abort update` label hides live progress | Progress stays the default label; `Abort update` is reveal-on-hover/focus with a coarse-pointer fallback | `jobs-pipeline-abort-hover.test.mjs` |
+
+### Re-checked: nothing open
+
+The first re-derivation left three rows unverified. Reading the code rather than trusting the
+search resolved all three:
+
+| Item | Resolution |
+|---|---|
+Report summary builders reclassify `canceled` as ok/error | **Handled.** Lifecycle `canceled` is what projections read; the abort render path is pinned by `admin-ops-history-abort-render.test.mjs` ("admin ops history: current abort action"). `lifecycle_cleanup.py:111-124` writes `terminalReason` / `abortFinishedAt` into the payload instead of re-deriving status from a report. |
+Pipeline waits too long after child abort | **Handled.** `_wait_for_child_report` (`pipeline_service_children.py:224-240`) re-raises `PipelineAbortRequested` rather than swallowing it, and treats only `error`/`failed`/`failure` as a raise — a `canceled` child is not misread as a failure. Pinned by `test_pipeline_service_abort_waits.py`: abort during a discovery wait, abort during a fetch wait, and "child report wait preserves pipeline abort". |
+Registry adjudication is treated as abortable | **Not reachable.** `SUPPORTED_ABORT_TASK_TYPES = {"fetch", "discovery", "pipeline"}` (`task_abort_service.py:20`), and validation rejects anything outside it. Registry adjudication cannot be an abort target, so the original "skip if not started, wait and warn" guard is unreachable code by design. |
+
+So the real state is **0 open loopholes out of 17**, and this plan's only remaining value is the
+citations above. The **Backend/Frontend Acceptance Criteria** and **Test Plan** sections below are
+still unverified against the suite — that is the honest remaining work, and it is verification, not
+implementation.
+
+## A note on why this table had to be rewritten
+
+It was written before implementation and never reconciled afterwards, so it described work as
+outstanding that had long since landed — the same failure as five other plans this repo retired in
+2026-10-01. A loophole list written ahead of the code cannot be trusted afterwards, because nothing
+forces it to track reality. The citation column is the fix: it makes each row falsifiable.
+
+## A note on why this table had to be rewritten
+
+It was written before implementation and never reconciled afterwards, so it described work as
+outstanding that had long since landed — the same failure as five other plans this repo retired in
+2026-10-01. A loophole list written ahead of the code cannot be trusted afterwards, because nothing
+forces it to track reality. The citation column is the fix: it makes each row falsifiable.
 
 ## Backend Acceptance Criteria
 
