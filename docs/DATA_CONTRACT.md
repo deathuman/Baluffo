@@ -947,8 +947,8 @@ Do **not** add `needs_review` to the guard's diagnosis refusal set. The trusted-
 
 ### Source health triage
 
-Per-source health counters are canonical-only on every surface (alias collapse,
-`docs/plans/source-health-counter-collapse-plan.md`): `lastKeptCount`,
+Per-source health counters are canonical-only on every surface (see the alias-collapse
+migration recorded in §2.5): `lastKeptCount`,
 `consecutiveZeroKept`, and `consecutiveFailures` are the only stored and emitted
 names since Phase 5 (2026-09-10). The legacy spellings (`lastJobsKept`,
 `zeroJobStreak`, `failureCount`) are read for legacy input compatibility and

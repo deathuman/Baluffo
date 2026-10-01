@@ -72,13 +72,18 @@ A status of *Folded*, *Parked*, *Closed*, *Superseded*, *Implemented*, or *Fully
 means the plan is finished. If it still sits in `plans/`, that is the defect, not the state.
 
 `test_plan_lifecycle_tripwires` in [`../tools/repo_health/release_docs_policy.py`](../tools/repo_health/release_docs_policy.py)
-enforces this: it flags oversized plans, terminal-status plans still in `plans/`, and plans
-past 5,000 words. It is **warn-only** while the existing backlog drains — set
-`PLAN_LIFECYCLE_ENFORCE = True` once the list is empty or the remaining plans are accepted.
+enforces this. It flags oversized plans, terminal-status plans still in `plans/`, and plans past
+5,000 words.
 
-The word threshold exists because line counts miss the worst shape. One retired plan held
-21,816 words across 65 lines, with 172,891 characters on a single line. A line-based rule
-passed it cleanly.
+**Deferral is not terminal.** A plan may legitimately wait, and the gate keeps it as long as its
+status names the condition that unblocks it — "deferred until the next desktop portable release"
+passes. A plan marked *Parked* or *Deferred* with **no stated trigger** fails, because an
+unexplained reason to wait is indistinguishable from an abandoned one. That is the pressure the
+rule applies: make the reason checkable, or delete the plan.
+
+The word threshold exists because line counts miss the worst shape. One retired plan held 21,816
+words across 65 lines, with 172,891 characters on a single line. A line-based rule passed it
+cleanly.
 
 Durable results belong in the canonical doc that owns the topic — measurement method in
 [`measurement-methods.md`](measurement-methods.md), pipeline behaviour in

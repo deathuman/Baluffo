@@ -1,4 +1,4 @@
-"""Counter-collapse guardrails (docs/plans/source-health-counter-collapse-plan.md).
+"""Counter-collapse guardrails (docs/DATA_CONTRACT.md section 2.5).
 
 The alias map in the policy leaf owns every dual-written counter name. These
 tests fail if an alias spelling re-enters the persistence layer or the bridge

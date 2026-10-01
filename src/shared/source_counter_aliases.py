@@ -9,7 +9,7 @@ derive. The alias-first reader ordering caused a self-perpetuating split brain
 in commit `ca778258`; this leaf makes the canonical-first precedence the single
 definition so no consumer hand-rolls alias fallbacks again.
 
-Migration state (docs/plans/source-health-counter-collapse-plan.md): Phases
+Migration state (docs/DATA_CONTRACT.md §2.5): Phases
 1–4 + 6 collapsed persisted state to canonical counters only (2026-09-09), and
 Phase 5 (2026-09-10, operator-approved) dropped the alias spellings from the
 bridge wire contract — no emit surface carries them anymore. The alias map

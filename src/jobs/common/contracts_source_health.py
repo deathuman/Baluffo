@@ -31,7 +31,7 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
     kept_count = _clamped_int(row.get("keptCount"), 0, 0)
     # Canonical counters only (alias collapse Phase 5): persisted state is
     # canonical-only (Phase 4), and the wire contract no longer carries the
-    # legacy alias spellings (docs/plans/source-health-counter-collapse-plan.md).
+    # legacy alias spellings (docs/DATA_CONTRACT.md §2.5).
     failure_count = _clamped_int(row.get("consecutiveFailures"), 0, 0)
     zero_job_streak = _clamped_int(row.get("consecutiveZeroKept"), 0, 0)
     last_success = clean_text(row.get("lastSuccessfulFetchAt")) or clean_text(

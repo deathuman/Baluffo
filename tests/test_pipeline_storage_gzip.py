@@ -220,7 +220,7 @@ def test_lifecycle_state_helpers_round_trip_gzip_storage() -> None:
 
 
 def test_source_state_stale_alias_converges_through_normalize_and_save() -> None:
-    """Phase 2/4 of the counter collapse (docs/plans/source-health-counter-collapse-plan.md):
+    """Phase 2/4 of the counter collapse (docs/DATA_CONTRACT.md section 2.5):
     heal, don't rewrite — and never re-emit. A legacy payload storing counters
     only under alias names converges onto the canonical counters with their
     VALUES preserved after the normal read-modify-write cycle, and alias keys

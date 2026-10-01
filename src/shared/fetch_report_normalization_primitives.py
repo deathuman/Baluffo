@@ -175,7 +175,7 @@ def _source_row_count_fields(src: dict[str, Any], options: _SourceRowBaseOptions
     )
     # Canonical counters only (alias collapse Phase 5): the wire contract no
     # longer carries the legacy alias spellings, so legacy alias-only inputs
-    # are normalized away entirely (docs/plans/source-health-counter-collapse-plan.md).
+    # are normalized away entirely (docs/DATA_CONTRACT.md §2.5).
     return {
         "fetchedCount": number(src.get("fetchedCount")),
         "keptCount": number(src.get("keptCount")),
@@ -211,7 +211,7 @@ def normalize_fetch_report_source_row_base(
     last_seen_fallback_last_run: bool = False,
     # Alias collapse Phase 5: the wire contract is canonical-only — the legacy
     # alias input spellings are no longer normalized into the output at all
-    # (docs/plans/source-health-counter-collapse-plan.md).
+    # (docs/DATA_CONTRACT.md §2.5).
     health_score_default: int = 0,
     health_score_max: int | None = 100,
     count_max: int | None = None,
@@ -255,7 +255,7 @@ def normalize_jobs_fetch_report_source_row_base(
     normalize_text_func: Any | None = _normalize_text,
 ) -> dict[str, Any]:
     # Alias collapse Phases 4–5
-    # (docs/plans/source-health-counter-collapse-plan.md): repo-side producers
+    # (docs/DATA_CONTRACT.md §2.5): repo-side producers
     # normalize the canonical counters only — no alias-shaped dual-write on
     # any wire surface since Phase 5 dropped the bridge alias contract.
     return normalize_fetch_report_source_row_base(

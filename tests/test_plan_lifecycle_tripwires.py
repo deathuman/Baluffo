@@ -74,12 +74,11 @@ def test_word_tripwire_leaves_a_short_plan_alone(tmp_path: Path) -> None:
     "status",
     [
         "Folded (2026-09-04) -- remainder moved elsewhere",
-        "Parked; deferred experiment",
         "Closed -- no active follow-up",
         "Superseded by the current plan",
-        "Implemented, published, and live-smoked",
         "Fully executed - Phases 1-4",
         "**All four systemic fixes S1-S4 landed**",
+        "Code work is complete and everything in this plan has landed",
     ],
 )
 def test_terminal_status_in_plans_is_flagged(tmp_path: Path, status: str) -> None:
@@ -102,6 +101,69 @@ def test_live_status_is_not_flagged(tmp_path: Path, status: str) -> None:
     _plan(tmp_path, "live.md", f"> - **Status:** {status}\n\nShort body.\n")
     findings = _plan_lifecycle_findings(tmp_path / "docs" / "plans")
     assert not any("live.md" in f for f in findings)
+
+
+def test_parked_with_a_trigger_is_kept(tmp_path: Path) -> None:
+    """Deferral is legitimate when the status names what unblocks it.
+
+    Real case: optional-playwright reads "Parked -- deferred until the next desktop
+    portable release". That trigger is real and checkable, so the plan must survive.
+    Condemning it would be a false positive in the enforcing phase.
+    """
+    _plan(
+        tmp_path,
+        "pw.md",
+        "> - **Status:** Parked -- deferred until the next desktop portable release\n\nBody.\n",
+    )
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+def test_implemented_with_pending_acceptance_criteria_is_kept(tmp_path: Path) -> None:
+    """Real case: task-abort-control reads 'Implemented baseline, refinement-ready'."""
+    _plan(tmp_path, "abort.md", "> - **Status:** Implemented baseline, refinement-ready\n\nBody.\n")
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["Parked; deferred experiment", "Parked", "Deferred", "Implemented"],
+)
+def test_deferral_without_a_trigger_is_flagged_as_unscoped(tmp_path: Path, status: str) -> None:
+    """ "Parked" with no stated reason to wait is indistinguishable from abandoned.
+
+    Requiring the trigger is what stops "Parked" from becoming the new "Complete".
+    """
+    _plan(tmp_path, "vague.md", f"> - **Status:** {status}\n\nBody.\n")
+    findings = _plan_lifecycle_findings(tmp_path / "docs" / "plans")
+    assert any("vague.md" in f and "without naming what unblocks it" in f for f in findings)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "Parked -- revisit before the next desktop runtime effort",
+        "Parked until the pooled fallback proves insufficient",
+        "Deferred until a fresh fetch returns",
+        "Parked; revisit together with the release plan",
+    ],
+)
+def test_various_phraseings_of_a_real_trigger_are_accepted(tmp_path: Path, status: str) -> None:
+    _plan(tmp_path, "triggered.md", f"> - **Status:** {status}\n\nBody.\n")
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+def test_parked_wins_over_a_later_terminal_word(tmp_path: Path) -> None:
+    """A deferred status is judged on its trigger, not on a word further along.
+
+    "Parked until the next release -- implemented behind a flag" is still deferred,
+    because the opening clause is what states the plan's lifecycle.
+    """
+    _plan(
+        tmp_path,
+        "mixed.md",
+        "> - **Status:** Parked until the next release -- implemented behind a flag\n\nBody.\n",
+    )
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
 
 
 def test_template_is_exempt(tmp_path: Path) -> None:

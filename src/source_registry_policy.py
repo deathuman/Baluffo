@@ -113,7 +113,7 @@ def _fresh_jobs_found_count(row: dict[str, Any], state: dict[str, Any]) -> int |
     if _latest_fetch_failed(row, state):
         return None
     # Counter read via the shared policy leaf: canonical-first with alias
-    # fallback (docs/plans/source-health-counter-collapse-plan.md, Phase 3).
+    # fallback (docs/DATA_CONTRACT.md §2.5, Phase 3).
     for source in (state, row):
         if "lastJobsFound" in source:
             return max(0, _coerce_int(source.get("lastJobsFound"), 0))

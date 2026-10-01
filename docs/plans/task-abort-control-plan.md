@@ -1,6 +1,6 @@
 # Task Abort Control Plan
 
-> - **Status:** Implemented baseline, refinement-ready
+> - **Status:** Implemented baseline; refinement-ready — the open work is the Loopholes table and the backend/frontend acceptance criteria below, both enumerated and unmet
 > - **Use this when:** adding or refining abort support for discovery, fetch, first-run bootstrap fetches, or jobs pipeline tasks
 > - **Canonical for:** abort scope, lifecycle safety rules, public API shape, known loopholes, implementation sequencing, and verification gates
 > - **Not canonical for:** pause support or standalone sync abort

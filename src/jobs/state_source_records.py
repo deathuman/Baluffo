@@ -290,7 +290,7 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
         src.get("lastRunAt"), src.get("lastCheckedAt"), src.get("lastSeenInFetchAt")
     )
     # Canonical-first via the shared policy leaf (Phase 1 of the counter
-    # collapse, docs/plans/source-health-counter-collapse-plan.md): the
+    # collapse, docs/DATA_CONTRACT.md §2.5): the
     # maintained fields (lastKeptCount, consecutiveZeroKept,
     # consecutiveFailures) are updated fresh each run by the
     # apply_*_source_state appliers, while the legacy aliases (lastJobsKept,

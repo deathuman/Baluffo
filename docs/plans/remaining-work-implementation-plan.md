@@ -3,7 +3,7 @@
 > - **Status:** Of the five items, **four are closed** (2 and 3 landed; 4 closed with all 15 resolved; 5 half-closed — `test_bridge_profile_summary_records_external_sample_failure` **proven and mechanism-captured 2026-10-01**, `test_transient_get_error_retries_with_backoff` still unproven). **Item 1 is BLOCKED and its method is unsafe — do not run it** (see below). No item here is unstarted work waiting to be picked up; what remains is one operator-gated registry decision and one flake awaiting a genuine reproduction
 > - **Use this when:** picking up any of the five open items, or re-deciding whether one is still worth doing
 > - **Canonical for:** the scope, sequencing, and stop conditions of the open work
-> - **Not canonical for:** the completed 2026-09-26/27 registry repairs (see [`registry-hygiene-followup-plan.md`](registry-hygiene-followup-plan.md)) or the test-reduction rules (see [`test-reduction-triage.md`](test-reduction-triage.md))
+> - **Not canonical for:** the completed 2026-09-26/27 registry repairs (see the registry retirement rules in [`../scraping-pipeline.md`](../scraping-pipeline.md)) or the test-reduction rules (see [`test-reduction-triage.md`](test-reduction-triage.md))
 > - **Then inspect:** [`../testing.md`](../testing.md), the candidate registry row, and the owning source doc
 > - **Last updated:** 2026-09-27
 

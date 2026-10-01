@@ -146,6 +146,50 @@ Two constraints are durable regardless of that verdict:
   Scrapy-Playwright browser queue. Never provider APIs, ordinary HTTP fetches, dedup, no-openings
   evidence, saved jobs, or sync.
 
+### Registry retirement rules
+
+Two rules govern whether a source row may be removed, and both were learned by nearly getting the
+wrong answer.
+
+**A demote reason decides staleness.** A row absent from the active set is only a *stale seed copy*
+when the store demoted it for a superseded reason. Retry-state reasons mean the opposite — the row
+is deliberately still retrying:
+
+| Demote reason | Meaning | Disposition |
+|---|---|---|
+`registry_conflict_*_auto_demote` | parked loser of a reconciliation | prune where a live replacement is verified |
+`sheet_directory` / `seed` / `provider_migration_candidate` | superseded | prune |
+`fetch_failure_demote` | retry state | **keep** — a failed fetch is not a retirement |
+`hidden:repeated_zero_jobs` | parked, deliberately retryable | **keep** |
+
+**A conflict demotion can take out a whole studio family.** In one measured pass, 33 prune
+candidates had *no* active row on any adapter, because the conflict demotion had removed their
+entire studio family and left the studio with zero coverage — often as whole clusters of one board's
+URL variants. Pruning those would have retired live studios on the strength of a stale seed copy.
+The check that catches it is coverage, not provenance: **before pruning a row, confirm some other
+active row covers that studio on some adapter.** A provider-backed row often qualifies even when its
+canonical URL is the provider endpoint rather than the careers page, so a same-board URL check alone
+undercounts the available replacement.
+
+That asymmetry is also why a raw URL comparison misreads twins: a provider row's canonical URL never
+equals the careers page it supersedes, so `www`/apex/`http`/`:443`/trailing-slash normalization is
+necessary but not sufficient.
+
+### A narrower gate that empties out admits everything
+
+`add_detail_link` is the detail predicate for the detail-traversal lane, but it is only a
+*narrower*. `static_listing_runner.py` narrows to probable links **only when that set is
+non-empty**, so an empty candidate set means every link passes through unfiltered.
+
+This is why an under-reporting predicate can coexist with correct collection. The rendered-card
+lane (`extract_rendered_card_jobs`) emits a job from a job-like anchor without consulting the detail
+predicate at all, so a board can be fully collected while the probe's detail count reads zero — the
+number is wrong without anything being lost.
+
+Four lanes reach detail extraction, and a per-source opt-in reaches only two of them. Before
+concluding that a missing count means missing jobs, identify which lane produced the rows and
+whether it consults the predicate at all.
+
 ## 2) Where Playwright is used
 
 | Point | Location | When |

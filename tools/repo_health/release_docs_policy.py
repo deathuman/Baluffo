@@ -29,11 +29,16 @@ _ADVISORY_INTERNAL_LEAK_PATTERNS = (
 # programmes of ~1,000 lines each accumulated because a status line can go stale
 # while the body moves on, and a reader who trusts the line skips the body.
 #
-# PLAN_LIFECYCLE_ENFORCE is deliberately False. Twelve plans trip these rules
-# today, so enforcing on day one means a permanently red gate, and a permanently
-# red gate is one people learn to ignore. The warn pass prints the drain list;
-# flip this to True once the list is empty or the offenders are accepted.
-PLAN_LIFECYCLE_ENFORCE = False
+# PLAN_LIFECYCLE_ENFORCE started False on purpose. Twelve plans tripped these rules
+# that day, so enforcing immediately meant a permanently red gate, and a permanently
+# red gate is one people learn to ignore. It went True on 2026-10-01 once the drain
+# reached zero, so it now blocks on a clean list rather than on a red one.
+#
+# It blocks on something new and deliberate. A finished plan, or a deferred plan
+# that never says what unblocks it, fails the gate; a deferred plan that names a
+# real trigger passes. That is the intended pressure -- "Parked" with no stated
+# reason to wait is indistinguishable from abandoned, so the doc has to answer.
+PLAN_LIFECYCLE_ENFORCE = True
 
 # A tripwire to review, not a hard cap. The retired audit programme measured 1,027
 # lines and still carried live method value, so the threshold prompts a look
@@ -46,8 +51,24 @@ PLAN_LINE_TRIPWIRE = 600
 # directory, so word count is checked too.
 PLAN_WORD_TRIPWIRE = 5000
 
-# A terminal status is a plan asking to be deleted. Leaving it in plans/ is how
-# the directory fills with work that is already done.
+# "Code work is complete and everything in this plan has landed" opens with a
+# subject, not a state, so the anchored terminal pattern alone would miss it. These
+# openers are how finished work actually gets described in this repo's plans.
+PLAN_TERMINAL_SUBJECT = re.compile(
+    r"^(?:\W*)(?:code\s+work\s+is\s+complete\b|everything\b[^.]*\b(?:landed|complete)\b)",
+    re.IGNORECASE,
+)
+
+# A terminal status means "this plan's work is finished; delete it". Deferral is
+# NOT terminal. optional-playwright-browser-download reads "Parked -- deferred until
+# the next desktop portable release" and must stay, because that trigger is real
+# and checkable. task-abort-control reads "Implemented baseline, refinement-ready"
+# and must stay too, because its acceptance criteria are the next step. Flagging
+# either would be a false positive in the enforcing phase, and a guardrail that
+# condemns correct behaviour is one people disable.
+#
+# So a status is terminal only when it reads as work-complete AND names no
+# pending condition. The two tests are separate on purpose.
 #
 # ANCHORED, which is the whole mechanism. Real statuses run long and mention
 # completed work mid-sentence while the plan itself is active -- art-title reads
@@ -57,8 +78,32 @@ PLAN_WORD_TRIPWIRE = 5000
 # without needing a length window or an explicit "active" override; an earlier
 # draft of this check had both and they were dead code.
 PLAN_TERMINAL_STATUS = re.compile(
-    r"^(?:\W*)(?:folded|parked|closed|superseded|implemented|complete|completed|"
-    r"fully\s+executed|landed|finished|all\b[^.]*\blanded)\b",
+    r"^(?:\W*)(?:folded|closed|superseded|complete|completed|fully\s+executed|"
+    r"landed|finished|all\b[^.]*\blanded)\b",
+    re.IGNORECASE,
+)
+
+# "Parked" and "Implemented" open a deferred plan just as often as a finished one.
+# They are only terminal when nothing is pending, so they are judged by the pending
+# test below rather than by this pattern.
+PLAN_DEFERRED_STATUS = re.compile(
+    r"^(?:\W*)(?:parked|deferred|implemented|refinement-ready)\b",
+    re.IGNORECASE,
+)
+
+# A deferred plan must say what unblocks it. Real cases: "until the next desktop
+# portable release", "refinement-ready", "before the next desktop runtime effort".
+# Requiring the trigger is what keeps "Parked" from becoming the new "Complete" --
+# an unstated reason to wait is indistinguishable from an abandoned plan.
+#
+# Every term here is a CONDITION or a CRITERION, never a synonym for the state
+# itself. An earlier draft listed "deferred", which made "Parked; deferred
+# experiment" self-satisfying: the word describing the state also satisfied the
+# word justifying it, so a plan with no actual trigger passed.
+PLAN_PENDING_TRIGGER = re.compile(
+    r"(?:\buntil\b|\bwhen\b|\bbefore\b|\bafter\b|\bonce\b|\brevisit\b|\breturns?\b|"
+    r"\bnext\s+\w|\bif\b|\bready\b|\bpending\b|\bremain(?:s|ing)?\b|\bstill\b|"
+    r"\bretrigger\b|\bacceptance\s+criteria\b|\bcriteria\b|\bshould\b)",
     re.IGNORECASE,
 )
 
@@ -97,7 +142,19 @@ def _plan_lifecycle_findings(plans_dir: Path) -> list[str]:
             ),
             "",
         )
-        if status and PLAN_TERMINAL_STATUS.match(status):
+        if not status:
+            continue
+        # Deferral is legitimate when the status says what unblocks it. Judge that
+        # before the terminal test, or "Parked -- deferred until ..." is condemned
+        # for the very thing that makes it keepable.
+        if PLAN_DEFERRED_STATUS.match(status):
+            if not PLAN_PENDING_TRIGGER.search(status):
+                findings.append(
+                    f"{path.name}: deferred ({status[:PLAN_STATUS_QUOTE_CHARS].strip()!r}) "
+                    f"without naming what unblocks it -- state the trigger, or delete it"
+                )
+            continue
+        if PLAN_TERMINAL_STATUS.match(status) or PLAN_TERMINAL_SUBJECT.match(status):
             findings.append(
                 f"{path.name}: status is terminal ({status[:PLAN_STATUS_QUOTE_CHARS].strip()!r}) "
                 f"while still in plans/ -- delete it and absorb the lessons"
