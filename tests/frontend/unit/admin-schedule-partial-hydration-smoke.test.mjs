@@ -167,7 +167,11 @@ function createServer() {
     }
     if (url.pathname === "/registry/sources" || url.pathname === "/registry/summary") {
       if (url.pathname === "/registry/sources") {
-        await delay(700);
+        // This delay IS the width of the source-table placeholder window, which
+        // the observer samples on every animation frame. 700ms was tight enough
+        // to drop frames on a loaded CI box; 1200ms keeps several samples in the
+        // window without asserting anything about production timing.
+        await delay(1200);
       }
       json(res, {
         ok: true,
@@ -206,6 +210,63 @@ function textState(page) {
       interval: interval ? { value: interval.value, disabled: interval.disabled } : null
     };
   });
+}
+
+/**
+ * Record whether all three source-table buckets ever showed their loading
+ * placeholder at the same time.
+ *
+ * Installed with `addInitScript` before `page.goto` on purpose. The placeholder
+ * window opens when the bootstrap sets it
+ * (`frontend/admin/app/registry/source-tables-state.js`) and closes when the
+ * seeded rows render; its width is only the harness's `/registry/sources` delay.
+ * Sampling every frame from navigation cannot miss the window whatever order
+ * startup takes.
+ *
+ * Why this replaces a `waitForFunction`: that polls once at an arbitrary moment,
+ * starting only after `#admin-content` is revealed (unhidden in
+ * `frontend/admin/app/auth.js`). Under the lane's parallelism the two are not
+ * reliably ordered, so the wait can begin polling after the window has closed -
+ * the condition is then permanently false and only a timeout can end it. No
+ * timeout value fixes that; the observation has to be recorded as it happens.
+ *
+ * The delayed labels (`Source tables delayed ...`) are deliberately NOT accepted:
+ * those mean the load was skipped, which is the opposite of partial hydration.
+ */
+async function installPlaceholderObserver(page) {
+  await page.addInitScript(() => {
+    const buckets = ["pending", "active", "rejected"];
+    const text = bucket => (document.querySelector(`[data-ui="admin-${bucket}-sources"]`)?.textContent || "")
+      .replace(/\s+/g, " ").trim();
+    const allPlaceholders = () => buckets.every(b => new RegExp(`Loading ${b} sources`, "i").test(text(b)));
+    const observation = { seen: false, firstSeenAtMs: null, lastSeenAtMs: null, textWhenContentVisible: null };
+    globalThis.__sourceTablePlaceholder = observation;
+    const startedAtMs = performance.now();
+    const sample = () => {
+      const now = Math.round(performance.now() - startedAtMs);
+      const content = document.querySelector("#admin-content");
+      if (observation.textWhenContentVisible === null && content && !content.classList.contains("hidden")) {
+        observation.textWhenContentVisible = { atMs: now, text: Object.fromEntries(buckets.map(b => [b, text(b).slice(0, 60)])) };
+      }
+      if (allPlaceholders()) {
+        observation.lastSeenAtMs = now;
+        if (!observation.seen) { observation.seen = true; observation.firstSeenAtMs = now; }
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+function describePlaceholderObservation(observation, events, metrics) {
+  const at = observation.textWhenContentVisible;
+  return [
+    `placeholder observed: ${observation.seen ? "yes" : "NO"}`
+      + (observation.seen ? ` (first ${observation.firstSeenAtMs}ms, last ${observation.lastSeenAtMs}ms)` : ""),
+    `#admin-content visible at: ${at ? `${at.atMs}ms` : "never"}`,
+    at ? `bucket text then: ${JSON.stringify(at.text)}` : "",
+    evidence(events, metrics)
+  ].filter(Boolean).join("\n");
 }
 
 function evidence(events, metrics) {
@@ -257,13 +318,10 @@ test("admin schedule smoke renders saved config while next-run details refresh",
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
+    // Installed before goto on purpose - see installPlaceholderObserver.
+    await installPlaceholderObserver(page);
     await page.goto(`${baseUrl}/admin.html?partialScheduleSmoke=1`);
     await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15000 });
-    await page.waitForFunction(() => (
-      /Loading pending sources/i.test(document.querySelector('[data-ui="admin-pending-sources"]')?.textContent || "")
-      && /Loading active sources/i.test(document.querySelector('[data-ui="admin-active-sources"]')?.textContent || "")
-      && /Loading rejected sources/i.test(document.querySelector('[data-ui="admin-rejected-sources"]')?.textContent || "")
-    ), null, { timeout: 1500 });
     await page.waitForFunction(() => /schedule details refreshing|Pipeline:\s*every 11h, next/i.test(document.querySelector('[data-ui="admin-ops-schedule"]')?.textContent || ""), null, { timeout: 10000 });
     let state = await textState(page);
     assert.equal(state.enabled.checked, true, evidence(harness.events, harness.metrics));
@@ -290,6 +348,16 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       && /Active Seeded Studio/i.test(document.querySelector('[data-ui="admin-active-sources"]')?.textContent || "")
       && /Rejected Seeded Studio/i.test(document.querySelector('[data-ui="admin-rejected-sources"]')?.textContent || "")
     ), null, { timeout: 7000 });
+    // The seeded rows are in, so the placeholder window has closed: assert on
+    // what was recorded while it was open. Deliberately does NOT accept the
+    // "Source tables delayed ..." labels - those mean the load was skipped, which
+    // is the opposite of the partial hydration this test is about.
+    const placeholderObservation = await page.evaluate(() => globalThis.__sourceTablePlaceholder);
+    assert.equal(
+      placeholderObservation?.seen,
+      true,
+      `All three source tables must show their loading placeholder while the registry load is in flight.\n${describePlaceholderObservation(placeholderObservation || {}, harness.events, harness.metrics)}`
+    );
     assert.equal(
       harness.requests.filter(request => /GET \/registry\/sources\?view=table/.test(request) && /limitPerBucket=250/.test(request)).length,
       1
