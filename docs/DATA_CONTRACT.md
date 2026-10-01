@@ -914,6 +914,19 @@ Google Sheets source detail stats may also include additive title-hydration diag
 
 `summary.coverageScope` and `runtime.coverageScope` are additive fetch-report metadata. The first-run bootstrap route writes `"bootstrap_sheets"` to both fields for sheet-limited output; normal full fetch/pipeline reports should omit the field or replace it with their own full-coverage scope. Bootstrap-scoped reports must not be used as full-fetch output-drop or reliability baselines.
 
+`failureBucket` classifies why a source collected nothing. `details_broken` is the listing-live / details-dead split, distinct from `js_required`: a board can serve 200 with real server-rendered roles while every individual detail URL fails. It is stamped only when the evidence supports that reading, so readers must not infer it from a stale or absent counter.
+
+`has_details_broken_signal` fires only when **all** of these hold: details were actually visited (≥1), candidates or listing links ≥3, detail-fetch failures ≥80% of visited, no browser-fallback recommendation, and the source is not empty-confirmed. The `detail_fetch_failed` counter is stamped at the traversal detail-error site (`_record_detail_fetch_error`) and initialized in the entry report; the context builder reads both the `detail_fetch_failed` and `detailFetchFailedCount` spellings.
+
+Two consequences that are easy to get wrong:
+
+- **The listing-level zero-kept classification runs on the source report, not the detail evidence.** Without the explicit projection, a rows-flow shape (rendered cards re-verified against their detail URLs, first detail 500 aborting the source before any counter landed) stamps a detail failure while the source-level bucket stays `js_required`. `_apply_static_detail_evidence_to_report` projects `candidateLinksFound` / `detailPagesVisited` / `detailFetchFailedCount` / `listingJobsFound` onto the source-level report, nonzero-only, and stamps `details_broken` when the signal fires.
+- **`listingJobsFound` must be stamped before the per-row verification loop.** An abort on row 1 means the post-return counters never see the live board's remaining cards.
+
+`details_broken` is in the zero-kept guard's broken-prior-bucket set: a details-broken prior read is not clean-zero evidence. Adapter-stamped classifications (`anti_bot`, `site_changed`, `timeout`, `parse`, `dead_listing`, `empty`, `ok_no_jobs`) keep their own buckets, and a strong classification takes precedence.
+
+Do **not** add `needs_review` to the guard's diagnosis refusal set. The trusted-empty page's own diagnosis is the `needs_review` fall-through, so refusing it breaks every marker promotion. This was measured, not assumed, and the resulting bucket-based hardening is the actual fix.
+
 ### Source health triage
 
 Per-source health counters are canonical-only on every surface (alias collapse,

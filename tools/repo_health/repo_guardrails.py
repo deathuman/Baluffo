@@ -688,6 +688,7 @@ def run_docs_group() -> list[GuardFailure]:
             "test_active_docs_avoid_stale_runtime_and_test_guidance",
             "test_index_routes_current_process_docs_only",
             "test_contributing_points_startup_perf_changes_to_canonical_architecture_doc",
+            "test_plan_lifecycle_tripwires",
         )
     ]
     failures = _run_python_checks("docs", checks)

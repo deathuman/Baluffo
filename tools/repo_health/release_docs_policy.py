@@ -23,6 +23,98 @@ _ADVISORY_INTERNAL_LEAK_PATTERNS = (
     (r"\b__[a-z]+__\b", "dunder attribute"),
 )
 
+# Plans are temporary ledgers: refine before execution, track to completion, then
+# delete them and let the durable lessons land in the regular docs (see
+# DOCS_WORKFLOW.md:46 -- git history is the provenance, not archive/). Three
+# programmes of ~1,000 lines each accumulated because a status line can go stale
+# while the body moves on, and a reader who trusts the line skips the body.
+#
+# PLAN_LIFECYCLE_ENFORCE is deliberately False. Twelve plans trip these rules
+# today, so enforcing on day one means a permanently red gate, and a permanently
+# red gate is one people learn to ignore. The warn pass prints the drain list;
+# flip this to True once the list is empty or the offenders are accepted.
+PLAN_LIFECYCLE_ENFORCE = False
+
+# A tripwire to review, not a hard cap. The retired audit programme measured 1,027
+# lines and still carried live method value, so the threshold prompts a look
+# rather than forcing a split of a doc that does not need one.
+PLAN_LINE_TRIPWIRE = 600
+
+# A line count cannot see the worst offender. jobs-coverage-improvement-plan held
+# 21,816 words in 65 lines -- 172,891 characters on a single line, 97% of the
+# file. It passed every line-based rule while being the clearest violation in the
+# directory, so word count is checked too.
+PLAN_WORD_TRIPWIRE = 5000
+
+# A terminal status is a plan asking to be deleted. Leaving it in plans/ is how
+# the directory fills with work that is already done.
+#
+# ANCHORED, which is the whole mechanism. Real statuses run long and mention
+# completed work mid-sentence while the plan itself is active -- art-title reads
+# "Active follow-up plan, parser/redirect/company hardening implemented and
+# validated on 2026-05-30", and one retired plan carried 172,891 characters on a
+# single status line. A pattern that reads only the opening phrase rejects both
+# without needing a length window or an explicit "active" override; an earlier
+# draft of this check had both and they were dead code.
+PLAN_TERMINAL_STATUS = re.compile(
+    r"^(?:\W*)(?:folded|parked|closed|superseded|implemented|complete|completed|"
+    r"fully\s+executed|landed|finished|all\b[^.]*\blanded)\b",
+    re.IGNORECASE,
+)
+
+# Longest status prefix quoted in a finding. Display only -- matching is the
+# anchored pattern's job, not this slice's.
+PLAN_STATUS_QUOTE_CHARS = 60
+
+# refactor-charter-template.md is a template for authoring plans, not a plan. It
+# has no status line and no execution history, so lifecycle rules do not apply.
+PLAN_LIFECYCLE_EXEMPT = frozenset({"refactor-charter-template.md"})
+
+
+def _plan_lifecycle_findings(plans_dir: Path) -> list[str]:
+    findings: list[str] = []
+    for path in sorted(plans_dir.glob("*.md")):
+        if path.name in PLAN_LIFECYCLE_EXEMPT:
+            continue
+        text = path.read_text(encoding="utf-8")
+        lines = len(text.splitlines())
+        words = len(text.split())
+        if lines > PLAN_LINE_TRIPWIRE:
+            findings.append(
+                f"{path.name}: {lines} lines (over the {PLAN_LINE_TRIPWIRE}-line "
+                f"tripwire) -- review whether the open work still justifies it"
+            )
+        if words > PLAN_WORD_TRIPWIRE:
+            findings.append(
+                f"{path.name}: {words} words (over the {PLAN_WORD_TRIPWIRE}-word "
+                f"tripwire) -- a line count misses this shape"
+            )
+        status = next(
+            (
+                line.partition("**Status:**")[2].strip()
+                for line in text.splitlines()[:12]
+                if "**Status:**" in line
+            ),
+            "",
+        )
+        if status and PLAN_TERMINAL_STATUS.match(status):
+            findings.append(
+                f"{path.name}: status is terminal ({status[:PLAN_STATUS_QUOTE_CHARS].strip()!r}) "
+                f"while still in plans/ -- delete it and absorb the lessons"
+            )
+    return findings
+
+
+def test_plan_lifecycle_tripwires(repo_root: Path) -> None:
+    """Warn on plans that outlived their purpose. Warn-only until the list drains."""
+    findings = _plan_lifecycle_findings(repo_root / "docs" / "plans")
+    if not findings:
+        return
+    message = "plan lifecycle tripwires:\n" + "\n".join(f"  - {f}" for f in findings)
+    if PLAN_LIFECYCLE_ENFORCE:
+        raise AssertionError(message)
+    print(f"[warn] {message}")
+
 
 def _section(text: str, heading: str) -> str:
     start = text.index(heading)

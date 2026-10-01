@@ -75,6 +75,51 @@ Scrapy path (for scrapy_static sources from browser queue)
 - LinkedIn profile/search/post pages and generic third-party aggregators are not viable static career boards. They should stay out of default active fetches unless a supported provider/social adapter owns them.
 - Provider-hosted pages should be migrated to an existing provider adapter only when the repo already supports that provider and the source row has enough local evidence to map it safely. Otherwise, hide the static row and document the unsupported provider family as future work.
 
+### Page-controlled URL joins must go through `safe_page_urljoin`
+
+`safe_page_urljoin` in `static_runtime_support.py` is the single guarded join helper for any href
+that came out of a fetched page. A page-controlled href that cannot parse returns `""` and is
+skipped like any non-link text. Apply it at **every** page-controlled seam: rendered cards,
+`blizzard`, `frontier`, `nintendo_csod`, `ncsoft`, the runner, feed postings, and the
+detail-heuristics filter's joins.
+
+An unguarded `urljoin` on a page-controlled href raises `ValueError`, and the pipeline records
+that exception as the source's **entire** failure — one poisoned link kills a healthy board. Real
+carriers have been Zoho Recruit careers pages embedding unrendered template hrefs such as
+``https://'+$ESAPI.encoder().encodeForHTMLAttribute(data['website'])+'`` (the brackets make
+`urljoin` raise), and a board that is itself Zoho-backed inherits the same template. The URL
+shapes that cannot parse are not links; they can never crash a source through these seams.
+
+### The "Invalid IPv6 URL" failure class
+
+A recurring `ValueError` surfaced on ~8 static sources whose URLs parse fine under stdlib
+`urlsplit` and which probe healthy over plain HTTPS (Zwift 200s, Take-Two 200s). The exception is
+raised **inside the fetch stack** — URL assembly or proxy/env handling — not by the sites, and not
+by a malformed URL. One related variant reads `` 'cdn_template_directory' does not appear to be an
+IPv4 or IPv6 address ``.
+
+Treat it as a crash-path defect to be fixed at the seam (see `safe_page_urljoin` above), not as
+evidence the boards are dead. Do not re-diagnose these boards as genuinely unreachable: spot-checks
+against the live sites are what distinguish the two.
+
+### Do not read `lastStatus: excluded` as "found nothing"
+
+In `static_listing_flow._handle_skip_and_revalidation`, `excluded` means **not fetched this run** —
+a cache `skip_fresh`/`cooldown_skip`, an HTTP 304, or `structured_migration_promoted`. It never
+means the source yielded nothing. Corroborating tells for a non-fetch are `lastDurationMs: 0` and a
+`lastFingerprint` equal to the SHA-1 of the empty string (`da39a3ee…`).
+
+So neither `lastKeptCount: 0` nor a probe count of 0 is evidence of a collection failure, and a
+same-host job-ish link count cannot settle it either — that counter is a heuristic that cannot tell
+a posting from a category page, so it over-counts badly. **Only a real fetch settles what a source
+collects**, and probe counts and actual collection have been observed to disagree. Isolate it:
+
+```bash
+python src/jobs_fetcher.py --only-sources static_source::<id> --ignore-circuit-breaker --force-refresh-all --output-dir <dir>
+```
+
+Omitting `--output-dir` writes stub state into live `data/`. Always isolate.
+
 ## 2) Where Playwright is used
 
 | Point | Location | When |
@@ -154,7 +199,11 @@ The report also includes provider migration activation diagnostics: advisory act
 
 Provider migration staging records blocker diagnostics for every evaluated advisory candidate. Discovery reports expose stageable/staged/skipped counts, blocker buckets such as duplicate active/pending provider, unsupported provider, insufficient evidence, needs probe, provider-row build failure, identity collision, and adapter mismatch, plus compact blocker examples. Strong provider evidence from static-like rows can stage a provider candidate into pending review, but this remains non-destructive: it does not auto-promote, delete, hide, reject, demote, tombstone, mutate static rows, mutate `REDUNDANT_STATIC_IF_PROVIDER`, or apply source-policy cleanup.
 
-The soak report also includes read-only `providerCoverageGaps` buckets for unsupported provider detections, provider-shaped rows that need probing, staged provider candidates without fetch evidence, fetched-but-not-validated candidates, successful provider fetches missing `migrationSourceIdentity`, and active static rows that remain unsuppressed despite validated provider evidence. The section is advisory only and does not change source rows, loader selection, source sync, provider validation, dynamic suppression, or `REDUNDANT_STATIC_IF_PROVIDER`. For the broader follow-up strategy, see [`plans/jobs-coverage-improvement-plan.md`](plans/jobs-coverage-improvement-plan.md); the historical provider-coverage plan is archived at [`archive/provider-discovery-coverage-gap-plan.md`](archive/provider-discovery-coverage-gap-plan.md).
+The soak report also includes read-only `providerCoverageGaps` buckets for unsupported provider detections, provider-shaped rows that need probing, staged provider candidates without fetch evidence, fetched-but-not-validated candidates, successful provider fetches missing `migrationSourceIdentity`, and active static rows that remain unsuppressed despite validated provider evidence. The section is advisory only and does not change source rows, loader selection, source sync, provider validation, dynamic suppression, or `REDUNDANT_STATIC_IF_PROVIDER`. For the operator workflow behind these buckets see [`source-policy-runbook.md`](source-policy-runbook.md) and [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md); the historical provider-coverage plan is archived at [`archive/provider-discovery-coverage-gap-plan.md`](archive/provider-discovery-coverage-gap-plan.md).
+
+Coverage-improvement follow-ups are recorded as dated evidence under
+[`snapshots/`](snapshots/) and [`notes/`](notes/) rather than in a standing plan — see
+[`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) for why plans are temporary ledgers.
 
 The soak report also includes provider coverage link backfill diagnostics. These identify active provider rows that lack `migrationSourceIdentity` but appear to cover static/generic sources through exact redundant-static rules or provider-migration advisory evidence. Ambiguous matches are grouped by provider with each candidate static URL, host, match reason, confidence, blocker, registry state, and source-state history so review can see why a single static source was or was not selected. Exact provider-migration advisory identity remains the strongest disambiguator; source-state history can only resolve a link when one active, non-hidden, non-duplicate static has useful successful history and alternatives are weaker pending/hidden/duplicate/no-history rows. The report can also resolve safe registry-backed ambiguity by preferring real static registry rows over provider-shaped rows, active static rows over pending rows for the same normalized URL, and static rows with positive source-state history over no-history alternatives. Provider-shaped self-links remain non-actionable diagnostics and do not drive `resolve_link_ambiguity` by themselves. Company-name-only matches are intentionally ignored, and host-only matches without provider-id/rule evidence remain diagnostic. Medium-confidence source-state links are emitted as review-only `needs_review` candidates with an `apiEligible` flag and a ready `apply_migration_identity_link` payload for deliberate manual use; high-confidence exact links keep `backfill_migration_identity_candidate`. The report section is advisory only: it may show high-confidence backfill candidates, source-state-resolved medium-confidence candidates, ambiguous static matches, and blocker examples, but it never calls the API, writes `migrationSourceIdentity`, or changes registry rows.
 
