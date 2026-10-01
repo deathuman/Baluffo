@@ -1,11 +1,34 @@
 # Hold-Tail Repair Plan — the 9 quarantined sources behind the 31-row overdue floor
 
-> - **Status:** Wave 0 (read-only re-evidence) executed 2026-09-10 — see "Wave-0 execution" below; **Wave 1 (S1/S2/S3) landed 2026-09-10** — see "Wave-1 execution"; S4 and every registry mutation remain separate (operator-approved) work
+> - **Status:** **All four systemic fixes S1–S4 landed** (S1/S2/S3 with Wave 1 on 2026-09-10; S4 cookie-jar experiment 2026-09-10, activated 2026-09-11 — see each `### S<n>` heading), and **S5–S7 per-source repairs executed 2026-09-11/12**. The overdue floor moved **31 → 6**. What remains is **not** more engineering: six rows are blocked on **external upstream conditions** (Midgar TLS, Exit VR chronic 500, Inverge rebuild, SNK tenant death), monitored read-only by the sweep at *External-trigger re-verify sweep (2026-09-13)*, plus operator-approved registry adjudications. A stale earlier version of this line said "S4 and every registry mutation remain separate" — that was true on 2026-09-10 and stopped being true the next day; see *Corrected status* below
 > - **Use this when:** adjudicating or repairing the 9 hold-tail sources (Mundfish, Steer, Reflector, Big Moxi, Exit VR, Astrum, Konami, Inverge, SNK), lowering the overdue floor below 31, or extending the systemic fixes S1–S4
 > - **Canonical for:** per-source repair designs, wave sequencing, and acceptance criteria for the 31-row floor
 > - **Not canonical for:** the guard's promotion/refusal mechanics (`docs/snapshots/zero-kept-guard-2026-09-10.md`), the 2026-09-09 triage verdicts it builds on (`_out/evidence/overdue-triage-20260909/dispositions.json`), or adapter-family approval authority (iCIMS/Dayforce decisions stay in their own thread)
 > - **Then inspect:** `src/jobs/adapters/static_zero_kept_guard.py`, `src/jobs/page_gating.py` (`looks_like_server_template_artifact`), `docs/adapter-plugin-inventory.md` (targeted-run commands)
-> - **Last updated:** 2026-09-10 (Wave 0 executed)
+> - **Last updated:** 2026-10-01 (status line corrected to match the `### S<n>` execution records; no repair logic changed)
+
+## Corrected status (2026-10-01)
+
+A plan whose status line contradicts its own execution records is worse than one
+with no status line, because a reader trusts the line and skips the body. Three
+drifts, corrected here with no change to any design or disposition:
+
+1. **"S4 … remain[s] separate" was stale.** S4 is marked **LANDED 2026-09-10** in
+   its own `### S4` heading and activated 2026-09-11 (#8 Astrum). The status line
+   was written the day before and never revisited.
+2. **The plan also omits S5, S6 and S7 entirely.** All three carry execution
+   records: S5 Mundfish (floor 22 → 12), S7 Konami, S6 Big Moxi — all 2026-09-11/12.
+   A reader working from the status line would think three repairs were unstarted.
+3. **"Last updated: 2026-09-10 (Wave 0 executed)"** understated the document by
+   three days of recorded work.
+
+**What is actually left** is external, not engineering: the floor is **6**, and
+each remaining row waits on an upstream condition this plan cannot fix —
+Midgar's certificate mismatch (2), Exit VR's chronic 500 (2), Inverge's rebuild
+(1), SNK's dead tenant (1). These are watched by a read-only probe that writes one
+diffable JSON verdict per run (*External-trigger re-verify sweep*), so recovery is
+detected rather than predicted. Registry adjudications in Wave 2/3 remain
+operator-approved per action, which is deliberate: those mutate live rows.
 
 ## Why the floor exists (mechanism, 2026-09-10)
 
