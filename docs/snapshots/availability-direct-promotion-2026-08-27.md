@@ -3,7 +3,7 @@
 > - **Status:** Promotion applied — **live and enforced on 0.2.140** as of 2026-08-28; enforcement flag verified in the running container via `docker exec printenv` (`BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`, ~21:00 +02:00, operator-run on the Umbrel host); two post-update scheduled pipeline runs completed cleanly with no false mass-unavailable wave; bounded monitoring window through ~2026-08-31 (canary rechecks + saved-page digest) remains before archiving the rollout plan
 > - **Basis:** live HTTP evidence from the Umbrel bridge + operator review of a 100-job stratified sample (2026-08-27); working evidence and reproducible artifacts in `_out/availability-promotion-2026-08-27/`
 > - **Canonical for:** the promotion decision record for `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1`; not canonical for runtime contracts or endpoint shapes
-> - **Then inspect:** `docs/plans/reliable-job-availability-plan.md`, `docs/admin-bridge-api.md`, `docs/storage-contract.md`
+> - **Then inspect:** `docs/admin-bridge-api.md`, `docs/DATA_CONTRACT.md`, `docs/storage-contract.md`
 
 ## Gate verification (per the plan's promotion gate)
 

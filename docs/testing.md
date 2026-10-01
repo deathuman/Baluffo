@@ -628,7 +628,7 @@ Without it, `--cov=src` fails with `unrecognized arguments`, which reads as a br
 rather than a missing dev dependency. For machine-readable output add
 `--cov-report=json:<path>` (and/or `--cov-report=html:<dir>`) so a coverage sweep can be post-processed
 without scraping the terminal table. For test-reduction work see
-[`plans/test-reduction-triage.md`](plans/test-reduction-triage.md).
+[`test-reduction-policy.md`](test-reduction-policy.md).
 
 ## Type Check
 

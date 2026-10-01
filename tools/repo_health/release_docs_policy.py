@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 from src.app_version import get_app_version
@@ -107,6 +108,39 @@ PLAN_PENDING_TRIGGER = re.compile(
     re.IGNORECASE,
 )
 
+# A trigger with a date in it can EXPIRE, and a past date stops being a reason to
+# wait. reliable-job-availability said "Remaining: bounded monitoring window
+# through ~2026-08-31 ... then archive this plan" and sat un-flagged for a month,
+# because "Remaining" satisfied the trigger test. So a status naming only dates
+# that have passed is not a live trigger -- the deferral has lapsed and the plan
+# owes a decision.
+_PLAN_STATUS_DATE = re.compile(r"(20\d\d)-(\d\d)-(\d\d)")
+
+# "through ~2026-08-31" is an end date; "since 2026-05-30" is a start date and does
+# not expire. Only treat a date as a deadline when it is introduced as one.
+_PLAN_STATUS_DEADLINE = re.compile(
+    r"\b(?:through|until|by|before|ends?|expires?|closes?|deadline)\b[^.;]{0,40}?"
+    r"(20\d\d)-(\d\d)-(\d\d)",
+    re.IGNORECASE,
+)
+
+
+def _plan_status_deadlines(status: str) -> list[date]:
+    """Every deadline the status names, in the form 'through <date>' and friends."""
+    found: list[date] = []
+    for match in _PLAN_STATUS_DEADLINE.finditer(status):
+        try:
+            found.append(date(int(match.group(1)), int(match.group(2)), int(match.group(3))))
+        except ValueError:  # pragma: no cover - malformed date in a status line
+            continue
+    return found
+
+
+def _plan_status_deadlines_passed(status: str, *, today: date) -> bool:
+    """True when the status names a deadline that has already gone by."""
+    return any(deadline < today for deadline in _plan_status_deadlines(status))
+
+
 # Longest status prefix quoted in a finding. Display only -- matching is the
 # anchored pattern's job, not this slice's.
 PLAN_STATUS_QUOTE_CHARS = 60
@@ -114,6 +148,16 @@ PLAN_STATUS_QUOTE_CHARS = 60
 # refactor-charter-template.md is a template for authoring plans, not a plan. It
 # has no status line and no execution history, so lifecycle rules do not apply.
 PLAN_LIFECYCLE_EXEMPT = frozenset({"refactor-charter-template.md"})
+
+
+def _plan_policy_today() -> date:
+    """Today, isolated so tests can pin it instead of racing the calendar."""
+    return _PLAN_TODAY_OVERRIDE or date.today()
+
+
+# Set by the tests to make the expiry rule deterministic. A check that only passes
+# while the calendar happens to cooperate is a check that will surprise someone.
+_PLAN_TODAY_OVERRIDE: date | None = None
 
 
 def _plan_lifecycle_findings(plans_dir: Path) -> list[str]:
@@ -147,8 +191,21 @@ def _plan_lifecycle_findings(plans_dir: Path) -> list[str]:
         # Deferral is legitimate when the status says what unblocks it. Judge that
         # before the terminal test, or "Parked -- deferred until ..." is condemned
         # for the very thing that makes it keepable.
-        if PLAN_DEFERRED_STATUS.match(status):
-            if not PLAN_PENDING_TRIGGER.search(status):
+        if PLAN_DEFERRED_STATUS.match(status) or _plan_status_deadlines(status):
+            today = _plan_policy_today()
+            deadlines = _plan_status_deadlines(status)
+            if deadlines and all(deadline < today for deadline in deadlines):
+                findings.append(
+                    f"{path.name}: deferral has lapsed -- the status names a deadline "
+                    f"that has passed ({status[:PLAN_STATUS_QUOTE_CHARS].strip()!r}). "
+                    f"Do the deferred action or delete the plan"
+                )
+            elif deadlines or PLAN_PENDING_TRIGGER.search(status):
+                # A named future deadline is itself the trigger. "through 2026-12-01"
+                # needs no keyword to be checkable, so requiring a trigger word here
+                # would wrongly call it unscoped.
+                continue
+            else:
                 findings.append(
                     f"{path.name}: deferred ({status[:PLAN_STATUS_QUOTE_CHARS].strip()!r}) "
                     f"without naming what unblocks it -- state the trigger, or delete it"

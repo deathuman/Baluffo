@@ -190,6 +190,42 @@ Four lanes reach detail extraction, and a per-source opt-in reaches only two of 
 concluding that a missing count means missing jobs, identify which lane produced the rows and
 whether it consults the predicate at all.
 
+### Sheet adapters: candidate order decides the columns
+
+Google Sheets can be fetched through several endpoints, and they are **not** equivalent.
+`google_sheet_candidate_urls()` tries them in order: direct `export?format=csv`, then `gviz`, then
+`pub`, then two `allorigins` mirrors.
+
+`gviz` flattens a sheet's multi-row instruction block into the header row, producing headers like
+`… Job Category` and `… Title`. A matcher that accepts the first header *containing* `job` then picks
+`Job Category` as the title column and never reaches the real `Title` column — so source categories
+(`Art`, `Design`, `Animation`, `Product-management`) get copied straight into `RawJob.title` and can
+survive to the shipped feed. Direct export preserves the real header row.
+
+Two rules follow, and both are structural rather than sheet-specific:
+
+- **A non-empty parse is not a correct parse.** Judge candidates by parsed *shape*, not by whether
+  they returned rows. Do not globally remove an endpoint either — some sheets only work through
+  `gviz`.
+- **Prefer an exact `title` / `job title` header, and treat `job category`, `overall category`,
+  `company category`, `category`, and `function` as category candidates, not title candidates.**
+  Support sheets whose real title header genuinely is `Job`. Guard the adjacent-column shape where
+  `Job Category` is followed by `Title` and assert the title column wins.
+
+A category-like listing title must not mask a specific detail-page title either. Static detail
+fallback stays in scope for that, while preserving dead/no-openings detection before any repair.
+
+### Redirect self-mappings must not cache as success
+
+`PooledRedirectResolver` can store `original_url -> original_url` when resolution fails or times
+out. Source-state seeding then treats that self-mapping as a cache hit, so a later run skips
+retrying a redirect that is by then resolvable — and the board stays broken across runs with no error
+surfacing. One observed default Sheets state held 465 such Grackle self-mappings.
+
+Persist a redirect cache entry only when `resolved_url != original_url`. Track self-resolved and
+failed redirects separately, retry stale self-mappings on later runs under bounded concurrency, and
+keep the diagnostics additive (new counters belong in `docs/DATA_CONTRACT.md`).
+
 ## 2) Where Playwright is used
 
 | Point | Location | When |

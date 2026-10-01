@@ -4,7 +4,7 @@
 > - **Use this when:** someone brings you a LOC-reduction, dead-code, duplication, or "merge these files" claim, or you are about to measure one yourself
 > - **Canonical for:** how structural claims about this repo get verified — clone scanning, CSS liveness, staging-before-measuring, and what counts as proof
 > - **Not canonical for:** what the current numbers are, test command routing (see [`testing.md`](testing.md)), or line budgets (see [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md))
-> - **Then inspect:** [`plans/test-reduction-triage.md`](plans/test-reduction-triage.md) for which tests may be deleted or merged
+> - **Then inspect:** [`test-reduction-policy.md`](test-reduction-policy.md) for which tests may be deleted or merged
 > - **Last updated:** 2026-10-01
 
 Extracted from the retired structure/test audit programme. The programmes are gone; the
@@ -123,7 +123,7 @@ Four- and five-figure targets are unsupported by anything in this tree.
 
 ## Related
 
-- [`test-reduction-triage.md`](plans/test-reduction-triage.md) — which tests may be
+- [`test-reduction-policy.md`](test-reduction-policy.md) — which tests may be
   deleted or merged, and the retained-test boundaries that gate it
 - [`testing.md`](testing.md) — test command routing and fixture layout
 - A durable check belongs in `tools/repo_health/` with a test. Scratch under `_out/` is

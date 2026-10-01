@@ -9,6 +9,7 @@ compliant plans is worse than no check, because it trains people to skip it.
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,73 @@ def test_parked_wins_over_a_later_terminal_word(tmp_path: Path) -> None:
         "> - **Status:** Parked until the next release -- implemented behind a flag\n\nBody.\n",
     )
     assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+@pytest.fixture
+def pinned_today(monkeypatch: pytest.MonkeyPatch):
+    """Pin 'today' so the expiry rule is deterministic instead of calendar-dependent."""
+    import tools.repo_health.release_docs_policy as policy
+
+    monkeypatch.setattr(policy, "_PLAN_TODAY_OVERRIDE", date(2026, 10, 1))
+    return date(2026, 10, 1)
+
+
+def test_lapsed_deadline_is_not_a_trigger(pinned_today: date, tmp_path: Path) -> None:
+    """Real case: reliable-job-availability said "Remaining: bounded monitoring window
+    through ~2026-08-31 ... then archive this plan" and sat un-flagged for a month,
+    because "Remaining" satisfied the trigger test. A deadline in the past is not a
+    reason to keep waiting -- it is an overdue action."""
+    status = (
+        "Live and enforced on the container -- verified 2026-08-28. Remaining: bounded "
+        "monitoring window through ~2026-08-31 -- canary rechecks -- then archive this plan"
+    )
+    _plan(tmp_path, "lapsed.md", f"> - **Status:** {status}\n\nBody.\n")
+    findings = _plan_lifecycle_findings(tmp_path / "docs" / "plans")
+    assert any("lapsed.md" in f and "deferral has lapsed" in f for f in findings)
+
+
+def test_future_deadline_is_still_a_live_trigger(pinned_today: date, tmp_path: Path) -> None:
+    _plan(
+        tmp_path,
+        "future.md",
+        "> - **Status:** Parked -- monitoring window through ~2026-12-01, then archive\n\nBody.\n",
+    )
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+def test_start_date_is_not_a_deadline(pinned_today: date, tmp_path: Path) -> None:
+    """ "since 2026-05-30" is history, not an expiry. It must not read as a lapsed deadline."""
+    _plan(
+        tmp_path,
+        "history.md",
+        "> - **Status:** Active -- hardening implemented and validated since 2026-05-30; "
+        "parser-noise classifier tightened 2026-08-21\n\nBody.\n",
+    )
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+def test_today_itself_is_not_yet_lapsed(pinned_today: date, tmp_path: Path) -> None:
+    """A deadline landing today is still open; only a strictly past date has lapsed."""
+    _plan(tmp_path, "today.md", "> - **Status:** Parked -- window through 2026-10-01\n\nBody.\n")
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
+def test_deadline_lookup_ignores_malformed_dates(pinned_today: date) -> None:
+    """A bad date must not crash the gate; it just cannot prove an expiry."""
+    import tools.repo_health.release_docs_policy as policy
+
+    assert (
+        policy._plan_status_deadlines_passed(
+            "Parked -- through 2026-13-45 then review", today=pinned_today
+        )
+        is False
+    )
+    assert (
+        policy._plan_status_deadlines_passed(
+            "Parked -- through 2026-01-01 then review", today=pinned_today
+        )
+        is True
+    )
 
 
 def test_template_is_exempt(tmp_path: Path) -> None:

@@ -1,11 +1,11 @@
-# Test Reduction Triage
+# Test Reduction Policy
 
-> - **Status:** Active — standing rules for reducing the test corpus, plus the 2026-09-27 coverage-verified baseline. The 2026-09-28 clone re-sweep found **no further safe test reductions** beyond local-fixture extraction; the methods and per-cluster outcomes are recorded in [`../measurement-methods.md`](../measurement-methods.md). The rules below remain the gate for any future sweep
+> - **Status:** Active — standing rules for reducing the test corpus, plus the 2026-09-27 coverage-verified baseline. The 2026-09-28 clone re-sweep found **no further safe test reductions** beyond local-fixture extraction; the methods and per-cluster outcomes are recorded in [`measurement-methods.md`](measurement-methods.md). The rules below remain the gate for any future sweep
 > - **Use this when:** deciding whether a test can be deleted or merged, or starting a new coverage-backed reduction sweep
 > - **Canonical for:** the delete/merge safety rules and the retained-test boundaries
-> - **Not canonical for:** verification command ownership (see [`../testing.md`](../testing.md)), product/runtime contracts, or the history of past campaigns (git history, `docs/archive/`)
-> - **Then inspect:** [`../testing.md`](../testing.md), the candidate test file, and the owning source or contract doc
-> - **Last updated:** 2026-09-27 (2026-09-27 coverage sweep; May 2026 campaign history retired)
+> - **Not canonical for:** verification command ownership (see [`testing.md`](testing.md)), product/runtime contracts, or the history of past campaigns (git history, `docs/archive/`)
+> - **Then inspect:** [`testing.md`](testing.md), the candidate test file, and the owning source or contract doc
+> - **Last updated:** 2026-10-01 (moved out of `plans/`: this is standing policy, not a temporary ledger)
 
 Coverage data is a **signal only**. Delete or merge a test only when the asserted behavior is
 duplicated, obsolete, or already enforced by a static guardrail. Everything else defaults to
@@ -13,7 +13,7 @@ retained. Do not delete from this document's own authority: start a new sweep wi
 
 ## Baseline (2026-09-27, coverage-verified)
 
-Measured with `pytest-cov` over the full Python lane (see [`../testing.md`](../testing.md) for the
+Measured with `pytest-cov` over the full Python lane (see [`testing.md`](testing.md) for the
 plugin install):
 
 | Measure | Value |

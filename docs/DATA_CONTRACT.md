@@ -916,6 +916,29 @@ Scheduled pipeline launches reuse the normal pipeline lifecycle with `taskType: 
 
 Source rows may include `loss.canonicalDropReasons` for rows rejected before canonical output. The stable reasons include structural drops (`missing_title`, `missing_company`, `missing_job_link`, `invalid_url`, `invalid_payload`) and sanitizer drops (`non_job_static_page`, `google_sheets_category_row`, `sector_gate_filtered`). The `sector_gate_filtered` reason is additive when the `BALUFFO_STRICT_GAME_ONLY=1` environment variable is set; it records rows dropped by the opt-in sector-gate output filter. All drop-reason diagnostics are additive report visibility only and do not add fields to canonical/private or supported light JSON rows.
 
+**Extraction failure is not a drop reason.** A row whose title or company could not be recovered is a
+*repair* case, not a removal case. Baluffo is a job-finding app, so a likely-live job must not
+disappear because the parser picked the wrong column or a repair step came up empty. Drop only on
+proven grounds — dead, removed, unavailable, no-openings, invalid payload, or structurally
+unusable. When a likely-live row still carries a source-category title or an unidentifiable company
+after correct parsing and reasonable repair, it **fails a quality gate** rather than shipping with
+a placeholder. The gate reports source, company, location, job link, detected host, parsed-column
+evidence, and resolved link so the row is actionable.
+
+Two corollaries that are easy to get backwards:
+
+- **A short title is not a category leak.** Real roles like `Animator` exist and must survive;
+  they fail only on source evidence that the title is actually a category label such as `Art` or
+  `Animation`. Never ban by length.
+- **`Unknown company` is unacceptable when evidence exists** — a resolved redirect target, a
+  provider URL, a sibling posting row, or trusted page metadata. It is also unacceptable to *guess*
+  from weak evidence: generic hosts, bare careers landing pages, and ambiguous marketing pages need
+  structured provider/path evidence. Unknown beats wrong.
+
+The quality-gate counters (`exactCategoryTitleLeaks`, `staticContainerTitleLeaks`) are produced by
+`scripts/jobs_artifact_quality_gate.py`. A category-like title must not mask a specific detail-page
+title either: a static listing titled `Art` whose detail page says `Rockstar` ships `Rockstar`.
+
 Google Sheets source detail stats may also include additive title-hydration diagnostics: `title_hydration_candidates`, `title_hydration_feed_fetches`, `title_hydration_cache_hits`, `title_hydration_repaired`, `title_hydration_missed`, `title_hydration_errors`, and `title_hydration_ms`. Redirect diagnostics may include `redirect_transport_failures`, `redirect_short_circuits`, and `redirect_unreachable_hosts`; a short circuit preserves the original redirect URL after repeated transport-only failures on the same host. These describe fetch/repair attempts and do not add canonical job output fields.
 
 `summary.sizeGuardrails` is an additive output-size diagnostic. Unified JSON files are compact serialized; report/debug JSON remains pretty-printed. Readers must tolerate missing retired CSV size/output fields.
