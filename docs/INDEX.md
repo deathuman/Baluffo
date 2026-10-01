@@ -65,7 +65,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
-| [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) | Active Plan / Task Lifecycle | You are adding or refining abort support for discovery, fetch, first-run bootstrap fetches, or jobs pipeline tasks |
 | [`archive/registry-summary-desktop-performance-cleanup-report.md`](archive/registry-summary-desktop-performance-cleanup-report.md) | Archived Cleanup Report | June 2026 registry summary diagnostics, Admin count-basis copy, and desktop startup/page performance benchmark evidence (retained for provenance; no active follow-up) |
 | [`test-reduction-policy.md`](test-reduction-policy.md) | Active / Test Reduction | You are deciding whether a test can be deleted or merged, checking retained-test boundaries, or starting a coverage-backed reduction sweep |
 | [`plans/remaining-work-implementation-plan.md`](plans/remaining-work-implementation-plan.md) | Planned / Remaining Work | You are picking up the 23 moved-board repoints, the duplicate board rows, the `tmp/` retention pass, or the two retained stashes |
@@ -129,7 +128,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | Archived closeout | Completed Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, and packaged lifecycle smoke closeout |
 | [`archive/bridge-route-inventory-guardrail-plan.md`](archive/bridge-route-inventory-guardrail-plan.md) | Archived plan with closeout | Completed bridge route inventory and repo-health guardrail implementation |
 | [`archive/task_lifecycle_ledger_closeout_plan.md`](archive/task_lifecycle_ledger_closeout_plan.md) | Archived superseded pointer | Old underscore-named lifecycle closeout note; use [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) instead |
-| [`archive/PLAN-abort-telemetry.md`](archive/PLAN-abort-telemetry.md) | Archived superseded pointer | Precursor `/tasks/abort` non-blocking + telemetry plan; use [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) instead |
+| [`archive/PLAN-abort-telemetry.md`](archive/PLAN-abort-telemetry.md) | Archived superseded pointer | Precursor `/tasks/abort` non-blocking + telemetry plan; use [`admin-bridge-api.md`](admin-bridge-api.md) instead |
 | [`archive/static-outlier-source-conflict-decisions.md`](archive/static-outlier-source-conflict-decisions.md) | Archived operator record | Historical Super Lucky and Koei static-outlier source conflict decisions |
 | [`archive/static-scope-conflict-dry-run-decisions.md`](archive/static-scope-conflict-dry-run-decisions.md) | Archived operator record | Historical static scope conflict dry-run decisions and Arrowhead apply-safe evidence |
 | [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |
@@ -148,7 +147,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | related tests and the owning runtime docs |
 | Configure recurring Jobs pipeline schedule | [`admin-bridge-api.md`](admin-bridge-api.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
-| Add or refine task abort support | [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
+| Add or refine task abort support | [`admin-bridge-api.md`](admin-bridge-api.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
 | Run the right tests | [`testing.md`](testing.md) | [`architecture-ai-map.md`](architecture-ai-map.md) only if you need source ownership |
 | Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
 | Update docs | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | [`INDEX.md`](INDEX.md), then the owning authoritative doc |

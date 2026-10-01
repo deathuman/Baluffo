@@ -2,13 +2,13 @@
 
 > - **Status:** Superseded (archived 2026-08-17)
 > - **Use this when:** following old links or git history that referenced this precursor plan
-> - **Canonical for:** nothing; use the implemented baseline in [`task-abort-control-plan.md`](../plans/task-abort-control-plan.md)
+> - **Canonical for:** nothing; use the implemented baseline in [`admin-bridge-api.md`](../admin-bridge-api.md)
 > - **Not canonical for:** abort behavior, telemetry contracts, or task-lifecycle scope
-> - **Then inspect:** [`task-abort-control-plan.md`](../plans/task-abort-control-plan.md)
+> - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md)
 > - **Last updated:** 2026-08-17
 
 This precursor plan recorded the original `/tasks/abort` benchmark and root-cause investigation. The follow-up
-[`../plans/task-abort-control-plan.md`](../plans/task-abort-control-plan.md) is the implemented baseline and
+[`../admin-bridge-api.md`](../admin-bridge-api.md) is the implemented baseline and
 is the active reference for abort and abort-path telemetry behavior.
 
 ## Context
