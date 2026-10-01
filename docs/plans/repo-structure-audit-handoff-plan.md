@@ -106,7 +106,7 @@ re-measure before repeating the 65%.
 | Three named "truly orphan" heavies: `source_policy_soak_report_sections.py` (1,447), `perf_complete_profiles.py` (754), `perf_complete_bench.py` (535) = **2,736 deletable lines** | **All three are imported by live siblings**; deleting them breaks `scripts/` on the next import: `scripts/source_policy_soak_report.py:140`, `scripts/source_policy_soak_report_links.py:28`, `scripts/perf_complete.py:56`, `scripts/perf_complete_summary.py:20`, `scripts/perf_complete.py:26`. They are intra-package modules, not orphans — and the two chains are covered by **14 test files / 4,562 lines** of meta-tests (`test_source_policy_soak_report*.py`: 9 files / 3,453 lines; `test_perf_complete*.py`: 5 files / 1,109 lines), an earlier revision of this row having guessed "~2,778 lines in 5 files" | `git grep -n source_policy_soak_report_sections -- . ":(exclude)scripts/source_policy_soak_report_sections.py"` ; `git ls-files tests \| Select-String "soak_report\|perf_complete"` |
 | `src/frontend/styles.css` is dead | That path does not exist — **`src/frontend/` has no tracked files at all**. The stylesheets are at root **`styles/`: 5 files, 10,182 lines**, and the report's line citations were right: `admin.html:8-10`, `index.html:27-29`, `jobs.html:8-10`, `saved.html:8-10` each carry `<link rel="stylesheet" href="styles/…">`. Reachability is 100%; only the *path* in the claim is wrong | `git ls-files styles` ; `git grep -n "stylesheet" -- "*.html"` |
 | Large near-clone population in the test corpus | Across the **222** files in `tests/frontend/unit` (44,096 lines) exactly **2** pairs exceed 0.60 normalized-sequence similarity, and they share a file: `admin-ops-audit-artifacts-controller.test.mjs` ↔ `admin-ops-dedup-lists-controller.test.mjs` (0.695) and `admin-ops-dedup-lists-controller.test.mjs` ↔ `admin-ops-run-diagnostics-controller.test.mjs` (0.623) — one file sitting between two neighbours, not a clone population. The `tests/test_jobs_fetcher*` cluster (38 files / 9,546 lines) shows **zero** pairs above 0.55. A strict AST clone scan of all Python finds **38 groups / 676 redundant lines**, of which `tests/*.py` is 29 groups / **532 lines**, mostly duplicated local fixtures — not 15k. (An earlier revision of this row attributed the two 0.60 pairs to "198 vs 382 lines" files — those are the Python inventory tools, a different corpus) | `_out/audit_verify/ws4.out.txt`, `_out/audit_verify/ws10.out.txt` |
-| 15,000 LOC removable | The verified queue **still open (Q3–Q5) sums to −247…−389** realistic — about **0.05–0.08%** of the 488,995-line tree. Already landed from this queue: **−71** (Q6), **−677 headroom** (Q1), **−137** (Q2, re-measured), **−27** (Q3 so far), and Q7's additive gate. Note the open figure *fell* when Q3 started: its largest cluster proved to be shape-similarity rather than copy-paste. Its largest original item was found by *building a prototype*, not by the report's similarity metric. Four- and five-figure targets are unsupported by anything in the tree | *Implementation Queue* |
+| 15,000 LOC removable | The verified queue **still open (Q3 only) sums to about −54** — roughly **0.01%** of the 488,995-line tree. Already landed from this queue: **−71** (Q6), **−677 headroom** (Q1), **−137** (Q2, re-measured), **−199** (Q4+Q5, landed 2026-10-01), **−27** (Q3 so far), and Q7's additive gate. Note the open figure *fell* when Q3 started: its largest cluster proved to be shape-similarity rather than copy-paste. Its largest original item was found by *building a prototype*, not by the report's similarity metric. Four- and five-figure targets are unsupported by anything in the tree | *Implementation Queue* |
 
 ## Corrections To The External Audit (and To This Doc's First Pass)
 
@@ -292,7 +292,7 @@ banner, and `__all__`. Do not plan against the nominal column.
 | Q6 | ✅ **Landed 2026-09-29** — deleted the **2** un-wireable never-run policy copies (68 ln) and **registered** the 1 unique one (25 ln); see *Correction 5* | 93 lines | **−71 realised** (−72 deleted, +1 line listing the new check; the registered check costs one line and buys a live gate) | low | `loc_baseline.json` re-ratcheted (`tools` 15,618 → 15,547); `duplication` group unaffected |
 | Q7 | ✅ **Landed 2026-09-30** as `0c3e0372` — `tools/repo_health/policy_wiring_policy.py`, three checks registered in the `workflow` group; mutation-verified, see *Q7* below | 0 LOC (+322 new, 1 pre-existing unused helper deleted) | ~0 (closes the class) | low | *Verify, all three confirmed by mutation:* deleting a name from `run_workflow_group` fails **by name**; registering a name with no definition fails by name; a `tmp_path`-taking `test_*` is rejected as un-callable |
 
-| | **Total still open (Q3–Q5)** | | **−247…−389**, now **less** than the −220…−416 it was quoted at before Q3 started — see *Q3* | | *Q2 and Q7 are closed. Q3's largest cluster turned out not to be extractable, which is why the number went down rather than up. Q4/Q5 need a release window to ship, not to be landed.* |
+| | **Total still open (Q3)** | | **−54**, the eleven remaining Q3 clusters — every one unverified, and the largest turned out not to be extractable | | *Q2, Q4, Q5 and Q7 are closed. Q4/Q5 landed on 2026-10-01 and shipped in `0.3.002`.* |
 | | *Optional upside, not taken:* table-drive the five analyzer test files | 941 test lines (re-measured, not 1,100) | *further −250…−300* | low-med | same `compat` wiring. **Deferred rather than folded into Q2:** the five files carry 37 distinct `test_*` functions whose monkeypatch targets and asserted failure strings differ per tool, so a table would have to encode each variation anyway. Q2 took the orchestration and left the tests alone. |
 
 Re-measured upward from the first draft of this doc, and downward in one place: Q2 originally covered only
@@ -353,11 +353,22 @@ in the lane reports it.
 
 `_has_valid_release_tag_intent` treats `>= current` as valid so that a follow-up fix can be retagged into
 an already-bumped version. That is right for a bumped-but-unpublished version and wrong for an
-already-published one, and the gate cannot currently tell them apart. The fix is to make `>= current`
-count **only while `current` is unpublished**. Deciding *where* that knowledge comes from — a GHCR query
-(accurate, but a network call inside a commit hook), a recorded published-versions file (fast, but state
-that can drift), or a CI-only check that observes the tag right after the push (authoritative, no hook
-latency, but after the commit lands) — is still open and deliberately not pre-empted here.
+already-published one, and the gate could not tell them apart.
+
+**Resolved 2026-10-01, alongside the `0.3.002` bump.** `evaluate_window` gained
+`current_released`, the gate computes it from `git tag -l v<current>`, and a released version now demands a
+real bump — `Release-tag:` intent no longer authorises overwriting a published tag. Shipped commits that are
+ancestors of the release tag are dropped first, because they are inside the published image already.
+
+Choosing the **git tag** rather than a live GHCR query was the decision that mattered. The gate runs in
+pre-commit and pre-push; a registry call there means two round-trips, an offline failure mode, and — because
+`AGENTS.md` bans `--no-verify` — a stuck commit rather than a bypass. The cost is that a version which reached
+GHCR without ever being tagged reads as unreleased, which is the inert window anyway: nothing can hold the
+version string, and Umbrel's update check is string equality, so pre-release republishing reaches nobody and
+is still allowed.
+
+Verified by mutation: forcing `_version_is_released` to return `False` fails 2 of the new tests, and
+short-circuiting the released branch fails 9. `docs/RELEASE.md` carries the rule as the canonical statement.
 
 ### Why Q4 Could Not Land Alone (superseded 2026-10-01)
 

@@ -182,25 +182,70 @@ def _declared_release_tag_versions(message: str) -> list[str]:
     return [version.strip() for version in declared if version.strip()]
 
 
-def _has_valid_release_tag_intent(commit: WindowCommit, current_version: str) -> bool:
-    # "= current" counts as valid intent: the commit declaring it is the one
-    # carrying the release for the already-bumped version (e.g. a follow-up
-    # fix retagged into the same release channel). Only strictly older
-    # declarations are invalid.
+def _has_valid_release_tag_intent(
+    commit: WindowCommit,
+    current_version: str,
+    *,
+    current_released: bool = False,
+) -> bool:
+    # "= current" counts as valid intent ONLY while `current` is unreleased: the
+    # commit declaring it is the one carrying the release for a just-bumped
+    # version, e.g. a follow-up fix inside the same release window.
+    #
+    # Once `current` is RELEASED that reasoning inverts. The version tag is
+    # already on GHCR, so a shipped commit that does not bump mutates it: the
+    # container would hold different code than the frozen release assets under
+    # one version string, and because Umbrel's update check is string
+    # inequality the change would never be offered to an existing install. That
+    # happened on 2026-10-01, when pushing the Q4/Q5 CSS deletion moved the
+    # published 0.3.001 tag from sha256:f6fa5b37 to sha256:0d0f194c.
+    #
+    # So a released version demands strictly newer intent -- i.e. a real bump.
+    # Republishes BEFORE a version is tagged are deliberately still allowed:
+    # nobody can hold an unreleased version string, so that churn is inert, and
+    # blocking it would cost a release-window fix for nothing.
+    required = 1 if current_released else 0
     return any(
-        compare_baluffo_versions(version, current_version) >= 0
+        compare_baluffo_versions(version, current_version) >= required
         for version in _declared_release_tag_versions(commit.message)
     )
 
 
-def evaluate_window(commits: list[WindowCommit], current_version: str) -> list[str]:
-    """Return failures for a post-bump window that ships code without bump or intent."""
+def evaluate_window(
+    commits: list[WindowCommit],
+    current_version: str,
+    *,
+    current_released: bool = False,
+) -> list[str]:
+    """Return failures for a post-bump window that ships code without bump or intent.
+
+    ``current_released`` defaults to False, which preserves the pre-release
+    behaviour where ``Release-tag: v<current>`` counts as intent.
+    """
     shipped = [commit for commit in commits if any(_is_shipped_path(f) for f in commit.files)]
     if not shipped:
         return []
+    listing = "\n".join(f"- {commit.sha[:8]} {commit.subject}" for commit in shipped)
+    if current_released:
+        # Intent must NOT short-circuit here. The caller has already removed the
+        # shipped commits that are ancestors of the release tag (those are inside
+        # the published image and mutate nothing), so everything left here would
+        # overwrite a published tag. Declaring a newer Release-tag is not
+        # permission to do that -- the version has to actually move.
+        return [
+            f"{len(shipped)} shipped container code commit(s) landed after "
+            f"`v{current_version}` was released, without a version bump:\n{listing}\n"
+            f"`v{current_version}` is a published container tag, so shipping against it "
+            "overwrites the published image: the container would hold different code than "
+            "the frozen release assets under one version string, and Umbrel's "
+            "string-equality update check would never offer the change to an existing "
+            "install. Declaring a newer `Release-tag:` does not authorise that -- the "
+            "version has to actually move.\n"
+            "Bump the version (`python scripts/bump_version.py <next>`) in this change, or "
+            "keep the shipped code on a branch and release it by tagging."
+        ]
     if any(_has_valid_release_tag_intent(commit, current_version) for commit in shipped):
         return []
-    listing = "\n".join(f"- {commit.sha[:8]} {commit.subject}" for commit in shipped)
     return [
         f"{len(shipped)} shipped container code commit(s) landed after the last version "
         f"bump ({current_version}) without a version bump or explicit release-tag intent:\n"
@@ -211,8 +256,48 @@ def evaluate_window(commits: list[WindowCommit], current_version: str) -> list[s
     ]
 
 
+def _version_is_released(repo_root: Path, version: str) -> bool:
+    """True when ``version`` carries a git release tag.
+
+    The tag is the local, offline proxy for "this version is already out there".
+    It is deliberately not a GHCR query: this gate runs in pre-commit and
+    pre-push, where a network call would add two round-trips and fail offline --
+    and AGENTS.md bans ``--no-verify``, so a flaky gate means stuck commits
+    rather than a bypass.
+
+    Known limit: a version that reached GHCR without ever being tagged (bumped,
+    pushed, never released) reads as unreleased here. That is the inert window
+    anyway -- nothing can hold the version string, so the republish costs
+    nothing. ``docs/RELEASE.md`` records the same limit.
+    """
+    if not version:
+        return False
+    return bool(_git(repo_root, "tag", "-l", f"v{version}").strip())
+
+
+def _run_succeeds(repo_root: Path, *args: str) -> bool:
+    """True when ``git`` exits zero for ``args``."""
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
 def check_container_shipped_code_version_gate(repo_root: Path = ROOT) -> list[str]:
-    """Fail when shipped container code lands after the last version bump without bump/intent."""
+    """Fail when shipped container code lands after the last version bump without bump/intent.
+
+    Once the current version is **released**, the test stops being intent and
+    becomes ancestry: shipped code that is already an ancestor of the release tag
+    is inside the published image and mutates nothing, while shipped code after
+    the tag would overwrite it. Intent cannot authorise that -- declaring
+    ``Release-tag: v<next>`` while ``v<current>`` is still the published tag is
+    exactly the state this exists to stop, so a released version demands a real
+    bump or a branch.
+    """
     if not (repo_root / ".git").exists():
         return []
     anchor = _last_version_bump_commit(repo_root)
@@ -222,4 +307,13 @@ def check_container_shipped_code_version_gate(repo_root: Path = ROOT) -> list[st
     if not current_version:
         return []
     commits = _window_commits(repo_root, anchor)
-    return evaluate_window(commits, current_version)
+    current_released = _version_is_released(repo_root, current_version)
+    if current_released:
+        release_tag = f"v{current_version}"
+        already_published = [
+            commit
+            for commit in commits
+            if _run_succeeds(repo_root, "merge-base", "--is-ancestor", commit.sha, release_tag)
+        ]
+        commits = [commit for commit in commits if commit not in already_published]
+    return evaluate_window(commits, current_version, current_released=current_released)

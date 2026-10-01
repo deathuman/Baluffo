@@ -496,8 +496,8 @@ already-released `0.3.001` tag and moved it from `sha256:f6fa5b37` to `sha256:0d
 lane went red, and the `v0.3.001` **release assets** (built earlier, at `af63e63b`) do not contain the
 change — so the GitHub release and the container now hold **different code under one version string**.
 
-The version gate does not catch it, by construction. `container_version_policy.py` evaluates the window
-anchored at the last version bump, and `evaluate_window` returns clean if **any** shipped commit in that
+The version gate did not catch it, by construction. `container_version_policy.py` evaluated the window
+anchored at the last version bump, and `evaluate_window` returned clean if **any** shipped commit in that
 window declared release-tag intent:
 
 ```python
@@ -505,10 +505,10 @@ if any(_has_valid_release_tag_intent(commit, current_version) for commit in ship
     return []
 ```
 
-One intent line discharges the whole window, and the window only resets at a bump. So once a commit declares
-`Release-tag: v<next>` while `<current>` is still published, **every later shipped push republishes the live
-tag silently** — and because Umbrel's update check is string inequality, none of those republishes is ever
-offered to an existing install.
+One intent line discharged the whole window, and the window only reset at a bump. So once a commit declared
+`Release-tag: v<next>` while `<current>` was still published, **every later shipped push republished the live
+tag silently** — and because Umbrel's update check is string inequality, none of those republishes was ever
+offered to an existing install. That gate is fixed; see below.
 
 - **Shipped code is not landable on `main` while the current version tag is published**, unless the same
   commit bumps the version. Either bump `src/app_version.py` in that commit, or keep the change on a branch
@@ -518,11 +518,24 @@ offered to an existing install.
   warning; run after, it is a report about a fact that already exists.
 - **Record the digest a version actually ends on.** `0.3.001` shipped as `f6fa5b37` and now resolves to
   `0d0f194c`; both are true at different times and only the second is current.
-- The open fix is to make `_has_valid_release_tag_intent` accept `>= current` **only while `current` is
-  unpublished** — a follow-up fix to a bumped-but-unreleased version is legitimate, one to an
-  already-published version is not, and the gate cannot currently tell them apart. Where that knowledge
-  should come from (live GHCR query, a recorded published-versions file, or a CI-only post-push check) is
-  an open decision; do not assume it has been made.
+
+This is now **enforced**. `check_container_shipped_code_version_gate` computes whether the current version
+carries a git release tag and, when it does, drops the shipped commits that are ancestors of that tag (they
+are inside the published image already) and then fails on whatever shipped code remains — intent included. A
+`Release-tag: v<next>` line no longer authorises overwriting a published `v<current>`; the version has to
+actually move. The remedy is in the failure message: bump, or branch and release by tagging.
+
+Two deliberate limits:
+
+- **The git tag is the release marker, not a GHCR query.** That keeps the gate offline and deterministic in
+  pre-commit and pre-push, where a network call would add two round-trips and fail without a registry — and
+  because `AGENTS.md` bans `--no-verify`, a flaky gate means stuck commits rather than a bypass. The cost is
+  that a version that reached GHCR without ever being tagged reads as unreleased; that is the inert window
+  anyway, since nothing can hold the version string.
+- **Pre-release republishing is still allowed.** Between a bump and its tag, any shipped push republishes the
+  not-yet-released version. Nothing can install that string and Umbrel's string-equality check means it is
+  never offered, so the churn is unreachable by users and blocking it would cost a release-window fix for
+  nothing.
 
 `package-lock.json` is now in `NON_SHIPPED_PATTERNS` for the related reason that a dev-dependency bump
 should not rebuild a published image at all — see `NON_SHIPPED_PATTERNS` in

@@ -180,6 +180,102 @@ def test_evaluate_window_accepts_intent_equal_to_current() -> None:
     assert evaluate_window(commits, "0.2.141") == []
 
 
+def test_evaluate_window_rejects_intent_equal_to_current_once_released() -> None:
+    """Once the current version is published, "= current" is no longer permission.
+
+    This is the bug from 2026-10-01: `Release-tag: v<current>` counted as intent
+    forever, so a shipped commit could keep declaring the already-published
+    version and republish its container tag.
+    """
+    commits = [
+        _commit(
+            "b1c2d3e4",
+            "refactor(css)",
+            "refactor(css)\n\nRelease-tag: v0.2.141",
+            ("styles/admin.css",),
+        )
+    ]
+    failures = evaluate_window(commits, "0.2.141", current_released=True)
+    assert failures, "a released version must not be republishable via '= current' intent"
+    assert "v0.2.141" in failures[0]
+
+
+def test_evaluate_window_rejects_newer_intent_once_released() -> None:
+    """Even a strictly-newer declaration cannot authorise overwriting a live tag.
+
+    Declaring `v0.2.142` is correct bookkeeping for where the change should ship,
+    but it does not move the version, so the push would still overwrite the
+    published `0.2.141` image. The version has to actually move.
+    """
+    commits = [
+        _commit(
+            "c1d2e3f4",
+            "refactor(css)",
+            "refactor(css)\n\nRelease-tag: v0.2.142",
+            ("styles/admin.css",),
+        )
+    ]
+    failures = evaluate_window(commits, "0.2.141", current_released=True)
+    assert failures, "a newer Release-tag must not substitute for a version bump"
+    assert "Bump the version" in failures[0]
+
+
+def test_evaluate_window_allows_pre_release_churn_by_default() -> None:
+    """Before a release, republishing the bumped version is inert and stays allowed.
+
+    Nobody can hold an unreleased version string, and Umbrel's update check is
+    string inequality, so this churn reaches nobody. Blocking it would cost a
+    release-window fix for nothing.
+    """
+    commits = [
+        _commit(
+            "d1e2f3a4", "fix: bridge", "fix: bridge\n\nRelease-tag: v0.2.141", ("src/bridge/x.py",)
+        )
+    ]
+    assert evaluate_window(commits, "0.2.141") == []
+
+
+def test_gate_ignores_shipped_commits_already_inside_the_release_tag(tmp_path: Path) -> None:
+    """Shipped code that is an ancestor of the release tag is inside the image already."""
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    (repo / "src" / "feature.py").write_text("x = 1\n", encoding="utf-8")
+    _commit_all(repo, "feat: shipped before the release")
+    _run(repo, "tag", "v0.2.141")
+
+    # No commit after the tag, so nothing can overwrite it.
+    assert check_container_shipped_code_version_gate(repo) == []
+
+
+def test_gate_blocks_shipped_code_after_a_release_even_with_newer_intent(tmp_path: Path) -> None:
+    """The end-to-end shape of the 2026-10-01 incident, reproduced."""
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    (repo / "src" / "feature.py").write_text("x = 1\n", encoding="utf-8")
+    _commit_all(repo, "feat: part of the release")
+    _run(repo, "tag", "v0.2.141")
+    (repo / "styles").mkdir(exist_ok=True)
+    (repo / "styles" / "admin.css").write_text(".x { color: red }\n", encoding="utf-8")
+    _commit_all(repo, "refactor(css): delete dead rules\n\nRelease-tag: v0.2.142")
+
+    failures = check_container_shipped_code_version_gate(repo)
+    assert failures, "shipped code after a released version must be blocked"
+    assert "v0.2.141" in failures[0]
+    assert "Bump the version" in failures[0]
+
+
+def test_gate_allows_non_shipped_work_after_a_release(tmp_path: Path) -> None:
+    """Docs/tools/tests-only commits never touch the image, released or not."""
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    _run(repo, "tag", "v0.2.141")
+    (repo / "docs").mkdir(exist_ok=True)
+    (repo / "docs" / "plan.md").write_text("notes\n", encoding="utf-8")
+    _commit_all(repo, "docs(plans): notes only")
+
+    assert check_container_shipped_code_version_gate(repo) == []
+
+
 def test_gate_fails_shipped_code_after_bump_without_bump_or_intent(tmp_path: Path) -> None:
     repo = _init_git_repo(tmp_path)
     _commit_bump(repo)
