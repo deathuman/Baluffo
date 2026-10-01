@@ -120,6 +120,32 @@ python src/jobs_fetcher.py --only-sources static_source::<id> --ignore-circuit-b
 
 Omitting `--output-dir` writes stub state into live `data/`. Always isolate.
 
+### CloakBrowser was evaluated and rejected — do not re-propose it
+
+**Decision (product decision, 2026-10-01): reject. Do not revisit without new evidence.**
+
+An enhanced-browser A/B design was carried for months behind a "parked, revisit if the pooled
+browser fallback proves insufficient" status, which left it looking like an open question. It is
+closed. CloakBrowser **increases failed sources**, which is disqualifying under the pooled
+fallback's own quality checks — a fallback that turns passing sources into failing ones loses even
+when it recovers some blocked pages. That is why the runtime repeatedly came back to stock
+Playwright rather than carrying the integration.
+
+I have no benchmark artifact for this verdict, so it is recorded as a product decision with its
+reason rather than dressed up as a measurement. If someone later produces numbers, the decision is
+what the numbers must beat.
+
+Two constraints are durable regardless of that verdict:
+
+- **Licensing forbids bundling.** The wrapper is MIT, but the compiled browser binary carries a
+  separate Binary License that forbids redistribution, bundling, repackaging, or embedding in a
+  third-party product without separate OEM/SaaS licensing. It could never ship in the portable
+  ZIP even if it worked.
+- **Scope is deliberately narrow.** If it is ever evaluated again, only existing browser-fallback
+  lanes: admin source check, discovery browser recovery, static listing fallback, and the
+  Scrapy-Playwright browser queue. Never provider APIs, ordinary HTTP fetches, dedup, no-openings
+  evidence, saved jobs, or sync.
+
 ## 2) Where Playwright is used
 
 | Point | Location | When |

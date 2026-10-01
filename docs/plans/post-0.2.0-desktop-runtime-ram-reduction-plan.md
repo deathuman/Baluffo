@@ -1,21 +1,36 @@
-# Post-0.2.0 Desktop Runtime RAM Reduction Plan
+# Desktop Runtime RAM Reduction
 
-> - **Status:** Parked — revisit together with `optional-playwright-browser-download-plan.md` before any next desktop runtime effort
+> - **Status:** Active (deferred, lever un-landed) — the one remaining credible desktop RAM lever, still pending
 > - **Use this when:** revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation
-> - **Canonical for:** deferred proposal, risks, validation plan, and known loopholes
+> - **Canonical for:** the site-process fold-in proposal, its known loopholes, and its validation plan
 > - **Not canonical for:** current runtime behavior, release requirements, or benchmark baselines
 > - **Then inspect:** [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../testing.md`](../testing.md), [`../../src/ship/desktop_app/`](../../src/ship/desktop_app/), and [`../../src/ship/runtime_launcher.py`](../../src/ship/runtime_launcher.py)
-> - **Last updated:** 2026-08-28 (status review — parked until desktop runtime work resumes)
+> - **Last updated:** 2026-10-01 (status corrected: lever re-verified as still pending; two test citations repaired)
 
-## Summary
+## The lever
 
-This plan defers the next meaningful desktop RAM reduction until after v0.2.0. The conservative Chromium flag pass was mostly neutral, and the next credible lever is reducing the packaged desktop process count by folding the static site server into the launcher process.
+One packaged `Baluffo.exe` still serves the static site as a **child process**. That process
+costs about 42–44 MiB, which makes folding it into the launcher the next credible lever after a
+Chromium flag pass that came out mostly neutral.
 
-That change is intentionally not v0.2.0 scope. The expected win is useful but not release-critical, and the work crosses launcher cleanup, stale-runtime reclaim, startup traces, retry behavior, packaged rehearsals, and import-weight boundaries.
+**Verified still pending 2026-10-01.** The process boundary has not moved:
 
-## Current Evidence
+- `src/ship/desktop_app/process.py:25` `build_child_command()` still emits
+  `["__child_site__", "--root", …, "--port", …]` for `mode == "site"`.
+- `src/ship/desktop_app/launcher.py:75-78` dispatches that mode to `run_site_server` in the child.
 
-The latest complete benchmark evidence came from `_out/perf-complete/20260514-122901-214828/summary.json` after the conservative Chromium flag pass:
+`_DesktopSiteServer` living in `src/ship/runtime_launcher.py:128` does **not** mean the server
+runs in-process — it means the code is importable from there. Do not read that class as the lever
+already landing; it was mistaken for that once during this review.
+
+Nothing in `src/ship`'s history since the plan was parked reduces process count. The 19
+RAM-adjacent commits in that window are launcher/CLI narrowing, updater recovery, and startup
+regression fixes.
+
+## Evidence, and how stale it is
+
+Last complete benchmark: `_out/perf-complete/20260514-122901-214828/summary.json`, after the
+conservative Chromium flag pass.
 
 | Section | Browser RAM | Baluffo RAM | Notes |
 |---------|-------------|-------------|-------|
@@ -23,11 +38,16 @@ The latest complete benchmark evidence came from `_out/perf-complete/20260514-12
 | Startup warm | about 564 MiB | about 192 MiB | full packaged desktop startup |
 | Sync | 0 MiB | about 195 MiB | full packaged no-browser runtime |
 
-The removable-looking site process footprint is about 42-44 MiB. More Chromium flags are unlikely to be the safest next step because the prior low-risk flag set produced only a neutral cold result and a small warm improvement.
+**Re-measure before implementing.** These figures are from 2026-05-14. The 42–44 MiB site
+process is the plan's own sizing of the removable footprint, not a current measurement — and per
+[`../measurement-methods.md`](../measurement-methods.md), a number this old is a hypothesis until
+`npm run perf:complete` says otherwise. More Chromium flags are unlikely to be the safest next
+step: the prior low-risk flag set produced a neutral cold result and a small warm improvement.
 
-## Deferred Strategy
+## Strategy
 
-The future implementation should preserve browser-visible behavior while removing one packaged `Baluffo.exe` process from the normal desktop runtime:
+Remove one packaged `Baluffo.exe` from the normal desktop runtime without changing
+browser-visible behavior:
 
 1. Extract static site serving from [`../../src/ship/runtime_launcher.py`](../../src/ship/runtime_launcher.py) into a focused leaf helper.
 2. Run the site server inside the desktop launcher process by default.
@@ -35,26 +55,29 @@ The future implementation should preserve browser-visible behavior while removin
 4. Add an escape hatch that forces the old child-process site mode.
 5. Preserve the site URL, site port, startup metrics, packaged sync contract, and release smoke coverage.
 
-## Known Loopholes
-
-Any implementation must explicitly close these before it is considered safe:
+## Known loopholes to close first
 
 - Cleanup must distinguish process termination from in-process server shutdown.
 - Retry logic needs `.poll()`-like semantics for the in-process site handle.
 - Startup probe metrics must receive explicit `data_dir` and `startup_probe` inputs instead of relying on process environment.
 - Stale reclaim must handle both old child-owned `sitePid` and future launcher-owned `sitePid`.
-- Import weight must be measured so moving site serving into the launcher does not absorb most of the saved memory.
+  Today both `src/ship/desktop_app/_linux.py:617` and `_windows.py:700` read `sitePid` from stale state, and `src/dev_admin_supervisor.py` writes it from the site process.
+- Import weight must be measured, so moving site serving into the launcher does not absorb most of the saved memory.
 - Orphan-reclaim, update rehearsal, sync rehearsal, startup probes, and packaged smoke must remain covered.
 
-## Validation Plan
-
-Future implementation should run:
+## Validation
 
 ```powershell
 python -m py_compile src/ship/runtime_launcher.py src/ship/desktop_app/launcher_flow.py
-python -m pytest tests/test_runtime_launcher.py tests/desktop_app tests/packaged_desktop/test_rehearsal_flows.py tests/packaged_desktop/test_runtime_wait_and_reports.py -q
+python -m pytest tests/test_runtime_launcher.py tests/desktop_app tests/packaged_desktop -q
 npm run perf:complete
 ```
+
+The rehearsal tests are named by directory here, not by file. An earlier revision of this plan
+cited `tests/packaged_desktop/test_rehearsal_flows.py` and
+`tests/packaged_desktop/test_runtime_wait_and_reports.py`; **neither exists**. The suite was
+split into `test_rehearsal_browser_job.py`, `test_rehearsal_browser_launch.py`,
+`test_rehearsal_completion.py`, `test_rehearsal_lifecycle.py`, and others.
 
 Acceptance criteria:
 

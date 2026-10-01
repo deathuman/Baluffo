@@ -526,7 +526,25 @@ payload is explicit local backup/import portability only: source-policy review s
 `force_pause`, must not be included in `source-sync.json`, active/pending/rejected registry
 buckets, tombstones, or remote sync payloads.
 
-### 2.5 Stable JS runtime contract
+### 2.5 Version-bump discipline
+
+The shapes in §2.1–§2.4 are only half the contract. These are the rules for *when* the versions
+move, and they were previously recorded only in a retired plan:
+
+- **Update this document** when saved-row fields, backup payloads, activity details, or local-data route payloads change. The implementation and its tests are canonical over any prose summary.
+- **Update Pydantic schemas** in `src/core/schemas.py` when desktop payload schemas change.
+- **Update frontend typedefs** in `frontend/shared/types.js` when frontend-facing shapes change.
+- **Bump `DB_VERSION` only when IndexedDB migration behavior changes** — not for a field addition that needs no migration.
+- **Bump `BACKUP_SCHEMA_VERSION` only when the export/import shape changes in a way new clients should distinguish.**
+- **Keep backup import tolerant** across older versions. v1/v2/v3 rows normalize into split `pipelinePhase`/`outcomeStatus` tracking on import.
+- **Keep `applicationStatus` as a derived compatibility mirror** until compatibility callers are intentionally removed.
+
+Two rules are about not leaking storage semantics into tracking:
+
+- **Source lifecycle is read-only overlay data.** Do not persist it as user-owned tracking state, and do not infer user outcomes from it. Match lifecycle rows by generated job key, not fuzzy title/company matching.
+- **Do not add a flexible `tracking` bag opportunistically.** `applicationStatus` is a compatibility mirror precisely because a loose bag became an untyped dumping ground; new split-model work belongs in `pipelinePhase`/`outcomeStatus`.
+
+### 2.6 Stable JS runtime contract
 
 The canonical browser/desktop local-data runtime surface is defined by `frontend/local-data/runtime-contract.js`. `window.JobAppLocalData` in desktop mode must satisfy `LOCAL_DATA_RUNTIME_METHODS` exactly.
 
