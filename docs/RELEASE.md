@@ -485,6 +485,49 @@ After the run completes, re-verify the published assets against the refreshed de
 
 `docs/RELEASE.md` forbids moving or recreating tags for both desktop and container recovery; container-side fixes ship as a **new patch version** instead.
 
+### A Live Container Tag Is Mutable Until The Next Bump
+
+Tags are immutable for *release assets*. A **published container tag is not**: GHCR lets any
+`Build Container` run overwrite `ghcr.io/deathuman/baluffo:<version>` in place, and the workflow fires on
+any push touching shipped code while the version in `umbrel-app.yml` is unchanged.
+
+This is not hypothetical. On 2026-10-01, pushing the Q4/Q5 CSS deletion (`3f33e089`) republished the
+already-released `0.3.001` tag and moved it from `sha256:f6fa5b37` to `sha256:0d0f194c`. Nothing failed, no
+lane went red, and the `v0.3.001` **release assets** (built earlier, at `af63e63b`) do not contain the
+change — so the GitHub release and the container now hold **different code under one version string**.
+
+The version gate does not catch it, by construction. `container_version_policy.py` evaluates the window
+anchored at the last version bump, and `evaluate_window` returns clean if **any** shipped commit in that
+window declared release-tag intent:
+
+```python
+if any(_has_valid_release_tag_intent(commit, current_version) for commit in shipped):
+    return []
+```
+
+One intent line discharges the whole window, and the window only resets at a bump. So once a commit declares
+`Release-tag: v<next>` while `<current>` is still published, **every later shipped push republishes the live
+tag silently** — and because Umbrel's update check is string inequality, none of those republishes is ever
+offered to an existing install.
+
+- **Shipped code is not landable on `main` while the current version tag is published**, unless the same
+  commit bumps the version. Either bump `src/app_version.py` in that commit, or keep the change on a branch
+  and release it by tagging. Non-shipped work (`.github/`, `tools/`, `tests/`, `docs/`) is always safe.
+- **Check the digest after pushing shipped code**, not only before a release:
+  `python scripts/check_published_version.py --version <current>`. Run before the push it is a pre-flight
+  warning; run after, it is a report about a fact that already exists.
+- **Record the digest a version actually ends on.** `0.3.001` shipped as `f6fa5b37` and now resolves to
+  `0d0f194c`; both are true at different times and only the second is current.
+- The open fix is to make `_has_valid_release_tag_intent` accept `>= current` **only while `current` is
+  unpublished** — a follow-up fix to a bumped-but-unreleased version is legitimate, one to an
+  already-published version is not, and the gate cannot currently tell them apart. Where that knowledge
+  should come from (live GHCR query, a recorded published-versions file, or a CI-only post-push check) is
+  an open decision; do not assume it has been made.
+
+`package-lock.json` is now in `NON_SHIPPED_PATTERNS` for the related reason that a dev-dependency bump
+should not rebuild a published image at all — see `NON_SHIPPED_PATTERNS` in
+`tools/repo_health/container_version_policy.py`.
+
 ### Ship Bundle Verification
 
 1. Build the ship bundle for the target version.

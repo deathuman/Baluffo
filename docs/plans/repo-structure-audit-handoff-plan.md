@@ -1,11 +1,11 @@
 # Repo Structure & Test Audit Handoff
 
-> - **Status:** Active — 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, **Q6 landed** 2026-09-29, and **Q2 + Q7 landed 2026-09-30** (`f33d783e`/`7051947e`/`ccaa1603` and `0c3e0372`). **Q3–Q5 remain.** Figures re-anchored to the post-Q7 tree. **Q4/Q5 are blocked on a shipped-code release**, not on analysis — see *Why Q4 Cannot Land Alone*. Q2 and Q7 rows below now carry what actually landed, including two places where this doc's own prediction was wrong.
+> - **Status:** Active - 2026-09-28 verification sweep, 2026-09-29 independent re-measurement and **lane-run** pass, **Q6 landed** 2026-09-29, **Q2 + Q7 landed 2026-09-30** (`f33d783e`/`7051947e`/`ccaa1603` and `0c3e0372`), and **Q4 + Q5 landed 2026-10-01** (`3f33e089`, browser-verified). **Q3 remains.** Figures re-anchored to the post-Q7 tree. **Q4/Q5 are landed but deliberately UNRELEASED** — they ride with the next version bump; see *Q4 and Q5: landed, unreleased*. Q2 and Q7 rows below now carry what actually landed, including two places where this doc's own prediction was wrong.
 > - **Use this when:** a LOC-reduction, dead-code, or "merge these families" report arrives and you need to know whether it is real, or when you want to execute or extend the verified remaining reduction queue without re-measuring the repo from zero
 > - **Canonical for:** the 2026-09-28 corrected structure/test audit as re-measured on 2026-09-29, the refuted-claim list, and the ranked implementation queue derived from it
 > - **Not canonical for:** test delete/merge safety rules and retained-test boundaries (see [`test-reduction-triage.md`](test-reduction-triage.md)), the Wave 1–4 program record and its measured yield rates (see [`codebase-simplification-plan.md`](codebase-simplification-plan.md)), or verification command ownership (see [`../testing.md`](../testing.md))
 > - **Then inspect:** [`codebase-simplification-plan.md`](codebase-simplification-plan.md), [`test-reduction-triage.md`](test-reduction-triage.md), [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-09-29
+> - **Last updated:** 2026-10-01
 
 ## Why This Plan Exists
 
@@ -287,8 +287,8 @@ banner, and `__all__`. Do not plan against the nominal column.
 | Q1 | ✅ **Landed 2026-09-29** — retired the stale grandfathered test caps (identified 24 at `2ee26c03`; see *Q1* below for why the landed set differs and how it was verified) | 0 LOC (679 headroom identified) | **−677 headroom realised** across 23 caps | none | none (`line-budget` group verifies). *Landed inside `e7dfe33c`, not its own commit — both sessions write the same baseline file* |
 | Q2 | ✅ **Landed 2026-09-30** across `f33d783e`, `7051947e`, `ccaa1603` — all five analyzers converted; see *Q2* below for why it became **two** cores, not one | 800 tool lines (re-measured, not the 920 first recorded) + 941 test lines (not 1,100) | **−137 realised** (800 → 663) against a projected floor of 20 and ceiling of 362 | low-med | `loc_budget.py --update`; preserve `compat` wiring + 6 `compat_group_runs` tests. **The "no `duplicate_bodies_baseline.json` edit" claim above was wrong** — a third entry was needed, see *Q2* |
 | Q3 | ◑ **Started 2026-09-30** — two genuine clusters extracted (`fake_run` ×3, `loader` ×2), −27 lines. **The −90…−140 projection is optimistic:** the largest cluster (`ok_loader`, 107 lines) is shape-similarity, not copy-paste, so the rest of the table needs per-cluster checking. See *Q3* | 282 cross-file + 250 same-file (claimed) | **−27 realised**; every remaining cluster unverified | medium | none (cap shrink is free) |
-| Q4 | Delete the **18** CSS selectors with no reachable producer (2 literal-dead + 16 proven unreachable by the per-selector read) | 236 rule lines | −120…−236 | medium (visual) | `loc_budget.py --update` |
-| Q5 | Remove the 2 unreferenced CSS custom properties (`--bg-overlay`, `--surface-17`) | ~10 | −10…−40 | low | `loc_budget.py --update` |
+| Q4 | ✅ **Landed 2026-10-01** as `3f33e089` — deleted the **18** CSS selectors with no reachable producer (2 literal-dead + 16 proven unreachable by the per-selector read). **Unreleased**, rides the next version bump; see *Q4 and Q5: landed, unreleased* | 236 predicted | **−195 realised**, plus 4 selector lists hand-edited because they were only partly dead | medium (visual) — browser-passed | `loc_budget.py --update` (`styles` 10,250 → 10,073) |
+| Q5 | ✅ **Landed 2026-10-01** as `3f33e089` — removed the 2 unreferenced CSS custom properties (`--bg-overlay`, `--surface-17`). **Unreleased**, rides the next version bump | ~10 predicted | **−4 realised** (2 properties × `:root` + `[data-theme="light"]`; the per-file "82 unused" reading was an artifact of scoping) | low — done | `loc_budget.py --update` |
 | Q6 | ✅ **Landed 2026-09-29** — deleted the **2** un-wireable never-run policy copies (68 ln) and **registered** the 1 unique one (25 ln); see *Correction 5* | 93 lines | **−71 realised** (−72 deleted, +1 line listing the new check; the registered check costs one line and buys a live gate) | low | `loc_baseline.json` re-ratcheted (`tools` 15,618 → 15,547); `duplication` group unaffected |
 | Q7 | ✅ **Landed 2026-09-30** as `0c3e0372` — `tools/repo_health/policy_wiring_policy.py`, three checks registered in the `workflow` group; mutation-verified, see *Q7* below | 0 LOC (+322 new, 1 pre-existing unused helper deleted) | ~0 (closes the class) | low | *Verify, all three confirmed by mutation:* deleting a name from `run_workflow_group` fails **by name**; registering a name with no definition fails by name; a `tmp_path`-taking `test_*` is rejected as un-callable |
 
@@ -312,23 +312,71 @@ Land one item per commit. Every commit that removes lines must run
 index against `loc_baseline.json` and fails on an un-ratcheted reduction (`check_line_budget` alone will
 not catch a shrink — it only enforces maxima).
 
-### Why Q4 Cannot Land Alone
+### Q4 and Q5: landed, unreleased
+
+**Q4 and Q5 both landed on 2026-10-01 in `3f33e089`** — the browser check this section used to say they
+were blocked on is done. 195 rule lines across five stylesheets plus 4 custom-property declarations, and the
+`styles` LOC baseline was ratcheted 10,250 → 10,073 in the same commit. The deletion is **visually a no-op**
+and that was verified rather than assumed: `saved.html` pixel-identical, `jobs.html` 0 pixels differing above
+threshold 40, `admin.html` matching HEAD except 74 pixels in two spots that are the fetcher clock
+(`00:13:35` → `00:18:16`).
+
+What did **not** happen is a release. `3f33e089` declares `Release-tag: v0.3.002` intent, but **no
+`0.3.002` was cut**, so the CSS change is on `main` and not in any desktop release asset.
+
+The reason is worth keeping, because it is the opposite of what the earlier draft of this section implied.
+Pushing `3f33e089` **republished the live `0.3.001` container tag**, moving it from `sha256:f6fa5b37` to
+`sha256:0d0f194c`. So the deletion is *already* published — inside the container labelled `0.3.001`, while
+the `v0.3.001` release assets (built at `af63e63b`) do not contain it. Only the desktop assets lag, and
+since the change renders identically, that lag costs nothing.
+
+Cutting `0.3.002` was considered and declined: the entire user-visible delta would be a dead-code deletion
+plus the six boilerplate compatibility phrases `release_docs_policy.py` asserts on the top changelog section,
+against a ~22-minute `release:preflight` gate. The next real feature release carries it instead.
+
+#### The hazard this leaves open
+
+**A live version tag stays mutable for as long as shipped code lands on `main` without a bump.** `0.3.001`
+has already moved once; deferring does not freeze that, it guarantees further moves. Concretely,
+`container_version_policy.py:201`:
+
+```python
+if any(_has_valid_release_tag_intent(commit, current_version) for commit in shipped):
+    return []
+```
+
+**One** intent line satisfies the gate for the **whole window**, and the window only resets at a version
+bump. `3f33e089`'s `Release-tag: v0.3.002` has already discharged it, so every later push touching `src/`,
+`styles/`, `frontend/` or `scripts/` passes the gate silently and republishes `0.3.001` again — with no
+Umbrel update ever being offered, because that check is string equality. The tag degrades quietly; nothing
+in the lane reports it.
+
+`_has_valid_release_tag_intent` treats `>= current` as valid so that a follow-up fix can be retagged into
+an already-bumped version. That is right for a bumped-but-unpublished version and wrong for an
+already-published one, and the gate cannot currently tell them apart. The fix is to make `>= current`
+count **only while `current` is unpublished**. Deciding *where* that knowledge comes from — a GHCR query
+(accurate, but a network call inside a commit hook), a recorded published-versions file (fast, but state
+that can drift), or a CI-only check that observes the tag right after the push (authoritative, no hook
+latency, but after the commit lands) — is still open and deliberately not pre-empted here.
+
+### Why Q4 Could Not Land Alone (superseded 2026-10-01)
+
+> Kept because it is why Q4 was scheduled the way it was, and because the rule it states is still the rule:
+> when `container_version_policy` blocks, the answer is a release decision or a split commit, never a
+> bypass. What it got wrong is the blocker. It said the CSS deletion "has to ride a version bump" and
+> framed the browser check as the outstanding step. Both were right *in principle* and wrong *in fact*: the
+> browser check passed, the version bump was deliberately skipped, and the change landed anyway.
 
 Q4 and Q5 touch `styles/`, and `styles/**` is **shipped container code**. `NON_SHIPPED_PATTERNS`
 (`tools/repo_health/container_version_policy.py:66`) whitelists `docs/**`, `tests/**`, `tools/**`,
 `memory/**`, `.github/**` and the root identity files — `styles/`, `frontend/`, `src/` and `scripts/` are not
 in it, and the list is deliberately kept equal to `build-container.yml`'s `paths-ignore` so the gate and the
-republish trigger cannot disagree. A CSS-only commit therefore republishes the container, and the `release`
-group's `check_container_shipped_code_version_gate` (`repo_guardrails.py:887`) is what stands between that and
-a retagged image: after `v0.3.0` there is no version in front of a shipped change, so the gate is telling the
-truth — **the CSS deletion has to ride a version bump**. That is the repo rule in concrete form: when
-`container_version_policy` blocks, the answer is a release decision or a split commit, never a bypass.
+republish trigger cannot disagree. A CSS-only commit therefore republishes the container. That is exactly
+what happened, and the consequence was not caught by any gate: see *The hazard this leaves open*.
 
 It is also the whole difference between Q6 and Q4. `tools/**` and `docs/**` are both non-shipped, so the
-guardrail cleanup and this doc land today while the tree stays at `v0.3.0`; the 18 selectors of Q4 are
-proven dead, listed in *Q4*, and **blocked on a release, not on evidence**. Whoever picks Q4 up should do it
-inside the next `release(vX.Y.Z)` window, run `npm run test:frontend:unit` (969 tests) plus a load of the four
-HTML entrypoints, and ratchet `styles` in the same commit.
+guardrail cleanup landed while the tree stayed at `v0.3.0`; the 18 selectors of Q4 were proven dead and
+listed in *Q4* long before anyone touched them.
 
 ### Q1 — Retire the stale test-budget caps ✅ landed
 
@@ -732,11 +780,21 @@ table exists to catch: `job-sector` was originally "cleared" by the composition
 filter purely because `job-sector-line` shares its dash-prefix — clearing is not
 being alive.
 
-**The browser pass is still the one outstanding step for Q4.** Nothing above
-substitutes for it: `styles/**` has no gate, and a static read of a stylesheet
-cannot see a cascade interaction. And `styles/**` is **shipped code**, so the
-commit must carry `Release-tag: v0.3.002` intent — **not** `v0.3.001`, whose
-image is already published and can never contain this change.
+**The browser pass was the one outstanding step for Q4, and it was done on
+2026-10-01** — see *Q4 and Q5: landed, unreleased*. Recording it because the
+reason it was necessary generalises: nothing above substitutes for it, because
+`styles/**` has no gate and a static read of a stylesheet cannot see a cascade
+interaction. It was run as a before/after pixel diff of all three entry pages
+rather than a visual pass, which turned "it looks the same" into a measurement:
+`saved.html` identical, `jobs.html` 0 pixels over threshold 40, `admin.html`
+matching except the live fetcher clock. **Any future `styles/` change needs the
+same treatment, because the lane will not catch it.**
+
+One prediction below was wrong and is corrected in place: the deletion set was
+priced at **236 rule lines**, and the shipped change removed **195**. The
+difference is the four selector lists that were only *partly* dead and had to be
+edited by hand (`.job-sector` out of two lists, `.admin-dedup-audit-gate-flag-label`
+and `-flags` out of two dedup-audit lists) rather than dropped whole.
 
 **Method for any future sweep:** extract values of `class="…"`, `className`, and `classList.*` arguments
 — not identifiers — then find the *producer* of each candidate and read its value domain. A prefix hit in an
@@ -1012,12 +1070,12 @@ line-budget, loc, release, registry, bundle, duplication, dead-code`.
 ## Resume Protocol
 
 1. Read this doc, then [`test-reduction-triage.md`](test-reduction-triage.md) if the item touches tests.
-2. Pick **one** queue item. **Q2 and Q7 are closed** (2026-09-30), so the queue is **Q3–Q5**:
-   Q3 is self-contained; **Q4/Q5 need both a browser check and a release window** — nothing gates
-   `styles/` automatically, so the visual check is the test, and `styles/**` is shipped code, so the
-   container version gate is the calendar — see *Why Q4 Cannot Land Alone*. A release window is now
-   available (0.3.001's container is published), so Q4/Q5 can be *landed*; what remains is shipping them,
-   which means they ride with the next version bump.
+2. Pick **one** queue item. **Q2, Q4, Q5 and Q7 are closed** (Q4/Q5 landed 2026-10-01 in `3f33e089`,
+   browser-verified), so **Q3 is the only item left**. Q4/Q5 landed *unreleased* on purpose and ride the
+   next version bump — if you are picking up a release, `3f33e089`'s CSS deletion and the `0.3.001` tag
+   drift are already waiting for it; see *Q4 and Q5: landed, unreleased*. Note that nothing gates
+   `styles/`, so a future CSS change still needs the browser check, and `styles/**` is shipped code, so a
+   live version tag can be republished by any push that does not bump.
 3. Re-measure before editing — baselines moved **+15,262** lines in eleven days (473,733 → 488,995), and the
    re-measurement on 2026-09-30 found this doc's Q2 sizes overstated (920/1,100 against a real 800/941). Any
    number here older than a week is a hypothesis. Use the *Reproduction Kit*.
