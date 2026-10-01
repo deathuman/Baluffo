@@ -3,7 +3,7 @@
 > - **Status:** Evidence report; **19 dead/absorbed sources demoted to pending on 2026-08-12 via the admin bridge** (operator-approved); ATS-migrated staging still pending
 > - **Basis:** 2026-07-17 `data/jobs-source-state.json.gz`; live HTTP probes on 2026-08-12; bounded pipeline runs (`_out`-style temp dirs) on the same day
 > - **Canonical for:** classification of the 53 `site_changed` static regressions; not canonical for registry mutations
-> - **Then inspect:** `docs/plans/jobs-coverage-improvement-plan.md`, `docs/source-policy-runbook.md`, `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`
+> - **Then inspect:** `docs/scraping-pipeline.md`, `docs/source-policy-runbook.md`, `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`
 
 ## Definition
 

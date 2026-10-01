@@ -1,6 +1,6 @@
 # Provider Discovery Coverage Gap Plan
 
-> - **Status:** Archived — closed as evidence-saturated, advisory-only; next-step coverage strategy lives in [`plans/jobs-coverage-improvement-plan.md`](../plans/jobs-coverage-improvement-plan.md)
+> - **Status:** Archived — closed as evidence-saturated, advisory-only; next-step coverage strategy lives in [`../scraping-pipeline.md`](../scraping-pipeline.md)
 > - **Use this when:** improving ATS/provider discovery coverage, provider migration staging evidence, or Admin/Ops visibility without adding Apify or another crawler runtime
 > - **Canonical for:** next-step provider discovery coverage strategy and provider coverage gap report requirements
 > - **Not canonical for:** provider adapter runtime behavior, report payload contracts, source registry policy, or source cleanup authority

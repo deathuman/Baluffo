@@ -3,8 +3,8 @@
 > - **Status:** Evidence snapshot with a curated, programmatically-final decision list (`tmp/dead-board-sweep-20260906/final-decision-list.json`). No registry mutations performed by this sweep; execution is queued for the next maintenance pass, and per-run fetch-report snapshots now preserve each pass's evidence automatically.
 > - **Use this when:** deciding prune/repair/hold outcomes for the chronic failed-source tail (sources that failed the Sep 4 full pass with zero kept rows), or when planning the next registry-maintenance batch.
 > - **Canonical for:** the 2026-09-06 candidate rebuild (Sep 4 baseline + success cache), the 210 live probes, redirect-target evidence, and the final decision buckets below.
-> - **Not canonical for:** the fetch-report overwrite mechanism (see `docs/plans/jobs-coverage-improvement-plan.md`), sector-signal classification (`sector-signal-contamination-2026-09-06.md`), or provider migration staging.
-> - **Then inspect:** `docs/plans/jobs-coverage-improvement-plan.md` (maintenance-class notes), `docs/snapshots/jobs-dead-source-evidence-2026-04-29.md` (two-pass deletion-batch precedent), artifacts in `tmp/dead-board-sweep-20260906/` (`candidates.json`, `live-probes.json`, `decision-list.json`, `repair-target-probes.json`, `finalize_decisions.py`).
+> - **Not canonical for:** the fetch-report overwrite mechanism (see `docs/DATA_CONTRACT.md`), sector-signal classification (`sector-signal-contamination-2026-09-06.md`), or provider migration staging.
+> - **Then inspect:** `docs/scraping-pipeline.md` (static source triage), `docs/snapshots/jobs-dead-source-evidence-2026-04-29.md` (two-pass deletion-batch precedent), artifacts in `tmp/dead-board-sweep-20260906/` (`candidates.json`, `live-probes.json`, `decision-list.json`, `repair-target-probes.json`, `finalize_decisions.py`).
 > - **Last updated:** 2026-09-06
 
 ## Method

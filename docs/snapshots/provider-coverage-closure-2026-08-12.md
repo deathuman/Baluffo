@@ -2,7 +2,7 @@
 
 > - **Status:** Evidence snapshot; registry mutations applied 2026-08-12 (operator-approved). **ATS-migration staging added 2026-08-12 (Nintendo greenhouse).**
 > - **Basis:** fresh soak report (generated 2026-08-12 after provider staging refresh + provider-only pipeline run with `--include-pending-provider-migration`), live probes on 2026-08-12
-> - **Canonical for:** Track 2 closure evidence of `docs/plans/jobs-coverage-improvement-plan.md`
+> - **Canonical for:** Track 2 provider coverage closure evidence
 > - **Then inspect:** `docs/source-policy-runbook.md`, `_out/source-policy-soak-report.json`, `docs/snapshots/static-regression-triage-2026-08-12.md`
 
 ## ATS-migration staging (Track 1 leftover, 2026-08-12)

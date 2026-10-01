@@ -2,7 +2,7 @@
 
 > - **Status:** Evidence snapshot; registry mutations applied 2026-08-13 (operator-approved)
 > - **Basis:** live probes + bounded pipeline runs on 2026-08-13; registry exports `data/source-registry-*.json.gz`
-> - **Canonical for:** Track 3 (browser-fallback/widget boards), Ubisoft link ambiguity, and provider zero-yield triage from `docs/plans/jobs-coverage-improvement-plan.md`
+> - **Canonical for:** Track 3 (browser-fallback/widget boards), Ubisoft link ambiguity, and provider zero-yield triage from `docs/adapter-plugin-inventory.md`
 > - **Then inspect:** `docs/source-policy-runbook.md`, `docs/snapshots/provider-coverage-closure-2026-08-12.md`, `_out/source-policy-soak-report.json`
 
 ## Registry mutations (via local admin bridge, 127.0.0.1:8877)

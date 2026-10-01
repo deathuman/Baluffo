@@ -1,11 +1,11 @@
 # Dedup Pressure Reduction Plan
 
-> - **Status:** Folded (2026-09-04) — the validate-then-decide review was executed against a fresh fetch: the confidence-gate strategy holds (0 blocking non-primary merges, 0 blocking review rows) but the gate returned `blocked` with 2 new provider/static disagreement rows, so the archive criterion failed; the remainder (provider/static blocked-row review) is folded into **T4b** of [`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md) — see "Validation record 2026-09-04" below
+> - **Status:** Folded (2026-09-04) — the validate-then-decide review was executed against a fresh fetch: the confidence-gate strategy holds (0 blocking non-primary merges, 0 blocking review rows) but the gate returned `blocked` with 2 new provider/static disagreement rows, so the archive criterion failed; the remainder (provider/static blocked-row review) is folded into the coverage-improvement follow-ups — see "Validation record 2026-09-04" below
 > - **Use this when:** reducing dedup gate pressure without chasing individual static source failures
 > - **Canonical for:** next-step dedup pressure strategy and latest measured evidence
 > - **Not canonical for:** data payload contracts or source registry policy
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and the latest fresh `data/jobs-fetch-report.json` from `npm run dev:pipeline`
-> - **Last updated:** 2026-09-04 (validate-then-decide executed; plan folded into jobs-coverage-improvement-plan.md T4b)
+> - **Last updated:** 2026-09-04 (validate-then-decide executed; plan folded into the coverage-improvement follow-ups)
 
 ## Summary
 
@@ -111,7 +111,7 @@ sparseIdentity 320, blocking both 0) — but the gate is `blocked` because the f
 2 current-run blocked `provider_static_disagreement` rows (greenhouse/smartrecruiters pairs:
 31st Union, Guerrilla, People Can Fly, PlayStation Global class), which is this plan's own reopen
 trigger. Archiving on a blocked gate would strand those rows with no owner, so the plan is
-**folded** instead: the blocked-row review is now T4b in
-[`jobs-coverage-improvement-plan.md`](jobs-coverage-improvement-plan.md). Once both rows are
+**folded** instead: the blocked-row review is now tracked as a coverage-improvement
+follow-up. Once both rows are
 reviewed (`reviewed_safe`) and a re-run returns the gate to `warning`, the original archive
 criteria are satisfied.

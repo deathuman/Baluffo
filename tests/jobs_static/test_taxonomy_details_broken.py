@@ -36,7 +36,7 @@ def _mundfish_shape(**overrides: object) -> ClassificationContext:
 def test_details_broken_beats_generic_text_mappings() -> None:
     """The Mundfish shape must stamp details_broken instead of the js_required
     the static-manual-no-jobs text rule previously produced with zero JS
-    evidence (docs/plans/hold-tail-repair-plan.md S1)."""
+    evidence (docs/DATA_CONTRACT.md, fetch report diagnostic breakdowns)."""
     assert map_error_to_failure_bucket(_mundfish_shape()) is FailureBucket.DETAILS_BROKEN
 
 

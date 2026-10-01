@@ -14,7 +14,7 @@ exist at the source layer.
 
 Evidence: ``docs/snapshots/sector-signal-contamination-2026-09-06.md``
 (disposition 5), T13 execution notes in
-``docs/plans/jobs-coverage-improvement-plan.md``.
+``docs/snapshots/sector-signal-contamination-2026-09-06.md`` and ``docs/notes/t3-workday-promotion-2026-09-05.md``.
 """
 
 from __future__ import annotations

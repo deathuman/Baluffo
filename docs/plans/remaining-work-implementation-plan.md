@@ -226,8 +226,8 @@ and pruning it in the same change took `stale baseline` back to 0.
 **The premise was wrong.** This item was scoped as "752 MB, the largest disk win available".
 Measured, only **~139 MB was deletable**, because **65% of the volume (222 MB across 47
 directories) was cited provenance** — 44 of those directories are referenced from
-`docs/CHANGELOG.md`, plus `docs/plans/hold-tail-repair-plan.md`,
-`docs/adapter-plugin-inventory.md` and six snapshots. A bulk purge would have deleted the evidence
+`docs/CHANGELOG.md`, plus `docs/adapter-plugin-inventory.md`, `docs/DATA_CONTRACT.md` and
+six snapshots. A bulk purge would have deleted the evidence
 trail of shipped work.
 
 The real accumulation is elsewhere and was never in scope: **`_out/perf-runs` is 10.5 GB** of

@@ -20,7 +20,7 @@ HBO Max, Disney, SciGames) as Game — 458 rows in the baseline dataset.
 
 Evidence: ``docs/snapshots/sector-signal-contamination-2026-09-06.md``
 (2026-09-06 contamination sweep); T13 in
-``docs/plans/jobs-coverage-improvement-plan.md``.
+``docs/snapshots/sector-signal-contamination-2026-09-06.md`` and ``docs/notes/t3-workday-promotion-2026-09-05.md``.
 """
 
 from __future__ import annotations

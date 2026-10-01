@@ -55,6 +55,37 @@ Active refactor plans, planning templates, and follow-up trackers belong in [`pl
 - Do not add overlapping overview pages when narrower canonical docs already cover the topic.
 - Do not create a second documentation tree, append-only doc logs, Obsidian-style wiki links, or agent-specific root rule files for this workflow.
 
+## Plan Lifecycle
+
+A plan is a **temporary ledger**, not a documentation page. Its job is to refine the work
+before execution, track progress while it runs, and then get out of the way:
+
+1. **Author and refine.** Record the queue, the per-item gate, and the reproduction step.
+2. **Execute and track.** Update as work lands. Re-measure rather than trusting an earlier
+   figure — a status line that says "not started" while the body says otherwise costs a
+   reader more than the work did.
+3. **Close it.** When the work is done, **delete the plan** and move anything worth
+   keeping into the regular docs. Do not leave it parked in `plans/`, and do not archive a
+   long record — see the archive rule above; git history is the provenance.
+
+A status of *Folded*, *Parked*, *Closed*, *Superseded*, *Implemented*, or *Fully executed*
+means the plan is finished. If it still sits in `plans/`, that is the defect, not the state.
+
+`test_plan_lifecycle_tripwires` in [`../tools/repo_health/release_docs_policy.py`](../tools/repo_health/release_docs_policy.py)
+enforces this: it flags oversized plans, terminal-status plans still in `plans/`, and plans
+past 5,000 words. It is **warn-only** while the existing backlog drains — set
+`PLAN_LIFECYCLE_ENFORCE = True` once the list is empty or the remaining plans are accepted.
+
+The word threshold exists because line counts miss the worst shape. One retired plan held
+21,816 words across 65 lines, with 172,891 characters on a single line. A line-based rule
+passed it cleanly.
+
+Durable results belong in the canonical doc that owns the topic — measurement method in
+[`measurement-methods.md`](measurement-methods.md), pipeline behaviour in
+[`scraping-pipeline.md`](scraping-pipeline.md), data shapes in
+[`DATA_CONTRACT.md`](DATA_CONTRACT.md), dated evidence in [`snapshots/`](snapshots/). A
+promised follow-up is a plan; a landed result is a doc.
+
 ## Freshness Check After Code Changes
 
 Review the touched area and update docs in the same change when any of these moved:
