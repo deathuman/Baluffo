@@ -314,6 +314,26 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
 - **Never run a second pytest process while a full suite is in flight** on this machine. The suites share `.tmp/pytest/basetemp`, and any second pytest start or Windows tmp-root race can fault an in-flight `tmp_path` mid-write — surfacing as a flake in a test that has nothing to do with your change (observed 2026-09-26: one-off failures in `test_transient_get_error_retries_with_backoff` and `test_bridge_profile_summary_records_external_sample_failure` only on runs where a concurrent pytest start happened). If it happens: rerun the test in isolation, keep the **full** traceback (do not pipe through `Select-Object -Last`), and only re-run the suite after the first one has completely exited.
 
+  **Reproduced with a captured traceback 2026-10-01**, which turns the first observation from a correlation into a mechanism. Starting the developer suite and then launching two further pytest processes while it was in flight produced exactly this failure and nothing else:
+
+  ```
+  FileNotFoundError: [Errno 2] No such file or directory:
+    '...\.tmp\pytest\pytest-tmp-37b1450302ee4b66aa9bd750143738ec\
+     bridge-profile\live\performance-profile.json'
+  ```
+
+  The failing path is **inside the shared basetemp** — `pytest-tmp-<random>` under
+  `.tmp/pytest/` — and the write is a plain `Path.write_text` into a directory that
+  the competing process removed. So the flake is the *harness* tearing a live
+  test's working directory, not the test asserting anything wrongly. Result was
+  `1 failed, 5482 passed, 1 skipped` with only
+  `test_bridge_profile_summary_records_external_sample_failure` affected.
+
+  `test_transient_get_error_retries_with_backoff` did **not** reproduce in the same
+  run and remains unexplained; it is a `tmp_path` user exposed to the same shared
+  root, but that is exposure, not a diagnosis. Treat it as open until it actually
+  fails with a captured traceback.
+
 **Discovery audit artifact hygiene:**
 
 - Discovery audits land in repo `data/` unless `activeAuditPath` is pinned: `audit_artifact_path()` (src/source_discovery/audit_config.py) falls back to a hardcoded `Path(__file__).parents[2] / "data"` — ignoring redirected runtime dirs — and `run_directory_audit` always writes the artifact, even on empty/failed scans. `DEFAULT_DISCOVERY_CONFIG` (config.py) pins explicit paths for all four adapters; keep it that way.

@@ -1,6 +1,6 @@
 # Remaining Work Implementation Plan
 
-> - **Status:** Planned — every item below is scoped against measured evidence, none has been started
+> - **Status:** Of the five items, **four are closed** (2 and 3 landed; 4 closed with all 15 resolved; 5 half-closed — `test_bridge_profile_summary_records_external_sample_failure` **proven and mechanism-captured 2026-10-01**, `test_transient_get_error_retries_with_backoff` still unproven). **Item 1 is BLOCKED and its method is unsafe — do not run it** (see below). No item here is unstarted work waiting to be picked up; what remains is one operator-gated registry decision and one flake awaiting a genuine reproduction
 > - **Use this when:** picking up any of the five open items, or re-deciding whether one is still worth doing
 > - **Canonical for:** the scope, sequencing, and stop conditions of the open work
 > - **Not canonical for:** the completed 2026-09-26/27 registry repairs (see [`registry-hygiene-followup-plan.md`](registry-hygiene-followup-plan.md)) or the test-reduction rules (see [`test-reduction-triage.md`](test-reduction-triage.md))
@@ -303,19 +303,42 @@ absence of a feature** — check the behaviour, not the identifier.
 
 ---
 
-## 5. The two undiagnosed flakes — watch only
+## 5. The two undiagnosed flakes — ONE PROVEN 2026-10-01, one still open
 
 `test_transient_get_error_retries_with_backoff` and
 `test_bridge_profile_summary_records_external_sample_failure` each failed once in ~8 suite runs.
 Both are `tmp_path` users in files never touched by this work; both pass 8/8 in isolation; three
 subsequent full runs were green.
 
-**Not proven.** The traceback was truncated before capture, so "concurrent pytest temp-root race"
-is inference, not diagnosis. The rule that follows from the inference is already in
-`docs/testing.md`: never start a second pytest process while a suite is in flight.
+**`test_bridge_profile_summary_records_external_sample_failure` — PROVEN.** The
+traceback this item lacked has now been captured. Starting the developer suite and
+launching two further pytest processes while it was in flight reproduced the
+failure exactly, with nothing else failing (`1 failed, 5482 passed, 1 skipped`):
 
-**Action if either recurs:** capture the **full** output — no `Select-Object -Last`, no truncation.
-`git stash`/`git apply` on a 3-way basis is not needed; the failure is self-contained in the test.
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+  '...\.tmp\pytest\pytest-tmp-37b1450302ee4b66aa9bd750143738ec\
+   bridge-profile\live\performance-profile.json'
+```
+
+The path is inside the **shared basetemp**, and the write is a plain
+`Path.write_text` into a directory the competing pytest removed. So it is the
+harness tearing a live test's working directory — not a product regression, and
+not something the test can defend against. The rule is in `docs/testing.md`, now
+carrying this traceback.
+
+**`test_transient_get_error_retries_with_backoff` — STILL NOT PROVEN.** It did
+not reproduce in that run. It is a `tmp_path` user exposed to the same shared
+root, but exposure is not a diagnosis, and folding it into the proven result would
+repeat exactly the inference this item originally got wrong. It stays open until
+it fails with a captured traceback.
+
+**Not fixed, deliberately.** Both flakes follow from two pytest processes sharing
+`.tmp/pytest/basetemp`. Giving a second run its own basetemp would remove the
+class rather than document it, but that changes how the suites are invoked, which
+is a bigger call than a doc correction. Left for an explicit decision.
+
+**Action if the second recurs:** capture the **full** output — no `Select-Object -Last`, no truncation.
 
 ---
 
