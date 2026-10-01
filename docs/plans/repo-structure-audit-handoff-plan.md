@@ -652,6 +652,56 @@ Total realised: **−27 lines** against Q3's −90…−140. Note that `tests/` 
 the `duplication` gate's `SCANNED_ROOTS` (`src`, `scripts`, `tools`), so test
 duplication is unmonitored and these reductions are invisible to it.
 
+#### Measured 2026-10-01: the remaining eight clusters, cluster by cluster
+
+Every cluster in the table above was re-measured rather than trusted, after the
+`ok_loader` result showed the clone scan measures *structure*. **Three are
+byte-identical, four are shape-similarity, and one is misfiled.**
+
+**Extracted — `run_static_plugin`, 3 sites, −46 lines.** The plan listed
+`_run_plugin` as 2 sites / 22 redundant lines. It is **five** `def _run_plugin` in
+`tests/jobs/adapters/plugins/static/`, and only **two** are byte-identical
+(`wp11`/`wp12`, same md5). `wp3` differs by taking `source_row` as a parameter
+instead of computing it — but it passes `source_row("astrid")`, which is exactly
+what `wp11` computes from `plugin.__name__.split(".")[-1]`. **Functionally
+identical**, so one helper in `tests/helpers/jobs_rows.py` (which already owns
+`source_row`) absorbs all three with **no call-site change** for `wp11`/`wp12` and
+only the redundant `source_row=` argument dropped from `wp3`'s three calls.
+Verified the value is not weakened: the computed string is the same expression.
+
+**Rejected — shape-similarity, not copy-paste:**
+
+| Cluster | Why rejected |
+|---|---|
+| `check` (40) | same string-literal count, **different values** — the assertions differ per test |
+| `scraper_loader` (25) | same shape, different fixture values |
+| `_active_job` (14) | same shape, different row payloads |
+| `fake_fetch_directory_pages` (11) | **5** sites, not 2, and **4 distinct shapes** (8/7/8/17/0 literals); two take `(*_args, **_kwargs)`, three take `(_timeout_s, page_jobs, **_kwargs)` |
+
+**Two byte-identical clusters deliberately not extracted**, because the arithmetic
+does not support the churn:
+
+- `set_source_diagnostics` (17 × 2) is a **method on a per-test fake class**
+  (`_FakeDeps`), so sharing it means a mixin and restructures both test files.
+  ≈ −15 lines for a structural change to two fakes.
+- `delayed_fetch_with_retries` (13 × 2) is a **closure** over `fetches` and
+  `fake_deps`. Hoisting it means passing both as parameters, which makes every
+  call site noisier than the 13 lines saved.
+
+**Another stale path.** The table cites
+`tests/source_discovery/test_web_search_directory_candidates.py`, which **does not
+exist**; the real file is `test_web_search_candidates.py`. That is the fourth
+path error this table has produced (see the correction note above for the first
+three), and it also undercounted the sites by three.
+
+Verified by mutation: making the shared helper `return []` fails 10 tests, so the
+suites are not passing vacuously through it. `tests/jobs/` green at 602.
+
+Q3 total realised: **−73 lines** (27 previous + 46 here) against a −90…−140
+projection that remains optimistic — four of the eight clusters checked so far are
+not extractable, and the four never measured are the long tail of 8–13-line
+groups this section already calls low-value.
+
 Split by risk: **same-file repeats (250 lines = 532 total − 282 cross-file) are mechanical** — one
 module-level helper per file, no import changes. **Cross-file clusters (282 lines)** need a shared host (`conftest.py` for pytest fixtures,
 or a `tests/jobs_fetcher_support.py` helper); the host must not import product internals the tests do not

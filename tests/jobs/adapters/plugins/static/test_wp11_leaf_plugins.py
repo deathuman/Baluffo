@@ -7,35 +7,9 @@ from typing import Any, cast
 import pytest
 
 from src.jobs.adapters.plugins.static import a4vr, amrita, animvs
-from tests.helpers.jobs_rows import source_row
-
-_source_row = source_row
+from tests.helpers.jobs_rows import run_static_plugin as _run_plugin
 
 _PLUGINS = (a4vr, amrita, animvs)
-
-
-def _run_plugin(
-    plugin: Any,
-    *,
-    page_url: str,
-    html: str,
-) -> list[dict[str, Any]]:
-    def fetch_text(url: str, timeout_s: int) -> str:
-        assert url == page_url
-        assert timeout_s == 10
-        return html
-
-    return cast(
-        list[dict[str, Any]],
-        plugin.run(
-            fetch_text=fetch_text,
-            timeout_s=10,
-            retries=0,
-            backoff_s=0.0,
-            pages=[page_url],
-            source_row=_source_row(plugin.__name__.split(".")[-1]),
-        ),
-    )
 
 
 @pytest.mark.parametrize(

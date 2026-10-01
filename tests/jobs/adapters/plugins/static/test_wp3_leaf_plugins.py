@@ -7,36 +7,9 @@ from typing import Any, cast
 import pytest
 
 from src.jobs.adapters.plugins.static import astrid, immersity, perfectgarbage
-from tests.helpers.jobs_rows import source_row
-
-_source_row = source_row
+from tests.helpers.jobs_rows import run_static_plugin as _run_plugin
 
 _PLUGINS = (astrid, immersity, perfectgarbage)
-
-
-def _run_plugin(
-    plugin: Any,
-    *,
-    page_url: str,
-    html: str,
-    source_row: dict[str, Any],
-) -> list[dict[str, Any]]:
-    def fetch_text(url: str, timeout_s: int) -> str:
-        assert url == page_url
-        assert timeout_s == 10
-        return html
-
-    return cast(
-        list[dict[str, Any]],
-        plugin.run(
-            fetch_text=fetch_text,
-            timeout_s=10,
-            retries=0,
-            backoff_s=0.0,
-            pages=[page_url],
-            source_row=source_row,
-        ),
-    )
 
 
 def test_astrid_extracts_all_blocks_with_locations() -> None:
@@ -55,7 +28,6 @@ def test_astrid_extracts_all_blocks_with_locations() -> None:
         astrid,
         page_url="https://astridentertainment.com/careers",
         html=html,
-        source_row=_source_row("astrid"),
     )
     assert [r["title"] for r in rows] == ["Senior Gameplay Engineer", "Senior UI / UX Designer"]
     assert [r["jobLink"] for r in rows] == [
@@ -91,7 +63,6 @@ def test_immersity_extracts_company_careers_blocks() -> None:
         immersity,
         page_url="https://immersity.ai/careers",
         html=html,
-        source_row=_source_row("immersity"),
     )
     assert [r["title"] for r in rows] == [
         "IT Operations Specialist",
@@ -117,7 +88,6 @@ def test_perfectgarbage_extracts_all_workwithindies_links_and_strips_hiring_pref
         perfectgarbage,
         page_url="https://www.perfectgarbage.com/careers",
         html=html,
-        source_row=_source_row("perfectgarbage"),
     )
     assert [r["title"] for r in rows] == ["Senior Programmer", "Technical Sound Designer"]
     assert [r["jobLink"] for r in rows] == [

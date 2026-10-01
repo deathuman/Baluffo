@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any
+from typing import Any, cast
 
 
 def dedup_row(**overrides):
@@ -97,6 +97,42 @@ def canonical_feed_row(availability_id: str = "availability_1") -> dict:
         "availabilityStatus": "available",
         "sourceBundle": [],
     }
+
+
+def run_static_plugin(
+    plugin: Any,
+    *,
+    page_url: str,
+    html: str,
+) -> list[dict[str, Any]]:
+    """Run one static leaf plugin against a single canned page and return its rows.
+
+    Shared by the `wp3`/`wp11`/`wp12` leaf-plugin suites, which each carried their
+    own copy. `wp3` passed ``source_row=source_row("astrid")`` explicitly while
+    `wp11`/`wp12` computed ``source_row(plugin.__name__.split(".")[-1])``
+    internally - the same value either way, so one helper covers all three with no
+    call-site change.
+
+    Fixed `retries`/`backoff_s` are part of the contract these tests assert on, so
+    keeping them in one place is what stops the three suites from drifting apart.
+    """
+
+    def fetch_text(url: str, timeout_s: int) -> str:
+        assert url == page_url
+        assert timeout_s == 10
+        return html
+
+    return cast(
+        list[dict[str, Any]],
+        plugin.run(
+            fetch_text=fetch_text,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=[page_url],
+            source_row=source_row(plugin.__name__.split(".")[-1]),
+        ),
+    )
 
 
 def excluded_report(name: str, reason: str) -> dict[str, object]:
