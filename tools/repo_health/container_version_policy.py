@@ -68,6 +68,7 @@ NON_SHIPPED_PATTERNS = (
     "tests/**",
     "tools/**",
     "memory/**",
+    ".agents/**",
     ".github/**",
     "README.md",
     "CONTRIBUTING.md",

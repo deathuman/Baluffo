@@ -13,6 +13,10 @@ on:
       - "tests/**"
       - "tools/**"
       - "memory/**"
+      # `.agents/` holds agent skills and MCP config. Nothing in `src/`, `frontend/`,
+      # or `scripts/` reads it, so a skill edit cannot change what the app does.
+      # Rebuilding here republished the version tag with no behavioural change.
+      - ".agents/**"
       - ".github/**"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -39,6 +43,7 @@ on:
       - "tests/**"
       - "tools/**"
       - "memory/**"
+      - ".agents/**"
       - ".github/**"
       - "README.md"
       - "CONTRIBUTING.md"
