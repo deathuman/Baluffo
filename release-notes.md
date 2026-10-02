@@ -1,3 +1,20 @@
+## [0.3.006] - 2026-10-02
+### Fixed
+
+- **A failed attachment load no longer looks like an empty one.** If the app could not reach your saved files, the panel used to say "No attachments yet." as though you had never added anything. It now says the list could not be loaded and offers to try again, so a problem is never disguised as a fact about your data.
+
+- **You can now reload a job's attachments on demand.** The Attachments panel has a Refresh button next to Upload, matching the one already on the History tab.
+
+### Changed
+
+- **The Attachments panel no longer claims to be empty before it has looked.** On first open it previously read "No attachments yet." when in fact nothing had been loaded yet. It now says the list has not been loaded and points at Refresh.
+
+### Notes
+
+- **Nothing stored is touched.** Attachment storage, the backup format, and the attachment counts are all exactly as before. This is display and a manual reload only, and re-uploading is unchanged.
+
+- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.005.
+
 ## [0.3.005] - 2026-10-02
 ### Fixed
 

@@ -5,7 +5,8 @@ import {
   getAttachmentPreviewUrl as getAttachmentPreviewUrlFromModule,
   clearAttachmentPreviewUrls as clearAttachmentPreviewUrlsFromModule,
   renderAttachmentList as renderAttachmentListFromModule,
-  renderAttachmentLoading as renderAttachmentLoadingFromModule
+  renderAttachmentLoading as renderAttachmentLoadingFromModule,
+  renderAttachmentError as renderAttachmentErrorFromModule
 } from "../attachments.js";
 import { escapeHtml, showToast } from "../../../shared/ui/index.js";
 
@@ -51,11 +52,24 @@ export function createSavedAttachmentsController({
     });
   }
 
+  function renderAttachmentError(jobKey) {
+    const safeJobKey = String(jobKey || "");
+    // Drop the loaded marker so a later Refresh actually re-fetches. Keeping it
+    // would make hydrateAttachmentListForJob early-return and the retry a no-op.
+    viewState.loadedAttachmentJobKeys.delete(safeJobKey);
+    viewState.loadingAttachmentJobKeys.delete(safeJobKey);
+    return renderAttachmentErrorFromModule(safeJobKey, {
+      savedJobsListEl: dom.savedJobsListEl,
+      cssEscape
+    });
+  }
+
   async function hydrateAttachmentLists(jobs) {
     return hydrateAttachmentListsFromModule(jobs, {
       currentUser: viewState.currentUser,
       listAttachmentsForJob: (uid, jobKey) => savedPageService.listAttachmentsForJob(uid, jobKey),
-      renderAttachmentList
+      renderAttachmentList,
+      renderAttachmentError
     });
   }
 
@@ -70,7 +84,8 @@ export function createSavedAttachmentsController({
         currentUser: viewState.currentUser,
         listAttachmentsForJob: (uid, safeKey) => savedPageService.listAttachmentsForJob(uid, safeKey),
         renderAttachmentList,
-        renderAttachmentLoading
+        renderAttachmentLoading,
+        renderAttachmentError
       });
     } finally {
       viewState.loadingAttachmentJobKeys.delete(safeJobKey);
@@ -223,6 +238,17 @@ export function createSavedAttachmentsController({
         await deleteAttachment(jobKey, btn.dataset.attachmentId || "");
       };
     });
+
+    // Manual refresh. `force` is required: hydrateAttachmentListForJob returns
+    // early for a key already in loadedAttachmentJobKeys, so without it the
+    // button would look broken the moment a list had been hydrated once.
+    savedJobsListEl.querySelectorAll(".att-refresh-btn").forEach(btn => {
+      btn.onclick = async () => {
+        const jobKey = btn.dataset.jobKey || "";
+        setSelectedJobKey(jobKey, { rerenderTimeline: false });
+        await hydrateAttachmentListForJob(jobKey, { force: true });
+      };
+    });
   }
 
   return {
@@ -230,6 +256,7 @@ export function createSavedAttachmentsController({
     hydrateAttachmentListForJob,
     uploadAttachments,
     renderAttachmentList,
+    renderAttachmentError,
     bindAttachmentActionButtons
   };
 }

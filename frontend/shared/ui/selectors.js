@@ -143,6 +143,7 @@ export const UI_TOKENS = Object.freeze({
     detailsTabBtn: "saved-details-tab-btn",
     noteInput: "job-notes-input",
     attachUploadBtn: "attach-upload-btn",
+    attachRefreshBtn: "att-refresh-btn",
     historyRefreshBtn: "job-history-refresh-btn"
   },
   admin: {

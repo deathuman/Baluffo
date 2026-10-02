@@ -215,11 +215,12 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="attachments-value">
               <div class="attachments-toolbar">
                 <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" data-ui="attach-upload-btn" ${!currentUser ? "disabled" : ""} ${!currentUser ? tooltipAttrs("Sign in to upload attachments.") : ""}>Upload</button>
+                <button class="btn back-btn att-refresh-btn" data-job-key="${jobKey}" data-ui="att-refresh-btn" ${!currentUser ? "disabled" : ""} ${!currentUser ? tooltipAttrs("Sign in to load attachments.") : ""}>Refresh</button>
                 <span class="attachments-hint">Max ${maxAttachmentsPerJob} files, ${Math.round(maxAttachmentBytes / (1024 * 1024))}MB each</span>
               </div>
               <input class="attach-file-input hidden" type="file" multiple data-job-key="${jobKey}" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
               <div class="attachments-list" data-job-key="${jobKey}">
-                <div class="muted">No attachments yet.</div>
+                <div class="muted">Attachments have not been loaded yet. Use Refresh to load them.</div>
               </div>
             </div>
           </div>
