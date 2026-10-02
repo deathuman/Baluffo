@@ -54,6 +54,7 @@ Use this lane when one version is intended to become both the public desktop rel
 1. Confirm the release identity.
    - Verify `main`, `origin/main`, `src/app_version.py`, Umbrel metadata, and `docs/CHANGELOG.md` all name the same version.
    - Confirm the target tag and GitHub release do not already exist. If either exists, inspect it before proposing recovery.
+   - **Know what the version gate will demand before you touch shipped code.** `check_container_shipped_code_version_gate` reads the version at **HEAD**, not the working tree. While the current version is unreleased, `Release-tag: v<current>` intent is enough and republishing the tag is inert. Once it is **released**, intent is no longer consulted: a **newer** `Release-tag:` is still rejected, because overwriting a published image requires the version to actually move. Either bump `src/app_version.py` in the same change as the shipped code, or keep shipped code on a branch and release it by tagging. The gate blocks at **pre-push**, so the offending commit always lands locally first — that is by design, not a bypass point.
 
 2. Run local confidence.
    - Run `rtk npm run release:preflight` on the exact commit to tag, then confirm the repo stays clean.

@@ -123,6 +123,45 @@ Four- and five-figure targets are unsupported by anything in this tree.
 
 ## Related
 
+## Know which instrument produced the number
+
+A number means nothing until you know what could and could not have been seen. The clearest
+case in this repo: `static_probe_evidence` (`src/source_discovery/probe.py:400`) is a
+**detail-link** detector, so a board that expresses its postings as **cards** scores **0** —
+and it still scores 0 after Playwright renders the page.
+
+That is measured, not inferred. Three positive controls (boards independently known to yield
+jobs) stayed at 0 after rendering, while byte deltas of 57,835 → 58,468 confirmed the browser
+had actually run. The signal is **positive-only**: a high score is real evidence, and **a zero
+means nothing at all.** Scored against 17 boards that collect, **eight scored zero.**
+
+Two rules follow:
+
+- **Never conclude "no board found" from a zero.** For card-shaped boards use the card
+  extractor (`extract_rendered_card_jobs` / `_extract_listing_candidates`), and settle what a
+  board collects with a real isolated fetch — `--output-dir` mandatory, since omitting it writes
+  stub state into live `data/`.
+- **A wrong instrument looks exactly like a missing thing.** The rendering hypothesis was
+  disproved *by running the renderer*, not by reasoning about it.
+
+## Assert the control; never assume it
+
+AGENTS.md says a control must be verified to exist. Three concrete traps in this repo, all
+caught only because the control was checked rather than trusted:
+
+| Trap | Why it fooled the measurement |
+|---|---|
+`status == 200 and len > 1000` | proves **reachability**, not the **signal** |
+a "studio root" that was a 3.7 KB shell | looked like a plausible board; was an empty page |
+`registrable_host("maglab.com.tr")` → `com.tr` | a **public suffix**, not a registrable domain, so it false-matched an unrelated company as `same_host` |
+
+The registrable case is fixed in `src/source_discovery/recovery_url_planner.py:26-27` (two-letter
+ccTLD handling) and pinned by `test_suffix_containment_is_bidirectional_and_not_a_public_suffix`.
+It is the shape to watch for generally: any "are these the same company" shortcut that reduces a
+host to a fixed number of labels will be wrong for some suffix.
+
+## Related
+
 - [`test-reduction-policy.md`](test-reduction-policy.md) — which tests may be
   deleted or merged, and the retained-test boundaries that gate it
 - [`testing.md`](testing.md) — test command routing and fixture layout
