@@ -1,3 +1,16 @@
+## [0.3.004] - 2026-10-02
+### Fixed
+
+- **A tooltip you dismissed with Escape now stays dismissed.** Admin refreshes itself in the background every thirty seconds. If one of those refreshes redrew the button your mouse was resting on, the browser re-checked the hover and the tooltip you had just dismissed popped back up on its own. Escape now holds until you actually move the pointer away, after which hovering behaves exactly as before. This was also what made an automated check fail intermittently.
+
+### Notes
+
+- **Nothing stored is touched.** No saved jobs, settings, or tracked applications are read or written differently, and there is no upgrade step.
+
+- **Keyboard and screen-reader use improves.** Anyone dismissing a tooltip with the keyboard no longer has it reappear under them partway through a session.
+
+- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.003. The only difference is that a tooltip you dismissed with Escape stays dismissed.
+
 ## [0.3.003] - 2026-10-02
 ### Changed
 

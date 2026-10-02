@@ -92,6 +92,7 @@ export function installGlobalTooltipController({
   let activeTarget = null;
   let previousDescribedBy = null;
   let mutationObserver = null;
+  let dismissedByEscape = false;
 
   function ensurePortal() {
     if (portal?.parentNode) return portal;
@@ -177,10 +178,20 @@ export function installGlobalTooltipController({
 
   function handleShow(event) {
     const target = closestTooltipTarget(eventTarget(event, doc), doc);
-    if (target) showTooltip(target);
+    if (!target) return;
+    // An Escape dismissal sticks until the pointer genuinely leaves. Replacing a
+    // hovered node re-evaluates hover in the browser, which re-fires pointerover
+    // on the replacement -- so on a page that re-renders under the cursor (Admin
+    // polls every 30s) a dismissed tooltip would otherwise come back on its own.
+    if (dismissedByEscape) return;
+    showTooltip(target);
   }
 
   function handleHide(event) {
+    // Any real pointer/focus departure ends the dismissal, so hovering back shows
+    // the tooltip again. Replacing a node does NOT fire pointerout, which is
+    // exactly what separates "the user moved on" from "the page re-rendered".
+    dismissedByEscape = false;
     if (!activeTarget) return;
     const nextTarget = closestTooltipTarget(event?.relatedTarget || null, doc);
     if (nextTarget === activeTarget) return;
@@ -188,7 +199,10 @@ export function installGlobalTooltipController({
   }
 
   function handleKeydown(event) {
-    if (event?.key === "Escape") hideTooltip();
+    if (event?.key !== "Escape") return;
+    // hideTooltip() clears activeTarget, so read it before dismissing.
+    dismissedByEscape = Boolean(activeTarget);
+    hideTooltip();
   }
 
   function handleViewportChange() {

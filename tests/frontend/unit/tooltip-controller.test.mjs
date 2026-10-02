@@ -216,3 +216,44 @@ test("tooltip controller shows via focus, restores aria-describedby, and flips n
   doc.dispatch("keydown", { key: "Escape", target });
   assert.equal(portal.getAttribute("aria-hidden"), "true");
 });
+
+test("tooltip controller keeps an Escape dismissal across a re-render, until the pointer leaves", () => {
+  const { doc, windowTarget } = createTooltipDom();
+  const target = createFakeElement(doc, "button");
+  target.setAttribute("data-tooltip", "Verify GitHub App access");
+  doc.body.appendChild(target);
+
+  installGlobalTooltipController({ documentTarget: doc, windowTarget });
+
+  doc.dispatch("pointerover", { target });
+  const portal = doc.body.children.find(child => child.id === "baluffo-global-tooltip");
+  assert.ok(portal);
+  assert.equal(portal.getAttribute("aria-hidden"), "false");
+
+  doc.dispatch("keydown", { key: "Escape", target });
+  assert.equal(portal.getAttribute("aria-hidden"), "true");
+
+  // Admin polls every 30s and re-renders under a stationary cursor. Replacing
+  // the hovered node makes the browser re-evaluate hover, which re-fires
+  // pointerover on the replacement -- so a dismissed tooltip used to come back
+  // on its own, and the smoke test's post-Escape assertion failed intermittently.
+  const replacement = createFakeElement(doc, "button");
+  replacement.setAttribute("data-tooltip", "Verify GitHub App access");
+  doc.body.appendChild(replacement);
+  doc.dispatch("pointerover", { target: replacement });
+  assert.equal(
+    portal.getAttribute("aria-hidden"),
+    "true",
+    "an Escape dismissal must survive a re-render of the hovered target"
+  );
+
+  // The dismissal must not become permanent: a genuine pointer departure ends
+  // it, so hovering the target again shows the tooltip as usual.
+  doc.dispatch("pointerout", { target: replacement, relatedTarget: null });
+  doc.dispatch("pointerover", { target: replacement });
+  assert.equal(
+    portal.getAttribute("aria-hidden"),
+    "false",
+    "hovering back after the pointer left must show the tooltip again"
+  );
+});
