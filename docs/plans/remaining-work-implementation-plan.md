@@ -1,11 +1,14 @@
 # Remaining Work Implementation Plan
 
 > - **Status:** One item blocked and **unsafe to attempt**; four items verified complete; one flake still unproven. No implementation work is live here.
+> - **Class:** cleanup
+> - **Trigger:** none. Item 1 is blocked and its method is unsafe to run; items 2-4 are done; item 5 has one flake that will not resolve without a deliberate concurrent-pytest reproduction.
+> - **Verified against:** 722c3be3
 > - **Use this when:** someone proposes resuming the 23-board repoint, or asks what remains of this plan
 > - **Canonical for:** the do-not-run warning on the repoint method, and the remaining unproven flake
 > - **Not canonical for:** measurement method (see [`../measurement-methods.md`](../measurement-methods.md)), registry retirement rules (see [`../scraping-pipeline.md`](../scraping-pipeline.md)), or job-quality policy (see [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md))
 > - **Then inspect:** [`../measurement-methods.md`](../measurement-methods.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and `git log` for the completed items
-> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines; durable lessons extracted)
+> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines, then 97; durable lessons extracted; declaration block added)
 
 Every claim below was re-verified against the tree on 2026-10-02 rather than trusted from the
 previous revision, which was the sixth plan in this repo whose body had moved on from its status.

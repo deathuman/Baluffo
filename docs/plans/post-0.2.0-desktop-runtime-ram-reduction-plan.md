@@ -1,11 +1,14 @@
 # Desktop Runtime RAM Reduction
 
 > - **Status:** Active (deferred, lever un-landed) — the one remaining credible desktop RAM lever, still pending
+> - **Class:** cleanup
+> - **Trigger:** no date. Deferred on risk, not on a condition: ~42-44 MiB measured from 2026-05-14 against a cold-start budget with 24% headroom, against seven unenumerated loopholes that all fail silently. Reopen only if `npm run perf:complete` shows the site process still near 42 MiB.
+> - **Verified against:** 722c3be3
 > - **Use this when:** revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation
 > - **Canonical for:** the site-process fold-in proposal, its known loopholes, and its validation plan
 > - **Not canonical for:** current runtime behavior, release requirements, or benchmark baselines
 > - **Then inspect:** [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../testing.md`](../testing.md), [`../../src/ship/desktop_app/`](../../src/ship/desktop_app/), and [`../../src/ship/runtime_launcher.py`](../../src/ship/runtime_launcher.py)
-> - **Last updated:** 2026-10-01 (status corrected: lever re-verified as still pending; two test citations repaired)
+> - **Last updated:** 2026-10-02 (declaration block added; site-process symbols re-verified as still live in process.py, launcher.py and runtime_launcher.py)
 
 ## The lever
 

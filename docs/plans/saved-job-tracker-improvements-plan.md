@@ -1,11 +1,14 @@
 # Saved Jobs Deferred Backlog
 
 > - **Status:** Active — four restart-criteria items; nothing is in implementation
+> - **Class:** enhance-stable
+> - **Trigger:** a product decision, not a technical one: Saved Jobs becoming an application tracker. Each of the four items names its own restart criteria in the body.
+> - **Verified against:** 722c3be3
 > - **Use this when:** deciding whether a deferred Saved Jobs decision has become active again
 > - **Canonical for:** the four deferred items, their restart criteria, and their stated prohibitions
 > - **Not canonical for:** saved-job row shape, backup payload shape, version-bump discipline, bridge route contracts, or current UI behavior. Those live in [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md) §2 and are canonical over this file.
 > - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../../frontend/local-data/tracking.js`](../../frontend/local-data/tracking.js), [`../../src/local_data_store_tracking.py`](../../src/local_data_store_tracking.py), [`../../frontend/saved/app/view-model.js`](../../frontend/saved/app/view-model.js), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-10-01 (reduced to open work; v1 summary and guardrails moved to the canonical docs)
+> - **Last updated:** 2026-10-02 (reduced to open work; v1 summary and guardrails moved to the canonical docs; declaration block added; Stage grouping re-verified as the only grouping)
 
 ## Position
 

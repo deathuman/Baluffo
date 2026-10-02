@@ -1,11 +1,14 @@
 # Optional Playwright Browser Download Plan
 
 > - **Status:** Parked — deferred until the next desktop portable release; recent release work is container/Umbrel-side and unaffected by this plan
+> - **Class:** enhance-stable
+> - **Trigger:** the next desktop portable release. Container/Umbrel work does not reach this, because the portable ZIP is a desktop-only artifact.
+> - **Verified against:** 722c3be3
 > - **Use this when:** moving Playwright browser binaries out of the portable ZIP, changing packaged browser fallback install behavior, or revisiting first-start browser-support UX
 > - **Canonical for:** proposed optional browser payload download behavior, packaging invariants, user-facing tradeoffs, and validation plan
 > - **Not canonical for:** current v0.2.01 portable ZIP contents, released updater behavior, or implemented browser fallback runtime state
 > - **Then inspect:** [`../RELEASE.md`](../RELEASE.md), [`../testing.md`](../testing.md), [`../TROUBLESHOOTING.md`](../TROUBLESHOOTING.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and [`../../scripts/build_portable_exe.py`](../../scripts/build_portable_exe.py)
-> - **Last updated:** 2026-08-28 (status review — parked until the next desktop portable release)
+> - **Last updated:** 2026-10-02 (declaration block added; premise re-verified - the build still defines the chromium-headless-shell payload, so the work it proposes is still unlanded)
 
 ## Summary
 

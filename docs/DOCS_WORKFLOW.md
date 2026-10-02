@@ -112,6 +112,41 @@ version-bump discipline. That rule now lives in [`DATA_CONTRACT.md`](DATA_CONTRA
 retiring a plan, confirm anything load-bearing it carries has a second home, usually the canonical
 doc that owns the topic.
 
+### The declaration block
+
+Every plan opens with three lines that classify it. This is a **convention, not a gate** —
+nothing checks it, and that is deliberate; see *Why this is a convention and not a gate* below.
+
+```markdown
+> - **Class:** shipped-defect | enhance-stable | cleanup
+> - **Trigger:** <the condition that makes this actionable>
+> - **Verified against:** <short sha>
+```
+
+- **`Class`** — which side of the line this sits on. A `shipped-defect` plan fixes something
+  affecting a release users are running today. An `enhance-stable` plan proposes a new
+  capability for software that already works. A `cleanup` plan reduces structure with no
+  behaviour change. The class determines what "done" means, and it is the first thing to
+  disagree with when a plan goes stale.
+- **`Trigger`** — what makes this actionable now. A release, a condition, an operator
+  decision. If you cannot name one, the plan is not deferred, it is abandoned.
+- **`Verified against`** — the commit you last checked this plan against the tree.
+
+**Why the three sit together.** The failure this repo hit repeatedly was a summary trusted
+over a body: a status line said work was outstanding while the body recorded it landing.
+`Class` next to `Status` puts the two claims adjacent, so `class: shipped-defect` beside
+`status: active follow-up` is a contradiction you can see without reading further.
+
+**Verify, then write the sha.** `Verified against` is a claim like any other. Re-read the
+plan against the current code, confirm each open item still holds, *then* record the commit.
+Writing today's sha onto a plan nobody checked makes the field worse than absent — it
+launders an unverified claim into a timestamped one.
+
+**Plans with no baseline in the current code are normal.** A plan for a genuinely new feature
+has no code to verify against, and that is not a defect. Such a plan is `enhance-stable` and
+its `Trigger` carries the weight. Do not retrofit one into a code-citation shape it does not
+have.
+
 ### The citation convention
 
 An open-items table with no per-row status is unfalsifiable on sight, and that is what makes a stale
@@ -146,6 +181,25 @@ Staleness is **semantic**. It is a claim about code, so catching it requires rea
 is the manual step the convention makes explicit. A structural gate can only see shape, and shape
 does not correlate. A check with 20% recall that also fires on benchmarks would be either
 permanently red or permanently silent — both of which teach people to ignore it.
+
+### What the declaration block deliberately does not check
+
+The three questions a plan raises are classification, staleness, and value.
+
+- **Classification** — answered by the `Class` line. A gate cannot infer it, but it can force the
+  author to state it, which is the part that matters.
+- **Staleness** — the mechanical version was measured and **fails**: a plan cites a path, that path
+  changed since `Last updated`, flag the plan. Against the five remaining plans it fires on exactly
+  one, and it is wrong — `optional-playwright-browser-download` cites `scripts/build_portable_exe.py`,
+  which changed once, by a commit consolidating SHA-256 helpers. Path overlap cannot express
+  "relevant", so it misfires on first contact.
+- **Value** — a human judgment. No gate should attempt it. The block's only job is to make the
+  judgment cheap and well-posed by requiring it in writing.
+
+What *did* work for staleness was narrower and unambiguous: a **past date** in a trigger is a
+lapsed deferral, full stop. No path analysis, no judgment, no false positives. That rule is enforced
+above, and it is the shape worth extending if anything is extended later.
+
 
 Durable results belong in the canonical doc that owns the topic — measurement method in
 [`measurement-methods.md`](measurement-methods.md), pipeline behaviour in
