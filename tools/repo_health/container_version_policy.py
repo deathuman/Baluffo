@@ -78,18 +78,25 @@ NON_SHIPPED_PATTERNS = (
     "LICENSE",
     "release-notes.md",
     "umbrel-app-store.yml",
-    # A lockfile edit is usually a dev-dependency edit -- a linter, a type
-    # checker -- and those install into the image's *build* stage only.
+    # A manifest or lockfile edit is usually a dev-dependency edit -- a linter, a
+    # type checker -- and those install into the image's *build* stage only.
     # `Dockerfile` runs `npm ci` in a frontend stage and copies forward just the
     # built `.container-frontend` bundle, so a dev-dep bump changes the build
-    # stage without changing the published image. Treating the lockfile as
+    # stage without changing the published image. Treating either file as
     # shipped code republished the version tag for no content change, which is
     # how 0.3.001 reached five distinct digests in one session.
+    #
+    # The two are registered together on purpose. `package-lock.json` was added
+    # first and `package.json` -- the manifest that produces it -- was not, so a
+    # Dependabot dev-dep bump was still gated as shipped code and still
+    # re-triggered Build Container. It declares no runtime `dependencies` (only
+    # `devDependencies`), and nothing under `src/` or `frontend/` reads it.
     #
     # Nothing is lost: every release bumps `src/app_version.py`, which *is* a
     # shipped path, so the image still rebuilds when a rebuild is wanted. What
     # this buys is that a routine dependency bump needs neither a version bump
     # nor release-tag intent to land.
+    "package.json",
     "package-lock.json",
     # `data/*` is excluded from the image and then re-included path by path in
     # .dockerignore. The three audit reports below are tracked but NOT among the

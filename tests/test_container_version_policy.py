@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -149,6 +150,37 @@ def test_dockerignore_and_nonshipped_agree_on_dev_tooling() -> None:
         assert f"{directory}/**" in non_shipped
 
 
+# The Node manifest and its lockfile are the same class and were registered
+# separately by accident: `package-lock.json` was added, `package.json` was not.
+# A Dependabot dev-dependency bump rewrites both, so it was still counted as
+# shipped code and still re-triggered Build Container. See
+# `test_evaluate_window_allows_dev_dependency_bump_once_released` for the
+# consequence, and `test_package_json_declares_no_runtime_dependencies` for the
+# invariant that makes excluding the manifest sound at all.
+def test_manifest_and_lockfile_classify_together() -> None:
+    assert not _is_shipped_path("package.json")
+    assert not _is_shipped_path("package-lock.json")
+
+
+def test_package_json_declares_no_runtime_dependencies() -> None:
+    """Keep the blanket `package.json` exclusion honest.
+
+    Dev deps install into the image's build stage only, which is the whole
+    reason both files are non-shipped. That reasoning only holds while the
+    manifest declares no runtime `dependencies`. Adding one makes the manifest
+    shipped code again, so fail here where a re-think is cheap instead of
+    mis-classifying silently. `.dockerignore` deliberately keeps both files in
+    the image, so they change its digest; the exemption is that a toolchain bump
+    should not be allowed to republish a released tag.
+    """
+    manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert not manifest.get("dependencies"), (
+        "package.json is non-shipped because it declares no runtime dependencies; "
+        "adding some makes it shipped code and it must leave NON_SHIPPED_PATTERNS "
+        "and the build-container paths-ignore lists"
+    )
+
+
 def test_declared_release_tag_versions_parses_intent_forms() -> None:
     assert _declared_release_tag_versions("feat: x\n\nRelease-tag: v0.2.142") == ["0.2.142"]
     assert _declared_release_tag_versions("feat: x\n\nrelease-tag: 0.2.142") == ["0.2.142"]
@@ -273,6 +305,28 @@ def test_evaluate_window_rejects_newer_intent_once_released() -> None:
     failures = evaluate_window(commits, "0.2.141", current_released=True)
     assert failures, "a newer Release-tag must not substitute for a version bump"
     assert "Bump the version" in failures[0]
+
+
+def test_evaluate_window_allows_dev_dependency_bump_once_released() -> None:
+    """A Dependabot dev-dep bump must not need a version bump or release intent.
+
+    This is the PR #12 failure. The bump was `eslint` and `knip` in
+    `devDependencies`, touching exactly these two files, against the released
+    `v0.3.002`. `package-lock.json` was registered as non-shipped but
+    `package.json` was not, so the commit counted as shipped code and the
+    pre-commit gate failed a linter bump. That in turn would have forced
+    spending a release version on toolchain-only changes -- the exact cost the
+    lockfile exemption was added to avoid.
+    """
+    commits = [
+        _commit(
+            "49b32e15",
+            "chore(deps-dev): bump the js-dev-tooling group",
+            "chore(deps-dev): bump the js-dev-tooling group",
+            ("package.json", "package-lock.json"),
+        )
+    ]
+    assert evaluate_window(commits, "0.3.002", current_released=True) == []
 
 
 def test_evaluate_window_allows_pre_release_churn_by_default() -> None:

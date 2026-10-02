@@ -26,12 +26,14 @@ on:
       - "LICENSE"
       - "release-notes.md"
       - "umbrel-app-store.yml"
-      # A lockfile edit is usually a dev-dependency edit, and dev deps install
-      # into the image's build stage only -- `Dockerfile` copies forward just the
-      # built `.container-frontend` bundle. Rebuilding here republished the version
-      # tag with no content change. Every release bumps `src/app_version.py`, a
-      # shipped path, so a wanted rebuild still happens. Keep this list equal to
-      # NON_SHIPPED_PATTERNS in tools/repo_health/container_version_policy.py.
+      # A manifest or lockfile edit is usually a dev-dependency edit, and dev
+      # deps install into the image's build stage only -- `Dockerfile` copies
+      # forward just the built `.container-frontend` bundle. Rebuilding here
+      # republished the version tag with no content change. Every release bumps
+      # `src/app_version.py`, a shipped path, so a wanted rebuild still happens.
+      # Keep this list equal to NON_SHIPPED_PATTERNS in
+      # tools/repo_health/container_version_policy.py.
+      - "package.json"
       - "package-lock.json"
       # `data/*` is excluded from the image then re-included path by path; these
       # three audit reports are tracked but not re-included, so they were treated
@@ -60,6 +62,7 @@ on:
       - "LICENSE"
       - "release-notes.md"
       - "umbrel-app-store.yml"
+      - "package.json"
       - "package-lock.json"
       # `data/*` is excluded from the image then re-included path by path; these
       # three audit reports are tracked but not re-included, so they were treated

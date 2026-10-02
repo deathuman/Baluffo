@@ -537,9 +537,21 @@ Two deliberate limits:
   never offered, so the churn is unreachable by users and blocking it would cost a release-window fix for
   nothing.
 
-`package-lock.json` is now in `NON_SHIPPED_PATTERNS` for the related reason that a dev-dependency bump
-should not rebuild a published image at all — see `NON_SHIPPED_PATTERNS` in
-`tools/repo_health/container_version_policy.py`.
+`package.json` and `package-lock.json` are both in `NON_SHIPPED_PATTERNS` for the related reason that a
+dev-dependency bump should not rebuild a published image at all — see `NON_SHIPPED_PATTERNS` in
+`tools/repo_health/container_version_policy.py`. The lockfile was registered first and the manifest that
+produces it was not, so a grouped Dependabot bump of `eslint` and `knip` was still counted as shipped code
+and still failed `check_container_shipped_code_version_gate` against a released tag (PR #12). A routine
+toolchain bump must need neither a version bump nor release-tag intent to land.
+
+The exclusion is path-level and therefore only as sound as the manifest it covers, so
+`test_package_json_declares_no_runtime_dependencies` asserts that `package.json` carries no runtime
+`dependencies` section. Dev deps install into the image's build stage only — `Dockerfile` runs `npm ci` in
+a frontend stage and copies forward just the built `.container-frontend` bundle — so the file can change the
+image digest (`.dockerignore` keeps it in the image) without changing what the app does. If a runtime
+dependency is ever added, both files must leave `NON_SHIPPED_PATTERNS` and the `paths-ignore` lists in
+`.github/workflows/build-container.yml` together, which
+`test_container_workflow_paths_ignore_stays_aligned_with_guardrail` then enforces.
 
 ### Ship Bundle Verification
 
