@@ -35,13 +35,32 @@ def expand_aliases(seed: dict[str, Any]) -> list[str]:
 
 
 def likely_providers_for_seed(seed: dict[str, Any]) -> list[str]:
+    """Providers discovery should probe for one studio seed.
+
+    ``likelyProviders`` is a prior, not a ceiling. An explicit list is honoured
+    first, but a provider the seed's own ``careersUrl`` already points at is
+    added even when the list omits it. Without that, an ATS migration silently
+    blinds the studio: the seed stays pinned to the old vendor, the old board
+    404s, and the new one is never proposed. Voodoo hit exactly this, pinned to
+    ``lever`` while its board had moved to Ashby.
+
+    Widening is gated on that host evidence rather than applied to every seed, so
+    the default provider set is untouched for studios whose seed is consistent.
+    """
     explicit = [
         str(item).strip().lower()
         for item in (seed.get("likelyProviders") or [])
         if str(item).strip()
     ]
     if explicit:
-        return [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
+        listed = [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
+        implied = [
+            provider
+            for provider in SUPPORTED_PROVIDERS
+            if provider not in listed and provider_reinforcement_score(seed, provider) > 0
+        ]
+        return [*listed, *implied]
+
     providers = {"greenhouse", "workable", "teamtailor"}
     if not bool(seed.get("nlPriority")):
         providers.update({"lever", "smartrecruiters", "ashby", "recruitee", "pinpoint"})

@@ -422,11 +422,13 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "nlPriority": False,
     },
     {
-        "name": "Voodoo (Lever)",
+        # Voodoo's board moved from Lever to Ashby; both Lever endpoints 404. The
+        # Ashby board is registered via ashby_registry_refresh.CURATED_ASHBY_ROWS.
+        "name": "Voodoo (Ashby)",
         "studio": "Voodoo",
-        "adapter": "lever",
-        "account": "voodoo",
-        "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
+        "adapter": "ashby",
+        "board_url": "https://jobs.ashbyhq.com/voodoo",
+        "careersUrl": "https://jobs.ashbyhq.com/voodoo",
         "nlPriority": False,
     },
     {

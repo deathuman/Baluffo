@@ -24,6 +24,27 @@ _LEGIT_EMPTY_CLASSIFICATIONS = {
     "gameprog_no_current_openings",
 }
 _TRIAGE_ROW_LIMIT = 10
+# Adapters whose fetch fans out over many boards behind one report row, so a dead
+# board is hidden behind a family that still reports success.
+_MULTI_BOARD_PROVIDER_ADAPTERS = frozenset(
+    {
+        "ashby",
+        "bamboohr",
+        "breezy",
+        "greenhouse",
+        "jazzhr",
+        "lever",
+        "oracle_hcm",
+        "personio",
+        "phenom",
+        "pinpoint",
+        "recruitee",
+        "smartrecruiters",
+        "teamtailor",
+        "workable",
+        "workday",
+    }
+)
 
 
 def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -131,8 +152,41 @@ def _zero_kept_needs_review(row: dict[str, Any]) -> bool:
     return True
 
 
+def _provider_child_rows(source_rows: Any) -> list[dict[str, Any]]:
+    """Provider boards inside multi-board families, as health rows.
+
+    A family such as ``lever_sources`` fetches many boards behind one row, and
+    its per-board results live in ``details``. Those children were never walked,
+    so a board that had been deleted stayed invisible: the family reported
+    ``status: ok`` and ``health: healthy`` because its other boards still
+    returned jobs, and the dead board appeared only inside a prose ``error``
+    string. Twelve boards were in that state, including ``Voodoo (Lever)`` after
+    the studio moved to Ashby.
+
+    Emitted under its own additive key rather than folded into
+    ``sourcesNeedingAttention``, which would change the family counts that Admin
+    and the ops surfaces already present.
+    """
+    children: list[dict[str, Any]] = []
+    for raw in json_object_rows(source_rows):
+        row = _source_health_row(raw)
+        # Only multi-board provider families fan out this way; a `static_source`
+        # row's `details` is one payload, not a board list, and counting it would
+        # restate the parent's own failure as a child.
+        if row["adapter"] not in _MULTI_BOARD_PROVIDER_ADAPTERS:
+            continue
+        for child in json_object_rows(raw.get("details")):
+            child_row = _source_health_row(child)
+            child_row["family"] = row["name"]
+            children.append(child_row)
+    return children
+
+
 def derive_source_health(source_rows: Any) -> dict[str, Any]:
     rows = [_source_health_row(row) for row in json_object_rows(source_rows)]
+    # Read `details` off the raw payload: _source_health_row keeps only the
+    # contract fields, so a derived row no longer carries its children.
+    child_rows = _provider_child_rows(source_rows)
     failed_rows = [row for row in rows if row["status"] == "error"]
     excluded_rows = [row for row in rows if row["status"] == "excluded"]
     dynamic_redundant_rows = [
@@ -148,7 +202,23 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
     classification_examples: dict[str, list[str]] = {}
     attention_rows: list[dict[str, Any]] = []
 
-    for row in rows:
+    child_attention_rows = [
+        row for row in child_rows if row["status"] == "error" or _zero_kept_needs_review(row)
+    ]
+    child_attention_rows.sort(
+        key=lambda row: (
+            row["status"] != "error",
+            not _zero_kept_needs_review(row),
+            -int(row["durationMs"]),
+            clean_text(row.get("name")),
+        )
+    )
+
+    # Buckets span children as well as top-level rows, so a dead board's bucket
+    # shows up in the breakdown. sourcesNeedingAttention deliberately does NOT:
+    # it is the family-level triage list Admin presents, and a child there would
+    # misreport a healthy family as failing. Children get their own key.
+    for row in [*rows, *child_rows]:
         name = clean_text(row.get("name"))
         failure_bucket = clean_text(row.get("failureBucket"))
         classification = clean_text(row.get("classification"))
@@ -158,6 +228,8 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         if classification:
             classification_counts[classification] += 1
             _push_example(classification_examples, classification, name)
+
+    for row in rows:
         if (
             row["status"] == "error"
             or row["browserFallbackRecommended"]
@@ -212,6 +284,8 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         )[:_TRIAGE_ROW_LIMIT],
         "topFailureBuckets": _breakdown_rows(failure_counts, failure_examples),
         "topClassifications": _breakdown_rows(classification_counts, classification_examples),
+        "providerChildFailures": child_attention_rows[:_TRIAGE_ROW_LIMIT],
+        "providerChildFailureCount": len(child_attention_rows),
     }
 
 
@@ -231,6 +305,7 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "zeroKeptSources",
         "zeroKeptNeedsReviewSources",
         "browserFallbackRecommendedSources",
+        "providerChildFailureCount",
     ):
         normalized[key] = _clamped_int(src.get(key), normalized[key], 0)
     for key in (
@@ -240,6 +315,7 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "dynamicRedundantStatic",
         "slowestSources",
         "topProductiveSources",
+        "providerChildFailures",
     ):
         if key not in src:
             continue

@@ -18,6 +18,11 @@ from src.source_discovery import gamesmap as gamesmap_adapter
 from src.source_discovery import orchestrator as discovery_orchestrator
 from src.source_discovery import url_patches as discovery_url_patches
 from src.source_discovery.core import classify_probe_failure_stage
+from src.source_discovery.provider_patterns import (
+    likely_providers_for_seed,
+    provider_reinforcement_score,
+)
+from src.source_discovery.reporting_candidates import stage_curated_seed_candidates
 from src.source_discovery.schemas import DiscoveryReportSummarySchema
 from src.source_discovery.web_search import async_fetch_text_httpx
 from tests.helpers.discovery_runtime import (
@@ -168,13 +173,16 @@ __all__ = [
     "gamesmap_adapter",
     "importlib",
     "json",
+    "likely_providers_for_seed",
     "mock",
     "os",
     "override_discovery_config",
     "override_discovery_runtime",
     "patch_empty_generator_stages",
+    "provider_reinforcement_score",
     "sd",
     "sr",
+    "stage_curated_seed_candidates",
     "sys",
     "threading",
     "time",
