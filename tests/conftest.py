@@ -151,6 +151,13 @@ def _claim_single_pytest_session(config: pytest.Config) -> None:
     process portably needs platform-specific calls; a run that has not finished
     in six hours was not a run.
     """
+    # xdist workers are one logical session, not competing sessions: CI runs
+    # `pytest -n auto --dist=loadfile`, and every worker process shares this
+    # checkout and one basetemp by design. Locking them out would fail CI on
+    # every run, which is exactly what happened before this exemption existed.
+    # `PYTEST_XDIST_WORKER` is "controller" for the parent and "gwN" per worker.
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
     lock_dir = Path(__file__).resolve().parents[1] / ".tmp" / "pytest"
     lock_path = lock_dir / "session.lock"
     try:
