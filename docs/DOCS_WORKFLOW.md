@@ -61,6 +61,8 @@ A plan is a **temporary ledger**, not a documentation page. Its job is to refine
 before execution, track progress while it runs, and then get out of the way:
 
 1. **Author and refine.** Record the queue, the per-item gate, and the reproduction step.
+   Give every open-items row a status or a code citation from the start — see
+   [Reading a plan](#reading-a-plan-verify-before-you-trust-it).
 2. **Execute and track.** Update as work lands. Re-measure rather than trusting an earlier
    figure — a status line that says "not started" while the body says otherwise costs a
    reader more than the work did.
@@ -84,6 +86,66 @@ rule applies: make the reason checkable, or delete the plan.
 The word threshold exists because line counts miss the worst shape. One retired plan held 21,816
 words across 65 lines, with 172,891 characters on a single line. A line-based rule passed it
 cleanly.
+
+## Reading a plan: verify before you trust it
+
+**A plan's status is a claim about the world, not a description of the file. Verify it.**
+
+Eleven plans were retired in 2026-10-01, and every one asserted work was outstanding that had
+already landed: `hold-tail-repair`, the structure audit, `remaining-work`, `art-title-repair`,
+`registry-hygiene`, `task-abort-control`, and others. In each case a reader who trusted the table
+would have skipped the body and gotten the wrong answer. One plan's loophole table listed 17 open
+items; all 17 were already implemented.
+
+So before acting on any plan's open items:
+
+1. **Read the body, not the status line.** A stale status is the normal failure here, not the rare one.
+2. **Verify each open item against the code**, the same way you would verify any other claim. Search
+   for the implementing symbol; check whether the required behaviour already exists.
+3. **Treat a section heading as a claim too.** A heading reading "Awaiting human disposition" sat over
+   five items that were all converged.
+4. **Write down what you verified, and where.** See below.
+
+**Never cite a plan as the only record of a code fact.** `DB_VERSION` and `BACKUP_SCHEMA_VERSION`
+appeared in exactly one file repo-wide — a plan — and deleting it would have silently lost the
+version-bump discipline. That rule now lives in [`DATA_CONTRACT.md`](DATA_CONTRACT.md) §2.5. Before
+retiring a plan, confirm anything load-bearing it carries has a second home, usually the canonical
+doc that owns the topic.
+
+### The citation convention
+
+An open-items table with no per-row status is unfalsifiable on sight, and that is what makes a stale
+one expensive — you cannot tell a landed row from an outstanding one without reading the code.
+
+**Every row of an open-items table should carry either a citation to the code that implements it, or
+an explicit status.** Cite the implementing location *and* the test that pins it:
+
+```markdown
+| Loophole | Where it is handled | Pinned by |
+|---|---|---|
+PID-only kill after PID reuse | `task_process_registry.py:194` refuses an unregistered PID | `test_pipeline_service_control_files.py` |
+```
+
+Applied to `task-abort-control`, this converted a 17-row wishlist into a verified "0 open" in one
+pass — every claim falsifiable, so nothing had to be taken on trust.
+
+### Why this is a convention and not a gate
+
+A staleness detector was designed and measured against the eleven retired plans, and **none of the
+three candidate mechanisms survived**:
+
+- **Citation ratio** — no discrimination. `hold-tail-repair` scored 1.47 citations per table row and
+  `jobs-coverage-improvement` scored 8.00; both were stale. The worst offender had the *highest*
+  citation density in the repo.
+- **Status-vs-body contradiction** — 20% recall, catching 1 of 5, and only on a weak token.
+- **Status-blind table, scoped by heading** — fired on 16 tables, all false positives: benchmark
+  tables, "What landed" records, and per-step progress tables. Section titles do not use the words
+  the heuristic guessed.
+
+Staleness is **semantic**. It is a claim about code, so catching it requires reading the code, which
+is the manual step the convention makes explicit. A structural gate can only see shape, and shape
+does not correlate. A check with 20% recall that also fires on benchmarks would be either
+permanently red or permanently silent — both of which teach people to ignore it.
 
 Durable results belong in the canonical doc that owns the topic — measurement method in
 [`measurement-methods.md`](measurement-methods.md), pipeline behaviour in
