@@ -122,6 +122,42 @@ def _load_function(module_name: str, function_name: str) -> Callable[..., object
     return getattr(importlib.import_module(module_name), function_name)
 
 
+def _describe_check_failure(exc: BaseException, module_name: str, function_name: str) -> str:
+    """Name the real problem behind a failing check.
+
+    Two failure shapes used to be indistinguishable from a broken policy check, and
+    both have bitten during a release closeout:
+
+    - A dependency that cannot be imported. Several checks import a leaf module to
+      assert a runtime contract (``callable(...)``, ``__all__`` contents, a re-export
+      being the real class and not a wrapper), but importing a leaf still executes
+      its package ``__init__``, which reaches the ``src.jobs`` composition root and
+      pydantic. A local dependency upgrade then failed the check with a pydantic
+      version error that read like the compat contract was broken.
+    - An ``assert`` written without a message, which reports as an empty string and
+      prints as ``[group] name`` followed by nothing.
+
+    Both still fail the run: an unverifiable policy must not pass silently. This only
+    makes the difference legible.
+    """
+    text = str(exc).strip()
+    if isinstance(exc, ModuleNotFoundError) or "incompatible with the current" in text:
+        return (
+            f"This check could not verify its contract because its dependencies do not "
+            f"import in this environment: {type(exc).__name__}: {text}\n"
+            f"    That is local dependency drift, not a policy violation - the check "
+            f"never ran. CI installs requirements-lock.txt, so CI verifies it properly. "
+            f"Locally, run `python -m pip install -r requirements-lock.txt`."
+        )
+    if not text:
+        return (
+            f"{type(exc).__name__} was raised with no message, so this failure does not "
+            f"say which contract broke. The check in `{module_name}.{function_name}` used "
+            f"a bare `assert`; give it a message."
+        )
+    return text
+
+
 def _run_python_check(group: str, module_name: str, function_name: str) -> GuardFailure | None:
     check = _load_function(module_name, function_name)
     try:
@@ -131,7 +167,9 @@ def _run_python_check(group: str, module_name: str, function_name: str) -> Guard
         else:
             check()
     except Exception as exc:  # noqa: BLE001 - guardrails should report all assertion/config failures.
-        return GuardFailure(group, function_name, str(exc))
+        return GuardFailure(
+            group, function_name, _describe_check_failure(exc, module_name, function_name)
+        )
     return None
 
 
