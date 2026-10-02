@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from urllib.error import HTTPError, URLError
 
 import pytest
 
 from src import source_sync as sync
+from src import source_sync_snapshot_remote
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 
 
@@ -313,12 +315,35 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
     assert result["remoteSha"] == "s4"
 
 
+class _ModuleSleepRecorder:
+    """Records ``sleep`` for ONE module without touching the global ``time``.
+
+    Patching ``time.sleep`` on the real ``time`` module is process-wide, so any
+    background thread left polling by an earlier test lands in the recording and
+    fails the assertion. The codebase has dozens of threaded modules with sleep
+    loops, which is what made this test flaky rather than deterministic.
+
+    Replacing the ``time`` attribute on the module under test scopes the
+    interception to that module only; every other ``time`` lookup still resolves
+    to the real module.
+    """
+
+    def __init__(self, calls: list[float]) -> None:
+        self._calls = calls
+
+    def sleep(self, seconds: float) -> None:
+        self._calls.append(seconds)
+
+    def __getattr__(self, name: str):
+        return getattr(time, name)
+
+
 def test_transient_get_error_retries_with_backoff(source_sync_test_root, monkeypatch):
     source_sync_test_root.write_packaged_config()
     sleep_calls: list[float] = []
-    monkeypatch.setattr(
-        sync._source_sync_snapshot.time, "sleep", lambda seconds: sleep_calls.append(seconds)
-    )
+    # ``_retry_transient_get`` lives in source_sync_snapshot_remote, so that is
+    # the module whose ``time`` must be swapped.
+    monkeypatch.setattr(source_sync_snapshot_remote, "time", _ModuleSleepRecorder(sleep_calls))
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
