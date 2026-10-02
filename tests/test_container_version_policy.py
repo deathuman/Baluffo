@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tools.repo_health.container_version_policy import (
@@ -92,6 +93,60 @@ def test_dockerignore_excludes_memory_notes() -> None:
     }
     assert "memory" in patterns
     assert "memory/**" in patterns
+
+
+# Directories that are dev/agent tooling and never runtime inputs. Each must be
+# BOTH excluded from the image (.dockerignore) and treated as non-shipped, or the
+# two drift apart in a way nobody notices until a push is blocked for no reason.
+#
+# `.agents/` is here because it was missed: skills were shipped into the image by
+# `COPY . .` and, until 2026-10-02, an edit to a SKILL.md was classified as
+# shipped container code. `memory/` already had this rule and a test; skills are
+# the same class and had neither.
+DEV_TOOLING_DIRS = ("docs", "tests", "memory", ".agents", ".github")
+
+
+def _dockerignore_patterns() -> set[str]:
+    return {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+
+def _dockerignore_excludes(patterns: set[str], directory: str) -> bool:
+    """A bare directory name and a `dir/**` glob both exclude the whole tree in Docker,
+    so either form satisfies the intent. `.github` is listed bare; the rest carry both."""
+    return directory in patterns or f"{directory}/**" in patterns
+
+
+@pytest.mark.parametrize("directory", DEV_TOOLING_DIRS)
+def test_dev_tooling_dir_is_excluded_from_the_image(directory: str) -> None:
+    assert _dockerignore_excludes(_dockerignore_patterns(), directory), (
+        f".dockerignore must exclude {directory}/"
+    )
+
+
+@pytest.mark.parametrize("directory", DEV_TOOLING_DIRS)
+def test_dev_tooling_dir_is_not_shipped_container_code(directory: str) -> None:
+    """An edit here must never republish a released container tag."""
+    assert f"{directory}/**" in NON_SHIPPED_PATTERNS
+
+
+def test_dockerignore_and_nonshipped_agree_on_dev_tooling() -> None:
+    """The invariant as one assertion, so a new tooling dir cannot half-register.
+
+    Not a blanket cross-check: the two lists are deliberately not 1:1.
+    `package-lock.json` is excluded from neither (the Dockerfile copies it and it
+    changes the build), and `tools/**` is non-shipped for edits while most of it
+    still enters the image. The rule that holds is narrower -- dev/agent tooling
+    must be absent from both.
+    """
+    patterns = _dockerignore_patterns()
+    non_shipped = set(NON_SHIPPED_PATTERNS)
+    for directory in DEV_TOOLING_DIRS:
+        assert _dockerignore_excludes(patterns, directory), f"{directory} must leave the image"
+        assert f"{directory}/**" in non_shipped
 
 
 def test_declared_release_tag_versions_parses_intent_forms() -> None:

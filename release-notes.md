@@ -1,23 +1,12 @@
-## [0.3.002] - 2026-10-01
-> Housekeeping release. Nothing you can see looks different: this removes
-> styling that no page could ever display, and fixes a test that was failing on
-> its own about one run in four. It exists so the cleanup below can actually
-> reach you instead of sitting on the development branch.
-
+## [0.3.003] - 2026-10-02
 ### Changed
 
-- **Removed styling that nothing was ever able to display.** The stylesheets carried rules for 18 classes that no part of the app could put on a page, plus two colour settings nothing referred to. Nothing you saw was affected and nothing you see will change — the pages are pixel-for-pixel identical, checked on all three main screens. Removing them makes the stylesheet smaller and easier to trust: what is left in it is styling that is genuinely in use.
+- **Agent skills and MCP config no longer ship inside the container.** The `.agents/` folder was reaching the image because the container build's ignore list never excluded it, and an edit to a skill file was therefore treated as shipped container code -- so editing a skill could overwrite a released version tag. Nothing in the running app reads those files. They are now excluded from the image and treated as non-shipped, matching the rule the AI continuity notes already had.
 
-- **Container updates no longer rebuild for tool-only dependency bumps.** Updating a developer-only tool — a linter, a type checker — rebuilt the container image and republished the current version under the same version number. Nothing about the running app changed, but the image behind a version you already had was quietly replaced. Those updates no longer trigger a rebuild. Real changes to what the app runs still do.
-
-### Fixed
-
-- **A check that was failing intermittently for no reason.** One of the Admin interface tests failed roughly one time in four depending on how busy the machine was, which was making it hard to trust the test suite. It was timing its own observation rather than recording it, so it could miss the thing it was looking at. It now records what it saw and checks that, and passed ten consecutive full runs.
+- **The two container ignore lists can no longer half-register.** The workflow trigger list and the shipped-path list were already asserted equal in length and order; the image ignore list was only spot-checked for a few patterns, which is how `.agents/` slipped through. A new invariant requires every dev and agent tooling directory to be absent from both the image and the shipped-path list.
 
 ### Notes
 
-- **No behaviour, data, or upgrade changes.** No saved jobs, settings, or tracked applications are touched, and there is no migration to run.
+- **No behaviour, data, or upgrade changes.** Nothing you can see looks different, and no saved jobs, settings, or tracked applications are touched.
 
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.001. Install and update paths are the same, and the Linux AppImage, portable Windows app, and recovery bundle are all published as before.
-
-- **What changed about how releases are guarded.** Because a stylesheet edit is part of what ships, a change of this kind can no longer land while an already-published version is current — it would replace the image behind a version you have. That is now caught automatically, with a clear explanation, before it reaches you.
+- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.002. The only difference is that agent tooling no longer rides along inside the image.

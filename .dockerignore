@@ -1,5 +1,9 @@
 .git
 .github
+# Agent skills and MCP config. Not runtime inputs -- no code under src/,
+# frontend/, or scripts/ reads them. Same class as memory/ below.
+.agents
+.agents/**
 .codex
 .serena
 .tmp
