@@ -100,10 +100,22 @@ jobs:
           path: dist/Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
           retention-days: 30
 
+      # Publish the notes from the changelog, not from the tag message. This
+      # workflow usually finishes before build-portable-exe, so whichever one runs
+      # first creates the release. Without a body_path the release shipped with an
+      # empty body and rendered the tag annotation until the Windows workflow
+      # updated it -- and had that workflow failed, it would have shipped with no
+      # notes at all and nothing would have noticed. Extracting here rather than
+      # reading the tracked release-notes.md means the notes can never be stale.
+      - name: Extract release notes
+        run: |
+          python scripts/extract_release_notes.py --version ${{ env.BALUFFO_VERSION }} --changelog docs/CHANGELOG.md --output release-notes.md
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.BALUFFO_RELEASE_TAG }}
           name: Baluffo ${{ env.BALUFFO_RELEASE_TAG }}
+          body_path: release-notes.md
           files: dist/Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
