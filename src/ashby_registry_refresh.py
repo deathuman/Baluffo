@@ -76,6 +76,15 @@ CURATED_ASHBY_ROWS: list[dict[str, Any]] = [
         "board_url": "https://jobs.ashbyhq.com/voldex",
         "careersUrl": "https://jobs.ashbyhq.com/voldex",
     },
+    {
+        # Voodoo's careers board moved off Lever; `lever:account:voodoo` now 404s on
+        # both api.lever.co and jobs.lever.co. Registering the Ashby board is what
+        # restores collection.
+        "name": "Voodoo (Ashby)",
+        "studio": "Voodoo",
+        "board_url": "https://jobs.ashbyhq.com/voodoo",
+        "careersUrl": "https://jobs.ashbyhq.com/voodoo",
+    },
 ]
 
 DISCOVERY_ASHBY_ROWS: list[dict[str, Any]] = [
@@ -136,6 +145,53 @@ def _normalize_board_url(url: str) -> str:
     return normalized.geturl().rstrip("/")
 
 
+def _board_key(url: str) -> str:
+    """Case-insensitive board identity for candidate keying.
+
+    ``_normalize_board_url`` preserves path case because it also produces the URL
+    to fetch, and paths are not universally case-insensitive. Keying, though, must
+    be case-insensitive: ``source_identity`` lowercases every value when it builds
+    ``id``, so a curated ``.../Joyteractive`` and a persisted ``.../joyteractive``
+    are the same board. Keying them apart wrote two registry rows for one board,
+    and because both ids lowercase to the same string they double-counted its jobs.
+    """
+    return _normalize_board_url(url).lower()
+
+
+def _board_url_from_source_id(row: dict[str, Any]) -> str:
+    """Recover a board URL from a persisted registry row.
+
+    Rows that came back through the registry keep their ``id`` but not their
+    ``board_url``, so ``https://jobs.ashbyhq.com/improbable`` survives only as
+    ``ashby:board_url:https://jobs.ashbyhq.com/improbable``. Resolving the URL
+    from the id keeps those rows probeable; without it every existing Ashby row
+    validates as ``invalid``/``missing board_url`` and the refresh drops it.
+
+    Scoped to this module rather than
+    ``provider_fields_from_source_id``, because that shared helper also feeds
+    conflict adjudication, and adding ``ashby`` there would widen the change
+    beyond this defect.
+    """
+    source_id = clean_text(row.get("id") or row.get("sourceId"))
+    if not source_id:
+        return ""
+    parts = source_id.split(":", 2)
+    if len(parts) != 3:
+        return ""
+    adapter, field, value = (part.strip() for part in parts)
+    if adapter.lower() != "ashby" or field.lower() != "board_url":
+        return ""
+    return _normalize_board_url(value)
+
+
+def _row_board_url(row: dict[str, Any]) -> str:
+    """Board URL for a row, preferring explicit fields then the source id."""
+    explicit = _normalize_board_url(
+        clean_text(row.get("board_url")) or clean_text(row.get("careersUrl"))
+    )
+    return explicit or _board_url_from_source_id(row)
+
+
 def _default_fetch_text(url: str, timeout_s: int) -> str:
     request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(request, timeout=timeout_s) as response:
@@ -145,9 +201,7 @@ def _default_fetch_text(url: str, timeout_s: int) -> str:
 def _probe_ashby_board(
     row: dict[str, Any], *, fetch_text=_default_fetch_text, timeout_s: int = 15
 ) -> dict[str, Any]:
-    board_url = _normalize_board_url(
-        clean_text(row.get("board_url")) or clean_text(row.get("careersUrl"))
-    )
+    board_url = _row_board_url(row)
     if not board_url:
         return {
             "status": "invalid",
@@ -269,11 +323,7 @@ def refresh_active_ashby_registry(
     candidates_by_key: dict[str, dict[str, Any]] = {}
     curated_names = {clean_text(row.get("name")) for row in curated_rows}
     for row in [*existing_ashby_rows, *list(curated_rows), *list(discovery_rows)]:
-        key = _normalize_board_url(
-            clean_text(row.get("board_url"))
-            or clean_text(row.get("careersUrl"))
-            or clean_text(row.get("name"))
-        )
+        key = _board_key(_row_board_url(row) or clean_text(row.get("name")))
         if not key:
             continue
         if key not in candidates_by_key:
@@ -287,10 +337,7 @@ def refresh_active_ashby_registry(
     removed_rows: list[dict[str, Any]] = []
     rejected_candidates: list[dict[str, Any]] = []
     added_count = 0
-    normalized_existing_keys = {
-        _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")))
-        for row in existing_ashby_rows
-    }
+    normalized_existing_keys = {_board_key(_row_board_url(row)) for row in existing_ashby_rows}
 
     for key, row in sorted(
         candidates_by_key.items(), key=lambda item: clean_text(item[1].get("name")).lower()

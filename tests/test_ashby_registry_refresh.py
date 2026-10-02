@@ -212,3 +212,145 @@ def test_refresh_active_ashby_registry_keeps_live_existing_rows_even_if_not_newl
     assert [row["name"] for row in ashby_rows] == ["Improbable (Ashby)"]
     assert report["configuredAfter"] == 1
     assert report["rejectedCount"] == 0
+
+
+def test_curated_rows_register_voodoo_on_its_ashby_board() -> None:
+    """Voodoo moved off Lever; the curated row must point at the Ashby board.
+
+    ``lever:account:voodoo`` 404s on both api.lever.co and jobs.lever.co, so a
+    curated row carrying either Lever URL would re-register a dead board.
+    """
+    voodoo_rows = [
+        row for row in refresh.CURATED_ASHBY_ROWS if "voodoo" in str(row.get("name")).lower()
+    ]
+    assert len(voodoo_rows) == 1, "Voodoo must be curated exactly once"
+    row = voodoo_rows[0]
+    assert row["board_url"] == "https://jobs.ashbyhq.com/voodoo"
+    assert row["careersUrl"] == "https://jobs.ashbyhq.com/voodoo"
+    assert "lever.co" not in row["board_url"]
+    assert "lever.co" not in row["careersUrl"]
+    assert row["studio"] == "Voodoo"
+
+
+def test_refresh_adds_voodoo_ashby_board_and_leaves_dead_lever_row_alone(tmp_path) -> None:
+    """The Ashby board is added; the dead Lever row is preserved, not retired.
+
+    Retiring the dead Lever row is a separate registry-hygiene operation, so the
+    refresh must not silently drop it as a side effect of adding the Ashby board.
+    """
+    active_path = tmp_path / "source-registry-active.json"
+    report_path = tmp_path / "ashby-registry-refresh-report.json"
+    active_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "lever:account:voodoo",
+                    "name": "Voodoo (Lever)",
+                    "studio": "Voodoo",
+                    "adapter": "lever",
+                    "account": "voodoo",
+                    "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
+                    "enabledByDefault": True,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(url: str, timeout_s: int) -> str:
+        assert url == "https://jobs.ashbyhq.com/voodoo"
+        return _app_data_html(
+            organization="Voodoo",
+            postings=[
+                {"id": "13968523-e0f2-4cdb-81a1-4ac338bd5e0a", "title": "Technical Artist (AI)"},
+                {"id": "second", "title": "Game Developer - Puzzle Games"},
+            ],
+        )
+
+    report = refresh.refresh_active_ashby_registry(
+        active_path=active_path,
+        report_path=report_path,
+        curated_rows=[
+            {
+                "name": "Voodoo (Ashby)",
+                "studio": "Voodoo",
+                "board_url": "https://jobs.ashbyhq.com/voodoo",
+                "careersUrl": "https://jobs.ashbyhq.com/voodoo",
+                "enabledByDefault": True,
+            }
+        ],
+        discovery_rows=[],
+        fetch_text=fake_fetch,
+        timeout_s=5,
+    )
+
+    next_rows = load_json_array(active_path, [])
+    ids = [row["id"] for row in next_rows]
+    assert "ashby:board_url:https://jobs.ashbyhq.com/voodoo" in ids
+    assert "lever:account:voodoo" in ids
+
+    voodoo_ashby = next(
+        row for row in next_rows if row["id"] == "ashby:board_url:https://jobs.ashbyhq.com/voodoo"
+    )
+    assert voodoo_ashby["adapter"] == "ashby"
+    assert voodoo_ashby["studio"] == "Voodoo"
+    assert voodoo_ashby["board_url"] == "https://jobs.ashbyhq.com/voodoo"
+    assert voodoo_ashby["jobsFound"] == 2
+    assert report["addedCount"] == 1
+    assert report["removedCount"] == 0
+
+
+def test_refresh_keeps_persisted_rows_that_only_carry_the_board_url_in_their_id(
+    tmp_path,
+) -> None:
+    """Persisted Ashby rows keep their board URL in ``id``, not ``board_url``.
+
+    The registry stores a slim row projection, so a row read back from the active
+    registry has ``id: ashby:board_url:<url>`` and no ``board_url`` field. Without
+    resolving the URL from the id, every such row validates as
+    ``invalid``/``missing board_url`` and the refresh silently deletes live boards
+    -- observed dropping 9 working boards, including thatgamecompany's 40 jobs.
+    """
+    active_path = tmp_path / "source-registry-active.json"
+    report_path = tmp_path / "ashby-registry-refresh-report.json"
+    active_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "ashby:board_url:https://jobs.ashbyhq.com/thatgamecompany",
+                    "name": "thatgamecompany (Ashby)",
+                    "adapter": "ashby",
+                    "studio": "thatgamecompany",
+                    "registryState": "active",
+                    "pendingReason": "",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(url: str, timeout_s: int) -> str:
+        assert url == "https://jobs.ashbyhq.com/thatgamecompany"
+        return _app_data_html(
+            organization="thatgamecompany",
+            postings=[{"id": "a", "title": "3D Character Artist (Mid-Senior)"}],
+        )
+
+    report = refresh.refresh_active_ashby_registry(
+        active_path=active_path,
+        report_path=report_path,
+        curated_rows=[],
+        discovery_rows=[],
+        fetch_text=fake_fetch,
+        timeout_s=5,
+    )
+
+    next_rows = load_json_array(active_path, [])
+    assert [row["id"] for row in next_rows] == [
+        "ashby:board_url:https://jobs.ashbyhq.com/thatgamecompany"
+    ]
+    assert next_rows[0]["board_url"] == "https://jobs.ashbyhq.com/thatgamecompany"
+    assert next_rows[0]["jobsFound"] == 1
+    assert report["removedCount"] == 0
+    assert report["addedCount"] == 0
+    assert report["configuredAfter"] == 1
