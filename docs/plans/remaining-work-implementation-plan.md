@@ -1,14 +1,14 @@
 # Remaining Work Implementation Plan
 
-> - **Status:** One item blocked and **unsafe to attempt**; four items verified complete; one flake still unproven. No implementation work is live here.
+> - **Status:** One item blocked and **unsafe to attempt**; four items verified complete; both former flakes are now diagnosed, and one is fixed.
 > - **Class:** cleanup
-> - **Trigger:** none. Item 1 is blocked and its method is unsafe to run; items 2-4 are done; item 5 has one flake that will not resolve without a deliberate concurrent-pytest reproduction.
-> - **Verified against:** 722c3be3
+> - **Trigger:** none. Item 1 is blocked and its method is unsafe to run; items 2-4 are done; of the two flakes, item 5a is fixed and 5b remains unfixed by deliberate decision.
+> - **Verified against:** 2e039570
 > - **Use this when:** someone proposes resuming the 23-board repoint, or asks what remains of this plan
-> - **Canonical for:** the do-not-run warning on the repoint method, and the remaining unproven flake
+> - **Canonical for:** the do-not-run warning on the repoint method, and the two flake diagnoses (one of which disproved the assumed shared-basetemp cause)
 > - **Not canonical for:** measurement method (see [`../measurement-methods.md`](../measurement-methods.md)), registry retirement rules (see [`../scraping-pipeline.md`](../scraping-pipeline.md)), or job-quality policy (see [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md))
 > - **Then inspect:** [`../measurement-methods.md`](../measurement-methods.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and `git log` for the completed items
-> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines, then 97; durable lessons extracted; declaration block added)
+> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines, then 97; durable lessons extracted; declaration block added; item 5 rewritten after both flakes were diagnosed)
 
 Every claim below was re-verified against the tree on 2026-10-02 rather than trusted from the
 previous revision, which was the sixth plan in this repo whose body had moved on from its status.
@@ -63,14 +63,56 @@ python src/jobs_fetcher.py --only-sources static_source::<id> \
 3. `tmp/` retention | `50c28c1f` | commit exists; `tmp/` holds 1 file and 0 tracked files, and `_out/evidence/` carries 48 relocated evidence directories. |
 4. The stashes | — | `git stash list` is empty; all 15 resolved. |
 
-## 5. The two undiagnosed flakes — one proven, one still open
+## 5. The two flakes — both diagnosed; one fixed, one deliberately not
 
 `test_transient_get_error_retries_with_backoff` and
 `test_bridge_profile_summary_records_external_sample_failure` each failed once in ~8 suite runs.
 
-**`test_bridge_profile_summary_records_external_sample_failure` — PROVEN.** Reproduced
-deliberately: starting the developer suite and launching two more pytest processes while it was in
-flight produced exactly this failure and nothing else (`1 failed, 5482 passed, 1 skipped`):
+**This item previously recorded both as the same bug — two pytest processes sharing
+`.tmp/pytest/basetemp`. That was half right, and the half that was wrong mattered.**
+
+### 5a. `test_transient_get_error_retries_with_backoff` — PROVEN, and FIXED (`2e039570`)
+
+**It was never the shared basetemp.** It is a `tmp_path` user, so the shared root was a
+reasonable guess, but it is not the cause. The real cause is in the test itself:
+
+```python
+monkeypatch.setattr(sync._source_sync_snapshot.time, "sleep", recorder)
+assert sleep_calls == [1.0]
+```
+
+`time` is the **global module object**, so that replaces `time.sleep` for the whole pytest
+process. The assertion was therefore measuring process-global sleep traffic, not the retry
+helper's own backoff. `src/` has ~38 threaded modules and ~95 `time.sleep` sites, several of
+them poll loops, and pytest runs every test in one process — so any background thread still
+alive from an earlier test lands in the recording. CI loses the race more often because it is
+slower. That is why it never reproduced under a plain re-run.
+
+Reproduced deliberately, with a control, by starting a leaking thread that calls `time.sleep`
+via a **dynamic** lookup so it hits the patched attribute:
+
+| Run | Result |
+|---|---|
+| no leaking thread | 2 passed |
+| leaking thread | `assert [0.001, 0.001...1, 0.001, ...] == [1.0]` — **failed** |
+| after the fix, leaking thread | 6 passed (and 56.11s → 1.13s) |
+
+Fixed by replacing the `time` attribute **on the module that performs the sleep**
+(`source_sync_snapshot_remote`, where `_retry_transient_get` lives) with a proxy that records
+`sleep` and delegates everything else to the real module. Production code was never wrong — it
+sleeps exactly 1.0s once. Mutation-verified: changing the backoff base 1.0 → 2.0 still fails the
+test, so scoping the observation did not blind the assertion.
+
+**Transferable lesson:** a monkeypatch on a stdlib module attribute is process-global. If the
+assertion is "this code called sleep once", patch the *module reference*, not `time` itself. And
+a flake that never reproduces under a re-run is not thereby innocent — it was reproducing against
+a background thread the re-run happened not to have running.
+
+### 5b. `test_bridge_profile_summary_records_external_sample_failure` — PROVEN, deliberately NOT fixed
+
+Reproduced deliberately: starting the developer suite and launching two more pytest processes
+while it was in flight produced exactly this failure and nothing else
+(`1 failed, 5482 passed, 1 skipped`):
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory:
@@ -82,15 +124,10 @@ The path is inside the **shared basetemp**, and the write is a plain `Path.write
 directory the competing pytest removed. The harness is tearing a live test's working directory —
 not a product regression, and not something the test can defend against.
 
-**`test_transient_get_error_retries_with_backoff` — STILL NOT PROVEN.** It did not reproduce in
-that run. It is a `tmp_path` user exposed to the same shared root, but exposure is not a diagnosis,
-and folding it into the proven result would repeat exactly the inference this item originally got
-wrong. It stays open until it fails with a captured traceback.
-
-**Not fixed, deliberately.** Both follow from two pytest processes sharing `.tmp/pytest/basetemp`.
-Giving a second run its own basetemp would remove the class rather than documenting it, but that
-changes how the suites are invoked — a bigger call than a doc correction. The rule and the
-traceback are in [`../testing.md`](../testing.md).
+**Left unfixed on purpose.** Giving each run its own basetemp would remove the class rather than
+document it, but it changes how the suites are invoked — a bigger call than a test correction,
+and the one that would need a decision about CI. The rule and the traceback are in
+[`../testing.md`](../testing.md).
 
 ## Why this plan was reduced rather than deleted
 
