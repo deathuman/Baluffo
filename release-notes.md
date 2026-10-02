@@ -1,3 +1,20 @@
+## [0.3.005] - 2026-10-02
+### Fixed
+
+- **A tooltip you dismissed with Escape now stays dismissed.** Admin refreshes itself in the background every thirty seconds. If one of those refreshes redrew the button your mouse was resting on, the browser re-checked the hover and the tooltip you had just dismissed popped back up on its own. Escape now holds until you actually move the pointer away, after which hovering behaves exactly as before. This was also what made an automated check fail intermittently.
+
+### Changed
+
+- **Two test-harness problems that were causing intermittent failures are now fixed at the source.** One check was measuring every sleep in the whole system rather than its own retry delay. The other let two test runs started by accident delete each other's working files; starting a second run now stops with a plain explanation instead of quietly corrupting the first.
+
+- **A developer-only report script no longer advertises a flag it never had.** It accepted a time filter, ignored it, and documented it in its usage line. The parameter is gone and the usage line now matches what the script actually does.
+
+### Notes
+
+- **Nothing stored is touched.** No saved jobs, settings, or tracked applications are read or written differently, and there is no upgrade step.
+
+- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.004. The only user-visible difference is that a tooltip you dismissed with Escape stays dismissed.
+
 ## [0.3.004] - 2026-10-02
 ### Fixed
 

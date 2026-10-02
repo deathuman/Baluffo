@@ -2,7 +2,7 @@
 """Aggregate the per-source alloc profile JSONL emitted by ``run_profiled_alloc``.
 
 Usage:
-    python scripts/perf_alloc_top.py [--limit N] [--since ISO]
+    python scripts/perf_alloc_top.py [--limit N] [--sources N]
 
 Reads ``<data_dir>/perf-profiles/allocations.jsonl`` and prints the top frames
 (by cumulative allocation across all sources), plus a per-source bucket summary.
@@ -23,7 +23,7 @@ def _data_dir() -> Path:
     return Path(os.environ.get("BALUFFO_DATA_DIR") or "_out")
 
 
-def _load(path: Path, since: str | None) -> list[dict[str, Any]]:
+def _load(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not path.exists():
         return rows
@@ -34,7 +34,6 @@ def _load(path: Path, since: str | None) -> list[dict[str, Any]]:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        # The log doesn't carry a birth timestamp; rely on dict ordering as-is.
         rows.append(entry)
     return rows
 
@@ -45,7 +44,7 @@ def main() -> int:
     parser.add_argument("--sources", type=int, default=10, help="how many top sources to print")
     args = parser.parse_args()
 
-    rows = _load(_data_dir() / "perf-profiles" / "allocations.jsonl", since=None)
+    rows = _load(_data_dir() / "perf-profiles" / "allocations.jsonl")
     if not rows:
         print(f"no entries in {_data_dir() / 'perf-profiles' / 'allocations.jsonl'}")
         return 0
