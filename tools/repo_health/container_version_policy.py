@@ -91,6 +91,31 @@ NON_SHIPPED_PATTERNS = (
     # this buys is that a routine dependency bump needs neither a version bump
     # nor release-tag intent to land.
     "package-lock.json",
+    # `data/*` is excluded from the image and then re-included path by path in
+    # .dockerignore. The three audit reports below are tracked but NOT among the
+    # re-inclusions, so they were gated as shipped while being absent from the
+    # image: editing one burned a version and republished a tag whose content had
+    # not changed. Same class as the `.agents/` leak fixed in 0.3.003.
+    #
+    # The two *runtime* data files in `data/` are deliberately NOT listed here.
+    # They are excluded from the image but read by the app, so they are shipped
+    # code and changing them must still force a version move.
+    "data/adapter-audit-report.md",
+    "data/pipeline-audit-report.md",
+    "data/release-repeatability-report.md",
+)
+
+# Tracked files that `.dockerignore` keeps out of the image but that the shipped-code
+# gate must still treat as shipped, because the running app reads them at runtime.
+#
+# Every other tracked file that the image excludes is expected to be non-shipped. A
+# tracked file that is in neither bucket is a *classification gap*, and that is
+# exactly how the three `data/` audit reports came to be gated as shipped while
+# being absent from the image: nothing ever had to state which side they were on.
+# Listing them here forces that decision to be explicit and reviewable.
+IMAGE_EXCLUDED_BUT_SHIPPED = (
+    "data/social-sources-config.json",
+    "data/source-registry-tombstones.json.gz",
 )
 
 _APP_VERSION_RE = re.compile(r'APP_VERSION\s*=\s*"([^"]+)"')

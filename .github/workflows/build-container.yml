@@ -33,6 +33,13 @@ on:
       # shipped path, so a wanted rebuild still happens. Keep this list equal to
       # NON_SHIPPED_PATTERNS in tools/repo_health/container_version_policy.py.
       - "package-lock.json"
+      # `data/*` is excluded from the image then re-included path by path; these
+      # three audit reports are tracked but not re-included, so they were treated
+      # as shipped code while absent from the image. The two runtime data files in
+      # `data/` stay shipped on purpose. Keep equal to NON_SHIPPED_PATTERNS.
+      - "data/adapter-audit-report.md"
+      - "data/pipeline-audit-report.md"
+      - "data/release-repeatability-report.md"
   pull_request:
     branches: [main]
     # Keep this list equal to NON_SHIPPED_PATTERNS in
@@ -54,6 +61,13 @@ on:
       - "release-notes.md"
       - "umbrel-app-store.yml"
       - "package-lock.json"
+      # `data/*` is excluded from the image then re-included path by path; these
+      # three audit reports are tracked but not re-included, so they were treated
+      # as shipped code while absent from the image. The two runtime data files in
+      # `data/` stay shipped on purpose. Keep equal to NON_SHIPPED_PATTERNS.
+      - "data/adapter-audit-report.md"
+      - "data/pipeline-audit-report.md"
+      - "data/release-repeatability-report.md"
   workflow_dispatch:
 
 env:
