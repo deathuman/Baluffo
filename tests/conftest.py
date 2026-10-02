@@ -7,7 +7,9 @@ poison the entire test process.
 
 from __future__ import annotations
 
+import atexit
 import os
+import time
 from collections.abc import Callable, Generator
 
 _BALUFFO_RUNTIME_ISOLATION_KEYS = (
@@ -112,3 +114,86 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "windows: Test requires Windows-specific APIs; skipped on Linux."
     )
+    _claim_single_pytest_session(config)
+
+
+_SESSION_LOCK_STALE_S = 6 * 60 * 60
+
+
+def _claim_single_pytest_session(config: pytest.Config) -> None:
+    """Refuse to start a second pytest session against the same checkout.
+
+    Why this exists, and why the obvious fixes do not work
+    --------------------------------------------------------
+    pytest 9.1.1 puts every ``tmp_path`` under ``.tmp/pytest/pytest-tmp-<uuid>``
+    and **deletes sibling ``pytest-tmp-*`` directories when a session starts**
+    (verified: a planted ``pytest-tmp-SENTINEL123`` does not survive a run). Two
+    sessions in one checkout therefore race on a shared root, and one can remove
+    the directory the other is still writing into. That is the proven cause of
+    ``test_bridge_profile_summary_records_external_sample_failure`` failing with
+    a ``FileNotFoundError`` from a plain ``Path.write_text``.
+
+    Three candidate fixes were measured and all were no-ops on pytest 9.1.1,
+    because ``tmp_path`` no longer derives from any of them:
+
+    - ``--basetemp=.tmp/pytest/basetemp`` (what the npm scripts pin) - ignored;
+      the observed root is the *parent* of the value, so a per-process suffix
+      still resolves to the same shared ``.tmp/pytest``.
+    - a deeper ``--basetemp`` (``.../run-<pid>/inner``) - still ignored.
+    - ``PYTEST_DEBUG_TEMPROOT`` - ignored.
+
+    ``tmp_path`` also already lands in a per-session UUID directory, so the
+    recorded "shared basetemp" explanation was never the mechanism. What is left
+    is to stop the sessions colliding at all, so a second run fails with an
+    explanation instead of tearing out a live run's working directory.
+
+    A lock is used rather than a PID-liveness probe because checking another
+    process portably needs platform-specific calls; a run that has not finished
+    in six hours was not a run.
+    """
+    lock_dir = Path(__file__).resolve().parents[1] / ".tmp" / "pytest"
+    lock_path = lock_dir / "session.lock"
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        holder = _describe_lock_holder(lock_path)
+        if holder is None:
+            # Stale lock from a run that never released it; take it over.
+            try:
+                lock_path.unlink()
+                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except OSError:
+                fd = None
+        else:
+            pytest.exit(
+                "Another pytest session is already running against this checkout.\n"
+                f"  holder: {holder}\n"
+                "  Wait for it to finish, or delete "
+                f"{lock_path} if you are certain no run is in flight.\n"
+                "Two concurrent pytest sessions share .tmp/pytest and will delete "
+                "each other's tmp_path directories.",
+                returncode=4,
+            )
+    except OSError:
+        return  # Never block a test run because the lock could not be created.
+
+    if fd is None:
+        return
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(f"pid={os.getpid()}\nstarted={time.time():.0f}\n")
+    # pytest 9 has no config.add_cleanup_handler, and atexit covers the normal
+    # exit path. A hard kill leaves the lock behind, which the staleness check
+    # above takes over.
+    atexit.register(lambda: lock_path.unlink(missing_ok=True))
+
+
+def _describe_lock_holder(lock_path: Path) -> str | None:
+    """Return a human description of the lock's holder, or None if it is stale."""
+    try:
+        age = time.time() - lock_path.stat().st_mtime
+        if age > _SESSION_LOCK_STALE_S:
+            return None
+        return lock_path.read_text(encoding="utf-8").strip().replace("\n", " ")
+    except OSError:
+        return None

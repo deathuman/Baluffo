@@ -312,9 +312,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - Keep pytest temp roots under `.tmp/pytest`; the repo disables pytest's cacheprovider by default so unreadable `pytest-cache-files-*` debris does not accumulate in the workspace.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
-- **Never run a second pytest process while a full suite is in flight** on this machine. The suites share `.tmp/pytest/basetemp`, and any second pytest start or Windows tmp-root race can fault an in-flight `tmp_path` mid-write — surfacing as a flake in a test that has nothing to do with your change (observed 2026-09-26: one-off failures in `test_transient_get_error_retries_with_backoff` and `test_bridge_profile_summary_records_external_sample_failure` only on runs where a concurrent pytest start happened). If it happens: rerun the test in isolation, keep the **full** traceback (do not pipe through `Select-Object -Last`), and only re-run the suite after the first one has completely exited.
+- **Only one pytest session may run against this checkout at a time.** This is now **enforced**, not just advised: `tests/conftest.py` takes an exclusive lock at `.tmp/pytest/session.lock` and a second concurrent session exits with code 4 and an explanation naming the holding PID. If you see that message, wait for the first run; if you are certain no run is in flight, delete the lock file. The lock releases on normal exit, and a lock older than six hours is treated as stale and taken over.
 
-  **Reproduced with a captured traceback 2026-10-01**, which turns the first observation from a correlation into a mechanism. Starting the developer suite and then launching two further pytest processes while it was in flight produced exactly this failure and nothing else:
+  **Mechanism, corrected 2026-10-02.** The earlier explanation here was wrong, and the correction matters because it changes the fix:
 
   ```
   FileNotFoundError: [Errno 2] No such file or directory:
@@ -322,17 +322,33 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
      bridge-profile\live\performance-profile.json'
   ```
 
-  The failing path is **inside the shared basetemp** — `pytest-tmp-<random>` under
-  `.tmp/pytest/` — and the write is a plain `Path.write_text` into a directory that
-  the competing process removed. So the flake is the *harness* tearing a live
-  test's working directory, not the test asserting anything wrongly. Result was
-  `1 failed, 5482 passed, 1 skipped` with only
-  `test_bridge_profile_summary_records_external_sample_failure` affected.
+  `pytest-tmp-<random>` is **not** the `--basetemp`. On pytest 9.1.1 it is pytest's own
+  per-session `tmp_path` directory, and it already contains a UUID, so two concurrent
+  sessions do **not** collide on its name. What actually removes a live directory is that
+  **a pytest session deletes sibling `pytest-tmp-*` directories when it starts** —
+  verified by planting `.tmp/pytest/pytest-tmp-SENTINEL123`, running one test, and finding
+  the sentinel gone. Two sessions therefore race on the shared `.tmp/pytest` root, and one
+  can delete the tree the other is still writing into. The write is a plain
+  `Path.write_text`, so the flake is the *harness* tearing a live test's working directory,
+  never the test asserting anything wrongly.
 
-  `test_transient_get_error_retries_with_backoff` did **not** reproduce in the same
-  run and remains unexplained; it is a `tmp_path` user exposed to the same shared
-  root, but that is exposure, not a diagnosis. Treat it as open until it actually
-  fails with a captured traceback.
+  **Three candidate fixes were measured and all were no-ops on pytest 9.1.1**, because
+  `tmp_path` no longer derives from any of them:
+
+  | Lever | Result |
+  |---|---|
+  | `--basetemp=.tmp/pytest/basetemp` (what the npm scripts pin) | ignored; the observed root is the *parent* of the value, so a per-process suffix still resolves to the same shared `.tmp/pytest` |
+  | a deeper `--basetemp` (`.../run-<pid>/inner`) | still ignored |
+  | `PYTEST_DEBUG_TEMPROOT` | ignored |
+
+  Setting `option.basetemp` from `pytest_configure` was tried and **discarded as a no-op**
+  rather than shipped as a fix that does nothing. That is why the answer is a session lock:
+  pytest offers no way to move the root, so the collision is prevented instead.
+
+  `test_transient_get_error_retries_with_backoff` was a **different** flake and is now fixed
+  (`2e039570`): it monkeypatched `sleep` on the global `time` module, so its assertion
+  measured process-wide sleep traffic. See
+  [`plans/remaining-work-implementation-plan.md`](plans/remaining-work-implementation-plan.md) §5.
 
 **Discovery audit artifact hygiene:**
 

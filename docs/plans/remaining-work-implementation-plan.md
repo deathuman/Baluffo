@@ -1,14 +1,14 @@
 # Remaining Work Implementation Plan
 
-> - **Status:** One item blocked and **unsafe to attempt**; four items verified complete; both former flakes are now diagnosed, and one is fixed.
+> - **Status:** One item blocked and **unsafe to attempt**; four items verified complete; both former flakes are now diagnosed and addressed — 5a fixed at the source, 5b prevented by an enforced session lock.
 > - **Class:** cleanup
-> - **Trigger:** none. Item 1 is blocked and its method is unsafe to run; items 2-4 are done; of the two flakes, item 5a is fixed and 5b remains unfixed by deliberate decision.
+> - **Trigger:** none. Item 1 is blocked and its method is unsafe to run; items 2-4 are done. Item 1 is the only thing left and it is blocked. Both flakes are closed: 5a was fixed in the test, 5b is now prevented by a session lock rather than left as advice.
 > - **Verified against:** 2e039570
 > - **Use this when:** someone proposes resuming the 23-board repoint, or asks what remains of this plan
 > - **Canonical for:** the do-not-run warning on the repoint method, and the two flake diagnoses (one of which disproved the assumed shared-basetemp cause)
 > - **Not canonical for:** measurement method (see [`../measurement-methods.md`](../measurement-methods.md)), registry retirement rules (see [`../scraping-pipeline.md`](../scraping-pipeline.md)), or job-quality policy (see [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md))
 > - **Then inspect:** [`../measurement-methods.md`](../measurement-methods.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and `git log` for the completed items
-> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines, then 97; durable lessons extracted; declaration block added; item 5 rewritten after both flakes were diagnosed)
+> - **Last updated:** 2026-10-02 (reduced 489 → 121 lines, then 97; durable lessons extracted; declaration block added; item 5 rewritten after both flakes were diagnosed; 5b's recorded mechanism found to be wrong and corrected)
 
 Every claim below was re-verified against the tree on 2026-10-02 rather than trusted from the
 previous revision, which was the sixth plan in this repo whose body had moved on from its status.
@@ -108,7 +108,7 @@ assertion is "this code called sleep once", patch the *module reference*, not `t
 a flake that never reproduces under a re-run is not thereby innocent — it was reproducing against
 a background thread the re-run happened not to have running.
 
-### 5b. `test_bridge_profile_summary_records_external_sample_failure` — PROVEN, deliberately NOT fixed
+### 5b. `test_bridge_profile_summary_records_external_sample_failure` — PROVEN, and now prevented
 
 Reproduced deliberately: starting the developer suite and launching two more pytest processes
 while it was in flight produced exactly this failure and nothing else
@@ -120,13 +120,29 @@ FileNotFoundError: [Errno 2] No such file or directory:
    bridge-profile\live\performance-profile.json'
 ```
 
-The path is inside the **shared basetemp**, and the write is a plain `Path.write_text` into a
-directory the competing pytest removed. The harness is tearing a live test's working directory —
-not a product regression, and not something the test can defend against.
+**The mechanism recorded here before was wrong.** `pytest-tmp-<random>` is not the shared
+`--basetemp`; on pytest 9.1.1 it is pytest's own per-session `tmp_path` directory and already
+carries a UUID, so concurrent sessions do not collide on its name. What removes a live
+directory is that **a pytest session deletes sibling `pytest-tmp-*` directories at startup** —
+proven by planting `.tmp/pytest/pytest-tmp-SENTINEL123`, running one test, and finding it
+deleted. Two sessions race on the shared `.tmp/pytest` root and one can delete the tree the
+other is still writing into.
 
-**Left unfixed on purpose.** Giving each run its own basetemp would remove the class rather than
-document it, but it changes how the suites are invoked — a bigger call than a test correction,
-and the one that would need a decision about CI. The rule and the traceback are in
+**Three fixes were measured and all were no-ops** on pytest 9.1.1, because `tmp_path` no longer
+derives from any of them:
+
+| Lever | Result |
+|---|---|
+| `--basetemp=.tmp/pytest/basetemp` (what the npm scripts pin) | ignored; observed root is its *parent* |
+| a deeper `--basetemp` (`.../run-<pid>/inner`) | still ignored |
+| `PYTEST_DEBUG_TEMPROOT` | ignored |
+
+Setting `option.basetemp` from `pytest_configure` was implemented, measured to change nothing,
+and **reverted rather than shipped as a fix that does nothing**. pytest exposes no way to move
+that root, so the collision is prevented instead: `tests/conftest.py` takes an exclusive lock at
+`.tmp/pytest/session.lock`, and a second concurrent session exits code 4 naming the holding PID.
+Verified: the first run completed (7 passed) while the second was refused, and the lock released.
+Because it lives in `tests/`, this needs no version bump. Rule and full traceback in
 [`../testing.md`](../testing.md).
 
 ## Why this plan was reduced rather than deleted
