@@ -670,6 +670,8 @@ def run_docs_group() -> list[GuardFailure]:
             "test_release_guide_is_canonical_single_source",
             "test_release_docs_cover_the_current_public_release_line",
             "test_changelog_keeps_unreleased_above_versioned_rollup",
+            "test_changelog_clamps_released_sections",
+            "test_no_change_is_claimed_by_two_release_sections",
             "test_top_release_notes_stay_user_readable",
             "test_release_notes_artifact_matches_current_version",
             "test_local_setup_points_to_canonical_commands_and_docs",

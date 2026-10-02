@@ -1,59 +1,28 @@
 ## [0.3.006] - 2026-10-02
-### Fixed
-
-- **A failed attachment load no longer looks like an empty one.** If the app could not reach your saved files, the panel used to say "No attachments yet." as though you had never added anything. It now says the list could not be loaded and offers to try again, so a problem is never disguised as a fact about your data.
-
-- **You can now reload a job's attachments on demand.** The Attachments panel has a Refresh button next to Upload, matching the one already on the History tab.
-
 ### Changed
 
-- **The Attachments panel no longer claims to be empty before it has looked.** On first open it previously read "No attachments yet." when in fact nothing had been loaded yet. It now says the list has not been loaded and points at Refresh.
+- **A tooltip you dismissed with Escape now stays dismissed.** Admin refreshes itself in the background every thirty seconds. If one of those refreshes redrew the button your mouse was resting on, the browser re-checked the hover and the tooltip came back on its own. Escape now holds until you actually move the pointer away, after which hovering behaves exactly as before.
 
-### Notes
+- **The Attachments panel no longer claims to be empty before it has looked.** On first open it read "No attachments yet." when nothing had actually been loaded. It now says the list has not been loaded and points at Refresh.
 
-- **Nothing stored is touched.** Attachment storage, the backup format, and the attachment counts are all exactly as before. This is display and a manual reload only, and re-uploading is unchanged.
+- **Agent skills and MCP configuration no longer ship inside the container image.** That folder was reaching the image, so editing a skill was treated as a change to the app itself — which could quietly replace the image behind a version you already had. Nothing in the running app reads those files.
 
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.005.
+- **The two container ignore lists can no longer half-register.** The rule that decides when a change counts as "shipped" and the rule that decides what goes into the image are now asserted to agree, so a directory cannot be counted as shipped while being absent from the image.
 
-## [0.3.005] - 2026-10-02
+### Added
+
+- **You can now reload a job's attachments on demand.** The Attachments panel has a Refresh button beside Upload, matching the one already on the History tab.
+
 ### Fixed
 
-- **A tooltip you dismissed with Escape now stays dismissed.** Admin refreshes itself in the background every thirty seconds. If one of those refreshes redrew the button your mouse was resting on, the browser re-checked the hover and the tooltip you had just dismissed popped back up on its own. Escape now holds until you actually move the pointer away, after which hovering behaves exactly as before. This was also what made an automated check fail intermittently.
-
-### Changed
-
-- **Two test-harness problems that were causing intermittent failures are now fixed at the source.** One check was measuring every sleep in the whole system rather than its own retry delay. The other let two test runs started by accident delete each other's working files; starting a second run now stops with a plain explanation instead of quietly corrupting the first.
-
-- **A developer-only report script no longer advertises a flag it never had.** It accepted a time filter, ignored it, and documented it in its usage line. The parameter is gone and the usage line now matches what the script actually does.
+- **A failed attachment load no longer looks like an empty one.** If the app could not reach your saved files, the panel used to say "No attachments yet." as though you had never added anything. It now reports that the list could not be loaded and offers to try again, so a problem is never disguised as a fact about your data.
 
 ### Notes
 
-- **Nothing stored is touched.** No saved jobs, settings, or tracked applications are read or written differently, and there is no upgrade step.
+- **Nothing stored is touched.** No saved jobs, settings, or tracked applications are read or written differently, and there is no upgrade step. Attachment storage, the backup format, and attachment counts are all exactly as before.
 
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.004. The only user-visible difference is that a tooltip you dismissed with Escape stays dismissed.
+- **Some intermittent test failures were fixed at their source.** One check was measuring every pause in the whole system instead of its own retry delay; another let two test runs started by accident delete each other's working files. These affected development confidence, not anything you can see.
 
-## [0.3.004] - 2026-10-02
-### Fixed
+- **A developer-only report script no longer advertises an option it never had.** It accepted a time filter, ignored it, and documented it in its usage line. The option is gone and the usage line now matches what the script does.
 
-- **A tooltip you dismissed with Escape now stays dismissed.** Admin refreshes itself in the background every thirty seconds. If one of those refreshes redrew the button your mouse was resting on, the browser re-checked the hover and the tooltip you had just dismissed popped back up on its own. Escape now holds until you actually move the pointer away, after which hovering behaves exactly as before. This was also what made an automated check fail intermittently.
-
-### Notes
-
-- **Nothing stored is touched.** No saved jobs, settings, or tracked applications are read or written differently, and there is no upgrade step.
-
-- **Keyboard and screen-reader use improves.** Anyone dismissing a tooltip with the keyboard no longer has it reappear under them partway through a session.
-
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.003. The only difference is that a tooltip you dismissed with Escape stays dismissed.
-
-## [0.3.003] - 2026-10-02
-### Changed
-
-- **Agent skills and MCP config no longer ship inside the container.** The `.agents/` folder was reaching the image because the container build's ignore list never excluded it, and an edit to a skill file was therefore treated as shipped container code -- so editing a skill could overwrite a released version tag. Nothing in the running app reads those files. They are now excluded from the image and treated as non-shipped, matching the rule the AI continuity notes already had.
-
-- **The two container ignore lists can no longer half-register.** The workflow trigger list and the shipped-path list were already asserted equal in length and order; the image ignore list was only spot-checked for a few patterns, which is how `.agents/` slipped through. A new invariant requires every dev and agent tooling directory to be absent from both the image and the shipped-path list.
-
-### Notes
-
-- **No behaviour, data, or upgrade changes.** Nothing you can see looks different, and no saved jobs, settings, or tracked applications are touched.
-
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.002. The only difference is that agent tooling no longer rides along inside the image.
+- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.002. The only user-visible difference is that a tooltip you dismissed with Escape stays dismissed, and that a failed attachment load now says so.

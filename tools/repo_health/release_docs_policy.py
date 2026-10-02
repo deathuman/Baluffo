@@ -13,6 +13,10 @@ from src.app_version import get_app_version
 RELEASE_NOTE_WORD_BUDGET = 2000
 RELEASE_NOTE_BULLET_CHAR_BUDGET = 1200
 
+# docs/CHANGELOG.md is a release log for the versions someone may install, not a
+# history of every bump. `git log` is the source of truth for older entries.
+CHANGELOG_MAX_RELEASED_SECTIONS = 5
+
 # Advisory only. A jargon blocklist cannot be made false-positive-free, and a
 # gate that is always red gets ignored -- the same failure mode that let the
 # broken Playwright cache check look healthy. These patterns are the concrete
@@ -292,6 +296,78 @@ def test_changelog_keeps_unreleased_above_versioned_rollup(repo_root: Path) -> N
     )
 
 
+def _changelog_sections(changelog_text: str) -> list[tuple[str, str]]:
+    """Split the `## [version]` blocks into ``(version, body)`` pairs, newest first."""
+    starts = [m.start() for m in re.finditer(r"^## \[", changelog_text, re.MULTILINE)]
+    out: list[tuple[str, str]] = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(changelog_text)
+        body = changelog_text[start:end]
+        out.append((body[len("## [") : body.index("]")], body))
+    return out
+
+
+def _declares_rollup(body: str) -> bool:
+    """Whether a section announces itself as a rollup restating earlier releases.
+
+    `0.3.001` legitimately repeats `0.3.0`'s bullets so users upgrading from 0.2.x
+    see the whole 0.3 line, and says so in the blockquote under its heading. An
+    accidental restatement carries no such declaration, and that is the difference
+    this test turns on.
+    """
+    return "rollup" in body.split("###", 1)[0].lower()
+
+
+def test_changelog_clamps_released_sections(repo_root: Path) -> None:
+    """Keep `docs/CHANGELOG.md` a short release log instead of a version ledger.
+
+    It once held 153 release sections, which made restating entries on every bump
+    the only way to stay current and left nobody reading it. `git log` keeps that
+    history, so the file is clamped instead.
+    """
+    changelog_text = (repo_root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    versions = [version for version, _ in _changelog_sections(changelog_text)]
+    released = [version for version in versions if version != "Unreleased"]
+
+    assert released, "docs/CHANGELOG.md must keep at least one released version section."
+    assert "Unreleased" in versions, "docs/CHANGELOG.md is missing its `## [Unreleased]` section."
+    assert len(released) <= CHANGELOG_MAX_RELEASED_SECTIONS, (
+        f"docs/CHANGELOG.md holds {len(released)} released sections "
+        f"({', '.join(released)}); the clamp is {CHANGELOG_MAX_RELEASED_SECTIONS}. Drop "
+        "the oldest -- `git log` keeps that history -- and keep the clamp described in "
+        "docs/DOCS_WORKFLOW.md so nobody adds them back."
+    )
+
+
+def test_no_change_is_claimed_by_two_release_sections(repo_root: Path) -> None:
+    """One change belongs to one release section, unless a declared rollup says otherwise."""
+    changelog_text = (repo_root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    claims: dict[str, list[str]] = {}
+    rollups: set[str] = set()
+
+    for version, body in _changelog_sections(changelog_text):
+        if _declares_rollup(body):
+            rollups.add(version)
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                claims.setdefault(stripped, []).append(version)
+
+    offenders = [
+        f"      {bullet[:88]} -> {', '.join(versions)}"
+        for bullet, versions in claims.items()
+        if len(versions) > 1 and not (set(versions) & rollups)
+    ]
+    assert not offenders, (
+        "The same change is described in more than one release section, so each of "
+        "those releases appears to ship it:\n"
+        + "\n".join(offenders)
+        + "\n    Keep the wording in the earliest section that claims it and delete the "
+        "later copy. If the later section is a deliberate rollup for users skipping "
+        "releases, declare that in a blockquote under its heading (0.3.001 does)."
+    )
+
+
 def test_top_release_notes_stay_user_readable(repo_root: Path) -> None:
     """The shipped release section must read as release notes, not as a work log.
 
@@ -342,16 +418,6 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
-    release_0_2_25 = _section(changelog_text, "## [0.2.25]")
-    release_0_2_18 = _section(changelog_text, "## [0.2.18]")
-    release_0_2_17 = _section(changelog_text, "## [0.2.17]")
-    release_0_2_16 = _section(changelog_text, "## [0.2.16]")
-    release_0_2_15 = _section(changelog_text, "## [0.2.15]")
-    release_0_2_1 = _section(changelog_text, "## [0.2.1]")
-    release_0_2_01 = _section(changelog_text, "## [0.2.01]")
-    release_0_2_0 = _section(changelog_text, "## [0.2.0]")
-    release_0_1_1 = _section(changelog_text, "## [0.1.1]")
-    legacy_notes = _section(changelog_text, "## Legacy notes")
 
     assert "src/app_version.py" in release_text
     assert "v<app_version>" in release_text
@@ -374,58 +440,6 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     assert "private community app-store metadata" in top_release
     assert "wildcard browser CORS allow headers" in top_release
     assert "desktop localhost bridge compatibility" in top_release
-    assert "recurring full Jobs pipeline schedule" in release_0_2_25
-    assert "confirmed abort controls" in release_0_2_25
-    assert "task abort lifecycle evidence" in release_0_2_25
-    assert "broader ATS HTML-signature detection" in release_0_2_25
-    assert "recent views bar" in release_0_2_25
-    assert "Task abort lifecycle closeout" in release_0_2_25
-    assert "Packaged desktop Jobs-to-Admin navigation" in release_0_2_25
-    assert "Google Sheets and static-source cleanup" in release_0_2_25
-    assert "Linux packaged desktop support" in release_0_2_18
-    assert "Release automation now publishes a Linux AppImage" in release_0_2_18
-    assert "%APPDATA%\\Baluffo" in release_0_2_18
-    assert "external data root" in release_0_2_18
-    assert "Windows-specific facade calls through Linux stubs" in release_0_2_18
-    assert "Ruff baseline metadata" in release_0_2_18
-    assert "First-run Google Sheets bootstrap" in release_0_2_17
-    assert "Jobs first-run Retry" in release_0_2_17
-    assert "Packaged first-run smoke" in release_0_2_17
-    assert "Remote Python CI" in release_0_2_16
-    assert "Google Sheets category-style titles" in release_0_2_16
-    assert "URL-derived title repair" in release_0_2_16
-    assert "Remote OK parser filtering" in release_0_2_16
-    assert "Oracle HCM provider API support" in release_0_2_15
-    assert "Provider coverage migration tooling" in release_0_2_15
-    assert "title sanitization evidence" in release_0_2_15
-    assert "First-run Jobs regressions after `0.2.1`" in release_0_2_15
-    assert "CVE-2026-45409" in release_0_2_15
-    assert "Saved Jobs tracking polish" in release_0_2_1
-    assert "Previous release-note viewing" in release_0_2_1
-    assert "flash the Baluffo taskbar button" in release_0_2_1
-    assert "first-run Jobs notice" in release_0_2_1
-    assert "starts one Google Sheets bootstrap" in release_0_2_1
-    assert "one-minute cold-start validation cost" in release_0_2_1
-    assert "Windows portable updater handoff" in release_0_2_01
-    assert "optional `psutil`" in release_0_2_01
-    assert "non-secret diagnostics" in release_0_2_01
-    assert "updater capability `2.0.1`" in release_0_2_01
-    assert "`chromium_headless_shell-*`" in release_0_2_01
-    assert "explicit visible empty-state evidence" in release_0_2_01
-    assert "Milan, Tel Aviv, and Frankfurt am Main" in release_0_2_01
-    assert "Runtime SQLite/WAL storage" in release_0_2_0
-    assert "Source-sync v3" in release_0_2_0
-    assert "gitleaks-based secret scanning" in release_0_2_0
-    assert "Desktop in-app update flow in the Jobs desktop UI" in release_0_1_1
-    assert (
-        "Location normalization was consolidated into the canonical parsers path" in release_0_1_1
-    )
-    assert (
-        "Closing the packaged desktop window now tears down the desktop session cleanly"
-        in release_0_1_1
-    )
-    assert "Desktop portable EXE with PyInstaller" not in legacy_notes
-    assert "Ship bundle (zip-first) release channel" not in legacy_notes
     assert "## [Unreleased]" in changelog_text
     assert "Current development" not in changelog_text
     assert "## [1.3.0]" not in changelog_text
@@ -591,9 +605,12 @@ def test_docs_avoid_stale_archive_and_generated_artifact_links(repo_root: Path) 
 
     assert "[`_out/`](../_out/)" not in index_text
     assert "`_out/`" in index_text
+    # The changelog must not point readers at archive material or generated artifacts.
+    # This used to also require a specific historical mention of
+    # `scraping-pipeline-run-notes.md`; that file is gone from the repo and the mention
+    # lived in `0.1.0`, so it pinned a deleted file's wording rather than a rule.
     assert "docs/archive/" not in changelog_text
     assert "(archive/)" not in changelog_text
-    assert "scraping-pipeline-run-notes.md" in changelog_text
 
 
 def test_ai_docs_classify_compatibility_surfaces(repo_root: Path) -> None:

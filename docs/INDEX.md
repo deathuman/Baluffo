@@ -105,7 +105,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`../tools/mcp/BASIC_MEMORY.md`](../tools/mcp/BASIC_MEMORY.md) | AI continuity memory | You are setting up or maintaining required Basic Memory continuity for Codex CLI or OpenCode |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
-| [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release log for the newest 5 versions plus `[Unreleased]`; `git log` holds older history | You need recent project history or release notes context |
 | [`plans/refactor-charter-template.md`](plans/refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal without loading archived refactor records |
 
 

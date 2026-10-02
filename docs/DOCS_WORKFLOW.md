@@ -225,3 +225,33 @@ Review the touched area and update docs in the same change when any of these mov
 - Use git history and PR context for routine doc maintenance history.
 - Keep [`CHANGELOG.md`](CHANGELOG.md) reserved for product and release history.
 - Do not add a separate append-only documentation log for normal maintenance updates.
+
+### The changelog is a release log, not a version ledger
+
+[`CHANGELOG.md`](CHANGELOG.md) holds **the most recent 5 released versions plus
+`[Unreleased]`**, and nothing older. It once carried 153 release sections, which
+made restating entries on every version bump the only way to stay current and left
+nobody reading it.
+
+**`git log` is the source of truth for older history.** Clamping the file exists so
+it can describe the version someone is about to install, which is the only job it
+can do well.
+
+Two rules keep this from quietly regrowing, both enforced by
+[`tools/repo_health/release_docs_policy.py`](../tools/repo_health/release_docs_policy.py):
+
+| Rule | Guardrail |
+| --- | --- |
+| At most 5 released sections, plus `[Unreleased]` | `test_changelog_clamps_released_sections` |
+| A change is described by exactly one release section | `test_no_change_is_claimed_by_two_release_sections` |
+
+The second rule has one deliberate exception. A **rollup** release restates an
+earlier release's notes so users skipping versions see the whole line, and may
+duplicate bullets — provided it says so in a blockquote under its heading.
+[`0.3.001`](CHANGELOG.md) does this for the 0.3 line. An accidental restatement
+carries no such declaration, and that is the whole difference: `0.3.004` and
+`0.3.005` both re-claimed the tooltip fix without declaring anything, so two
+releases appeared to ship a single change.
+
+When you cut a release, drop the oldest section in the same commit rather than
+leaving the clamp for the guardrail to fail.

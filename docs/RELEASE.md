@@ -646,6 +646,10 @@ Before running `python scripts/bump_version.py <version>`, author the release co
 
 `test_top_release_notes_stay_user_readable` additionally bounds the shape of that top section — at most 2,000 words and no bullet over 1,200 characters — and prints a non-blocking advisory when implementation detail leaks in. It never scans historical sections.
 
+The same release commit is also where the changelog's **clamp** is applied. `docs/CHANGELOG.md` holds only the newest 5 released versions plus `[Unreleased]`; `git log` is the source of truth for anything older. `test_changelog_clamps_released_sections` fails once a sixth released section appears, so adding the new `## [<app_version>]` section means dropping the oldest one in the same commit — otherwise `release:preflight` fails on the docs guardrail.
+
+Bumping straight from one released section to the next (as 0.3.004 and 0.3.005 did) is also how a change ends up described twice. `test_no_change_is_claimed_by_two_release_sections` fails when the same bullet appears in two release sections, because it makes each of them appear to ship a change only one of them did. Fold the unreleased sections into the new one and keep each change described once. The single exception is a deliberate **rollup** release that restates an earlier release's notes for users skipping versions: it may duplicate bullets provided it declares that in a blockquote under its heading, exactly as `## [0.3.001]` does.
+
 ### Container / Umbrel Verification
 
 Container builds use the checked-in `Dockerfile` and run:
