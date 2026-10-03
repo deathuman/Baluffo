@@ -12,6 +12,7 @@ from . import config as _config
 from .config import (
     ADAPTER_QUEUE_CAPS,
     CAREERS_URL_HINTS,
+    COVERAGE_BOARDS_PATH,
     DEFAULT_DISCOVERY_CONFIG,
     DEFAULT_DISCOVERY_THRESHOLDS,
     DISCOVERY_CONFIG_PATH,
@@ -40,6 +41,7 @@ from .config import (
     UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS,
     UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP,
     WEB_SEARCH_QUERY_SUFFIX,
+    load_curated_coverage_boards,
     load_studio_seeds,
 )
 

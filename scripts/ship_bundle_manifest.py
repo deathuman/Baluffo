@@ -74,6 +74,10 @@ APP_RUNTIME_SCRIPTS: tuple[str, ...] = (
     "local_data_store_tracking.py",
     "local_data_store.py",
     "discovery_seed_catalog.json",
+    # Coverage-audit board registrations. Read by source_discovery at import time to
+    # seed curated candidates, so a packaged install needs it: without the file the
+    # loader returns no rows and discovery silently starts from nothing.
+    "curated_coverage_boards.json",
     "python_version_guard.py",
 )
 

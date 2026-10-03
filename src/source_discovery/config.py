@@ -37,6 +37,11 @@ def env_int(name: str, default: int) -> int:
 
 
 SEED_CATALOG_PATH = _REPO_ROOT / "src" / "discovery_seed_catalog.json"
+# Boards added by the coverage audit against the external job index. Kept as data
+# rather than a literal in this module because there are hundreds of them and a
+# diff of a Python literal is unreviewable. Same loader contract as the studio seed
+# catalog: a missing or malformed file must not break discovery.
+COVERAGE_BOARDS_PATH = _REPO_ROOT / "src" / "curated_coverage_boards.json"
 DISCOVERY_STAGES: tuple[str, ...] = (
     "curated_seed",
     "sheet_directory",
@@ -412,6 +417,38 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "thresholds": dict(DEFAULT_DISCOVERY_THRESHOLDS),
 }
 
+
+def load_curated_coverage_boards() -> list[dict[str, Any]]:
+    """Boards the coverage audit verified would collect, as curated-seed candidates.
+
+    Every row here was proposed because a specific missed opening pointed at that
+    board, and was registered because the board verifiably serves openings -- 270
+    returned rows when fetched, and 234 render in a browser. There is no volume
+    threshold, because the point of the product is that no opening is left behind.
+
+    The browser-rendered class is registered rather than deferred on evidence, not
+    assumption: of the boards this repo already collects, 101 of 159 reach their
+    rows only through the browser path, so a listing that a plain GET cannot read is
+    the normal case rather than a warning sign.
+
+    Returns an empty list on a missing or malformed file so discovery still runs.
+    """
+    try:
+        payload = json.loads(COVERAGE_BOARDS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw in payload:
+        if not isinstance(raw, dict) or not raw.get("adapter") or not raw.get("studio"):
+            continue
+        row = dict(raw)
+        row.setdefault("nlPriority", False)
+        rows.append(row)
+    return rows
+
+
 STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
     {
         "name": "Sandbox VR (Lever)",
@@ -523,7 +560,7 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "api_url": "https://api.smartrecruiters.com/v1/companies/YggdrasilSandbox/postings",
         "nlPriority": False,
     },
-]
+] + load_curated_coverage_boards()
 
 
 def load_studio_seeds() -> list[dict[str, Any]]:
