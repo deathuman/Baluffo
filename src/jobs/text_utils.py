@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from src.jobs.country_contract import (
+    COUNTRY_ACCEPTANCE_CONTRACT_NAME,
+    country_code_to_name,
+    resolve_contract_path,
+)
 from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
 
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
@@ -173,16 +178,13 @@ LOWERCASE_CITY_NOISE_TOKENS = {
     "touch",
     "widget",
 }
-COUNTRY_ACCEPTANCE_CONTRACT_NAME = "country_acceptance.json"
 CITY_NOISE_CONTRACT_NAME = "city_noise_contract.json"
 
 
 def _resolve_contract_path(filename: str) -> Path:
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / "data" / "contracts" / filename
-        if candidate.exists():
-            return candidate
-    return Path(__file__).resolve().parents[2] / "data" / "contracts" / filename
+    # Anchored on this module's own __file__ so the packaged-ship tests, which
+    # redirect text_utils.__file__ to a version-local path, keep working.
+    return resolve_contract_path(filename, anchor=Path(__file__))
 
 
 def _clean_mapping_text(value: Mapping[Any, Any]) -> str:
@@ -295,6 +297,16 @@ def load_country_acceptance_contract() -> dict[str, Any]:
         if token and text and token not in exact_label_map:
             exact_label_map[token] = text
 
+    # `countryNameByCode` is the contract's other canonical label list, and ten of
+    # its names are absent from acceptedExactLabels: Anguilla, Bermuda, European
+    # Union, Gibraltar, Greenland, Hong Kong, Isle of Man, Macau, Montserrat and
+    # Puerto Rico. sanitize_country_text rejected those as
+    # `invalid_country_semantic_noise` despite the contract listing them.
+    #
+    # Kept in a separate map, NOT merged into exactLabelMap: looks_like_country_token
+    # reads that map to decide whether a location string is a country or a city, and
+    # tests pin `Greenland`/`Bermuda`/`Gibraltar`/`Hong Kong` as a *city* whose country
+    # is inferred. Widening exactLabelMap silently flipped all five to country.
     alias_to_canonical: dict[str, str] = {}
     for alias, canonical in (raw.get("normalizeAliasesToValue", {}) or {}).items():
         token = normalize_country_acceptance_token(alias)
@@ -307,6 +319,36 @@ def load_country_acceptance_contract() -> dict[str, Any]:
         "exactLabelMap": exact_label_map,
         "aliasToCanonical": alias_to_canonical,
     }
+
+
+@lru_cache(maxsize=1)
+def _country_contract_names() -> dict[str, str]:
+    """Country names from ``countryNameByCode``, tokenised.
+
+    Ten of these never appear in ``acceptedExactLabels`` — Anguilla, Bermuda,
+    European Union, Gibraltar, Greenland, Hong Kong, Isle of Man, Macau,
+    Montserrat, Puerto Rico — so ``sanitize_country_text`` rejected territories the
+    contract itself lists.
+
+    Deliberately NOT folded into ``exactLabelMap``: that map feeds
+    ``looks_like_country_token``, which decides whether a location string is a
+    country or a city, and tests pin Greenland/Bermuda/Gibraltar/Hong Kong/Isle of
+    Man as a *city* whose country is inferred. Widening it flipped all five to
+    country and emptied their city field.
+
+    Also not part of ``load_country_acceptance_contract``'s return value, which
+    ``test_location_sanitizer_parity`` pins to the frontend mirror.
+    """
+    raw = json.loads(
+        _resolve_contract_path(COUNTRY_ACCEPTANCE_CONTRACT_NAME).read_text(encoding="utf-8")
+    )
+    names: dict[str, str] = {}
+    for label in country_code_to_name(raw).values():
+        token = normalize_country_acceptance_token(label)
+        text = sanitize_public_text(label)
+        if token and text and token not in names:
+            names[token] = text
+    return names
 
 
 @lru_cache(maxsize=1)
@@ -484,6 +526,19 @@ def resolve_country_acceptance_value(value: Any) -> str:
     return str(alias_map.get(token) or exact_map.get(token, ""))
 
 
+def resolve_country_contract_name(value: Any) -> str:
+    """Country name from the contract's ``countryNameByCode`` list.
+
+    Deliberately separate from :func:`resolve_country_acceptance_value`, which also
+    feeds city/country disambiguation. This only answers "is this a country the
+    contract names?", so accepting a label here cannot reclassify a city.
+    """
+    token = normalize_country_acceptance_token(value)
+    if not token:
+        return ""
+    return str(_country_contract_names().get(token, ""))
+
+
 def looks_like_country_token(value: Any) -> bool:
     token = clean_text(value)
     if not token:
@@ -521,6 +576,10 @@ def sanitize_country_text(value: Any) -> tuple[str, str]:
         return "", reason
     if resolved:
         return resolved, ""
+    # Names the contract lists in countryNameByCode but not in acceptedExactLabels.
+    contract_name = resolve_country_contract_name(text)
+    if contract_name:
+        return contract_name, ""
     return "", "invalid_country_semantic_noise"
 
 
