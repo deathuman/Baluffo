@@ -448,8 +448,10 @@ def audit(
         "labelMismatches": label_mismatches,
         "feedOnly": sorted(feed_only, key=lambda row: str(row["company"]))[:200],
         "caveats": [
-            "role_not_on_board is provisional: a fetchable detail page does not "
-            "prove a job is still open. Confirm against the board's list API.",
+            "role_not_on_board comes from an explicit live probe, never from a "
+            "detail page resolving. Boards the probe could not decide are left "
+            "out of the probe map entirely, so they fall through to the "
+            "studio/registry buckets instead of being called delisted.",
             "The feed mixes ISO codes and country names and 73 values resolve to "
             "neither, so region counts are a lower bound.",
             "label_mismatches are counted as matched, not reported as gaps: GJI "

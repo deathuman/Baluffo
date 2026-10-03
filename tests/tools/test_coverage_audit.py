@@ -232,8 +232,9 @@ def test_audit_reports_the_delisted_bucket_only_with_a_probe() -> None:
 def test_audit_always_carries_its_caveats() -> None:
     result = audit_mod.audit([], [], query="Technical Artist")
     joined = " ".join(result["caveats"])
-    assert "provisional" in joined
+    assert "live probe" in joined
     assert "lower bound" in joined
+    assert "detail page" in joined
 
 
 def test_registry_ids_load_from_plain_and_gzipped_json(tmp_path: Path) -> None:
