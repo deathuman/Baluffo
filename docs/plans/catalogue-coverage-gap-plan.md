@@ -180,21 +180,59 @@ until a row is registered. That is a different piece of work from phase 1.
 
 Rescoped. The original phase 2 was 4,589 rows diagnosed as "registered but not
 collecting", and that bucket turned out to be 98% measurement artifact. What remains
-is 5,128 studio-covered-but-role-absent plus 58 registered-no-role, and neither has
-been diagnosed yet. Candidate causes, each of which must be measured rather than
-assumed:
+is 5,128 studio-covered-but-role-absent plus 58 registered-no-role.
 
-- quality gates dropping legitimate openings — the same weakness that lets
-  Gamucatex's nav text through may also be dropping real roles
-- pagination caps (SmartRecruiters `limit=100`, Lever, Greenhouse)
+### Diagnosis: 30 boards, and it is extraction, not filtering
+
+Joined the 5,128 against the live fetch report by parsing the board URL out of each
+source name (`static_source::<registry id>` — the `name` field is an identifier, not
+a URL, and joining on it directly yields 32 nonsense "hosts"):
+
+| | Rows | Meaning |
+|---|---|---|
+| No source on the board host | 3,689 | Not registered. Belongs to phase 1. |
+| `excluded` | 675 | Not fetched this run. Not evidence of anything. |
+| Fetched `ok`, role absent | **764** | Genuine gap. |
+
+**All 764 come from just 30 sources**, and the same signature appears on every one:
+`fetchedCount == keptCount` with `lowConfidenceDropped == 0`. Nothing is being
+filtered out — the quality gate is not dropping these roles. The extraction simply
+finds fewer rows than the board serves.
+
+| Misses | Kept | Source |
+|---|---|---|
+| 283 | 340 | `hrmos.co/pages/cygames` |
+| 134 | 145 | `jobs.ea.com` |
+| 121 | **11** | `jobs.jobvite.com/amberstudiocareers` |
+| 74 | **7** | `careers.garena.com` |
+| 43 | 80 | `careers.activision.com/careers` |
+| 16 | 166 | `riotgames.com` |
+| 13 | **1** | `outfit7.com` |
+| 12 | **6** | `flixinteractive.com` |
+| 9 | **0** | `nordeus.com`, `interactive.innovina.it` |
+
+A board keeping 11 rows while the index lists 121 is an extraction failure, and no
+quality gate is involved. The likely causes are JS-rendered listings, unpaged
+endpoints, and detail links that never resolve to a job page — the same shape as the
+Gamucatex case, where extraction falls through to `static_detail_link_rows` and
+returns nav text.
+
+One concrete defect found while checking: the registered URL
+`https://careers.activision.com/careers` now returns **HTTP 404**, while the source
+still reports `ok` with 80 kept. That is a stale registration that the fetch report
+does not surface as an error.
+
+Candidate causes still to confirm per source:
+
+- pagination not followed (SmartRecruiters `limit=100`, Lever, Greenhouse)
 - per-source detail-fetch budgets — a Bandai note records "38 sibling detail
   verifications burning the source budget"
-- freshness and cadence skips
-- boards registered against a stale tenant slug after a rebrand
+- boards registered against a stale path after a site redesign
+- `excluded` rows: cadence and cooldown, which must not be read as "no openings"
 
 Note the distinct question this asks. Phase 1 is "is the board registered?". Phase 2
-is "the board is registered and the role is live — why did the pipeline drop it?",
-which is a quality-gate and budget problem, not a registration one.
+is "the board is registered and the role is live — why did the pipeline not see it?",
+which is an extraction problem, not a registration one.
 
 ## Phase 3 — the spreadsheet dependency
 
