@@ -44,9 +44,22 @@ import argparse
 import gzip
 import json
 import re
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+# tools/ is flat and has no package init, so a sibling import needs the directory on
+# the path. Guarded so repeated loads (tests import these by path) do not grow it.
+_TOOLS_DIR = str(Path(__file__).resolve().parent)
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+from coverage_board_identity import (  # noqa: E402, I001
+    build_candidate,
+    candidate_identity,
+    registry_identity,
+)
 
 # EU 27 + EEA non-EU (IS, LI, NO) + CH. Mirrors gamesjobsindex.com
 # assets/js/jobs-page-utils.js EUROPEAN_COUNTRIES exactly. GB and TR are
@@ -375,26 +388,32 @@ def build_label_prefix_index(
 
 
 def registry_ids_for_board(registry_ids: set[str], source_url: str) -> list[str]:
-    """Registry ids that could cover this board.
+    """Registry rows that actually cover this board.
 
-    Matching on the host alone does not work: Baluffo ids look like
-    ``greenhouse:slug:example`` and never contain ``job-boards.greenhouse.io``, so
-    a host-only test reports every registered board as unregistered. Match the
-    host *and* the board's path segments, which is where the slug or account lives.
+    Identity is ``(adapter, host, tenant)``, resolved the same way
+    ``coverage_boards`` resolves it for a candidate. The previous version matched
+    any path segment as a substring of any registry id, which was loose enough to
+    call most things registered: measured on the catalogue, 4,564 of 4,589
+    ``registered_no_role`` rows matched *only* that way. So the bucket named a
+    collection failure where the real cause was an unregistered board, and phase 2
+    would have gone looking for a collection bug that did not exist.
+
+    Host alone is not enough either -- ids like ``greenhouse:slug:example`` never
+    contain ``job-boards.greenhouse.io`` -- and neither is the id string, which is
+    inconsistent about trailing slashes across 2,030 active static rows.
     """
     if not source_url or not registry_ids:
         return []
-    stripped = re.sub(r"^https?://", "", str(source_url)).lower()
-    host, _, path = stripped.partition("/")
-    needles = {host}
-    needles.update(normalize_token(seg) for seg in path.split("/") if seg)
-    needles.discard("")
-    if not needles:
+    try:
+        candidate = build_candidate(source_url)
+    except Exception:
         return []
-    hits = []
+    if not candidate.get("tenant"):
+        return []
+    identity = candidate_identity(candidate)
+    hits: list[str] = []
     for rid in registry_ids:
-        rid_norm = normalize_token(rid)
-        if any(needle and (needle in rid or needle in rid_norm) for needle in needles):
+        if registry_identity(rid) == identity:
             hits.append(rid)
     return sorted(hits)
 

@@ -57,6 +57,12 @@ sys.modules["coverage_audit"] = _audit
 _spec.loader.exec_module(_audit)
 normalize_token = _audit.normalize_token
 
+from coverage_board_identity import (  # noqa: E402, F401, I001
+    board_key,
+    board_root,
+    host_of,
+)
+
 try:  # certifi-anchored TLS: bare urllib fails hosts the pipeline fetches fine.
     import certifi
 
@@ -103,18 +109,6 @@ def http_get(url: str, *, timeout: float = 40.0, attempts: int = 3) -> tuple[int
         if attempt + 1 < attempts:
             time.sleep(1.5 * (attempt + 1))
     return last
-
-
-def host_of(url: str) -> str:
-    """Host of a URL, lowercased and without a leading ``www.``."""
-    parsed = urlparse(url if "//" in str(url or "") else f"//{url}")
-    return (parsed.netloc or "").lower().removeprefix("www.")
-
-
-def board_root(url: str) -> str:
-    """The board's own root, so a 404 on a job path is not read as a dead board."""
-    parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}/"
 
 
 def list_api_candidates(url: str) -> list[str]:
