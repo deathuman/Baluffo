@@ -1,7 +1,7 @@
 > - **Class:** shipped-defect
 > - **Trigger:** Voodoo's careers ATS moved from Lever to Ashby; `lever:account:voodoo` now 404s, so job `13968523-e0f2-4cdb-81a1-4ac338bd5e0a` (published 2026-10-01) is absent from the feed
 > - **Verified against:** be26a0f0
-> - **Status:** active — items 1-4 implemented; awaiting commit and live verification
+> - **Status:** items 1-4 implemented; release + live verification deferred by request
 
 # Voodoo Ashby board migration
 
@@ -153,7 +153,53 @@ run even with the catalog fixed. Both are fixed.
 | 3. Items 2-3 — discovery derives Ashby for Voodoo | **done.** `likely_providers_for_seed` -> `['ashby']`; ashby reinforcement 0 -> 18, lever 18 -> 0; curated candidate stages as `ashby:board_url:https://jobs.ashbyhq.com/voodoo`; 0 of 34 shipped seeds change. |
 | 4. Item 4 — child failures surface | **done.** 58 failing children on the live report, 12 of them the HTTP 404 dead boards. Family totals byte-identical. |
 | 5. Full Python lane + `data/` hygiene | **done.** 5566 passed, 1 skipped. No `gameprog-*` / `gamesmap-*` / `*-discovery-audit.json` in `data/`. |
-| 6. Umbrel pipeline run | **pending** — needs the release shipped; the box runs v0.3.006. |
+| 6. Umbrel pipeline run | **deferred** — the box runs v0.3.006; verifying there needs the release shipped first. |
+
+## Two premises from this plan that measurement disproved
+
+Recorded because both were acted on before being checked, and both would have
+shipped a change with no benefit.
+
+**"The static extractor returns 0 despite visible jobs."** Not true. The one
+production row measured as `ok` + `0/0` (Mundfish) failed with
+`time_budget_exceeded`, a timeout. Holonautic and Donkey Crew reported
+`excluded` / `cache_within_freshness_window`, which per repo guardrails means *not
+fetched* — no conclusion available. Fetching all three directly gave Holonautic
+3 jobs, Donkey Crew 5 and Gamucatex 3 both before and after a fix to
+`detect_js_shell`, and a real A/B of the old and new functions across twelve
+boards showed **no measurable output change anywhere**. The `detect_js_shell`
+false positives are real (Mundfish is `data-ssr="true"` yet flagged, and six
+boards including Nintendo, Larian and Supercell are misclassified) but they sit
+in a path that does not currently suppress output. The change was reverted.
+
+**"8,273 rows carry a country name instead of a code."** The names were never
+rejected: `sanitize_country_text("Poland")` already returned `('Poland', '')` and
+`looks_like_country_token` was already `True`. The real defect was 10 contract
+labels — Anguilla, Bermuda, European Union, Gibraltar, Greenland, Hong Kong, Isle
+of Man, Macau, Montserrat, Puerto Rico — present only in `countryNameByCode`,
+which the loader never read. All ten affected **zero** live rows. The bulk
+name-to-code rewrite would have been a user-visible regression (`Poland` -> `PL`,
+5 location tests failing) for no correctness gain, so it was dropped in favour of
+`ba17bac7`.
+
+Also corrected: `personio_sources` fetching 2 and keeping 0 is **not** a bug. A
+live read-only probe returned one speculative title and one Remote-location QA
+role, both correctly dropped.
+
+## Added after the coverage check
+
+`tools/coverage_audit.py` (`22fec319`) classifies GJI-vs-feed misses into
+actionable buckets. It is the tool that should drive board registration, including
+the four verified-live boards held back from this plan:
+
+| Studio | Board | Live | TA roles |
+|---|---|---|---|
+| 2K Czech | greenhouse `2kczech` | 7 | 1 |
+| Hangar 13 | greenhouse `hangar13` | 9 | 2 (same role as 2K Czech) |
+| Companion Group | recruitee | 12 | 1 |
+| Yggdrasil | smartrecruiters `YggdrasilSandbox` | 4 | 1 |
+
+Voodoo is additionally fixed in unreleased 0.3.007 and needs no registration.
 
 ## Out of scope by decision
 
