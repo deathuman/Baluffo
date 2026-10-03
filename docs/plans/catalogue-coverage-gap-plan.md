@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** catalogue sweep shows Baluffo carries 31.7% of the index's openings; 10,465 openings are absent and most are on boards it could read
 > - **Verified against:** 79ef50b9
-> - **Status:** phase 0 landed; phase 1 next; phase 2 diagnosis not started
+> - **Status:** phase 0 landed; phase 1 extraction and verification landed, registration pending; phase 2 rescoped after its premise was disproved
 
 # Closing the catalogue coverage gap
 
@@ -30,13 +30,64 @@ Missing, decomposed against the live registry:
 
 | Cause | Count |
 |---|---|
-| Board not registered, studio not in registry | 2,080 |
-| Board not registered, studio has other boards | 2,102 |
-| Board not registered, no studio relationship | 748 |
-| Board registered but the opening is not collected | 4,589 |
+| Board not registered | 5,279 |
+| Studio is in the feed, this role is not | 5,128 |
+| Board registered, opening not collected | 58 |
 
-**4,930 of 10,465 (47%) are unreachable only because the board was never
+**5,279 of 10,465 (50%) are unreachable only because the board was never
 registered.** That is mechanical work, not a research problem.
+
+### Correction: the "registered but not collecting" bucket was a measurement bug
+
+An earlier version of this table reported 4,589 rows as "board registered, opening
+not collected", and phase 2 was planned around diagnosing them. That number was
+wrong. The audit matched a registry row by testing whether *any* path segment of a
+job URL was a substring of *any* registry id, which is loose enough to call most
+things registered: 4,564 of the 4,589 matched only that way, and **0** matched by
+board identity.
+
+The real figure is **58**, and they are genuine per-role gaps. Matched and missing
+totals did not move, so the fix redistributed rows between causes rather than
+inventing or hiding coverage.
+
+This matters beyond the bookkeeping. The wrong bucket named a *collection* failure
+— "Baluffo reads this board but does not collect the role" — where the cause was
+registration. Phase 2 would have hunted for a collection bug that does not exist
+while phase 1 quietly fixed it.
+
+### Board identity is host + tenant
+
+Both sides of the registry comparison now resolve identity through one shared leaf,
+`tools/coverage_board_identity.py`, because the audit's join and the board tool's
+candidate builder must agree exactly or the same opening lands in one bucket when
+measured and another when registered.
+
+| Rule | Why the obvious alternative is wrong |
+|---|---|
+| Host + tenant, never the id string | The registry is internally inconsistent about trailing slashes — of 2,030 active static rows, 778 end in `/`, 1,252 do not. String comparison calls one real board two boards. |
+| Both sides use one tenant resolver | Reading a registry id's tenant from the last path segment while reading a candidate's from the job URL's host made every single-site static board look unregistered. |
+| Never the studio label | One board is registered both as "Lost Boys Interactive" and "Lost Boys Interactive (Embracer Group)". |
+
+Correcting the join dropped proposed boards from 966 to **712** and recoverable
+openings from 8,374 to **6,706**; the earlier figure double-counted 319 boards the
+registry already serves.
+
+### Tenant position is per platform
+
+Getting this wrong is the worst available outcome: a multi-tenant platform collapsed
+onto one host-root row leaves the registry looking served while every tenant's
+openings stay missing.
+
+| Shape | Examples |
+|---|---|
+| Subdomain | `kurogame.jobs.feishu.cn`, `nintendoeurope.csod.com` |
+| First segment | `job-boards.greenhouse.io/2kczech`, `jobs.jobvite.com/asus` |
+| After chrome | `hrmos.co/pages/capcom`, `herp.careers/v1/charabank` |
+| Host | `blooberteam.recruitee.com`, `jobs.ea.com` |
+
+`hrmos.co` is the case that proved it: 31 tenants and 845 openings on the apex
+host — Capcom, Square Enix, Cygames, Nexon, Game Freak, Spike Chunsoft — which a
+host-root rule reports as a single served board.
 
 ### Provenance of what Baluffo *does* carry
 
@@ -75,30 +126,63 @@ URL fields at all, so board identity has to be recovered by parsing `id`.
 
 ## Phase 1 — register the missing boards
 
-Target: the 4,930 openings behind unregistered boards.
+Target: 712 boards behind 6,706 openings, plus a vendor backlog that needs adapters
+rather than registrations.
 
-1. **Board candidate extraction.** Resolve host + tenant/slug per missed opening.
-   The top hosts are adapters Baluffo already supports: `jobs.smartrecruiters.com`
-   (272), `apply.workable.com` (258), `job-boards.greenhouse.io` (209),
-   `jobs.ashbyhq.com` (173), `myworkdayjobs.com` (296 across tenants),
-   `jobs.lever.co` (153). The tail runs to 30 vendors including `feishu`, `hrmos`,
-   `oracle-hcm`, `bamboohr`, `huntflow`, `csod`.
-2. **Probe before proposing.** Reuse `tools/coverage_probe.py`, including its
-   known-good control and retry discipline, so no board is registered on a
-   single-endpoint guess.
-3. **Emit registry-ready rows** for boards that verifiably serve openings, with
-   no volume threshold: a single live opening justifies the row.
+1. **Board candidate extraction** — `tools/coverage_boards.py`, done. Resolves
+   host + tenant per missed opening and dedupes on board identity.
+2. **Verify before proposing** — `tools/coverage_verify.py`, done. Resolving a
+   tenant does not mean the board would collect anything, so each candidate is
+   fetched and given a three-way verdict.
+3. **Register the `collects` boards.** Not started.
 4. **Apply under the repo's mutation guardrails** — match rows by host rather than
    studio label, print the plan, assert the size, require an explicit apply flag,
    back up to `_out/`, read back after writing.
 
-Sequencing note: `workday` alone is 296 openings and `feishu` 148, so per-vendor
-adapter support is the rate limiter, not the row count.
+### Verification is three-way on purpose
 
-## Phase 2 — fix "registered but not collecting" (4,589)
+`collects` and `empty` are answers; `unknown` is the absence of one and is never
+folded into either. Writing a failed fetch as `empty` asserts a board has no
+openings when in fact a timeout proved nothing — and that quietly re-creates the
+gap this effort exists to close. A broken adapter control downgrades all of that
+adapter's boards to `unknown`, because a dead fetcher is otherwise indistinguishable
+from a vendor of dead boards and the fix never gets made.
 
-Not started. This needs diagnosis before code; each candidate cause below must be
-measured, not assumed:
+Building the verifier found four defects, each of which would have made registration
+look better than reality:
+
+- **Workday reported `collects, 1 row` for every board.** Its CXS endpoint is a POST
+  behind a certifi-anchored TLS context, because the OS cert store poisons chain
+  building for `*.myworkdayjobs.com`. A GET hits the SPA redirect stub
+  `{"widget":"redirect","externalSpa":true}`, and the row counter read that single
+  object as one row. Now verified through the production runner's own CXS helper.
+- **Three of four adapter controls were dead URLs.** A dead control silently marks
+  every board on that adapter `unknown`, so all four were re-picked by fetching them
+  and confirming the count: greenhouse 3, lever 12, ashby 157, smartrecruiters 200.
+- **The row counter fell back to "any non-empty dict is one row"** — the Workday bug.
+- **An unrecognised shape was reported as `empty`** rather than `unknown`.
+
+### Adapter backlog
+
+Vendors with no adapter are a counted backlog, not a silent gap. Grouped by tenant
+because board count is meaningless without an adapter:
+
+| Vendor | Openings | Boards |
+|---|---|---|
+| hrmos | 845 | 31 |
+| feishu | 826 | 8 |
+| csod | 18 | 1 |
+
+1,689 openings — 16% of the gap — are unreachable until an adapter exists, not
+until a row is registered. That is a different piece of work from phase 1.
+
+## Phase 2 — the remaining 5,186 rows
+
+Rescoped. The original phase 2 was 4,589 rows diagnosed as "registered but not
+collecting", and that bucket turned out to be 98% measurement artifact. What remains
+is 5,128 studio-covered-but-role-absent plus 58 registered-no-role, and neither has
+been diagnosed yet. Candidate causes, each of which must be measured rather than
+assumed:
 
 - quality gates dropping legitimate openings — the same weakness that lets
   Gamucatex's nav text through may also be dropping real roles
@@ -107,6 +191,10 @@ measured, not assumed:
   verifications burning the source budget"
 - freshness and cadence skips
 - boards registered against a stale tenant slug after a rebrand
+
+Note the distinct question this asks. Phase 1 is "is the board registered?". Phase 2
+is "the board is registered and the role is live — why did the pipeline drop it?",
+which is a quality-gate and budget problem, not a registration one.
 
 ## Phase 3 — the spreadsheet dependency
 
