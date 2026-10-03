@@ -105,6 +105,12 @@ def http_get(url: str, *, timeout: float = 40.0, attempts: int = 3) -> tuple[int
     return last
 
 
+def host_of(url: str) -> str:
+    """Host of a URL, lowercased and without a leading ``www.``."""
+    parsed = urlparse(url if "//" in str(url or "") else f"//{url}")
+    return (parsed.netloc or "").lower().removeprefix("www.")
+
+
 def board_root(url: str) -> str:
     """The board's own root, so a 404 on a job path is not read as a dead board."""
     parsed = urlparse(url)
