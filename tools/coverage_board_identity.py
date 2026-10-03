@@ -249,13 +249,24 @@ def build_candidate(source_url: str, *, company: str = "") -> dict[str, Any]:
     host = host_of(source_url)
     segments = segments_of(source_url)
     adapter = adapter_for_host(host)
-    scheme = "https"
     tenant = resolve_tenant(host, segments)
     if adapter == "oracle_hcm":
         tenant = (
             next((s for s in segments if s not in {"hcmUI", "CandidateExperience"}), "") or host
         )
+    return describe_board(adapter=adapter, host=host, tenant=tenant, company=company)
 
+
+def describe_board(*, adapter: str, host: str, tenant: str, company: str = "") -> dict[str, Any]:
+    """Fill in a board's locator fields and registry id from adapter + host + tenant.
+
+    Split out from :func:`build_candidate` so a caller holding a resolved board
+    identity -- rather than a job URL -- can produce the same row. Regenerating the
+    curated catalogue needs exactly that: audit output carries adapter, host and
+    tenant but not the original job URL, and rebuilding from tenant is what keeps an
+    ``api_url`` on every row where one exists.
+    """
+    scheme = "https"
     row: dict[str, Any] = {"adapter": adapter, "host": host, "tenant": tenant, "company": company}
     if adapter not in ADAPTER_ID_FORMAT:
         row["status"] = STATUS_UNSUPPORTED
@@ -265,13 +276,41 @@ def build_candidate(source_url: str, *, company: str = "") -> dict[str, Any]:
         return row
 
     base = f"{scheme}://{host}"
+    # `api_url` is load-bearing, not decoration: discovery's `endpoint_url` probes the
+    # first of api_url, feed_url, board_url, listing_url, and auto-approval requires a
+    # positive job count. A row carrying only `board_url` sends the probe at the
+    # human-facing page, which for a single-page app ships no job links -- so the
+    # board reads as healthy with zero jobs and sits in pending forever.
+    #
+    # Measured on this catalogue: the only two adapters that carried an api_url
+    # (smartrecruiters, recruitee) were the only provider adapters where every board
+    # landed, while greenhouse, lever, ashby, workday, bamboohr and breezy landed none
+    # -- despite APIs that return 18-122 rows on a plain GET.
     if adapter == "greenhouse":
-        row.update({"slug": tenant, "id": f"greenhouse:slug:{tenant.lower()}"})
+        row.update(
+            {
+                "slug": tenant,
+                "api_url": f"https://boards-api.greenhouse.io/v1/boards/{tenant.lower()}/jobs?content=true",
+                "id": f"greenhouse:slug:{tenant.lower()}",
+            }
+        )
     elif adapter == "lever":
-        row.update({"account": tenant, "id": f"lever:account:{tenant.lower()}"})
+        row.update(
+            {
+                "account": tenant,
+                "api_url": f"https://api.lever.co/v0/postings/{tenant.lower()}?mode=json",
+                "id": f"lever:account:{tenant.lower()}",
+            }
+        )
     elif adapter == "ashby":
         board_url = f"{base}/{tenant}"
-        row.update({"board_url": board_url, "id": f"ashby:board_url:{board_url}"})
+        row.update(
+            {
+                "board_url": board_url,
+                "api_url": f"https://api.ashbyhq.com/posting-api/job-board/{tenant}",
+                "id": f"ashby:board_url:{board_url}",
+            }
+        )
     elif adapter == "smartrecruiters":
         org = re.sub(r"[^A-Za-z0-9]", "", tenant)
         row.update(
@@ -295,7 +334,15 @@ def build_candidate(source_url: str, *, company: str = "") -> dict[str, Any]:
         row.update({"listing_url": url, "id": f"bamboohr:listing_url:{url}"})
     elif adapter == "breezy":
         url = f"{base}/"
-        row.update({"board_url": url, "id": f"breezy:board_url:{url}"})
+        row.update(
+            {
+                "board_url": url,
+                # Verified: https://feeds.breedy.hr/<tenant> does not resolve, while
+                # https://<tenant>.breezy.hr/json returns the posting list.
+                "api_url": f"{base}/json",
+                "id": f"breezy:board_url:{url}",
+            }
+        )
     elif adapter == "jazzhr":
         url = f"{base}/apply"
         row.update({"board_url": url, "id": f"jazzhr:board_url:{url}"})
@@ -305,7 +352,8 @@ def build_candidate(source_url: str, *, company: str = "") -> dict[str, Any]:
     elif adapter == "workable":
         row.update({"account": tenant, "id": f"workable:account:{tenant}"})
     elif adapter == "workday":
-        url = "/".join([base, *segments[:1]])
+        # The tenant is the board's path segment, which is also the CXS site name.
+        url = f"{base}/{tenant}"
         row.update({"listing_url": url, "id": f"workday:listing_url:{url}"})
     elif adapter == "oracle_hcm":
         row.update({"id": f"oracle_hcm:listing_url:{base}", "listing_url": base})

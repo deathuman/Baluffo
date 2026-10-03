@@ -613,6 +613,16 @@ def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
         "workable": ("jobs", r'(?is)href=["\'][^"\']+/j/[^"\']+["\']'),
         "recruitee": ("offers", r'(?is)href=["\'][^"\']+/o/[^"\']+["\']'),
         "pinpoint": ("data", r'(?is)href=["\'][^"\']+/postings/[^"\']+["\']'),
+        # Ashby and Breezy were missing here, so a board whose api_url returns JSON
+        # fell through to an anchor-counting branch that only ever matches HTML. The
+        # effect was that every Ashby board probed as zero jobs and sat in pending
+        # forever despite its API returning 21-36 rows: measured across the curated
+        # set, Ashby landed 0 of 39 boards while Greenhouse and Lever, which were
+        # listed, landed 40 of 44 and 20 of 22.
+        #
+        # Ashby's API returns {"jobs": [...]}; Breezy's /json returns a bare array.
+        "ashby": ("jobs", r'(?is)href=["\'][^"\']+/job/[^"\']+["\']'),
+        "breezy": (None, r'(?is)href=["\'][^"\']+/j/[^"\']+["\']'),
     }
     spec = provider_specs.get(adapter)
     if spec is None:
@@ -620,6 +630,9 @@ def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
     json_key, html_pattern = spec
     if adapter == "lever":
         return _json_count(text, "data") if text.strip().startswith("{") else _json_count(text)
+    if adapter == "breezy":
+        # Breezy returns a top-level array, so there is no envelope key to read.
+        return _json_count(text, None)
     return _json_or_html_count(text, json_key=json_key, html_pattern=html_pattern)
 
 
