@@ -42,41 +42,92 @@ def _candidate(**overrides: object) -> dict[str, object]:
 
 
 # --- Row counting ---------------------------------------------------------
+#
+# count_rows returns (rows, anchor_count). anchor_count is 0 for JSON and is what
+# distinguishes "empty board" from "listing only renders in a browser".
 
 
 def test_a_json_array_counts_as_its_length() -> None:
-    assert verify_mod.count_rows('[{"a":1},{"b":2}]') == 2
+    assert verify_mod.count_rows('[{"a":1},{"b":2}]')[0] == 2
 
 
 def test_the_usual_listing_envelopes_are_recognised() -> None:
     for key in ("jobs", "postings", "results", "offers", "items", "content", "jobPostings"):
         payload = '{"' + key + '":[{"x":1},{"x":2}]}'
-        assert verify_mod.count_rows(payload) == 2, key
+        assert verify_mod.count_rows(payload)[0] == 2, key
 
 
 def test_workday_cxs_envelope_is_recognised_by_its_total() -> None:
     """Workday returns total plus jobPostings; both are read."""
-    assert verify_mod.count_rows('{"total": 154, "jobPostings": [{"t":1}]}') == 1
+    assert verify_mod.count_rows('{"total": 154, "jobPostings": [{"t":1}]}')[0] == 1
 
 
 def test_a_bare_object_is_not_silently_one_row() -> None:
     """This is the Workday SPA stub, and counting it as 1 row invented coverage."""
-    payload = '{"widget":"redirect","externalSpa":true}'
-    assert verify_mod.count_rows(payload) is None
+    assert verify_mod.count_rows('{"widget":"redirect","externalSpa":true}')[0] is None
 
 
-def test_non_json_is_not_counted() -> None:
-    assert verify_mod.count_rows("<html>maintenance</html>") is None
-    assert verify_mod.count_rows("") is None
+def test_non_json_with_no_job_links_is_not_counted() -> None:
+    assert verify_mod.count_rows("<html>maintenance</html>")[0] is None
+    assert verify_mod.count_rows("")[0] is None
 
 
 def test_an_empty_listing_is_zero_not_unknown() -> None:
-    assert verify_mod.count_rows('{"jobs": []}') == 0
+    assert verify_mod.count_rows('{"jobs": []}')[0] == 0
 
 
 def test_an_empty_envelope_is_a_real_answer() -> None:
     """``{}`` is a valid, empty listing. Only a non-empty unknown shape is unknown."""
-    assert verify_mod.count_rows("{}") == 0
+    assert verify_mod.count_rows("{}")[0] == 0
+
+
+# --- HTML listing counting ------------------------------------------------
+
+
+def test_job_detail_links_are_counted_as_rows() -> None:
+    html = (
+        '<a href="/jobs/1234">one</a><a href="/jobs/5678">two</a>'
+        '<a href="/about">nav</a><a href="#top">top</a>'
+    )
+    rows, anchors = verify_mod.count_rows(html)
+    assert rows == 2
+    assert anchors == 4, "nav links still count as anchors, just not as rows"
+
+
+def test_jsonld_jobposting_is_a_row_signal() -> None:
+    html = '<script type="application/ld+json">{"@type":"JobPosting","title":"a"}</script>'
+    assert verify_mod.count_rows(html)[0] == 1
+
+
+def test_a_js_shell_is_unknown_not_empty() -> None:
+    """Boards the runtime collects read as near-empty to a plain GET.
+
+    Measured: careers.wbd.com/jobs has 24 anchors for 80 rendered rows, and
+    activategames.bamboohr.com/careers has 1 anchor for 17 rendered rows. Calling
+    that `empty` would file a working board as dead.
+    """
+    html = '<a href="/about">a</a><a href="/team">b</a>'
+    rows, anchors = verify_mod.count_rows(html)
+    assert rows is None
+    assert anchors == 2
+
+
+def test_a_js_rendered_listing_is_reported_as_such(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        verify_mod.probe,
+        "http_get",
+        lambda *a, **k: (200, '<a href="/about">a</a><a href="/team">b</a>'),
+    )
+    result = verify_mod.verify_candidate(
+        _candidate(
+            adapter="static",
+            listing_url="https://x.example",
+            id="static:listing_url:https://x.example",
+        )
+    )
+    assert result["verdict"] == verify_mod.VERDICT_UNKNOWN
+    assert "JS-rendered" in result["reason"]
+    assert result["anchors"] == 2
 
 
 # --- List URL derivation --------------------------------------------------

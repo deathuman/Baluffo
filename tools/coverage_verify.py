@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import re
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -34,6 +35,19 @@ from typing import Any
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+_TOOLS_DIR = str(Path(__file__).resolve().parent)
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+# Imported after the path setup above: this tool runs from tools/, where the repo
+# root is not otherwise importable. An earlier version put the insert after the
+# import and every background run died with ModuleNotFoundError on `src`.
+from src.jobs.adapters.static_detail_heuristics_filter import (  # noqa: E402, I001
+    _DEFAULT_DETAIL_PATH_TOKENS,
+    _DEFAULT_DETAIL_QUERY_KEYS,
+    is_probable_job_detail_url,
+)
 
 
 def _load(name: str, path: Path) -> Any:
@@ -80,6 +94,12 @@ ADAPTER_CONTROL: dict[str, str] = {
 # production code is also what keeps this tool honest about what the pipeline can
 # actually fetch.
 STRUCTURED_ADAPTERS = ("workday",)
+
+# A listing page carrying at most this many anchors is treated as JS-rendered rather
+# than unreadable. Calibrated against boards the runtime already collects: the raw
+# HTML of careers.wbd.com/jobs has 24 anchors for 80 rendered rows, and
+# activategames.bamboohr.com/careers has 1 anchor for 17 rendered rows.
+_JS_RENDER_ANCHOR_CEILING = 60
 
 # Where each adapter's board data lives, keyed by the id fields coverage_boards emits.
 LIST_URL_FIELD = {
@@ -129,15 +149,98 @@ def list_url_for(candidate: Mapping[str, Any]) -> str:
     return str(candidate.get(field) or "")
 
 
-def count_rows(payload: str) -> int | None:
-    """Rows in a vendor payload, or None when the body is not JSON we recognise."""
-    import json as _json
+def count_html_rows(html: str) -> tuple[int | None, int]:
+    """Job rows in an HTML listing, plus the anchor count that was examined.
 
+    Needed because most of the candidate boards are HTML, not JSON: of the 712
+    verified, every board on a JSON API adapter collected (greenhouse 46, ashby 40,
+    lever 22, workday 17, smartrecruiters 17, recruitee 3) and all 567 unknowns were
+    HTML or XML boards -- static 432, bamboohr 47, workable 29, personio 21, breezy
+    15, teamtailor 13, jazzhr 8 -- that a JSON-only counter could not read.
+
+    Detection delegates to the runtime's own ``is_probable_job_detail_url`` with the
+    runtime's own default tokens, for the same reason the Workday verdict uses
+    production code: this tool answers "would registering this board collect
+    anything", and a second copy of the row rules would answer a subtly different
+    question while looking authoritative. Passing empty token lists here disables
+    detection entirely, which is what the first version did and why every board
+    came back unreadable.
+
+    The anchor count matters as much as the row count. Measured on boards Baluffo
+    already collects, a plain GET sees 24 anchors on ``careers.wbd.com/jobs`` and 1
+    on ``activategames.bamboohr.com/careers`` -- against 80 and 17 rows the runtime
+    gets via its browser path. So "no rows, very few anchors" means the listing is
+    JS-rendered, which is a fact about the board rather than an unreadable page, and
+    it is reported as such instead of being guessed either way.
+    """
+    anchors = re.findall(r"""<a\b[^>]*?href=["']([^"']+)["']""", html, re.I)
+    seen: set[str] = set()
+    for href in anchors:
+        url = href.strip()
+        if not url or url.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        try:
+            if is_probable_job_detail_url(
+                url,
+                {},
+                default_path_tokens=list(_DEFAULT_DETAIL_PATH_TOKENS),
+                default_query_keys=list(_DEFAULT_DETAIL_QUERY_KEYS),
+            ):
+                seen.add(url)
+        except Exception:
+            continue
+    jsonld = _jsonld_postings(html)
+    if jsonld is not None:
+        return max(len(seen), jsonld), len(anchors)
+    return (len(seen) or None), len(anchors)
+
+
+def _jsonld_postings(html: str) -> int | None:
+    """JobPosting entries in JSON-LD, or None when the page declares none."""
+    total = 0
+    found = False
+    for block in re.findall(
+        r"""<script[^>]+type=["']application/ld\+json["'][^>]*>(.*?)</script>""",
+        html,
+        re.I | re.S,
+    ):
+        try:
+            data = json.loads(block.strip())
+        except Exception:
+            continue
+        for node in data if isinstance(data, list) else [data]:
+            if not isinstance(node, dict):
+                continue
+            kind = node.get("@type")
+            kinds = kind if isinstance(kind, list) else [kind]
+            if any(str(k).lower() == "jobposting" for k in kinds):
+                found = True
+                total += 1
+            graph = node.get("@graph")
+            if isinstance(graph, list):
+                for child in graph:
+                    ctype = child.get("@type") if isinstance(child, dict) else None
+                    ctypes = ctype if isinstance(ctype, list) else [ctype]
+                    if any(str(k).lower() == "jobposting" for k in ctypes):
+                        found = True
+                        total += 1
+    return total if found else None
+
+
+def count_rows(payload: str) -> tuple[int | None, int]:
+    """``(rows, anchor_count)`` for a vendor payload.
+
+    JSON shapes are counted directly; anything else is treated as HTML/XML. The
+    anchor count is 0 for JSON responses.
+    """
     try:
-        data = _json.loads(payload)
+        data = json.loads(payload)
     except Exception:
-        return None
-    return _row_count(data)
+        return count_html_rows(payload)
+    rows = _row_count(data)
+    if rows is not None:
+        return rows, 0
+    return count_html_rows(payload)
 
 
 # Payload keys that actually hold listing rows. Anything outside this set is
@@ -261,23 +364,28 @@ def verify_candidate(candidate: Mapping[str, Any], *, timeout: float = 40.0) -> 
             "reason": f"list endpoint returned HTTP {status}",
             "status": status,
             "rows": 0,
+            "anchors": 0,
         }
-    rows = count_rows(payload)
-    if rows is None:
+    rows, anchors = count_rows(payload)
+    if rows:
+        verdict, reason = VERDICT_COLLECTS, f"list endpoint returned {rows} rows"
+    elif rows == 0:
+        verdict, reason = VERDICT_EMPTY, "list endpoint answered with an empty body"
+    elif anchors and anchors <= _JS_RENDER_ANCHOR_CEILING:
+        # A real board, behind a listing that only renders in a browser. Measured on
+        # boards the runtime already collects: a plain GET sees 24 anchors on
+        # careers.wbd.com/jobs and 1 on activategames.bamboohr.com/careers, against
+        # 80 and 17 rows the runtime gets via its browser path. So this is a fact
+        # about the board, not an unreadable page -- but a GET still cannot prove the
+        # board yields rows, so the verdict stays undecided rather than guessed.
+        verdict, reason = (
+            VERDICT_UNKNOWN,
+            f"listing is JS-rendered: {anchors} anchor(s) in the raw HTML, no job rows",
+        )
+    else:
         verdict, reason = (
             VERDICT_UNKNOWN,
             f"list endpoint returned {len(payload)} bytes in an unrecognised shape",
-        )
-    elif rows:
-        verdict, reason = VERDICT_COLLECTS, f"list endpoint returned {rows} rows"
-    elif len(payload.strip()) < 200:
-        verdict, reason = VERDICT_EMPTY, "list endpoint answered with an empty body"
-    else:
-        # A substantial body that yields no rows is a shape we failed to parse, not
-        # an empty board. Filing it as empty would hide a working board.
-        verdict, reason = (
-            VERDICT_UNKNOWN,
-            f"list endpoint returned {len(payload)} bytes but no recognisable rows",
         )
     return {
         "id": candidate.get("id"),
@@ -285,7 +393,8 @@ def verify_candidate(candidate: Mapping[str, Any], *, timeout: float = 40.0) -> 
         "verdict": verdict,
         "reason": reason,
         "status": status,
-        "rows": rows,
+        "rows": rows or 0,
+        "anchors": anchors,
         "url": url,
     }
 
