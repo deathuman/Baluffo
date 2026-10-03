@@ -190,6 +190,91 @@ def test_label_related_requires_a_prefix_stem() -> None:
     assert audit_mod._labels_related("sega", "sega europe") is False
 
 
+# --- Catalogue sweep ------------------------------------------------------
+
+
+def test_prefix_index_narrows_candidates_without_changing_verdicts() -> None:
+    """The prefix index is a speed optimisation, so it must be verdict-neutral."""
+    feed = [
+        {"title": "Technical Artist", "company": "Example Studios"},
+        {"title": "Producer", "company": "Totally Other Co"},
+        {"title": "Designer", "company": "Exampleton Labs"},
+    ]
+    index = audit_mod.build_feed_index(feed, company_key="company")
+    prefix = audit_mod.build_label_prefix_index(index)
+    gji = _gji(company="Example Studios", title="Technical Artist")
+    slow = audit_mod.find_match(gji, index, company_key="company")
+    fast = audit_mod.find_match(gji, index, company_key="company", prefix_index=prefix)
+    assert slow[0] is not None
+    assert fast[0] is not None
+    assert slow[1:] == fast[1:]
+
+
+def test_prefix_index_groups_by_leading_six_characters() -> None:
+    index = audit_mod.build_feed_index(
+        [{"title": "x", "company": "Exampleton Labs"}, {"title": "y", "company": "Short"}],
+        company_key="company",
+    )
+    prefix = audit_mod.build_label_prefix_index(index)
+    # Keys are the 6-character stem, not the whole label.
+    assert prefix["exampl"] == {"exampletonlabs"}
+    # Too short to be related to anything, so it is not indexed at all.
+    assert "short" not in prefix
+
+
+def test_short_gji_label_still_matches_with_a_prefix_index() -> None:
+    """A label under 6 chars cannot be related, so the scan must stay available."""
+    index = audit_mod.build_feed_index(
+        [{"title": "Artist", "company": "Acme"}], company_key="company"
+    )
+    prefix = audit_mod.build_label_prefix_index(index)
+    _, _, studio_known = audit_mod.find_match(
+        _gji(company="Acme", title="Nothing Alike"),
+        index,
+        company_key="company",
+        prefix_index=prefix,
+    )
+    assert studio_known is True
+
+
+def test_category_filter_restricts_the_compared_rows() -> None:
+    gji = [
+        {**_gji(company="Alpha", title="Technical Artist"), "category": "Art"},
+        {**_gji(company="Beta", title="Technical Artist"), "category": "Engineering"},
+    ]
+    feed = [{"title": "Technical Artist", "company": "Alpha", "country": "FR"}]
+    art_only = audit_mod.audit(gji, feed, query="Technical Artist", categories={"Art"})
+    assert art_only["gjiConsidered"] == 1
+    assert art_only["gjiMatched"] == 1
+
+    both = audit_mod.audit(gji, feed, query="Technical Artist", categories={"Art", "Engineering"})
+    assert both["gjiConsidered"] == 2
+
+
+def test_sweep_reports_every_published_discipline() -> None:
+    gji = [
+        {**_gji(company="Alpha", title="Technical Artist"), "category": "Art"},
+        {**_gji(company="Beta", title="Producer"), "category": "Production"},
+        {**_gji(company="Gamma", title="Narrative Writer"), "category": "Narrative"},
+    ]
+    feed = [{"title": "Technical Artist", "company": "Alpha", "country": "FR"}]
+    result = audit_mod.sweep(gji, feed, region="ANY")
+
+    assert set(result["byCategory"]) == {"Art", "Production", "Narrative"}
+    assert result["byCategory"]["Art"]["matchRatePct"] == 100.0
+    assert result["byCategory"]["Production"]["matchRatePct"] == 0.0
+    # Worst coverage first: an audit should lead with the thin disciplines.
+    assert [c for c in result["byCategory"]][-1] == "Art"
+    assert result["overall"]["gjiConsidered"] == 3
+
+
+def test_sweep_skips_disciplines_with_nothing_in_region() -> None:
+    gji = [{**_gji(company="Alpha"), "category": "Art", "country": "US"}]
+    result = audit_mod.sweep(gji, [], region="EU")
+    assert result["byCategory"] == {}
+    assert result["overall"]["matchRatePct"] is None
+
+
 # --- End to end -----------------------------------------------------------
 
 

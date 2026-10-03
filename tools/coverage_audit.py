@@ -271,6 +271,7 @@ def find_match(
     feed_index: Mapping[str, list[Mapping[str, Any]]],
     *,
     company_key: str,
+    prefix_index: Mapping[str, set[str]] | None = None,
 ) -> tuple[Mapping[str, Any] | None, bool, bool]:
     """Match one GJI row against the feed.
 
@@ -286,11 +287,15 @@ def find_match(
     gji_label = normalize_token(strip_bracket_prefix(gji_row.get(company_key)))
     gji_titles = _title_variants(gji_row, company_key=company_key)
     studio_known = False
-    for label, candidates in feed_index.items():
+    if prefix_index is not None and len(gji_label) >= _LABEL_PREFIX_LEN:
+        labels: Iterable[str] = prefix_index.get(gji_label[:_LABEL_PREFIX_LEN], set())
+    else:
+        labels = feed_index
+    for label in labels:
         if not _labels_related(gji_label, label):
             continue
         studio_known = True
-        for candidate in candidates:
+        for candidate in feed_index[label]:
             if _title_variants(candidate, company_key=company_key) & gji_titles:
                 return candidate, not _labels_match(gji_label, label), True
     return None, False, studio_known
@@ -311,6 +316,22 @@ def build_feed_index(
             row
         )
     return index
+
+
+# `_labels_related` only ever relates labels where the shorter is a prefix of the
+# longer and at least 6 characters, so bucketing on the first 6 characters makes
+# candidate lookup near-constant instead of a scan of every studio in the feed.
+_LABEL_PREFIX_LEN = 6
+
+
+def build_label_prefix_index(
+    feed_index: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, set[str]]:
+    prefixes: dict[str, set[str]] = {}
+    for label in feed_index:
+        if len(label) >= _LABEL_PREFIX_LEN:
+            prefixes.setdefault(label[:_LABEL_PREFIX_LEN], set()).add(label)
+    return prefixes
 
 
 def registry_ids_for_board(registry_ids: set[str], source_url: str) -> list[str]:
@@ -371,9 +392,11 @@ def audit(
     live_boards: Mapping[str, bool] | None = None,
     gji_company_key: str = "company",
     feed_company_key: str = "company",
+    categories: set[str] | None = None,
 ) -> dict[str, Any]:
     ids = registry_ids or set()
     feed_index = build_feed_index(feed_rows, company_key=feed_company_key)
+    prefix_index = build_label_prefix_index(feed_index)
     matched_feed: list[Mapping[str, Any]] = []
     matched_gji: list[Mapping[str, Any]] = []
     misses: list[dict[str, Any]] = []
@@ -383,10 +406,12 @@ def audit(
     for gji_row in gji_rows:
         if region.upper() == "EU" and not in_europe(gji_row):
             continue
+        if categories is not None and str(gji_row.get("category")) not in categories:
+            continue
         if not matches_query(gji_row, query, company_key=gji_company_key):
             continue
         found, fuzzy_label, studio_known = find_match(
-            gji_row, feed_index, company_key=feed_company_key
+            gji_row, feed_index, company_key=feed_company_key, prefix_index=prefix_index
         )
         if found is not None:
             if fuzzy_label:
@@ -477,6 +502,85 @@ def render_summary(result: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def sweep(
+    gji_rows: Sequence[Mapping[str, Any]],
+    feed_rows: Sequence[Mapping[str, Any]],
+    *,
+    region: str = "EU",
+    registry_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Audit every discipline the index publishes, not one query at a time.
+
+    One query at a time hides the shape of the gap. Sweeping the categories shows
+    whether a discipline is thin because its boards are unregistered or because the
+    whole discipline is served differently, which is the difference between
+    registering boards and doing nothing.
+    """
+    categories = sorted({str(row.get("category")) for row in gji_rows if row.get("category")})
+    per_category: dict[str, Any] = {}
+    for category in categories:
+        result = audit(
+            gji_rows,
+            feed_rows,
+            region=region,
+            registry_ids=registry_ids,
+            categories={category},
+        )
+        considered = result["gjiConsidered"]
+        per_category[category] = {
+            "gjiConsidered": considered,
+            "gjiMatched": result["gjiMatched"],
+            "gjiMissing": result["gjiMissing"],
+            "matchRatePct": round(result["gjiMatched"] * 100 / considered, 1)
+            if considered
+            else None,
+            "buckets": result["buckets"],
+        }
+    overall = audit(gji_rows, feed_rows, region=region, registry_ids=registry_ids)
+    # Worst coverage first: the point of a sweep is to lead with the thin disciplines.
+    ranked = sorted(
+        (c for c in per_category.items() if c[1]["gjiConsidered"]),
+        key=lambda item: (item[1]["matchRatePct"] or 0.0, -item[1]["gjiConsidered"]),
+    )
+    return {
+        "region": region.upper(),
+        "overall": {
+            "gjiConsidered": overall["gjiConsidered"],
+            "gjiMatched": overall["gjiMatched"],
+            "gjiMissing": overall["gjiMissing"],
+            "matchRatePct": round(overall["gjiMatched"] * 100 / overall["gjiConsidered"], 1)
+            if overall["gjiConsidered"]
+            else None,
+            "buckets": overall["buckets"],
+        },
+        "byCategory": dict(ranked),
+        "caveats": overall["caveats"],
+    }
+
+
+def render_sweep(result: Mapping[str, Any]) -> str:
+    overall = result["overall"]
+    lines = [
+        f"region={result['region']}  GJI considered {overall['gjiConsidered']}, "
+        f"matched {overall['gjiMatched']} ({overall['matchRatePct']}%), "
+        f"missing {overall['gjiMissing']}",
+        "",
+        f"{'discipline':<24} {'considered':>10} {'matched':>8} {'rate':>7}  top bucket",
+        "-" * 84,
+    ]
+    for category, stats in result["byCategory"].items():
+        buckets = stats["buckets"] or {}
+        top = max(buckets.items(), key=lambda kv: kv[1])[0] if buckets else "-"
+        lines.append(
+            f"{category[:24]:<24} {stats['gjiConsidered']:>10} {stats['gjiMatched']:>8} "
+            f"{str(stats['matchRatePct']):>7}  {top}"
+        )
+    lines.append("")
+    for caveat in result.get("caveats") or []:
+        lines.append(f"  - {caveat}")
+    return "\n".join(lines)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--feed", required=True, type=Path, help="Baluffo job feed JSON")
@@ -485,6 +589,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--registry", type=Path, help="source-registry-active.json[.gz]")
     parser.add_argument("--query", default="", help="title/company search text")
     parser.add_argument("--region", default="EU", choices=["EU", "ANY"])
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="audit every discipline the index publishes instead of one query",
+    )
     parser.add_argument(
         "--live-probe",
         type=Path,
@@ -500,12 +609,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(payload, Mapping):
             live_boards = {str(key): bool(value) for key, value in payload.items()}
 
+    gji_rows = load_gji_records(args.gji)
+    feed_rows = load_feed_rows(args.feed)
+    registry_ids = load_registry_ids(args.registry)
+
+    if args.sweep:
+        result = sweep(gji_rows, feed_rows, region=args.region, registry_ids=registry_ids)
+        text = render_sweep(result)
+        if args.out:
+            args.out.mkdir(parents=True, exist_ok=True)
+            (args.out / "sweep.json").write_text(
+                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            (args.out / "sweep.txt").write_text(text + "\n", encoding="utf-8")
+        print(text)
+        return 0
+
     result = audit(
-        load_gji_records(args.gji),
-        load_feed_rows(args.feed),
+        gji_rows,
+        feed_rows,
         query=args.query,
         region=args.region,
-        registry_ids=load_registry_ids(args.registry),
+        registry_ids=registry_ids,
         live_boards=live_boards,
     )
     summary = render_summary(result)
