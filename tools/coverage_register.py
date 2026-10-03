@@ -120,10 +120,15 @@ def build_rows(candidates: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 def select(
     candidates: Sequence[Mapping[str, Any]],
     results: Sequence[Mapping[str, Any]],
+    registry_ids: Sequence[str] = (),
 ) -> dict[str, list[dict[str, Any]]]:
-    """Split candidates into register / review / skip, dropping known duplicates."""
+    """Split candidates into register / review / skip, dropping known duplicates.
+
+    ``registry_ids`` is passed in rather than stashed on the candidates: a set on
+    the row is not JSON-serialisable, and the proposed rows get written to disk.
+    """
     verdicts = {str(row.get("id")): row for row in results if row.get("id")}
-    known = registry_identities(candidates[0].get("_registry_ids") or []) if candidates else set()
+    known = registry_identities(registry_ids)
     out: dict[str, list[dict[str, Any]]] = {"register": [], "review": [], "skip": []}
     seen: set[tuple[str, str, str]] = set()
     for candidate in candidates:
@@ -230,10 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidates = [c for c in boards if c.get("status") == "new_candidate"]
     if args.adapter:
         candidates = [c for c in candidates if str(c.get("adapter")) == args.adapter]
-    for candidate in candidates:
-        candidate["_registry_ids"] = registry_ids
 
-    buckets = select(candidates, results)
+    buckets = select(candidates, results, registry_ids)
     register_rows = [{**r, "_id": r["id"]} for r in buckets["register"]]
     print(render(buckets, limit=args.show))
 
