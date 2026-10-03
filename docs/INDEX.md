@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-09-25 (added `plans/registry-hygiene-followup-plan.md` for the registry repair-approval gate and live-vs-seed drift reconciliation)
+> - **Last updated:** 2026-10-04 (indexed `plans/catalogue-coverage-gap-plan.md`, which had been added without an index entry)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -67,6 +67,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
 | [`archive/registry-summary-desktop-performance-cleanup-report.md`](archive/registry-summary-desktop-performance-cleanup-report.md) | Archived Cleanup Report | June 2026 registry summary diagnostics, Admin count-basis copy, and desktop startup/page performance benchmark evidence (retained for provenance; no active follow-up) |
 | [`test-reduction-policy.md`](test-reduction-policy.md) | Active / Test Reduction | You are deciding whether a test can be deleted or merged, checking retained-test boundaries, or starting a coverage-backed reduction sweep |
+| [`plans/catalogue-coverage-gap-plan.md`](plans/catalogue-coverage-gap-plan.md) | Active / Coverage Gap | You are closing the gap against the external job index, registering boards the catalogue audit found, or diagnosing why registered boards do not deliver openings (queue deadlock, unprobeable adapters) |
 | [`plans/remaining-work-implementation-plan.md`](plans/remaining-work-implementation-plan.md) | Planned / Remaining Work | You are picking up the 23 moved-board repoints, the duplicate board rows, the `tmp/` retention pass, or the two retained stashes |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Deferred Backlog | You are deciding whether to restart Saved Job Tracker work, add v2 CRM-style tracking, or revisit deferred Saved-page list-management behavior |
 | [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) | Archived / Refactoring Inventory | Historical 2026-05-17 initial refactoring inventory (reporting_dedup_evidence 1,133→12 + state_lifecycle 1,121→38 now done); use git history and [`architecture-ai-map.md`](architecture-ai-map.md) for current routing |
