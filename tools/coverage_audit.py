@@ -266,24 +266,64 @@ def _labels_related(left: str, right: str) -> bool:
     return len(shorter) >= 6 and longer.startswith(shorter)
 
 
+def normalize_url(value: Any) -> str:
+    """Normalised job URL for exact cross-feed matching.
+
+    The query string is **kept**: for several vendors it is the job identifier
+    (``?ashby_jid=``), so dropping it collapses every opening at a studio onto one
+    URL -- measured at 218 distinct jobs sharing one base URL on a single board.
+    Only the scheme, a leading ``www.``, and the fragment are dropped.
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"^https?://", "", text).split("#", 1)[0].rstrip("/")
+    return re.sub(r"^www\.", "", text)
+
+
+def build_url_index(rows: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
+    index: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        key = normalize_url(row.get("jobLink") or row.get("url"))
+        if key:
+            index.setdefault(key, row)
+    return index
+
+
 def find_match(
     gji_row: Mapping[str, Any],
     feed_index: Mapping[str, list[Mapping[str, Any]]],
     *,
     company_key: str,
     prefix_index: Mapping[str, set[str]] | None = None,
-) -> tuple[Mapping[str, Any] | None, bool, bool]:
+    url_index: Mapping[str, Mapping[str, Any]] | None = None,
+) -> tuple[Mapping[str, Any] | None, bool, bool, str]:
     """Match one GJI row against the feed.
 
-    Returns ``(row, fuzzy_label, studio_known)``:
+    Returns ``(row, fuzzy_label, studio_known, basis)``.
 
-    * ``row`` set, ``fuzzy_label`` False -> identical studio and title.
+    URL first, because it is the only definitive signal available: the two boards
+    publish the same posting URL, so a hit is the same opening rather than a
+    similar title. On the full catalogue 3,368 of 15,332 rows match this way.
+
+    ``basis`` is ``"url"``, ``"title"``, or ``""``, and the caller reports the two
+    separately. Title matching alone over-claims -- "HR Business Partner - US
+    Operations (West)" and "(East)" collapse to one title -- so an unlabelled
+    headline rate would hide how much of the coverage is actually proven.
+
+    Otherwise:
     * ``row`` set, ``fuzzy_label`` True -> same role under a different studio
       label. Not a gap, so it is kept out of the miss list entirely.
     * ``row`` None, ``studio_known`` True -> the studio IS in the feed but this
       role is not. A real gap, and the studio being covered is precisely what
       separates it from an unregistered board.
     """
+    if url_index is not None:
+        by_url = url_index.get(normalize_url(gji_row.get("source_url")))
+        if by_url is not None:
+            gji_label = normalize_token(strip_bracket_prefix(gji_row.get(company_key)))
+            feed_label = normalize_token(strip_bracket_prefix(by_url.get(company_key)))
+            return by_url, not _labels_match(gji_label, feed_label), True, "url"
     gji_label = normalize_token(strip_bracket_prefix(gji_row.get(company_key)))
     gji_titles = _title_variants(gji_row, company_key=company_key)
     studio_known = False
@@ -297,8 +337,8 @@ def find_match(
         studio_known = True
         for candidate in feed_index[label]:
             if _title_variants(candidate, company_key=company_key) & gji_titles:
-                return candidate, not _labels_match(gji_label, label), True
-    return None, False, studio_known
+                return candidate, not _labels_match(gji_label, label), True, "title"
+    return None, False, studio_known, ""
 
 
 def build_feed_index(
@@ -397,11 +437,13 @@ def audit(
     ids = registry_ids or set()
     feed_index = build_feed_index(feed_rows, company_key=feed_company_key)
     prefix_index = build_label_prefix_index(feed_index)
+    url_index = build_url_index(feed_rows)
     matched_feed: list[Mapping[str, Any]] = []
     matched_gji: list[Mapping[str, Any]] = []
     misses: list[dict[str, Any]] = []
     label_mismatches: list[dict[str, Any]] = []
     buckets: dict[str, int] = {}
+    match_basis: dict[str, int] = {}
 
     for gji_row in gji_rows:
         if region.upper() == "EU" and not in_europe(gji_row):
@@ -410,10 +452,15 @@ def audit(
             continue
         if not matches_query(gji_row, query, company_key=gji_company_key):
             continue
-        found, fuzzy_label, studio_known = find_match(
-            gji_row, feed_index, company_key=feed_company_key, prefix_index=prefix_index
+        found, fuzzy_label, studio_known, basis = find_match(
+            gji_row,
+            feed_index,
+            company_key=feed_company_key,
+            prefix_index=prefix_index,
+            url_index=url_index,
         )
         if found is not None:
+            match_basis[basis or "title"] = match_basis.get(basis or "title", 0) + 1
             if fuzzy_label:
                 # Same role under a different studio label: a naming artefact, not
                 # a gap, so it is recorded but kept out of the miss list.
@@ -466,6 +513,8 @@ def audit(
         "region": region.upper(),
         "gjiConsidered": len(matched_gji) + len(misses),
         "gjiMatched": len(matched_gji),
+        "gjiMatchedByUrl": match_basis.get("url", 0),
+        "gjiMatchedByTitleOnly": match_basis.get("title", 0),
         "gjiMissing": len(misses),
         "feedOnlyCount": len(feed_only),
         "buckets": {name: buckets.get(name, 0) for name in BUCKET_ORDER if buckets.get(name)},
@@ -490,6 +539,8 @@ def render_summary(result: Mapping[str, Any]) -> str:
         f"query={result['query'] or '(any)'} region={result['region']}",
         f"GJI considered {result['gjiConsidered']}, matched {result['gjiMatched']}, "
         f"missing {result['gjiMissing']}, feed-only {result['feedOnlyCount']}",
+        f"  matched by URL (definitive) : {result.get('gjiMatchedByUrl', 0)}",
+        f"  matched by title only       : {result.get('gjiMatchedByTitleOnly', 0)}",
         "",
         "misses by bucket:",
     ]

@@ -159,7 +159,7 @@ def test_label_variant_is_matched_not_reported_as_a_gap() -> None:
     index = audit_mod.build_feed_index(
         [{"title": "Technical Artist", "company": "Electronic Arts"}], company_key="company"
     )
-    row, fuzzy, _ = audit_mod.find_match(
+    row, fuzzy, _, _ = audit_mod.find_match(
         _gji(company="Electronic Arts (EA)", title="Technical Artist"), index, company_key="company"
     )
     assert row is not None
@@ -170,7 +170,7 @@ def test_same_studio_different_role_is_a_gap_not_a_label_mismatch() -> None:
     index = audit_mod.build_feed_index(
         [{"title": "Producer", "company": "Example Studio"}], company_key="company"
     )
-    row, fuzzy, studio_known = audit_mod.find_match(_gji(), index, company_key="company")
+    row, fuzzy, studio_known, _ = audit_mod.find_match(_gji(), index, company_key="company")
     assert row is None
     assert fuzzy is False
     assert studio_known is True
@@ -180,7 +180,7 @@ def test_unrelated_studio_is_not_treated_as_known() -> None:
     index = audit_mod.build_feed_index(
         [{"title": "Producer", "company": "Totally Other Co"}], company_key="company"
     )
-    _, _, studio_known = audit_mod.find_match(_gji(), index, company_key="company")
+    _, _, studio_known, _ = audit_mod.find_match(_gji(), index, company_key="company")
     assert studio_known is False
 
 
@@ -228,7 +228,7 @@ def test_short_gji_label_still_matches_with_a_prefix_index() -> None:
         [{"title": "Artist", "company": "Acme"}], company_key="company"
     )
     prefix = audit_mod.build_label_prefix_index(index)
-    _, _, studio_known = audit_mod.find_match(
+    _, _, studio_known, _ = audit_mod.find_match(
         _gji(company="Acme", title="Nothing Alike"),
         index,
         company_key="company",
