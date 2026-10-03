@@ -494,6 +494,35 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "slug": "bandainamco",
         "nlPriority": False,
     },
+    {
+        # Coverage audit + live board probe: the Greenhouse board serves
+        # "Lead Technical Artist - Shaders" and the registered 2kczech.com static
+        # row does not, so the ATS board itself was unregistered.
+        "name": "2K Czech (Greenhouse)",
+        "studio": "2K Czech",
+        "adapter": "greenhouse",
+        "slug": "2kczech",
+        "nlPriority": False,
+    },
+    {
+        # Same Brno role as 2K Czech, published on Hangar 13's own Greenhouse board.
+        # Both are indexed separately upstream, so both are registered.
+        "name": "Hangar 13 (Greenhouse)",
+        "studio": "Hangar 13",
+        "adapter": "greenhouse",
+        "slug": "hangar13",
+        "nlPriority": False,
+    },
+    {
+        # Probe-confirmed live with "Technical Artist" on the board and no registry
+        # row for it. The org is YggdrasilSandbox, not Yggdrasil.
+        "name": "Yggdrasil (SmartRecruiters)",
+        "studio": "Yggdrasil",
+        "adapter": "smartrecruiters",
+        "company_id": "YggdrasilSandbox",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/YggdrasilSandbox/postings",
+        "nlPriority": False,
+    },
 ]
 
 
