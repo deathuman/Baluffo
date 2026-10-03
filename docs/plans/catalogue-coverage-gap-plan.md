@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** catalogue sweep shows Baluffo carries 31.7% of the index's openings; 10,465 openings are absent and most are on boards it could read
 > - **Verified against:** 79ef50b9
-> - **Status:** phase 0 landed; phase 1 extraction and verification landed, registration pending; phase 2 rescoped after its premise was disproved
+> - **Status:** phase 0 and phase 1 landed — 504 boards behind 4,465 openings registered and spot-checked; phase 2 diagnosed to 30 boards and awaiting fixes; phase 3 not started
 
 # Closing the catalogue coverage gap
 
@@ -134,10 +134,34 @@ rather than registrations.
 2. **Verify before proposing** — `tools/coverage_verify.py`, done. Resolving a
    tenant does not mean the board would collect anything, so each candidate is
    fetched and given a three-way verdict.
-3. **Register the `collects` boards.** Not started.
-4. **Apply under the repo's mutation guardrails** — match rows by host rather than
-   studio label, print the plan, assert the size, require an explicit apply flag,
-   back up to `_out/`, read back after writing.
+3. **Register the boards** — done, in `src/curated_coverage_boards.json`.
+4. **Apply under the repo's mutation guardrails** — the plan is printed, the row
+   count asserted against `--expect-rows`, nothing written without `--apply`, a
+   backup taken to `_out/`, and the registry read back afterwards.
+
+### Outcome
+
+| | Boards | Openings |
+|---|---|---|
+| Registered | **504** | **4,465** |
+| Left for review | 208 | — |
+| Verified empty | 0 | — |
+
+Adapter mix: static 276, greenhouse 46, bamboohr 47, ashby 40, lever 22, workday 17,
+smartrecruiters 17, breezy 15, teamtailor 13, jazzhr 8, recruitee 3.
+
+270 of the 504 returned rows when fetched; 234 render only in a browser and were
+registered on the control above. Spot-checked after landing: 14 of 14 sampled boards
+across five adapters return rows, so the registrations resolve to real endpoints
+rather than merely well-shaped URLs.
+
+Rows live in a data file rather than a literal in `config.py` — roughly 4,000 lines
+of unreviewable diff otherwise. Each row records the opening count it was added for,
+so a later sweep can tell a board added on evidence from one added by guess.
+
+**This will not improve coverage until a release ships.** The registrations are seed
+candidates for the discovery stage, and 0.3.007 is deliberately untagged, so nothing
+here has reached a running install yet.
 
 ### Verification is three-way on purpose
 
