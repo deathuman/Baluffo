@@ -125,6 +125,34 @@ def test_the_hand_curated_rows_are_still_present() -> None:
     assert {"Voodoo", "CD PROJEKT RED"} <= studios
 
 
+def test_no_board_is_registered_twice() -> None:
+    """Four boards were in both tables after the first landing.
+
+    Voodoo, 2K Czech, Hangar 13 and Yggdrasil were already in the hand-curated
+    literal from earlier work, and the audit re-proposed them because the audit
+    dedupes against the *live registry*, which does not carry unreleased rows. Two
+    rows for one board means it is fetched twice and double-counted, so the
+    duplicates were removed from the data file and their opening counts moved onto
+    the surviving hand-curated rows.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in STATIC_DISCOVERY_CANDIDATES:
+        locator = next((str(row[f]) for f in _LOCATORS if row.get(f)), "")
+        key = (str(row["adapter"]), locator)
+        assert locator, f"no locator in {row}"
+        assert key not in seen, f"board registered twice: {key}"
+        seen.add(key)
+
+
+def test_provenance_survives_where_the_duplicate_was_removed() -> None:
+    """The opening count must not vanish with the row it was attached to."""
+    by_studio = {str(r.get("studio")): r for r in STATIC_DISCOVERY_CANDIDATES}
+    for studio, openings in (("Voodoo", 90), ("2K Czech", 7), ("Hangar 13", 9), ("Yggdrasil", 3)):
+        row = by_studio.get(studio)
+        assert row is not None, studio
+        assert row.get("coverageAuditOpenings") == openings, studio
+
+
 def test_the_adapter_mix_matches_what_the_audit_verified() -> None:
     """A regression guard on the shape of the addition, not a pin on exact counts.
 

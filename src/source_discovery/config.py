@@ -466,6 +466,7 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "adapter": "ashby",
         "board_url": "https://jobs.ashbyhq.com/voodoo",
         "careersUrl": "https://jobs.ashbyhq.com/voodoo",
+        "coverageAuditOpenings": 90,
         "nlPriority": False,
     },
     {
@@ -539,6 +540,7 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "studio": "2K Czech",
         "adapter": "greenhouse",
         "slug": "2kczech",
+        "coverageAuditOpenings": 7,
         "nlPriority": False,
     },
     {
@@ -548,6 +550,7 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "studio": "Hangar 13",
         "adapter": "greenhouse",
         "slug": "hangar13",
+        "coverageAuditOpenings": 9,
         "nlPriority": False,
     },
     {
@@ -558,6 +561,7 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "adapter": "smartrecruiters",
         "company_id": "YggdrasilSandbox",
         "api_url": "https://api.smartrecruiters.com/v1/companies/YggdrasilSandbox/postings",
+        "coverageAuditOpenings": 3,
         "nlPriority": False,
     },
 ] + load_curated_coverage_boards()
