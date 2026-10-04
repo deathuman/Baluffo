@@ -19,8 +19,8 @@ second one is a result.
 |---|---|
 | Registered and **proven delivered** | **6,844 (98.8%)** |
 | Registered but not landing | 85 |
-| Still on an unregistered board | ~2,500 |
-| Of which blocked on a genuinely unreadable board | ~350 |
+| Still on an unregistered board | ~1,510 |
+| Of which Feishu, unreachable by any current path | 826 |
 
 Measured with `tools/coverage_drain.py`, which drains discovery over the curated boards
 in an isolated data directory and counts what reaches `active`.
@@ -218,17 +218,53 @@ full of positions, all marketing roles like "(Junior) Brand Partnerships Manager
 Baluffo correctly does not collect. The verdict says "parsed and yielded no game openings" so
 it cannot be confused with an unreachable board.
 
-### 4. The 82% Google Sheet dependency — an asset, not a liability
+### Feishu — 826 openings, and not reachable by anything the runtime has
 
-**Corrected framing.** This was previously written up as a single point of failure to be
-reduced. That is wrong: the community spreadsheet is the best base source available, and
-it is the reason the feed has breadth at all. The goal is therefore **not** to remove the
-dependency but to stop it being the *ceiling* — i.e. to make sure the direct ATS and
-static-scraped sources behind it are actually reaching the feed.
+The last block worth engineering, investigated and found to be genuinely out of reach rather
+than merely unlabelled. This is the opposite of the hrmos finding, and the difference is
+worth stating precisely, because the cheap-looking fix here is the exact pattern this effort
+has spent its whole duration undoing.
+
+**The reclassification would have worked on paper.** hrmos was labelled a vendor adapter when
+it is a static platform the runtime collects; the same reasoning says Feishu's eight tenant
+boards are just JS pages and could be static rows on their recorded openings. 105 boards of
+exactly that shape are registered and reach the registry today.
+
+**It would also have been false.** Four measurements, each of which is the reason:
+
+| Question | Answer |
+|---|---|
+| Does a GET see job rows? | HTTP 200, 141 KB, **zero anchors**, no job data in the HTML |
+| Does rendering see them? | Chromium produces 5.7 MB and still **5 anchors, no job rows** |
+| Where do the rows come from? | `POST /api/v1/search/job_post/count`, discovered from the JS bundle |
+| Can that be called directly? | **405** unauthenticated, then **429 ratelimit** on repeat; no cookies, and `/api/v1/csrf/token` is an SPA catch-all |
+
+The runtime has no Feishu handling at all — no plugin, no adapter, nothing in `src/jobs`.
+And the crucial point: **the delivery metric would have said "landed" and been wrong.** A
+static row reaches the registry and counts as delivered, exactly as the 105 JS boards do,
+while producing zero jobs. That is a false green, which is worse than an acknowledged gap
+because it stops anyone looking.
+
+So Feishu stays unregistered. Recovering its 826 openings is a real project, not a
+registration task: a CSRF-aware, rate-limit-respecting client for a POST search API, a
+parser for its payload, and a fixture to test both against. That is worth doing on its own
+merits if Feishu matters — Kurogame alone is 411 openings — and not as part of this effort.
+
+`tools/coverage_render_probe.py` is what established the above: it renders a tenant page,
+counts job links with the runtime's own `is_probable_job_detail_url`, and records the
+API-shaped responses so the data path is visible rather than guessed.
+
+### 4. The 82% Google Sheet dependency — an asset, not a liability
 
 This is now item 1's successor rather than a parallel track. A freshness fix delivers more
 openings only if the feed is not still dominated by one source, so the two are
 sequential: fix the window, then confirm the recovered boards show up in the feed.
+
+**Corrected framing.** This was previously written up as a single point of failure to be
+reduced. That is wrong: the community spreadsheet is the best base source available, and it
+is the reason the feed has breadth at all. The goal is not to remove the dependency but to
+stop it being the *ceiling* — to make sure the direct ATS and static-scraped sources behind
+it actually reach the feed.
 
 ### 5. Data quality, deferred by agreement
 
