@@ -1,13 +1,14 @@
 """What actually reaches the registry, measured rather than assumed.
 
-Draining discovery over the 500 curated boards, per adapter:
+Draining discovery over the 557 curated boards, per adapter:
 
 ===============  ======  =======  =========  ==========
 adapter          boards  landed   openings  delivered
 ===============  ======  =======  =========  ==========
-static              276     271      1,514      1,492
+static              304     299      2,347      2,325
 workday              17      17      1,065      1,065
 greenhouse           44      43        497        459
+workable             29      29        440        440
 smartrecruiters      16      16        432        432
 ashby                39      39        334        334
 bamboohr             47      47        192        192
@@ -18,7 +19,16 @@ teamtailor           13      13         26         26
 recruitee             3       3         14         14
 ===============  ======  =======  =========  ==========
 
-**492 boards and 4,280 of 4,356 openings — 98% of boards, 98% of openings.**
+The table is 557 rows rather than 558 because AppLovin's Greenhouse board was proposed by
+the audit while the hand-curated literal already carried it. The two tables are
+concatenated, so a board in both is fetched twice and double-counted; four such boards
+were already known (Voodoo, 2K Czech, Hangar 13, Yggdrasil) and this was the fifth.
+`_drop_already_curated` now removes the class by board identity rather than by studio label.
+
+**549 boards and 5,553 of 5,629 openings — 98.6% of boards, 98.6% of openings.**
+
+The eight that still do not land are two empty Greenhouse and Lever boards and six thin
+static boards, one of which (`vivastudios.com`) disconnects mid-response.
 
 That number came from 762 (17%) in six steps, and every step was found by running
 discovery rather than by reading it:
@@ -52,6 +62,28 @@ inference from a zero.
 The delivery share is deliberately reported per adapter and in openings, not boards:
 one board with 176 promised openings and one with a single opening are not comparable
 units, and a board-count headline hides exactly the concentration that matters.
+
+Three further findings came out of measuring the later waves rather than trusting the
+labels, and all three were the harness lying rather than the boards failing.
+
+**A board's JSON API lives on a different host from its career page**, so all 39 Ashby
+boards register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/…`, which
+resolved to `('ashby', 'api.ashbyhq.com', '')` — host and tenant both lost — and read as
+39 unregistered boards worth 334 openings. Greenhouse, Lever and SmartRecruiters have the
+same shape. `registry_identity` now folds a known API host onto its canonical career-page
+host and recovers the tenant from the API path.
+
+**hrmos needed no adapter at all.** It was labelled an unsupported vendor because no
+dedicated adapter exists, but its tenant listing pages are server-rendered, the runtime's
+detector reads all 32 tenants, and 4 were already registered as static rows. The remaining
+833 openings are 28 static rows, and all 28 land.
+
+**Workable was lost twice to a wrong URL.** The probe read
+`/api/v1/accounts/<a>/jobs`, which answers HTTP 400, and the row it then built carried
+only `account`, which `endpoint_url` cannot resolve — so all 29 boards failed as "missing
+adapter or URL". Both now use the runtime's own `JsonFeedSpec` template, and all 29 land
+440 openings. The lesson is the one this effort keeps teaching: the probe was looking
+somewhere the openings were not, and the zero was recorded as an answer.
 """
 
 from __future__ import annotations
@@ -68,10 +100,26 @@ _ROOT = Path(__file__).resolve().parents[2]
 _DRAIN = _ROOT / "_out" / "coverage" / "drain"
 
 # Measured delivery per adapter, from the drain run these figures quote.
+#
+# Two registration waves beyond the original 500, both of which turned out to be
+# measurement faults rather than missing adapters.
+#
+# The 28 hrmos rows: hrmos was labelled an unsupported vendor purely because no dedicated
+# adapter exists, but its tenant listing pages are server-rendered and the runtime's own
+# detector reads all 32 tenants -- cgames 100 rows, capcom 92, gamefreak 59 -- and
+# `hrmos.co/pages/cygames` was already a registered static row keeping 340 jobs in
+# production. So the 833 remaining openings are 28 static rows, not a vendor integration.
+#
+# The 29 workable rows: 440 openings that read as unreadable twice over. The verify tool
+# probed `/api/v1/accounts/<a>/jobs`, which answers HTTP 400, and the registry rows it
+# then built carried only `account`, which `endpoint_url` cannot resolve -- so all 29
+# failed the probe as "missing adapter or URL" and registered 0 of 29. Both now use the
+# runtime's own JsonFeedSpec template. keywords-intl1 serves 282 jobs and sideinc 378.
 _DELIVERED = {
-    "static": (276, 271, 1_514, 1_492),
+    "static": (304, 299, 2_347, 2_325),
     "workday": (17, 17, 1_065, 1_065),
     "greenhouse": (44, 43, 497, 459),
+    "workable": (29, 29, 440, 440),
     "smartrecruiters": (16, 16, 432, 432),
     "ashby": (39, 39, 334, 334),
     "bamboohr": (47, 47, 192, 192),
@@ -110,14 +158,19 @@ def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
         "recruitee",
         "jazzhr",
         "teamtailor",
+        "workable",
     ):
         boards, landed, _openings, _delivered = _DELIVERED[adapter]
         assert landed == boards, f"{adapter} landed {landed}/{boards}"
 
 
-def test_workday_and_bamboohr_land_every_opening_they_promised() -> None:
-    """They were the two largest zero-delivery blocks: 1,065 and 192 openings."""
-    for adapter in ("workday", "bamboohr"):
+def test_workday_bamboohr_and_workable_land_every_opening_they_promised() -> None:
+    """Workday and BambooHR were the two largest zero-delivery blocks: 1,065 and 192.
+
+    Workable joins them because 440 openings were lost twice to a wrong URL -- once in the
+    probe and once in the row it built -- and it now lands all 29 boards and every opening.
+    """
+    for adapter in ("workday", "bamboohr", "workable"):
         _boards, _landed, openings, delivered = _DELIVERED[adapter]
         assert delivered == openings, adapter
 

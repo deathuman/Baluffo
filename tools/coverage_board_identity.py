@@ -156,6 +156,63 @@ ADAPTER_CANONICAL_HOST = {
     "workable": "apply.workable.com",
 }
 
+# A board's JSON API lives on a different host from its career page, so the same board is
+# written two ways and reads as two boards unless the API host is folded onto the canonical
+# one. Measured: the 39 curated Ashby boards all land as
+# ``ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/<slug>``, which resolved to
+# ``('ashby', 'api.ashbyhq.com', '')`` -- host and tenant both lost -- so all 39 looked
+# unregistered next to the 9 rows the live registry already held in ``board_url`` form.
+# That is a delivery report understating 334 openings, not a real gap.
+#
+# The tenant is recovered from the API path by the shapes below, which are the endpoints
+# the runtime actually reads.
+API_HOST_ALIASES = {
+    r"(^|\.)api\.ashbyhq\.com$": ("ashby", "jobs.ashbyhq.com"),
+    r"(^|\.)boards-api\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
+    r"(^|\.)api\.lever\.co$": ("lever", "jobs.lever.co"),
+    r"(^|\.)api\.smartrecruiters\.com$": ("smartrecruiters", "jobs.smartrecruiters.com"),
+    r"(^|\.)feeds\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
+    r"(^|\.)api\.workable\.com$": ("workable", "apply.workable.com"),
+}
+
+# Where the tenant sits inside each API path.
+API_TENANT_SOURCE = {
+    # .../posting-api/job-board/<slug>
+    r"posting-api/job-board/([^/?#]+)": 0,
+    # .../v1/boards/<slug>/jobs
+    r"v1/boards/([^/?#]+)": 0,
+    # .../v0/postings/<slug>
+    r"v0/postings/([^/?#]+)": 0,
+    # .../v1/companies/<company_id>/postings
+    r"v1/companies/([^/?#]+)": 0,
+    # .../embed?account=<slug> or ?organization=<slug>
+    r"[?&](?:account|organization|company)=([^&#]+)": 0,
+}
+
+
+def canonical_board_host(host: str) -> tuple[str, str]:
+    """Fold an API host onto the career-page host its board is published under.
+
+    Returns ``(adapter, canonical_host)``, with the adapter empty when the host is not a
+    known API alias.
+    """
+    lowered = host.lower()
+    for pattern, (adapter, canonical) in API_HOST_ALIASES.items():
+        if re.search(pattern, lowered):
+            return adapter, canonical
+    return "", host
+
+
+def api_path_tenant(value: str) -> str:
+    """The tenant inside a board API URL, or empty when the path does not name one."""
+    path = re.sub(r"^https?://[^/]+", "", str(value or ""))
+    for pattern, _group in API_TENANT_SOURCE.items():
+        match = re.search(pattern, path, re.IGNORECASE)
+        if match:
+            return match.group(1).strip("/").lower()
+    return ""
+
+
 # Where a platform keeps its tenant. Four shapes occur in the data:
 #
 #   subdomain  kurogame.jobs.feishu.cn, nintendoeurope.csod.com
@@ -414,7 +471,15 @@ def registry_identity(registry_id: str) -> tuple[str, str, str] | None:
     adapter, value = parts[0].lower(), parts[2]
     if "/" in value or value.startswith("http"):
         host = host_of(value)
-        tenant = resolve_tenant(host, segments_of(value))
+        alias_adapter, canonical = canonical_board_host(host)
+        if alias_adapter:
+            # The API host is not the board. Fold it onto the career page and take the
+            # tenant from the API path, or a board registered through its JSON endpoint
+            # reads as a different board from the same board registered as a page.
+            host = canonical
+            tenant = api_path_tenant(value) or resolve_tenant(host, segments_of(value))
+        else:
+            tenant = resolve_tenant(host, segments_of(value))
     else:
         host = ADAPTER_CANONICAL_HOST.get(adapter, "")
         tenant = value

@@ -113,6 +113,23 @@ def build_rows(candidates: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 row[field] = value
         if not row.get("listing_url") and not row.get("board_url") and not row.get("api_url"):
             row["careersUrl"] = f"https://{candidate.get('host')}"
+        if adapter == "workable" and not row.get("api_url"):
+            # A Workable row carrying only ``account`` has no endpoint the probe or the
+            # runtime can read: ``endpoint_url`` looks at api_url/feed_url/board_url/
+            # listing_url, so all 29 boards probed as "missing adapter or URL" and none
+            # registered. This is the runtime's own JsonFeedSpec url_template.
+            account = str(candidate.get("account") or "")
+            if account:
+                row["api_url"] = (
+                    f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true"
+                )
+        # Provenance for the curated-seed audit fallback: how many openings this board was
+        # observed serving when the audit found it. Without it a curated row whose probe
+        # reads zero has nothing to stand in for the probe, and 246 JS-rendered boards
+        # would be refused as empty.
+        openings = candidate.get("missingCount")
+        if openings:
+            row["coverageAuditOpenings"] = int(openings)
         rows.append(row)
     return rows
 

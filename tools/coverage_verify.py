@@ -144,8 +144,17 @@ def list_url_for(candidate: Mapping[str, Any]) -> str:
         tenant = url.rstrip("/").rsplit("/", 1)[-1] if url else ""
         return f"https://api.ashbyhq.com/posting-api/job-board/{tenant}" if tenant else ""
     if adapter == "workable":
+        # Workable's widget endpoint, not ``/api/v1/accounts/<a>/jobs``, which answers
+        # HTTP 400. Verified against the runtime's own JsonFeedSpec url_template:
+        # keywords-intl1 returns 282 jobs and sideinc 378 where the other path returns
+        # nothing at all -- 29 boards and 440 openings read as unreadable purely because
+        # this tool guessed the wrong URL.
         account = candidate.get("account") or ""
-        return f"https://apply.workable.com/api/v1/accounts/{account}/jobs" if account else ""
+        return (
+            f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true"
+            if account
+            else ""
+        )
     return str(candidate.get(field) or "")
 
 

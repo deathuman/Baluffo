@@ -139,7 +139,10 @@ def test_a_js_rendered_listing_is_reported_as_such(monkeypatch: pytest.MonkeyPat
         ("greenhouse", {"slug": "2kczech"}, "boards/2kczech/jobs"),
         ("lever", {"account": "animocabrands"}, "postings/animocabrands"),
         ("ashby", {"board_url": "https://jobs.ashbyhq.com/voodoo"}, "job-board/voodoo"),
-        ("workable", {"account": "1tk"}, "accounts/1tk/jobs"),
+        # The widget endpoint, matching the runtime's JsonFeedSpec. The older
+        # `/api/v1/accounts/<a>/jobs` shape answers HTTP 400 for every account, which is
+        # what made 29 boards and 440 openings read as unreadable.
+        ("workable", {"account": "1tk"}, "widget/accounts/1tk"),
         (
             "smartrecruiters",
             {"api_url": "https://api.smartrecruiters.com/v1/companies/x/postings"},

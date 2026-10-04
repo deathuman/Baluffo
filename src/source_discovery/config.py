@@ -418,6 +418,26 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
 }
 
 
+def _board_locator_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    """``(adapter, locator)`` for a curated row, or None when it carries no locator.
+
+    The locator is the first populated id field, which is what identifies a board. The
+    studio label does not: the same board is registered as both "Lost Boys Interactive"
+    and "Lost Boys Interactive (Embracer Group)".
+    """
+    for field in ("slug", "account", "company_id", "board_url", "api_url", "listing_url"):
+        value = row.get(field)
+        if value:
+            return (str(row.get("adapter") or ""), str(value))
+    return None
+
+
+def _drop_already_curated(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Data-file rows whose board the hand-curated literal above already registers."""
+    known = {k for k in (_board_locator_key(row) for row in STATIC_DISCOVERY_CANDIDATES) if k}
+    return [row for row in rows if _board_locator_key(row) not in known]
+
+
 def load_curated_coverage_boards() -> list[dict[str, Any]]:
     """Boards the coverage audit verified would collect, as curated-seed candidates.
 
@@ -564,7 +584,14 @@ STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
         "coverageAuditOpenings": 3,
         "nlPriority": False,
     },
-] + load_curated_coverage_boards()
+]
+
+# The literal and the data file are concatenated rather than merged, so a board present in
+# both is fetched twice and double-counted. Four were (Voodoo, 2K Czech, Hangar 13,
+# Yggdrasil) and the fifth arrived with the second registration wave: AppLovin's Greenhouse
+# board was proposed by the audit while the literal already carried it. Matched on adapter
+# plus locator, never on the studio label. The literal wins, being hand-maintained.
+STATIC_DISCOVERY_CANDIDATES += _drop_already_curated(load_curated_coverage_boards())
 
 
 def load_studio_seeds() -> list[dict[str, Any]]:
