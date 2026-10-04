@@ -1,11 +1,11 @@
 """What actually reaches the registry, measured rather than assumed.
 
-Draining discovery over the 673 curated boards, per adapter:
+Draining discovery over the 695 curated boards, per adapter:
 
 ===============  ======  =======  =========  ==========
 adapter          boards  landed   openings  delivered
 ===============  ======  =======  =========  ==========
-static              412     408      3,259      3,244
+static              425     420      3,440      3,409
 workday              17      17      1,065      1,065
 greenhouse           52      51        655        617
 workable             29      29        440        440
@@ -14,6 +14,7 @@ ashby                39      39        334        334
 bamboohr             47      47        192        192
 lever                22      20        181        165
 breezy               15      15         69         69
+personio              9       9         49         49
 jazzhr                8       8         32         32
 teamtailor           13      13         26         26
 recruitee             3       3         14         14
@@ -25,9 +26,9 @@ concatenated, so a board in both is fetched twice and double-counted; four such 
 were already known (Voodoo, 2K Czech, Hangar 13, Yggdrasil) and this was the fifth.
 `_drop_already_curated` now removes the class by board identity rather than by studio label.
 
-**666 boards and 6,630 of 6,699 openings — 99% of boards, 99% of openings.**
+**687 boards and 6,844 of 6,929 openings — 98.8% of boards, 98.8% of openings.**
 
-The seven that still do not land are two empty Greenhouse and Lever boards and five thin
+The eight that still do not land are two empty Greenhouse and Lever boards and six thin
 static boards, one of which (`vivastudios.com`) disconnects mid-response.
 
 That number came from 762 (17%) in six steps, and every step was found by running
@@ -63,8 +64,8 @@ The delivery share is deliberately reported per adapter and in openings, not boa
 one board with 176 promised openings and one with a single opening are not comparable
 units, and a board-count headline hides exactly the concentration that matters.
 
-Five further findings came out of measuring the later waves rather than trusting the
-labels, and all five were the harness lying rather than the boards failing.
+Six further findings came out of measuring the later waves rather than trusting the
+labels, and all six were the harness lying rather than the boards failing.
 
 **A board's JSON API lives on a different host from its career page**, so all 39 Ashby
 boards register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/…`, which
@@ -95,8 +96,18 @@ one of those tenants: tripledotstudios 92 jobs, sportygroup 38, growe 15, kambi 
 `tools/coverage_listing_discovery.py` derives the listing from the URLs of the openings that
 were missed on the board — the board was found because those specific openings exist — and
 finds a readable one where the root has none: `koeitecmo.co.jp/recruit/career` serves 43
-rows. The boards it cannot improve return HTTP 200 with zero anchors, so they are
-registered on their recorded openings rather than on a probe, as the 246 boards above were.
+rows. It also finds thirteen whose root URL is simply wrong and answers 400 or 404, where the
+real listing answers 200: nine herp.careers tenants at `/v1/<tenant>` rather than
+`/<tenant>`, and one each on Dayforce, Briohr, EyeLine and Hurma. The rest return HTTP 200
+with zero anchors, so they are registered on their recorded openings rather than on a probe,
+as the 246 boards above were.
+
+**Personio publishes XML, and the probe was counting HTML anchors.** `count_rows` finds
+nothing in a `<workzag-jobs>` feed, so all 21 Personio boards read as zero. With the
+runtime's own `parse_personio_feed_xml` they split into 9 that collect, 7 whose feed parses
+and holds no *game* roles, and 5 whose feed 404s. Then the probe's validator rejected every
+`.jobs.personio.com` host as invalid because it only accepted `jobs.personio.de`, and the 9
+registered 0 of 9 — a third instance of a zero read as an answer.
 """
 
 from __future__ import annotations
@@ -129,7 +140,7 @@ _DRAIN = _ROOT / "_out" / "coverage" / "drain"
 # failed the probe as "missing adapter or URL" and registered 0 of 29. Both now use the
 # runtime's own JsonFeedSpec template. keywords-intl1 serves 282 jobs and sideinc 378.
 _DELIVERED = {
-    "static": (412, 408, 3_259, 3_244),
+    "static": (425, 420, 3_440, 3_409),
     "workday": (17, 17, 1_065, 1_065),
     "greenhouse": (52, 51, 655, 617),
     "workable": (29, 29, 440, 440),
@@ -138,6 +149,7 @@ _DELIVERED = {
     "bamboohr": (47, 47, 192, 192),
     "lever": (22, 20, 181, 165),
     "breezy": (15, 15, 69, 69),
+    "personio": (9, 9, 49, 49),
     "jazzhr": (8, 8, 32, 32),
     "teamtailor": (13, 13, 26, 26),
     "recruitee": (3, 3, 14, 14),
@@ -172,6 +184,7 @@ def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
         "jazzhr",
         "teamtailor",
         "workable",
+        "personio",
     ):
         boards, landed, _openings, _delivered = _DELIVERED[adapter]
         assert landed == boards, f"{adapter} landed {landed}/{boards}"

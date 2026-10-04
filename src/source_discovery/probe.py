@@ -487,6 +487,11 @@ def _is_valid_identity_token(token: str) -> bool:
     )
 
 
+# Personio operates two domains and a board is real on either. The feed format and the
+# runtime's parser are identical across them.
+_PERSONIO_HOST_SUFFIXES = ("jobs.personio.de", "jobs.personio.com")
+
+
 def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     if adapter in {"lever", "workable"}:
@@ -507,10 +512,13 @@ def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
         return (valid, "" if valid else "invalid company identifier")
     if adapter == "personio":
         host = (urlparse(str(candidate.get("feed_url") or "")).hostname or "").lower()
-        return (
-            host_matches_subdomain(host, "jobs.personio.de"),
-            "" if host_matches_subdomain(host, "jobs.personio.de") else "invalid personio host",
-        )
+        # Personio serves both `jobs.personio.de` and `jobs.personio.com`, and a board on
+        # either serves the same `<workzag-jobs>` feed the runtime's parser reads. Accepting
+        # only `.de` rejected every `.com` board as an invalid host, which cost all nine of
+        # them: altagramgroup, aesir, weltenbauer, nitrado, bigpoint, gvc2u, traviangames,
+        # remotecontrol and unitedgames all parsed a real feed and registered zero of nine.
+        valid = any(host_matches_subdomain(host, suffix) for suffix in _PERSONIO_HOST_SUFFIXES)
+        return (valid, "" if valid else "invalid personio host")
     if adapter == "teamtailor":
         parsed = urlparse(str(candidate.get("listing_url") or "").strip())
         host = (parsed.hostname or "").lower()

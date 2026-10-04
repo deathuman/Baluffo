@@ -71,7 +71,15 @@ def hand_curated_identities() -> set[tuple[str, str, str]]:
         load_curated_coverage_boards,
     )
 
-    locators = ("slug", "account", "company_id", "board_url", "api_url", "listing_url")
+    locators = (
+        "slug",
+        "account",
+        "company_id",
+        "board_url",
+        "api_url",
+        "listing_url",
+        "feed_url",
+    )
     # Both sides must go through the same function. The curated rows carry locator
     # fields but no host/tenant, so candidate_identity() on them yields
     # (adapter, "", "") and never matches a real identity -- which would make every

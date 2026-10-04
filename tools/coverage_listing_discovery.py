@@ -66,28 +66,61 @@ def opening_urls_by_host(records: Sequence[Mapping[str, Any]]) -> dict[str, list
     return {host: sorted(set(urls)) for host, urls in by_host.items()}
 
 
-def candidate_listings(host: str, urls: Sequence[str]) -> list[str]:
-    """Ancestor paths of real opening URLs, shallowest first.
+def candidate_listings(host: str, urls: Sequence[str], tenant: str = "") -> list[str]:
+    """Ancestor paths of real opening URLs, deepest first.
 
     The openings are the evidence that the board exists at all, so their own paths are the
     best available starting point. Each prefix is a plausible listing page; the caller
     measures them rather than trusting the shape.
+
+    Deepest first, and tenant-scoped, because a multi-tenant host's prefixes are shared.
+    ``herp.careers/v1/pgrecruit/e5id`` has the ancestors ``/v1`` and ``/v1/pgrecruit``, and
+    the first of those belongs to every tenant on the host. Shallowest-first would hand all
+    nine herp boards the same listing the moment ``/v1`` answered 200, which is the
+    multi-tenant collapse this tool exists to avoid.
     """
+    wanted = tenant.strip().lower()
+    if wanted == host.lower():
+        # A single-site board's "tenant" is its own host, which appears in no path segment.
+        # Scoping by it would discard every candidate and find nothing.
+        wanted = ""
     found: list[str] = []
     seen: set[str] = set()
     for url in urls:
         segments = [s for s in urlparse(url).path.split("/") if s]
-        for depth in range(1, min(len(segments), _MAX_ANCESTORS) + 1):
+        for depth in range(min(len(segments), _MAX_ANCESTORS), 0, -1):
             prefix = segments[:depth]
             if len(prefix) == len(segments):
                 continue
             if prefix[-1].lower() in _JOB_SEGMENTS:
+                continue
+            if wanted and wanted not in [p.lower() for p in prefix]:
                 continue
             listing = f"https://{host}/" + "/".join(prefix)
             if listing not in seen:
                 seen.add(listing)
                 found.append(listing)
     return found
+
+
+def urls_for_board(
+    board: Mapping[str, Any], urls_by_host: Mapping[str, Sequence[str]]
+) -> list[str]:
+    """The board's own opening URLs, not every URL on its host.
+
+    Grouping by host alone is wrong on a multi-tenant platform. All nine herp.careers
+    boards share one host, so each board's candidate list contained every other tenant's
+    openings and the first ancestor to answer 200 won -- which pointed all nine at the same
+    listing. A board's listing has to come from that board's openings, so a candidate with a
+    tenant keeps only the URLs whose path contains it.
+    """
+    host = _host(str(board.get("listing_url") or ""))
+    urls = list(urls_by_host.get(host) or ())
+    tenant = str(board.get("tenant") or "").strip().lower()
+    if not tenant or tenant == host:
+        return urls
+    mine = [u for u in urls if f"/{tenant}/" in u.lower() or u.lower().endswith(f"/{tenant}")]
+    return mine or urls
 
 
 def discover(
@@ -97,10 +130,22 @@ def discover(
     timeout: int,
     max_probes: int = 14,
 ) -> dict[str, Any]:
-    """The best listing URL for one board, measured with the runtime's detector."""
+    """The best listing URL for one board, measured with the runtime's detector.
+
+    Two different wins are reported, because they are different findings. ``bestRows`` is a
+    board a plain GET can read, which no other tool needs help with. ``reachableUrl`` is a
+    board whose registered URL was simply wrong -- the host root answers 404 or 400 while the
+    real listing answers 200 -- and that is worth registering even when the 200 page carries
+    no rows, because the registered URL is still the correct one and the openings recorded
+    for it stand in for the zero.
+
+    Conflating them loses the second case entirely: a JS shell that answers 200 scores zero
+    rows, so "found more rows" discards it and leaves the board registered against a URL that
+    errors.
+    """
     root = str(board.get("listing_url") or "")
     host = _host(root)
-    urls = urls_by_host.get(host) or ()
+    urls = urls_for_board(board, urls_by_host)
     result: dict[str, Any] = {
         "id": board.get("id"),
         "adapter": board.get("adapter"),
@@ -111,20 +156,27 @@ def discover(
         "openingUrlCount": len(urls),
         "bestUrl": "",
         "bestRows": 0,
+        "reachableUrl": "",
+        "reachableHttp": 0,
         "probed": [],
     }
     status, body = probe.http_get(root, timeout=timeout)
     result["rootHttp"] = status
     if status == 200:
         result["rootRows"] = static_probe_evidence(body, root).count
+        result["reachableUrl"] = root
+        result["reachableHttp"] = 200
 
-    for listing in candidate_listings(host, urls)[:max_probes]:
+    for listing in candidate_listings(host, urls, str(board.get("tenant") or ""))[:max_probes]:
         status, body = probe.http_get(listing, timeout=timeout)
         rows = static_probe_evidence(body, listing).count if status == 200 else 0
         result["probed"].append({"url": listing, "http": status, "rows": rows})
         if rows > result["bestRows"]:
             result["bestUrl"] = listing
             result["bestRows"] = rows
+        if status == 200 and not result["reachableUrl"]:
+            result["reachableUrl"] = listing
+            result["reachableHttp"] = 200
     return result
 
 
@@ -147,23 +199,32 @@ def main() -> int:
     urls_by_host = opening_urls_by_host(records)
 
     results = [discover(c, urls_by_host, timeout=args.timeout) for c in wanted]
-    improved = [r for r in results if r["bestRows"] > r["rootRows"]]
-    gained = sum(r["bestRows"] - r["rootRows"] for r in improved)
+    readable = [r for r in results if r["bestRows"] > r["rootRows"]]
+    repaired = [r for r in results if r["reachableUrl"] and r["reachableUrl"] != r["rootUrl"]]
+    gained = sum(r["bestRows"] - r["rootRows"] for r in readable)
+    seen_listings: dict[str, list[str]] = {}
+    for row in repaired:
+        seen_listings.setdefault(row["reachableUrl"], []).append(str(row.get("studio") or ""))
+    collisions = {url: names for url, names in seen_listings.items() if len(names) > 1}
 
     Path(args.out).write_text(
         json.dumps({"results": results}, indent=1) + "\n", encoding="utf-8", newline="\n"
     )
 
-    print(f"boards examined          : {len(results)}")
-    print(f"host root readable       : {sum(1 for r in results if r['rootRows'])}")
-    print(f"a derived listing is better: {len(improved)}")
-    print(f"rows gained over the root : {gained}")
+    print(f"boards examined            : {len(results)}")
+    print(f"host root readable         : {sum(1 for r in results if r['rootRows'])}")
+    print(f"a derived listing reads more: {len(readable)}  ({gained} rows)")
+    print(f"host root is the wrong URL : {len(repaired)}")
+    print(f"two boards on one listing  : {len(collisions)}  <- must be 0")
     print()
-    print(f"{'root':>5} {'best':>6} {'HTTP':<5} listing")
-    for row in sorted(improved, key=lambda r: -r["bestRows"])[: args.show]:
+    print(f"{'root':>5} {'best':>6} {'rootHTTP':<8} studio -> repaired listing")
+    for row in sorted(repaired, key=lambda r: (-r["bestRows"], str(r.get("studio"))))[: args.show]:
         print(
-            f"{row['rootRows']:>5} {row['bestRows']:>6} {str(row.get('rootHttp')):<5} {row['bestUrl']}"
+            f"{row['rootRows']:>5} {row['bestRows']:>6} {str(row.get('rootHttp')):<8} "
+            f"{str(row.get('studio'))[:22]:<24} {row['reachableUrl']}"
         )
+    for url, names in collisions.items():
+        print(f"  COLLISION {url} <- {', '.join(names)}")
     return 0
 
 

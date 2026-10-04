@@ -32,7 +32,15 @@ _ROOT = Path(__file__).resolve().parents[2]
 # Board locator fields, by adapter. greenhouse keys on ``slug`` and
 # SmartRecruiters on ``company_id``, so a key that only looks at URLs collapses
 # every SmartRecruiters row onto one identity.
-_LOCATORS = ("slug", "account", "company_id", "board_url", "api_url", "listing_url")
+_LOCATORS = (
+    "slug",
+    "account",
+    "company_id",
+    "board_url",
+    "api_url",
+    "listing_url",
+    "feed_url",
+)
 
 
 def test_the_catalogue_file_exists_and_parses() -> None:

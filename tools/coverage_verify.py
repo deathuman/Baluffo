@@ -43,6 +43,7 @@ if _TOOLS_DIR not in sys.path:
 # Imported after the path setup above: this tool runs from tools/, where the repo
 # root is not otherwise importable. An earlier version put the insert after the
 # import and every background run died with ModuleNotFoundError on `src`.
+from src.jobs.adapters.parsers.personio import parse_personio_feed_xml  # noqa: E402
 from src.jobs.adapters.static_detail_heuristics_filter import (  # noqa: E402, I001
     _DEFAULT_DETAIL_PATH_TOKENS,
     _DEFAULT_DETAIL_QUERY_KEYS,
@@ -94,6 +95,11 @@ ADAPTER_CONTROL: dict[str, str] = {
 # production code is also what keeps this tool honest about what the pipeline can
 # actually fetch.
 STRUCTURED_ADAPTERS = ("workday",)
+
+# Adapters whose listing is an XML feed rather than a page. `count_rows` counts HTML
+# anchors, so it reads every one of these as zero rows -- the same class of error as
+# counting BambooHR's `/careers` shell instead of its `/careers/list` JSON.
+XML_FEED_ADAPTERS = ("personio",)
 
 # A listing page carrying at most this many anchors is treated as JS-rendered rather
 # than unreadable. Calibrated against boards the runtime already collects: the raw
@@ -384,6 +390,43 @@ def verify_candidate(candidate: Mapping[str, Any], *, timeout: float = 40.0) -> 
             "status": status,
             "rows": 0,
             "anchors": 0,
+        }
+    if adapter in XML_FEED_ADAPTERS:
+        # Personio publishes an XML feed, and count_rows is an HTML counter: it finds no
+        # anchors in `<position-list>` and every one of the 21 boards read as zero rows.
+        # Delegating to the runtime's own parser is the same rule the Workday branch
+        # follows -- the tool should report what the pipeline can actually fetch.
+        try:
+            feed_rows = len(parse_personio_feed_xml(payload))
+        except Exception as exc:
+            return {
+                "id": candidate.get("id"),
+                "adapter": adapter,
+                "verdict": VERDICT_UNKNOWN,
+                "reason": f"feed would not parse: {type(exc).__name__}",
+                "status": status,
+                "rows": 0,
+                "anchors": 0,
+                "url": url,
+            }
+        return {
+            "id": candidate.get("id"),
+            "adapter": adapter,
+            "verdict": VERDICT_COLLECTS if feed_rows else VERDICT_EMPTY,
+            "reason": (
+                f"feed reports {feed_rows} openings"
+                if feed_rows
+                # A parsed feed with no rows is a real answer, and a different one from an
+                # unreachable board: the feed parsed and every posting in it failed the
+                # game-job test. Seven of the 21 look empty here while the catalogue counts
+                # openings on them -- marketing roles at game studios, which Baluffo
+                # correctly does not collect. The wording keeps the two apart.
+                else "feed parsed and yielded no game openings"
+            ),
+            "status": status,
+            "rows": feed_rows,
+            "anchors": 0,
+            "url": url,
         }
     rows, anchors = count_rows(payload)
     if rows:

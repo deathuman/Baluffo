@@ -5631,5 +5631,190 @@
   "slug": "kano",
   "api_url": "https://boards-api.greenhouse.io/v1/boards/kano/jobs?content=true",
   "coverageAuditOpenings": 1
+ },
+ {
+  "name": "PlatinumGames (static)",
+  "studio": "PlatinumGames",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/pgrecruit",
+  "coverageAuditOpenings": 31
+ },
+ {
+  "name": "Zoccon (static)",
+  "studio": "Zoccon",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/zoccon",
+  "coverageAuditOpenings": 27
+ },
+ {
+  "name": "FUJI NEXTERA LABO INC. (static)",
+  "studio": "FUJI NEXTERA LABO INC.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/fnlinc",
+  "coverageAuditOpenings": 26
+ },
+ {
+  "name": "GameWith, Inc. (static)",
+  "studio": "GameWith, Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/gamewith",
+  "coverageAuditOpenings": 24
+ },
+ {
+  "name": "Heroz Inc. (static)",
+  "studio": "Heroz Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/heroz",
+  "coverageAuditOpenings": 13
+ },
+ {
+  "name": "LIONA Interactive (static)",
+  "studio": "LIONA Interactive",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/liona",
+  "coverageAuditOpenings": 13
+ },
+ {
+  "name": "Eidos-Montreal (static)",
+  "studio": "Eidos-Montreal",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://jobs.dayforcehcm.com/en-CA/eic/CANDIDATEPORTAL",
+  "coverageAuditOpenings": 12
+ },
+ {
+  "name": "Lemon Sky Studios (static)",
+  "studio": "Lemon Sky Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://boards.briohr.com/lemonskyanimationsdnbhd-cvh2lrymnt",
+  "coverageAuditOpenings": 11
+ },
+ {
+  "name": "Linked Brain Inc. (static)",
+  "studio": "Linked Brain Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/linkedbrain",
+  "coverageAuditOpenings": 10
+ },
+ {
+  "name": "Eyeline Studios (static)",
+  "studio": "Eyeline Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://apply.eyelinestudios.com/careers",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "TwinWinGames (static)",
+  "studio": "TwinWinGames",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://twinwingames.hurma.work/public-vacancies",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "CharacterBank (static)",
+  "studio": "CharacterBank",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/charabank",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Nobollel Inc. (static)",
+  "studio": "Nobollel Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://herp.careers/v1/nobollelinc",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Altagram Group (personio)",
+  "studio": "Altagram Group",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://altagramgroup.jobs.personio.com/xml",
+  "careersUrl": "https://altagramgroup.jobs.personio.com",
+  "coverageAuditOpenings": 23
+ },
+ {
+  "name": "Aesir Interactive GmbH (personio)",
+  "studio": "Aesir Interactive GmbH",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://aesir.jobs.personio.com/xml",
+  "careersUrl": "https://aesir.jobs.personio.com",
+  "coverageAuditOpenings": 9
+ },
+ {
+  "name": "weltenbauer. Software Entwicklung GmbH (personio)",
+  "studio": "weltenbauer. Software Entwicklung GmbH",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://weltenbauer-software-entwicklung-gmbh.jobs.personio.com/xml",
+  "careersUrl": "https://weltenbauer-software-entwicklung-gmbh.jobs.personio.com",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "marbis GmbH (personio)",
+  "studio": "marbis GmbH",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://nitrado.jobs.personio.com/xml",
+  "careersUrl": "https://nitrado.jobs.personio.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Bigpoint Games Pte. Ltd. (personio)",
+  "studio": "Bigpoint Games Pte. Ltd.",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://bigpoint.jobs.personio.com/xml",
+  "careersUrl": "https://bigpoint.jobs.personio.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Com2us Europe GmbH (personio)",
+  "studio": "Com2us Europe GmbH",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://gvc2u.jobs.personio.com/xml",
+  "careersUrl": "https://gvc2u.jobs.personio.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Travian Games GmbH (personio)",
+  "studio": "Travian Games GmbH",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://traviangames.jobs.personio.com/xml",
+  "careersUrl": "https://traviangames.jobs.personio.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Chimera Entertainment (personio)",
+  "studio": "Chimera Entertainment",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://remotecontrol.jobs.personio.com/xml",
+  "careersUrl": "https://remotecontrol.jobs.personio.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "United Games Entertainment (personio)",
+  "studio": "United Games Entertainment",
+  "adapter": "personio",
+  "nlPriority": false,
+  "feed_url": "https://unitedgames.jobs.personio.com/xml",
+  "careersUrl": "https://unitedgames.jobs.personio.com",
+  "coverageAuditOpenings": 1
  }
 ]

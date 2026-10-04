@@ -425,7 +425,15 @@ def _board_locator_key(row: dict[str, Any]) -> tuple[str, str] | None:
     studio label does not: the same board is registered as both "Lost Boys Interactive"
     and "Lost Boys Interactive (Embracer Group)".
     """
-    for field in ("slug", "account", "company_id", "board_url", "api_url", "listing_url"):
+    for field in (
+        "slug",
+        "account",
+        "company_id",
+        "board_url",
+        "api_url",
+        "listing_url",
+        "feed_url",
+    ):
         value = row.get(field)
         if value:
             return (str(row.get("adapter") or ""), str(value))
