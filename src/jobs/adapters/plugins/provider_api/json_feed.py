@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ ParsePayload = Callable[[dict[str, object], Any, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
 PayloadCount = Callable[[Any, list[RawJob]], int]
 ProviderParser = Callable[[Any, str, str], list[RawJob]]
+FetchPayload = Callable[[str], Any]
 
 JSON_FEED_SOURCE_FETCH_CONCURRENCY = 6
 
@@ -53,6 +55,96 @@ class JsonFeedSpec:
     payload_key: str = ""
     dotted_url_template: str = ""
     list_payload: bool = False
+    # Offset pagination, for the feeds that cap a response. SmartRecruiters answers with
+    # `totalFound` postings and returns at most 100 of them however the request is phrased,
+    # so a single GET sees a third of Ubisoft's board and the rest never arrive: measured
+    # `totalFound=332` against 100 rows returned, with 175 of the catalogue's missing
+    # Ubisoft roles in the pages that were never requested.
+    #
+    # Pages are merged back into one payload before parsing rather than parsed separately,
+    # so a parser sees exactly the shape it always did.
+    page_offset_param: str = ""
+    page_size_param: str = ""
+    page_total_key: str = ""
+    page_size: int = 100
+    max_pages: int = 1
+
+
+def _with_query(url: str, **params: object) -> str:
+    """Append query parameters, respecting a URL that already carries some."""
+    added = "&" if "?" in url else "?"
+    return (
+        url
+        + added
+        + urllib.parse.urlencode({k: v for k, v in params.items() if v not in (None, "")})
+    )
+
+
+def _json_feed_total(payload: Any, spec: JsonFeedSpec) -> int:
+    if not spec.page_total_key or not isinstance(payload, dict):
+        return 0
+    try:
+        return int(payload.get(spec.page_total_key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _merge_json_feed_page(payload: Any, page: Any, spec: JsonFeedSpec) -> Any:
+    """Fold one page into the payload, so the parser sees a single listing."""
+    if spec.list_payload and isinstance(payload, list) and isinstance(page, list):
+        return [*payload, *page]
+    if not spec.payload_key or not isinstance(payload, dict) or not isinstance(page, dict):
+        return payload
+    merged = dict(payload)
+    merged[spec.payload_key] = [
+        *(payload.get(spec.payload_key) or []),
+        *(page.get(spec.payload_key) or []),
+    ]
+    return merged
+
+
+def _fetch_json_feed_payload(
+    endpoint: str,
+    spec: JsonFeedSpec,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> Any:
+    """Fetch the listing, following offset pages when the feed caps a response.
+
+    The first request is the bare endpoint so the conditional-revalidate path, which is keyed
+    on that exact URL, keeps working unchanged.
+    """
+    payload = json.loads(fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s))
+    if not spec.page_offset_param or spec.max_pages <= 1:
+        return payload
+    total = _json_feed_total(payload, spec)
+    have = len(payload.get(spec.payload_key) or []) if isinstance(payload, dict) else 0
+    if not total or have >= total:
+        return payload
+    page_size = max(1, spec.page_size)
+    for page_number in range(2, spec.max_pages + 1):
+        offset = (page_number - 1) * page_size
+        if offset >= total:
+            break
+        url = _with_query(
+            endpoint,
+            **{
+                spec.page_size_param: page_size,
+                spec.page_offset_param: offset,
+            },
+        )
+        try:
+            page = json.loads(fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s))
+        except (ValueError, OSError):
+            # A later page failing must not discard the pages already fetched.
+            break
+        merged = _merge_json_feed_page(payload, page, spec)
+        if merged is payload or len(merged.get(spec.payload_key) or []) == have:
+            break
+        payload, have = merged, len(merged.get(spec.payload_key) or [])
+    return payload
 
 
 def _build_json_feed_url(source: dict[str, object], spec: JsonFeedSpec) -> str:
@@ -88,6 +180,11 @@ JSON_FEED_SPECS: dict[str, JsonFeedSpec] = {
         url_template="https://api.smartrecruiters.com/v1/companies/{value}/postings",
         parser=_provider_parsers.parse_smartrecruiters_jobs_payload,
         payload_key="content",
+        page_offset_param="offset",
+        page_size_param="limit",
+        page_total_key="totalFound",
+        page_size=100,
+        max_pages=20,
     ),
     "workable": JsonFeedSpec(
         default_error="missing account/api_url",
@@ -141,6 +238,7 @@ def _run_json_feed_sources(
     build_url: BuildUrl,
     payload_count: PayloadCount,
     fetch_text: Callable[[str, int], str],
+    fetch_payload: FetchPayload | None = None,
     timeout_s: int,
     retries: int,
     backoff_s: float,
@@ -194,10 +292,17 @@ def _run_json_feed_sources(
             return source_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
-            text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+            # A caller that supplies no fetcher gets a single plain request, which is what
+            # this did before pagination existed. Kept as the default so the seam stays
+            # additive rather than becoming a signature every caller has to adopt.
+            if fetch_payload is None:
+                payload = json.loads(
+                    fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+                )
+            else:
+                payload = fetch_payload(endpoint)
             entry_report["fetchMs"] = _elapsed_ms(fetch_started)
             parse_started = time.perf_counter()
-            payload = json.loads(text)
             parsed = parse_payload(source, payload, studio)
             entry_report["parseMs"] = _elapsed_ms(parse_started)
             entry_report["fetchedCount"] = payload_count(payload, parsed)
@@ -257,6 +362,12 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         return ctx.family == "provider_api" and ctx.adapter_key == adapter_key
 
     def run_plugin(**kwargs: Any) -> list[RawJob]:
+        # Pulled out of kwargs because the pagination closure needs them; they are still
+        # forwarded below, because _run_json_feed_sources uses fetch_text for its own retries.
+        fetch_text = kwargs["fetch_text"]
+        timeout_s = kwargs["timeout_s"]
+        retries = kwargs["retries"]
+        backoff_s = kwargs["backoff_s"]
         return _run_json_feed_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
@@ -266,6 +377,9 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             ),
             build_url=lambda source: _build_json_feed_url(source, spec),
             payload_count=lambda payload, parsed: _json_feed_payload_count(payload, parsed, spec),
+            fetch_payload=lambda endpoint: _fetch_json_feed_payload(
+                endpoint, spec, fetch_text, timeout_s, retries, backoff_s
+            ),
             **kwargs,
         )
 
