@@ -27,6 +27,70 @@ GAME_KEYWORDS = {
     "graphics programmer",
 }
 
+# Craft terms that identify a row as games work without identifying the *sector*.
+#
+# Kept separate from GAME_KEYWORDS on purpose. ``looks_like_game_job`` decides whether a row
+# belongs in the feed; ``has_positive_game_evidence`` decides what sector an employer is, and
+# the second is deliberately stricter -- a bare role word at an unnamed employer must not
+# imply Game, or every UX Designer at a bank lands in the games feed. Folding these into
+# GAME_KEYWORDS made exactly that happen and broke
+# tests/test_game_detection_company_url_evidence.py.
+#
+# Measured, not guessed. The audit found 1,226 catalogue roles missing from boards Baluffo
+# already collects that the row filter rejected outright -- Ubisoft's "Senior Hard Surface
+# Artist", CD Projekt Red's "Senior VFX Artist", Marvelous's ゲームデザイナー. Every token
+# recovered at least one and admitted none of a control set of plainly non-game roles
+# (Logistics Director, Marketing Manager, Junior .NET Developer, Principal Security Software
+# Engineer), via tools/coverage_classifier_candidates.py. 199 roles across 97 studios.
+#
+# Business and support roles are deliberately absent. A games studio hires project managers,
+# producers and finance business partners, and admitting those turns a games-jobs feed into a
+# jobs board -- which is why this was measured for what it admits as well as what it recovers.
+GAME_ROLE_KEYWORDS = {
+    "2d artist",
+    "3d artist",
+    "3d generalist",
+    "3d modeler",
+    "art director",
+    "technical director",
+    "creative director",
+    "concept artist",
+    "prop artist",
+    "vehicle artist",
+    "hard surface artist",
+    "environmental artist",
+    "illustrator",
+    "animator",
+    "animation",
+    "ui/ux",
+    "ui artist",
+    "ui designer",
+    "ux designer",
+    "vfx",
+    "level design",
+    "level designer",
+    "combat designer",
+    "systems designer",
+    "narrative designer",
+    "sound designer",
+    "qa analyst",
+    "tools programmer",
+    # Non-English listings. An ASCII substring test cannot see these at all: Japanese studios
+    # publish titles in Japanese (Marvelous's ゲームデザイナー, Bandai Namco's
+    # ゲームAIエンジニア) and Ubisoft publishes "Animateur.trice Cinématique Sénior" in
+    # French. Unambiguous craft terms, not whole sentences.
+    "ゲームデザイナー",
+    "デザイナー",
+    "エンジニア",
+    "アート",
+    "animateur",
+    "concepteur",
+    "développeur",
+    "ingénieur",
+}
+
+GAME_ROW_KEYWORDS = GAME_KEYWORDS | GAME_ROLE_KEYWORDS
+
 GAME_SOURCE_FAMILY_HINTS = {
     "8bitplay",
     "epic_games_careers",
@@ -204,9 +268,14 @@ def has_game_source_provenance(
 
 
 def looks_like_game_job(*values: Any) -> bool:
-    """True if any value string contains a game-related keyword."""
+    """True if any value string contains a game-related keyword.
+
+    Consults the sector-grade ``GAME_KEYWORDS`` and the craft-grade
+    ``GAME_ROLE_KEYWORDS`` together: this decides whether a *row* is games work, which is a
+    weaker question than deciding what sector an employer is in.
+    """
     text = " ".join(str(v or "").strip().lower() for v in values if v is not None)
-    return bool(text) and any(keyword in text for keyword in GAME_KEYWORDS)
+    return bool(text) and any(keyword in text for keyword in GAME_ROW_KEYWORDS)
 
 
 def has_positive_game_evidence(
