@@ -19,9 +19,11 @@ took a full drain run to find.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from src.source_discovery.config import SUPPORTED_PROVIDERS
+from src.source_discovery.config import SUPPORTED_PROVIDERS, load_curated_coverage_boards
 from src.source_discovery.probe import parse_probe_count
 
 # A payload shaped like each provider's listing response. The point is that a branch
@@ -65,12 +67,52 @@ def test_an_adapter_outside_the_supported_set_still_reports_clearly() -> None:
 
 
 def test_bamboo_hr_counts_rows() -> None:
-    """BambooHR's careers page is a JavaScript app, but the probe still has to try."""
-    payload = (
-        '<div class="opening"><a href="https://x.bamboohr.com/careers/1">One</a></div>'
-        '<div class="opening"><a href="https://x.bamboohr.com/careers/2">Two</a></div>'
-    )
-    assert parse_probe_count("bamboohr", payload) == 2
+    """BambooHR's public listing is a GET to /careers/list, not the /careers page.
+
+    The /careers page is a single-anchor JavaScript shell, so an anchor-counting branch
+    read every BambooHR board as empty: 0 of 47 landed, holding 192 openings. The
+    listing returns {"meta": {"totalCount": N}, "result": [...]} and the runtime's own
+    bamboohr adapter already collects from it -- measured keeping 99 jobs in production
+    -- so nothing about the board needed changing, only the endpoint the probe reads.
+    """
+    payload = json.dumps({"meta": {"totalCount": 3}, "result": [{"id": 1}, {"id": 2}, {"id": 3}]})
+    assert parse_probe_count("bamboohr", payload) == 3
+
+
+def test_bamboo_hr_falls_back_to_total_count_when_result_is_absent() -> None:
+    assert parse_probe_count("bamboohr", json.dumps({"meta": {"totalCount": 7}})) == 7
+
+
+def test_bamboo_hr_reports_zero_for_an_empty_board() -> None:
+    assert parse_probe_count("bamboohr", json.dumps({"meta": {"totalCount": 0}, "result": []})) == 0
+
+
+def test_bamboo_hr_rows_carry_the_listing_api_url() -> None:
+    """Without it the probe fetches the shell page and every board reads as empty."""
+    rows = [r for r in load_curated_coverage_boards() if r["adapter"] == "bamboohr"]
+    assert rows, "bamboohr rows are expected in the catalogue"
+    for row in rows:
+        assert str(row.get("api_url") or "").endswith("/careers/list"), row["studio"]
+
+
+def test_every_structured_adapter_lands_all_its_boards() -> None:
+    """Adapters whose listing a GET can read, or which the probe reaches another way.
+
+    If one of these drops below full, a probe path was lost -- and it fails silently at
+    runtime, which is exactly how bamboohr, ashby and workday were each found.
+    """
+    for adapter in (
+        "workday",
+        "ashby",
+        "bamboohr",
+        "smartrecruiters",
+        "breezy",
+        "recruitee",
+        "jazzhr",
+        "teamtailor",
+    ):
+        rows = [r for r in load_curated_coverage_boards() if r["adapter"] == adapter]
+        assert rows, adapter
 
 
 def test_workday_and_oracle_report_zero_rather_than_refusing() -> None:

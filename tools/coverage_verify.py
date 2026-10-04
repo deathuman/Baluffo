@@ -245,7 +245,13 @@ def count_rows(payload: str) -> tuple[int | None, int]:
 
 # Payload keys that actually hold listing rows. Anything outside this set is
 # envelope, not data.
-_ROW_KEYS = ("jobs", "postings", "results", "offers", "items", "content", "jobPostings")
+#
+# ``result`` is BambooHR's singular key, alongside ``meta.totalCount``. It was missing
+# here while present in the discovery probe, which is why this tool reported
+# ``/careers/list`` as an unrecognised shape while the same payload was readable by
+# the probe -- two counters for one vendor is exactly the divergence this file's
+# docstring warns about.
+_ROW_KEYS = ("jobs", "postings", "results", "offers", "items", "content", "jobPostings", "result")
 
 
 def _row_count(data: Any) -> int:
@@ -264,6 +270,10 @@ def _row_count(data: Any) -> int:
         value = data.get(key)
         if isinstance(value, list):
             return len(value)
+    # BambooHR reports its own total alongside the rows: {"meta": {"totalCount": N}}.
+    meta = data.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("totalCount"), int):
+        return int(meta["totalCount"])
     # Workday's CXS returns {"total": N, "jobPostings": [...]}, which the loop above
     # catches. A dict with a numeric total and no list is still a listing envelope.
     if isinstance(data.get("total"), int):

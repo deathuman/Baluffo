@@ -667,10 +667,27 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
     if adapter == "jazzhr":
         return len(parse_jazzhr_jobs_html(text, base_url))
     if adapter == "bamboohr":
-        # BambooHR's careers page is a JavaScript app, so this sees nothing on most
-        # boards. The branch exists because the adapter is declared supported and a
-        # board that can never be counted can never be approved; a real zero here is
-        # the honest answer and is handled by the zero-yield quarantine.
+        # BambooHR's public listing is a GET to /careers/list returning
+        # {"meta": {"totalCount": N}, "result": [...]}. The /careers page itself is a
+        # single-anchor JavaScript shell, which is why these boards read as empty and
+        # why an earlier branch counted anchors.
+        if text.lstrip().startswith("{"):
+            try:
+                payload = json.loads(text)
+            except ValueError:
+                payload = {}
+            if isinstance(payload, dict):
+                result = payload.get("result")
+                if isinstance(result, list):
+                    return len(result)
+                total = (
+                    (payload.get("meta") or {}).get("totalCount")
+                    if isinstance(payload.get("meta"), dict)
+                    else None
+                )
+                if isinstance(total, int):
+                    return max(0, total)
+                return 0
         return _html_link_count(text, r'(?is)href=["\'][^"\']+/careers/\d+[^"\']*["\']')
     if adapter in {"workday", "oracle_hcm"}:
         # Both render through JavaScript and expose no GET-accessible listing. Counted

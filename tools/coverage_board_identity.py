@@ -331,7 +331,18 @@ def describe_board(*, adapter: str, host: str, tenant: str, company: str = "") -
         row.update({"api_url": api, "id": f"pinpoint:api_url:{api}"})
     elif adapter == "bamboohr":
         url = f"{base}/careers"
-        row.update({"listing_url": url, "id": f"bamboohr:listing_url:{url}"})
+        # The public listing is a GET to /careers/list returning
+        # {"meta": {"totalCount": N}, "result": [...]}. The /careers page is a
+        # single-anchor JavaScript shell, so without this api_url the probe sees one
+        # anchor and the board reads as empty -- even though the runtime's own
+        # bamboohr adapter collects from it (measured keeping 99 jobs in production).
+        row.update(
+            {
+                "listing_url": url,
+                "api_url": f"{base}/careers/list",
+                "id": f"bamboohr:listing_url:{url}",
+            }
+        )
     elif adapter == "breezy":
         url = f"{base}/"
         row.update(

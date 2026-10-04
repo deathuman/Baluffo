@@ -10,7 +10,7 @@ workday              17      17      1,065      1,065
 greenhouse           44      40        497        456
 smartrecruiters      16      16        432        432
 ashby                39      39        334        334
-bamboohr             47       0        192          0
+bamboohr             47      47        192        192
 lever                22      20        181        165
 breezy               15      15         69         69
 jazzhr                8       8         32         32
@@ -18,9 +18,9 @@ teamtailor           13      13         26         26
 recruitee             3       3         14         14
 ===============  ======  =======  =========  ==========
 
-**201 boards and 2,851 of 4,356 openings — 40% of boards, 65% of openings.**
+**248 boards and 3,043 of 4,356 openings — 49% of boards, 69% of openings.**
 
-That number came from 762 (17%) in four steps, and every step was a defect found by
+That number came from 762 (17%) in five steps, and every step was a defect found by
 running discovery rather than by reading it:
 
 1. **Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
@@ -32,9 +32,15 @@ running discovery rather than by reading it:
    branch at all**, accounting for 68 of 71 recorded probe failures.
 4. **Workday's listing needs a POST.** Its CXS endpoint sits behind a certifi-anchored
    TLS context, so a GET cannot see it and every Workday board probed as zero.
+5. **BambooHR's listing is not the page its URL points at.** `/careers` is a
+   single-anchor JavaScript shell; the listing is a GET to `/careers/list` returning
+   `{"meta": {"totalCount": N}, "result": [...]}`. Nothing about the board needed
+   changing -- the runtime's own adapter already collected from it, keeping 99 jobs in
+   production -- only the endpoint the probe read.
 
-What still lands nothing is BambooHR (0 of 47, 192 openings) and 246 of the 276 static
-boards — boards with no listing a plain GET can read. Those need the rendered path.
+Every structured adapter now lands all of its boards. What remains is static: 30 of 276
+boards and 258 of 1,514 openings, which need the rendered path rather than any endpoint
+change.
 
 The delivery share is deliberately reported per adapter and in openings, not boards:
 one board with 176 promised openings and one with a single opening are not comparable
@@ -61,7 +67,7 @@ _DELIVERED = {
     "greenhouse": (44, 40, 497, 456),
     "smartrecruiters": (16, 16, 432, 432),
     "ashby": (39, 39, 334, 334),
-    "bamboohr": (47, 0, 192, 0),
+    "bamboohr": (47, 47, 192, 192),
     "lever": (22, 20, 181, 165),
     "breezy": (15, 15, 69, 69),
     "jazzhr": (8, 8, 32, 32),
@@ -84,12 +90,14 @@ def test_the_measured_split_matches_the_catalogue() -> None:
 def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
     """The class of board this effort fixed.
 
-    Workday needed a POST and Ashby needed a provider spec; both now land every board.
-    A regression here means a probe path was lost, and it is silent at runtime.
+    Workday needed a POST, Ashby needed a provider spec, and BambooHR needed a
+    different endpoint than its URL names. All now land every board. A regression here
+    means a probe path was lost, and it is silent at runtime.
     """
     for adapter in (
         "workday",
         "ashby",
+        "bamboohr",
         "smartrecruiters",
         "breezy",
         "recruitee",
@@ -100,18 +108,23 @@ def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
         assert landed == boards, f"{adapter} landed {landed}/{boards}"
 
 
-def test_workday_is_no_longer_the_largest_undelivered_block() -> None:
-    """It was 1,065 openings landing zero, and was the single biggest block."""
-    boards, landed, openings, delivered = _DELIVERED["workday"]
-    assert delivered == openings
-    assert landed == boards
+def test_workday_and_bamboohr_land_every_opening_they_promised() -> None:
+    """They were the two largest zero-delivery blocks: 1,065 and 192 openings."""
+    for adapter in ("workday", "bamboohr"):
+        _boards, _landed, openings, delivered = _DELIVERED[adapter]
+        assert delivered == openings, adapter
 
 
-def test_bamboohr_and_most_static_boards_are_what_remains() -> None:
+def test_static_is_the_only_remaining_gap() -> None:
     """Names the remaining work so it cannot be quietly forgotten."""
-    assert _DELIVERED["bamboohr"][1] == 0
-    static_boards, static_landed, _, _ = _DELIVERED["static"]
+    for adapter, (_b, landed, _o, _d) in _DELIVERED.items():
+        if adapter == "static":
+            continue
+        boards = _DELIVERED[adapter][0]
+        assert landed >= boards - 4, f"{adapter} landed only {landed}/{boards}"
+    static_boards, static_landed, static_openings, static_delivered = _DELIVERED["static"]
     assert static_landed < static_boards / 2
+    assert static_openings - static_delivered > 1_000
 
 
 def test_no_board_is_quarantined_while_active() -> None:
