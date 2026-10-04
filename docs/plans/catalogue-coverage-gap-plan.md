@@ -8,6 +8,35 @@
 Canonical plan for the catalogue coverage effort: baseline, board registration, and
 what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 
+## Where the remaining 10,464 openings actually are
+
+Every number below is measured against the live feed and the live fetch report, with the
+board-identity fixes applied — the audit was undercounting registered coverage by ~1,000
+openings until they were in.
+
+| Bucket | Openings | Status |
+|---|---:|---|
+| **A — registered in the repo, awaiting a release** | **6,862** | done; inert until shipped |
+| **B1 — board was skipped as "fresh"** | **779** | fixed; needs a live run to realise |
+| B2 — board was fetched and still returns short | 325 | per-board extraction work |
+| C — the sector classifier rejects the role | 988 | 238 just recovered; most of the rest is correctly rejected |
+| D — board registered nowhere | 1,510 | 826 Feishu (out of reach) + ~684 unreadable |
+
+**7,641 openings — 73% of the entire remaining gap — are already fixed and blocked on exactly
+one thing: a release.** That is the single most important fact about this plan, and it is why
+no further registration work is worth starting before one ships.
+
+Two details worth keeping in view. Bucket B1 is the freshness-window fix showing up in the
+data: 779 openings sit on the 1,893 boards the last run skipped as `cache_within_freshness_window`.
+And the live report shows `personio_sources` **kept 0 of 2 fetched** — the Personio validator
+bug cost the entire provider in production, which is why those 49 openings are in bucket A
+rather than merely theoretical.
+
+Bucket C is not a gap of the size it looks. Of the 988 the classifier still rejects, the
+measurement in `tools/coverage_classifier_candidates.py` shows the remainder is dominated by
+business roles at studios — Logistics Director, Marketing Manager, Junior .NET Developer —
+which this product should not be collecting.
+
 ## Where this stands
 
 Registration now covers **6,929 openings** across 695 boards. **6,844 of them are proven to
@@ -49,7 +78,7 @@ exactly the concentration that matters.
 The seven boards still not landing are two empty Greenhouse and Lever boards and five thin
 static boards, one of which (`vivastudios.com`) disconnects mid-response.
 
-## Eight defects found by running discovery, not reading it
+## Nine defects found by running discovery, not reading it
 
 The first six are recorded below. Three more arrived with the second and third waves, and
 every one has the same shape: **the harness was looking somewhere the openings were not, and
@@ -289,27 +318,35 @@ SmartRecruiters rate-limits.
 `GAME_KEYWORDS` holds 19 entries, all multi-token or unambiguous ("character artist",
 "tech artist", "world artist"), and `vfx` and `concept artist` are simply absent.
 
-This is a *product classification* decision with feed-wide blast radius, not a coverage fix:
-widening it changes which rows exist in the public feed for every source. It belongs to the
-data-quality track, and the honest recommendation is to widen it deliberately with a measured
-corpus rather than as a side effect of closing a coverage gap. Some of the same 1,468 are
-legitimately not gaps at all — dontnod's three "missing" roles are all "Spontaneous
-Application", correctly dropped.
+**The sector classifier was dropping real game roles — FIXED, on an explicit product
+decision.** `looks_like_game_job` rejected 1,226 catalogue roles outright: Ubisoft's "Senior
+Hard Surface Artist", CD Projekt Red's "Senior VFX Artist", Marvelous's ゲームデザイナー. 35
+measured craft tokens now recover 238 of them across 97 studios, admitting none of a 15-role
+control set of business roles at studios.
 
-**The static remainder needs board-by-board work.** `jobs.ea.com` (134),
-`careers.roblox.com` (123) and `careers.garena.com` (74) are single large boards where the
-extractor returns fewer rows than exist. That is a per-site parser question, not one shared
-fix, and each needs its own diagnosis against what the board actually serves.
+Two things make that safe rather than a widening of blast radius. The craft tokens live in
+`GAME_ROLE_KEYWORDS`, separate from `GAME_KEYWORDS`, because `has_positive_game_evidence` is a
+*sector* classifier where a bare role word must not imply Game — folding them together made
+"UX Designer" at an arbitrary employer classify as Game and broke an existing invariant. And
+the addition was measured for what it *admits* as well as what it recovers, because a games
+studio hires project managers and finance business partners too. Residual rejections are
+mostly correct.
 
-This is now item 1's successor rather than a parallel track. A freshness fix delivers more
-openings only if the feed is not still dominated by one source, so the two are
-sequential: fix the window, then confirm the recovered boards show up in the feed.
+**Some of the 1,468 were never gaps at all.** dontnod's three "missing" roles are all
+"Spontaneous Application", correctly dropped.
+
+### 4. The 82% Google Sheet dependency — an asset, not a liability
+
+This is item 1's successor rather than a parallel track: a freshness fix delivers more
+openings only if the feed is not still dominated by one source, so the two are sequential —
+fix the window, then confirm the recovered boards actually show up in the feed.
 
 **Corrected framing.** This was previously written up as a single point of failure to be
-reduced. That is wrong: the community spreadsheet is the best base source available, and it
-is the reason the feed has breadth at all. The goal is not to remove the dependency but to
-stop it being the *ceiling* — to make sure the direct ATS and static-scraped sources behind
-it actually reach the feed.
+reduced, which inverts it. The community spreadsheet is the best base source available and the
+reason the feed has breadth at all. The goal is not to remove the dependency but to stop it
+being the *ceiling* — to make sure the direct ATS and static-scraped sources behind it reach
+the feed. With 6,862 openings registered behind that work, this is the question the next live
+run answers.
 
 ### 5. Data quality, deferred by agreement
 
@@ -318,25 +355,62 @@ it actually reach the feed.
 - **GB/UK and England/Scotland/Wales — ~365 rows.** Pending a `country_acceptance.json`
   contract change.
 
-### 6. Carried-over defects
+### 6. The live registry holds rows that 404 while reporting `active`
 
-- **The 30 extraction-limited boards** (764 openings). `fetchedCount == keptCount` with
-  `lowConfidenceDropped == 0`, so nothing is filtered and extraction finds fewer rows.
-  Re-diagnose now that the delivered set has changed.
-- **`careers.activision.com/careers` returns 404 while reporting `ok` with 80 kept** — a
-  stale registration the fetch report does not surface as an error. A 404 reporting `ok`
-  will recur, so this is worth fixing on its own account.
+All three Electronic Arts rows answer **404** and have done since they were promoted on
+2026-04-10, while `registryState` reads `active`:
+
+- `static:listing_url:https://jobs.ea.com/en_us/careers`
+- `static:listing_url:https://jobs.ea.com/en_us/careers/home/?4538=8369&4538_format=3021&listfiltermode=1`
+- `static:listing_url:https://jobs.ea.com/en_us/careers/searchjobs/?4538=[8354]&4538_format=3021`
+
+`https://jobs.ea.com/careers` answers 200 with 29 rows. So EA looks registered, contributes
+almost nothing, and 134 catalogue openings sit behind it — the same shape as the Activision
+row that reports `ok` with 80 kept while 404ing.
+
+This is **not** fixed here. Correcting live registry rows is a data mutation, and the repo's
+rule is that it takes a printed plan, an asserted row count, an explicit apply flag, a backup
+to `_out/` and a read-back. Worth doing deliberately rather than as a side effect. Note also
+that a curated seed row cannot substitute: board identity is host + tenant, so a second row
+for `jobs.ea.com` would be a duplicate board fetched twice.
+
+### 7. Per-board extraction gaps — 325 openings
+
+The boards that *were* fetched and still return fewer roles than the catalogue lists. The
+static runner already follows `?page=N` and `/page/N` anchors within a budget, so this is not
+paging: EA, Roblox and Garena expose **zero** pagination anchors and their lists are
+JS/API-driven. Each board needs its own diagnosis against what it actually serves, and the
+largest are Roblox (123, 9 rows visible), Garena (74, 10 rows), Activision (43) and
+`jobs.jobvite.com` (39).
+
+Provider boards are a separate 159 openings, and they cannot be triaged from the fetch report
+at all: providers roll up to one row each (`greenhouse_boards` kept 1,108, `lever_sources`
+296, `workable_sources` 348), so a single underperforming board is invisible inside a healthy
+provider total.
+
+### 8. Carried-over defects
+
+- **`careers.activision.com/careers` returns 404 while reporting `ok` with 80 kept** — the
+  same defect shape as the three EA rows above, and one of a family: a stale registration the
+  fetch report does not surface as an error. Worth fixing on its own account, since a 404
+  reporting `ok` will recur.
 - **Gamucatex junk rows** — pre-existing. `static_detail_link_rows` at `_runner.py:343`
   has no title gate; only `larian.py` and `supercell.py` call it.
 - **`plans/voodoo-ashby-board-migration-plan.md`** — delete once a release lands.
 
 ## Sequencing note
 
-Nothing here reaches a running install until a release ships, and 0.3.007 is
-deliberately untagged. The six probe fixes are worth having regardless: before them a
-release would have carried 17% of the registration, and it now carries 98%. The same is
-true of the freshness fix — before it a release would carry a registry that is 94%
-unrefreshed, which caps everything above regardless of how many boards are registered.
+Nothing here reaches a running install until a release ships, and 0.3.007 is deliberately
+untagged. Everything above is worth having regardless, because of what a release would
+otherwise carry:
+
+| Fix | A release without it |
+|---|---|
+| Six probe fixes | 17% of the registration instead of 98% |
+| Freshness window | a registry that is 94% unrefreshed, capping everything above |
+| Personio domains | `personio_sources` kept 0 of 2 fetched, as the live report shows |
+| SmartRecruiters pagination | a third of Ubisoft's board never requested |
+| Board-identity fixes | the audit undercounts registered coverage by ~1,000 openings |
 
 ## Correction on record
 
@@ -350,26 +424,6 @@ Measured coverage is **31.7%**, not the 25.4% first quoted: that came from title
 matching alone, whereas posting-URL matching is definitive. Both bases are reported
 separately because title matching over-claims — `HR Business Partner - US Operations
 (West)` and `(East)` collapse to one title.
-
-## Carried over
-
-- **The 30 extraction-limited boards** (764 openings). `fetchedCount == keptCount` with
-  `lowConfidenceDropped == 0`, so nothing is filtered and extraction finds fewer rows.
-  Given the JavaScript root cause above, re-diagnose *after* the rendered-path work
-  rather than fixing separately.
-- **`careers.activision.com/careers` returns 404 while reporting `ok` with 80 kept** — a
-  stale registration the fetch report does not surface as an error.
-- **Gamucatex junk rows** — pre-existing, not a regression. Localised to
-  `static_detail_link_rows` at `_runner.py:343`, which has no title gate. Only
-  `larian.py` and `supercell.py` call it, so gate it on `looks_like_listing_role_title`
-  after confirming their real titles pass.
-- **`plans/voodoo-ashby-board-migration-plan.md`** — delete once a release lands.
-
-## Sequencing note
-
-Nothing here reaches a running install until a release ships, and 0.3.007 is
-deliberately untagged. The six probe fixes are worth having regardless: before them a
-release would have carried 17% of the registration, and it now carries 98%.
 
 ## Standing verification for every step
 
