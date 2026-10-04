@@ -10,24 +10,24 @@ what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 
 ## Where this stands
 
-Registration now covers **6,699 openings** across 673 boards. **6,630 of them are proven to
+Registration now covers **6,929 openings** across 695 boards. **6,844 of them are proven to
 reach the registry** — up from 762 when delivery was first measured. The difference is
 tracked as two numbers throughout, because "registered" is not "delivered" and only the
 second one is a result.
 
 | | Openings |
 |---|---|
-| Registered and **proven delivered** | **6,630 (99%)** |
-| Registered but not landing | 69 |
-| Still on an unregistered board | ~2,700 |
-| Of which blocked on a genuinely unreadable board | ~800 |
+| Registered and **proven delivered** | **6,844 (98.8%)** |
+| Registered but not landing | 85 |
+| Still on an unregistered board | ~2,500 |
+| Of which blocked on a genuinely unreadable board | ~350 |
 
 Measured with `tools/coverage_drain.py`, which drains discovery over the curated boards
 in an isolated data directory and counts what reaches `active`.
 
 | Adapter | Boards | Landed | Openings | Delivered |
 |---|---|---|---|---|
-| static | 412 | 408 | 3,259 | 3,244 |
+| static | 425 | 420 | 3,440 | 3,409 |
 | workday | 17 | 17 | 1,065 | 1,065 |
 | greenhouse | 52 | 51 | 655 | 617 |
 | workable | 29 | 29 | 440 | 440 |
@@ -36,10 +36,11 @@ in an isolated data directory and counts what reaches `active`.
 | bamboohr | 47 | 47 | 192 | 192 |
 | lever | 22 | 20 | 181 | 165 |
 | breezy | 15 | 15 | 69 | 69 |
+| personio | 9 | 9 | 49 | 49 |
 | jazzhr | 8 | 8 | 32 | 32 |
 | teamtailor | 13 | 13 | 26 | 26 |
 | recruitee | 3 | 3 | 14 | 14 |
-| **Total** | **673** | **666 (99%)** | **6,699** | **6,630 (99%)** |
+| **Total** | **695** | **687 (98.8%)** | **6,929** | **6,844 (98.8%)** |
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and
 one with a single opening are not comparable units, and a board-count headline hides
@@ -83,6 +84,17 @@ measures each ancestor path with the runtime's own detector.
 and double-counted. Four were known; AppLovin's Greenhouse board arrived with the second wave
 and `_drop_already_curated` now removes the class by board identity rather than by studio
 label, since one board is registered under two labels.
+
+**Personio operates two domains and the probe accepted one.** `validate_candidate_for_probe`
+required `jobs.personio.de`, so every `.jobs.personio.com` board was refused as an invalid
+host before it was fetched — nine boards, all serving a real feed, all registering zero. The
+runtime itself never had the restriction. Alongside it, `count_rows` counted HTML anchors in
+an XML feed, so all 21 Personio boards read as zero in the first place.
+
+The recurring lesson across all nine: **every one was a harness assumption, not a board
+failure, and none was visible without running discovery.** A recorded zero is the most
+expensive kind of finding, because it is indistinguishable from a board that genuinely has
+nothing — right up until the openings stay missing.
 
 ## What is left, in priority order
 
@@ -183,10 +195,28 @@ a zero, and the same evidence the first wave's 246 boards used.
 |---|---|---|---|
 | HTTP error (404/400/0/403/429/401) | 47 | 514 | says the board cannot be read, not that it is empty |
 | oracle_hcm | 2 | 169 | own REST endpoint returns empty `items`; UI ships zero anchors |
-| personio | 14 | 104 | feed shape needs a separate check |
+| personio | 5 | 33 | feed 404s; the careers page is HTML the Personio adapter cannot read |
 
 Registering an HTTP-error board would trade a missing opening for a source that reports zero
 forever, which is the failure mode the zero-yield quarantine exists to prevent.
+
+**Two of those three classes turned out to be fixable after all — 230 openings, 22 boards.**
+
+**Thirteen of the 47 were registered against a URL that errors.** `herp.careers/<tenant>`
+answers 400 where `herp.careers/v1/<tenant>` answers 200 — nine boards and 147 openings —
+and Dayforce, Briohr, EyeLine and Hurma each lost a URL segment the same way for 34 more.
+
+**Personio publishes XML and the probe was counting HTML anchors**, so all 21 boards read as
+zero. With the runtime's own parser they split into 9 that collect, 7 whose feed parses and
+holds no *game* roles, and 5 whose feed 404s. Then the probe's validator rejected every
+`.jobs.personio.com` host because it accepted only `jobs.personio.de` — and the 9 registered
+0 of 9. The runtime never had that restriction; `provider_personio` fetches `feed_url`
+directly. Both domains are accepted now.
+
+The 7 non-collecting Personio boards are a real answer, not a defect: instinct3's feed is
+full of positions, all marketing roles like "(Junior) Brand Partnerships Manager", which
+Baluffo correctly does not collect. The verdict says "parsed and yielded no game openings" so
+it cannot be confused with an unreachable board.
 
 ### 4. The 82% Google Sheet dependency — an asset, not a liability
 
