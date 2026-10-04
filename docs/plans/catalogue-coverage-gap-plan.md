@@ -139,6 +139,21 @@ failed, still advance it.
 Six tests pin it; four fail against the pre-fix behaviour, verified by reverting the
 guard.
 
+**Verified by replay rather than asserted.** `tools/coverage_freshness_replay.py` drives the
+real decision function over a simulated run cadence, with the pre-fix policy alongside as the
+control. Over 30 days the current policy fetches a board **55 times** at a 60-minute cadence
+and **30 times** at 720; the pre-fix policy fetches **zero at both**, which is exactly the
+121-day staleness the live report showed.
+
+Two earlier versions of that replay measured nothing and both looked like null results — one
+rewrote the deadline every round so it could never expire, the other never rewrote it so real
+time never reached it. The control is now a test: if the pre-fix policy ever fetches, the
+replay has stopped measuring the policy and the test says so.
+
+**This is a mechanism replay, not production.** It shows a board is refetched now and was not
+before. Whether the *skipped count in a live run* falls from 94% is still only observable
+there, and that stays the check to make after a release.
+
 **To confirm it works in production:** after a release, two consecutive full runs should
 show the skipped count falling rather than holding near 94%, and the median age of a
 skipped board should stop growing between runs.
@@ -254,7 +269,37 @@ merits if Feishu matters — Kurogame alone is 411 openings — and not as part 
 counts job links with the runtime's own `is_probable_job_detail_url`, and records the
 API-shaped responses so the data path is visible rather than guessed.
 
-### 4. The 82% Google Sheet dependency — an asset, not a liability
+### The 1,468 extraction gaps — mostly not coverage work
+
+1,468 openings sit on boards that are registered and working, where the studio has other roles
+in the feed but this role is absent. Spread over 155 boards, and the causes are not the same
+kind of thing, which matters because only one of them is a coverage defect.
+
+**SmartRecruiters capped its response — 214 openings, and a real bug — FIXED.** The runtime
+issued one request per source with no `limit` or `offset`, and the API returns at most 100
+however the request is phrased. `ubisoft2` reports `totalFound=332` against 100 rows, and the
+runtime kept 12 game jobs where the board holds 46; 175 of the missing Ubisoft roles sat in
+pages nobody had requested. Now paginated: **kept 12 → 46**, verified against the live API,
+with `cdprojektred` and `gameloft` unchanged at 43 and 55 because they already fit one page.
+Only smartrecruiters is paginated — the other four JSON feeds return everything at once and
+SmartRecruiters rate-limits.
+
+**The sector classifier is dropping real game roles — and that is not a coverage call.**
+`looks_like_game_job` rejects CD Projekt Red's "Senior VFX Artist" and "Expert Concept Artist".
+`GAME_KEYWORDS` holds 19 entries, all multi-token or unambiguous ("character artist",
+"tech artist", "world artist"), and `vfx` and `concept artist` are simply absent.
+
+This is a *product classification* decision with feed-wide blast radius, not a coverage fix:
+widening it changes which rows exist in the public feed for every source. It belongs to the
+data-quality track, and the honest recommendation is to widen it deliberately with a measured
+corpus rather than as a side effect of closing a coverage gap. Some of the same 1,468 are
+legitimately not gaps at all — dontnod's three "missing" roles are all "Spontaneous
+Application", correctly dropped.
+
+**The static remainder needs board-by-board work.** `jobs.ea.com` (134),
+`careers.roblox.com` (123) and `careers.garena.com` (74) are single large boards where the
+extractor returns fewer rows than exist. That is a per-site parser question, not one shared
+fix, and each needs its own diagnosis against what the board actually serves.
 
 This is now item 1's successor rather than a parallel track. A freshness fix delivers more
 openings only if the feed is not still dominated by one source, so the two are
