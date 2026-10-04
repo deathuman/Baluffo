@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** catalogue sweep shows Baluffo carries 31.7% of the index's openings; 10,465 openings are absent and most are on boards it could read
-> - **Verified against:** 277cfc37
-> - **Status:** phases 0 and 1 landed; 2,851 of 4,356 registered openings proven delivered (65%); the remaining 35% needs a rendered path
+> - **Verified against:** 2b5759cd
+> - **Status:** phases 0 and 1 landed; 3,043 of 4,356 registered openings proven delivered (69%); every structured adapter lands fully; the remaining 31% is static boards with no listing a GET can read
 
 # Closing the catalogue coverage gap
 
@@ -10,15 +10,15 @@ what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 
 ## Where this stands
 
-Registration covers **4,356 openings** across 513 boards. **2,851 of them are proven to
+Registration covers **4,356 openings** across 513 boards. **3,043 of them are proven to
 reach the registry** — up from 762 when delivery was first measured. The difference is
 tracked as two numbers throughout, because "registered" is not "delivered" and only the
 second one is a result.
 
 | | Openings |
 |---|---|
-| Registered and **proven delivered** | **2,851 (65%)** |
-| Registered but blocked on delivery | 1,505 |
+| Registered and **proven delivered** | **3,043 (69%)** |
+| Registered but blocked on delivery | 1,313 |
 | On an unregistered board | 3,522 |
 | Blocked on a missing adapter | 1,689 |
 
@@ -27,58 +27,65 @@ in an isolated data directory and counts what reaches `active`.
 
 | Adapter | Boards | Landed | Openings | Delivered |
 |---|---|---|---|---|
-| static | 276 | 30 | 1,514 | 258 |
 | workday | 17 | **17** | 1,065 | **1,065** |
 | greenhouse | 44 | 40 | 497 | 456 |
 | smartrecruiters | 16 | 16 | 432 | 432 |
 | ashby | 39 | **39** | 334 | **334** |
-| bamboohr | 47 | 0 | 192 | 0 |
+| bamboohr | 47 | **47** | 192 | **192** |
 | lever | 22 | 20 | 181 | 165 |
 | breezy | 15 | 15 | 69 | 69 |
 | jazzhr | 8 | 8 | 32 | 32 |
 | teamtailor | 13 | 13 | 26 | 26 |
 | recruitee | 3 | 3 | 14 | 14 |
-| **Total** | **500** | **201 (40%)** | **4,356** | **2,851 (65%)** |
+| static | 276 | 30 | 1,514 | 258 |
+| **Total** | **500** | **248 (49%)** | **4,356** | **3,043 (69%)** |
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and
 one with a single opening are not comparable units, and a board-count headline hides
 exactly the concentration that matters.
 
-## Four defects fixed, all found by running discovery
+## Five defects fixed, all found by running discovery
 
-Delivery went 762 → 1,383 → 1,777 → 2,851. Every step was a defect that reading the code
-would not have surfaced.
+Delivery went 762 → 1,383 → 1,777 → 2,851 → 3,043. Every step was a defect that reading
+the code would not have surfaced, and every one had the same shape: **the probe was
+looking somewhere the openings were not.**
 
 **Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
 only a `board_url` sent the probe at a single-page app that ships no job links. The
-board read as *healthy with zero jobs* and auto-approval believed the zero. The evidence
-was unambiguous: the only adapters carrying an `api_url` were the only ones where every
-board landed.
+board read as *healthy with zero jobs* and auto-approval believed the zero.
 
 **Ashby and Breezy were missing from the probe's `provider_specs`,** so a board whose
 `api_url` returns JSON fell through to an HTML anchor matcher. Ashby landed 0 of 39.
 
 **bamboohr, oracle_hcm and workday were declared supported with no probe-count branch
-at all** — 68 of 71 recorded probe failures. An adapter can be declared supported while
-being unprobeable and nothing checks it, so there is now a guardrail test asserting every
-adapter in `SUPPORTED_PROVIDERS` is probeable.
+at all** — 68 of 71 recorded probe failures. There is now a guardrail test asserting
+every adapter in `SUPPORTED_PROVIDERS` is probeable, which is worth more than the
+branches: it would have caught Ashby and Breezy before each cost a measurement cycle.
 
 **Workday's listing needs a POST.** Its CXS endpoint sits behind a certifi-anchored TLS
 context, so a GET sees an SPA stub. The runtime already implemented the POST, so the
-probe reuses it; all 17 boards now resolve (NVIDIA 2,000 jobs, Disney 605, Tencent 288).
+probe reuses it; all 17 boards resolve (NVIDIA 2,000 jobs, Disney 605, Tencent 288).
 
-A fifth fix removed a queue deadlock rather than adding coverage: a probe that reaches a
-board and finds nothing had no exit, so the same rows occupied every queue slot forever
-while 226 candidates waited behind them. Zero-yield probes are now recorded and
-time-box-quarantined — meaning "stop re-probing for now", never "this board is empty".
-Verified safe: 247 boards were quarantined and none is active.
+**BambooHR's listing is not the page its URL names.** `/careers` is a single-anchor
+shell; the listing is a GET to `/careers/list`. Nothing about the board needed changing
+— the runtime's own adapter already collected from it, keeping 99 jobs in production —
+only the endpoint the probe read. This also corrects an earlier conclusion in this plan
+that BambooHR needed the rendered path. It never did.
+
+A sixth change removed a queue deadlock rather than adding coverage: a probe that
+reaches a board and finds nothing had no exit, so the same rows occupied every queue
+slot forever while 226 candidates waited behind them. Zero-yield probes are now recorded
+and time-box-quarantined — "stop re-probing for now", never "this board is empty".
+Verified safe: 247 boards were quarantined and none was active.
 
 ## What remains
 
-**1. BambooHR (0 of 47) and 246 of 276 static boards — ~1,450 openings.** No endpoint
-change helps these: they have no listing a plain GET can read. They need the rendered
-path — the runtime's existing browser fallback — or a per-vendor extractor. This is the
-last large block on the registration and the most open-ended piece of work.
+**1. 246 of 276 static boards — ~1,256 openings.** The only remaining block on the
+registration. These have no listing a plain GET can read, so no endpoint change helps.
+Checked rather than assumed: `static_probe_evidence` and an independent counter agree on
+14 of 14 sampled boards, so this is the boards being unreadable rather than a detector
+disagreeing with itself. They need the rendered path — the runtime's existing browser
+fallback, which discovery's probe does not currently use — or a per-vendor extractor.
 
 **2. Triage the residual probe failures** — 6, from 71.
 
@@ -131,8 +138,8 @@ separately because title matching over-claims — `HR Business Partner - US Oper
 ## Sequencing note
 
 Nothing here reaches a running install until a release ships, and 0.3.007 is
-deliberately untagged. The four probe fixes are worth having regardless: before them a
-release would have carried 17% of the registration, and it now carries 65%.
+deliberately untagged. The five probe fixes are worth having regardless: before them a
+release would have carried 17% of the registration, and it now carries 69%.
 
 ## Standing verification for every step
 
