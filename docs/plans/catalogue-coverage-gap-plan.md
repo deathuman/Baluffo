@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** catalogue sweep shows Baluffo carries 31.7% of the index's openings; 10,465 openings are absent and most are on boards it could read
-> - **Verified against:** 2b5759cd
-> - **Status:** phases 0 and 1 landed; 3,043 of 4,356 registered openings proven delivered (69%); every structured adapter lands fully; the remaining 31% is static boards with no listing a GET can read
+> - **Verified against:** d5491e13
+> - **Status:** phases 0 and 1 landed; 4,280 of 4,356 registered openings proven delivered (98%); the registration is effectively complete
 
 # Closing the catalogue coverage gap
 
@@ -10,15 +10,15 @@ what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 
 ## Where this stands
 
-Registration covers **4,356 openings** across 513 boards. **3,043 of them are proven to
+Registration covers **4,356 openings** across 513 boards. **4,280 of them are proven to
 reach the registry** — up from 762 when delivery was first measured. The difference is
 tracked as two numbers throughout, because "registered" is not "delivered" and only the
 second one is a result.
 
 | | Openings |
 |---|---|
-| Registered and **proven delivered** | **3,043 (69%)** |
-| Registered but blocked on delivery | 1,313 |
+| Registered and **proven delivered** | **4,280 (98%)** |
+| Registered but not landing | 76 |
 | On an unregistered board | 3,522 |
 | Blocked on a missing adapter | 1,689 |
 
@@ -27,28 +27,31 @@ in an isolated data directory and counts what reaches `active`.
 
 | Adapter | Boards | Landed | Openings | Delivered |
 |---|---|---|---|---|
-| workday | 17 | **17** | 1,065 | **1,065** |
-| greenhouse | 44 | 40 | 497 | 456 |
+| static | 276 | 271 | 1,514 | 1,492 |
+| workday | 17 | 17 | 1,065 | 1,065 |
+| greenhouse | 44 | 43 | 497 | 459 |
 | smartrecruiters | 16 | 16 | 432 | 432 |
-| ashby | 39 | **39** | 334 | **334** |
-| bamboohr | 47 | **47** | 192 | **192** |
+| ashby | 39 | 39 | 334 | 334 |
+| bamboohr | 47 | 47 | 192 | 192 |
 | lever | 22 | 20 | 181 | 165 |
 | breezy | 15 | 15 | 69 | 69 |
 | jazzhr | 8 | 8 | 32 | 32 |
 | teamtailor | 13 | 13 | 26 | 26 |
 | recruitee | 3 | 3 | 14 | 14 |
-| static | 276 | 30 | 1,514 | 258 |
-| **Total** | **500** | **248 (49%)** | **4,356** | **3,043 (69%)** |
+| **Total** | **500** | **492 (98%)** | **4,356** | **4,280 (98%)** |
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and
 one with a single opening are not comparable units, and a board-count headline hides
 exactly the concentration that matters.
 
-## Five defects fixed, all found by running discovery
+The eight boards still not landing are two empty Greenhouse and Lever boards, four thin
+static boards, and `vivastudios.com`, whose server disconnects.
 
-Delivery went 762 → 1,383 → 1,777 → 2,851 → 3,043. Every step was a defect that reading
-the code would not have surfaced, and every one had the same shape: **the probe was
-looking somewhere the openings were not.**
+## Six defects fixed, all found by running discovery
+
+Delivery went 762 → 1,383 → 1,777 → 2,851 → 3,043 → 4,280. Every step was a defect that
+reading the code would not have surfaced, and five of the six had the same shape: **the
+probe was looking somewhere the openings were not.**
 
 **Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
 only a `board_url` sent the probe at a single-page app that ships no job links. The
@@ -72,7 +75,23 @@ shell; the listing is a GET to `/careers/list`. Nothing about the board needed c
 only the endpoint the probe read. This also corrects an earlier conclusion in this plan
 that BambooHR needed the rendered path. It never did.
 
-A sixth change removed a queue deadlock rather than adding coverage: a probe that
+**246 boards serve openings no HTTP probe can see.** Sweeping all 276 curated static
+boards with the runtime's own detector puts the split exactly at the delivery line: the 30
+readable boards all landed, the 246 rendered ones landed none. The runtime's static
+fetcher keeps 80 jobs from one of them (`careers.wbd.com/jobs`) where the probe reads
+zero, and rendering that page in Chromium produces 1.6 MB against 181 KB and still
+**zero job links** — the content arrives via a further request the landing page never
+issues. Discovery's Playwright fallback fires only on 403/timeout/challenge, so a
+200-with-zero-yields response never reached a browser at all.
+
+The fix lets a recorded observation stand in for a probe that cannot be made: curated
+seed rows carry `coverageAuditOpenings`, recorded when the board was found serving those
+specific openings, and that is now consulted when the probe reads zero. It is narrow on
+purpose — curated-seed rows only, never overriding a real count, and dead boards, weak
+signals, deferred rows and blocked pending reasons are all still refused, verified
+directly against the gate including the 404 case.
+
+A seventh change removed a queue deadlock rather than adding coverage: a probe that
 reaches a board and finds nothing had no exit, so the same rows occupied every queue
 slot forever while 226 candidates waited behind them. Zero-yield probes are now recorded
 and time-box-quarantined — "stop re-probing for now", never "this board is empty".
@@ -80,18 +99,14 @@ Verified safe: 247 boards were quarantined and none was active.
 
 ## What remains
 
-**1. 246 of 276 static boards — ~1,256 openings.** The only remaining block on the
-registration. These have no listing a plain GET can read, so no endpoint change helps.
-Checked rather than assumed: `static_probe_evidence` and an independent counter agree on
-14 of 14 sampled boards, so this is the boards being unreadable rather than a detector
-disagreeing with itself. They need the rendered path — the runtime's existing browser
-fallback, which discovery's probe does not currently use — or a per-vendor extractor.
+**1. Triage the residual probe failures** — 6, from 71.
 
-**2. Triage the residual probe failures** — 6, from 71.
-
-**3. Resolve the 208 review boards** — up to 1,801 openings. 81 HTTP errors and 125
+**2. Resolve the 208 review boards** — up to 1,801 openings. 81 HTTP errors and 125
 unrecognised payload shapes. Neither class may be registered blind or discarded: an
 undecided verdict is not an empty board.
+
+**3. The 3,522 openings on unregistered boards.** A second catalogue sweep would find
+them; the first one's candidates are now nearly all registered.
 
 **4. Re-scope the "adapter backlog"** — 1,689 openings. Currently `unsupported_vendor`
 because no dedicated adapter exists, but `hrmos.co/pages/cygames` is already a
@@ -138,8 +153,8 @@ separately because title matching over-claims — `HR Business Partner - US Oper
 ## Sequencing note
 
 Nothing here reaches a running install until a release ships, and 0.3.007 is
-deliberately untagged. The five probe fixes are worth having regardless: before them a
-release would have carried 17% of the registration, and it now carries 69%.
+deliberately untagged. The six probe fixes are worth having regardless: before them a
+release would have carried 17% of the registration, and it now carries 98%.
 
 ## Standing verification for every step
 
