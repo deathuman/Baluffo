@@ -4695,5 +4695,941 @@
   "careersUrl": "https://apply.workable.com",
   "api_url": "https://apply.workable.com/api/v1/widget/accounts/unseen-inc?details=true",
   "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Dizzaract (static)",
+  "studio": "Dizzaract",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://dizzaract.peopleforce.io/careers",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "Koei Tecmo (static)",
+  "studio": "Koei Tecmo",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://koeitecmo.co.jp/recruit/career",
+  "coverageAuditOpenings": 54
+ },
+ {
+  "name": "Octo Games Studio (static)",
+  "studio": "Octo Games Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://octogamesstudio.peopleforce.io/careers",
+  "coverageAuditOpenings": 9
+ },
+ {
+  "name": "IGT Gaming (static)",
+  "studio": "IGT Gaming",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://jobs.igt.com",
+  "coverageAuditOpenings": 109
+ },
+ {
+  "name": "Com2uS Group (static)",
+  "studio": "Com2uS Group",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://com2us.recruiter.co.kr",
+  "coverageAuditOpenings": 61
+ },
+ {
+  "name": "AQUASTAR Inc. (static)",
+  "studio": "AQUASTAR Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://recruit.jobcan.jp",
+  "coverageAuditOpenings": 59
+ },
+ {
+  "name": "Active Gaming Media Inc. (static)",
+  "studio": "Active Gaming Media Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://en-gage.net",
+  "coverageAuditOpenings": 40
+ },
+ {
+  "name": "Yggdrazil Group (static)",
+  "studio": "Yggdrazil Group",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ygg-cg.com",
+  "coverageAuditOpenings": 40
+ },
+ {
+  "name": "FirstFun (static)",
+  "studio": "FirstFun",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://hire-r1.mokahr.com",
+  "coverageAuditOpenings": 36
+ },
+ {
+  "name": "Webzen (static)",
+  "studio": "Webzen",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://webzen.recruiter.co.kr",
+  "coverageAuditOpenings": 31
+ },
+ {
+  "name": "historia Inc. (static)",
+  "studio": "historia Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://historia.co.jp",
+  "coverageAuditOpenings": 26
+ },
+ {
+  "name": "From Software (static)",
+  "studio": "From Software",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://fromsoftware-careers.snar.jp",
+  "coverageAuditOpenings": 23
+ },
+ {
+  "name": "Matrix Software (static)",
+  "studio": "Matrix Software",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://matrixsoft.co.jp",
+  "coverageAuditOpenings": 18
+ },
+ {
+  "name": "Jet Studio inc. (static)",
+  "studio": "Jet Studio inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://jetstudio.jp",
+  "coverageAuditOpenings": 14
+ },
+ {
+  "name": "Nexus Mods (static)",
+  "studio": "Nexus Mods",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://nexusmods.careers.hibob.com",
+  "coverageAuditOpenings": 14
+ },
+ {
+  "name": "peropero (static)",
+  "studio": "peropero",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://peropero.net",
+  "coverageAuditOpenings": 14
+ },
+ {
+  "name": "4Tale Production (static)",
+  "studio": "4Tale Production",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://4taleproduction.com",
+  "coverageAuditOpenings": 12
+ },
+ {
+  "name": "HEXADRIVE Inc. (static)",
+  "studio": "HEXADRIVE Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://hexadrive.jp",
+  "coverageAuditOpenings": 11
+ },
+ {
+  "name": "MSY Inc. (static)",
+  "studio": "MSY Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://msygroup.com",
+  "coverageAuditOpenings": 11
+ },
+ {
+  "name": "Recreate Games (static)",
+  "studio": "Recreate Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://recreate.games",
+  "coverageAuditOpenings": 11
+ },
+ {
+  "name": "Antada (static)",
+  "studio": "Antada",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://antada.com.vn",
+  "coverageAuditOpenings": 10
+ },
+ {
+  "name": "Meteorise (static)",
+  "studio": "Meteorise",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://meteorise.co.jp",
+  "coverageAuditOpenings": 10
+ },
+ {
+  "name": "Entrada Interactive (static)",
+  "studio": "Entrada Interactive",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://entradainteractive.com",
+  "coverageAuditOpenings": 9
+ },
+ {
+  "name": "Revolving Games (static)",
+  "studio": "Revolving Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://revolvinggames.com",
+  "coverageAuditOpenings": 9
+ },
+ {
+  "name": "Studio Z (static)",
+  "studio": "Studio Z",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://studioz.co.jp",
+  "coverageAuditOpenings": 9
+ },
+ {
+  "name": "Dedalord Game Studio (static)",
+  "studio": "Dedalord Game Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://dedalord.com",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "Falcom (static)",
+  "studio": "Falcom",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://falcom.co.jp",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "Nukebox Studios (static)",
+  "studio": "Nukebox Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://nukeboxstudios.com",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "Sumo Digital (static)",
+  "studio": "Sumo Digital",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://sumodigitalltd.careers.hibob.com",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "Torpor Games (static)",
+  "studio": "Torpor Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://torporgames.careers.hibob.com",
+  "coverageAuditOpenings": 8
+ },
+ {
+  "name": "Backbone (static)",
+  "studio": "Backbone",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://app.dover.com",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "Dot9 Games (static)",
+  "studio": "Dot9 Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://dot9games.com",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "GlobaLoc (static)",
+  "studio": "GlobaLoc",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://globaloc.de",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "HORI CO., LTD. (static)",
+  "studio": "HORI CO., LTD.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://hori.jp",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "Iteration One GmbH (static)",
+  "studio": "Iteration One GmbH",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://join.com",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "Pingle Studio (static)",
+  "studio": "Pingle Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://pinglestudio.com",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "Sonologic-Design (static)",
+  "studio": "Sonologic-Design",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://sonologic-design.com",
+  "coverageAuditOpenings": 7
+ },
+ {
+  "name": "The Coalition (static)",
+  "studio": "The Coalition",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://apply.careers.microsoft.com",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "C4on, Inc. (static)",
+  "studio": "C4on, Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://c4on.jp",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "Crater Studios (static)",
+  "studio": "Crater Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://craterstudiosgames.com",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "Rengame (static)",
+  "studio": "Rengame",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://rengame.co.jp",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "Rideon (static)",
+  "studio": "Rideon",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://rideon.co.jp",
+  "coverageAuditOpenings": 6
+ },
+ {
+  "name": "BIT ODD (static)",
+  "studio": "BIT ODD",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://bitoddoy.careers.hibob.com",
+  "coverageAuditOpenings": 5
+ },
+ {
+  "name": "BROCCOLI Co. (static)",
+  "studio": "BROCCOLI Co.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://broccoli.co.jp",
+  "coverageAuditOpenings": 5
+ },
+ {
+  "name": "Cleverside (static)",
+  "studio": "Cleverside",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://cleverside.com",
+  "coverageAuditOpenings": 5
+ },
+ {
+  "name": "Fawkes (static)",
+  "studio": "Fawkes",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://fawkesgames.com",
+  "coverageAuditOpenings": 5
+ },
+ {
+  "name": "ustwo games (static)",
+  "studio": "ustwo games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ustwo.careers.hibob.com",
+  "coverageAuditOpenings": 5
+ },
+ {
+  "name": "Bosi (static)",
+  "studio": "Bosi",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://bosi.com",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "FRVR (static)",
+  "studio": "FRVR",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://frvr.com",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "Noisycroak (static)",
+  "studio": "Noisycroak",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://noisycroak.co.jp",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "Normal VR (static)",
+  "studio": "Normal VR",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://normcore.io",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "PLAYISM (static)",
+  "studio": "PLAYISM",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://playism.com",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "Twin Atlas (static)",
+  "studio": "Twin Atlas",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://twinatlas.notion.site",
+  "coverageAuditOpenings": 4
+ },
+ {
+  "name": "Arika (static)",
+  "studio": "Arika",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://arika.co.jp",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Gameforge (static)",
+  "studio": "Gameforge",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://corporate.gameforge.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "ENTERGRAM, INC. (static)",
+  "studio": "ENTERGRAM, INC.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://entergram.co.jp",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Game Tailors (static)",
+  "studio": "Game Tailors",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://gametailors.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Good Dog Studios (static)",
+  "studio": "Good Dog Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://gooddogstudios.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Gunjan App Studios (static)",
+  "studio": "Gunjan App Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://gunjanappstudios.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Hexar Studios (formerly Ares Studio) (static)",
+  "studio": "Hexar Studios (formerly Ares Studio)",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://hexarstudios.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Second Star Games (static)",
+  "studio": "Second Star Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://jobs.recruit.charliehr.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Lowpixel Studios (static)",
+  "studio": "Lowpixel Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://lowpixelstudios.freshteam.com",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Pygmy Studio (static)",
+  "studio": "Pygmy Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://pygmy.jp",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Regista (static)",
+  "studio": "Regista",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://regista.co.jp",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "SOLID WHITE design & digital media GmbH (static)",
+  "studio": "SOLID WHITE design & digital media GmbH",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://solidwhite.de",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Winlight (static)",
+  "studio": "Winlight",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://winlight.co.jp",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Zeppelin Studio (static)",
+  "studio": "Zeppelin Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://zeppelinstudio.net",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Art of Play (static)",
+  "studio": "Art of Play",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://artofplaygames.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Afterverse (static)",
+  "studio": "Afterverse",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ats.abler.com.br",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "bigscreen VR (static)",
+  "studio": "bigscreen VR",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://bigscreenvr.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Jawaker (static)",
+  "studio": "Jawaker",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://careers.jawaker.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "ELYZIO (static)",
+  "studio": "ELYZIO",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://elyzio.notion.site",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Changefied (static)",
+  "studio": "Changefied",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://en.changefied.nl",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "e-smile CO.,LTD. (static)",
+  "studio": "e-smile CO.,LTD.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://esmile-soltribe.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Farsight Studios (static)",
+  "studio": "Farsight Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://farsightstudios.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Gemdrops, Inc. (static)",
+  "studio": "Gemdrops, Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://gemdrops.co.jp",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Korion Interactive (static)",
+  "studio": "Korion Interactive",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://korion.de",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Luden.io (static)",
+  "studio": "Luden.io",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://luden.io",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Naphora Games Group (static)",
+  "studio": "Naphora Games Group",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://naphora.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Pixalot Labs (static)",
+  "studio": "Pixalot Labs",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://pixalotlabs.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Rocky Road Games (static)",
+  "studio": "Rocky Road Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://rockyroadgames.notion.site",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Rusty Lake (static)",
+  "studio": "Rusty Lake",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://rustylake.com",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Ammonite Design Studios (static)",
+  "studio": "Ammonite Design Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ammonitedesignstudios.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Ampere Analysis (static)",
+  "studio": "Ampere Analysis",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ampereanalysis.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "VOYA Games GmbH (static)",
+  "studio": "VOYA Games GmbH",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://angry-dynomites-lab.notion.site",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "A PLUS JAPAN, Inc. (static)",
+  "studio": "A PLUS JAPAN, Inc.",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://aplusjapan.co.jp",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Twin Atlas (static)",
+  "studio": "Twin Atlas",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://app.notion.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Archibaldi Studio (static)",
+  "studio": "Archibaldi Studio",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://archibaldistudio.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Infold Games (static)",
+  "studio": "Infold Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://career.infoldgames.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "CAT-astrophe Games (static)",
+  "studio": "CAT-astrophe Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://cat-astrophe-games.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Classy Games (static)",
+  "studio": "Classy Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://classygames.jp.larksuite.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Double Coconut (static)",
+  "studio": "Double Coconut",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://doublecoconut.freshteam.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Eschatology Entertainment (static)",
+  "studio": "Eschatology Entertainment",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ee.peopleforce.io",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Twin Atlas (static)",
+  "studio": "Twin Atlas",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://efficient-shrine-b62.notion.site",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Fangamer (static)",
+  "studio": "Fangamer",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://fangamer.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Fangamer Japan (static)",
+  "studio": "Fangamer Japan",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://fangamer.jp",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "FlowMotion Entertainment (static)",
+  "studio": "FlowMotion Entertainment",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://flowmotionentertainment.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Inferno Studios (static)",
+  "studio": "Inferno Studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://fueltheinferno.recruit.charliehr.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Fun Train (static)",
+  "studio": "Fun Train",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://funtrainvr.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Gunzilla Games (static)",
+  "studio": "Gunzilla Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://gunzillagames.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "IJsfontein (be experienced! GmbH, DE) (static)",
+  "studio": "IJsfontein (be experienced! GmbH, DE)",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://ijsfontein.nl",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Mayhem studios (static)",
+  "studio": "Mayhem studios",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://mayhem.keka.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Mythical Games (static)",
+  "studio": "Mythical Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://mythicalgames.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Set Snail (static)",
+  "studio": "Set Snail",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://setsnail.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Springlab (static)",
+  "studio": "Springlab",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://springlab.nl",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Taito (static)",
+  "studio": "Taito",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://taito.snar.jp",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "TrueMyth Games (static)",
+  "studio": "TrueMyth Games",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://truemythgames.com",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Yuke's (static)",
+  "studio": "Yuke's",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://yukes.co.jp",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Tripledot Studios (greenhouse)",
+  "studio": "Tripledot Studios",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "tripledotstudios",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/tripledotstudios/jobs?content=true",
+  "coverageAuditOpenings": 90
+ },
+ {
+  "name": "Sporty Group (greenhouse)",
+  "studio": "Sporty Group",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "sportygroup",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/sportygroup/jobs?content=true",
+  "coverageAuditOpenings": 37
+ },
+ {
+  "name": "growe (greenhouse)",
+  "studio": "growe",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "growe",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/growe/jobs?content=true",
+  "coverageAuditOpenings": 14
+ },
+ {
+  "name": "Kambi (greenhouse)",
+  "studio": "Kambi",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "kambi",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/kambi/jobs?content=true",
+  "coverageAuditOpenings": 10
+ },
+ {
+  "name": "Tactile Games (greenhouse)",
+  "studio": "Tactile Games",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "tactilegames",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/tactilegames/jobs?content=true",
+  "coverageAuditOpenings": 3
+ },
+ {
+  "name": "Keen Software House (greenhouse)",
+  "studio": "Keen Software House",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "keensoftwarehouseas",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/keensoftwarehouseas/jobs?content=true",
+  "coverageAuditOpenings": 2
+ },
+ {
+  "name": "Evoplay (greenhouse)",
+  "studio": "Evoplay",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "evoplaygames",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/evoplaygames/jobs?content=true",
+  "coverageAuditOpenings": 1
+ },
+ {
+  "name": "Kano (greenhouse)",
+  "studio": "Kano",
+  "adapter": "greenhouse",
+  "nlPriority": false,
+  "slug": "kano",
+  "api_url": "https://boards-api.greenhouse.io/v1/boards/kano/jobs?content=true",
+  "coverageAuditOpenings": 1
  }
 ]

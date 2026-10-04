@@ -1,13 +1,13 @@
 """What actually reaches the registry, measured rather than assumed.
 
-Draining discovery over the 557 curated boards, per adapter:
+Draining discovery over the 673 curated boards, per adapter:
 
 ===============  ======  =======  =========  ==========
 adapter          boards  landed   openings  delivered
 ===============  ======  =======  =========  ==========
-static              304     299      2,347      2,325
+static              412     408      3,259      3,244
 workday              17      17      1,065      1,065
-greenhouse           44      43        497        459
+greenhouse           52      51        655        617
 workable             29      29        440        440
 smartrecruiters      16      16        432        432
 ashby                39      39        334        334
@@ -25,9 +25,9 @@ concatenated, so a board in both is fetched twice and double-counted; four such 
 were already known (Voodoo, 2K Czech, Hangar 13, Yggdrasil) and this was the fifth.
 `_drop_already_curated` now removes the class by board identity rather than by studio label.
 
-**549 boards and 5,553 of 5,629 openings — 98.6% of boards, 98.6% of openings.**
+**666 boards and 6,630 of 6,699 openings — 99% of boards, 99% of openings.**
 
-The eight that still do not land are two empty Greenhouse and Lever boards and six thin
+The seven that still do not land are two empty Greenhouse and Lever boards and five thin
 static boards, one of which (`vivastudios.com`) disconnects mid-response.
 
 That number came from 762 (17%) in six steps, and every step was found by running
@@ -63,8 +63,8 @@ The delivery share is deliberately reported per adapter and in openings, not boa
 one board with 176 promised openings and one with a single opening are not comparable
 units, and a board-count headline hides exactly the concentration that matters.
 
-Three further findings came out of measuring the later waves rather than trusting the
-labels, and all three were the harness lying rather than the boards failing.
+Five further findings came out of measuring the later waves rather than trusting the
+labels, and all five were the harness lying rather than the boards failing.
 
 **A board's JSON API lives on a different host from its career page**, so all 39 Ashby
 boards register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/…`, which
@@ -84,6 +84,19 @@ only `account`, which `endpoint_url` cannot resolve — so all 29 boards failed 
 adapter or URL". Both now use the runtime's own `JsonFeedSpec` template, and all 29 land
 440 openings. The lesson is the one this effort keeps teaching: the probe was looking
 somewhere the openings were not, and the zero was recorded as an answer.
+
+**Greenhouse's EU hosts were invisible to the host rules**, so 158 openings on 8 tenants
+collapsed onto a single static host-root row. `job-boards.eu.greenhouse.io` does not match
+`(^|\.)job-boards\.greenhouse\.io$` — it ends `eu.greenhouse.io`, not
+`job-boards.greenhouse.io` — so it fell through to `static`. The runtime's API serves every
+one of those tenants: tripledotstudios 92 jobs, sportygroup 38, growe 15, kambi 10.
+
+**A static candidate's listing URL is its host root, which is often not the careers page.**
+`tools/coverage_listing_discovery.py` derives the listing from the URLs of the openings that
+were missed on the board — the board was found because those specific openings exist — and
+finds a readable one where the root has none: `koeitecmo.co.jp/recruit/career` serves 43
+rows. The boards it cannot improve return HTTP 200 with zero anchors, so they are
+registered on their recorded openings rather than on a probe, as the 246 boards above were.
 """
 
 from __future__ import annotations
@@ -116,9 +129,9 @@ _DRAIN = _ROOT / "_out" / "coverage" / "drain"
 # failed the probe as "missing adapter or URL" and registered 0 of 29. Both now use the
 # runtime's own JsonFeedSpec template. keywords-intl1 serves 282 jobs and sideinc 378.
 _DELIVERED = {
-    "static": (304, 299, 2_347, 2_325),
+    "static": (412, 408, 3_259, 3_244),
     "workday": (17, 17, 1_065, 1_065),
-    "greenhouse": (44, 43, 497, 459),
+    "greenhouse": (52, 51, 655, 617),
     "workable": (29, 29, 440, 440),
     "smartrecruiters": (16, 16, 432, 432),
     "ashby": (39, 39, 334, 334),

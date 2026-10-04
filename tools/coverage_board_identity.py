@@ -126,8 +126,13 @@ ADAPTER_ID_FORMAT = {
 # Host patterns that identify a vendor. Ordered: first match wins, so put the
 # specific multi-tenant patterns above the generic ones.
 HOST_RULES: tuple[tuple[str, str], ...] = (
-    (r"(^|\.)job-boards\.greenhouse\.io$", "greenhouse"),
-    (r"(^|\.)boards\.greenhouse\.io$", "greenhouse"),
+    # Greenhouse's EU data-residency hosts are ``job-boards.eu.greenhouse.io`` and
+    # ``boards.eu.greenhouse.io``. The optional regional label matters: a rule anchored at
+    # ``job-boards\.greenhouse\.io$`` does not match a host ending ``eu.greenhouse.io``,
+    # so all 158 openings on 8 tenants fell through to static and collapsed onto one
+    # host-root row. The runtime's API serves every one of them.
+    (r"(^|\.)job-boards(\.[a-z]{2})?\.greenhouse\.io$", "greenhouse"),
+    (r"(^|\.)boards(\.[a-z]{2})?\.greenhouse\.io$", "greenhouse"),
     (r"^jobs\.lever\.co$", "lever"),
     (r"(^|\.)jobs\.ashbyhq\.com$", "ashby"),
     (r"(^|\.)jobs\.smartrecruiters\.com$", "smartrecruiters"),
@@ -227,8 +232,8 @@ TENANT_SOURCE = {
     r"(^|\.)personio\.(com|de)$": "host",
     r"(^|\.)applytojob\.com$": "host",
     r"^jobs\.lever\.co$": "seg0",
-    r"(^|\.)job-boards\.greenhouse\.io$": "seg0",
-    r"(^|\.)boards\.greenhouse\.io$": "seg0",
+    r"(^|\.)job-boards(\.[a-z]{2})?\.greenhouse\.io$": "seg0",
+    r"(^|\.)boards(\.[a-z]{2})?\.greenhouse\.io$": "seg0",
     r"(^|\.)jobs\.smartrecruiters\.com$": "seg0",
     r"(^|\.)jobs\.ashbyhq\.com$": "seg0",
     r"(^|\.)teamtailor\.com$": "seg0",
