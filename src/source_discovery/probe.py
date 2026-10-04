@@ -662,9 +662,25 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
         return max(link_count, _static_result_count(text, base_url))
     if adapter == "jazzhr":
         return len(parse_jazzhr_jobs_html(text, base_url))
+    if adapter == "bamboohr":
+        # BambooHR's careers page is a JavaScript app, so this sees nothing on most
+        # boards. The branch exists because the adapter is declared supported and a
+        # board that can never be counted can never be approved; a real zero here is
+        # the honest answer and is handled by the zero-yield quarantine.
+        return _html_link_count(text, r'(?is)href=["\'][^"\']+/careers/\d+[^"\']*["\']')
+    if adapter in {"workday", "oracle_hcm"}:
+        # Both render through JavaScript and expose no GET-accessible listing. Counted
+        # as zero rather than refusing: refusing meant these boards were reported as
+        # probe failures (68 of 71 recorded) instead of as undecided, which is the
+        # distinction the zero-yield quarantine exists to preserve.
+        #
+        # Workday's real count needs the CXS POST behind a certifi-anchored context,
+        # which `provider_structured_listing` implements. Wiring the probe to it is
+        # tracked separately; until then zero is correct and non-blocking.
+        return 0
     if adapter == "static":
         return _static_probe_count(text, base_url)
-    raise ValueError("unsupported adapter")
+    raise ValueError(f"unsupported adapter: {adapter}")
 
 
 def _probe_urls(candidate: dict[str, Any]) -> list[str]:
