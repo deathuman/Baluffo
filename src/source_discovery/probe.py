@@ -12,7 +12,7 @@ import asyncio
 import json
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from html import unescape
 from typing import Any
@@ -25,6 +25,10 @@ from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.personio import looks_like_personio_marketing_html
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
+from src.jobs.adapters.provider_structured_listing import (
+    _fetch_workday_cxs_page,
+    _workday_cxs_config,
+)
 from src.jobs.common.no_openings import contains_no_openings_marker, visible_text_from_html
 from src.url_hosts import host_matches_domain_pattern, host_matches_subdomain
 
@@ -687,6 +691,56 @@ def _probe_urls(candidate: dict[str, Any]) -> list[str]:
     return [endpoint_url(candidate), *fallback_probe_urls(candidate)]
 
 
+def structured_api_probe_count(
+    candidate: Mapping[str, Any] | None, *, timeout_s: int
+) -> int | None:
+    """Count openings from a vendor listing that a plain GET cannot reach.
+
+    Workday is the case that matters. Its CXS endpoint is a **POST** to
+    ``/wday/cxs/<tenant>/<site>/jobs`` behind a certifi-anchored TLS context, because
+    the OS cert store poisons chain building for ``*.myworkdayjobs.com``. A GET hits
+    an SPA redirect stub, so the board probes as zero no matter what URL it carries.
+    The runtime already implements the POST in
+    :mod:`src.jobs.adapters.provider_structured_listing`, and this reuses it rather
+    than writing a second copy of a rule that is easy to get subtly wrong.
+
+    Measured on the curated set: Workday holds 1,065 openings across 17 boards, the
+    largest single undelivered block, and every one of them probed as zero.
+
+    Returns ``None`` when the adapter has no such path, when the board lacks a
+    listing URL, or when the fetch fails -- so the caller falls through to the
+    ordinary HTML/JSON probe rather than reporting a failure. A genuine zero from the
+    API is returned as ``0`` and handled by the zero-yield quarantine.
+    """
+    if not isinstance(candidate, Mapping):
+        return None
+    if str(candidate.get("adapter") or "") != "workday":
+        return None
+    listing = str(candidate.get("listing_url") or candidate.get("careersUrl") or "").strip()
+    if not listing:
+        return None
+    endpoint, _site, _search = _workday_cxs_config(listing)
+    if not endpoint:
+        return None
+    try:
+        payload = _fetch_workday_cxs_page(
+            endpoint=endpoint,
+            payload={"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""},
+            timeout_s=max(5, int(timeout_s)),
+            retries=2,
+            backoff_s=1.0,
+        )
+    except Exception:
+        # Fall through to the generic probe. The board is undecided, not empty, and
+        # the zero-yield quarantine will retire it if it keeps yielding nothing.
+        return None
+    total = payload.get("total") if isinstance(payload, Mapping) else None
+    if isinstance(total, int):
+        return max(0, total)
+    postings = payload.get("jobPostings") if isinstance(payload, Mapping) else None
+    return len(postings) if isinstance(postings, list) else None
+
+
 def _probe_fetch_urls(
     probe_urls: list[str],
     *,
@@ -695,6 +749,9 @@ def _probe_fetch_urls(
     fetcher: Callable[[str, int], str],
     candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str]:
+    structured = structured_api_probe_count(candidate, timeout_s=timeout_s)
+    if structured is not None:
+        return True, structured, ""
     seen_urls = set()
     last_error = "probe failed"
     for probe_url in probe_urls:
@@ -791,6 +848,11 @@ async def _async_probe_fetch_urls(
     fetcher: Callable[[str, int], str],
     candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str]:
+    # Off the event loop: the structured fetch is a blocking POST, and the async probe
+    # batch runs many boards concurrently, so calling it inline would serialise them.
+    structured = await asyncio.to_thread(structured_api_probe_count, candidate, timeout_s=timeout_s)
+    if structured is not None:
+        return True, structured, ""
     seen_urls = set()
     last_error = "probe failed"
     for probe_url in probe_urls:

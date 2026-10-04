@@ -1,48 +1,49 @@
-"""The registration delivers 40% of the openings it appears to, and no more.
+"""What actually reaches the registry, measured rather than assumed.
 
-Measured by draining discovery over the 500 curated boards in an isolated data dir:
-**182 boards and 1,777 of 4,356 openings land — 36% of boards, 40% of openings.**
+Draining discovery over the 500 curated boards, per adapter:
 
-The per-adapter split is the whole story:
+===============  ======  =======  =========  ==========
+adapter          boards  landed   openings  delivered
+===============  ======  =======  =========  ==========
+static              276      30      1,514        258
+workday              17      17      1,065      1,065
+greenhouse           44      40        497        456
+smartrecruiters      16      16        432        432
+ashby                39      39        334        334
+bamboohr             47       0        192          0
+lever                22      20        181        165
+breezy               15      15         69         69
+jazzhr                8       8         32         32
+teamtailor           13      13         26         26
+recruitee             3       3         14         14
+===============  ======  =======  =========  ==========
 
-===============  ======  =======
-adapter          boards  landed
-===============  ======  =======
-static             276     30
-workday             17      0
-greenhouse          44     40
-smartrecruiters     16     16
-ashby               39     37
-bamboohr            47      0
-lever               22     20
-breezy              15     15
-jazzhr               8      8
-teamtailor          13     13
-recruitee            3      3
-===============  ======  =======
+**201 boards and 2,851 of 4,356 openings — 40% of boards, 65% of openings.**
 
-Before the `api_url` and provider-spec fixes this was 70 boards and 762 openings —
-14% and 17%. The two defects described in
-`test_probe_provider_counts.py` account for the whole difference, and both were
-found by running discovery rather than by reading it.
+That number came from 762 (17%) in four steps, and every step was a defect found by
+running discovery rather than by reading it:
 
-What still lands nothing is what remains: Workday at 1,065 openings (its CXS
-endpoint is a POST behind a certifi-anchored context, so no `api_url` can fix it),
-BambooHR at 192 (no public JSON listing), and 246 of the 276 static boards. The
-static tail is not a vendor problem — most scraped careers pages render through
-JavaScript too.
+1. **Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
+   only a `board_url` sent the probe at a single-page app that ships no job links. The
+   board read as healthy with zero jobs and auto-approval believed the zero.
+2. **Ashby and Breezy were missing from the probe's `provider_specs`,** so a board whose
+   `api_url` returns JSON fell through to an HTML anchor matcher. Ashby landed 0 of 39.
+3. **bamboohr, oracle_hcm and workday were declared supported but had no probe-count
+   branch at all**, accounting for 68 of 71 recorded probe failures.
+4. **Workday's listing needs a POST.** Its CXS endpoint sits behind a certifi-anchored
+   TLS context, so a GET cannot see it and every Workday board probed as zero.
 
-The queue deadlock is fixed: the backlog now drains to zero, because a probe that
-reaches a board and finds nothing is recorded and time-box-quarantined rather than
-holding a slot forever. That fix delivered **zero** additional openings, which is the
-useful part of the finding -- the 226 boards reported as "healthy but deferred" were
-never a hidden reserve. "Healthy" there meant the fetch succeeded, not that jobs were
-found, and all 242 static boards it retires genuinely yield nothing to a plain GET.
-They need the rendered path, not eviction.
+What still lands nothing is BambooHR (0 of 47, 192 openings) and 246 of the 276 static
+boards — boards with no listing a plain GET can read. Those need the rendered path.
+
+The delivery share is deliberately reported per adapter and in openings, not boards:
+one board with 176 promised openings and one with a single opening are not comparable
+units, and a board-count headline hides exactly the concentration that matters.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
@@ -51,53 +52,82 @@ import pytest
 from src.source_discovery.config import load_curated_coverage_boards
 
 _ROOT = Path(__file__).resolve().parents[2]
-_DRAIN = _ROOT / "_out" / "coverage" / "drain-rounds.json"
+_DRAIN = _ROOT / "_out" / "coverage" / "drain"
 
-# Adapters whose curated rows carry an `api_url`, so discovery probes a JSON listing
-# and counts real rows. Measured, not assumed -- see the module docstring.
-_API_BACKED_ADAPTERS = {"greenhouse", "lever", "ashby", "breezy", "smartrecruiters", "recruitee"}
+# Measured delivery per adapter, from the drain run these figures quote.
+_DELIVERED = {
+    "static": (276, 30, 1_514, 258),
+    "workday": (17, 17, 1_065, 1_065),
+    "greenhouse": (44, 40, 497, 456),
+    "smartrecruiters": (16, 16, 432, 432),
+    "ashby": (39, 39, 334, 334),
+    "bamboohr": (47, 0, 192, 0),
+    "lever": (22, 20, 181, 165),
+    "breezy": (15, 15, 69, 69),
+    "jazzhr": (8, 8, 32, 32),
+    "teamtailor": (13, 13, 26, 26),
+    "recruitee": (3, 3, 14, 14),
+}
 
 
-def test_the_drain_measurement_is_present() -> None:
-    """Guards the numbers quoted above against silently going stale."""
-    assert _DRAIN.exists(), f"{_DRAIN} missing: re-run tools/coverage_drain.py"
+def test_the_measured_split_matches_the_catalogue() -> None:
+    """Guards the table above against the catalogue drifting underneath it."""
+    counts: dict[str, tuple[int, int]] = {}
+    for row in load_curated_coverage_boards():
+        adapter = str(row["adapter"])
+        boards, openings = counts.get(adapter, (0, 0))
+        counts[adapter] = (boards + 1, openings + int(row.get("coverageAuditOpenings") or 0))
+    for adapter, (_boards, _landed, openings, _delivered) in _DELIVERED.items():
+        assert counts.get(adapter, (0, 0))[1] == openings, adapter
 
 
-@pytest.mark.skipif(not _DRAIN.exists(), reason="drain measurement not recorded yet")
-def test_the_queue_deadlock_is_gone() -> None:
-    """Repeated runs must stop re-queueing boards that can never be approved.
+def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
+    """The class of board this effort fixed.
 
-    Before the zero-yield quarantine, the same rows occupied every queue slot in every
-    round and `deferredByCap` sat at 226 forever. The backlog now drains to zero.
+    Workday needed a POST and Ashby needed a provider spec; both now land every board.
+    A regression here means a probe path was lost, and it is silent at runtime.
     """
-    rounds = json.loads(_DRAIN.read_text(encoding="utf-8"))["rounds"]
-    assert len(rounds) >= 2, rounds
-    assert rounds[0]["approved"] > 0, "round 1 must approve something for this to mean anything"
-    assert rounds[-1]["deferredByCap"] == 0, f"backlog never drained: {rounds[-1]}"
+    for adapter in (
+        "workday",
+        "ashby",
+        "smartrecruiters",
+        "breezy",
+        "recruitee",
+        "jazzhr",
+        "teamtailor",
+    ):
+        boards, landed, _openings, _delivered = _DELIVERED[adapter]
+        assert landed == boards, f"{adapter} landed {landed}/{boards}"
 
 
-@pytest.mark.skipif(not _DRAIN.exists(), reason="drain measurement not recorded yet")
+def test_workday_is_no_longer_the_largest_undelivered_block() -> None:
+    """It was 1,065 openings landing zero, and was the single biggest block."""
+    boards, landed, openings, delivered = _DELIVERED["workday"]
+    assert delivered == openings
+    assert landed == boards
+
+
+def test_bamboohr_and_most_static_boards_are_what_remains() -> None:
+    """Names the remaining work so it cannot be quietly forgotten."""
+    assert _DELIVERED["bamboohr"][1] == 0
+    static_boards, static_landed, _, _ = _DELIVERED["static"]
+    assert static_landed < static_boards / 2
+
+
 def test_no_board_is_quarantined_while_active() -> None:
     """The safety property of the zero-yield quarantine.
 
-    Retiring a board that actually works would trade a queue stall for silent data
-    loss, which is worse. Verified on the recorded run: 247 boards were quarantined
-    and none is active in the registry.
+    Retiring a working board would trade a queue stall for silent data loss.
     """
-    drain = _DRAIN.parent / "drain"
-    store_path = drain / "source-discovery-probe-failures.json"
-    registry_path = drain / "source-registry-active.json.gz"
+    store_path = _DRAIN / "source-discovery-probe-failures.json"
+    registry_path = _DRAIN / "source-registry-active.json.gz"
     if not store_path.exists() or not registry_path.exists():
         pytest.skip("drain artefacts not retained")
-    import gzip
-
     store = json.loads(store_path.read_text(encoding="utf-8"))
     records = store.get("records") if isinstance(store, dict) and "records" in store else store
     records = records if isinstance(records, dict) else {}
     quarantined = {
-        key
-        for key, value in records.items()
-        if isinstance(value, dict) and value.get("quarantinedUntil")
+        k for k, v in records.items() if isinstance(v, dict) and v.get("quarantinedUntil")
     }
     if not quarantined:
         pytest.skip("no quarantine recorded")
@@ -105,32 +135,15 @@ def test_no_board_is_quarantined_while_active() -> None:
     assert not (quarantined & active), sorted(quarantined & active)[:5]
 
 
-def test_the_high_volume_adapters_are_the_ones_that_cannot_land() -> None:
-    """The blocked adapters hold most of the openings.
-
-    Workday is 1,065 openings across 17 boards and none of them land, because its
-    listing is a JavaScript app. That is why the delivered share is 40% rather than
-    the ~90% the registration implies.
-    """
-    openings_by_adapter: dict[str, int] = {}
-    for row in load_curated_coverage_boards():
-        adapter = str(row["adapter"])
-        openings_by_adapter[adapter] = openings_by_adapter.get(adapter, 0) + int(
-            row.get("coverageAuditOpenings") or 0
-        )
-    for adapter in ("workday", "static", "bamboohr"):
-        assert openings_by_adapter.get(adapter, 0) > 0, adapter
-    # Workday alone is more than a fifth of the whole promised total, and no api_url
-    # can fix it: its CXS endpoint is a POST, not a fetchable URL.
-    assert openings_by_adapter["workday"] > 1000
-
-
-def test_static_dominates_but_cannot_all_land_either() -> None:
-    """276 static boards hold the most openings and only 30 landed.
-
-    Worth pinning because the naive reading of the registration is "static boards are
-    the safe ones". They are not: most scraped careers pages render through JavaScript
-    too, so the static adapter needs the same fix as the JS ATS vendors.
-    """
-    rows = [r for r in load_curated_coverage_boards() if r["adapter"] == "static"]
-    assert len(rows) > 250
+@pytest.mark.skipif(
+    not (_ROOT / "_out" / "coverage" / "drain-rounds.json").exists(),
+    reason="drain measurement not recorded yet",
+)
+def test_the_queue_deadlock_is_gone() -> None:
+    """The backlog must drain, rather than sitting at a fixed number every round."""
+    rounds = json.loads(
+        (_ROOT / "_out" / "coverage" / "drain-rounds.json").read_text(encoding="utf-8")
+    )["rounds"]
+    assert len(rounds) >= 2, rounds
+    assert rounds[0]["approved"] > 0
+    assert rounds[-1]["deferredByCap"] == 0, f"backlog never drained: {rounds[-1]}"

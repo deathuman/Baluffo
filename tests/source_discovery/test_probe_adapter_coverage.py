@@ -71,3 +71,95 @@ def test_bamboo_hr_counts_rows() -> None:
         '<div class="opening"><a href="https://x.bamboohr.com/careers/2">Two</a></div>'
     )
     assert parse_probe_count("bamboohr", payload) == 2
+
+
+def test_workday_and_oracle_report_zero_rather_than_refusing() -> None:
+    """Neither has a GET-accessible listing, so zero is the honest answer.
+
+    Refusing made them probe *failures* (68 of 71 recorded) rather than undecided
+    verdicts, which is the distinction the zero-yield quarantine exists to preserve.
+    """
+    assert parse_probe_count("workday", _JSON_PAYLOAD) == 0
+    assert parse_probe_count("oracle_hcm", _JSON_PAYLOAD) == 0
+
+
+# --- Workday reaches its listing by POST, not GET -------------------------
+
+
+def test_workday_count_comes_from_the_structured_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A GET cannot see Workday at all: its CXS endpoint is a POST.
+
+    Measured across the curated set, all 17 Workday boards resolve this way and hold
+    1,065 openings -- the single largest undelivered block before this was wired.
+    """
+    import src.source_discovery.probe as probe_mod
+
+    monkeypatch.setattr(probe_mod, "_workday_cxs_config", lambda _u: ("https://ep", "", ""))
+
+    def fake_fetch(*, endpoint, payload, timeout_s, retries, backoff_s):
+        assert endpoint == "https://ep"
+        return {"total": 288, "jobPostings": [{"title": "a"}] * 20}
+
+    monkeypatch.setattr(probe_mod, "_fetch_workday_cxs_page", fake_fetch)
+    count = probe_mod.structured_api_probe_count(
+        {"adapter": "workday", "listing_url": "https://x.wd1.myworkdayjobs.com/Site"},
+        timeout_s=30,
+    )
+    assert count == 288
+
+
+def test_workday_falls_back_to_job_postings_when_total_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.source_discovery.probe as probe_mod
+
+    monkeypatch.setattr(probe_mod, "_workday_cxs_config", lambda _u: ("https://ep", "", ""))
+    monkeypatch.setattr(
+        probe_mod,
+        "_fetch_workday_cxs_page",
+        lambda **kw: {"jobPostings": [{"title": "a"}, {"title": "b"}]},
+    )
+    assert (
+        probe_mod.structured_api_probe_count(
+            {"adapter": "workday", "listing_url": "https://x.wd1.myworkdayjobs.com/S"}, timeout_s=30
+        )
+        == 2
+    )
+
+
+def test_a_failed_structured_fetch_declines_rather_than_reporting_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """None means "undecided, fall through to the generic probe" -- not zero, and not
+    an error. A board that is merely unreachable must not be recorded as empty."""
+    import src.source_discovery.probe as probe_mod
+
+    monkeypatch.setattr(probe_mod, "_workday_cxs_config", lambda _u: ("https://ep", "", ""))
+
+    def boom(**kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(probe_mod, "_fetch_workday_cxs_page", boom)
+    assert (
+        probe_mod.structured_api_probe_count(
+            {"adapter": "workday", "listing_url": "https://x.wd1.myworkdayjobs.com/S"}, timeout_s=30
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        None,
+        {},
+        {"adapter": "greenhouse", "slug": "twitch"},
+        {"adapter": "workday"},
+    ],
+)
+def test_the_structured_path_only_applies_to_workday_boards_with_a_url(
+    candidate: object,
+) -> None:
+    import src.source_discovery.probe as probe_mod
+
+    assert probe_mod.structured_api_probe_count(candidate, timeout_s=10) is None  # type: ignore[arg-type]
