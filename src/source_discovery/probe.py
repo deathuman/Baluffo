@@ -648,68 +648,100 @@ def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
     return _json_or_html_count(text, json_key=json_key, html_pattern=html_pattern)
 
 
+def _personio_probe_count(text: str, _base_url: str) -> int:
+    if looks_like_personio_marketing_html(text):
+        # Dead board slugs serve Personio's marketing page instead of the
+        # XML feed; report the real story instead of a raw expat offset
+        # from deep inside minified page CSS, and keep the failure
+        # distinct from a genuinely empty board.
+        raise ValueError("personio feed redirected to marketing site")
+    if text.lstrip().startswith("<"):
+        try:
+            return len(ET.fromstring(text).findall(".//position"))
+        except ET.ParseError as exc:
+            raise ValueError(f"invalid personio XML: {exc}") from exc
+    return 0
+
+
+def _bamboohr_payload_count(text: str) -> int | None:
+    """Openings from a BambooHR ``/careers/list`` JSON body, or None when it is not one."""
+    if not text.lstrip().startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+    result = payload.get("result")
+    if isinstance(result, list):
+        return len(result)
+    meta = payload.get("meta")
+    total = meta.get("totalCount") if isinstance(meta, dict) else None
+    if isinstance(total, int):
+        return max(0, total)
+    return 0
+
+
+def _bamboohr_probe_count(text: str, _base_url: str) -> int:
+    # BambooHR's public listing is a GET to /careers/list returning
+    # {"meta": {"totalCount": N}, "result": [...]}. The /careers page itself is a
+    # single-anchor JavaScript shell, which is why these boards read as empty and
+    # why an earlier branch counted anchors.
+    counted = _bamboohr_payload_count(text)
+    if counted is not None:
+        return counted
+    return _html_link_count(text, r'(?is)href=["\'][^"\']+/careers/\d+[^"\']*["\']')
+
+
+def _rendered_only_probe_count(text: str, _base_url: str) -> int:
+    # Workday and Oracle HCM both render through JavaScript and expose no GET-accessible
+    # listing. Counted as zero rather than refusing: refusing meant these boards were
+    # reported as probe failures (68 of 71 recorded) instead of as undecided, which is the
+    # distinction the zero-yield quarantine exists to preserve.
+    #
+    # Workday's real count needs the CXS POST behind a certifi-anchored context, which
+    # `provider_structured_listing` implements and `structured_api_probe_count` reuses.
+    # Until the probe is wired to that, zero is correct and non-blocking.
+    return 0
+
+
+def _ashby_probe_count(text: str, _base_url: str) -> int:
+    return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))
+
+
+def _teamtailor_probe_count(text: str, base_url: str) -> int:
+    link_count = len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)))
+    return max(link_count, _static_result_count(text, base_url))
+
+
+def _jazzhr_probe_count(text: str, base_url: str) -> int:
+    return len(parse_jazzhr_jobs_html(text, base_url))
+
+
+# One counter per adapter, so adding a vendor is a table entry rather than another branch in
+# one function. `parse_probe_count` reached 17, and every branch in it had to be found by
+# running discovery rather than by reading it -- six defects came out of this function.
+_PROBE_COUNTERS: dict[str, Callable[[str, str], int]] = {
+    "personio": _personio_probe_count,
+    "ashby": _ashby_probe_count,
+    "teamtailor": _teamtailor_probe_count,
+    "jazzhr": _jazzhr_probe_count,
+    "bamboohr": _bamboohr_probe_count,
+    "workday": _rendered_only_probe_count,
+    "oracle_hcm": _rendered_only_probe_count,
+    "static": _static_probe_count,
+}
+
+
 def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
     provider_count = _parse_provider_probe_count(adapter, text)
     if provider_count is not None:
         return provider_count
-    if adapter == "personio":
-        if looks_like_personio_marketing_html(text):
-            # Dead board slugs serve Personio's marketing page instead of the
-            # XML feed; report the real story instead of a raw expat offset
-            # from deep inside minified page CSS, and keep the failure
-            # distinct from a genuinely empty board.
-            raise ValueError("personio feed redirected to marketing site")
-        if text.lstrip().startswith("<"):
-            try:
-                return len(ET.fromstring(text).findall(".//position"))
-            except ET.ParseError as exc:
-                raise ValueError(f"invalid personio XML: {exc}") from exc
-        return 0
-    if adapter == "ashby":
-        return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))
-    if adapter == "teamtailor":
-        link_count = len(
-            set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text))
-        )
-        return max(link_count, _static_result_count(text, base_url))
-    if adapter == "jazzhr":
-        return len(parse_jazzhr_jobs_html(text, base_url))
-    if adapter == "bamboohr":
-        # BambooHR's public listing is a GET to /careers/list returning
-        # {"meta": {"totalCount": N}, "result": [...]}. The /careers page itself is a
-        # single-anchor JavaScript shell, which is why these boards read as empty and
-        # why an earlier branch counted anchors.
-        if text.lstrip().startswith("{"):
-            try:
-                payload = json.loads(text)
-            except ValueError:
-                payload = {}
-            if isinstance(payload, dict):
-                result = payload.get("result")
-                if isinstance(result, list):
-                    return len(result)
-                total = (
-                    (payload.get("meta") or {}).get("totalCount")
-                    if isinstance(payload.get("meta"), dict)
-                    else None
-                )
-                if isinstance(total, int):
-                    return max(0, total)
-                return 0
-        return _html_link_count(text, r'(?is)href=["\'][^"\']+/careers/\d+[^"\']*["\']')
-    if adapter in {"workday", "oracle_hcm"}:
-        # Both render through JavaScript and expose no GET-accessible listing. Counted
-        # as zero rather than refusing: refusing meant these boards were reported as
-        # probe failures (68 of 71 recorded) instead of as undecided, which is the
-        # distinction the zero-yield quarantine exists to preserve.
-        #
-        # Workday's real count needs the CXS POST behind a certifi-anchored context,
-        # which `provider_structured_listing` implements. Wiring the probe to it is
-        # tracked separately; until then zero is correct and non-blocking.
-        return 0
-    if adapter == "static":
-        return _static_probe_count(text, base_url)
-    raise ValueError(f"unsupported adapter: {adapter}")
+    counter = _PROBE_COUNTERS.get(adapter)
+    if counter is None:
+        raise ValueError(f"unsupported adapter: {adapter}")
+    return counter(text, base_url)
 
 
 def _probe_urls(candidate: dict[str, Any]) -> list[str]:

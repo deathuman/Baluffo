@@ -553,6 +553,18 @@ def looks_like_country_token(value: Any) -> bool:
     return len(token) == 2 and token.isalpha()
 
 
+def _resolved_country_label(text: str, resolved: str) -> tuple[str, str]:
+    """Accept an alias the acceptance list resolves to a known country code."""
+    if not resolved:
+        return "", ""
+    resolved_normalized = normalize_country(resolved)
+    if resolved_normalized in set(COUNTRY_NAME_TO_CODE.values()):
+        return resolved_normalized, ""
+    if resolved != text:
+        return resolved, ""
+    return "", ""
+
+
 def sanitize_country_text(value: Any) -> tuple[str, str]:
     text = sanitize_public_text(value)
     if not text:
@@ -562,12 +574,9 @@ def sanitize_country_text(value: Any) -> tuple[str, str]:
     if len(text) == 2 and text.isascii() and text.isalpha() and text == text.upper():
         return normalize_country(text), ""
     resolved = resolve_country_acceptance_value(text)
-    if resolved:
-        resolved_normalized = normalize_country(resolved)
-        if resolved_normalized in set(COUNTRY_NAME_TO_CODE.values()):
-            return resolved_normalized, ""
-        if resolved != text:
-            return resolved, ""
+    alias = _resolved_country_label(text, resolved)
+    if alias[0]:
+        return alias
     normalized = normalize_country(text)
     if normalized in set(COUNTRY_NAME_TO_CODE.values()) or text.lower() in COUNTRY_NAME_TO_CODE:
         return normalized, ""

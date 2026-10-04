@@ -229,6 +229,25 @@ def _elapsed_ms(started: float) -> int:
     return max(0, int((time.perf_counter() - started) * 1000))
 
 
+def _resolve_json_feed_fetch(
+    endpoint: str,
+    fetch_payload: FetchPayload | None,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> Any:
+    """The injected paginating fetcher, or a single plain request without one.
+
+    A caller that supplies no fetcher gets the behaviour this had before pagination
+    existed. Kept as the default so the seam is additive rather than a signature every
+    caller has to adopt.
+    """
+    if fetch_payload is not None:
+        return fetch_payload(endpoint)
+    return json.loads(fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s))
+
+
 def _run_json_feed_sources(
     *,
     adapter_name: str,
@@ -292,15 +311,9 @@ def _run_json_feed_sources(
             return source_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
-            # A caller that supplies no fetcher gets a single plain request, which is what
-            # this did before pagination existed. Kept as the default so the seam stays
-            # additive rather than becoming a signature every caller has to adopt.
-            if fetch_payload is None:
-                payload = json.loads(
-                    fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
-                )
-            else:
-                payload = fetch_payload(endpoint)
+            payload = _resolve_json_feed_fetch(
+                endpoint, fetch_payload, fetch_text, timeout_s, retries, backoff_s
+            )
             entry_report["fetchMs"] = _elapsed_ms(fetch_started)
             parse_started = time.perf_counter()
             parsed = parse_payload(source, payload, studio)
