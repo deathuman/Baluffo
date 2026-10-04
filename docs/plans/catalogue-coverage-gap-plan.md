@@ -19,8 +19,8 @@ second one is a result.
 |---|---|
 | Registered and **proven delivered** | **4,280 (98%)** |
 | Registered but not landing | 76 |
-| On an unregistered board | 3,522 |
-| Blocked on a missing adapter | 1,689 |
+| Still on an unregistered board | 4,713 |
+| Of which blocked on a missing adapter | 1,689 |
 
 Measured with `tools/coverage_drain.py`, which drains discovery over the curated boards
 in an isolated data directory and counts what reaches `active`.
@@ -47,81 +47,98 @@ exactly the concentration that matters.
 The eight boards still not landing are two empty Greenhouse and Lever boards, four thin
 static boards, and `vivastudios.com`, whose server disconnects.
 
-## Six defects fixed, all found by running discovery
+## What is left, in priority order
 
-Delivery went 762 → 1,383 → 1,777 → 2,851 → 3,043 → 4,280. Every step was a defect that
-reading the code would not have surfaced, and five of the six had the same shape: **the
-probe was looking somewhere the openings were not.**
+Ordered by measured size, and by whether the item blocks others. Everything below is
+outside the registration, which is finished.
 
-**Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
-only a `board_url` sent the probe at a single-page app that ships no job links. The
-board read as *healthy with zero jobs* and auto-approval believed the zero.
+### 1. The freshness window is not ageing boards out — 1,892 boards
 
-**Ashby and Breezy were missing from the probe's `provider_specs`,** so a board whose
-`api_url` returns JSON fell through to an HTML anchor matcher. Ashby landed 0 of 39.
+**The largest remaining item, and it is not on any board.** In the most recent full
+fetch, **1,892 of 2,013 registered boards (94%) were skipped** as
+`cache_within_freshness_window`. Their median last *successful* fetch was **121 days
+ago**, and 1,599 have not fetched successfully in over 90 days.
 
-**bamboohr, oracle_hcm and workday were declared supported with no probe-count branch
-at all** — 68 of 71 recorded probe failures. There is now a guardrail test asserting
-every adapter in `SUPPORTED_PROVIDERS` is probeable, which is worth more than the
-branches: it would have caught Ashby and Breezy before each cost a measurement cycle.
+| Registered boards | Count |
+|---|---|
+| Skipped as fresh | 1,892 |
+| Fetched, kept jobs | 159 |
+| Fetched, error | 84 |
+| Fetched, kept zero | 16 |
 
-**Workday's listing needs a POST.** Its CXS endpoint sits behind a certifi-anchored TLS
-context, so a GET sees an SPA stub. The runtime already implemented the POST, so the
-probe reuses it; all 17 boards resolve (NVIDIA 2,000 jobs, Disney 605, Tencent 288).
+The 16 are all `time_budget_exceeded` after 30-47 seconds, so not one board is
+confirmed dead-and-silent. The 1,754 excluded rows are `excluded`, which per the repo's
+own rule means *not fetched*, never "no openings".
 
-**BambooHR's listing is not the page its URL names.** `/careers` is a single-anchor
-shell; the listing is a GET to `/careers/list`. Nothing about the board needed changing
-— the runtime's own adapter already collected from it, keeping 99 jobs in production —
-only the endpoint the probe read. This also corrects an earlier conclusion in this plan
-that BambooHR needed the rendered path. It never did.
+The mechanism is in `src/jobs/state_incremental.py`. `get_incremental_cache_decision`
+returns `skip_fresh` whenever `nextEligibleCheckAt` is in the future, and that value is
+computed from **when the source was last checked** rather than when it last succeeded.
+The one guard against exactly this — `not _has_fetch_success_history(entry)` — only
+rescues a board that has *never* succeeded, so a board that succeeded once long ago and
+then went stale keeps being skipped.
 
-**246 boards serve openings no HTTP probe can see.** Sweeping all 276 curated static
-boards with the runtime's own detector puts the split exactly at the delivery line: the 30
-readable boards all landed, the 246 rendered ones landed none. The runtime's static
-fetcher keeps 80 jobs from one of them (`careers.wbd.com/jobs`) where the probe reads
-zero, and rendering that page in Chromium produces 1.6 MB against 181 KB and still
-**zero job links** — the content arrives via a further request the landing page never
-issues. Discovery's Playwright fallback fires only on 403/timeout/challenge, so a
-200-with-zero-yields response never reached a browser at all.
+**This is stated as a strong hypothesis, not a confirmed diagnosis**, because the
+fetch report does not carry `nextEligibleCheckAt` and the state store is not available
+locally. Step one is therefore to read the actual values before changing anything.
 
-The fix lets a recorded observation stand in for a probe that cannot be made: curated
-seed rows carry `coverageAuditOpenings`, recorded when the board was found serving those
-specific openings, and that is now consulted when the probe reads zero. It is narrow on
-purpose — curated-seed rows only, never overriding a real count, and dead boards, weak
-signals, deferred rows and blocked pending reasons are all still refused, verified
-directly against the gate including the 404 case.
+- Confirm by reading `nextEligibleCheckAt` for the 1,892 skipped boards.
+- Then either advance the window from `lastSuccessAt` rather than the last check, or
+  add a hard staleness ceiling so no board can sit unrefreshed indefinitely.
+- Acceptance: a full run fetches a meaningful share of the 1,599 boards stale beyond 90
+  days, and the median age of a skipped board stops growing between runs.
 
-A seventh change removed a queue deadlock rather than adding coverage: a probe that
-reaches a board and finds nothing had no exit, so the same rows occupied every queue
-slot forever while 226 candidates waited behind them. Zero-yield probes are now recorded
-and time-box-quarantined — "stop re-probing for now", never "this board is empty".
-Verified safe: 247 boards were quarantined and none was active.
+### 2. Second registration wave — up to ~2,600 openings
 
-## What remains
+4,713 openings sit on boards that are still unregistered. The pipeline for this is built
+and proven (`coverage_audit` → `coverage_boards` → `coverage_verify` → `coverage_drain`),
+and it now has the audit-evidence fallback that the first wave lacked, so boards no
+probe can see will still land.
 
-**1. Triage the residual probe failures** — 6, from 71.
+Highest-value sub-slice first: **hrmos, feishu and csod — 1,689 openings.** These are
+classified `unsupported_vendor` only because no *dedicated adapter* exists, but
+`hrmos.co/pages/cygames` is already registered as a **static** row keeping 340 rows. So
+the likely answer is 31 per-tenant static registrations rather than three vendor
+integrations. Prove it on two tenants before building anything.
 
-**2. Resolve the 208 review boards** — up to 1,801 openings. 81 HTTP errors and 125
-unrecognised payload shapes. Neither class may be registered blind or discarded: an
-undecided verdict is not an empty board.
+### 3. The 208 review boards — up to 1,801 openings
 
-**3. The 3,522 openings on unregistered boards.** A second catalogue sweep would find
-them; the first one's candidates are now nearly all registered.
+81 HTTP errors and 125 unrecognised payload shapes, deliberately left undecided. Now
+cheaper to resolve: the audit-evidence fallback means a board can land on recorded
+evidence even when the verdict stays unknown. Re-run the probe with the browser path,
+then register what is still genuinely undecided rather than discarding it.
 
-**4. Re-scope the "adapter backlog"** — 1,689 openings. Currently `unsupported_vendor`
-because no dedicated adapter exists, but `hrmos.co/pages/cygames` is already a
-registered static row keeping 340 rows. Test the static path on two tenants first.
+### 4. Phase 3 — the 82% Google Sheet dependency
 
-**5. Blank country** — 4,493 rows. Deferred by agreement. Orthogonal: these rows are
-present but unclassifiable by region, which understates EU counts rather than losing
-openings.
+81.9% of the feed is one community spreadsheet: simultaneously the ceiling on coverage
+and a single point of failure. Kept separate from the above because it changes the shape
+of the system rather than filling it. **It should be started before item 1 lands**, since
+a stale-refresh fix delivers more openings only if the feed is not still dominated by
+one sheet.
 
-**6. GB/UK and England/Scotland/Wales** — ~365 rows. Deferred by agreement, pending a
-`country_acceptance.json` contract change.
+### 5. Data quality, deferred by agreement
 
-**7. Phase 3 — the 82% Google Sheet dependency.** 81.9% of the feed is one community
-spreadsheet: simultaneously the ceiling on coverage and a single point of failure. Kept
-separate because it changes the shape of the system rather than filling it.
+- **Blank country — 4,493 rows.** Orthogonal to coverage: present but unclassifiable by
+  region, which understates EU counts rather than losing openings.
+- **GB/UK and England/Scotland/Wales — ~365 rows.** Pending a `country_acceptance.json`
+  contract change.
+
+### 6. Carried-over defects
+
+- **The 30 extraction-limited boards** (764 openings). `fetchedCount == keptCount` with
+  `lowConfidenceDropped == 0`, so nothing is filtered and extraction finds fewer rows.
+  Re-diagnose now that the delivered set has changed.
+- **`careers.activision.com/careers` returns 404 while reporting `ok` with 80 kept** — a
+  stale registration the fetch report does not surface as an error. A 404 reporting `ok`
+  will recur, so this is worth fixing on its own account.
+- **Gamucatex junk rows** — pre-existing. `static_detail_link_rows` at `_runner.py:343`
+  has no title gate; only `larian.py` and `supercell.py` call it.
+- **`plans/voodoo-ashby-board-migration-plan.md`** — delete once a release lands.
+
+## Sequencing note
+
+Nothing here reaches a running install until a release ships, and 0.3.007 is
+deliberately untagged. The six probe fixes are worth having regardless: before them a
+release would have carried 17% of the registration, and it now carries 98%.
 
 ## Correction on record
 
