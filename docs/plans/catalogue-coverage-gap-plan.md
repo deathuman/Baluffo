@@ -10,26 +10,27 @@ what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 
 ## Where this stands
 
-Registration covers **4,356 openings** across 513 boards. **4,280 of them are proven to
+Registration now covers **6,699 openings** across 673 boards. **6,630 of them are proven to
 reach the registry** — up from 762 when delivery was first measured. The difference is
 tracked as two numbers throughout, because "registered" is not "delivered" and only the
 second one is a result.
 
 | | Openings |
 |---|---|
-| Registered and **proven delivered** | **4,280 (98%)** |
-| Registered but not landing | 76 |
-| Still on an unregistered board | 4,713 |
-| Of which blocked on a missing adapter | 1,689 |
+| Registered and **proven delivered** | **6,630 (99%)** |
+| Registered but not landing | 69 |
+| Still on an unregistered board | ~2,700 |
+| Of which blocked on a genuinely unreadable board | ~800 |
 
 Measured with `tools/coverage_drain.py`, which drains discovery over the curated boards
 in an isolated data directory and counts what reaches `active`.
 
 | Adapter | Boards | Landed | Openings | Delivered |
 |---|---|---|---|---|
-| static | 276 | 271 | 1,514 | 1,492 |
+| static | 412 | 408 | 3,259 | 3,244 |
 | workday | 17 | 17 | 1,065 | 1,065 |
-| greenhouse | 44 | 43 | 497 | 459 |
+| greenhouse | 52 | 51 | 655 | 617 |
+| workable | 29 | 29 | 440 | 440 |
 | smartrecruiters | 16 | 16 | 432 | 432 |
 | ashby | 39 | 39 | 334 | 334 |
 | bamboohr | 47 | 47 | 192 | 192 |
@@ -38,14 +39,50 @@ in an isolated data directory and counts what reaches `active`.
 | jazzhr | 8 | 8 | 32 | 32 |
 | teamtailor | 13 | 13 | 26 | 26 |
 | recruitee | 3 | 3 | 14 | 14 |
-| **Total** | **500** | **492 (98%)** | **4,356** | **4,280 (98%)** |
+| **Total** | **673** | **666 (99%)** | **6,699** | **6,630 (99%)** |
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and
 one with a single opening are not comparable units, and a board-count headline hides
 exactly the concentration that matters.
 
-The eight boards still not landing are two empty Greenhouse and Lever boards, four thin
-static boards, and `vivastudios.com`, whose server disconnects.
+The seven boards still not landing are two empty Greenhouse and Lever boards and five thin
+static boards, one of which (`vivastudios.com`) disconnects mid-response.
+
+## Eight defects found by running discovery, not reading it
+
+The first six are recorded below. Three more arrived with the second and third waves, and
+every one has the same shape: **the harness was looking somewhere the openings were not, and
+the zero was recorded as an answer.**
+
+**A board's JSON API lives on a different host from its career page.** All 39 Ashby boards
+register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/<slug>`, which
+resolved to `('ashby', 'api.ashbyhq.com', '')` — host and tenant both lost. Greenhouse, Lever
+and SmartRecruiters share the shape. `registry_identity` now folds a known API host onto its
+canonical career-page host and reads the tenant out of the API path. This one was a delivery
+report understating coverage by 334 openings, not a real gap.
+
+**Greenhouse's EU hosts matched no host rule at all.** `job-boards.eu.greenhouse.io` does not
+match `job-boards\.greenhouse\.io$` — it ends `eu.greenhouse.io`, not
+`job-boards.greenhouse.io` — so it fell through to `static` and 158 openings on 8 tenants
+collapsed onto one host-root row, which is the multi-tenant failure this repo's own guardrail
+warns about. Eight per-tenant rows now; the runtime's API serves every one.
+
+**Workable was lost twice to the same wrong URL.** The probe read
+`/api/v1/accounts/<a>/jobs` (HTTP 400 for every account) and the row it built carried only
+`account`, which `endpoint_url` cannot resolve. Fixing only the first still registered 0 of 29
+— both were needed, and both now use the runtime's own `JsonFeedSpec` template.
+
+**A static candidate's listing URL is its host root, which is often not the careers page.**
+This is the BambooHR defect again, except the tool never held a path to be wrong about, only a
+host. All 109 unreadable static boards return HTTP 200 with zero anchors at the root.
+`tools/coverage_listing_discovery.py` derives the listing from the URLs of the openings that
+were missed on the board — the board was found because those specific openings exist — and
+measures each ancestor path with the runtime's own detector.
+
+**Two curated tables are concatenated, not merged.** A board present in both is fetched twice
+and double-counted. Four were known; AppLovin's Greenhouse board arrived with the second wave
+and `_drop_already_curated` now removes the class by board identity rather than by studio
+label, since one board is registered under two labels.
 
 ## What is left, in priority order
 
@@ -94,63 +131,62 @@ guard.
 show the skipped count falling rather than holding near 94%, and the median age of a
 skipped board should stop growing between runs.
 
-### 2. Second registration wave — 2,383 openings, 213 boards
+### 2. Second registration wave — **DONE**, 1,415 openings
 
-The catalogue has moved since the first sweep, and the extractor now deduplicates against
-both the live registry *and* the repo's curated tables. 213 boards / 2,383 openings are
-genuinely new — not already registered, not already curated.
+The wave was 213 boards / 2,383 openings. It resolved to **1,415 registered and delivered**
+across 88 boards, and the difference is the interesting part: five of the six blocks turned
+out to be measurement faults rather than missing adapters.
 
-| Adapter | Boards | Openings |
-|---|---|---|
-| static | 156 | 1,528 |
-| workable | 29 | 440 |
-| oracle_hcm | 2 | 169 |
-| personio | 21 | 104 |
-| ashby | 1 | 90 |
-| greenhouse | 3 | 49 |
-| smartrecruiters | 1 | 3 |
+| Adapter | Boards | Openings | What it actually was |
+|---|---|---|---|
+| static (hrmos) | 28 | 833 | no adapter needed at all |
+| workable | 29 | 440 | lost twice to the same wrong URL |
+| greenhouse (EU) | 8 | 158 | host matched no rule; 8 tenants collapsed to one row |
+| ashby / greenhouse / smartrecruiters | 5 | 94 | API host is not the board |
+| static (listing discovered) | 3 | 70 | listing was not the host root |
 
-Splitting the 4,713-opening `unregistered_board` bucket by whether a probe can read the
-board now:
+**hrmos needed no adapter — 833 openings.** Labelled `unsupported_vendor` purely because no
+dedicated adapter exists. Its tenant listing pages are server-rendered and the runtime's own
+detector reads all 32 (cygames 100 rows, capcom 92, gamefreak 59, square-enix 35, nexon 17),
+and 4 were already registered as static rows with cgames keeping 340 in production as the
+control. 28 static rows; all 28 land.
 
-| Sub-slice | Openings | Note |
-|---|---|---|
-| Probeable now | 3,584 | register through the existing pipeline |
-| Unsupported vendor (hrmos, feishu) | 1,129 | see below |
+**Workable was lost twice to one wrong URL — 440 openings.** `list_url_for` built
+`/api/v1/accounts/<a>/jobs`, which answers HTTP 400 for every account; the row it then built
+carried only `account`, which `endpoint_url` cannot resolve. The first fix alone still
+registered 0 of 29 — both were needed. Both now use the runtime's own `JsonFeedSpec`
+template, where keywords-intl1 serves 282 jobs and sideinc 378.
 
-**hrmos needs no adapter — 845 openings.** The `unsupported_vendor` label is simply
-wrong. The tenant listing pages are fully server-rendered and the runtime's own detector
-reads them directly:
+**Greenhouse's EU hosts matched no rule — 158 openings.** `job-boards.eu.greenhouse.io` does
+not match `job-boards\.greenhouse\.io$`, so it fell through to `static` and 8 tenants
+collapsed onto one host-root row — the multi-tenant failure the repo's own guardrail warns
+about. Now 8 per-tenant greenhouse rows; the runtime's API serves every one.
 
-| Tenant | Rows read |
-|---|---|
-| cgames | 100 |
-| capcom | 92 |
-| gamefreak | 59 |
-| square-enix | 35 |
-| nexon | 17 |
+**A static candidate's listing URL is its host root, which is often not the careers page.**
+The BambooHR defect again, except the tool never held a path to be wrong about, only a host.
+`tools/coverage_listing_discovery.py` derives the listing from the URLs of the openings that
+were missed on the board and measures each ancestor path: `koeitecmo.co.jp/recruit/career`
+serves 43 rows where the root serves none.
 
-And `hrmos.co/pages/cygames` is *already* registered as a static row keeping 340 rows in
-production, which is the control that settles it. So this is 31 per-tenant static
-registrations, not a vendor integration. Highest value per unit of risk in the whole
-remainder.
+### 3. The review boards — **DONE**, 1,070 openings registered, 63 left undecided
 
-**feishu needs real work — 826 openings.** `moonton.jobs.feishu.cn` and
-`lilithgames.jobs.feishu.cn` return HTTP 200 with **zero anchors**, the same JS-shell
-shape as the 246 static boards. Unlike hrmos, no server-rendered path exists, so these
-genuinely need either a JSON endpoint discovery or the browser path. Do not register them
-blind.
+The 179 undecided boards resolved to **116 registered carrying 1,070 openings — all 116
+land** — and 63 that stay undecided on purpose.
 
-Order of work: hrmos static registrations → the 3,584 probeable → workable/oracle_hcm/
-personio → feishu as a separate investigation.
+**105 alive but unreadable** return HTTP 200 with zero anchors, so they are registered on
+their recorded openings rather than on a probe: an observation rather than an inference from
+a zero, and the same evidence the first wave's 246 boards used.
 
-### 3. The 208 review boards — up to 1,801 openings
+**63 are left alone, and that is the honest answer rather than a gap in the work:**
 
-81 HTTP errors and 125 unrecognised payload shapes, deliberately left undecided. Now
-cheaper to resolve: the audit-evidence fallback lets a board land on recorded evidence
-even when its verdict stays unknown, so an undecided verdict no longer blocks coverage.
-Re-probe with the browser path, then register what is still genuinely undecided rather
-than discarding it — an undecided verdict is not an empty board.
+| Class | Boards | Openings | Why not registered |
+|---|---|---|---|
+| HTTP error (404/400/0/403/429/401) | 47 | 514 | says the board cannot be read, not that it is empty |
+| oracle_hcm | 2 | 169 | own REST endpoint returns empty `items`; UI ships zero anchors |
+| personio | 14 | 104 | feed shape needs a separate check |
+
+Registering an HTTP-error board would trade a missing opening for a source that reports zero
+forever, which is the failure mode the zero-yield quarantine exists to prevent.
 
 ### 4. The 82% Google Sheet dependency — an asset, not a liability
 
