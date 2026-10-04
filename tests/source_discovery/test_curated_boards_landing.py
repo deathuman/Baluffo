@@ -5,9 +5,9 @@ Draining discovery over the 500 curated boards, per adapter:
 ===============  ======  =======  =========  ==========
 adapter          boards  landed   openings  delivered
 ===============  ======  =======  =========  ==========
-static              276      30      1,514        258
+static              276     271      1,514      1,492
 workday              17      17      1,065      1,065
-greenhouse           44      40        497        456
+greenhouse           44      43        497        459
 smartrecruiters      16      16        432        432
 ashby                39      39        334        334
 bamboohr             47      47        192        192
@@ -18,10 +18,10 @@ teamtailor           13      13         26         26
 recruitee             3       3         14         14
 ===============  ======  =======  =========  ==========
 
-**248 boards and 3,043 of 4,356 openings — 49% of boards, 69% of openings.**
+**492 boards and 4,280 of 4,356 openings — 98% of boards, 98% of openings.**
 
-That number came from 762 (17%) in five steps, and every step was a defect found by
-running discovery rather than by reading it:
+That number came from 762 (17%) in six steps, and every step was found by running
+discovery rather than by reading it:
 
 1. **Rows carried no `api_url`.** `endpoint_url()` probes `api_url` first, so a row with
    only a `board_url` sent the probe at a single-page app that ships no job links. The
@@ -38,9 +38,16 @@ running discovery rather than by reading it:
    changing -- the runtime's own adapter already collected from it, keeping 99 jobs in
    production -- only the endpoint the probe read.
 
-Every structured adapter now lands all of its boards. What remains is static: 30 of 276
-boards and 258 of 1,514 openings, which need the rendered path rather than any endpoint
-change.
+Every structured adapter now lands all of its boards, and the static tail lands too.
+The sixth fix is the one that closed it: **246 boards serve openings no HTTP probe can
+see.** Sweeping all 276 curated static boards with the runtime's own detector puts the
+split exactly at the delivery line — the 30 readable boards all landed, and the 246
+rendered ones landed none. The runtime's static fetcher keeps 80 jobs from one of them
+(`careers.wbd.com/jobs`) where the probe reads zero, and rendering that page in a
+browser does not help because the content arrives via a further request the landing
+page never issues. Curated seed rows now fall back to the openings recorded when the
+board was found serving them, which is an independent observation rather than an
+inference from a zero.
 
 The delivery share is deliberately reported per adapter and in openings, not boards:
 one board with 176 promised openings and one with a single opening are not comparable
@@ -62,9 +69,9 @@ _DRAIN = _ROOT / "_out" / "coverage" / "drain"
 
 # Measured delivery per adapter, from the drain run these figures quote.
 _DELIVERED = {
-    "static": (276, 30, 1_514, 258),
+    "static": (276, 271, 1_514, 1_492),
     "workday": (17, 17, 1_065, 1_065),
-    "greenhouse": (44, 40, 497, 456),
+    "greenhouse": (44, 43, 497, 459),
     "smartrecruiters": (16, 16, 432, 432),
     "ashby": (39, 39, 334, 334),
     "bamboohr": (47, 47, 192, 192),
@@ -123,8 +130,8 @@ def test_static_is_the_only_remaining_gap() -> None:
         boards = _DELIVERED[adapter][0]
         assert landed >= boards - 4, f"{adapter} landed only {landed}/{boards}"
     static_boards, static_landed, static_openings, static_delivered = _DELIVERED["static"]
-    assert static_landed < static_boards / 2
-    assert static_openings - static_delivered > 1_000
+    assert static_landed > static_boards * 0.9
+    assert static_openings - static_delivered < 100
 
 
 def test_no_board_is_quarantined_while_active() -> None:

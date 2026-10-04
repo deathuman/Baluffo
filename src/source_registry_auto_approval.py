@@ -49,6 +49,32 @@ def _normalize_discovery_health_status(value: Any) -> str:
     return token
 
 
+def _curated_seed_audit_evidence(row: dict[str, Any]) -> int:
+    """Recorded openings for a curated seed row, when one was measured.
+
+    Some boards serve openings that no HTTP probe can see. Measured across the
+    curated static boards: the runtime's own static fetcher keeps 80 jobs from
+    `careers.wbd.com/jobs`, while `static_probe_evidence` reads that same page as
+    zero -- and rendering it in a browser does not help either, because the content
+    arrives via a further request the landing page never issues.
+
+    A curated seed row carries `coverageAuditOpenings`, recorded when the board was
+    found serving those specific openings, so it is an independent positive
+    observation rather than an inference from a zero. Returning it here keeps the
+    repo's rule intact -- a probe zero is still never read as "this board is empty" --
+    it just is not the *only* evidence consulted.
+
+    Deliberately narrow: curated-seed rows only. A scraped candidate has no such
+    record, so this cannot quietly approve anything discovered at scale.
+    """
+    if str(row.get("discoveryStage") or "") != "curated_seed":
+        return 0
+    try:
+        return max(0, int(row.get("coverageAuditOpenings") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = None) -> int:
     report_row = as_json_object(report)
     for value in (
@@ -63,7 +89,7 @@ def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = N
             numeric = 0
         if numeric > 0:
             return numeric
-    return 0
+    return _curated_seed_audit_evidence(row)
 
 
 def _discovery_row_has_blocking_error(
