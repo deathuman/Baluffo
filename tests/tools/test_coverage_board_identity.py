@@ -132,7 +132,7 @@ def test_a_different_tenant_is_not_covered() -> None:
         ("https://jobs.jobvite.com/asus/job/oyOpAfw5", "static", "asus"),
         ("https://herp.careers/v1/charabank/f8aZIoadk", "static", "charabank"),
         ("https://app.mokahr.com/social-recruitment/ourpalm/45614#/job/x", "static", "ourpalm"),
-        ("https://hrmos.co/pages/capcom/jobs/QA_active_200b_3", "hrmos", "capcom"),
+        ("https://hrmos.co/pages/capcom/jobs/QA_active_200b_3", "static", "capcom"),
         ("https://kurogame.jobs.feishu.cn/index/position/1/detail", "feishu", "kurogame"),
         (
             "https://nintendoeurope.csod.com/ux/ats/careersite/1/requisition/503",
@@ -218,11 +218,39 @@ def test_unreadable_vendors_are_reported_not_dropped() -> None:
     """An unreadable board is still a missing opening, so it must stay countable."""
     for url, vendor in (
         ("https://kurogame.jobs.feishu.cn/index/position/1/detail", "feishu"),
-        ("https://hrmos.co/pages/capcom/jobs/1", "hrmos"),
+        ("https://nintendoeurope.csod.com/ux/ats/careersite/1/requisition/503", "csod"),
     ):
         candidate = ident.build_candidate(url)
         assert candidate["adapter"] == vendor
         assert candidate["status"] == ident.STATUS_UNSUPPORTED
+
+
+def test_hrmos_is_a_static_platform_not_an_unsupported_vendor() -> None:
+    """hrmos was labelled a vendor needing an adapter; it is collected by a static plugin.
+
+    `plugins/static/hrmos.py` keys on the same host and reads the same tenant listing pages,
+    and four of its tenants were already registered as static rows with one keeping 340 jobs
+    in production. Calling the host "hrmos" made all 32 tenants `unsupported_vendor`, which
+    is what first presented 845 openings as needing a vendor integration, and then left the
+    28 rows registered as static unable to match a candidate whose adapter read "hrmos".
+    """
+    candidate = ident.build_candidate("https://hrmos.co/pages/capcom/jobs/1")
+    assert candidate["adapter"] == "static"
+    assert candidate["status"] == ident.STATUS_NEW
+    assert candidate["tenant"] == "capcom", candidate
+
+
+def test_one_board_on_three_greenhouse_hosts_is_one_identity() -> None:
+    """Greenhouse serves the same board on three hosts, one of them the EU domain."""
+    identities = {
+        ident.candidate_identity(ident.build_candidate(f"https://{host}/applovin/jobs/4716410006"))
+        for host in (
+            "boards.greenhouse.io",
+            "job-boards.greenhouse.io",
+            "job-boards.eu.greenhouse.io",
+        )
+    }
+    assert identities == {("greenhouse", "job-boards.greenhouse.io", "applovin")}, identities
 
 
 def test_unknown_host_is_scrapeable_rather_than_discarded() -> None:

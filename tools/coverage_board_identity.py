@@ -148,7 +148,12 @@ HOST_RULES: tuple[tuple[str, str], ...] = (
     (r"(^|\.)applytojob\.com$", "jazzhr"),
     (r"(^|\.)jobs\.feishu\.cn$", "feishu"),
     (r"(^|\.)jobs\.hiretalent\.com$", "hirentalent"),
-    (r"(^|\.)hrmos\.co$", "hrmos"),
+    # hrmos is a *static* platform, not a provider adapter. The runtime collects it through
+    # `plugins/static/hrmos.py`, a static plugin keyed on the same host. Labelling the host
+    # "hrmos" made every one of its 32 tenants `unsupported_vendor` -- which is what first
+    # presented 845 openings as needing a vendor integration -- and then left the 28 rows
+    # registered as static unable to match a candidate whose adapter read "hrmos".
+    (r"(^|\.)hrmos\.co$", "static"),
     (r"(^|\.)csod\.com$", "csod"),
 )
 
@@ -178,6 +183,13 @@ API_HOST_ALIASES = {
     r"(^|\.)api\.smartrecruiters\.com$": ("smartrecruiters", "jobs.smartrecruiters.com"),
     r"(^|\.)feeds\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
     r"(^|\.)api\.workable\.com$": ("workable", "apply.workable.com"),
+    # Greenhouse also serves the same board on two other hosts, one of them the EU
+    # data-residency domain. All three are one board, so all three fold onto the canonical
+    # career-page host; otherwise a board registered on `job-boards.greenhouse.io` reads as
+    # unregistered when the same opening is indexed under `boards.greenhouse.io`.
+    r"(^|\.)boards\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
+    r"(^|\.)job-boards\.eu\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
+    r"(^|\.)boards\.eu\.greenhouse\.io$": ("greenhouse", "job-boards.greenhouse.io"),
 }
 
 # Where the tenant sits inside each API path.
@@ -492,9 +504,16 @@ def registry_identity(registry_id: str) -> tuple[str, str, str] | None:
 
 
 def candidate_identity(candidate: Mapping[str, Any]) -> tuple[str, str, str]:
-    """The comparable identity of a candidate built by :func:`build_candidate`."""
+    """The comparable identity of a candidate built by :func:`build_candidate`.
+
+    The host is folded onto its canonical form for the same reason
+    :func:`registry_identity` does it. Both sides must agree or a board registered on one
+    Greenhouse host reads as unregistered on another, which is how 151 openings on boards
+    already in the curated table were reported as missing.
+    """
     host = str(candidate.get("host") or "").lower()
     tenant = str(candidate.get("tenant") or "")
+    _alias_adapter, host = canonical_board_host(host)
     return (str(candidate.get("adapter") or ""), host, _normalise_tenant(host, tenant))
 
 

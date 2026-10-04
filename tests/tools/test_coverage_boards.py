@@ -159,11 +159,14 @@ def test_a_multi_tenant_platform_splits_by_tenant() -> None:
 def test_unreadable_vendor_groups_by_tenant_so_the_backlog_is_sized() -> None:
     """Board count is meaningless without an adapter; openings is what to size.
 
-    Collapsing these made 845 hrmos openings read as one board.
+    Collapsing these made 845 hrmos openings read as one board. The vendor is feishu here
+    rather than hrmos: hrmos turned out to be a static platform the runtime already collects
+    through a plugin, so labelling it a vendor needing an adapter was the mislabel that put
+    those 845 openings in an adapter backlog at all.
     """
     misses = [
-        _miss(f"https://hrmos.co/pages/{tenant}/jobs/{i}")
-        for i, tenant in enumerate(("capcom", "cygames", "nexon"))
+        _miss(f"https://{tenant}.jobs.feishu.cn/index/position/{i}/detail")
+        for i, tenant in enumerate(("kurogame", "moonton", "lilithgames"))
     ]
     rows = boards_mod.collect_candidates(misses, registry_ids=set())
     assert len(rows) == 3
