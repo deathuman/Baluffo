@@ -27,6 +27,7 @@ from .core import (
 )
 from .io_runtime import endpoint_url
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
+from .probe_failure_memory import record_zero_jobs
 from .probe_runtime import run_bounded_probe_batch_async
 from .runtime_metrics import adjust_adapter_runtime as _adjust_adapter_runtime
 from .runtime_metrics import increment_adapter_runtime as _increment_adapter_runtime
@@ -228,8 +229,17 @@ def _record_probe_result(
         _record_failed_probe(raw, error, state=state)
         return
     memory = state.probe_failure_memory
-    if memory is not None:
-        memory.clear_identity(source_identity(raw))
+    identity = source_identity(raw)
+    if jobs_found <= 0:
+        # A repeated zero-yield probe is recorded so the time-boxed quarantine can
+        # retire it. Clearing here instead would make the count unreachable: such a
+        # board is admitted to the queue on evidence score, then refused by
+        # auto-approval for having no jobs, and so holds its slot indefinitely.
+        record = record_zero_jobs(memory, identity, at=now_iso())
+        if record is not None:
+            state.probe_quarantine_started_count += 1
+    elif memory is not None:
+        memory.clear_identity(identity)
     if not should_queue_candidate(raw, jobs_found, deps.thresholds):
         _record_queue_filtered_probe(raw, jobs_found=jobs_found, state=state)
         return

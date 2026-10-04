@@ -30,9 +30,17 @@ _DNS_ERROR_RE = re.compile(
 )
 _SSL_ERROR_RE = re.compile(r"certificate verify failed|sslv3[-_ ]?alert|ssl:", re.IGNORECASE)
 
-# Only deterministic failure classes (DNS/SSL) may quarantine a candidate.
-# Timeouts, 5xx, and resets are transient by nature and keep probing every run.
-_QUARANTINE_CLASSES = frozenset({"dns", "ssl"})
+# A probe that reached the board and counted zero jobs. Deliberately its own class
+# rather than something derived from an error string: these rows carry no error at all,
+# which is exactly why they were never recorded and never evicted.
+ZERO_JOBS_CLASS = "zero_jobs"
+ZERO_JOBS_ERROR = "probe reached the board but found no jobs"
+
+# Only deterministic outcome classes may quarantine a candidate. Timeouts, 5xx and
+# resets are transient by nature and keep probing every run. ``zero_jobs`` is
+# deterministic in the same sense: a board that repeatedly yields nothing to a probe
+# that *did* reach it is not going to yield something next round.
+_QUARANTINE_CLASSES = frozenset({"dns", "ssl", ZERO_JOBS_CLASS})
 
 _STORE_MAX_ENTRIES = 5000
 
@@ -46,6 +54,8 @@ def classify_probe_failure_class(error: str) -> str:
     transport-level classes used for quarantine decisions.
     """
     text = str(error or "")
+    if text == ZERO_JOBS_ERROR:
+        return ZERO_JOBS_CLASS
     if _DNS_ERROR_RE.search(text):
         return "dns"
     if _SSL_ERROR_RE.search(text):
@@ -53,6 +63,28 @@ def classify_probe_failure_class(error: str) -> str:
     if _HTTP_4XX_ERROR_RE.search(text[:120]):
         return "4xx"
     return "other"
+
+
+def record_zero_jobs(
+    memory: ProbeFailureMemory | None, identity: str, *, at: str | None = None
+) -> dict[str, Any] | None:
+    """Record a probe that succeeded but found no jobs, as its own failure class.
+
+    A probe zero is **not** an answer -- the repo's rule is that the signal is
+    positive-only -- so this deliberately does not classify the board as empty. It
+    records a *repeated* zero-yield outcome so the existing time-boxed quarantine can
+    stop re-probing it, and the board returns to the queue when the window expires.
+
+    Without this, such a board has no exit. `should_queue_candidate` admits a
+    zero-jobs candidate on evidence score alone, which is the correct "a zero is not
+    an answer" behaviour, but auto-approval then requires a positive job count and
+    refuses it. Measured consequence: 21 such rows occupied every queue slot in every
+    discovery round while 226 candidates the probe had already called healthy were
+    starved behind them, so re-running discovery delivered nothing.
+    """
+    if memory is None:
+        return None
+    return memory.record_failure(identity=identity, error=ZERO_JOBS_ERROR, at=at or now_iso())
 
 
 def is_quarantine_class(failure_class: str) -> bool:

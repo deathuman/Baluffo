@@ -32,10 +32,13 @@ BambooHR at 192 (no public JSON listing), and 246 of the 276 static boards. The
 static tail is not a vendor problem — most scraped careers pages render through
 JavaScript too.
 
-The drain stalls rather than draining. Round 1 approves 185; rounds 2 through 6
-approve 0, with ~226 deferred by cap every round and `active` frozen at 2,434.
-Re-running does not help, because a pending row is deduped as `existing_id`
-on the next cycle and is never re-probed for the evidence it needs.
+The queue deadlock is fixed: the backlog now drains to zero, because a probe that
+reaches a board and finds nothing is recorded and time-box-quarantined rather than
+holding a slot forever. That fix delivered **zero** additional openings, which is the
+useful part of the finding -- the 226 boards reported as "healthy but deferred" were
+never a hidden reserve. "Healthy" there meant the fetch succeeded, not that jobs were
+found, and all 242 static boards it retires genuinely yield nothing to a plain GET.
+They need the rendered path, not eviction.
 """
 
 from __future__ import annotations
@@ -61,25 +64,45 @@ def test_the_drain_measurement_is_present() -> None:
 
 
 @pytest.mark.skipif(not _DRAIN.exists(), reason="drain measurement not recorded yet")
-def test_the_drain_stalls_after_the_first_round() -> None:
-    """Repeated runs do not deliver more.
+def test_the_queue_deadlock_is_gone() -> None:
+    """Repeated runs must stop re-queueing boards that can never be approved.
 
-    This is the load-bearing finding: an operator watching coverage flatline after
-    the registration would reasonably conclude the registration failed, when in fact
-    it delivered everything it structurally can and is waiting on a probe fix.
+    Before the zero-yield quarantine, the same rows occupied every queue slot in every
+    round and `deferredByCap` sat at 226 forever. The backlog now drains to zero.
     """
     rounds = json.loads(_DRAIN.read_text(encoding="utf-8"))["rounds"]
-    assert len(rounds) >= 3, rounds
+    assert len(rounds) >= 2, rounds
     assert rounds[0]["approved"] > 0, "round 1 must approve something for this to mean anything"
-    later = [r["approved"] for r in rounds[1:]]
-    assert all(count == 0 for count in later), f"drain resumed unexpectedly: {later}"
+    assert rounds[-1]["deferredByCap"] == 0, f"backlog never drained: {rounds[-1]}"
 
 
 @pytest.mark.skipif(not _DRAIN.exists(), reason="drain measurement not recorded yet")
-def test_active_count_freezes_while_candidates_stay_deferred() -> None:
-    rounds = json.loads(_DRAIN.read_text(encoding="utf-8"))["rounds"]
-    assert rounds[0]["active"] == rounds[-1]["active"]
-    assert rounds[-1]["deferredByCap"] > 0, "backlog should still be waiting on a probe fix"
+def test_no_board_is_quarantined_while_active() -> None:
+    """The safety property of the zero-yield quarantine.
+
+    Retiring a board that actually works would trade a queue stall for silent data
+    loss, which is worse. Verified on the recorded run: 247 boards were quarantined
+    and none is active in the registry.
+    """
+    drain = _DRAIN.parent / "drain"
+    store_path = drain / "source-discovery-probe-failures.json"
+    registry_path = drain / "source-registry-active.json.gz"
+    if not store_path.exists() or not registry_path.exists():
+        pytest.skip("drain artefacts not retained")
+    import gzip
+
+    store = json.loads(store_path.read_text(encoding="utf-8"))
+    records = store.get("records") if isinstance(store, dict) and "records" in store else store
+    records = records if isinstance(records, dict) else {}
+    quarantined = {
+        key
+        for key, value in records.items()
+        if isinstance(value, dict) and value.get("quarantinedUntil")
+    }
+    if not quarantined:
+        pytest.skip("no quarantine recorded")
+    active = {str(row.get("id")) for row in json.loads(gzip.decompress(registry_path.read_bytes()))}
+    assert not (quarantined & active), sorted(quarantined & active)[:5]
 
 
 def test_the_high_volume_adapters_are_the_ones_that_cannot_land() -> None:
