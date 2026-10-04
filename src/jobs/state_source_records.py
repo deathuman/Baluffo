@@ -866,13 +866,17 @@ def apply_errored_source_state(
         ).isoformat()
 
 
+def excluded_source_skip_reason(report: dict[str, Any]) -> str:
+    """The reason an excluded source was skipped, preferring the explicit field."""
+    return clean_text(report.get("exclusionReason")) or clean_text(
+        report.get("cacheDecisionReason")
+    )
+
+
 def apply_excluded_source_state(
     entry: dict[str, Any], *, report: dict[str, Any], finished_at: str
 ) -> None:
-    exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(
-        report.get("cacheDecisionReason")
-    )
-    if exclusion_reason == "not_modified_304":
+    if excluded_source_skip_reason(report) == "not_modified_304":
         entry["lastSuccessAt"] = finished_at
         entry["consecutiveFailures"] = 0
         for key in ("quarantinedUntilAt", "lastFailureAt", "lastError"):
@@ -880,8 +884,19 @@ def apply_excluded_source_state(
 
 
 def refresh_next_eligible_check_at(
-    entry: dict[str, Any], *, source_name: str, finished_at: str
+    entry: dict[str, Any], *, source_name: str, finished_at: str, skip_reason: str = ""
 ) -> None:
+    """Advance a source's next-eligible time, unless it was never actually fetched.
+
+    A skip teaches the pipeline nothing new about the board, so it must not move the
+    deadline. Advancing it anyway lets the run cadence, rather than the configured
+    freshness window, decide whether a source is ever fetched again.
+
+    The reason is passed in explicitly rather than read from the entry so a stale reason
+    can never suppress the advance after a later successful fetch.
+    """
+    if _state_incremental.is_non_fetch_skip_reason(skip_reason):
+        return
     entry["nextEligibleCheckAt"] = _state_incremental.compute_next_eligible_check_at(
         entry,
         adapter=_state_incremental.adapter_for_cache(source_name, entry),

@@ -28,6 +28,7 @@ from .state_source_records import (
     build_browser_fallback_circuit_breaker,
     circuit_breaker_until,
     derive_source_health_fields,
+    excluded_source_skip_reason,
     normalize_source_state_payload,
     read_previously_successful_sources,
     read_source_state,
@@ -173,6 +174,7 @@ def _apply_status_state(
     circuit_breaker_cooldown_minutes: int,
     circuit_breaker_zero_kept: int,
 ) -> None:
+    skip_reason = ""
     if entry["lastStatus"] == "ok":
         apply_successful_source_state(
             entry,
@@ -192,10 +194,16 @@ def _apply_status_state(
             circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         )
     elif entry["lastStatus"] == "excluded":
+        skip_reason = excluded_source_skip_reason(report)
         apply_excluded_source_state(entry, report=report, finished_at=finished_at)
     else:
         return
-    refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
+    refresh_next_eligible_check_at(
+        entry,
+        source_name=source_name,
+        finished_at=finished_at,
+        skip_reason=skip_reason,
+    )
 
 
 def _apply_detail_reports(

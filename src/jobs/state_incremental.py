@@ -42,6 +42,34 @@ _STATIC_DEAD_SOURCE_TOKENS = (
     "needs_review",
 )
 
+# Skip reasons that mean the board was never actually fetched. A run that skips a source
+# for one of these has learned nothing new about it, so it must not push the source's
+# next-eligible time forward.
+#
+# ``not_modified_304`` is included deliberately even though it is a real HTTP exchange: a
+# 304 asserts the cached copy is current, which is a reason to leave the deadline alone
+# rather than to extend it.
+NON_FETCH_SKIP_REASONS = frozenset(
+    {
+        "cache_within_freshness_window",
+        "dynamic_redundant_provider",
+        "not_modified_304",
+        "skip_fresh",
+        "within_freshness_window",
+    }
+)
+
+
+def is_non_fetch_skip_reason(reason: Any) -> bool:
+    """Whether this skip reason means the board was not fetched for its own sake.
+
+    Advancing a deadline on a skip makes eligibility a function of how often the pipeline
+    runs rather than of the configured freshness window, so a source skipped often enough
+    is never fetched at all.
+    """
+    token = norm_text(reason)
+    return bool(token) and any(marker in token for marker in NON_FETCH_SKIP_REASONS)
+
 
 def _zero_kept_streak(entry: dict[str, Any]) -> int:
     # Canonical-first via the shared policy leaf (Phase 3 of the counter
