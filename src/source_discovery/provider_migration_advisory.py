@@ -20,6 +20,13 @@ from src.source_registry import source_identity
 from src.url_hosts import host_matches_domain
 
 from .config import SUPPORTED_PROVIDERS
+from .core_identity import (
+    board_identity_key,
+    multi_tenant_provider,
+    root_domain,
+    tenant_host_label,
+    tenant_path,
+)
 from .provider_inference import infer_provider_adapter, provider_candidate
 from .scoring import unique_string_list
 
@@ -282,6 +289,42 @@ def _has_strong_provider_evidence(row: dict[str, Any]) -> bool:
     return bool(reasons & _STRONG_PROVIDER_EVIDENCE_REASONS)
 
 
+def _tenant_scoped_lookup_key(
+    row: dict[str, Any], family: str, provider_id: str
+) -> tuple[str, str] | None:
+    """A tenant-scoped key for multi-tenant providers, or None to use the family key.
+
+    ``REDUNDANT_STATIC_IF_PROVIDER`` declares Workday and BambooHR with
+    ``provider_id_field: adapter`` / ``provider_id_value: workday``. That value is the
+    *adapter name*, not a tenant, so every board on the platform hashed to one lookup key
+    and the duplicate index held a single arbitrary entry: NVIDIA resolved to whichever
+    Workday board was indexed first, was flagged ``already_covered_by_provider``, and was
+    never registered. 64 curated boards / 1,257 openings were suppressed this way.
+
+    The redundancy rule still means what it should -- "this static board is served by a
+    provider" -- so it is left alone. What changes is that identity resolution asks which
+    tenant, and only falls back to the platform-wide key when no tenant can be resolved.
+    """
+    if not family or not provider_id:
+        return None
+    if provider_id.lower() not in {family.lower(), ""}:
+        return None
+    identity = board_identity_key(row)
+    host, _, tenant = identity.partition("|")
+    if "|" not in identity:
+        host = _host(_current_url(row))
+        tenant = ""
+    if not multi_tenant_provider(host):
+        return None
+    label = tenant_host_label(host) or tenant
+    path = tenant_path(_current_url(row)) or tenant
+    if not label and not path:
+        return None
+    # A tenant on the same host but a different board path is a different board. Keying on
+    # host alone would re-merge the two tenants this exists to separate.
+    return family.lower(), f"{label}|{path}".lower()
+
+
 def _provider_seen_identities(rows: list[dict[str, Any]] | None) -> set[str]:
     return {
         source_identity(row)
@@ -295,26 +338,56 @@ def _provider_seen_identities(rows: list[dict[str, Any]] | None) -> set[str]:
     }
 
 
-def _provider_lookup_key(row: dict[str, Any]) -> tuple[str, str]:
-    family = _provider_family(row, _candidate_url(row))
-    _field, value = _provider_id(row, family, _candidate_url(row))
-    if family and value:
-        return family, value.lower()
-    return "", ""
+def _provider_lookup_keys(
+    row: dict[str, Any], *, family: str = "", provider_id: str = ""
+) -> list[tuple[str, str]]:
+    """Every key this board may be found under, most specific first.
+
+    ``family``/``provider_id`` are passed in rather than recomputed because the provider
+    URL is not always the candidate URL: a static board advertising its ATS in
+    ``atsLinks`` resolves its provider from that link, not from its own careers page.
+    Recomputing from ``_candidate_url`` alone silently dropped those boards out of the
+    index, which is how a real Greenhouse match stopped being found.
+
+    A tenant-scoped key is authoritative when the board resolves to one, because that is
+    the only key that can tell two tenants apart. The platform-wide key is kept as a
+    fallback so a registry row that carries no resolvable tenant is still reachable.
+    """
+    if not family or not provider_id:
+        provider_url = (
+            _text(row.get("detectedProviderUrl")) or _first_ats_link(row) or _candidate_url(row)
+        )
+        family = family or _provider_family(row, provider_url)
+        provider_id = provider_id or _provider_id(row, family, provider_url)[1]
+    if not family or not provider_id:
+        return []
+    keys: list[tuple[str, str]] = []
+    scoped = _tenant_scoped_lookup_key(row, family, provider_id)
+    if scoped is not None:
+        keys.append(scoped)
+    wide = (family, provider_id.lower())
+    if wide not in keys:
+        keys.append(wide)
+    return keys
 
 
 def _provider_registry_index(
     active_rows: list[dict[str, Any]] | None,
     pending_rows: list[dict[str, Any]] | None,
 ) -> dict[tuple[str, str], tuple[str, str]]:
+    """Registry rows indexed by every key they answer to.
+
+    ``setdefault`` over most-specific-first means a tenant-scoped row wins its own key
+    rather than being shadowed by whichever unrelated tenant happened to be indexed first.
+    """
     index: dict[tuple[str, str], tuple[str, str]] = {}
     for state, rows in (("active", active_rows or []), ("pending", pending_rows or [])):
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            key = _provider_lookup_key(row)
-            if key != ("", ""):
-                index.setdefault(key, (source_identity(row), state))
+            identity, row_state = source_identity(row), state
+            for key in _provider_lookup_keys(row):
+                index.setdefault(key, (identity, row_state))
     return index
 
 
@@ -337,10 +410,130 @@ def _existing_provider_match(
     provider_id: str,
     provider_index: dict[tuple[str, str], tuple[str, str]],
 ) -> tuple[str, str]:
-    existing_id, existing_state = provider_index.get((family, provider_id.lower()), ("", ""))
-    if existing_id:
-        return existing_id, existing_state
-    return _text(row.get("existingProviderSourceId")), _text(row.get("existingProviderSourceState"))
+    """The registry row that already serves this board, if any.
+
+    Looked up tenant-scoped first. A match is only accepted when it is this board: a
+    cross-tenant hit means the row belongs to a different studio, and reporting it as
+    coverage is how 64 curated boards were suppressed.
+    """
+    for key in _provider_lookup_keys(row, family=family, provider_id=provider_id):
+        existing_id, existing_state = provider_index.get(key, ("", ""))
+        if existing_id and _row_serves_board(existing_id, row):
+            return existing_id, existing_state
+    # No indexed match. A carried-over value is only trusted when it is this board too.
+    carried = _text(row.get("existingProviderSourceId"))
+    if carried and _row_serves_board(carried, row):
+        return carried, _text(row.get("existingProviderSourceState"))
+    return "", ""
+
+
+def _row_serves_board(registry_id: str, candidate: dict[str, Any]) -> bool:
+    """Whether a registry id identifies the same board as the candidate.
+
+    Both sides resolve to ``(host, tenant)``. A shared platform domain is not identity:
+    ``nvidia.wd5.myworkdayjobs.com`` and ``aristocrat.wd3.myworkdayjobs.com`` are two
+    studios on one platform, not one board.
+    """
+    registry_host, registry_tenant = _id_host_tenant(registry_id)
+    if not registry_host:
+        return False
+    candidate_host = _board_host(candidate)
+    if not candidate_host:
+        # No board host to compare. The registry row was found under this candidate's own
+        # provider key, which is the strongest evidence available; the key carried the
+        # tenant, so accept it rather than rejecting a correct match.
+        return registry_id == (_text(candidate.get("sourceIdentity")) or source_identity(candidate))
+    if _same_host(registry_host, candidate_host):
+        pass
+    elif registry_tenant and registry_tenant == _candidate_tenant(candidate):
+        # A provider row is keyed by tenant on the platform's API host, while the board is
+        # on the studio's own host. Same tenant is the same board.
+        return True
+    else:
+        return False
+    if not multi_tenant_provider(candidate_host):
+        return True
+    # Same platform host: compare tenants, and treat an unresolvable one as no match.
+    registry_label = tenant_host_label(registry_host)
+    candidate_label = tenant_host_label(candidate_host)
+    if not candidate_label or not registry_label:
+        return registry_id == (_text(candidate.get("sourceIdentity")) or source_identity(candidate))
+    return registry_label == candidate_label
+
+
+def _board_host(candidate: dict[str, Any]) -> str:
+    """The candidate's own board host.
+
+    The ATS link is preferred over the careers page: a static board whose provider row
+    lives on the platform API host is the same board, and the careers host is the studio's
+    marketing site. Neither is wrong; they are different roles.
+    """
+    for url in (_first_ats_link(candidate), _current_url(candidate), _candidate_url(candidate)):
+        host = _host(url)
+        if host:
+            return host
+    return ""
+
+
+def _same_host(left: str, right: str) -> bool:
+    """Host equality that tolerates ``www.`` and the API/page split on one domain."""
+
+    def bare(value: str) -> str:
+        label = str(value or "").strip().lower().split(":")[0]
+        return label[4:] if label.startswith("www.") else label
+
+    left_bare, right_bare = bare(left), bare(right)
+    if left_bare == right_bare:
+        return True
+    return root_domain(left_bare) == root_domain(right_bare) and bool(root_domain(left_bare))
+
+
+def _candidate_tenant(candidate: dict[str, Any]) -> str:
+    """The candidate's tenant, from whichever of its URLs carries one."""
+    for url in (_first_ats_link(candidate), _current_url(candidate), _candidate_url(candidate)):
+        host = _host(url)
+        label = tenant_host_label(host) if host else ""
+        if label:
+            return label
+    for url in (_current_url(candidate), _candidate_url(candidate)):
+        path = tenant_path(url)
+        if path:
+            return path.split("/")[-1]
+    return _text(candidate.get("slug") or candidate.get("account") or candidate.get("company_id"))
+
+
+def _id_host_tenant(registry_id: str) -> tuple[str, str]:
+    try:
+        from tools.coverage_board_identity import registry_identity
+    except ImportError:  # pragma: no cover - tools/ is absent in a slimmed install
+        parsed = _fallback_registry_identity(registry_id)
+        if parsed is None:
+            return "", ""
+    else:
+        parsed = registry_identity(registry_id)
+        if parsed is None:
+            return "", ""
+    _adapter, host, tenant = parsed
+    return host, tenant_host_label(host) or tenant
+
+
+def _fallback_registry_identity(registry_id: str) -> tuple[str, str, str] | None:
+    """``(adapter, host, tenant)`` for a registry id, without the tools package.
+
+    The tools module owns the canonical rule for splitting an id; this mirrors it closely
+    enough for a host/tenant comparison and is only reached when it cannot be imported.
+    """
+    parts = str(registry_id or "").split(":", 2)
+    if len(parts) < 3:
+        return None
+    adapter, value = parts[0].lower(), parts[2]
+    host = _host(value if "/" in value else "")
+    if not host:
+        host = _host(f"https://{value}")
+    if not host:
+        return "", "", ""
+    path = tenant_path(value)
+    return adapter, host, path.split("/")[-1] if path else ""
 
 
 def _migration_reasons(

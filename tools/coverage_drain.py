@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drain discovery's curated-seed queue and report what actually lands.
+"""Drain discovery's curated-seed queue, then prove what a fetch collects.
 
 Registering boards is not the same as collecting openings. A curated seed becomes
 a registry row only after it survives four gates, and the first measurement showed
@@ -13,12 +13,31 @@ with a domain cap on top — so a large seed set is *designed* to land over seve
 cycles. One run tells you the throttle exists; several tell you the drain rate and
 whether it reaches zero.
 
+**Three numbers, not one.** Registration alone was previously reported as delivery,
+and on 2026-10-04 that mistake shipped: `tools/coverage_drain.py` reported 6,844 of
+6,929 openings delivered, and a live fetch collected 0 of them. The three numbers are
+
+    registered      a registry row exists for the board
+    adapter_matched that row carries the adapter the curated row declares
+    collected       a fetch run kept a non-zero number of its openings
+
+`adapter_matched` is the cheap gate and needs no network. It is what catches a board
+that landed under the wrong adapter — Workday registered as `static` collects nothing
+because no Workday loader ever sees it. `collected` needs a fetch and is opt-in via
+`--verify-collected` because a full run over the curated set takes tens of minutes.
+
+With `--verify-collected` this exits non-zero when boards registered but nothing was
+collected, so it is usable as a preflight gate rather than a report that is read
+optimistically.
+
 Everything is isolated under `--data-dir`. Discovery has no `--output-dir`, and
 `BALUFFO_DATA_DIR` is the only redirect it honours, so an unisolated run writes into
 the repo's `data/` and leaves discovery-audit artefacts behind.
 
 Usage:
   python tools/coverage_drain.py --rounds 6 --data-dir _out/coverage/drain
+  python tools/coverage_drain.py --rounds 6 --data-dir _out/coverage/drain \
+      --verify-collected
 """
 
 from __future__ import annotations
@@ -34,8 +53,12 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from coverage_board_identity import registry_identity  # noqa: E402
 
 # The registry is written as a gzipped JSON array; the sibling .jsonl holds the same
 # data as a single-line array, so parsing it as newline-delimited silently yields one
@@ -43,6 +66,27 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_ACTIVE = "source-registry-active.json.gz"
 REGISTRY_PENDING = "source-registry-pending.json.gz"
 REPORT = "source-discovery-report.json"
+CURATED = "src/curated_coverage_boards.json"
+FETCH_REPORT = "jobs-fetch-report.json"
+FETCH_OUTPUT = "jobs-unified.json"
+
+# Exit code for "boards registered, nothing collected". Distinct from 1 so a caller can
+# tell a collection failure from a harness error.
+EXIT_NOT_COLLECTED = 3
+
+
+def board_key(url: Any) -> tuple[str, str]:
+    """Comparable ``(host, tenant)`` for a board listing URL.
+
+    Reuses the measurement module's own identity so registration and delivery agree.
+    Two functions that each normalise a URL their own way is how the two sides came to
+    disagree about Workday in the first place.
+    """
+    from coverage_board_identity import build_candidate
+
+    host = str(url or "").strip().lower()
+    candidate = build_candidate(host)
+    return (str(candidate.get("host") or ""), str(candidate.get("tenant") or ""))
 
 
 def read_registry(data_dir: Path, name: str) -> list[dict[str, Any]]:
@@ -140,6 +184,154 @@ def round_summary(data_dir: Path) -> dict[str, Any]:
     }
 
 
+def load_curated() -> list[dict[str, Any]]:
+    payload = json.loads((ROOT / CURATED).read_text(encoding="utf-8"))
+    rows = payload["boards"] if isinstance(payload, dict) and "boards" in payload else payload
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def collectable_adapters(landing_url: str, landing_tags: set[str], declared: str) -> set[str]:
+    """Which loaders can actually read this row, mirroring ``registry_entries``.
+
+    A ``static`` row on a Workday or BambooHR host *is* collected: the runtime migrates
+    it into that adapter at read time (``_provider_migration_entry`` in
+    ``src/jobs/common/registry.py``). Ignoring that would make this gate fire on boards
+    that do collect, which is the other way to be wrong. For every other adapter a
+    ``static`` row is only visible to the static loader.
+    """
+    tags = set(landing_tags)
+    if declared in tags:
+        tags.add(declared)
+    if "static" in landing_tags:
+        host = urlparse(landing_url).netloc.lower()
+        if host.endswith((".myworkdayjobs.com", ".workday.com", ".bamboohr.com")):
+            tags.add("workday" if "workday" in host else "bamboohr")
+    return {tag for tag in tags if not tag.startswith("state:")}
+
+
+def registration_report(
+    curated: list[dict[str, Any]], active: list[dict[str, Any]], pending: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Per curated board: does a registry row exist, and can a loader read it?
+
+    Identity is ``(host, tenant)`` on both sides, via the same
+    :mod:`coverage_board_identity` helpers the audit uses. Keying on the id string or the
+    studio label instead is what let a Workday board report as landed under a different
+    tenant's row.
+    """
+    landed: dict[tuple[str, str], dict[str, Any]] = {}
+    for state, rows in (("active", active), ("pending", pending)):
+        for row in rows:
+            identity = registry_identity(str(row.get("id") or ""))
+            if identity is None:
+                continue
+            _, host, tenant = identity
+            record = landed.setdefault((host, tenant), {"adapters": set(), "states": set()})
+            record["adapters"].add(str(row.get("adapter") or "").lower())
+            record["states"].add(state)
+
+    out: list[dict[str, Any]] = []
+    for board in curated:
+        url = str(board.get("listing_url") or board.get("url") or "")
+        adapter = str(board.get("adapter") or "").lower()
+        record = landed.get(board_key(url)) or {"adapters": set(), "states": set()}
+        states, adapters = record["states"], record["adapters"]
+        readable = collectable_adapters(url, adapters, adapter)
+        out.append(
+            {
+                "adapter": adapter,
+                "listing_url": url,
+                "openings": int(board.get("coverageAuditOpenings") or 0),
+                "registered": bool(states),
+                "state": "active"
+                if "active" in states
+                else ("pending" if "pending" in states else ""),
+                "adapter_matched": adapter in adapters,
+                "readable_by": sorted(readable),
+                "collectable": adapter in readable,
+                "registry_adapters": sorted(adapters),
+                "collected": None,
+            }
+        )
+    return out
+
+
+def run_fetch(data_dir: Path, *, timeout: int, fetch_timeout: int) -> None:
+    """Run one real fetch against the isolated data directory."""
+    env = {**os.environ, "BALUFFO_DATA_DIR": str(data_dir), "PYTHONIOENCODING": "utf-8"}
+    argv = [
+        sys.executable,
+        str(ROOT / "src" / "jobs_fetcher.py"),
+        "--output-dir",
+        str(data_dir),
+        "--timeout",
+        str(fetch_timeout),
+        "--force-refresh-all",
+        "--ignore-circuit-breaker",
+    ]
+    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        argv,
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr[-2000:])
+        raise SystemExit(f"fetch failed with exit {proc.returncode}")
+
+
+def read_json(path: Path) -> Any:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def attribute_collected(
+    data_dir: Path, report: list[dict[str, Any]]
+) -> tuple[dict[tuple[str, str]], int]:
+    """Attribute kept jobs to boards by host + tenant.
+
+    Provider adapters roll their boards up into one fetch-report row, so per-board counts
+    cannot come from the report — they come from the output rows, matched the same way
+    identity is defined everywhere else. Unmatched jobs are returned rather than dropped:
+    an attribution that silently covers only part of the output is a second false green.
+    """
+    payload = read_json(data_dir / FETCH_OUTPUT)
+    if isinstance(payload, dict):
+        payload = payload.get("jobs") or payload.get("records") or []
+    if not isinstance(payload, list):
+        return {}, 0
+
+    index: dict[str, tuple[str, str]] = {}
+    for row in report:
+        if not row["registered"]:
+            continue
+        host, tenant = board_key(row["listing_url"])
+        if host:
+            index.setdefault(f"{host}|{tenant}", (host, tenant))
+            index.setdefault(f"{host}|", (host, ""))
+
+    counts: dict[tuple[str, str], int] = {}
+    unmatched = 0
+    for job in payload:
+        if not isinstance(job, dict):
+            continue
+        url = str(job.get("url") or job.get("job_url") or job.get("applyUrl") or "")
+        host, tenant = board_key(url)
+        if not host or (host, tenant) not in index and (host, "") not in index:
+            unmatched += 1
+            continue
+        key = (host, tenant) if (host, tenant) in index else (host, "")
+        counts[key] = counts.get(key, 0) + 1
+    return counts, unmatched
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--rounds", type=int, default=5, help="discovery cycles to run")
@@ -152,6 +344,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="live registry json to seed the isolated run with",
     )
     parser.add_argument("--out", type=Path, help="write the per-round table here")
+    parser.add_argument(
+        "--verify-collected",
+        action="store_true",
+        help=(
+            "run a real fetch and report collected openings per board. Slower than "
+            "registration alone; without it the tool reports registration only and says so."
+        ),
+    )
+    parser.add_argument(
+        "--fetch-timeout",
+        type=int,
+        default=3600,
+        help="wall-clock ceiling for the --verify-collected fetch",
+    )
+    parser.add_argument(
+        "--fetch-job-timeout", type=int, default=30, help="per-request timeout for the fetch"
+    )
     args = parser.parse_args(argv)
 
     data_dir = args.data_dir.resolve()
@@ -177,9 +386,77 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("backlog exhausted: nothing left to promote")
             break
 
+    curated = load_curated()
+    report = registration_report(
+        curated, read_registry(data_dir, REGISTRY_ACTIVE), read_registry(data_dir, REGISTRY_PENDING)
+    )
+
+    unmatched = 0
+    if args.verify_collected:
+        print("running one fetch to measure collection...", flush=True)
+        run_fetch(data_dir, timeout=args.fetch_timeout, fetch_timeout=args.fetch_job_timeout)
+        counts, unmatched = attribute_collected(data_dir, report)
+        for row in report:
+            if not row["registered"]:
+                continue
+            row["collected"] = counts.get(board_key(row["listing_url"]), 0)
+
+    def tally(predicate: Any) -> tuple[int, int]:
+        picked = [row for row in report if predicate(row)]
+        return len(picked), sum(row["openings"] for row in picked)
+
+    registered_n, registered_o = tally(lambda row: row["registered"])
+    active_n, active_o = tally(lambda row: row["state"] == "active")
+    matched_n, matched_o = tally(lambda row: row["adapter_matched"])
+    readable_n, readable_o = tally(lambda row: row["collectable"])
+    collected_n, collected_o = tally(lambda row: (row["collected"] or 0) > 0)
+
+    if args.verify_collected:
+        collected_openings = sum(row["collected"] or 0 for row in report)
+    else:
+        collected_openings = -1
+
+    print()
+    print("=== registration ===")
+    print(
+        f"curated boards          : {len(report)} / {sum(r['openings'] for r in report)} openings"
+    )
+    print(f"registered (any state)  : {registered_n} / {registered_o}")
+    print(f"  of which active       : {active_n} / {active_o}")
+    print(f"declared adapter present: {matched_n} / {matched_o}")
+    print(f"readable by some loader : {readable_n} / {readable_o}")
+    unreadable = [r for r in report if r["registered"] and not r["collectable"]]
+    if unreadable:
+        print(
+            f"REGISTERED BUT UNREADABLE: {len(unreadable)} / {sum(r['openings'] for r in unreadable)}"
+        )
+        for row in unreadable[:8]:
+            print(
+                f"    declared={row['adapter']:<12} landed={row['registry_adapters']} "
+                f"openings={row['openings']:<5} {row['listing_url'][:52]}"
+            )
+
+    if args.verify_collected:
+        print()
+        print("=== collection (fetch-backed) ===")
+        print(f"boards keeping > 0 jobs : {collected_n} / {registered_n}")
+        print(f"openings collected      : {collected_openings} / {registered_o}")
+        print(f"jobs not attributed     : {unmatched}")
+
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps({"rounds": rows}, indent=2), encoding="utf-8")
+        args.out.write_text(
+            json.dumps(
+                {
+                    "rounds": rows,
+                    "curated": report,
+                    "unmatchedJobs": unmatched,
+                    "collectedOpenings": collected_openings,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
     first, last = rows[0], rows[-1]
     print()
@@ -188,6 +465,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"active after round {len(rows)}    : {last['active']}")
     print(f"still deferred by cap : {last['deferredByCap']}")
     print(f"probe-failed (stable) : {last['probeFailed']}")
+
+    if not args.verify_collected:
+        print()
+        print(
+            "NOTE: registration only. Collection is unmeasured -- pass --verify-collected "
+            "before reporting any board as delivered."
+        )
+        return 0
+
+    # The gate. Registration without collection is the failure this harness exists to
+    # catch, and a report that exits 0 through it is what shipped on 2026-10-04.
+    if registered_n > 0 and collected_n == 0:
+        print()
+        print(
+            f"GATE FAILED: {registered_n} boards registered, 0 collected any openings. "
+            "Registration is not delivery.",
+            file=sys.stderr,
+        )
+        return EXIT_NOT_COLLECTED
     return 0
 
 

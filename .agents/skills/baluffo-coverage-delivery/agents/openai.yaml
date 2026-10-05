@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Coverage Delivery"
+  short_description: "Close catalogue coverage gaps with honest delivery measurement"
+  default_prompt: "Use $baluffo-coverage-delivery to measure and close catalogue coverage gaps."

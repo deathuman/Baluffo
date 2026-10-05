@@ -56,6 +56,13 @@ else:
 # this class of chain resolution, which is why they never saw the failure.
 _WORKDAY_TLS_HOST_SUFFIX = ".myworkdayjobs.com"
 
+# The CXS endpoint honours `limit`, so pages are as large as the API accepts. The old
+# `range(0, limit * 5, limit)` capped a board at five pages regardless of its size, which
+# is how NVIDIA's 2,000 openings resolved to 100 collected: the loop simply stopped. The
+# ceiling is now a safety bound on a pathological `total`, not a page budget.
+_WORKDAY_PAGE_LIMIT = 20
+_WORKDAY_MAX_POSTINGS = 5000
+
 
 def _is_workday_tls_host(endpoint: str) -> bool:
     host = (urlparse(str(endpoint or "")).hostname or "").lower()
@@ -402,11 +409,13 @@ def _collect_workday_api_rows(
     if not endpoint:
         return []
     rows: list[dict[str, Any]] = []
-    limit = 20
-    for offset in range(0, limit * 5, limit):
+    seen_external_paths: set[str] = set()
+    offset = 0
+    total: int | None = None
+    while offset < _WORKDAY_MAX_POSTINGS:
         payload = {
             "appliedFacets": {},
-            "limit": limit,
+            "limit": _WORKDAY_PAGE_LIMIT,
             "offset": offset,
             "searchText": search_text,
         }
@@ -420,6 +429,7 @@ def _collect_workday_api_rows(
         postings = page.get("jobPostings")
         if not isinstance(postings, list) or not postings:
             break
+        new_rows = 0
         for posting in postings:
             if not isinstance(posting, dict):
                 continue
@@ -428,10 +438,21 @@ def _collect_workday_api_rows(
                 site_base_url=site_base_url,
                 fallback_company=studio,
             )
-            if row:
+            # Workday repeats a posting across pages when facets shift under the
+            # offset, so identity is the posting's own external path, not its position.
+            identity = str(row.get("sourceJobId") or row.get("url") or "") if row else ""
+            if row and identity not in seen_external_paths:
+                seen_external_paths.add(identity)
                 rows.append(row)
-        total = page.get("total")
-        if isinstance(total, int) and offset + limit >= total:
+                new_rows += 1
+        offset += _WORKDAY_PAGE_LIMIT
+        reported_total = page.get("total")
+        if isinstance(reported_total, int) and reported_total > 0:
+            total = reported_total
+        # A short page means the board is exhausted, whatever it claims its total is.
+        if len(postings) < _WORKDAY_PAGE_LIMIT or new_rows == 0:
+            break
+        if total is not None and offset >= total:
             break
     return rows
 

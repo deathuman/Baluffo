@@ -64,6 +64,10 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
 | Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py` 1,133→12, 12/12) and lifecycle coordinator (`state_lifecycle.py` 1,121→38, 45/49+4 via `_sl.`) plus `registry_conflicts.py` were split into leaf modules (2026-05 through 2026-08-20); public entrypoints remain stable in the coordinator files |
 | A local `_as_int` / `_safe_int` / `_coerce_int` is safer than the shared helper | `src/shared/utils.py` owns integer coercion. Use `int_or_default(value, default)`; do not re-implement it. 21 local copies were deleted in favour of it, and every one of them was missing `except OverflowError`, so `float("inf")` escaped as an uncaught `OverflowError` (`int(float("inf"))` raises `OverflowError`, which is **not** a `ValueError`) |
+| A registry row means the board delivers openings | Registration is not delivery. A board delivers only when a fetch run keeps a non-zero count of its openings — measure with `tools/coverage_drain.py --verify-collected` (local-only); see the `baluffo-coverage-delivery` skill |
+| An adapter absent from the fetch report is missing | Prove absence in `DEFAULT_SOURCE_LOADER_NAMES`, `registry_entries(<adapter>)`, and `adapterTimings` first — the report samples and omits families that never dispatched. Workday was "missing" while present in all three |
+| A zero from the discovery probe means the board has no jobs | The probe signal is positive-only; a zero means nothing at all. Absence requires the rendered path or a real fetch, with a known-good control board in the same run |
+| A board's registry id or studio label identifies it | Identity is **host + tenant**, compared case-insensitively; the registry lowercases path segments. Keying on the id string or studio label suppressed 64 curated boards as cross-tenant "duplicates" |
 
 ## Verification Shortcuts
 
@@ -80,6 +84,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Linux Python tests | `npm run test:py:linux` |
 | Linux frontend tests | `npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
+| Coverage/delivery claims | Load `.agents/skills/baluffo-coverage-delivery/SKILL.md`, then `python tools/coverage_drain.py --rounds 1 --data-dir _out/coverage/drain` (offline half; add `--verify-collected` for the real fetch — local-only, tens of minutes) |
 
 ## Codex In-App Browser Visual QA
 

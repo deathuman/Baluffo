@@ -2,23 +2,33 @@
 
 Draining discovery over the 695 curated boards, per adapter:
 
-===============  ======  =======  =========  ==========
-adapter          boards  landed   openings  delivered
-===============  ======  =======  =========  ==========
-static              425     420      3,440      3,409
-workday              17      17      1,065      1,065
-greenhouse           52      51        655        617
-workable             29      29        440        440
-smartrecruiters      16      16        432        432
-ashby                39      39        334        334
-bamboohr             47      47        192        192
-lever                22      20        181        165
-breezy               15      15         69         69
-personio              9       9         49         49
-jazzhr                8       8         32         32
-teamtailor           13      13         26         26
-recruitee             3       3         14         14
-===============  ======  =======  =========  ==========
+===============  ======  =======  ==========
+adapter          boards  landed   openings
+===============  ======  =======  ==========
+static              425     420      3,440
+workday              17      17      1,065
+greenhouse           52      51        655
+workable             29      29        440
+smartrecruiters      16      16        432
+ashby                39      39        334
+bamboohr             47      47        192
+lever                22      20        181
+breezy               15      15         69
+personio              9       9         49
+jazzhr                8       8         32
+teamtailor           13      13         26
+recruitee             3       3         14
+===============  ======  =======  ==========
+
+**This table has no `delivered` column and must not grow one.** It previously reported
+6,844 of 6,929 openings delivered. On 2026-10-04, after v0.3.007 shipped and a live
+pipeline ran end to end, the fetch collected **0** of them: 277 of these boards were
+active in the registry, discovery had probed all 277 `ok` counting 3,598 jobs, and the
+fetch kept nothing. `delivered` was being computed as "a registry row exists", which is
+registration wearing a delivery label. Delivery is measured by
+`tools/coverage_drain.py --verify-collected`, which reports three separate numbers —
+registered, readable by some loader, collected — and exits non-zero when boards register
+and nothing collects.
 
 The table is 557 rows rather than 558 because AppLovin's Greenhouse board was proposed by
 the audit while the hand-curated literal already carried it. The two tables are
@@ -26,10 +36,9 @@ concatenated, so a board in both is fetched twice and double-counted; four such 
 were already known (Voodoo, 2K Czech, Hangar 13, Yggdrasil) and this was the fifth.
 `_drop_already_curated` now removes the class by board identity rather than by studio label.
 
-**687 boards and 6,844 of 6,929 openings — 98.8% of boards, 98.8% of openings.**
-
-The eight that still do not land are two empty Greenhouse and Lever boards and six thin
-static boards, one of which (`vivastudios.com`) disconnects mid-response.
+**687 of 695 boards, 98.8%, land in the registry.** The eight that still do not are two
+empty Greenhouse and Lever boards and six thin static boards, one of which
+(`vivastudios.com`) disconnects mid-response.
 
 That number came from 762 (17%) in six steps, and every step was found by running
 discovery rather than by reading it:
@@ -88,7 +97,7 @@ somewhere the openings were not, and the zero was recorded as an answer.
 
 **Greenhouse's EU hosts were invisible to the host rules**, so 158 openings on 8 tenants
 collapsed onto a single static host-root row. `job-boards.eu.greenhouse.io` does not match
-`(^|\.)job-boards\.greenhouse\.io$` — it ends `eu.greenhouse.io`, not
+`(^|[.])job-boards[.]greenhouse[.]io$` - it ends `eu.greenhouse.io`, not
 `job-boards.greenhouse.io` — so it fell through to `static`. The runtime's API serves every
 one of those tenants: tripledotstudios 92 jobs, sportygroup 38, growe 15, kambi 10.
 
@@ -113,6 +122,7 @@ registered 0 of 9 — a third instance of a zero read as an answer.
 from __future__ import annotations
 
 import gzip
+import importlib.util
 import json
 from pathlib import Path
 
@@ -122,6 +132,16 @@ from src.source_discovery.config import load_curated_coverage_boards
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DRAIN = _ROOT / "_out" / "coverage" / "drain"
+
+
+def _load_tool(name: str):
+    """Import a `tools/` script by name, as a subprocess entrypoint would."""
+    spec = importlib.util.spec_from_file_location(name, _ROOT / "tools" / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 # Measured delivery per adapter, from the drain run these figures quote.
 #
@@ -139,20 +159,27 @@ _DRAIN = _ROOT / "_out" / "coverage" / "drain"
 # then built carried only `account`, which `endpoint_url` cannot resolve -- so all 29
 # failed the probe as "missing adapter or URL" and registered 0 of 29. Both now use the
 # runtime's own JsonFeedSpec template. keywords-intl1 serves 282 jobs and sideinc 378.
-_DELIVERED = {
-    "static": (425, 420, 3_440, 3_409),
-    "workday": (17, 17, 1_065, 1_065),
-    "greenhouse": (52, 51, 655, 617),
-    "workable": (29, 29, 440, 440),
-    "smartrecruiters": (16, 16, 432, 432),
-    "ashby": (39, 39, 334, 334),
-    "bamboohr": (47, 47, 192, 192),
-    "lever": (22, 20, 181, 165),
-    "breezy": (15, 15, 69, 69),
-    "personio": (9, 9, 49, 49),
-    "jazzhr": (8, 8, 32, 32),
-    "teamtailor": (13, 13, 26, 26),
-    "recruitee": (3, 3, 14, 14),
+# (boards, landed, openings). There is deliberately no "delivered" column: an earlier
+# version of this file carried one and asserted workday had delivered all 1,065 of its
+# openings. The 2026-10-04 live run collected 0. `delivered` was being computed as
+# "a registry row exists", which cannot tell a collected board from a registered one, so
+# the column was removed rather than corrected -- measuring it is
+# `tools/coverage_drain.py --verify-collected`, which exits non-zero when boards register
+# and nothing collects.
+_LANDED = {
+    "static": (425, 420, 3_440),
+    "workday": (17, 17, 1_065),
+    "greenhouse": (52, 51, 655),
+    "workable": (29, 29, 440),
+    "smartrecruiters": (16, 16, 432),
+    "ashby": (39, 39, 334),
+    "bamboohr": (47, 47, 192),
+    "lever": (22, 20, 181),
+    "breezy": (15, 15, 69),
+    "personio": (9, 9, 49),
+    "jazzhr": (8, 8, 32),
+    "teamtailor": (13, 13, 26),
+    "recruitee": (3, 3, 14),
 }
 
 
@@ -163,7 +190,7 @@ def test_the_measured_split_matches_the_catalogue() -> None:
         adapter = str(row["adapter"])
         boards, openings = counts.get(adapter, (0, 0))
         counts[adapter] = (boards + 1, openings + int(row.get("coverageAuditOpenings") or 0))
-    for adapter, (_boards, _landed, openings, _delivered) in _DELIVERED.items():
+    for adapter, (_boards, _landed, openings) in _LANDED.items():
         assert counts.get(adapter, (0, 0))[1] == openings, adapter
 
 
@@ -186,31 +213,41 @@ def test_every_adapter_with_a_json_listing_lands_all_its_boards() -> None:
         "workable",
         "personio",
     ):
-        boards, landed, _openings, _delivered = _DELIVERED[adapter]
+        boards, landed, _openings = _LANDED[adapter]
         assert landed == boards, f"{adapter} landed {landed}/{boards}"
 
 
-def test_workday_bamboohr_and_workable_land_every_opening_they_promised() -> None:
-    """Workday and BambooHR were the two largest zero-delivery blocks: 1,065 and 192.
+def test_landing_is_not_delivery() -> None:
+    """The invariant the 2026-10-04 live run established.
 
-    Workable joins them because 440 openings were lost twice to a wrong URL -- once in the
-    probe and once in the row it built -- and it now lands all 29 boards and every opening.
+    Every board here landed in the registry, and a live fetch still collected none of
+    them. Landing is a registration fact; delivery requires a loader that can read the
+    row and a non-zero kept count. Any future column that claims delivery without a
+    fetch behind it has reintroduced the measurement bug this file previously asserted.
     """
-    for adapter in ("workday", "bamboohr", "workable"):
-        _boards, _landed, openings, delivered = _DELIVERED[adapter]
-        assert delivered == openings, adapter
+    total_landed = sum(landed for _boards, landed, _openings in _LANDED.values())
+    assert total_landed == 687
+
+    # The gate that enforces this has to exist, not just be described in a docstring.
+    drain = _load_tool("coverage_drain")
+    assert drain.EXIT_NOT_COLLECTED != 0
+    # A Workday board registered as `static` is still readable: the runtime migrates it.
+    tags = drain.collectable_adapters(
+        "https://lnw.wd5.myworkdayjobs.com/LightWonderExternalCareers", {"static"}, "workday"
+    )
+    assert "workday" in tags, tags
 
 
 def test_static_is_the_only_remaining_gap() -> None:
     """Names the remaining work so it cannot be quietly forgotten."""
-    for adapter, (_b, landed, _o, _d) in _DELIVERED.items():
+    for adapter, (_b, landed, _o) in _LANDED.items():
         if adapter == "static":
             continue
-        boards = _DELIVERED[adapter][0]
+        boards = _LANDED[adapter][0]
         assert landed >= boards - 4, f"{adapter} landed only {landed}/{boards}"
-    static_boards, static_landed, static_openings, static_delivered = _DELIVERED["static"]
+    static_boards, static_landed, static_openings = _LANDED["static"]
     assert static_landed > static_boards * 0.9
-    assert static_openings - static_delivered < 100
+    assert static_openings > 0
 
 
 def test_no_board_is_quarantined_while_active() -> None:
