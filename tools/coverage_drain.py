@@ -458,6 +458,132 @@ def read_json(path: Path) -> Any:
         return None
 
 
+def _source_key_index(
+    report: list[dict[str, Any]],
+) -> tuple[
+    dict[str, tuple[str, str]],
+    list[tuple[str, str, tuple[str, str]]],
+    dict[str, str],
+]:
+    """Map fetch-report source names to boards: ``(by_source, prefix_index, rollup_of)``.
+
+    One rule, two consumers. Attribution and fetch evidence both have to know which
+    fetch-report row speaks for which board, and deriving that twice is how the two drifted
+    apart before -- the evidence path would have said a board was never asked while the
+    attribution path was reading its jobs.
+    """
+    by_source: dict[str, tuple[str, str]] = {}
+    prefix_index: list[tuple[str, str, tuple[str, str]]] = []
+    rollup_of: dict[str, str] = {}
+    for row in report:
+        if not row["registered"]:
+            continue
+        host, tenant = report_identity(row)
+        if not host:
+            continue
+        key = (host, tenant)
+        adapter = str(row.get("adapter") or "").lower()
+        rollup = _ROLLUP_SOURCE.get(adapter, "")
+        if adapter in {"static", "scrapy_static"}:
+            by_source[static_source_name(str(row["listing_url"]))] = key
+        else:
+            rollup_of.setdefault(rollup, adapter)
+            prefix_index.append((host, _posting_prefix(str(row["listing_url"])), key))
+    return by_source, prefix_index, rollup_of
+
+
+# A source row that was never asked is not a source row that found nothing. These are the
+# tells, from `static_listing_flow._handle_skip_and_revalidation`: a skip decision, or no
+# time spent and nothing fetched. A row that spent seconds and fetched nothing has asked.
+_SKIP_DECISIONS = frozenset({"skip_fresh", "cooldown_skip", "skip_revalidate", "skipped"})
+
+FETCH_STATES = (
+    "collected",
+    "fetched_empty",
+    "error",
+    "not_selected",
+    "rollup_only",
+    "no_report",
+)
+
+
+def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
+    """One source row's fetch evidence, classified.
+
+    The distinction this exists for: ``fetchedCount == 0`` alone cannot tell a board that
+    was asked and had nothing from one that was never asked. A board reported as zero on
+    the strength of a skip is a measurement artifact wearing a coverage finding's clothes.
+    """
+    if row is None:
+        return {
+            "state": "not_selected",
+            "kept_count": None,
+            "fetched_count": None,
+            "duration_ms": None,
+            "cache_decision": "",
+            "error": "",
+        }
+    kept = int(row.get("keptCount") or 0)
+    fetched = int(row.get("fetchedCount") or 0)
+    duration = int(row.get("durationMs") or 0)
+    decision = str(((row.get("details") or [{}])[0] or {}).get("cacheDecision") or "")
+    error = str(row.get("error") or "")
+    if error:
+        state = "error"
+    elif kept > 0:
+        state = "collected"
+    elif decision in _SKIP_DECISIONS or (duration == 0 and fetched == 0):
+        state = "not_selected"
+    else:
+        state = "fetched_empty"
+    return {
+        "state": state,
+        "kept_count": kept,
+        "fetched_count": fetched,
+        "duration_ms": duration,
+        "cache_decision": decision,
+        "error": error[:120],
+    }
+
+
+def fetch_evidence(data_dir: Path, report: list[dict[str, Any]]) -> dict[tuple[str, str], dict]:
+    """Per-board fetch evidence, so "never asked" is separable from "asked and empty".
+
+    Every zero this harness reported was a zero of *kept* jobs, read without the fetch
+    evidence beside it. The 205 boards reported here as ``fetched_empty`` were confirmed to
+    have asked -- ``cacheDecision: run_now``, 420-5,884 ms spent, ``fetchedCount: 0`` --
+    which is the opposite conclusion from the one the kept-count alone supports.
+
+    A provider board cannot be given its own evidence: the adapter fetches every board it
+    serves under one rollup row, so per-board evidence does not exist to be had. Those
+    boards report ``rollup_only`` rather than inheriting the rollup's state, because the
+    rollup keeping jobs says nothing about whether *this* board is among them.
+    """
+    doc = read_json(data_dir / FETCH_REPORT)
+    sources = doc.get("sources") if isinstance(doc, dict) else None
+    if not isinstance(sources, list):
+        return {}
+    by_name = {str(row.get("name") or ""): row for row in sources if isinstance(row, dict)}
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in report:
+        if not row["registered"]:
+            continue
+        key = report_identity(row)
+        if not key[0]:
+            continue
+        adapter = str(row.get("adapter") or "").lower()
+        if adapter in {"static", "scrapy_static"}:
+            out[key] = _classify_source(by_name.get(static_source_name(str(row["listing_url"]))))
+            continue
+        rollup = _ROLLUP_SOURCE.get(adapter, "")
+        evidence = _classify_source(by_name.get(rollup)) if rollup else _classify_source(None)
+        evidence = dict(evidence)
+        evidence["state"] = "rollup_only" if evidence["state"] != "not_selected" else "no_report"
+        evidence["rollup"] = rollup
+        out[key] = evidence
+    return out
+
+
 def attribute_collected(
     data_dir: Path, report: list[dict[str, Any]]
 ) -> tuple[dict[tuple[str, str]], int]:
@@ -489,23 +615,7 @@ def attribute_collected(
     # Matching globally by URL is what produced the first wrong number in this harness: 70
     # "n-ix jobs" that were Google-Sheet rows pointing at careers.n-ix.com, credited to a
     # board that itself kept zero.
-    by_source: dict[str, tuple[str, str]] = {}
-    prefix_index: list[tuple[str, str, tuple[str, str]]] = []
-    rollup_of: dict[str, str] = {}
-    for row in report:
-        if not row["registered"]:
-            continue
-        host, tenant = report_identity(row)
-        if not host:
-            continue
-        key = (host, tenant)
-        adapter = str(row.get("adapter") or "").lower()
-        rollup = _ROLLUP_SOURCE.get(adapter, "")
-        if adapter in {"static", "scrapy_static"}:
-            by_source[static_source_name(str(row["listing_url"]))] = key
-        else:
-            rollup_of.setdefault(rollup, adapter)
-            prefix_index.append((host, _posting_prefix(str(row["listing_url"])), key))
+    by_source, prefix_index, rollup_of = _source_key_index(report)
 
     counts: dict[tuple[str, str], int] = {}
     unmatched = 0
@@ -684,10 +794,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  hydrated {hydrated_now} {registry_file} row(s) for the fetch", flush=True)
         run_fetch(data_dir, timeout=args.fetch_timeout, fetch_timeout=args.fetch_job_timeout)
         counts, unmatched = attribute_collected(data_dir, report)
+        evidence = fetch_evidence(data_dir, report)
         for row in report:
             if not row["registered"]:
                 continue
             row["collected"] = counts.get(report_identity(row), 0)
+            found = evidence.get(report_identity(row)) or {}
+            row["fetch_state"] = found.get("state", "no_report")
+            row["fetched_count"] = found.get("fetched_count")
+            row["fetch_duration_ms"] = found.get("duration_ms")
+            row["cache_decision"] = found.get("cache_decision", "")
 
     def tally(predicate: Any) -> tuple[int, int]:
         picked = [row for row in report if predicate(row)]
@@ -730,6 +846,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"boards keeping > 0 jobs : {collected_n} / {registered_n}")
         print(f"openings collected      : {collected_openings} / {registered_o}")
         print(f"jobs not attributed     : {unmatched}")
+        # A kept count on its own cannot separate "asked and found nothing" from "never
+        # asked", and reading it alone is what turned a harness bug into a coverage finding
+        # four times. Printed beside the headline, not buried in the JSON.
+        states: dict[str, list[int]] = {}
+        for row in report:
+            if not row["registered"]:
+                continue
+            bucket = states.setdefault(str(row.get("fetch_state") or "no_report"), [0, 0])
+            bucket[0] += 1
+            bucket[1] += int(row["openings"])
+        print()
+        print("=== per-board fetch evidence ===")
+        print("  a board only counts as empty if it was actually asked")
+        for state in FETCH_STATES:
+            if state not in states:
+                continue
+            count, openings = states[state]
+            print(f"  {state:<14} {count:>4} boards  {openings:>6} openings")
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
