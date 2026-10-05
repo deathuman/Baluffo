@@ -58,7 +58,12 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from coverage_board_identity import registry_identity  # noqa: E402
+from coverage_board_identity import (  # noqa: E402
+    build_candidate,
+    candidate_identity,
+    host_of,
+    registry_identity,
+)
 
 # The registry is written as a gzipped JSON array; the sibling .jsonl holds the same
 # data as a single-line array, so parsing it as newline-delimited silently yields one
@@ -68,7 +73,10 @@ REGISTRY_PENDING = "source-registry-pending.json.gz"
 REPORT = "source-discovery-report.json"
 CURATED = "src/curated_coverage_boards.json"
 FETCH_REPORT = "jobs-fetch-report.json"
-FETCH_OUTPUT = "jobs-unified.json"
+# The fetch writes this gzipped. Reading the bare `.json` name found nothing, so every run
+# reported zero collected while the output held 41,277 rows -- a gate that cannot tell
+# "collected nothing" from "looked in the wrong file".
+FETCH_OUTPUT = "jobs-unified.json.gz"
 
 # Exit code for "boards registered, nothing collected". Distinct from 1 so a caller can
 # tell a collection failure from a harness error.
@@ -78,15 +86,14 @@ EXIT_NOT_COLLECTED = 3
 def board_key(url: Any) -> tuple[str, str]:
     """Comparable ``(host, tenant)`` for a board listing URL.
 
-    Reuses the measurement module's own identity so registration and delivery agree.
-    Two functions that each normalise a URL their own way is how the two sides came to
-    disagree about Workday in the first place.
+    Uses the measurement module's own candidate identity, so a curated row and a registry
+    row are compared by the same rule. Deriving one side here and reading the other with
+    ``registry_identity`` looked equivalent and was not: this returned ``tenant == host``
+    where that returned ``tenant == ''``, which reported 57 of 695 boards registered when
+    498 were. One rule, applied to both sides, is the whole point.
     """
-    from coverage_board_identity import build_candidate
-
-    host = str(url or "").strip().lower()
-    candidate = build_candidate(host)
-    return (str(candidate.get("host") or ""), str(candidate.get("tenant") or ""))
+    _adapter, host, tenant = candidate_identity(build_candidate(str(url or "")))
+    return (host, tenant)
 
 
 def read_registry(data_dir: Path, name: str) -> list[dict[str, Any]]:
@@ -287,8 +294,11 @@ def read_json(path: Path) -> Any:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = path.read_bytes()
+        if path.suffix == ".gz":
+            raw = gzip.decompress(raw)
+        return json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
         return None
 
 
@@ -301,6 +311,10 @@ def attribute_collected(
     cannot come from the report — they come from the output rows, matched the same way
     identity is defined everywhere else. Unmatched jobs are returned rather than dropped:
     an attribution that silently covers only part of the output is a second false green.
+
+    The posting URL lives in ``jobLink``. Provider payloads also carry ``sourceBundle``,
+    which names the board id per contributing source, so a job whose posting URL is on a
+    CDN still attributes to the board that served it.
     """
     payload = read_json(data_dir / FETCH_OUTPUT)
     if isinstance(payload, dict):
@@ -308,28 +322,59 @@ def attribute_collected(
     if not isinstance(payload, list):
         return {}, 0
 
+    # Board host -> the identity tuple the curated row resolved to.
     index: dict[str, tuple[str, str]] = {}
     for row in report:
         if not row["registered"]:
             continue
         host, tenant = board_key(row["listing_url"])
         if host:
-            index.setdefault(f"{host}|{tenant}", (host, tenant))
-            index.setdefault(f"{host}|", (host, ""))
+            index.setdefault(host, (host, tenant))
 
     counts: dict[tuple[str, str], int] = {}
     unmatched = 0
     for job in payload:
         if not isinstance(job, dict):
             continue
-        url = str(job.get("url") or job.get("job_url") or job.get("applyUrl") or "")
-        host, tenant = board_key(url)
-        if not host or (host, tenant) not in index and (host, "") not in index:
+        url = _job_posting_url(job)
+        key = index.get(host_of(url)) if url else None
+        if key is None:
+            key = _bundle_board_identity(job, index)
+        if key is None:
             unmatched += 1
             continue
-        key = (host, tenant) if (host, tenant) in index else (host, "")
         counts[key] = counts.get(key, 0) + 1
     return counts, unmatched
+
+
+def _job_posting_url(job: dict[str, Any]) -> str:
+    for field in ("jobLink", "url", "job_url", "applyUrl"):
+        value = str(job.get(field) or "").strip()
+        if value.startswith("http"):
+            return value
+    return ""
+
+
+def _bundle_board_identity(
+    job: dict[str, Any], index: dict[str, tuple[str, str]]
+) -> tuple[str, str] | None:
+    """Resolve a job to a board through its ``sourceBundle`` when the URL will not say.
+
+    A provider posting can live on a host the curated row never mentions, while the bundle
+    entry names the board id. Only host-keyed entries are accepted, so this cannot invent
+    an identity.
+    """
+    bundle = job.get("sourceBundle")
+    if not isinstance(bundle, list):
+        return None
+    for entry in bundle:
+        if not isinstance(entry, dict):
+            continue
+        url = _job_posting_url(entry)
+        key = index.get(host_of(url)) if url else None
+        if key is not None:
+            return key
+    return None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
