@@ -506,6 +506,53 @@ FETCH_STATES = (
     "no_report",
 )
 
+# `sourceHealth.failedSources` counts every `status == "error"` row, which folds four
+# different findings into one number. 27 of the 87 error rows in the v6 run were boards
+# that fetched fine and extracted nothing -- a shape the reporting layer already buckets as
+# `needs_review`, via `reporting_breakdowns._classify_unknown_static_shape`. Retiring them
+# on the strength of a failure count is the mistake this breakdown exists to prevent.
+#
+# `failedSources` itself is left alone: it feeds `failedSourceRatioLatest` in ops_health and
+# `ops_live_payload`, and narrowing a persisted report contract to make a local number read
+# better is the wrong trade. The split is surfaced here instead.
+ERROR_KINDS = (
+    "no_openings",
+    "time_budget",
+    "blocked",
+    "transport",
+    "redirect",
+    "adapter_mismatch",
+    "fetch_failed",
+)
+
+_ERROR_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("no_openings", ("no jobs extracted", "no_openings")),
+    ("time_budget", ("time budget exceeded", "time_budget_exceeded", "timed out", "timeout")),
+    (
+        "blocked",
+        ("403", "401", "429", "captcha", "challenge", "cloudflare", "forbidden", "bot"),
+    ),
+    ("transport", ("connection", "dns", "ssl", "certificate", "network", "unreachable", "reset")),
+    ("redirect", ("unsafe static redirect", "redirect loop", "too many redirects")),
+    ("adapter_mismatch", ("workday signature", "consider adapter reclassification")),
+)
+
+
+def classify_error_kind(error: str) -> str:
+    """Which kind of failure a source row's error is.
+
+    The distinction that matters most is ``no_openings`` against everything else: a board
+    that returned nothing and a board whose connection failed are opposite findings, and
+    one number for both is how 27 empty boards came to be read as 27 broken ones.
+    """
+    text = str(error or "").lower()
+    if not text.strip():
+        return ""
+    for kind, markers in _ERROR_MARKERS:
+        if any(marker in text for marker in markers):
+            return kind
+    return "fetch_failed"
+
 
 def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
     """One source row's fetch evidence, classified.
@@ -517,6 +564,7 @@ def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
     if row is None:
         return {
             "state": "not_selected",
+            "error_kind": "",
             "kept_count": None,
             "fetched_count": None,
             "duration_ms": None,
@@ -538,6 +586,7 @@ def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
         state = "fetched_empty"
     return {
         "state": state,
+        "error_kind": classify_error_kind(error) if state == "error" else "",
         "kept_count": kept,
         "fetched_count": fetched,
         "duration_ms": duration,
@@ -801,6 +850,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             row["collected"] = counts.get(report_identity(row), 0)
             found = evidence.get(report_identity(row)) or {}
             row["fetch_state"] = found.get("state", "no_report")
+            row["error_kind"] = found.get("error_kind", "")
             row["fetched_count"] = found.get("fetched_count")
             row["fetch_duration_ms"] = found.get("duration_ms")
             row["cache_decision"] = found.get("cache_decision", "")
@@ -864,6 +914,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 continue
             count, openings = states[state]
             print(f"  {state:<14} {count:>4} boards  {openings:>6} openings")
+        # `failedSources` counts a board that found nothing the same as a board whose
+        # connection failed. Splitting them is what tells a fixable transport problem from
+        # a board that simply has nothing on offer.
+        kinds: dict[str, list[int]] = {}
+        for row in report:
+            if not row["registered"] or row.get("fetch_state") != "error":
+                continue
+            bucket = kinds.setdefault(str(row.get("error_kind") or "fetch_failed"), [0, 0])
+            bucket[0] += 1
+            bucket[1] += int(row["openings"])
+        if kinds:
+            print()
+            print("=== error kinds (failedSources folds these together) ===")
+            for kind in ERROR_KINDS:
+                if kind not in kinds:
+                    continue
+                count, openings = kinds[kind]
+                note = "  <- fetched fine, found nothing" if kind == "no_openings" else ""
+                print(f"  {kind:<18} {count:>4} boards  {openings:>6} openings{note}")
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

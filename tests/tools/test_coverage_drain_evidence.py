@@ -141,6 +141,84 @@ def test_error_outranks_a_stale_kept_count():
     assert cd._classify_source(row)["state"] == "error"
 
 
+# --- the error kinds: an empty board and a broken connection are opposite findings ------
+
+
+def test_a_board_that_found_nothing_is_not_a_transport_failure():
+    """The distinction that makes the 87 error rows actionable.
+
+    `failedSources` counts both. 27 of the 87 rows in the v6 run were boards that fetched
+    cleanly and extracted nothing -- a shape `reporting_breakdowns` already buckets as
+    `needs_review`. Reading them as failures is how 27 empty boards became 27 broken ones.
+    """
+    empty = cd.classify_error_kind("static:x (static): no jobs extracted from source pages")
+    broken = cd.classify_error_kind("static:x (static): Connection reset by peer")
+    assert empty == "no_openings"
+    assert broken == "transport"
+    assert empty != broken
+
+
+def test_time_budget_is_not_a_board_failure():
+    """14 rows and ~752 openings stopped mid-fetch on a 25-second per-source budget.
+
+    That is a configured limit, not a broken board, and `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S`
+    is a knob. Filing it as a failure buries it under boards that need real work.
+    """
+    assert cd.classify_error_kind("static:x: time budget exceeded (25s)") == "time_budget"
+    assert cd.classify_error_kind("static:asus (static): time_budget_exceeded") == "time_budget"
+
+
+def test_no_openings_wins_over_a_timeout_mention_inside_its_own_message():
+    """The message is `... : no jobs extracted from source pages`; a stray 'timeout'
+    word in a source name must not reclassify it as a transport failure."""
+    assert (
+        cd.classify_error_kind(
+            "static_source::static:listing_url:https://timeouts.test: "
+            "static:x: no jobs extracted from source pages"
+        )
+        == "no_openings"
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        ("HTTP 403 Forbidden", "blocked"),
+        ("captcha challenge served", "blocked"),
+        ("SSL certificate verify failed", "transport"),
+        ("dns resolution failed", "transport"),
+        ("Unsafe static redirect", "redirect"),
+        ("HTML contains workday signature - consider adapter reclassification", "adapter_mismatch"),
+        ("something nobody has a name for", "fetch_failed"),
+    ],
+)
+def test_error_kinds(error, kind):
+    assert cd.classify_error_kind(error) == kind
+
+
+def test_every_error_kind_is_one_the_summary_prints():
+    known = set(cd.ERROR_KINDS)
+    assert known >= {
+        "no_openings",
+        "time_budget",
+        "blocked",
+        "transport",
+        "redirect",
+        "adapter_mismatch",
+        "fetch_failed",
+    }
+
+
+def test_a_collected_board_carries_no_error_kind():
+    row = _source(durationMs=5, keptCount=2, fetchedCount=2)
+    assert cd._classify_source(row)["error_kind"] == ""
+
+
+def test_an_unknown_source_row_carries_no_error_kind():
+    assert cd._classify_source(None)["error_kind"] == ""
+    assert cd.classify_error_kind("") == ""
+
+
 # --- the evidence carries the numbers the state was derived from ---------------------
 
 
