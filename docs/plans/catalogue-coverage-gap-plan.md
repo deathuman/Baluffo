@@ -28,16 +28,43 @@ product should not be collecting.
 
 ## Where this stands
 
-Registration covers **6,929 openings** across 695 boards. Registration is complete.
-Delivery is **0** — see [Live verification](#live-verification-2026-10-04-the-release-delivered-0)
-and [Correction on record](#correction-on-record).
+Two numbers are sound, from two different environments, and they do not agree. Both are
+reported because neither supersedes the other.
 
-| | Openings |
-|---|---|
-| Registered | **6,929** |
-| Collected by a fetch run | **0** |
-| Still on an unregistered board | ~1,510 |
-| Of which Feishu, unreachable by any current path | 826 |
+**Live (v0.3.007, Umbrel, 2026-10-04):** of the 6,929 registered openings, **0 collected.**
+That is the only measurement taken where the registry is correct by construction, and it has
+never been explained. See [Live verification](#live-verification-2026-10-04-the-release-delivered-0).
+
+**Local (`tools/coverage_drain.py --verify-collected`, isolated `--data-dir`):** 291 of 688
+registered boards keep a non-zero count. The harness reported four wrong numbers before that
+one, each from the same mistake — applying one identity rule to rows that do not share a
+shape — and the tool is now covered by 18 tests pinning the invariants. Until 0.3.008 ships
+and is read live, treat the local figure as **provisional and the live 0 as the finding**.
+
+| | Boards | Openings |
+|---|---|---|
+| Curated | 695 | 6,929 |
+| Registered | 688 | 6,858 |
+| Registered and keeping > 0 (local, provisional) | 291 | 6,731 |
+| Registered, fetched, kept 0 | 205 | 1,353 |
+| Registered but never selected by the fetch | see below | — |
+| Unregistered | **7** | **71** |
+
+The 205 zero-kept boards are **not** cache skips and **not** misattribution, which was the
+assumption every earlier version of this table rested on. Measured on the source rows
+directly: `cacheDecision: run_now` for 199, row-level `durationMs` of 420–5,884 ms,
+`fetchedCount: 0` for 203, `healthReason: "latest fetch kept no jobs"`. They fetched, spent
+seconds, and extracted nothing. 199 of the 205 are `static`.
+
+Those 199 span **194 distinct hosts**: 189 singletons plus five small platforms
+(`recruiter.co.kr`, `career.greetinghr.com`, `careers.hibob.com`, `herp.careers`,
+`recruit.charliehr.com`) carrying 256 openings. There is no single vendor-shaped fix behind
+them — 91% are individual boards.
+
+One unexplained observation, deliberately not yet acted on: the drained registry holds
+**274 provider rows** across 12 adapters, but the fetch report contains only ~28 non-static
+rows. Whether that is selection (freshness, caps) or rollup needs measuring before it is
+called a gap.
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and one
 with a single opening are not comparable units, and a board-count headline hides exactly
@@ -46,7 +73,9 @@ the concentration that matters.
 The per-adapter delivery table this section used to carry is withdrawn: it reported workday
 17/17 and 1,065 openings delivered, and the live run collected none of them.
 `tools/coverage_drain.py` counted what reached `active`, which is registration, not
-delivery.
+delivery. The "128 boards / 5,500 openings" variant is withdrawn for the same reason and a
+third one: it matched boards to output rows by host, so 70 "n-ix jobs" were credited to a
+board that kept zero.
 
 ## Live verification, 2026-10-04: the release delivered 0
 
@@ -137,10 +166,23 @@ verifiable.
 |---|---|---|
 | **E** | Redefine delivered: registered / readable / collected, and exit 3 when boards land and nothing collects | metric — **DONE** |
 | **A** | Identity on host + tenant; reject cross-tenant duplicate matches | 64 boards / 1,257 openings — **DONE**, 0 of 66 cross-tenant claims survive |
-| **B**+**C** | Workday end-to-end: confirm dispatch, replace `limit * 5` with `total`-driven paging | 17 boards / 1,065 openings |
-| **D** | `ok` + `kept 0` + no error → `unknown` | 268 boards / 1,756 openings |
-| — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412; `"uncapped"` is only 2x, and hand-audited boards should not compete with machine candidates | 482 boards / 4,533 openings |
+| **B**+**C** | Workday end-to-end: confirm dispatch, replace `limit * 5` with `total`-driven paging | 17 boards / 1,065 openings — **DONE** |
+| — | Curated rows with no `listing_url` resolve by adapter + tenant | 193 rows / 2,206 openings — **DONE**, 688 of 695 boards now register |
+| **D** | `ok` + `kept 0` + no error → `unknown` | 205 boards / 1,353 openings — **NOT STARTED**, see below |
+| — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings — **DONE**, `deferredByCap` 662 → 0 by round 2 |
+| — | Five small platform hosts in the zero set (`recruiter.co.kr`, `career.greetinghr.com`, `careers.hibob.com`, `herp.careers`, `recruit.charliehr.com`) | 18 boards / 256 openings — not started |
+| — | Classify the remaining 181 zero-kept static boards by extraction shape | 1,097 openings / 181 boards — not started |
+| — | The 7 unregistered boards: greenhouse `2k`, lever `fliff`, lever `branch.gg`, `r-force.co.jp`, `bexide.co.jp`, `playedwithfire.com`, `vivastudios.com` | 71 openings — not started |
+| — | Why the fetch selected ~28 of 274 registered provider rows | unexplained — not started |
 | — | Duplicate rows and the redirect class: Ubisoft 46 min, WBD 5 rows for one 80-job board, EA 4 overlapping rows, 72 `site_changed` | cleanup |
+
+**On D.** It was written as "`ok` + `kept 0` + no error → `unknown`". That premise is now
+verified against a real population rather than an assumed one: the 205 zero-kept boards do
+carry `status: ok`, `fetchedCount: 0`, and `healthReason: "latest fetch kept no jobs"`, and
+all 205 are already classified `needs_review` with **0** `legit_empty` and **0**
+`health: healthy`. So the gate is not obviously wrong — but the correct fix depends on which
+of the 205 are genuinely empty, and that is the classification step above. Write D after it,
+not before.
 
 ### Verification gate for each step
 
@@ -196,7 +238,9 @@ nothing — right up until the openings stay missing.
 ## What is left, in priority order
 
 Ordered by measured size, and by whether the item blocks others. Everything below is
-outside the registration, which is finished.
+outside the registration, which is finished at 688 of 695 boards — the residue is the
+7 boards / 71 openings listed in [Fix order](#fix-order-after-the-live-run), and it is
+small enough to fold into any of the slices below rather than stand alone.
 
 ### 1. The freshness window was not ageing boards out — 1,892 boards — **DONE, unverified live**
 
@@ -369,6 +413,37 @@ right about different things.
 
 ## Correction on record
 
+**Third correction. Registration was reported as 6,929 openings; it is 6,858.**
+
+`registration_report` resolved every curated board by `listing_url`. **193 of the 695
+curated rows carry no `listing_url` at all** — they identify the way the registry does, by
+adapter plus tenant (`{"adapter": "smartrecruiters", "company_id": "Bet3651"}`). Those 193
+resolved to `("", "")`, matched no registry row, and were reported unregistered. The
+intermediate claims built on that were **197 boards / 2,223 openings**, then **158 boards /
+2,042 openings** once the matcher was fixed but the *producer* of the identity was not.
+
+Resolved from the tenant field, against the drained registry, they match at 190 of 193.
+Every provider adapter is essentially complete — greenhouse 51/52, ashby 39/39,
+workable 29/29, lever 20/22, smartrecruiters 16/16, and breezy/jazzhr/personio/recruitee/
+teamtailor 48/48. The true residue is **7 boards / 71 openings**: greenhouse `2k`,
+lever `fliff`, lever `branch.gg`, and four static hosts (`r-force.co.jp`,
+`bexide.co.jp`, `playedwithfire.com`, `vivastudios.com`).
+
+That is four wrong numbers from one mistake. The other three, all in the same harness:
+
+- host-matching credited Google-Sheet rows to boards — 70 "n-ix jobs" for a board that
+  kept zero;
+- `tenant == host` on one side where `registry_identity` yields `tenant == ""` — 57 of 695
+  boards read as registered when 498 were;
+- reading `jobs-fetch-report.json` beside `jobs-fetch-report.json.gz`, so a run reported 0
+  collected while 41,277 rows sat in the file it never opened.
+
+The generalisable lesson, and the reason `tests/tools/test_coverage_drain_identity.py`
+exists: **assert identity as an invariant, never a count.** A count is what moved; all four
+wrong numbers were reported with the same confidence as a correct one, and each was
+discovered only by checking the underlying rows after the summary had already been written
+down.
+
 **Second correction.** This plan reported "6,844 of 6,929 openings proven delivered
 (98.8%)" and a per-adapter table showing workday 17/17. The live run collected **0**.
 "Delivered" meant *a registry row exists*; delivery needs that row to carry the declared
@@ -390,6 +465,16 @@ collapse to one title.
 
 - **A board is delivered when a fetch run keeps its openings.** Registry presence, adapter
   presence, and a probe's job count are not delivery.
+- **Identity is asserted as an invariant, never as a count.** A curated board resolves to
+  the same `(host, tenant)` as its registry row whether or not it carries a `listing_url`;
+  an unidentifiable board resolves to `("", "")` and must register `false`; two tenants on
+  one platform host stay distinct. All four wrong numbers in this plan were counts asserted
+  before the rule was verified.
+- **A zero is never read as "empty" without its fetch evidence.** Check `cacheDecision`,
+  row-level `durationMs` and `fetchedCount` on the source row. `run_now` + seconds spent +
+  `fetchedCount: 0` means fetched and found nothing; `skip_fresh` + `durationMs: 0` means
+  never asked. Note that `details[0].durationMs` is not the row-level field — quoting the
+  wrong one produced a false "these never fetched" here.
 - Adapters exercised against a registered control board with a known expected count,
   never a raw endpoint alone.
 - `npm run test:py` and `npm run lint:repo-guardrails` before each commit.
