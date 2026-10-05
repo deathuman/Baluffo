@@ -118,6 +118,42 @@ def read_report(data_dir: Path) -> dict[str, Any]:
         return {}
 
 
+_URL_FIELDS = ("board_url", "listing_url", "careersUrl", "api_url", "feed_url", "pages")
+
+
+def hydrate_registry_urls(rows: list[dict[str, Any]]) -> int:
+    """Give a row the URL field the runtime fetches from, recovered from its ``id``.
+
+    Discovery writes registry rows whose only URL is inside ``id``
+    (``static:listing_url:https://…``). The runtime's own registry carries ``board_url``,
+    and ``_static_source_primary_host`` reads ``pages``/``listing_url`` — not the id — so a
+    row without them has nothing to fetch.
+
+    That made the first ``--verify-collected`` run report every static board as
+    "fetched, kept nothing" when the truth was that none of them fetched at all: 422 rows,
+    ``request_count: 0``, ``status: ok``. It is a harness artifact, not a runtime defect, and
+    it is invisible unless the row shape is compared against a live registry.
+
+    Provider rows (``greenhouse:slug:x``, ``ashby:slug:x``) identify by slug and are left
+    alone; only rows whose id carries a URL get the field.
+    """
+    hydrated = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if any(row.get(field) for field in _URL_FIELDS):
+            continue
+        parts = str(row.get("id") or "").split(":", 2)
+        if len(parts) < 3:
+            continue
+        url = parts[2].strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        row["board_url"] = url
+        hydrated += 1
+    return hydrated
+
+
 def seed_data_dir(data_dir: Path, source_registry: Path | None) -> None:
     """Prepare an isolated data dir, optionally seeded with the live registry.
 
@@ -130,11 +166,15 @@ def seed_data_dir(data_dir: Path, source_registry: Path | None) -> None:
     if source_registry and source_registry.exists():
         raw = json.loads(source_registry.read_text(encoding="utf-8"))
         rows = raw if isinstance(raw, list) else raw.get("rows") or []
+        # Discovery writes rows whose only URL is inside `id`; the runtime fetches from
+        # `board_url`/`listing_url`. Without this the static path has nothing to request and
+        # every static board reports "fetched, kept nothing" having fetched nothing.
+        hydrated = hydrate_registry_urls(rows)
         # The runtime writes gzipped; match that so the seeded file is read the
         # same way the run's own output is.
         payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
         (data_dir / REGISTRY_ACTIVE).write_bytes(gzip.compress(payload))
-        print(f"seeded {len(rows)} registry rows into {data_dir}")
+        print(f"seeded {len(rows)} registry rows into {data_dir} ({hydrated} URL-hydrated)")
 
 
 def run_round(data_dir: Path, *, preset: str, timeout: int) -> int:
@@ -290,6 +330,35 @@ def run_fetch(data_dir: Path, *, timeout: int, fetch_timeout: int) -> None:
         raise SystemExit(f"fetch failed with exit {proc.returncode}")
 
 
+def hydrate_registry_file(data_dir: Path, name: str) -> int:
+    """Rewrite a registry file in place with the URL fields the runtime fetches from.
+
+    This has to run *after* the drain rounds and immediately before the fetch: discovery
+    owns that file and rewrites it on every round, so hydrating only the seed is not enough
+    — the rows the fetch finally reads are the ones discovery last wrote, and those carry no
+    URL field at all. The first attempt seeded a hydrated registry and then watched discovery
+    overwrite it, which is why the static adapter still made zero requests.
+    """
+    path = data_dir / name
+    if not path.exists():
+        return 0
+    try:
+        payload = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+    except (OSError, ValueError):
+        return 0
+    rows = payload if isinstance(payload, list) else payload.get("rows") or []
+    hydrated = hydrate_registry_urls(rows)
+    if hydrated:
+        body = json.dumps(rows, ensure_ascii=False).encode("utf-8")
+        path.write_bytes(gzip.compress(body))
+        # The .jsonl sibling is a single-line array of the same rows; leaving it stale would
+        # let a reader pick up the un-hydrated shape.
+        sibling = path.with_suffix("").with_suffix(".jsonl")
+        if sibling.exists():
+            sibling.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    return hydrated
+
+
 def read_json(path: Path) -> Any:
     if not path.exists():
         return None
@@ -322,33 +391,76 @@ def attribute_collected(
     if not isinstance(payload, list):
         return {}, 0
 
-    # A board is keyed by its posting prefix, not its host: several curated boards share a
-    # host (`jobs.jobvite.com` carried 955 of the collected jobs), so a host-only index
-    # collapsed them into one bucket and over-counted by construction.
-    index: list[tuple[str, str, tuple[str, str]]] = []
+    # Attribution is by *provenance*, not by where a posting URL happens to live.
+    #
+    # A job carries the source that fetched it. For a static board that source name is the
+    # board's own source id, so the mapping is exact and needs no URL matching at all. For a
+    # provider adapter every board collapses into one rollup row (`workday_sources`), so
+    # the bundle's posting URL is matched against the board's path prefix -- but only among
+    # jobs that rollup actually fetched.
+    #
+    # Matching globally by URL is what produced the first wrong number in this harness: 70
+    # "n-ix jobs" that were Google-Sheet rows pointing at careers.n-ix.com, credited to a
+    # board that itself kept zero.
+    by_source: dict[str, tuple[str, str]] = {}
+    prefix_index: list[tuple[str, str, tuple[str, str]]] = []
+    rollup_of: dict[str, str] = {}
     for row in report:
         if not row["registered"]:
             continue
         host, tenant = board_key(row["listing_url"])
         if not host:
             continue
-        prefix = _posting_prefix(str(row["listing_url"]))
-        index.append((host, prefix, (host, tenant)))
+        key = (host, tenant)
+        adapter = str(row.get("adapter") or "").lower()
+        rollup = _ROLLUP_SOURCE.get(adapter, "")
+        if adapter in {"static", "scrapy_static"}:
+            by_source[static_source_name(str(row["listing_url"]))] = key
+        else:
+            rollup_of.setdefault(rollup, adapter)
+            prefix_index.append((host, _posting_prefix(str(row["listing_url"])), key))
 
     counts: dict[tuple[str, str], int] = {}
     unmatched = 0
     for job in payload:
         if not isinstance(job, dict):
             continue
-        url = _job_posting_url(job)
-        key = _match_board(url, index)
-        if key is None:
-            key = _match_bundle(job, index)
+        source = str(job.get("source") or "")
+        key = by_source.get(source)
+        if key is None and source in rollup_of:
+            key = _match_bundle(job, prefix_index)
         if key is None:
             unmatched += 1
             continue
         counts[key] = counts.get(key, 0) + 1
     return counts, unmatched
+
+
+# Provider adapters report one rollup row for every board they serve, so a board's
+# collected openings arrive under the adapter's source name rather than its own.
+_ROLLUP_SOURCE = {
+    "workday": "workday_sources",
+    "bamboohr": "bamboohr_sources",
+    "greenhouse": "greenhouse_boards",
+    "lever": "lever_sources",
+    "ashby": "ashby_sources",
+    "workable": "workable_sources",
+    "smartrecruiters": "smartrecruiters_sources",
+    "teamtailor": "teamtailor_sources",
+    "personio": "personio_sources",
+    "recruitee": "recruitee_sources",
+    "jazzhr": "jazzhr_sources",
+    "breezy": "breezy_sources",
+    "pinpoint": "pinpoint_sources",
+    "dayforce": "dayforce_sources",
+    "phenom": "phenom_sources",
+    "oracle_hcm": "oracle_hcm_sources",
+}
+
+
+def static_source_name(listing_url: str) -> str:
+    """The fetch-report source name for a static board, matching the registry's own key."""
+    return f"static_source::static:listing_url:{str(listing_url or '').strip()}"
 
 
 def _posting_prefix(listing_url: str) -> str:
@@ -399,10 +511,11 @@ def _job_posting_url(job: dict[str, Any]) -> str:
 def _match_bundle(
     job: dict[str, Any], index: list[tuple[str, str, tuple[str, str]]]
 ) -> tuple[str, str] | None:
-    """Resolve a job to a board through its ``sourceBundle`` when the URL will not say.
+    """Resolve a provider job to a board through its ``sourceBundle``.
 
-    A provider posting can live on a host the curated row never mentions, while the bundle
-    entry names the board that served it.
+    Reached only for jobs whose own source is a provider rollup, so a board is credited
+    only with postings that rollup fetched. The bundle's posting URL is matched against the
+    board's path prefix; the longest match wins because one board can sit under another.
     """
     bundle = job.get("sourceBundle")
     if not isinstance(bundle, list):
@@ -478,6 +591,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     unmatched = 0
     if args.verify_collected:
         print("running one fetch to measure collection...", flush=True)
+        for registry_file in (REGISTRY_ACTIVE, REGISTRY_PENDING):
+            hydrated_now = hydrate_registry_file(data_dir, registry_file)
+            if hydrated_now:
+                print(f"  hydrated {hydrated_now} {registry_file} row(s) for the fetch", flush=True)
         run_fetch(data_dir, timeout=args.fetch_timeout, fetch_timeout=args.fetch_job_timeout)
         counts, unmatched = attribute_collected(data_dir, report)
         for row in report:
