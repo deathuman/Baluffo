@@ -65,7 +65,21 @@ from coverage_board_identity import (  # noqa: E402
     registry_identity,
 )
 
-from src.jobs.adapters.static_runtime import _as_pages  # noqa: E402
+
+def _static_pages(row: dict[str, Any]) -> list[str]:
+    """The pages the static loader would see on a registry row.
+
+    Mirrors ``src.jobs.adapters.static_runtime._as_pages``: only an existing list survives,
+    a bare string is dropped. Duplicated rather than imported because this script runs with
+    ``tools/`` on ``sys.path`` and because a measurement tool should not reach into an
+    adapter's internals -- but the duplication is the point, since reading ``board_url``
+    instead of ``pages`` is what silently left 421 static rows unfetched.
+    """
+    value = row.get("pages")
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
 
 # The registry is written as a gzipped JSON array; the sibling .jsonl holds the same
 # data as a single-line array, so parsing it as newline-delimited silently yields one
@@ -151,7 +165,7 @@ def hydrate_registry_urls(rows: list[dict[str, Any]]) -> int:
             # The static loader reads `pages` and nothing else, and `_as_pages` drops a bare
             # string. A row can already carry `board_url` and still be unfetchable, so the
             # guard is per-loader rather than "has any URL field".
-            if _as_pages(row.get("pages")):
+            if _static_pages(row):
                 continue
             row["pages"] = [url]
             row.setdefault("board_url", url)
