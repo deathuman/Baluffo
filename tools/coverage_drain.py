@@ -59,6 +59,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from coverage_board_identity import (  # noqa: E402
+    ADAPTER_ID_FORMAT,
     build_candidate,
     candidate_identity,
     host_of,
@@ -110,6 +111,55 @@ def board_key(url: Any) -> tuple[str, str]:
     """
     _adapter, host, tenant = candidate_identity(build_candidate(str(url or "")))
     return (host, tenant)
+
+
+def curated_identity(row: dict[str, Any]) -> tuple[str, str]:
+    """``(host, tenant)`` for a curated board, whether or not it carries a URL.
+
+    **193 of the 695 curated rows carry no ``listing_url`` at all** — 2,206 openings. They
+    identify the way the registry does, by adapter plus tenant:
+
+        {"adapter": "smartrecruiters", "company_id": "Bet3651", ...}
+
+    Keying those on ``listing_url`` resolved every one of them to ``("", "")``, matched
+    nothing, and reported them as unregistered — a 197-board, 2,223-opening gap that does
+    not exist. It was the fourth wrong number this harness produced from the same mistake:
+    applying one identity rule to rows that do not share a shape.
+
+    A URL-bearing board is resolved through ``candidate_identity``; a provider board is
+    resolved by building the registry id ``registry_identity`` parses, using the same
+    adapter -> tenant-field map the registry itself uses.
+    """
+    url = str(row.get("listing_url") or row.get("url") or "").strip()
+    if url:
+        return board_key(url)
+    adapter = str(row.get("adapter") or "").strip().lower()
+    field = ADAPTER_ID_FORMAT.get(adapter, "listing_url")
+    value = str(row.get(field) or "").strip()
+    if adapter and field and value:
+        parsed = registry_identity(f"{adapter}:{field}:{value}")
+        if parsed is not None:
+            return (parsed[1], parsed[2])
+    # Last resort: any URL-ish field the row happens to carry.
+    for fallback in ("api_url", "board_url", "feed_url", "careersUrl"):
+        candidate = str(row.get(fallback) or "").strip()
+        if candidate.startswith(("http://", "https://")):
+            return board_key(candidate)
+    return ("", "")
+
+
+def report_identity(row: dict[str, Any]) -> tuple[str, str]:
+    """``(host, tenant)`` for a registration-report row.
+
+    Prefers the identity ``registration_report`` already resolved, and falls back to
+    re-deriving it. The fallback keeps hand-built report rows working — several tests
+    construct one from ``listing_url`` alone — and it is the same rule either way, which
+    is the only thing that matters when a mismatch would read as a coverage finding.
+    """
+    host = str(row.get("host") or "").strip()
+    if host:
+        return (host, str(row.get("tenant") or "").strip())
+    return curated_identity(row)
 
 
 def read_registry(data_dir: Path, name: str) -> list[dict[str, Any]]:
@@ -307,13 +357,24 @@ def registration_report(
     for board in curated:
         url = str(board.get("listing_url") or board.get("url") or "")
         adapter = str(board.get("adapter") or "").lower()
-        record = landed.get(board_key(url)) or {"adapters": set(), "states": set()}
+        # Resolved from the curated board, not from `url`: 193 of 695 curated rows carry
+        # no URL at all, and looking them up by it resolved every one to ("", "") so it
+        # matched no registry row and reported a gap of 197 boards / 2,223 openings that
+        # does not exist. Measured against the drained registry, those rows match at
+        # 190 of 193 -- every provider adapter essentially complete.
+        identity = curated_identity(board)
+        record = landed.get(identity) or {"adapters": set(), "states": set()}
         states, adapters = record["states"], record["adapters"]
         readable = collectable_adapters(url, adapters, adapter)
         out.append(
             {
                 "adapter": adapter,
                 "listing_url": url,
+                # Stored, not recomputed downstream: a report row does not carry the
+                # tenant field `curated_identity` needs, and an empty `host` here would
+                # silently read as "no registry row" instead of "not identifiable".
+                "host": identity[0],
+                "tenant": identity[1],
                 "openings": int(board.get("coverageAuditOpenings") or 0),
                 "registered": bool(states),
                 "state": "active"
@@ -434,7 +495,7 @@ def attribute_collected(
     for row in report:
         if not row["registered"]:
             continue
-        host, tenant = board_key(row["listing_url"])
+        host, tenant = report_identity(row)
         if not host:
             continue
         key = (host, tenant)
@@ -626,7 +687,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for row in report:
             if not row["registered"]:
                 continue
-            row["collected"] = counts.get(board_key(row["listing_url"]), 0)
+            row["collected"] = counts.get(report_identity(row), 0)
 
     def tally(predicate: Any) -> tuple[int, int]:
         picked = [row for row in report if predicate(row)]
