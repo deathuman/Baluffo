@@ -183,7 +183,13 @@ REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
         "provider_id_value": "CDPROJEKTRED",
     },
     {
-        "hosts": ["ubisoft.com", "www.ubisoft.com"],
+        # `*.ubisoft.com` is the load-bearing entry. Every Ubisoft careers board is a
+        # regional subdomain (toronto, berlin, mainz, duesseldorf, saguenay, stockholm,
+        # winnipeg); the apex and `www.` alone matched none of them, so no regional row was
+        # ever recognised as provider-served. The static adapter then spent 2,760 s on
+        # toronto.ubisoft.com to keep 1 job from a page that serves zero job links, while
+        # the SmartRecruiters board holds 333 postings covering those same studios.
+        "hosts": ["*.ubisoft.com", "ubisoft.com", "www.ubisoft.com"],
         "adapter": "smartrecruiters",
         "provider_id_field": "company_id",
         "provider_id_value": "Ubisoft2",
