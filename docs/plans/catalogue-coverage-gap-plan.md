@@ -15,8 +15,8 @@ buckets outside them, measured against the live feed and the live fetch report.
 
 | Bucket | Openings | Status |
 |---|---:|---|
-| B2 — board was fetched and still returns short | 325 | per-board extraction work |
-| C — the sector classifier rejects the role | 988 | 238 recovered; most of the rest is correctly rejected |
+| B2 — fetched and still returns short | 325 | per-board extraction work |
+| C — classifier rejects the role | 988 | 238 recovered; most correctly rejected |
 | D — board registered nowhere | 1,510 | 826 Feishu (out of reach) + ~684 unreadable |
 
 Bucket C is not a gap of the size it looks: of the 988 the classifier still rejects,
@@ -52,49 +52,45 @@ and is read live, treat the local figure as **provisional and the live 0 as the 
 | Unregistered | **7** | **71** |
 
 The 168 boards that fetched and kept nothing are **not** cache skips and **not**
-misattribution, which was the assumption every earlier version of this table rested on.
-Measured on the source rows directly: `cacheDecision: run_now`, row-level `durationMs` of
-420–5,884 ms, `fetchedCount: 0`, `healthReason: "latest fetch kept no jobs"`. They asked,
-spent seconds, and extracted nothing. All but one are `static`, spanning **194 distinct
-hosts**: 189 singletons plus five small platforms (`recruiter.co.kr`,
-`career.greetinghr.com`, `careers.hibob.com`, `herp.careers`, `recruit.charliehr.com`)
-carrying 256 openings. There is no single vendor-shaped fix behind them — 91% are
-individual boards.
+misattribution — the assumption every earlier version of this table rested on. Measured on
+the source rows: `cacheDecision: run_now`, row-level `durationMs` 420–5,884 ms,
+`fetchedCount: 0`, `healthReason: "latest fetch kept no jobs"`. They asked, spent seconds,
+and extracted nothing. All but one are `static`, spanning **194 distinct hosts**: 189
+singletons plus five small platforms carrying 256 openings. There is no single
+vendor-shaped fix behind them — 91% are individual boards.
 
 ### The per-source time budget was a coverage defect, and it is a knob
 
 `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` defaults to **25 seconds**. Fourteen boards were
 mid-fetch when that clock expired, and they were being reported as failures —
-`time_budget_exceeded`, 298 openings. Raising the budget to 90s and the per-task timeout to
-120s, changing nothing else, moved **`time_budget` errors from 14 to 1** and converted
-**11 boards to real collections**; the other 6 stopped timing out and confirmed empty.
-Total attribution went 291 → 322 boards and 6,731 → 9,074 openings in one run.
-
-This was filed under "extraction gaps" and would have been diagnosed per-board. It was a
-configured limit.
+`time_budget_exceeded`, 298 openings. Raising it to 90s, the per-task timeout to 120s, and
+changing nothing else, moved **`time_budget` errors from 14 to 1** and converted **11
+boards to real collections**; the other 6 stopped timing out and confirmed empty. Total
+attribution went 291 → 322 boards and 6,731 → 9,074 openings in one run. This was filed
+under "extraction gaps" and would have been diagnosed per-board; it was a configured limit.
 
 ### Thirty-four "errors" are duplicate rows over working boards
 
 `adapter_mismatch` — "HTML contains workday signature — consider adapter reclassification" —
 was 34 boards / 128 openings and looked like a reclassification job. **All 34 already
 collect**: not one has zero attributed openings. A redundant `static` row shadows a
-provider path that is serving the studio's postings, and the static row's error is what the
-report shows.
+provider path that is serving the studio's postings. So the fix is row cleanup, not adapter
+work, and it is the duplicate-row class already listed below (Ubisoft, WBD, EA). Third time
+in this plan that "the error is real, the board is broken" turned out to be false.
 
-So the fix is row cleanup, not adapter work, and it is the duplicate-row class already
-listed below (Ubisoft, WBD, EA) rather than coverage work. This is also the third time in
-this plan that "the error is real, the board is broken" turned out to be false.
+### The provider-attribution zero, answered
 
-### Unexplained, deliberately not yet acted on
-
-**169 provider boards have zero attributed openings** while their adapter's rollup ran. The
-drained registry holds 274 provider rows but the fetch report only ~28 non-static rows.
-Selection, rollup scope, or attribution failing on CDN-hosted posting links — unmeasured,
-and a zero here is not yet evidence of anything.
+**169 provider boards had zero attributed openings — answered.** The 274 provider rows
+collapse to 16 rollup rows by design, and the rollups collected 7,956 openings; but 190
+of 267 prefix entries held an **empty** prefix (the 193 rows with no `listing_url`), so
+those boards could not be attributed at all. Matching the tenant — the posting URL's
+first path segment — fixed it: **all 7,186 rollup jobs now attribute, zero unmatched**,
+194 by tenant, collecting boards 322 → 331. The 41 greenhouse boards still at zero are a
+real zero, not a measurement artifact.
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and one
 with a single opening are not comparable units, and a board-count headline hides the
-concentration that matters. Both prior delivery tables are withdrawn: the per-adapter one
+concentration that matters. Both prior delivery tables are withdrawn — the per-adapter one
 reported workday 17/17 when the live run collected none, and the "128 boards / 5,500
 openings" one credited 70 "n-ix jobs" to a board that kept zero.
 
@@ -185,8 +181,8 @@ missing adapter and would have led; it is not missing, and cannot land until **A
 | — | Per-source time budget: `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` 25s → 90s | 14 boards / 298 openings — **DONE**, `time_budget` errors 14 → 1 |
 | — | Split `failedSources` into its component findings in the drain tool | 86 error rows → 6 kinds — **DONE** |
 | — | Retire the 34 redundant `static` rows shadowing working Workday paths | 34 boards / 128 openings, **already collecting** — cleanup, not coverage |
-| — | Why 169 provider boards have zero attributed openings when the drained registry holds 274 provider rows but the fetch report ~28 | unexplained — not started |
 | — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings — **DONE**, `deferredByCap` 662 → 0 by round 2 |
+| — | Why 41 greenhouse boards collect nothing while the rollup fetched 927 | real zero — not started |
 | — | Five small platform hosts in the zero set (`recruiter.co.kr`, `career.greetinghr.com`, `careers.hibob.com`, `herp.careers`, `recruit.charliehr.com`) | 18 boards / 256 openings — not started |
 | — | Classify the remaining 150 fetched-and-empty static boards by extraction shape | ~825 openings — not started |
 | — | The 7 unregistered boards: greenhouse `2k`, lever `fliff`, lever `branch.gg`, `r-force.co.jp`, `bexide.co.jp`, `playedwithfire.com`, `vivastudios.com` | 71 openings — not started |
