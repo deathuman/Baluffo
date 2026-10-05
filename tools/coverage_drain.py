@@ -464,17 +464,31 @@ def _source_key_index(
     dict[str, tuple[str, str]],
     list[tuple[str, str, tuple[str, str]]],
     dict[str, str],
+    dict[str, tuple[str, str]],
 ]:
-    """Map fetch-report source names to boards: ``(by_source, prefix_index, rollup_of)``.
+    """Map fetch-report source names to boards: ``(by_source, prefix_index, rollup_of, tenant_index)``.
 
     One rule, two consumers. Attribution and fetch evidence both have to know which
     fetch-report row speaks for which board, and deriving that twice is how the two drifted
     apart before -- the evidence path would have said a board was never asked while the
     attribution path was reading its jobs.
+
+    ``tenant_index`` exists because **193 of the 695 curated rows carry no URL**, so
+    ``_posting_prefix(row["listing_url"])`` is ``""`` for every provider board and
+    ``_match_board`` skips an empty prefix outright. Those boards were therefore
+    un-attributable by construction: 168 of them sat at zero openings while their adapter's
+    rollup collected 7,956. The tenant is the board's first URL path segment
+    (``.../Tencent_Careers/job/...``) and ``registry_identity`` already derives it from
+    exactly that segment, so both sides agree by construction rather than by a prefix guess.
+
+    Only tenants that are **unique** across registered boards are indexed. Two boards
+    sharing a tenant string is not resolvable from a posting URL, and first-wins would
+    credit one board with the other's openings.
     """
     by_source: dict[str, tuple[str, str]] = {}
     prefix_index: list[tuple[str, str, tuple[str, str]]] = []
     rollup_of: dict[str, str] = {}
+    tenants: dict[str, tuple[str, str] | None] = {}
     for row in report:
         if not row["registered"]:
             continue
@@ -486,10 +500,14 @@ def _source_key_index(
         rollup = _ROLLUP_SOURCE.get(adapter, "")
         if adapter in {"static", "scrapy_static"}:
             by_source[static_source_name(str(row["listing_url"]))] = key
-        else:
-            rollup_of.setdefault(rollup, adapter)
-            prefix_index.append((host, _posting_prefix(str(row["listing_url"])), key))
-    return by_source, prefix_index, rollup_of
+            continue
+        rollup_of.setdefault(rollup, adapter)
+        prefix_index.append((host, _posting_prefix(str(row["listing_url"])), key))
+        if tenant:
+            # None marks a collision, so a later row cannot overwrite the first.
+            tenants[tenant] = None if tenant in tenants else key
+    tenant_index = {name: key for name, key in tenants.items() if key is not None}
+    return by_source, prefix_index, rollup_of, tenant_index
 
 
 # A source row that was never asked is not a source row that found nothing. These are the
@@ -664,7 +682,7 @@ def attribute_collected(
     # Matching globally by URL is what produced the first wrong number in this harness: 70
     # "n-ix jobs" that were Google-Sheet rows pointing at careers.n-ix.com, credited to a
     # board that itself kept zero.
-    by_source, prefix_index, rollup_of = _source_key_index(report)
+    by_source, prefix_index, rollup_of, tenant_index = _source_key_index(report)
 
     counts: dict[tuple[str, str], int] = {}
     unmatched = 0
@@ -674,7 +692,7 @@ def attribute_collected(
         source = str(job.get("source") or "")
         key = by_source.get(source)
         if key is None and source in rollup_of:
-            key = _match_bundle(job, prefix_index)
+            key = _match_bundle(job, prefix_index, tenant_index)
         if key is None:
             unmatched += 1
             continue
@@ -754,14 +772,35 @@ def _job_posting_url(job: dict[str, Any]) -> str:
     return ""
 
 
+def _first_path_segment(url: str) -> str:
+    """The board segment of a provider posting URL, lowercased.
+
+    ``https://tencent.wd1.myworkdayjobs.com/Tencent_Careers/job/Japan-Tokyo-...`` ->
+    ``tencent_careers``. That segment is the tenant on every multi-tenant platform, and
+    ``registry_identity`` derives the tenant from it, so the two agree by construction.
+    """
+    path = (urlparse(str(url or "")).path or "").strip("/")
+    if not path:
+        return ""
+    return path.split("/", 1)[0].strip().lower()
+
+
 def _match_bundle(
-    job: dict[str, Any], index: list[tuple[str, str, tuple[str, str]]]
+    job: dict[str, Any],
+    index: list[tuple[str, str, tuple[str, str]]],
+    tenant_index: dict[str, tuple[str, str]] | None = None,
 ) -> tuple[str, str] | None:
     """Resolve a provider job to a board through its ``sourceBundle``.
 
     Reached only for jobs whose own source is a provider rollup, so a board is credited
-    only with postings that rollup fetched. The bundle's posting URL is matched against the
-    board's path prefix; the longest match wins because one board can sit under another.
+    only with postings that rollup fetched.
+
+    Two rules, in order. The prefix rule matches the bundle's posting URL against a board's
+    path prefix, longest first, because one board can sit under another. The tenant rule
+    matches the posting URL's first path segment against boards resolved by adapter +
+    tenant -- the only rule available for the 193 curated rows that carry no URL, whose
+    prefix is empty and therefore unmatched. Prefix is tried first because it is stricter
+    where it applies.
     """
     bundle = job.get("sourceBundle")
     if not isinstance(bundle, list):
@@ -769,9 +808,20 @@ def _match_bundle(
     for entry in bundle:
         if not isinstance(entry, dict):
             continue
-        key = _match_board(_job_posting_url(entry), index)
+        posting_url = _job_posting_url(entry)
+        key = _match_board(posting_url, index)
         if key is not None:
             return key
+    if tenant_index:
+        for entry in bundle:
+            if not isinstance(entry, dict):
+                continue
+            segment = _first_path_segment(_job_posting_url(entry))
+            if segment and segment in tenant_index:
+                return tenant_index[segment]
+            studio = str(entry.get("studio") or "").strip().lower()
+            if studio and studio in tenant_index:
+                return tenant_index[studio]
     return None
 
 

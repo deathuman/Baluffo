@@ -335,7 +335,9 @@ def test_evidence_and_attribution_share_one_source_index(tmp_path):
     url = "https://careers.ea.com/jobs"
     report = _report(_board(url))
     report[0]["registered"] = True
-    by_source, prefix_index, rollup_of = cd._source_key_index(report)
+    by_source, prefix_index, rollup_of, tenant_index = cd._source_key_index(report)
     assert by_source[cd.static_source_name(url)] == cd.report_identity(report[0])
     assert rollup_of == {}
     assert prefix_index == []
+    # A static board is one board per host, so it has no tenant to index by.
+    assert tenant_index == {}
