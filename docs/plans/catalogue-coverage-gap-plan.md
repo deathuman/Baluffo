@@ -25,39 +25,48 @@ at studios, which this product should not be collecting.
 
 ## Where this stands
 
-Two numbers are sound, from two different environments, and they do not agree. Both are
-reported because neither supersedes the other.
+**Two populations, and conflating them is what produced every wrong number in this plan.**
+They answer different questions and neither subsumes the other.
 
-**Live (v0.3.007, Umbrel, 2026-10-04):** of the 6,929 registered openings, **0 collected.**
-That is the only measurement taken where the registry is correct by construction, and it has
-never been explained. See [Live verification](#live-verification-2026-10-04-the-release-delivered-0).
+| Population | What it is | Size |
+|---|---|---|
+| **Delivery** (operational) | rows the install actually watches | 2,818 active + 871 pending, machine-discovered |
+| **Catalogue gap** (audit) | hand-audited target list vs the Games Jobs Index | 695 curated boards / 6,929 openings |
+
+Overlap is high on static and low on provider boards, and neither direction is empty:
+
+| | curated | live | shared | curated-only | live-only |
+|---|---:|---:|---:|---:|---:|
+| one board per host | 466 | 2,880 | 379 | 87 | 2,501 |
+| tenant boards | 229 | 277 | 74 | 155 | 203 |
+
+So the metrics are named rather than merged:
+
+**Delivery — live, `fetch_15458e437b`, appVersion 0.3.008 portable, 49,240 jobs written:**
+
+| | |
+|---|---|
+| static rows keeping > 0 | **1,019** of 2,460 |
+| static fetched, kept 0 | 995 |
+| static errored | 711 |
+| provider boards whose adapter collected | **325 of 337** |
+| distinct hosts in the output | 1,082 |
+
+**Catalogue gap — curated boards absent from the live registry: 242 boards / 1,990 openings**
+(87 static / 644; 155 provider / 1,346). These are **real, not stale**: a control-first probe
+of the curated-only provider boards returned HTTP 200 with live job counts on 12 of 12 —
+2K 125, Applovin 44, Bluehole 18, Crystal Dynamics 1. It is a *discovery* gap.
 
 **Local (`tools/coverage_drain.py --verify-collected`, isolated `--data-dir`, run `v7`):**
-322 of 688 registered boards keep a non-zero count. The harness reported four wrong numbers
-before that one, each from the same mistake — applying one identity rule to rows that do not
-share a shape — and is now covered by 42 tests pinning the invariants. Until 0.3.008 ships
-and is read live, treat the local figure as **provisional and the live 0 as the finding**.
-
-| | Boards | Openings |
-|---|---|---|
-| Curated | 695 | 6,929 |
-| Registered | 688 | 6,858 |
-| Registered and keeping > 0 (local, provisional) | 322 | 9,074 |
-| Fetched, kept 0 | 168 | 1,081 |
-| Registered, fetch errored | 69 | 461 |
-| — of which already collecting via a provider path | 34 | 128 |
-| — of which genuinely nothing found | 23 | 226 |
-| — of which real transport/blocked failures | 12 | 107 |
-| Never selected by the fetch | 1 | 12 |
-| Unregistered | **7** | **71** |
+322 of 688 registered boards keep a non-zero count, against 688 of 695 registered and 7 / 71
+unregistered. The harness reported four wrong numbers before that one, each from applying one
+identity rule to rows that do not share a shape; 42 tests now pin the invariants.
 
 The 168 boards that fetched and kept nothing are **not** cache skips and **not**
-misattribution — the assumption every earlier version of this table rested on. Measured on
-the source rows: `cacheDecision: run_now`, row-level `durationMs` 420–5,884 ms,
-`fetchedCount: 0`, `healthReason: "latest fetch kept no jobs"`. They asked, spent seconds,
-and extracted nothing. All but one are `static`, spanning **194 distinct hosts**: 189
-singletons plus five small platforms carrying 256 openings. There is no single
-vendor-shaped fix behind them — 91% are individual boards.
+misattribution. Measured on the source rows: `cacheDecision: run_now`, row-level
+`durationMs` 420–5,884 ms, `fetchedCount: 0`, `healthReason: "latest fetch kept no jobs"`.
+They asked, spent seconds, and extracted nothing. All but one are `static`, across **194
+distinct hosts** — 189 singletons plus five small platforms. 91% are individual boards.
 
 ### The per-source time budget was a coverage defect, and it is a knob
 
@@ -94,23 +103,21 @@ concentration that matters. Both prior delivery tables are withdrawn — the per
 reported workday 17/17 when the live run collected none, and the "128 boards / 5,500
 openings" one credited 70 "n-ix jobs" to a board that kept zero.
 
-## Live verification, 2026-10-04: the release delivered 0
+## Live verification, 2026-10-04: the "0" was a population conflation
 
-v0.3.007 shipped, Umbrel updated, the pipeline completed — `fetch_9c0eb3659c`, 21:39:19Z to
-22:43:37Z, closed 22:55Z, on `appVersion: 0.3.007`. 2,479 source rows, **519 selected**, 1,956
-skipped fresh, 442 ok, 77 error, 40,395 jobs written.
+v0.3.007 shipped and the pipeline completed — `fetch_9c0eb3659c` on `appVersion: 0.3.007`,
+2,479 source rows, 519 selected, 1,956 skipped fresh, 442 ok, 77 error, **40,395 jobs
+written**. This section recorded "of the 6,929 registered openings, 0 were collected" and
+spent a release treating that as the central open finding. It was a measurement error.
 
-**Of the 6,929 registered openings, 0 were collected.**
+The measurement scored **curated** boards against the **live registry**: 277 of 695 were
+`active`, and the run's output was attributed to them by host and path prefix. Because the
+curated provider slugs are largely disjoint from the registry's (greenhouse shares 8 of 52),
+that join found almost nothing to attribute and read as zero collection. The v0.3.008 run
+measured on its own registry rows writes 49,240 jobs with 1,019 static boards keeping a
+non-zero count — see [Where this stands](#where-this-stands).
 
-| Curated board | Count |
-|---|---|
-| Landed `active` in the live registry | 277 |
-| Of those, probed `ok` by discovery, counting jobs | 277 (3,598 jobs) |
-| Of those, kept by the fetch run | **0** |
-| Still deferred by discovery queue caps | 482 boards / 4,533 openings |
-| Produced no candidate at all | 6 boards / 24 openings |
-
-The three numbers this plan predicted, read honestly:
+Two predictions from that run were still worth making, and were still wrong:
 
 | Prediction | Result |
 |---|---|
@@ -120,73 +127,81 @@ The three numbers this plan predicted, read honestly:
 
 ### Five more, found by running the fetch
 
-Same lesson as the nine above — each a harness assumption recorded as a coverage gap.
+Same lesson — each a harness assumption recorded as a coverage gap. **A, B, C and E are
+done**; the fix-order table carries the outcomes, so only the mechanism is kept here.
 
 **A. Cross-board duplicate identity — 64 boards, 1,257 openings, 0 correct matches.**
 `REDUNDANT_STATIC_IF_PROVIDER` declares Workday and BambooHR with
 `provider_id_field: adapter` / `provider_id_value: workday` — the *adapter name*, not a
-tenant. Every board on either platform hashed to one key, the duplicate index held a single
-arbitrary entry, and each board matched whichever tenant registered first: NVIDIA's board
-was recorded as a duplicate of *Aristocrat Gaming's*. 66 candidates carried such a claim —
-16 workday, 47 bamboohr, **5,289 probe-counted jobs** — and not one resolved to its own
-board. This suppresses registration across both platforms, not just Workday.
+tenant. Every board on either platform hashed to one key, and each matched whichever tenant
+registered first: NVIDIA's board was recorded as a duplicate of *Aristocrat Gaming's*. 66
+candidates carried such a claim and not one resolved to its own board. **Fixed:** identity
+resolves per tenant, keyed most-specific-first, accepted only when `_row_serves_board`
+confirms host *and* tenant. Two sub-defects surfaced by running it — the platform must come
+from the **host**, not the declared adapter, and a board advertising its ATS in `atsLinks`
+resolves from that link. Replayed live: **0 of the 66 claims survive.**
 
-**A — fixed.** Identity resolves per tenant (`multi_tenant_provider`, `tenant_host_label`,
-`tenant_path`, `board_identity_key`), keyed most-specific-first, accepted only when
-`_row_serves_board` confirms host *and* tenant. Two sub-defects surfaced by running it: the
-platform must come from the **host**, not the declared adapter (a Workday board is routinely
-registered as `static`); and the provider URL is not always the board URL — a board
-advertising its ATS in `atsLinks` resolves from that link. Both pinned in
-`tests/source_discovery/test_board_identity_tenancy.py`. Replayed against the live report:
-**0 of the 66 cross-tenant claims survive.**
-
-**B. Workday is never dispatched.** The adapter exists and works — `run_workday_sources_source`
-iterates `registry_entries("workday")`, it is wired into `DEFAULT_SOURCE_LOADER_NAMES`, and
-its CXS POST was verified live against NVIDIA's `total: 2000`. The run showed **no `workday`
-entry in `adapterTimings`** because **A** had suppressed the boards before they could
-register, so the loader had nothing to read.
+**B. Workday is never dispatched.** The adapter exists and works, and its CXS POST was
+verified live against NVIDIA's `total: 2000`. The run showed no `workday` entry in
+`adapterTimings` because **A** had suppressed the boards before they could register.
 
 **C. Workday pagination has a hardcoded 100-job ceiling.** `_collect_workday_rows` loops
 `range(0, limit * 5, limit)`; called directly it emitted 40 rows against NVIDIA's 2,000.
 
 **D. Silent zero: `ok` + `kept 0` + empty error.** 268 curated static boards reported
-`status: ok`, `keptCount: 0`, `error: ''` while discovery counted jobs on the same boards
-— jobvite 87, hrmos 100, gamesjobsindex 97. An empty error string passes as success.
+`status: ok`, `keptCount: 0`, `error: ''` while discovery counted jobs on the same boards.
+An empty error string passes as success.
 
-**E. The delivery metric measured the wrong thing.** `tools/coverage_drain.py` reported
-workday 17/17 and 1,065 openings delivered; the live run collected zero. "Delivered" meant
-*a registry row exists*; delivery needs that row to carry its declared adapter, to be
-selected, and to keep a non-zero count.
+**E. The delivery metric measured the wrong thing.** It reported workday 17/17 and 1,065
+openings delivered; "delivered" meant *a registry row exists*. **Fixed:** three numbers
+instead of one, and `--verify-collected` runs a real fetch and **exits 3** when boards
+register and nothing collects.
 
-**E — fixed.** Three numbers instead of one: `registered`, `readable by some loader`,
-`collected`; `--verify-collected` runs a real fetch, attributes kept jobs by host + tenant,
-returns unmatched jobs rather than dropping them, and **exits 3** when boards register and
-nothing collects. The `delivered` column is gone from the landing test rather than
-corrected. `collectable_adapters` mirrors `registry_entries`' static→Workday/BambooHR
-migration, because a strict adapter check false-alarms on a board that does collect.
+## Fix order
 
-## Fix order after the live run
-
-The order proposed before triage is wrong, and running it is why. Workday looked like a
-missing adapter and would have led; it is not missing, and cannot land until **A** is fixed.
-**E** leads as a gate: without it nothing below is verifiable.
+Order set by measured size and by whether an item blocks others. **E** led as a gate:
+without it nothing below is verifiable. Workday looked like a missing adapter and would have
+led instead; it is not missing, and could not land until **A** was fixed.
 
 | # | Fix | Scope |
 |---|---|---|
-| **E** | Redefine delivered: registered / readable / collected, and exit 3 when boards land and nothing collects | metric — **DONE** |
-| **A** | Identity on host + tenant; reject cross-tenant duplicate matches | 64 boards / 1,257 openings — **DONE**, 0 of 66 cross-tenant claims survive |
-| **B**+**C** | Workday end-to-end: confirm dispatch, replace `limit * 5` with `total`-driven paging | 17 boards / 1,065 openings — **DONE** |
-| — | Curated rows with no `listing_url` resolve by adapter + tenant | 193 rows / 2,206 openings — **DONE**, 688 of 695 boards now register |
-| **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — **NOT STARTED**, see below |
-| — | Per-source time budget: `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` 25s → 90s | 14 boards / 298 openings — **DONE**, `time_budget` errors 14 → 1 |
-| — | Split `failedSources` into its component findings in the drain tool | 86 error rows → 6 kinds — **DONE** |
-| — | Retire the 34 redundant `static` rows shadowing working Workday paths | 34 boards / 128 openings, **already collecting** — cleanup, not coverage |
-| — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings — **DONE**, `deferredByCap` 662 → 0 by round 2 |
-| — | Why 41 greenhouse boards collect nothing while the rollup fetched 927 | real zero — not started |
-| — | Five small platform hosts in the zero set (`recruiter.co.kr`, `career.greetinghr.com`, `careers.hibob.com`, `herp.careers`, `recruit.charliehr.com`) | 18 boards / 256 openings — not started |
-| — | Classify the remaining 150 fetched-and-empty static boards by extraction shape | ~825 openings — not started |
-| — | The 7 unregistered boards: greenhouse `2k`, lever `fliff`, lever `branch.gg`, `r-force.co.jp`, `bexide.co.jp`, `playedwithfire.com`, `vivastudios.com` | 71 openings — not started |
-| — | Duplicate rows and the redirect class: Ubisoft 46 min, WBD 5 rows for one 80-job board, EA 4 overlapping rows, 72 `site_changed` | cleanup |
+| **E** | Delivery reports registered / readable / collected, and exits 3 when boards land and nothing collects | metric — **DONE** |
+| **A** | Identity on host + tenant; reject cross-tenant duplicate matches | 64 boards / 1,257 openings — **DONE**, 0 of 66 claims survive |
+| **B**+**C** | Workday end-to-end; replace `limit * 5` with `total`-driven paging | 17 boards / 1,065 openings — **DONE** |
+| — | Curated rows with no `listing_url` resolve by adapter + tenant | 193 rows / 2,206 openings — **DONE**, 688 of 695 register |
+| — | **Name the two populations** so delivery and catalogue gap stop sharing a join | metric — **DONE**, see [Correction on record](#correction-on-record) |
+| — | Split `failedSources` into its component findings in the drain tool | 86 rows → 6 kinds — **DONE** |
+| — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings — **DONE**, `deferredByCap` 662 → 0 |
+| **T** | `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` default 25s → **90s** | 134 live rows time out; locally 11 of 14 boards converted — **agreed, not landed** |
+| **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reports **0** while **199** rows need fallback — **agreed, not landed** |
+| **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
+| **DG** | Discovery gap: 242 audited boards / 1,990 openings never reached by the probe, and demonstrably real (12 of 12 sampled return 200 with jobs) | discovery, not measurement — **not started** |
+| **P** | `personio` 0 of 12 boards, dark in two releases | bounded — **not started** |
+| **R** | `Unsafe static redirect` boards cannot self-repair — **not a one-line token add, see below** | 136 live rows — **not started** |
+| **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
+| — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
+| — | Five small platform hosts in the zero set | 18 boards / 256 openings — needs embedded-JSON extraction, no host rule |
+| — | Classify the remaining fetched-and-empty static boards by extraction shape | ~825 openings — per-board |
+| — | Duplicate rows: WBD 5 rows for one 80-job board, EA 4 overlapping rows, 72 `site_changed` | cleanup |
+
+**On D.** It was written as "`ok` + `kept 0` + no error → `unknown`". The premise is now
+verified against a real population: the 168 fetched-and-empty boards do carry `status: ok`,
+`fetchedCount: 0` and `healthReason: "latest fetch kept no jobs"`, and all are already
+`needs_review` with **0** `legit_empty` and **0** `health: healthy`. A further 23 reach the
+same state through the `error` channel — `no jobs extracted from source pages` — which
+`reporting_breakdowns` already buckets as `needs_review`. The reporting layer handles the
+shape; what remains is that `failedSources` counts those 23 as failures, and that feeds
+`failedSourceRatioLatest`. Narrowing a persisted contract is a compatibility change, so the
+split lives in the drain tool. Write D against the 168 and the 23 together.
+
+**On T, and why the cap is not the lever.** Browser fallback demand was 1,032 attempts,
+988 refused, 40 served. Refusal comes from a *per-source 30-minute cooldown* set after a
+fallback attempt errors — `browserFallbackCap` only limits concurrency, so raising it changes
+nothing. Until `BF2` records why sources enter cooldown, the 78 HTTP-403 rows are not
+decidable. `transport` (83 rows, median 15s, max 298s) is a different class: hangs and
+timeouts, not blocks.
+
+
 
 **On D.** It was written as "`ok` + `kept 0` + no error → `unknown`". That premise is now
 verified against a real population rather than an assumed one: the 168 fetched-and-empty
@@ -200,6 +215,36 @@ counts those 23 as failures, and that number feeds `failedSourceRatioLatest`. Na
 persisted report contract is a compatibility change, so the split lives in the drain tool
 for now. Write D against the 168, and treat the 23 as the second half of the same finding.
 
+### On R: the token addition is not the fix
+
+`Unsafe static redirect` is **136 live rows**, not the 20 an earlier classifier bucket
+suggested, and none of the 136 matches any token in `PATCHABLE_ERROR_TOKENS`. So the class
+cannot self-repair. But adding `"unsafe static redirect"` to that tuple would be the wrong
+repair, for two reasons found by reading the code rather than the plan:
+
+**The error is a deliberate security guard.** `_safe_redirect_url` raises it when the redirect
+target has a non-http(s) scheme, carries credentials, **changes site** (`www.` stripped), or
+downgrades https to http. The dominant case for a careers board is a cross-site move — a studio
+leaving its own site for a platform — which is the Ubisoft shape, and the right answer there is
+to register the board against the platform, not to patch the old URL.
+
+**The patcher has no destination to work from.** `resolve_patch_target` tries
+`extract_redirect_location`, which parses only `Redirect location: '...'` — a form this error
+does not use. It then falls back to extracting the first URL from the message (the *original*,
+not the target) and guessing among `suggest_alternate_career_urls`. The caller probes before
+accepting, so a wrong guess costs probe budget rather than bad data — which makes it safe and
+merely wasteful.
+
+The better fix is to parse the destination out of this error form, since the message carries
+it: `Unsafe static redirect from <a> to <b>`. That turns a guess into a known target. **It also
+means deliberately routing a redirect the safety guard rejected into a fetch**, so it is a
+security decision rather than a coverage one, and it is not made here.
+
+Two smaller findings in the same class, neither yet diagnosed: two rows whose extracted URL is a
+`twitter.com/intent/tweet?url=` share link, and two `personio` rows whose error mentions a
+redirect only upstream of a `no jobs extracted`.
+
+
 ### Verification gate for each step
 
 A step is done when `coverage_drain.py --verify-collected` reports the board's own openings
@@ -209,102 +254,38 @@ defect it was meant to fix.
 
 ## Nine defects found by running discovery, not reading it
 
-The first six are recorded below. Three more arrived with the second and third waves, and
-every one has the same shape: **the harness was looking somewhere the openings were not, and
-the zero was recorded as an answer.**
+All nine have one shape: **the harness was looking somewhere the openings were not, and the
+zero was recorded as an answer.** Condensed; the mechanisms are in the commits and the tests.
 
-**A board's JSON API lives on a different host from its career page.** All 39 Ashby boards
-register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/<slug>`, which
-resolved to `('ashby', 'api.ashbyhq.com', '')` — host and tenant both lost. Greenhouse, Lever
-and SmartRecruiters share the shape. `registry_identity` now folds a known API host onto its
-canonical career-page host and reads the tenant out of the API path.
+- **A board's JSON API lives on a different host from its career page.** All 39 Ashby boards
+  register as `ashby:api_url:https://api.ashbyhq.com/posting-api/job-board/<slug>`, which
+  resolved to host *and* tenant both empty. Greenhouse, Lever and SmartRecruiters share it.
+- **Greenhouse's EU hosts matched no host rule.** `job-boards.eu.greenhouse.io` does not match
+  the `job-boards.greenhouse.io` rule — it ends `eu.greenhouse.io` — so 158 openings on 8
+  tenants collapsed onto one host-root row.
+- **Workable was lost twice to the same wrong URL.** The probe read
+  `/api/v1/accounts/<a>/jobs` (HTTP 400 for every account) and the row it built carried only
+  `account`, which `endpoint_url` cannot resolve. Fixing one still registered 0 of 29.
+- **A static candidate's listing URL is its host root, which is often not the careers page.**
+  All 109 unreadable static boards return HTTP 200 with zero anchors at the root.
+- **Two curated tables are concatenated, not merged**, so a board in both is fetched twice.
+- **Personio operates two domains and the probe accepted one**, refusing every
+  `.jobs.personio.com` board as an invalid host before it was fetched — nine boards, all
+  serving a real feed, all registering zero.
 
-**Greenhouse's EU hosts matched no host rule at all.** `job-boards.eu.greenhouse.io` does not
-match the `job-boards.greenhouse.io` rule — it ends `eu.greenhouse.io` — so it fell through
-to `static` and 158 openings on 8 tenants collapsed onto one host-root row, the multi-tenant
-failure this repo's own guardrail warns about. Eight per-tenant rows now.
-
-**Workable was lost twice to the same wrong URL.** The probe read
-`/api/v1/accounts/<a>/jobs` (HTTP 400 for every account) and the row it built carried only
-`account`, which `endpoint_url` cannot resolve. Fixing only the first still registered 0 of 29
-— both were needed, and both now use the runtime's own `JsonFeedSpec` template.
-
-**A static candidate's listing URL is its host root, which is often not the careers page.**
-The BambooHR defect again, except the tool held only a host, never a path to be wrong about.
-All 109 unreadable static boards return HTTP 200 with zero anchors at the root.
-`tools/coverage_listing_discovery.py` derives the listing from the URLs of the missed
-openings and measures each ancestor path with the runtime's own detector.
-
-**Two curated tables are concatenated, not merged.** A board present in both is fetched twice
-and double-counted. Four were known; AppLovin's Greenhouse board arrived with the second wave
-and `_drop_already_curated` now removes the class by board identity rather than by studio
-label, since one board is registered under two labels.
-
-**Personio operates two domains and the probe accepted one.** `validate_candidate_for_probe`
-required `jobs.personio.de`, so every `.jobs.personio.com` board was refused as an invalid
-host before it was fetched — nine boards, all serving a real feed, all registering zero. The
-runtime itself never had the restriction. Alongside it, `count_rows` counted HTML anchors in
-an XML feed, so all 21 Personio boards read as zero in the first place.
-
-The recurring lesson across all nine: **every one was a harness assumption, not a board
-failure, and none was visible without running discovery.** A recorded zero is the most
-expensive kind of finding, because it is indistinguishable from a board that genuinely has
-nothing — right up until the openings stay missing.
+The lesson: **every one was a harness assumption, not a board failure, and none was visible
+without running discovery.** A recorded zero is the most expensive kind of finding, because it
+is indistinguishable from a board that genuinely has nothing.
 
 ## What is left, in priority order
 
-Ordered by measured size, and by whether the item blocks others. Everything below is
-outside the registration, which is finished at 688 of 695 boards — the residue is the
-7 boards / 71 openings listed in [Fix order](#fix-order-after-the-live-run), and it is
-small enough to fold into any of the slices below rather than stand alone.
+The actionable list, with current numbers, is [Fix order](#fix-order). This section keeps only
+what that table cannot carry: the items deferred by agreement, and the two findings whose size
+is the argument for leaving them.
 
-### 1. The freshness window was not ageing boards out — 1,892 boards — **DONE, unverified live**
-
-**Cause.** `_apply_status_state` called `refresh_next_eligible_check_at` for every terminal
-status including `excluded`, while `apply_excluded_source_state` deliberately never moves
-`lastSuccessAt`. Each skip pushed the deadline out another window while the success clock
-froze, so eligibility became a function of run frequency rather than the configured window.
-Nothing surfaced it because `lastCheckedAt` did not move either — a skip is not a check — so
-the only clock advancing was the one that should not have been.
-
-**Fix.** A skip leaves `nextEligibleCheckAt` alone; the skip reason is threaded explicitly
-from the excluded report so a stale reason cannot suppress the advance later. `304` counts as
-a non-fetch skip deliberately: a 304 asserts the cache is current.
-
-**Verified by replay, not asserted.** `tools/coverage_freshness_replay.py` drives the real
-decision function with the pre-fix policy as a control: over 30 days the current policy
-fetches 55× at 60-minute cadence, the pre-fix policy 0×. The control is a test — if the
-pre-fix policy ever fetches, the replay has stopped measuring the policy.
-
-**The live run did not confirm it.** `cache_within_freshness_window` went 1,893 → **1,956**.
-A mechanism replay is not production evidence; this stays open until two consecutive live
-runs show the skipped count falling.
-
-### 2. Second registration wave — **DONE**, 1,415 openings across 88 boards
-
-213 boards / 2,383 openings resolved to 1,415. Five of six blocks were measurement faults,
-not missing adapters: hrmos needed no adapter at all (833), Workable was lost twice to the
-same wrong URL (440), Greenhouse EU hosts matched no host rule so 8 tenants collapsed to one
-row (158), a JSON API host is not the board (94), and a static candidate's listing URL was
-its host root (70).
-
-### 3. The review boards — **DONE**, 1,070 openings across 116 boards
-
-179 undecided boards resolved to 116 registered — on recorded openings rather than a probe,
-since 105 return HTTP 200 with zero anchors — and 63 deliberately left alone:
-
-| Class | Boards | Openings | Why not registered |
-|---|---|---|---|
-| HTTP error (404/400/0/403/429/401) | 47 | 514 | says the board cannot be read, not that it is empty |
-| oracle_hcm | 2 | 169 | own REST endpoint returns empty `items`; UI ships zero anchors |
-| personio | 5 | 33 | feed 404s; the careers page is HTML the Personio adapter cannot read |
-
-Registering an HTTP-error board trades a missing opening for a source reporting zero forever.
-Two of the three classes were then fixable anyway — **230 openings, 22 boards**: 13 of the 47
-were registered against a URL that errors (`herp.careers/v1/<tenant>` answers 200 where
-`herp.careers/<tenant>` answers 400, plus four boards each missing a path segment), and
-Personio was double-blocked by an HTML-anchor counter on an XML feed and a `.de`-only
-validator.
+Items 1–3 and 6–8 are **done** — the freshness window, the second registration wave, the review
+boards, the 404-while-active registry rows, the per-board extraction gaps and the carried-over
+defects. Their mechanisms are in the commits and the tests.
 
 ### Feishu — 826 openings, not reachable by anything the runtime has
 
@@ -322,91 +303,24 @@ on recorded openings — 105 boards of that shape already are. It would be false
 
 **And the delivery metric would have called it landed** — a static row reaches the registry
 and counts as delivered, exactly as the 105 JS boards do, while producing zero jobs. Hence
-Feishu stays unregistered. Recovering it is a project, not a registration task: a
-CSRF-aware, rate-limit-respecting client, a payload parser, and a fixture. Kurogame alone
-is 411 openings.
+Feishu stays unregistered. Recovering it is a project, not a registration task: a CSRF-aware,
+rate-limit-respecting client, a payload parser, and a fixture. Kurogame alone is 411 openings.
 
-### The 1,468 extraction gaps — mostly not coverage work
+### The 1,468 extraction gaps are mostly not coverage work
 
-1,468 openings on registered, working boards where the studio has other roles but this one is
-absent. Over 155 boards, and the causes are not the same kind of thing.
+`tools/coverage_classifier_candidates.py` shows the remainder after the 238 recovered roles is
+dominated by business roles at studios — Logistics Director, Marketing Manager — which this
+product should not be collecting. Chasing them would be volume for its own sake.
 
-**SmartRecruiters capped its response — 214 openings — FIXED.** One request per source with no
-`limit`/`offset`; the API returns at most 100 however asked. `ubisoft2` reports
-`totalFound=332` against 100 rows. Only SmartRecruiters is paginated — the other four JSON
-feeds return everything at once and it rate-limits.
+### The 82% Google Sheet dependency is an asset, not a liability
 
-**The sector classifier was dropping real game roles — FIXED, on an explicit product
-decision.** 1,226 roles rejected outright; 35 measured craft tokens recover 238 across 97
-studios, admitting none of a 15-role control set of business roles at studios. Safe because
-they live in `GAME_ROLE_KEYWORDS`, separate from `GAME_KEYWORDS`: `has_positive_game_evidence`
-is a *sector* classifier where a bare role word must not imply Game, and folding them
-together made "UX Designer" at an arbitrary employer classify as Game.
-
-**Some were never gaps.** dontnod's three "missing" roles are all "Spontaneous Application".
-
-### 4. The 82% Google Sheet dependency — an asset, not a liability
-
-This is item 1's successor rather than a parallel track: a freshness fix delivers more
-openings only if the feed is not still dominated by one source, so the two are sequential —
-fix the window, then confirm the recovered boards actually show up in the feed.
-
-**Corrected framing.** This was previously written up as a single point of failure to be
-reduced, which inverts it. The community spreadsheet is the best base source available and the
-reason the feed has breadth at all. The goal is not to remove the dependency but to stop it
-being the *ceiling* — to make sure the direct ATS and static-scraped sources behind it reach
-the feed. With 6,862 openings registered behind that work, this is the question the next live
-run answers.
+The Sheet is the best base source and stays. It was never the ceiling — it was being read as
+one, because the delivery metric credited sheet rows to whichever board's host the posting
+link happened to point at.
 
 ### 5. Data quality, deferred by agreement
 
-- **Blank country — 4,493 rows.** Orthogonal to coverage: present but unclassifiable by
-  region, which understates EU counts rather than losing openings.
-- **GB/UK and England/Scotland/Wales — ~365 rows.** Pending a `country_acceptance.json`
-  contract change.
-
-### 6. The live registry holds rows that 404 while reporting `active`
-
-All three Electronic Arts rows answer **404** and have done since they were promoted on
-2026-04-10, while `registryState` reads `active`:
-
-- `static:listing_url:https://jobs.ea.com/en_us/careers`
-- `static:listing_url:https://jobs.ea.com/en_us/careers/home/?4538=8369&4538_format=3021&listfiltermode=1`
-- `static:listing_url:https://jobs.ea.com/en_us/careers/searchjobs/?4538=[8354]&4538_format=3021`
-
-`https://jobs.ea.com/careers` answers 200 with 29 rows. So EA looks registered, contributes
-almost nothing, and 134 catalogue openings sit behind it — the same shape as the Activision
-row that reports `ok` with 80 kept while 404ing.
-
-This is **not** fixed here. Correcting live registry rows is a data mutation, and the repo's
-rule is that it takes a printed plan, an asserted row count, an explicit apply flag, a backup
-to `_out/` and a read-back. Worth doing deliberately rather than as a side effect. Note also
-that a curated seed row cannot substitute: board identity is host + tenant, so a second row
-for `jobs.ea.com` would be a duplicate board fetched twice.
-
-### 7. Per-board extraction gaps — 325 openings
-
-The boards that *were* fetched and still return fewer roles than the catalogue lists. The
-static runner already follows `?page=N` and `/page/N` anchors within a budget, so this is not
-paging: EA, Roblox and Garena expose **zero** pagination anchors and their lists are
-JS/API-driven. Each board needs its own diagnosis against what it actually serves, and the
-largest are Roblox (123, 9 rows visible), Garena (74, 10 rows), Activision (43) and
-`jobs.jobvite.com` (39).
-
-Provider boards are a separate 159 openings, and they cannot be triaged from the fetch report
-at all: providers roll up to one row each (`greenhouse_boards` kept 1,108, `lever_sources`
-296, `workable_sources` 348), so a single underperforming board is invisible inside a healthy
-provider total.
-
-### 8. Carried-over defects
-
-- **`careers.activision.com/careers` returns 404 while reporting `ok` with 80 kept** — the
-  same defect shape as the three EA rows above, and one of a family: a stale registration the
-  fetch report does not surface as an error. Worth fixing on its own account, since a 404
-  reporting `ok` will recur.
-- **Gamucatex junk rows** — pre-existing. `static_detail_link_rows` at `_runner.py:343`
-  has no title gate; only `larian.py` and `supercell.py` call it.
-- **`plans/voodoo-ashby-board-migration-plan.md`** — delete once a release lands.
+Blank country (4,493 rows) and GB/UK (~365) remain deferred.
 
 ## Sequencing note
 
@@ -426,6 +340,37 @@ The last row is the lesson: a board-identity fix that made the *audit* more accu
 *registration* less complete, because identity was compared across tenants.
 
 ## Correction on record
+
+**Fourth correction. "The live run collected 0 of 6,929" was false, and it was the
+load-bearing claim of this plan.**
+
+It came from scoring **curated** boards against the **live registry** and calling
+non-membership a collection failure. 277 of 695 curated boards were `active` live, and the
+run's output was attributed to them by host and path prefix; because the curated provider
+slugs are largely disjoint from the registry's, the join found nothing and read as zero.
+
+Measured on the v0.3.008 run's own registry rows (`fetch_15458e437b`, portable 0.3.008):
+**49,240 jobs written, 1,019 of 2,460 static rows keeping > 0, and 325 of 337 provider boards
+on a collecting adapter.** Every provider except `personio` collects.
+
+Two supporting claims were also false, and both were load-bearing:
+
+- **"The live registry carries `board_url`."** It carries none. A live row is
+  `{id, adapter, studio, registryState, pendingReason, stateChangedAt, stateChangedBy,
+  lastPromotedAt, lastDemotedAt, name}` — ten keys, the URL inside `id` only. `board_url`: 0
+  rows. `listing_url`: 0 rows. `pages`: 0 rows. This was the stated reason local runs were
+  treated as untrustworthy and the live run as authoritative, and it was false in the
+  direction that made the live number look like ground truth.
+- **"242 curated boards / 1,990 openings are unregistered, so that is the gap."** They are not
+  in the live registry because discovery never found them, not because the table is stale: a
+  control-first probe returned HTTP 200 with live job counts on **12 of 12** curated-only
+  provider boards. The gap is real; the population it was measured against was not the one
+  the run fetches.
+
+The generalisable form, and the reason this section exists four times over: **a coverage claim
+is meaningless without naming the population it was measured over.** The same run supports
+"1,019 boards collecting" and "242 audited boards unregistered" simultaneously, and this plan
+spent a release unable to hold both.
 
 **Third correction. Registration was reported as 6,929 openings; it is 6,858.**
 

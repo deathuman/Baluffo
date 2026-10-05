@@ -129,12 +129,50 @@ def _apply_structured_migration_fields(
         )
 
 
+def _first_detail_row(src: dict[str, Any]) -> dict[str, Any]:
+    """The source row's first detail child, or ``{}``.
+
+    Per-source outcome fields are written to ``entry_report``, which the pipeline lands in
+    ``details[0]`` -- not at the top of the row. ``_source_health_row`` reads the top level,
+    so anything only present in the detail was invisible to every summary built from it.
+    """
+    details = src.get("details")
+    if not isinstance(details, list):
+        return {}
+    for entry in details:
+        if isinstance(entry, dict):
+            return entry
+    return {}
+
+
 def _apply_browser_fallback_fields(
     target: dict[str, Any],
     src: dict[str, Any],
     *,
     clean_text_func: Any,
 ) -> None:
+    """Hoist the browser-fallback outcome fields, top level first, then the detail row.
+
+    ``browserFallbackRecommended`` was missing from this list entirely, which is why
+    ``sourceHealth.browserFallbackRecommendedSources`` read **0** on a live run while 199
+    rows carried the flag in ``details[0]``: 78 boards were failing HTTP 403 with browser
+    fallback recommended, and the health summary said no source needed it.
+
+    The same lift fixes the quarantine fields, which were empty on every row of that run for
+    the same reason -- with 988 of 1,032 fallback attempts refused by a per-source cooldown,
+    the recorded reason each source entered cooldown was unrecorded.
+
+    The top level wins when both carry a value, so a caller that already hoisted explicitly
+    is not overwritten by a stale detail.
+    """
+    detail = _first_detail_row(src)
+    # Boolean, not text: clean_text(False) is "" and clean_text(True) is "True", so routing
+    # this through the text path would write a string where the contract says bool -- and
+    # `bool("")` happens to be False, which is why that would have looked correct.
+    if "browserFallbackRecommended" in src:
+        target["browserFallbackRecommended"] = bool(src.get("browserFallbackRecommended"))
+    elif "browserFallbackRecommended" in detail:
+        target["browserFallbackRecommended"] = bool(detail.get("browserFallbackRecommended"))
     text_fields = (
         "browserFallbackQuarantinedUntilAt",
         "browserFallbackLastAttemptAt",
@@ -145,9 +183,15 @@ def _apply_browser_fallback_fields(
     for key in text_fields:
         if key in src:
             target[key] = clean_text_func(src.get(key))
+        elif key in detail:
+            target[key] = clean_text_func(detail.get(key))
     if "browserFallbackFailureCount" in src:
         target["browserFallbackFailureCount"] = _clamped_int(
             src.get("browserFallbackFailureCount"), 0, 0
+        )
+    elif "browserFallbackFailureCount" in detail:
+        target["browserFallbackFailureCount"] = _clamped_int(
+            detail.get("browserFallbackFailureCount"), 0, 0
         )
 
 

@@ -29,7 +29,7 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-from src.shared.utils import env_flag
+from src.shared.utils import coerce_int, env_flag
 
 from ..common import config as common_config
 from .static_cookie_retry import (
@@ -357,6 +357,20 @@ class StaticHtmlFetcher:
         return text, was_cached
 
 
+# The per-source static fetch ceiling, in seconds (2026-10-06: raised from 25).
+#
+# A board that exhausts its pages returns immediately, so this is a ceiling rather than a
+# wait -- the ~40% of boards with genuinely nothing to offer are unaffected by raising it.
+# What it does bound is the boards that *do* have openings and were being cut off
+# mid-fetch, which the report then filed as `time_budget_exceeded` failures: 134 rows on a
+# live 0.3.008 run, and 14 on the isolated run where raising it to 90s converted 11 boards
+# to real collections.
+#
+# The `uncapped` preset overrides this with 180s in `bridge/task_launch_fetcher_args.py`,
+# which is why 25s was the outlier and 90s is a realignment rather than a new limit.
+STATIC_SOURCE_TIME_BUDGET_DEFAULT_S = 90
+
+
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:
     static_profile = (
         norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
@@ -368,8 +382,15 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     detail_concurrency = max(
         1, int(static_detail_concurrency or common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY)
     )
-    raw_low_yield_detail_cap = int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)
-    raw_very_low_yield_detail_cap = int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)
+    # `coerce_int` rather than bare `int()`: an unparseable value here used to raise
+    # ValueError out of the config builder and take the whole fetch down with it, so a
+    # mistyped environment variable failed the run instead of falling back to the default.
+    raw_low_yield_detail_cap = coerce_int(
+        os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP"), 12, minimum=0, maximum=2**31 - 1
+    )
+    raw_very_low_yield_detail_cap = coerce_int(
+        os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP"), 6, minimum=0, maximum=2**31 - 1
+    )
     if uncapped_deep_static:
         low_yield_detail_cap = max(0, raw_low_yield_detail_cap)
         very_low_yield_detail_cap = max(0, raw_very_low_yield_detail_cap)
@@ -384,8 +405,24 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     return StaticSourceRuntimeConfig(
         static_profile=static_profile,
         static_detail_concurrency=detail_concurrency,
-        static_source_time_budget_s=max(
-            5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)
+        # 90s, not 25s (2026-10-06). The 25s default starved boards that were mid-fetch when
+        # the clock expired, and the report filed them as failures -- `time_budget_exceeded` --
+        # so a configured limit read as 134 broken boards on a live run. Raising it to 90s,
+        # changing nothing else, moved time_budget errors from 14 to 1 on the isolated run and
+        # converted 11 boards to real collections; the other 6 stopped timing out and
+        # confirmed empty.
+        #
+        # The `uncapped` preset already ran at 180s via
+        # `bridge/task_launch_fetcher_args.py`, so this brings the default path in line with
+        # behaviour the project already shipped rather than introducing a new limit. The
+        # budget is a ceiling, not a wait: a board with nothing to offer still returns as soon
+        # as its pages are exhausted, so raising it costs nothing for the 40% of boards that
+        # are genuinely empty.
+        static_source_time_budget_s=coerce_int(
+            os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S"),
+            STATIC_SOURCE_TIME_BUDGET_DEFAULT_S,
+            minimum=5,
+            maximum=2**31 - 1,
         ),
         low_yield_detail_cap=low_yield_detail_cap,
         very_low_yield_detail_cap=very_low_yield_detail_cap,
