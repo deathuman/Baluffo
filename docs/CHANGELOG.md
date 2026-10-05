@@ -51,6 +51,12 @@ Two rules the guardrail enforces so this cannot quietly regress:
   6,929 openings delivered while a live run collected none of them. The audit now reports
   registration, readability, and collected openings separately, and fails when boards
   register but nothing collects.
+- **Ubisoft's careers boards are read from the system that actually serves them.** Every
+  Ubisoft board is a regional subdomain — toronto, berlin, mainz, duesseldorf, saguenay,
+  stockholm, winnipeg — and none were recognised as SmartRecruiters-served, so each was
+  scraped as a plain page. `toronto.ubisoft.com/jobs` spent 2,760 seconds to yield a single
+  job from a 223 KB page containing no job links, while the SmartRecruiters tenant that
+  carries the same listings showed 333 openings including Berlin.
 
 - **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, and wildcard browser CORS allow headers all behave exactly as they did in 0.3.007, as does desktop localhost bridge compatibility. The only differences are the job-source coverage and fixes above.
 
