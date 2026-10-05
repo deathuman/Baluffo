@@ -322,14 +322,18 @@ def attribute_collected(
     if not isinstance(payload, list):
         return {}, 0
 
-    # Board host -> the identity tuple the curated row resolved to.
-    index: dict[str, tuple[str, str]] = {}
+    # A board is keyed by its posting prefix, not its host: several curated boards share a
+    # host (`jobs.jobvite.com` carried 955 of the collected jobs), so a host-only index
+    # collapsed them into one bucket and over-counted by construction.
+    index: list[tuple[str, str, tuple[str, str]]] = []
     for row in report:
         if not row["registered"]:
             continue
         host, tenant = board_key(row["listing_url"])
-        if host:
-            index.setdefault(host, (host, tenant))
+        if not host:
+            continue
+        prefix = _posting_prefix(str(row["listing_url"]))
+        index.append((host, prefix, (host, tenant)))
 
     counts: dict[tuple[str, str], int] = {}
     unmatched = 0
@@ -337,14 +341,51 @@ def attribute_collected(
         if not isinstance(job, dict):
             continue
         url = _job_posting_url(job)
-        key = index.get(host_of(url)) if url else None
+        key = _match_board(url, index)
         if key is None:
-            key = _bundle_board_identity(job, index)
+            key = _match_bundle(job, index)
         if key is None:
             unmatched += 1
             continue
         counts[key] = counts.get(key, 0) + 1
     return counts, unmatched
+
+
+def _posting_prefix(listing_url: str) -> str:
+    """Path prefix under which a board serves its postings, lowercased, no trailing slash.
+
+    ``https://careers.wbd.com/careers`` -> ``/careers``. A posting under it
+    (``/careers/j/123``) belongs to that board; a posting at ``/other/123`` does not, even
+    though the host is identical.
+    """
+    path = (urlparse(str(listing_url or "")).path or "").strip().lower().rstrip("/")
+    return path
+
+
+def _match_board(url: str, index: list[tuple[str, str, tuple[str, str]]]) -> tuple[str, str] | None:
+    """The board whose posting prefix contains this URL, most specific prefix first."""
+    if not url:
+        return None
+    host = host_of(url)
+    if not host:
+        return None
+    path = (urlparse(url).path or "").strip().lower()
+    matches = [row for row in index if row[0] == host]
+    if not matches:
+        return None
+    # Longest prefix wins, so a board at /careers/locations/milan is preferred over one at
+    # /careers when both could contain the posting.
+    matches.sort(key=lambda row: len(row[1]), reverse=True)
+    for _candidate_host, prefix, key in matches:
+        if prefix and path.startswith(prefix + "/"):
+            return key
+        if prefix and path == prefix:
+            return key
+    # A board whose listing URL is the site root owns the whole host.
+    for _candidate_host, prefix, key in matches:
+        if not prefix:
+            return key
+    return None
 
 
 def _job_posting_url(job: dict[str, Any]) -> str:
@@ -355,14 +396,13 @@ def _job_posting_url(job: dict[str, Any]) -> str:
     return ""
 
 
-def _bundle_board_identity(
-    job: dict[str, Any], index: dict[str, tuple[str, str]]
+def _match_bundle(
+    job: dict[str, Any], index: list[tuple[str, str, tuple[str, str]]]
 ) -> tuple[str, str] | None:
     """Resolve a job to a board through its ``sourceBundle`` when the URL will not say.
 
     A provider posting can live on a host the curated row never mentions, while the bundle
-    entry names the board id. Only host-keyed entries are accepted, so this cannot invent
-    an identity.
+    entry names the board that served it.
     """
     bundle = job.get("sourceBundle")
     if not isinstance(bundle, list):
@@ -370,8 +410,7 @@ def _bundle_board_identity(
     for entry in bundle:
         if not isinstance(entry, dict):
             continue
-        url = _job_posting_url(entry)
-        key = index.get(host_of(url)) if url else None
+        key = _match_board(_job_posting_url(entry), index)
         if key is not None:
             return key
     return None
