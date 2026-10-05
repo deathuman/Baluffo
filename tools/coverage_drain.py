@@ -65,6 +65,8 @@ from coverage_board_identity import (  # noqa: E402
     registry_identity,
 )
 
+from src.jobs.adapters.static_runtime import _as_pages  # noqa: E402
+
 # The registry is written as a gzipped JSON array; the sibling .jsonl holds the same
 # data as a single-line array, so parsing it as newline-delimited silently yields one
 # row and every count comes out wrong.
@@ -122,17 +124,14 @@ _URL_FIELDS = ("board_url", "listing_url", "careersUrl", "api_url", "feed_url", 
 
 
 def hydrate_registry_urls(rows: list[dict[str, Any]]) -> int:
-    """Give a row the URL field the runtime fetches from, recovered from its ``id``.
+    """Give a row the URL field its loader reads, recovered from its ``id``.
 
     Discovery writes registry rows whose only URL is inside ``id``
-    (``static:listing_url:https://…``). The runtime's own registry carries ``board_url``,
-    and ``_static_source_primary_host`` reads ``pages``/``listing_url`` — not the id — so a
-    row without them has nothing to fetch.
-
-    That made the first ``--verify-collected`` run report every static board as
-    "fetched, kept nothing" when the truth was that none of them fetched at all: 422 rows,
-    ``request_count: 0``, ``status: ok``. It is a harness artifact, not a runtime defect, and
-    it is invisible unless the row shape is compared against a live registry.
+    (``static:listing_url:https://…``), so a row has nothing to fetch. The static path reads
+    ``pages`` specifically — ``build_static_source_context`` calls ``_as_pages(source["pages"])``
+    — and ``_as_pages`` returns ``[]`` for anything that is not already a list. Setting
+    ``board_url`` is not enough, and cost two runs to learn: 421 static rows reported
+    ``request_count: 0`` with ``status: ok`` having never asked.
 
     Provider rows (``greenhouse:slug:x``, ``ashby:slug:x``) identify by slug and are left
     alone; only rows whose id carries a URL get the field.
@@ -141,15 +140,28 @@ def hydrate_registry_urls(rows: list[dict[str, Any]]) -> int:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        if any(row.get(field) for field in _URL_FIELDS):
-            continue
+        adapter = str(row.get("adapter") or "").lower()
         parts = str(row.get("id") or "").split(":", 2)
         if len(parts) < 3:
             continue
         url = parts[2].strip()
         if not url.startswith(("http://", "https://")):
             continue
+        if adapter in {"static", "scrapy_static"}:
+            # The static loader reads `pages` and nothing else, and `_as_pages` drops a bare
+            # string. A row can already carry `board_url` and still be unfetchable, so the
+            # guard is per-loader rather than "has any URL field".
+            if _as_pages(row.get("pages")):
+                continue
+            row["pages"] = [url]
+            row.setdefault("board_url", url)
+            row.setdefault("listing_url", url)
+            hydrated += 1
+            continue
+        if any(row.get(field) for field in _URL_FIELDS):
+            continue
         row["board_url"] = url
+        row["listing_url"] = url
         hydrated += 1
     return hydrated
 
