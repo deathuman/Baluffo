@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** catalogue sweep shows Baluffo carries 31.7% of the index's openings; 10,465 openings are absent and most are on boards it could read
 > - **Verified against:** d5491e13
-> - **Status:** v0.3.007 shipped and the live run **collected 0 of the 6,929 registered openings**; the delivery metric that certified them measured registry presence, not collection. Five defects found by running it; fix order below
+> - **Status:** v0.3.007's live run **collected 0 of the 6,929 registered openings**; the metric that certified them measured registry presence. Five defects found by running it; fix order below
 
 # Closing the catalogue coverage gap
 
@@ -11,7 +11,7 @@ what still blocks delivery. See [`INDEX.md`](../INDEX.md).
 ## Where the remaining openings actually are
 
 Registration and delivery are in [Where this stands](#where-this-stands); these are the
-buckets outside them, measured against the live feed and the live fetch report.
+buckets outside them, measured against the live feed and fetch report.
 
 | Bucket | Openings | Status |
 |---|---:|---|
@@ -172,6 +172,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **DG** | Audited boards Baluffo lacks. Measured 2026-10-06: **94 openings / 20 boards** in EU, **2,324 / 147** in ANY | **24 boards confirmed collecting, 149 game jobs**; role gate shipped — see below |
 | — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run — **shipped in v0.3.012** |
 | — | Game row filter on every source path; 39 verified greenhouse boards registered | **shipped in v0.3.012** — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |
+| — | Embedded-JSON lane 2.5, evidence-gated retirement, hrmos/mokahr/recruiterkr probes | all **shipped in v0.3.013**: 10 rows retired, 28 hrmos tenants registered; mokahr/recruiterkr not readable |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings **DONE** — the 168 and the 23 classify `unknown` |
@@ -183,11 +184,10 @@ led instead; it is not missing, and could not land until **A** was fixed.
 **On D.** It was written as "`ok` + `kept 0` + no error → `unknown`", against the
 168-board population above — all already `needs_review` with **0** `legit_empty` and **0**
 `health: healthy` — plus 23 more that reach the same state via `error` (`no jobs extracted
-from source pages`), which `reporting_breakdowns` also buckets as `needs_review`. The
-reporting layer handles the shape; what remains is `failedSources` counting those 23 as
-failures, feeding `failedSourceRatioLatest`. Narrowing a persisted contract is a
-compatibility change, so the split lives in the drain tool — **DONE**, both populations
-classify `unknown`, `failedSources` untouched.
+from source pages`), which `reporting_breakdowns` also buckets as `needs_review`. What
+remains is `failedSources` counting those 23 as failures, feeding `failedSourceRatioLatest`.
+Narrowing a persisted contract is a compatibility change, so the split lives in the drain tool
+— **DONE**, both populations classify `unknown`, `failedSources` untouched.
 
 **On T, and why the cap is not the lever.** Browser fallback demand was 1,032 attempts,
 988 refused, 40 served. Refusal comes from a *per-source 30-minute cooldown* set after a
@@ -228,7 +228,7 @@ openings. The rule needs a real public-suffix list — a naive last-two-labels s
 `.co.za` as the suffix and invents registrable domains.
 
 **The rebrand tag says "same studio, new address", not "this address works"** — separate
-steps, and probing five of the thirteen against the runtime's own detector:
+steps, and probing five of the thirteen against the runtime's detector:
 
 | target | verdict |
 |---|---|
@@ -249,11 +249,11 @@ target back into a request is what the guard exists to prevent. The old message 
 of the new one, so existing log searches still match.
 
 **The `;` fix is narrower than I first described it.** Servers do emit a trailing semicolon
-(`https://corp.roblox.com/careers;`), and I called the target malformed. It is not: `;` is a
-legal path character under RFC 3986, and the URL parses with a clean host. The real harm is
-downstream — copied verbatim into a registration URL it leaves a stray character on the end.
-`urlparse` puts the text before `;` in `path` and the rest in `params`, so stripping `path` is
-a no-op and the character has to come off the raw string — which is what the test caught.
+(`https://corp.roblox.com/careers;`), and I called the target malformed. It is not: `;` is
+legal under RFC 3986 and the URL parses with a clean host. The real harm is downstream —
+copied into a registration URL it leaves a stray character. `urlparse` puts the text before
+`;` in `path`, so stripping `path` is a no-op; the character must come off the raw string,
+which is what the test caught.
 
 The 5 migrations are registered by discovery from the classification. The 117 are classified
 but **not retired** — retiring a row is a visibility change with real consequences, and this
@@ -288,15 +288,14 @@ zero was recorded as an answer.** The mechanisms are in the commits and the test
   serving a real feed, all registering zero.
 
 The lesson: **every one was a harness assumption, not a board failure, and none was visible
-without running discovery.** A recorded zero is the most expensive finding — it is
-indistinguishable from a board that genuinely has nothing.
+without running discovery.** A recorded zero is the most expensive finding — indistinguishable
+from a board that genuinely has nothing.
 
 ### DG: the gap re-measured, and the filter it needs
 
-The GJI snapshot was never a manual artifact: `gamesjobsindex.com/jobs.json` is live and
-self-refreshing (`run_at 2026-10-06`, 15,394 records, 934 studios), so this is repeatable.
-Re-ran the repo's chain (`coverage_audit` → `coverage_boards` → `coverage_verify`) against the
-live feed:
+The GJI snapshot is live and self-refreshing (`run_at 2026-10-06`, 15,394 records, 934
+studios), so this is repeatable. Re-ran the repo's chain (`coverage_audit` →
+`coverage_boards` → `coverage_verify`) against the live feed:
 
 | region | GJI considered | matched | `unregistered_board` | boards |
 |---|---:|---:|---:|---:|
@@ -344,8 +343,8 @@ Game/Tech rows are both product content — **shipped in v0.3.012**.
 ## What is left, in priority order
 
 Items 1–3 and 6–8 are **done** — freshness window, second registration wave, review boards,
-404-while-active registry rows, per-board extraction gaps, carried-over defects; their
-mechanisms are in the commits and the tests. Current numbers are in [Fix order](#fix-order).
+404-while-active registry rows, per-board extraction gaps, carried-over defects — with their
+mechanisms in the commits and tests. Current numbers: [Fix order](#fix-order).
 
 ### Feishu — 826 openings, not reachable by anything the runtime has
 
@@ -363,8 +362,9 @@ boards of that shape already are. It would be false.
 
 **And the delivery metric would have called it landed** — a static row reaches the registry
 and counts as delivered, exactly as the 105 JS boards do, while producing zero jobs. Hence
-Feishu stays unregistered; recovering it is a project (a CSRF-aware, rate-limit-respecting
-client, a payload parser, a fixture). Kurogame alone is 411 openings.
+Feishu stays unregistered; the 0.3.013 attempt found no derivable session (a GET sets no
+cookie, `/api/v1/csrf/token` is an SPA catch-all, the search API answers 405), so recovering
+it is a project (a CSRF-aware client, a parser, a fixture). Kurogame alone is 411 openings.
 
 ### The 1,468 extraction gaps are mostly not coverage work
 
@@ -383,13 +383,13 @@ Blank country (4,493 rows) and GB/UK (~365) remain deferred.
 
 ## Sequencing note
 
-0.3.007 shipped and carried all six fixes below; the live run showed them necessary and not
-sufficient — it collected none of the registration, because the question was never "is the
-board registered" but "can a fetch read it". Without them: the probe fixes cost 17% of the
-registration instead of 98%; no freshness window left a registry 94% unrefreshed; personio
-domains kept 0 of 2 fetched; SmartRecruiters pagination never requested a third of Ubisoft's
-board; and board identity compared across tenants made the *audit* more accurate while making
-*registration* less complete.
+0.3.007 carried all six fixes below; the live run showed them necessary and not sufficient —
+it collected none of the registration, because the question was never "is the board registered"
+but "can a fetch read it". Without them: the probe fixes cost 17% of the registration instead
+of 98%; no freshness window left a registry 94% unrefreshed; personio domains kept 0 of 2;
+SmartRecruiters pagination never requested a third of Ubisoft's board; and board identity
+compared across tenants made the *audit* more accurate while making *registration* less
+complete.
 
 ## Correction on record
 
