@@ -43,7 +43,36 @@ MULTI_TENANT_PROVIDER_DOMAINS: dict[str, str] = {
     "myworkdayjobs.com": "workday",
     "workday.com": "workday",
     "bamboohr.com": "bamboohr",
+    # The provider platforms whose boards share one host or root domain. A platform that
+    # is missing here falls to the `adapter:root_domain` branch of `queue_family_key`,
+    # so every one of its boards becomes a single family and the domain cap queues only
+    # 2-8 per discovery run: greenhouse's 43 candidates were all deferred by
+    # `domain_cap` on 2026-10-05 for exactly this reason. The tenant is the path slug
+    # (greenhouse, ashby, lever, workable, smartrecruiters, dayforce) or the subdomain
+    # label (teamtailor, breezy, recruitee, jazzhr, personio, pinpoint), and
+    # `board_identity_key` already extracts both.
+    "greenhouse.io": "greenhouse",
+    "ashbyhq.com": "ashby",
+    "lever.co": "lever",
+    "workable.com": "workable",
+    "smartrecruiters.com": "smartrecruiters",
+    "teamtailor.com": "teamtailor",
+    "breezy.hr": "breezy",
+    "recruitee.com": "recruitee",
+    "applytojob.com": "jazzhr",
+    "personio.com": "personio",
+    "personio.de": "personio",
+    "pinpointhq.com": "pinpoint",
+    "dayforcehcm.com": "dayforce",
+    "createyourowncareer.com": "phenom",
 }
+
+# The families whose tenant lives in the URL path, not the host label. On these the host
+# label (``job-boards``, ``boards``, ``apply``, ``jobs``) names the platform's own service,
+# so reading it as a tenant compares service names and never the studio.
+PATH_TENANT_PROVIDER_FAMILIES = frozenset(
+    {"greenhouse", "ashby", "lever", "workable", "smartrecruiters"}
+)
 
 
 def multi_tenant_provider(host: str) -> str:

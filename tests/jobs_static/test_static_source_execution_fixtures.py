@@ -264,10 +264,10 @@ def test_run_static_studio_pages_source_empty_detail_batches_do_not_stop_remaini
 
 def test_run_static_studio_pages_source_listing_rows_do_not_cap_residual_detail_batches() -> None:
     source_row = {
-        "name": "Listing Wins Studio",
-        "studio": "Listing Wins Studio",
+        "name": "Listing Wins Games",
+        "studio": "Listing Wins Games",
         "adapter": "static",
-        "company": "Listing Wins Studio",
+        "company": "Listing Wins Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -276,7 +276,7 @@ def test_run_static_studio_pages_source_listing_rows_do_not_cap_residual_detail_
           <head>
             <script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Platform Engineer",
-            "hiringOrganization":{"name":"Listing Wins Studio"},
+            "hiringOrganization":{"name":"Listing Wins Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/platform-engineer"}
             </script>

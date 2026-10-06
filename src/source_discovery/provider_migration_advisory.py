@@ -21,6 +21,7 @@ from src.url_hosts import host_matches_domain
 
 from .config import SUPPORTED_PROVIDERS
 from .core_identity import (
+    PATH_TENANT_PROVIDER_FAMILIES,
     board_identity_key,
     multi_tenant_provider,
     root_domain,
@@ -453,12 +454,14 @@ def _row_serves_board(registry_id: str, candidate: dict[str, Any]) -> bool:
         return False
     if not multi_tenant_provider(candidate_host):
         return True
-    # Same platform host: compare tenants, and treat an unresolvable one as no match.
-    registry_label = tenant_host_label(registry_host)
-    candidate_label = tenant_host_label(candidate_host)
-    if not candidate_label or not registry_label:
-        return registry_id == (_text(candidate.get("sourceIdentity")) or source_identity(candidate))
-    return registry_label == candidate_label
+    # Same platform host: the tenant decides, read the way that platform keeps it
+    # (subdomain label for workday/bamboohr/teamtailor/breezy/..., path slug for
+    # greenhouse/ashby/lever/workable/smartrecruiters). Both resolvers return the
+    # platform's own service label for path-tenant hosts, which is never a studio.
+    candidate_tenant = _candidate_tenant(candidate)
+    if registry_tenant and candidate_tenant:
+        return registry_tenant == candidate_tenant
+    return registry_id == (_text(candidate.get("sourceIdentity")) or source_identity(candidate))
 
 
 def _board_host(candidate: dict[str, Any]) -> str:
@@ -489,8 +492,19 @@ def _same_host(left: str, right: str) -> bool:
 
 
 def _candidate_tenant(candidate: dict[str, Any]) -> str:
-    """The candidate's tenant, from whichever of its URLs carries one."""
-    for url in (_first_ats_link(candidate), _current_url(candidate), _candidate_url(candidate)):
+    """The candidate's tenant, from whichever of its URLs carries one.
+
+    The ATS link is consulted before the board's own URL: the board link is the studio's
+    marketing site, and on the path-tenant platforms only the ATS link carries the slug.
+    """
+    urls = (_first_ats_link(candidate), _current_url(candidate), _candidate_url(candidate))
+    for url in urls:
+        host = _host(url)
+        if host and multi_tenant_provider(host) in PATH_TENANT_PROVIDER_FAMILIES:
+            path = tenant_path(url)
+            if path:
+                return path.split("/")[-1]
+    for url in urls:
         host = _host(url)
         label = tenant_host_label(host) if host else ""
         if label:
@@ -514,6 +528,9 @@ def _id_host_tenant(registry_id: str) -> tuple[str, str]:
         if parsed is None:
             return "", ""
     _adapter, host, tenant = parsed
+    if multi_tenant_provider(host) in PATH_TENANT_PROVIDER_FAMILIES:
+        # ``job-boards``/``boards`` are the platform's own service names, not a studio.
+        return host, tenant
     return host, tenant_host_label(host) or tenant
 
 

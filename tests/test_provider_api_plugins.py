@@ -82,7 +82,7 @@ class _FakeDeps:
             return [
                 {
                     "sourceJobId": "tt:1",
-                    "title": "Engineer",
+                    "title": "Gameplay Engineer",
                     "company": fallback_company or "Unknown",
                     "city": "",
                     "country": "Unknown",
@@ -166,8 +166,8 @@ DISPATCH_CASES = [
                         "jobs": [
                             {
                                 "id": 1,
-                                "text": "Engineer",
-                                "title": "Engineer",
+                                "text": "Gameplay Engineer",
+                                "title": "Gameplay Engineer",
                                 "location": {"name": "Remote"},
                                 "absolute_url": "https://example/jobs/1",
                             }
@@ -286,7 +286,7 @@ DISPATCH_CASES = [
                 retries=1,
                 backoff_s=0.0,
             ),
-            expected_len=2,
+            expected_len=1,
             expected_adapter="jazzhr",
             expected_studio="Lost Boys Interactive",
             extra_check=_assert_full_time_contract,
@@ -440,7 +440,7 @@ def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
                 "jobs": [
                     {
                         "id": slug,
-                        "title": f"{slug} Engineer",
+                        "title": f"{slug} Gameplay Engineer",
                         "location": {"name": "Remote"},
                         "absolute_url": f"https://example/{slug}/jobs/1",
                     }

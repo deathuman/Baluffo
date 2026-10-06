@@ -68,20 +68,32 @@ def test_is_phenom_job_href_shapes() -> None:
 
 def test_parse_phenom_search_page_extracts_jobs_and_pagination() -> None:
     html = _fixture("phenom_rtl_search.html")
+    # RTL is a broadcaster: its own rows are media roles and the game row filter
+    # drops every one. Substitute a game title on the first posting so the
+    # row-building path still has a row to prove itself with.
+    html = html.replace(
+        "Working Student – Financial Controlling (m/f/d)", "Gameplay Engineer (m/f/d)"
+    )
     jobs, next_pages = parse_phenom_jobs_html(html, SEARCH_URL, fallback_company="RTL")
-    assert len(jobs) == 25
+    assert len(jobs) == 1, "only the substituted game row survives the row filter"
     assert len(next_pages) == 2
     assert all("startrow=" in page for page in next_pages)
     first = jobs[0]
     assert first["sourceJobId"] == "phenom:1434341833"
-    assert "Working Student" in first["title"]
+    assert "Gameplay Engineer" in first["title"]
     assert first["company"] == "RTL"
     assert first["city"] == "Hamburg"
     assert first["jobLink"].startswith("https://jobsearch.createyourowncareer.com/RTL/job/")
     assert first["sector"] == "Game"
-    # all rows carry unique stable ids
-    ids = {row["sourceJobId"] for row in jobs}
-    assert len(ids) == len(jobs)
+
+
+def test_parse_phenom_search_page_drops_a_media_board_entirely() -> None:
+    """Unmodified RTL rows are all media roles: parsed, none kept, pagination intact."""
+    jobs, next_pages = parse_phenom_jobs_html(
+        _fixture("phenom_rtl_search.html"), SEARCH_URL, fallback_company="RTL"
+    )
+    assert jobs == []
+    assert len(next_pages) == 2
 
 
 def test_phenom_pagination_next_page_is_unescaped_so_the_server_sees_startrow() -> None:
@@ -122,7 +134,11 @@ def test_phenom_detail_fields_extract_schema_org_meta() -> None:
 
 
 def test_phenom_runner_pages_and_emits_rows(_bind, monkeypatch) -> None:
-    search_html = _fixture("phenom_rtl_search.html")
+    # RTL's rows are media roles and the game filter would drop them all; one
+    # substituted game title keeps the page shape while giving the runner a row.
+    search_html = _fixture("phenom_rtl_search.html").replace(
+        "Working Student – Financial Controlling (m/f/d)", "Gameplay Engineer (m/f/d)"
+    )
     page2_html = search_html.replace("startrow=25", "startrow=50").replace(
         "startrow=50", "startrow=75", 1
     )

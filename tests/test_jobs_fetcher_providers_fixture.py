@@ -140,7 +140,7 @@ FIXTURE_PARSE_CASES = [
             loader=lambda text: text,
             args=("https://lostboysinteractive.applytojob.com/apply", "Lost Boys Interactive"),
             kwargs={},
-            expected_len=2,
+            expected_len=1,
             extra_check=_assert_jazzhr,
         ),
         id="jazzhr",

@@ -73,15 +73,17 @@ def test_runner_paginates_until_max_count(monkeypatch) -> None:
     bind_runner(monkeypatch, registry_rows([_REF_ROW]))
     page1 = {
         "jobPostings": [
-            {"jobPostingId": 1, "jobTitle": "One", "postingLocations": []},
-            {"jobPostingId": 2, "jobTitle": "Two", "postingLocations": []},
+            {"jobPostingId": 1, "jobTitle": "Game Designer One", "postingLocations": []},
+            {"jobPostingId": 2, "jobTitle": "Game Designer Two", "postingLocations": []},
         ],
         "maxCount": 3,
         "offset": 0,
         "count": 2,
     }
     page2 = {
-        "jobPostings": [{"jobPostingId": 3, "jobTitle": "Three", "postingLocations": []}],
+        "jobPostings": [
+            {"jobPostingId": 3, "jobTitle": "Game Designer Three", "postingLocations": []}
+        ],
         "maxCount": 3,
         "offset": 2,
         "count": 1,
@@ -141,6 +143,40 @@ def test_runner_empty_board_is_legit_empty(monkeypatch) -> None:
     details = captured[0]["details"]
     assert details[0]["classification"] == "dayforce_no_public_jobs"
     assert details[0]["emptyConfirmed"] is True
+
+
+def test_runner_drops_a_posting_that_is_not_a_game_role(monkeypatch) -> None:
+    """The row was fetched and parsed, then filtered: kept count zero, not a failure."""
+    captured = bind_runner(monkeypatch, registry_rows([_REF_ROW]))
+    csrf_body = json.dumps({"csrfToken": "t" * 64}).encode()
+    body = json.dumps(
+        {
+            "jobPostings": [
+                {"jobPostingId": 9, "jobTitle": "Senior Accountant", "postingLocations": []}
+            ],
+            "maxCount": 1,
+            "offset": 0,
+            "count": 1,
+        }
+    ).encode()
+
+    class _BusinessOpener(ScriptedOpener):
+        def open(self, request, timeout):  # noqa: ANN001, ANN202
+            if "api/auth/csrf" in request.full_url:
+                return FakeResponse(200, csrf_body)
+            return FakeResponse(200, body)
+
+    monkeypatch.setattr(
+        dayforce_runner.urllib.request, "build_opener", lambda *_a, **_k: _BusinessOpener({})
+    )
+    jobs = dayforce_runner.run_dayforce_sources_source(
+        fetch_text=lambda _u, _t: "",
+        timeout_s=10,
+        retries=2,
+        backoff_s=0.0,
+    )
+    assert jobs == []
+    assert captured[0]["details"][0]["fetchedCount"] == 1
 
 
 def test_runner_search_403_surfaces_expected_source_error(monkeypatch) -> None:

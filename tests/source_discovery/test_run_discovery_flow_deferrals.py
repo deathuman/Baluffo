@@ -342,6 +342,15 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                     discovery_orchestrator, "save_url_patch_manifest", return_value=None
                 ),
                 mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
+                # With the multi-tenant map fixed, three greenhouse slugs are three queue
+                # families -- the old domain-cap collapse that deferred one of them was
+                # the defect. Deferral persistence is still the subject here, so pinch
+                # the adapter cap to two and let the third defer by adapter pacing.
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "ADAPTER_QUEUE_CAPS",
+                    {**discovery_orchestrator.ADAPTER_QUEUE_CAPS, "greenhouse": 2},
+                ),
             ):
                 report = sd.run_discovery(
                     timeout_s=5,
@@ -360,8 +369,7 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
             assert len(persisted_candidates) == 3
             assert len([row for row in persisted_candidates if not bool(row.get("deferred"))]) == 2
             deferred_row = next(row for row in persisted_candidates if bool(row.get("deferred")))
-            assert deferred_row["deferReason"] == "domain_cap"
-            assert deferred_row["promotionLane"] == "domain_cap_review"
+            assert deferred_row["deferReason"] == "adapter_cap"
             assert deferred_row["candidateState"] == "validated"
             assert int(deferred_row["deferCount"]) == 1
             assert deferred_row["firstDeferredAt"]

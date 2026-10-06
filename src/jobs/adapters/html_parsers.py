@@ -319,6 +319,8 @@ def _append_gamesindustry_job(jobs: list[RawJob], seen_links: set[str], row: Raw
     job_link = normalize_url(row.get("jobLink"))
     if not job_link or "/job/" not in urlparse(job_link).path or job_link in seen_links:
         return
+    if not looks_like_game_job(row.get("title"), row.get("company")):
+        return
     seen_links.add(job_link)
     row["jobLink"] = job_link
     jobs.append(row)

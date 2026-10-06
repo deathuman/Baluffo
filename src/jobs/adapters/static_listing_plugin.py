@@ -33,7 +33,7 @@ from src.jobs.page_gating import (
 )
 from src.jobs.text_utils import clean_text, normalize_url
 
-from .static_runtime import StaticSourceContext
+from .static_runtime import StaticSourceContext, drop_non_game_rows
 
 
 def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | None:
@@ -299,8 +299,9 @@ def _finalize_plugin_fast_path(
     _apply_one_man_studio_cleanup(ctx, plugin_jobs)
     ctx.emit_heartbeat()
     ctx.jobs.extend(plugin_jobs)
+    dropped = drop_non_game_rows(ctx)
     ctx.entry_report["fetchedCount"] = len(ctx.pages)
-    ctx.entry_report["keptCount"] = len(plugin_jobs)
+    ctx.entry_report["keptCount"] = len(plugin_jobs) - dropped
     rejected_static_artifacts = max(0, original_plugin_count - len(plugin_jobs))
     if rejected_static_artifacts:
         ctx.entry_report["staticArtifactRowsRejected"] = rejected_static_artifacts

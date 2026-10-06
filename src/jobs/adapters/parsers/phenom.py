@@ -18,6 +18,7 @@ from src.jobs.adapters.html_parsers import (
     html_fragment_lines,
     strip_html_text,
 )
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -129,6 +130,9 @@ def parse_phenom_jobs_html(
         title = _phenom_anchor_title(anchor, path)
         if not title:
             continue
+        company = clean_text(fallback_company) or "Unknown"
+        if not looks_like_game_job(title, company):
+            continue
         seen_links.add(absolute)
         location = _phenom_anchor_location(anchor) or _phenom_row_location(html_text, anchor_start)
         location_details = normalize_location_details(location)
@@ -138,7 +142,7 @@ def parse_phenom_jobs_html(
             {
                 "sourceJobId": f"phenom:{job_id}",
                 "title": title,
-                "company": clean_text(fallback_company) or "Unknown",
+                "company": company,
                 "city": clean_text(location_details.get("city")) or location,
                 "country": clean_text(location_details.get("country")) or "Unknown",
                 "workType": "",

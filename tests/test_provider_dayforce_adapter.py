@@ -88,7 +88,7 @@ def test_dayforce_api_job_row_normalizes_capture_shape() -> None:
     )
     assert row is not None
     assert row["sourceJobId"] == "dayforce:ref:161"
-    assert row["title"] == "Programmer Engine and Tools"
+    assert row["title"] == "Engine Programmer - Engine and Tools"
     assert row["company"] == "Reflector Entertainment"
     # HTML entities in jobDescription decoded
     assert "You’ll build" in row["description"]

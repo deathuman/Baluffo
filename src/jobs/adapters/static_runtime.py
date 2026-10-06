@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
@@ -30,6 +31,34 @@ from .static_runtime_support import (
     pagination_budget_extension_s,
     remaining_static_source_budget_s,
 )
+
+
+def drop_non_game_rows(ctx: StaticSourceContext) -> int:
+    """Apply the game row filter to the rows this source appended, in place.
+
+    The filter is a product rule ("business and support roles are deliberately absent",
+    ``src/jobs/game_detection.py``), not a per-lane courtesy. It used to run only on the
+    detail-parse path, so listing lanes and host plugins could emit a studio's back-office
+    roles straight into the feed -- measured at 4,214 of 6,887 static rows in the live feed
+    failing it. One boundary call covers every lane that ends a static source.
+
+    Title + company is the canonical input shape (the same call the JSON-feed parsers
+    make). Returns the number of rows dropped; the dropped count stays in stats so
+    "extracted only non-game rows" is distinguishable from "extracted nothing", and the
+    caller finalises its counts afterwards.
+    """
+    start = int(ctx.kept_before)
+    rows = ctx.jobs[start:]
+    if not rows:
+        return 0
+    wanted = [row for row in rows if looks_like_game_job(row.get("title"), row.get("company"))]
+    dropped = len(rows) - len(wanted)
+    if dropped:
+        ctx.jobs[start:] = wanted
+        ctx.stats["non_game_rows_dropped"] = (
+            int(ctx.stats.get("non_game_rows_dropped") or 0) + dropped
+        )
+    return dropped
 
 
 def _default_ignored_link_titles() -> set[str]:

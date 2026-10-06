@@ -142,11 +142,11 @@ def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_lo
     ]
     listing = (
         "<html><body>"
-        '<a href="https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">Senior Engineer</a>'
+        '<a href="https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">Senior Engine Programmer</a>'
         '<a href="https://larian.com/careers/location/gent?location=Gent">Gent</a>'
         "</body></html>"
     )
-    detail = "<html><body><h1>Senior Engineer</h1></body></html>"
+    detail = "<html><body><h1>Senior Engine Programmer</h1></body></html>"
     try:
 
         def fake_fetch(url: str, _: int) -> str:
@@ -181,8 +181,8 @@ def test_run_static_studio_pages_source_accepts_remedy_query_key_override() -> N
             "enabledByDefault": True,
         }
     ]
-    listing = f'<html><body><a href="{base}/open?jobid=42">Rendering Programmer</a></body></html>'
-    detail = "<html><body><h1>Rendering Programmer</h1></body></html>"
+    listing = f'<html><body><a href="{base}/open?jobid=42">Graphics Programmer</a></body></html>'
+    detail = "<html><body><h1>Graphics Programmer</h1></body></html>"
     try:
 
         def fake_fetch(url: str, _: int) -> str:
@@ -248,7 +248,7 @@ def test_run_static_studio_pages_source_activision_plugin_extracts_job_links() -
     ]
     listing_html = """
         <a href="https://careers.activision.com/search-results">Search Jobs</a>
-        <a href="https://careers.activision.com/job/R025845/Programmeur-senior-Productivite">Programmeur senior, Productivite</a>
+        <a href="https://careers.activision.com/job/R025845/Programmeur-senior-Productivite">Développeur senior, Productivité</a>
         <a href="https://careers.activision.com/apply?jobSeqNo=ACPUUSR025845EXTERNAL">Apply Now</a>
         """
     rows = jf.run_static_studio_pages_source(
@@ -327,7 +327,7 @@ def test_run_static_studio_pages_source_neobards_plugin_keeps_only_job_anchors()
 def test_run_static_studio_pages_source_crater_plugin_renders_job_titles_from_slugs() -> None:
     shell = '<html><body><div id="root"></div><script type="module">react</script></body></html>'
     rendered = """
-        <a href="/careers/marketing-specialist">View Job</a>
+        <a href="/careers/game-designer">View Job</a>
         <a href="/careers/technical-artist">View Job</a>
         <a href="/careers/ux-ui-designer">View Job</a>
     """
@@ -350,7 +350,7 @@ def test_run_static_studio_pages_source_crater_plugin_renders_job_titles_from_sl
     )
 
     assert [row["title"] for row in rows] == [
-        "Marketing Specialist",
+        "Game Designer",
         "Technical Artist",
         "UX UI Designer",
     ]
@@ -365,12 +365,12 @@ def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_posit
             "pageProps": {
               "positions": [
                 {
-                  "title": "Senior Backend Developer (NodeJS)",
+                  "title": "Senior Gameplay Developer (NodeJS)",
                   "location": "HCMC",
                   "type": "Full-time",
                   "team": "Tech",
                   "leverId": "43fa1ef6-a45e-4718-9b8f-022c673632c6",
-                  "slug": {"current": "senior-backend-developer"}
+                  "slug": {"current": "senior-gameplay-developer"}
                 },
                 {
                   "title": "[New Games] Game Unit Manager",
@@ -402,12 +402,12 @@ def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_posit
         ],
     )
     assert [row["title"] for row in rows] == [
-        "Senior Backend Developer (NodeJS)",
+        "Senior Gameplay Developer (NodeJS)",
         "[New Games] Game Unit Manager",
     ]
     assert rows[0]["jobLink"] == (
         "https://www.careers.amanotes.com/jobs/"
-        "senior-backend-developer/43fa1ef6-a45e-4718-9b8f-022c673632c6"
+        "senior-gameplay-developer/43fa1ef6-a45e-4718-9b8f-022c673632c6"
     )
     assert rows[0]["city"] == "HCMC"
     assert rows[0]["country"] == "Vietnam"
@@ -424,11 +424,11 @@ def test_run_static_studio_pages_source_amanotes_plugin_preserves_remote_as_work
             "pageProps": {
               "positions": [
                 {
-                  "title": "QA Engineer",
+                  "title": "QA Analyst",
                   "location": "Remote",
                   "type": "Full-time",
                   "team": "Game",
-                  "slug": {"current": "qa-engineer"},
+                  "slug": {"current": "qa-analyst"},
                   "leverId": "job-1"
                 }
               ]
@@ -478,7 +478,7 @@ def test_run_static_studio_pages_source_blizzard_plugin_follows_role_pages_to_se
     home_html = '<a href="/global/en/engineering-technology">ENGINEERING & TECHNOLOGY</a>'
     role_html = '<a href="https://careers.blizzard.com/global/en/search-results?rk=l-engineering-technology&sortBy=Most%20relevant">View Open Jobs</a>'
     results_html = """
-        <a href="https://careers.blizzard.com/global/en/job/R026699/Software-Engineer-Server-World-of-Warcraft-Irvine-CA">Software Engineer, Server - World of Warcraft | Irvine, CA</a>
+        <a href="https://careers.blizzard.com/global/en/job/R026699/Software-Engineer-Server-World-of-Warcraft-Irvine-CA">Gameplay Engineer, Server - World of Warcraft | Irvine, CA</a>
         <div>Location Irvine, California, United States of America Posted Date January 30 2026 Category Engineering Job Id R026699</div>
         <a href="https://careers.blizzard.com/global/en/job/R026419/Lead-Systems-Engineer-Unreal-Engine-5">Lead Systems Engineer, Unreal Engine 5</a>
         <div>Location Irvine, California, United States of America Posted Date February 03 2026 Category Engineering Job Id R026419</div>
@@ -498,7 +498,7 @@ def test_run_static_studio_pages_source_blizzard_plugin_follows_role_pages_to_se
             fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
         )
         titles = {str(row.get("title") or "") for row in rows}
-        assert "Software Engineer, Server - World of Warcraft | Irvine, CA" in titles
+        assert "Gameplay Engineer, Server - World of Warcraft | Irvine, CA" in titles
         assert "Lead Systems Engineer, Unreal Engine 5" in titles
         assert len(rows) == 2
     finally:

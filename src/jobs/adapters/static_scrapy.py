@@ -26,6 +26,7 @@ from src.jobs.common.taxonomy import (
     classify_zero_kept,
     map_error_to_failure_bucket,
 )
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.page_gating import (
     looks_like_source_specific_static_noise_row,
@@ -268,18 +269,22 @@ def _finalize_source_detail(source_detail: dict[str, Any]) -> None:
 
 def _collect_normalized_jobs(
     jobs: list[Any], source: dict[str, Any], *, source_name: str
-) -> tuple[list[RawJob], int, list[str]]:
+) -> tuple[list[RawJob], int, list[str], int]:
     rows: list[RawJob] = []
     errors: list[str] = []
     invalid = 0
+    non_game = 0
     for item in jobs:
         normalized = _normalize_job(item, source)
-        if normalized:
-            rows.append(normalized)
-        else:
+        if not normalized:
             invalid += 1
             errors.append(f"{source_name}: dropped invalid job payload from runner")
-    return rows, invalid, errors
+            continue
+        if not looks_like_game_job(normalized.get("title"), normalized.get("company")):
+            non_game += 1
+            continue
+        rows.append(normalized)
+    return rows, invalid, errors, non_game
 
 
 def _reject_invalid_envelope(
@@ -375,12 +380,16 @@ def _merge_envelope_jobs(
         source_detail["classification"] = "parse_error"
         return [], [f"{source_name}: crawl failed"]
 
-    source_rows, parent_invalid_payload, job_errors = _collect_normalized_jobs(
+    source_rows, parent_invalid_payload, job_errors, non_game_dropped = _collect_normalized_jobs(
         jobs, source, source_name=source_name
     )
     kept = len(source_rows)
     source_detail_loss = _as_dict(source_detail.get("loss"))
     source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
+    if non_game_dropped:
+        # The same product rule every other static lane applies; counted so a
+        # filtered-to-zero board is distinguishable from one that extracted nothing.
+        source_detail_loss["scrapyNonGameRowsDropped"] = int(non_game_dropped)
     source_detail["loss"] = source_detail_loss
     source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
     source_detail["status"] = "ok"

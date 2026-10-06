@@ -60,10 +60,10 @@ from ._helpers import (
 
 def test_run_static_studio_pages_source_follows_safe_listing_redirect() -> None:
     source_row = {
-        "name": "Redirect Listing Studio",
-        "studio": "Redirect Listing Studio",
+        "name": "Redirect Listing Games",
+        "studio": "Redirect Listing Games",
         "adapter": "static",
-        "company": "Redirect Listing Studio",
+        "company": "Redirect Listing Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -77,7 +77,7 @@ def test_run_static_studio_pages_source_follows_safe_listing_redirect() -> None:
             return """
                 <html><head><script type="application/ld+json">
                 {"@context":"https://schema.org","@type":"JobPosting","title":"Redirect Role",
-                "hiringOrganization":{"name":"Redirect Listing Studio"},
+                "hiringOrganization":{"name":"Redirect Listing Games"},
                 "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
                 "url":"https://example.net/jobs/redirect-role"}
                 </script></head><body></body></html>
@@ -98,10 +98,10 @@ def test_run_static_studio_pages_source_follows_safe_listing_redirect() -> None:
 
 def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links() -> None:
     source_row = {
-        "name": "Off Target Studio",
-        "studio": "Off Target Studio",
+        "name": "Off Target Games",
+        "studio": "Off Target Games",
         "adapter": "static",
-        "company": "Off Target Studio",
+        "company": "Off Target Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -110,7 +110,7 @@ def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links(
           <head>
             <script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Platform Engineer",
-            "hiringOrganization":{"name":"Off Target Studio"},
+            "hiringOrganization":{"name":"Off Target Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/platform-engineer"}
             </script>
@@ -148,10 +148,10 @@ def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links(
 
 def test_run_static_studio_pages_source_caps_multi_host_external_detail_fanout() -> None:
     source_row = {
-        "name": "External Fanout Studio",
-        "studio": "External Fanout Studio",
+        "name": "External Fanout Games",
+        "studio": "External Fanout Games",
         "adapter": "static",
-        "company": "External Fanout Studio",
+        "company": "External Fanout Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -170,7 +170,7 @@ def test_run_static_studio_pages_source_caps_multi_host_external_detail_fanout()
         return f"""
             <html><head><script type="application/ld+json">
             {{"@context":"https://schema.org","@type":"JobPosting","title":"{role}",
-            "hiringOrganization":{{"name":"External Fanout Studio"}},
+            "hiringOrganization":{{"name":"External Fanout Games"}},
             "jobLocation":{{"address":{{"addressLocality":"Remote","addressCountry":"US"}}}},
             "url":"{url}"}}
             </script></head><body></body></html>
@@ -225,10 +225,10 @@ def test_run_static_studio_pages_source_zero_yield_listing_falls_through_to_need
 
 def test_run_static_studio_pages_source_keeps_post_listing_detail_tail() -> None:
     source_row = {
-        "name": "Post Listing Tail Studio",
-        "studio": "Post Listing Tail Studio",
+        "name": "Post Listing Tail Games",
+        "studio": "Post Listing Tail Games",
         "adapter": "static",
-        "company": "Post Listing Tail Studio",
+        "company": "Post Listing Tail Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -236,7 +236,7 @@ def test_run_static_studio_pages_source_keeps_post_listing_detail_tail() -> None
         <html>
           <head><script type="application/ld+json">
           {"@context":"https://schema.org","@type":"JobPosting","title":"Listed Role",
-          "hiringOrganization":{"name":"Post Listing Tail Studio"},
+          "hiringOrganization":{"name":"Post Listing Tail Games"},
           "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
           "url":"https://example.net/jobs/listed-role"}
           </script></head>
@@ -321,10 +321,10 @@ def test_run_static_studio_pages_source_records_listing_browser_fallback_termina
 
 def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress() -> None:
     source_row = {
-        "name": "Listing Progress Studio",
-        "studio": "Listing Progress Studio",
+        "name": "Listing Progress Games",
+        "studio": "Listing Progress Games",
         "adapter": "static",
-        "company": "Listing Progress Studio",
+        "company": "Listing Progress Games",
         "pages": [
             "https://example.net/jobs/page-a",
             "https://example.net/jobs/page-b",
@@ -336,7 +336,7 @@ def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress
         "https://example.net/jobs/page-a": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role A",
-            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "hiringOrganization":{"name":"Listing Progress Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-a"}
             </script></head><body></body></html>
@@ -344,7 +344,7 @@ def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress
         "https://example.net/jobs/page-b": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role B",
-            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "hiringOrganization":{"name":"Listing Progress Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-b"}
             </script></head><body></body></html>
@@ -352,7 +352,7 @@ def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress
         "https://example.net/jobs/page-c": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role C",
-            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "hiringOrganization":{"name":"Listing Progress Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-c"}
             </script></head><body></body></html>

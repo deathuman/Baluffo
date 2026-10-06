@@ -184,10 +184,10 @@ def test_run_static_studio_pages_source_emits_incremental_detail_batch_progress(
 def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     source = {
-        "name": "Tail Test Studio",
-        "studio": "Tail Test Studio",
+        "name": "Tail Test Games",
+        "studio": "Tail Test Games",
         "adapter": "static",
-        "company": "Tail Test Studio",
+        "company": "Tail Test Games",
         "pages": ["https://example.net/careers"],
         "enabledByDefault": True,
     }
@@ -203,7 +203,7 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
     detail_html = "<html><body><h1>Role</h1></body></html>"
     detail_calls = {"count": 0}
     tail_state = {
-        "Tail Test Studio": {
+        "Tail Test Games": {
             "lastDetailPagesVisited": 42,
             "lastKeptCount": 1,
             "lastDurationMs": 145137,
@@ -228,10 +228,10 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
             retries=0,
             backoff_s=0,
             sources=[source],
-            diagnostics_name="Tail Test Studio",
+            diagnostics_name="Tail Test Games",
             source_state_rows=source_state_rows,
         )
-        diag = (jf.SOURCE_DIAGNOSTICS.get("Tail Test Studio") or {}).get("details") or []
+        diag = (jf.SOURCE_DIAGNOSTICS.get("Tail Test Games") or {}).get("details") or []
         stats = (diag[0] if diag else {}).get("stats") or {}
         return int(stats.get("detail_pages_visited") or 0), len(rows)
 
@@ -252,18 +252,18 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
-            "name": "Force Refresh Studio",
-            "studio": "Force Refresh Studio",
+            "name": "Force Refresh Games",
+            "studio": "Force Refresh Games",
             "adapter": "static",
-            "company": "Force Refresh Studio",
+            "company": "Force Refresh Games",
             "pages": ["https://target.example/careers"],
             "enabledByDefault": True,
         },
         {
-            "name": "Control Studio",
-            "studio": "Control Studio",
+            "name": "Control Games",
+            "studio": "Control Games",
             "adapter": "static",
-            "company": "Control Studio",
+            "company": "Control Games",
             "pages": ["https://control.example/careers"],
             "enabledByDefault": True,
         },
@@ -275,14 +275,14 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
         "<html><head>"
         '<script type="application/ld+json">'
         '{"@context":"https://schema.org","@type":"JobPosting","title":"Control Role",'
-        '"hiringOrganization":{"name":"Control Studio"},'
+        '"hiringOrganization":{"name":"Control Games"},'
         '"jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},'
         '"url":"https://control.example/job/control-role"}'
         "</script>"
         "</head><body></body></html>"
     )
     target_fingerprint = hashlib.sha1(target_listing.encode("utf-8")).hexdigest()
-    source_state_rows = {"Force Refresh Studio": {"lastListingFingerprint": target_fingerprint}}
+    source_state_rows = {"Force Refresh Games": {"lastListingFingerprint": target_fingerprint}}
     detail_calls = {"count": 0}
 
     def fake_fetch(url: str, _: int) -> str:
@@ -299,9 +299,9 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
         return {
             "rows": [
                 {
-                    "sourceJobId": "static:Force Refresh Studio:target",
+                    "sourceJobId": "static:Force Refresh Games:target",
                     "title": "Software Engineer",
-                    "company": "Force Refresh Studio",
+                    "company": "Force Refresh Games",
                     "city": "",
                     "country": "Unknown",
                     "workType": "",
@@ -310,7 +310,7 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
                     "sector": "Game",
                     "postedAt": "",
                     "adapter": "static",
-                    "studio": "Force Refresh Studio",
+                    "studio": "Force Refresh Games",
                 }
             ],
             "parseEmpty": False,
@@ -366,10 +366,10 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
     # Use example.net so the generic listing-only fallback runs (no static plugin)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
-            "name": "Parallel Static Studio",
-            "studio": "Parallel Static Studio",
+            "name": "Parallel Static Games",
+            "studio": "Parallel Static Games",
             "adapter": "static",
-            "company": "Parallel Static Studio",
+            "company": "Parallel Static Games",
             "pages": ["https://example.net/careers"],
             "enabledByDefault": True,
         }
@@ -421,10 +421,10 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
-            "name": "Budget Studio",
-            "studio": "Budget Studio",
+            "name": "Budget Games",
+            "studio": "Budget Games",
             "adapter": "static",
-            "company": "Budget Studio",
+            "company": "Budget Games",
             "pages": ["https://example.net/careers"],
             "enabledByDefault": True,
         }
@@ -479,10 +479,10 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
 
 def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
     source_row = {
-        "name": "Parallel Listing Studio",
-        "studio": "Parallel Listing Studio",
+        "name": "Parallel Listing Games",
+        "studio": "Parallel Listing Games",
         "adapter": "static",
-        "company": "Parallel Listing Studio",
+        "company": "Parallel Listing Games",
         "pages": [
             "https://example.net/jobs/page-a",
             "https://example.net/jobs/page-b",
@@ -494,7 +494,7 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
         "https://example.net/jobs/page-a": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role A",
-            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "hiringOrganization":{"name":"Parallel Listing Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-a"}
             </script></head><body></body></html>
@@ -502,7 +502,7 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
         "https://example.net/jobs/page-b": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role B",
-            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "hiringOrganization":{"name":"Parallel Listing Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-b"}
             </script></head><body></body></html>
@@ -510,7 +510,7 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
         "https://example.net/jobs/page-c": """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Role C",
-            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "hiringOrganization":{"name":"Parallel Listing Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/role-c"}
             </script></head><body></body></html>
@@ -540,10 +540,10 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
 
 def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided() -> None:
     source_row = {
-        "name": "Async Listing Studio",
-        "studio": "Async Listing Studio",
+        "name": "Async Listing Games",
+        "studio": "Async Listing Games",
         "adapter": "static",
-        "company": "Async Listing Studio",
+        "company": "Async Listing Games",
         "pages": ["https://example.net/jobs"],
         "enabledByDefault": True,
     }
@@ -556,7 +556,7 @@ def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided()
         return """
             <html><head><script type="application/ld+json">
             {"@context":"https://schema.org","@type":"JobPosting","title":"Async Role",
-            "hiringOrganization":{"name":"Async Listing Studio"},
+            "hiringOrganization":{"name":"Async Listing Games"},
             "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
             "url":"https://example.net/jobs/async-role"}
             </script></head><body></body></html>

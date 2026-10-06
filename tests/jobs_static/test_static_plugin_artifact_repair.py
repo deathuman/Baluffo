@@ -21,7 +21,7 @@ def test_rendered_card_plugin_repairs_exact_category_rows_from_details() -> None
           {{
             "@context": "https://schema.org",
             "@type": "JobPosting",
-            "title": "Intermediate QA Tester",
+            "title": "Intermediate QA Analyst",
             "description": "QA role",
             "hiringOrganization": {{"name": "Bohemia Interactive"}},
             "url": "{detail_url}"
@@ -55,5 +55,5 @@ def test_rendered_card_plugin_repairs_exact_category_rows_from_details() -> None
         force_refresh_all=True,
     )
 
-    assert [row["title"] for row in rows] == ["Intermediate QA Tester"]
+    assert [row["title"] for row in rows] == ["Intermediate QA Analyst"]
     assert [row["jobLink"] for row in rows] == [detail_url]

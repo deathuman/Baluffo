@@ -35,6 +35,7 @@ from src.jobs.adapters.plugins.provider_api.source_errors import (
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -254,7 +255,7 @@ def _collect_bamboohr_api_rows(
             listing_url=listing_url,
             fallback_company=fallback_company,
         )
-        if row is not None:
+        if row is not None and looks_like_game_job(row.get("title"), row.get("company")):
             rows.append(row)
     return rows
 
@@ -397,6 +398,40 @@ def _workday_api_job_row(
     }
 
 
+def _workday_page_new_rows(
+    postings: list[Any],
+    *,
+    site_base_url: str,
+    studio: str,
+    seen_external_paths: set[str],
+) -> tuple[list[dict[str, Any]], int]:
+    """New postings on one CXS page: the rows kept by the game filter, identities seen.
+
+    Workday repeats a posting across pages when facets shift under the offset, so
+    identity is the posting's own external path, not its position. A page whose rows
+    were all filtered still counts its new identities, so the paging loop does not stop
+    early on a page of back-office roles.
+    """
+    rows: list[dict[str, Any]] = []
+    new_identities = 0
+    for posting in postings:
+        if not isinstance(posting, dict):
+            continue
+        row = _workday_api_job_row(
+            posting,
+            site_base_url=site_base_url,
+            fallback_company=studio,
+        )
+        identity = str(row.get("sourceJobId") or row.get("url") or "") if row else ""
+        if not row or not identity or identity in seen_external_paths:
+            continue
+        seen_external_paths.add(identity)
+        new_identities += 1
+        if looks_like_game_job(row.get("title"), row.get("company")):
+            rows.append(row)
+    return rows, new_identities
+
+
 def _collect_workday_api_rows(
     *,
     listing_url: str,
@@ -429,28 +464,21 @@ def _collect_workday_api_rows(
         postings = page.get("jobPostings")
         if not isinstance(postings, list) or not postings:
             break
-        new_rows = 0
-        for posting in postings:
-            if not isinstance(posting, dict):
-                continue
-            row = _workday_api_job_row(
-                posting,
-                site_base_url=site_base_url,
-                fallback_company=studio,
-            )
-            # Workday repeats a posting across pages when facets shift under the
-            # offset, so identity is the posting's own external path, not its position.
-            identity = str(row.get("sourceJobId") or row.get("url") or "") if row else ""
-            if row and identity not in seen_external_paths:
-                seen_external_paths.add(identity)
-                rows.append(row)
-                new_rows += 1
+        page_rows, new_identities = _workday_page_new_rows(
+            postings,
+            site_base_url=site_base_url,
+            studio=studio,
+            seen_external_paths=seen_external_paths,
+        )
+        rows.extend(page_rows)
         offset += _WORKDAY_PAGE_LIMIT
         reported_total = page.get("total")
         if isinstance(reported_total, int) and reported_total > 0:
             total = reported_total
         # A short page means the board is exhausted, whatever it claims its total is.
-        if len(postings) < _WORKDAY_PAGE_LIMIT or new_rows == 0:
+        # "No new identities" (not "nothing kept") is the repeat tell: a page whose
+        # rows were all filtered still proves the board has more pages.
+        if len(postings) < _WORKDAY_PAGE_LIMIT or new_identities == 0:
             break
         if total is not None and offset >= total:
             break

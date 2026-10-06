@@ -59,7 +59,7 @@ def _scripted(monkeypatch: Any, pages: list[dict[str, Any]]) -> dict[str, int]:
 
 def _collect() -> list[dict[str, Any]]:
     return runner._collect_workday_api_rows(
-        listing_url=_LISTING, studio="Example", timeout_s=5, retries=0, backoff_s=0.0
+        listing_url=_LISTING, studio="Example Games", timeout_s=5, retries=0, backoff_s=0.0
     )
 
 

@@ -205,7 +205,7 @@ def test_parse_greenhouse_jobs_payload_falls_back_to_description_location() -> N
         "jobs": [
             {
                 "id": 12345,
-                "title": "Senior Quest Designer - Varsapura",
+                "title": "Senior Level Designer - Varsapura",
                 "company_name": "HoYoverse",
                 "absolute_url": "https://boards.greenhouse.io/hoyoverse/jobs/12345",
                 "location": {"name": ""},
@@ -360,7 +360,9 @@ def test_parse_jazzhr_jobs_html_fixture() -> None:
         "https://lostboysinteractive.applytojob.com/apply",
         "Lost Boys Interactive",
     )
-    assert len(rows) == 2
+    # The fixture's first anchor is a "General Application" placeholder: not a job,
+    # so the row filter drops it and only the real role is kept.
+    assert len(rows) == 1
     assert all(row["company"] == "Lost Boys Interactive" for row in rows)
     assert any(row["contractType"] == "Full Time" for row in rows)
 

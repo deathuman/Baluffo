@@ -18,6 +18,7 @@ from src.jobs.adapters.html_parsers import (
     iter_anchor_fragments,
     strip_html_text,
 )
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -104,12 +105,15 @@ def _structured_listing_job(
     title = _structured_anchor_title(anchor, parsed_path)
     if not title:
         return None
+    company = clean_text(fallback_company) or "Unknown"
+    if not looks_like_game_job(title, company):
+        return None
     location, work_type = _structured_location_and_work_type(lines)
     location_details = normalize_location_details(location)
     return {
         "sourceJobId": f"{source_prefix}:{hashlib.sha1(absolute.encode('utf-8')).hexdigest()[:10]}",
         "title": title,
-        "company": clean_text(fallback_company) or "Unknown",
+        "company": company,
         "city": clean_text(location_details.get("city")) or location,
         "country": clean_text(location_details.get("country")) or "Unknown",
         "workType": work_type,

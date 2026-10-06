@@ -342,6 +342,8 @@ def parse_gamejobs_html(
         company = clean_text(company_match.group("company"))
         if not company:
             continue
+        if not looks_like_game_job(title, company):
+            continue
         location_match = _GAMEJOBS_LOCATION_PATTERN.search(match.group("rest"))
         location = clean_text(location_match.group("location")) if location_match else ""
         seen_links.add(link)
@@ -390,6 +392,8 @@ def parse_workwithindies_html(
         title = _strip_html(title_match.group(1)) if title_match else ""
         if not company or not title:
             continue
+        if not looks_like_game_job(title, company):
+            continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
         jobs.append(
@@ -437,6 +441,8 @@ def parse_8bitplay_html(
         location = _props_to_location(props_match.group(1) if props_match else "")
         if not link or link in seen_links or not title or not company:
             continue
+        if not looks_like_game_job(title, company):
+            continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
         jobs.append(
@@ -476,6 +482,8 @@ def parse_gracklehq_html(
         company = clean_text(company)
         location = clean_text(location)
         if not company:
+            continue
+        if not looks_like_game_job(title, company):
             continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)

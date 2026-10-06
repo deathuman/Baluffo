@@ -35,11 +35,11 @@ def test_parse_gamejobs_html_ignores_search_directory_and_facet_artifacts() -> N
           <div><a href="/search?c=Apple" class="c">Apple 50</a> · <a href="/search?c=Wargaming" class="c">Wargaming 51</a> · <a href="/search?w=Remote" class="w">Remote</a></div>
           <a href="/search?t=Design" class="c">Design 510</a> · <a href="/search?e=Graduate" class="c">Graduate 17</a>
           <a href="/search?page=2">Next</a>
-          <div class="job"><a class="title" href="/lead-producer-at-real-studio">Lead Producer</a><div><a href="/search?c=Real&#43;Studio" class="c">Real Studio</a> · <a href="/search?w=Remote" class="w">Remote</a></div></div>
+          <div class="job"><a class="title" href="/lead-producer-at-real-studio">Lead Game Designer</a><div><a href="/search?c=Real&#43;Studio" class="c">Real Studio</a> · <a href="/search?w=Remote" class="w">Remote</a></div></div>
         </body></html>
         """
     rows = jf.parse_gamejobs_html(html, base_url="https://gamejobs.co/")
-    assert [row["title"] for row in rows] == ["Lead Producer"]
+    assert [row["title"] for row in rows] == ["Lead Game Designer"]
     assert [row["company"] for row in rows] == ["Real Studio"]
     assert rows[0]["jobLink"] == "https://gamejobs.co/lead-producer-at-real-studio"
 
@@ -69,8 +69,8 @@ def test_run_gamejobs_source_paginates_search_pages() -> None:
         </body></html>
         """.format(
         _gamejobs_card(
-            "Economy Designer",
-            "/jobs/economy-designer",
+            "Systems Designer",
+            "/jobs/systems-designer",
             "Rainfall Interactive",
             "London, United Kingdom",
         ),
@@ -90,7 +90,7 @@ def test_run_gamejobs_source_paginates_search_pages() -> None:
 
     rows = jf.run_gamejobs_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
     assert len(rows) == 3
-    assert any(row["title"] == "Economy Designer" for row in rows)
+    assert any(row["title"] == "Systems Designer" for row in rows)
     assert seen_urls[:3] == [
         "https://gamejobs.co/",
         "https://gamejobs.co/search?page=2",
@@ -115,7 +115,7 @@ def test_run_gamejobs_source_skips_nav_only_page_and_still_paginates() -> None:
         if url == "https://gamejobs.co/search?page=2":
             return '<html><body>{}<a href="/search?page=3">Next</a></body></html>'.format(
                 _gamejobs_card(
-                    "Lead Producer", "/lead-producer-at-real-studio", "Real Studio", "Remote"
+                    "Lead Game Designer", "/lead-producer-at-real-studio", "Real Studio", "Remote"
                 )
             )
         if url == "https://gamejobs.co/search?page=3":
@@ -123,7 +123,7 @@ def test_run_gamejobs_source_skips_nav_only_page_and_still_paginates() -> None:
         raise AssertionError(f"unexpected url {url}")
 
     rows = jf.run_gamejobs_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
-    assert [row["title"] for row in rows] == ["Lead Producer"]
+    assert [row["title"] for row in rows] == ["Lead Game Designer"]
     assert seen_urls[:2] == ["https://gamejobs.co/", "https://gamejobs.co/search?page=2"]
 
 
@@ -157,7 +157,7 @@ def test_run_8bitplay_source_paginates_job_board_pages() -> None:
               <div class="acf-job-board__logo"><p class="acf-job-board__img-text">Nebula Forge</p></div>
               <h2 class="acf-job-board__props"><span>PC/Console</span><span>Europe</span></h2>
             </div>
-            <h3 class="post__similar-job-title acf-jtw__title">Rendering Engineer</h3>
+            <h3 class="post__similar-job-title acf-jtw__title">Graphics Programmer</h3>
           </a>
         </body></html>
         """
@@ -176,7 +176,7 @@ def test_run_8bitplay_source_paginates_job_board_pages() -> None:
 
     rows = jf.run_8bitplay_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
     assert len(rows) == 3
-    assert any(row["title"] == "Rendering Engineer" for row in rows)
+    assert any(row["title"] == "Graphics Programmer" for row in rows)
     assert seen_urls[:3] == [
         "https://8bitplay.com/jobs/",
         "https://8bitplay.com/jobs/?job-board-paged=2",

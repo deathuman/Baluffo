@@ -233,6 +233,17 @@ def build_registration_row(candidate: Mapping[str, Any]) -> dict[str, Any]:
     for field in ("decision", "missingCount", "sampleTitles", "status", "companies"):
         row.pop(field, None)
 
+    if str(row.get("adapter") or "") == "workable" and not row.get("api_url"):
+        # A Workable row carrying only ``account`` has no endpoint the probe or the
+        # runtime can read: ``endpoint_url`` looks at api_url/feed_url/board_url/
+        # listing_url, so account-only rows probe as "missing adapter or URL" and none
+        # register. This is the runtime's own JsonFeedSpec url_template.
+        account = str(row.get("account") or "")
+        if account:
+            row["api_url"] = (
+                f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true"
+            )
+
     board_id = str(candidate.get("_id") or candidate.get("id") or "").strip()
     if board_id:
         row["id"] = board_id
@@ -337,7 +348,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     register_rows = [{**r, "_id": r["id"]} for r in buckets["register"]]
     print(render(buckets, limit=args.show))
 
-    proposed = build_rows(register_rows)
+    # Preview exactly what `--apply` will prepare and validate: the same builder, so the
+    # operator reviews the stamped registration rather than a candidate-shaped shadow of
+    # it (that drift is how the first 0.3.011 run previewed rows it never wrote that way).
+    proposed = [build_registration_row(row) for row in register_rows]
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(

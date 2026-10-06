@@ -138,6 +138,54 @@ def test_bamboohr_tenants_are_separate_too() -> None:
     assert _match(candidate("acmegames"), index, family="bamboohr") == ""
 
 
+def test_path_tenant_platforms_get_their_own_queue_families() -> None:
+    """Every greenhouse board shared one family, so `domain_cap` deferred all but a few.
+
+    Measured 2026-10-05: all 43 deferred greenhouse candidates carried
+    `deferReason: domain_cap`. The platform map was missing greenhouse and the other
+    path-tenant platforms, so `queue_family_key` fell to `adapter:root_domain` and every
+    studio's board on the platform became one family. The tenant on these platforms is
+    the path slug.
+    """
+    rows = [
+        {
+            "adapter": "greenhouse",
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/studio-a/jobs",
+        },
+        {
+            "adapter": "greenhouse",
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/studio-b/jobs",
+        },
+        {
+            "adapter": "ashby",
+            "api_url": "https://api.ashbyhq.com/posting-api/job-board/studio-c",
+        },
+        {"adapter": "lever", "listing_url": "https://jobs.lever.co/studio-d"},
+        {"adapter": "workable", "listing_url": "https://apply.workable.com/studio-e"},
+        {
+            "adapter": "smartrecruiters",
+            "listing_url": "https://jobs.smartrecruiters.com/StudioF",
+        },
+    ]
+    keys = [queue_family_key(row) for row in rows]
+    assert len(set(keys)) == len(rows), keys
+
+
+def test_subdomain_tenant_platforms_get_their_own_queue_families() -> None:
+    """Same rule, host-label tenancy: one shared root domain must not collapse boards."""
+    rows = [
+        {"adapter": "teamtailor", "listing_url": "https://awaceb.teamtailor.com/"},
+        {"adapter": "teamtailor", "listing_url": "https://axolotgamesab.teamtailor.com/"},
+        {"adapter": "breezy", "listing_url": "https://flowplay-llc.breezy.hr/"},
+        {"adapter": "recruitee", "listing_url": "https://11bitstudios.recruitee.com/"},
+        {"adapter": "jazzhr", "listing_url": "https://gamedistrict.applytojob.com/apply"},
+        {"adapter": "personio", "listing_url": "https://aesir.jobs.personio.com/"},
+        {"adapter": "pinpoint", "listing_url": "https://gameplaygalaxy.pinpointhq.com/"},
+    ]
+    keys = [queue_family_key(row) for row in rows]
+    assert len(set(keys)) == len(rows), keys
+
+
 # --- the invariant, stated directly -----------------------------------------
 
 
@@ -159,6 +207,13 @@ def test_platform_family_comes_from_the_host_not_the_declared_adapter() -> None:
     assert multi_tenant_provider(f"nvidia.wd5.{WORKDAY}") == "workday"
     assert multi_tenant_provider(f"prismstudio.{BAMBOOHR}") == "bamboohr"
     assert multi_tenant_provider("careers.ea.com") == ""
+    # The path-tenant and subdomain-tenant platforms belong to the same rule: without
+    # them every board on the platform shared one queue family (43 greenhouse
+    # candidates deferred by `domain_cap`).
+    assert multi_tenant_provider("boards-api.greenhouse.io") == "greenhouse"
+    assert multi_tenant_provider("jobs.lever.co") == "lever"
+    assert multi_tenant_provider("awaceb.teamtailor.com") == "teamtailor"
+    assert multi_tenant_provider("gamedistrict.applytojob.com") == "jazzhr"
     # Same host, either declared adapter: still the same platform.
     assert multi_tenant_provider(f"nvidia.wd5.{WORKDAY}") == multi_tenant_provider(
         f"nvidia.wd5.{WORKDAY}"

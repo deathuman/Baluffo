@@ -54,6 +54,7 @@ from src.jobs.adapters.plugins.provider_api.source_errors import (
     reraise_unexpected_provider_api_source_exception,
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
@@ -330,6 +331,25 @@ def _mark_empty_dayforce_payload(entry_report: dict[str, object], fetched_count:
     entry_report["zeroKeptClassification"] = "legit_empty"
 
 
+def _dayforce_game_row(
+    posting: dict[str, Any],
+    *,
+    client_namespace: str,
+    culture_code: str,
+    studio: str,
+) -> dict[str, Any] | None:
+    """The normalized row, kept only when the game row filter would keep it."""
+    row = dayforce_api_job_row(
+        posting,
+        client_namespace=client_namespace,
+        culture_code=culture_code,
+        fallback_company=studio,
+    )
+    if row is None or not looks_like_game_job(row.get("title"), row.get("company")):
+        return None
+    return row
+
+
 def _run_dayforce_registry_source(
     source: dict[str, object],
     *,
@@ -389,11 +409,11 @@ def _run_dayforce_registry_source(
             for posting in postings:
                 if not isinstance(posting, dict):
                     continue
-                row = dayforce_api_job_row(
+                row = _dayforce_game_row(
                     posting,
                     client_namespace=client_namespace,
                     culture_code=culture_code,
-                    fallback_company=studio,
+                    studio=studio,
                 )
                 if row is None:
                     continue

@@ -9,7 +9,7 @@ def test_parse_breezy_jobs_html_handles_root_relative_nested_position_links() ->
             <ul class="position-wrap">
               <li class="position-details">
                 <a href="/p/83122cb1eac0-client-engineering-manager" title="Apply">
-                  <h2>Client Engineering Manager</h2>
+                  <h2>Game Client Engineering Manager</h2>
                   <ul class="meta">
                     <li class="location"><i></i><span>Seattle, US</span></li>
                     <li class="type"><i></i><span class="polygot">%LABEL_POSITION_TYPE_FULL_TIME%</span></li>
@@ -26,7 +26,7 @@ def test_parse_breezy_jobs_html_handles_root_relative_nested_position_links() ->
     )
 
     assert len(rows) == 1
-    assert rows[0]["title"] == "Client Engineering Manager"
+    assert rows[0]["title"] == "Game Client Engineering Manager"
     assert rows[0]["company"] == "Flowplay"
     assert rows[0]["jobLink"] == (
         "https://flowplay-llc.breezy.hr/p/83122cb1eac0-client-engineering-manager"

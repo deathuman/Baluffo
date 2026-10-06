@@ -206,7 +206,7 @@ def test_run_static_studio_pages_source_littlechicken_plugin_extracts_listing_ca
     listing_html = """
         <article><h2>3D Artist Internship</h2><a href="/job/3d-artist-internship/">Read more</a></article>
         <article><h2>2D Artist Internship</h2><a href="/job/2d-artist-internship/">Read more</a></article>
-        <article><h2>QA Tester Internship</h2><a href="/job/qa-tester-internship/">Read more</a></article>
+        <article><h2>QA Analyst Internship</h2><a href="/job/qa-analyst-internship/">Read more</a></article>
         """
     detail_html = """
         <script type="application/ld+json">
@@ -232,7 +232,7 @@ def test_run_static_studio_pages_source_littlechicken_plugin_extracts_listing_ca
         titles = {str(row.get("title") or "") for row in rows}
         assert "3D Artist Internship" in titles
         assert "2D Artist Internship" in titles
-        assert "Qa Tester Internship" in titles
+        assert "Qa Analyst Internship" in titles
         assert len(rows) == 3
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
@@ -254,7 +254,7 @@ def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
     listing_html = """
         <table>
           <tr class="job-listing-item"><td><a href="/en/game-programmer">Game Programmer</a></td></tr>
-          <tr class="job-listing-item"><td><a href="/en/ai-programmer">AI Programmer</a></td></tr>
+          <tr class="job-listing-item"><td><a href="/en/ai-programmer">Engine Programmer</a></td></tr>
         </table>
         """
 
@@ -277,7 +277,7 @@ def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
         )
         titles = {str(row.get("title") or "") for row in rows}
         assert "Game Programmer" in titles
-        assert "AI Programmer" in titles
+        assert "Engine Programmer" in titles
         assert len(rows) == 2
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
@@ -318,9 +318,14 @@ def test_run_static_studio_pages_source_milestone_plugin_extracts_intervieweb_if
             fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
         )
         titles = {str(row.get("title") or "") for row in rows}
-        assert "Game Designer_tech" in titles
-        assert "JUNIOR IT SERVICE DESK" in titles
-        assert len(rows) == 2
+        # The iframe lists a game role and an IT role; the game row filter at the
+        # static boundary keeps the game role and drops the back-office one.
+        assert titles == {"Game Designer_tech"}
+        assert len(rows) == 1
+        detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[
+            0
+        ]
+        assert int((detail.get("stats") or {}).get("non_game_rows_dropped") or 0) == 1
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -347,9 +352,9 @@ def test_run_static_studio_pages_source_nacon_plugin_extracts_listing_cards() ->
           <a href="/careers/gameplay-designer/">Learn more</a>
         </article>
         <article>
-          <h4>AI Programmer</h4>
-          <p>We are looking for an experienced AI Programmer.</p>
-          <a href="/careers/ai-programmer/">Learn more</a>
+          <h4>Graphics Programmer</h4>
+          <p>We are looking for an experienced Graphics Programmer.</p>
+          <a href="/careers/graphics-programmer/">Learn more</a>
         </article>
         """
     rows = jf.run_static_studio_pages_source(
@@ -360,7 +365,7 @@ def test_run_static_studio_pages_source_nacon_plugin_extracts_listing_cards() ->
         sources=source_rows,
     )
     titles = {str(row.get("title") or "") for row in rows}
-    assert titles == {"Gameplay Designer", "AI Programmer"}
+    assert titles == {"Gameplay Designer", "Graphics Programmer"}
 
 
 def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallback() -> None:
@@ -368,10 +373,10 @@ def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallbac
         <html>
           <body>
             <article class="job-card">
-              <h3>Business Development Manager</h3>
+              <h3>Game Designer</h3>
               <div>Helsinki Metropolitan Area</div>
               <div>Permanent</div>
-              <a href="/open-positions/business-development-manager">Learn More</a>
+              <a href="/open-positions/game-designer">Learn More</a>
             </article>
           </body>
         </html>
@@ -393,8 +398,8 @@ def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallbac
         ],
     )
     assert len(rows) == 1
-    assert rows[0]["title"] == "Business Development Manager"
-    assert rows[0]["jobLink"] == "https://www.rovio.com/open-positions/business-development-manager"
+    assert rows[0]["title"] == "Game Designer"
+    assert rows[0]["jobLink"] == "https://www.rovio.com/open-positions/game-designer"
     detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
     assert int(detail.get("keptCount") or 0) == 1
     assert str(detail.get("failureBucket") or "") != "js_required"

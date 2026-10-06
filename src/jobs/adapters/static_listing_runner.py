@@ -67,7 +67,7 @@ from src.shared.json_shapes import as_json_object as _as_dict
 from src.shared.utils import now_iso
 
 from ..common import config as common_config
-from .static_runtime import StaticSourceContext
+from .static_runtime import StaticSourceContext, drop_non_game_rows
 
 # S6 (Big Moxi 2026-09-12): rendered-empty confirmation bounds. A Playwright
 # render of a JS-shell listing that surfaced at most this many visible-text
@@ -150,6 +150,7 @@ class StaticFetchRunner:
             ):
                 break
             self._run_listing_batch(listing_batch_jobs)
+        drop_non_game_rows(self.ctx)
         _finish_generic_source(self.ctx, self.stage_state)
 
     # pure helper

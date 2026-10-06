@@ -233,7 +233,7 @@ def test_run_static_studio_pages_source_repairs_generic_container_row_from_detai
     detail_html = """
         <html><body>
           <script type="application/ld+json">
-          {"@context":"https://schema.org","@type":"JobPosting","title":"Creative Producer","url":"https://example.net/careers/creative","hiringOrganization":{"name":"Example Studio"}}
+          {"@context":"https://schema.org","@type":"JobPosting","title":"Creative Producer","url":"https://example.net/careers/creative","hiringOrganization":{"name":"Example Games Studio"}}
           </script>
         </body></html>
         """
@@ -385,8 +385,8 @@ def test_run_static_studio_pages_source_keeps_real_roles_with_container_words() 
 def _source(name: str, listing_url: str) -> dict[str, object]:
     return {
         "name": name,
-        "studio": "Example Studio",
-        "company": "Example Studio",
+        "studio": "Example Games Studio",
+        "company": "Example Games Studio",
         "adapter": "static",
         "pages": [listing_url],
         "id": f"static:listing_url:{listing_url}",
@@ -397,7 +397,7 @@ def _static_row(title: str, url: str) -> dict[str, object]:
     return {
         "sourceJobId": f"static:example:{title.lower()}",
         "title": title,
-        "company": "Example Studio",
+        "company": "Example Games Studio",
         "city": "",
         "country": "Unknown",
         "locations": [],

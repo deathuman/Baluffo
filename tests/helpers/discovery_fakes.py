@@ -18,7 +18,7 @@ def seeds() -> list[dict[str, Any]]:
 
 
 def assert_gamesindustry(rows: list[dict[str, Any]]) -> None:
-    assert rows[0]["title"] == "Senior Quality Analyst"
+    assert rows[0]["title"] == "Senior QA Analyst"
     assert rows[0]["company"] == "Sharkmob"
     assert rows[0]["sourceJobId"] == "43821"
     assert rows[0]["jobLink"].startswith("https://jobs.gamesindustry.biz/job/")

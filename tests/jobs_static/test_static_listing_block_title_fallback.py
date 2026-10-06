@@ -92,7 +92,7 @@ def test_fallback_recovers_heading_only_listing() -> None:
     <h2>Open Positions</h2>
     <h3>Senior Game Designer</h3>
     <h3>3D Artist</h3>
-    <h3>Technical Programmer</h3>
+    <h3>Graphics Programmer</h3>
     </body></html>
     """
 
@@ -110,12 +110,12 @@ def test_fallback_recovers_heading_only_listing() -> None:
     assert [r["title"] for r in rows] == [
         "Senior Game Designer",
         "3D Artist",
-        "Technical Programmer",
+        "Graphics Programmer",
     ]
     assert [r["jobLink"] for r in rows] == [
         "https://example.net/careers?static-role=senior-game-designer",
         "https://example.net/careers?static-role=3d-artist",
-        "https://example.net/careers?static-role=technical-programmer",
+        "https://example.net/careers?static-role=graphics-programmer",
     ]
     assert len({r["sourceJobId"] for r in rows}) == 3
     assert all(r["adapter"] == "static" for r in rows)

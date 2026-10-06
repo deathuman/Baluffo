@@ -232,6 +232,8 @@ def parse_greenhouse_jobs_payload(
         if not title or not job_link:
             continue
         company = clean_text(row.get("company_name")) or company_fallback
+        if not looks_like_game_job(title, company):
+            continue
         location_obj = row.get("location")
         location_name = (
             clean_text(location_obj.get("name"))
@@ -478,7 +480,7 @@ def parse_epic_games_jobs_payload(
         if not isinstance(row, dict):
             continue
         job = _epic_games_job_row(row, company)
-        if job:
+        if job and looks_like_game_job(job.get("title"), job.get("company")):
             jobs.append(job)
     return jobs
 

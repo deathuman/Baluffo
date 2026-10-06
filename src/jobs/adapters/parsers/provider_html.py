@@ -17,6 +17,7 @@ from src.jobs.adapters.html_parsers import (
     iter_anchor_fragments,
     strip_html_text,
 )
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 from src.shared.json_shapes import (
@@ -58,6 +59,10 @@ def _ashby_structured_job(
     posting_id = clean_text(posting.get("id"))
     title = clean_text(posting.get("title"))
     if not posting_id or not title:
+        return None
+    if not looks_like_game_job(title, company):
+        # The row filter every JSON-feed parser applies: an HTML-board provider
+        # serves the studio's whole board, and back-office roles are not the feed.
         return None
     location_parts = [clean_text(posting.get("locationName"))]
     location_parts.extend(
@@ -120,11 +125,14 @@ def _ashby_link_job(link: str, anchor_text: str, fallback_company: str) -> RawJo
     title = clean_text(anchor_text) or strip_html_text(re.sub(r"[-_]+", " ", slug)).title()
     if not title:
         return None
+    company = clean_text(fallback_company) or "Unknown"
+    if not looks_like_game_job(title, company):
+        return None
     location_details = normalize_location_details("")
     return {
         "sourceJobId": f"ashby:{ashby_jid or hashlib.sha256(link.encode('utf-8')).hexdigest()[:10]}",
         "title": title,
-        "company": clean_text(fallback_company) or "Unknown",
+        "company": company,
         "city": "",
         "country": "Unknown",
         "workType": "",
@@ -216,6 +224,8 @@ def parse_breezy_jobs_html(
         title = _breezy_anchor_title(anchor)
         if not title:
             continue
+        if not looks_like_game_job(title, company):
+            continue
         context_window = _breezy_anchor_context(html_text, href, body_html)
         context_text = _breezy_template_text(context_window)
         city, country, work_type = _breezy_location_fields(
@@ -259,6 +269,8 @@ def parse_jazzhr_jobs_html(
         title = clean_text(strip_html_text(match.group("label")))
         title = title.replace("View All Jobs", "").strip()
         if not title:
+            continue
+        if not looks_like_game_job(title, company):
             continue
         context_window = html_text[match.end() : match.end() + 500]
         context_text = clean_text(strip_html_text(context_window))
