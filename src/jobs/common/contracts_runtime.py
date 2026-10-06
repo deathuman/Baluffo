@@ -290,6 +290,20 @@ def normalize_runtime_payload(
             "servedEmpty": _clamped_int(
                 as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmpty"), 0, 0
             ),
+            # The empty-served split: a browser that could not launch is an environment
+            # failure and trips the cooldown, while a page that rendered with nothing in it is
+            # a fact about the board. One bucket for both is why the refused population could
+            # not be read at all.
+            "servedEmptyEnvironment": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get(
+                    "servedEmptyEnvironment"
+                ),
+                0,
+                0,
+            ),
+            "servedEmptyPage": _clamped_int(
+                as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmptyPage"), 0, 0
+            ),
         },
         "registryAssetPageAudit": _normalize_registry_asset_page_audit(
             src.get("registryAssetPageAudit")

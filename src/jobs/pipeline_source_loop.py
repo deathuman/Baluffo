@@ -20,6 +20,7 @@ from src.jobs import pipeline_root
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.models import CanonicalJob
+from src.jobs.text_utils import clean_text
 from src.shared.profile_utils import run_profiled, run_profiled_alloc
 
 from .pipeline_runtime_summary import PipelineTaskRuntime
@@ -228,13 +229,51 @@ def run_source_execution_stage(
                 "refused": int(browser_fallback_guard.demand_refused),
                 "servedWithHtml": int(browser_fallback_guard.demand_served_with_html),
                 "servedEmpty": int(browser_fallback_guard.demand_served_empty),
+                # `servedEmpty` alone was one bucket for two opposite findings: a browser
+                # that could not launch, and a page that rendered with nothing in it. The
+                # split is what makes the refused population readable -- 716 of 843 attempts
+                # were refused in the v8 run and nothing said whether that was a closed
+                # breaker or a missing browser.
+                "servedEmptyEnvironment": int(
+                    browser_fallback_guard.demand_served_empty_environment
+                ),
+                "servedEmptyPage": int(browser_fallback_guard.demand_served_empty_page),
             }
+        _stamp_browser_fallback_cause(source_reports, browser_fallback_guard)
     finally:
         if heap_stop is not None:
             heap_stop.set()
         if pool is not None:
             pool.close()
     root_mod.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
+
+
+def _stamp_browser_fallback_cause(
+    source_reports: list[dict[str, Any]] | None,
+    guard: BrowserFallbackCircuitBreaker | None,
+) -> None:
+    """Put the run's breaker cause on every row that asked for browser fallback.
+
+    A row that recommends fallback records a *need*; the run-level breaker records what
+    actually happened to it. Neither was visible beside the other, so the 8 ashby boards that
+    errored with "no jobs extracted from ashby board html" and `browserFallbackRecommended:
+    true` looked like boards that were never given a chance. The fields are named ``Run*``
+    because the cause is the run's, not the row's -- writing a per-row reason here would be the
+    same false precision this change exists to remove.
+    """
+    if not source_reports or guard is None:
+        return
+    cause = clean_text(guard.last_error)
+    refusal = clean_text(guard.last_refusal_reason)
+    if not cause and not refusal:
+        return
+    for row in source_reports:
+        if not isinstance(row, dict) or not row.get("browserFallbackRecommended"):
+            continue
+        if cause:
+            row["browserFallbackRunLastError"] = cause
+        if refusal:
+            row["browserFallbackRunRefusalReason"] = refusal
 
 
 def _browser_fallback_runtime(

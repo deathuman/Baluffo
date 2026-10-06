@@ -1,32 +1,25 @@
-## [0.3.013] - 2026-10-06
+## [0.3.014] - 2026-10-07
 ### Added
 
-- **Boards whose listings live inside the page's own data now work without a browser.**
-  When a careers page returns its openings as JSON embedded in the HTML - schema.org job
-  data, Next.js page data, or a script array - the app now reads them directly instead of
-  concluding the page has nothing. Bungie's careers page is the measured case: its
-  postings arrive inside the page payload, and they are read from there now; the host
-  rule that sent the page to a full browser render is gone.
-- **Twenty-eight Japanese studio boards on the hrmos platform are now watched, with 833
-  openings between them.** Capcom, Square Enix, Nexon, GREE, Aiming, Dwango, Lasengle and
-  the others each serve their listings as plain pages, and every tenant was fetched for
-  real before it was added. Two other platforms probed for the same treatment (mokahr,
-  recruiterkr) did not serve their listings to a plain fetch, so they stay out rather than
-  being registered on faith.
+- **The fetch report now says why a browser fallback was refused, and which kind of empty a
+  render was.** A refused attempt records its reason, and the counters separate "the browser
+  could not launch" from "the page rendered with no jobs in it" - two opposite findings that
+  shared one number, which is why a run with 716 refusals out of 843 attempts could not be
+  read at all. Rows that asked for browser fallback also carry the run's cause, so a board
+  recommending fallback no longer reads as a board nobody tried. The environment cause keeps
+  its own field: a refusal no longer overwrites the reason the breaker was closed.
 
 ### Fixed
 
-- **Closed and acquired studios' old board addresses are retired from the shipped list,
-  with evidence rather than a guess.** Ten addresses are retired. Each had been classified
-  as gone or acquired, and each was re-checked live: the address had to fail a fresh fetch
-  (unreachable, 404, or redirecting to a different company), with a known-good board
-  fetched through the same check in the same run, so a broken check cannot be mistaken for
-  a dead board. A page that moved but still answers is left alone - retiring a live board
-  is the costly direction to get wrong.
+- **A studio board's fetch evidence is read from its own entry, not its platform's totals.**
+  When an adapter serves many studios under one summary row, every one of them inherited that
+  row's totals, so 25 boards registered in recent releases read as "unknown, only the
+  platform's result is known". Read from each board's own record: 17 boards were asked and
+  genuinely returned nothing, and 8 errored asking for a browser. Both are decidable now.
 
 ### Notes
 
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.012:
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.013:
   the same-origin Linux container,
   Umbrel raw-LAN installs,
   GHCR multi-arch image publishing,

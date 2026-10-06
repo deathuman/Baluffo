@@ -124,6 +124,8 @@ def test_runtime_payload_stamping_shape() -> None:
             "refused": 4010,
             "servedWithHtml": 20,
             "servedEmpty": 0,
+            "servedEmptyEnvironment": 0,
+            "servedEmptyPage": 0,
         },
     }
     normalized = normalize_runtime_payload(payload, selected_source_count=3)
@@ -133,6 +135,10 @@ def test_runtime_payload_stamping_shape() -> None:
         "refused": 4010,
         "servedWithHtml": 20,
         "servedEmpty": 0,
+        # The empty split: a browser that could not launch, and a page that rendered with
+        # nothing in it, are different findings (BF2).
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
     }
 
     # Absent block → zeroed block (allowlist shape, not Optional).
@@ -142,6 +148,8 @@ def test_runtime_payload_stamping_shape() -> None:
         "refused": 0,
         "servedWithHtml": 0,
         "servedEmpty": 0,
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
     }
 
     # Junk values clamp to 0, unknown keys dropped.
@@ -161,6 +169,8 @@ def test_runtime_payload_stamping_shape() -> None:
         "refused": 0,
         "servedWithHtml": 7,
         "servedEmpty": 0,
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
     }
 
 

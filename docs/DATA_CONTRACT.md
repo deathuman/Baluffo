@@ -994,6 +994,10 @@ tombstone, suppress, reject, or delete sources.
 | `zeroKeptSources` | `number` | Non-excluded rows with `keptCount=0`. |
 | `zeroKeptNeedsReviewSources` | `number` | Zero-kept rows not classified as a known legitimate empty/no-openings result. |
 | `browserFallbackRecommendedSources` | `number` | Rows with `browserFallbackRecommended=true`. |
+| `browserFallbackLastRefusalReason` | `string` | Why the last fallback attempt was refused (`cooldown_active`); empty when the last attempt was served. Never overwrites `browserFallbackLastError`, which is the environment cause that closed the breaker. |
+| `browserFallbackLastRefusedAt` | `string` | Timestamp of the last refusal. |
+| `browserFallbackRunLastError` | `string` | **Run-level**: the environment error that closed the breaker, stamped only on rows with `browserFallbackRecommended=true`. The cause belongs to the run, not the row, which is why the field is `Run`-prefixed. |
+| `browserFallbackRunRefusalReason` | `string` | **Run-level**: the run's last refusal reason, on the same rows. |
 | `sourcesNeedingAttention` | `array` | Compact top rows with failure, browser-fallback, or zero-kept review signals. |
 | `zeroKeptNeedsReview` | `array` | Compact zero-kept rows that need operator review. |
 | `browserFallbackRecommended` | `array` | Compact rows recommended for browser fallback. |
@@ -1535,6 +1539,26 @@ truthful `publishedOutputUnchanged` evidence; lifecycle cleanup's
 | `topByFrequency` | `array` | Shapes ordered by frequency and duration. |
 | `rawMarkerCount` | `number` | Count of source rows where `classification`, `failureBucket`, or `zeroKeptClassification` is `needs_review`. |
 | `includedCount` | `number` | Count of rows included in the shaped zero-kept static breakdown. |
+
+### Browser-fallback demand counters
+
+`runtime.browserFallbackDemand` is an allowlisted block: absent input normalizes to a
+zeroed block rather than being omitted. It counts wrapped `try_playwright` calls per fetch
+run, where attempts = refused + servedWithHtml + servedEmpty.
+
+| Field | Type | Description |
+|---|---|---|
+| `attempts` | `number` | Every wrapped fallback call. |
+| `refused` | `number` | Attempts the circuit breaker refused while in cooldown. |
+| `servedWithHtml` | `number` | Attempts that returned HTML. |
+| `servedEmpty` | `number` | Attempts that returned no HTML; the sum of the two fields below. |
+| `servedEmptyEnvironment` | `number` | Empty because the browser could not run (the environment-failure kind, and the only kind that opens the cooldown). |
+| `servedEmptyPage` | `number` | Empty because the rendered page held no jobs (a fact about the board, not the browser). |
+
+The two split fields are additive and were absent before v0.3.014; a report written without
+them normalizes both to `0`. Splitting `servedEmpty` is what makes the refused population
+readable — 716 of 843 attempts were refused in the v8 replay and nothing said whether that
+was a closed breaker or a missing browser.
 
 ### Advisory registry hygiene audit
 

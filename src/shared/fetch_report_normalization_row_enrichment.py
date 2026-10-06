@@ -179,6 +179,14 @@ def _apply_browser_fallback_fields(
         "browserFallbackLastFailureAt",
         "browserFallbackLastSuccessAt",
         "browserFallbackLastError",
+        # The refusal reason and the run-level cause the pipeline stamps on rows that asked
+        # for fallback. Without these in the list they were written by the pipeline and then
+        # dropped by normalization, which is the whole reason the 8 ashby boards recommending
+        # fallback looked like boards nobody had tried.
+        "browserFallbackLastRefusedAt",
+        "browserFallbackLastRefusalReason",
+        "browserFallbackRunLastError",
+        "browserFallbackRunRefusalReason",
     )
     for key in text_fields:
         if key in src:

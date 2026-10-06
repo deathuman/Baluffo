@@ -23,6 +23,7 @@ TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 BROWSER_FALLBACK_STATE_KEY = "__browser_fallback__"
 DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES = 30
+REFUSAL_COOLDOWN = "cooldown_active"
 
 
 def is_browser_fallback_environment_error(error_text: str) -> bool:
@@ -38,6 +39,8 @@ class BrowserFallbackCircuitBreaker:
     last_success_at: str = ""
     last_error: str = ""
     failure_count: int = 0
+    last_refused_at: str = ""
+    last_refusal_reason: str = ""
     # Per-run demand accounting (saturation visibility, 2026-09-15): every
     # wrapped call is an attempt; the breaker refusing one in cooldown is
     # refused demand that used to surface only as a silent got_html=False
@@ -47,6 +50,13 @@ class BrowserFallbackCircuitBreaker:
     demand_refused: int = 0
     demand_served_with_html: int = 0
     demand_served_empty: int = 0
+    # "Empty" was one bucket for two opposite findings: a browser that could not launch (an
+    # environment failure, which is what trips the cooldown) and a page that rendered with no
+    # jobs in it (a fact about the board). 716 of 843 attempts were refused in the v8 run and
+    # the population could not be read, because the two were counted together and the refusal
+    # reason was never recorded.
+    demand_served_empty_environment: int = 0
+    demand_served_empty_page: int = 0
     _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     @classmethod
@@ -68,6 +78,8 @@ class BrowserFallbackCircuitBreaker:
             last_failure_at=clean_text(entry.get("browserFallbackLastFailureAt")),
             last_success_at=clean_text(entry.get("browserFallbackLastSuccessAt")),
             last_error=clean_text(entry.get("browserFallbackLastError")),
+            last_refused_at=clean_text(entry.get("browserFallbackLastRefusedAt")),
+            last_refusal_reason=clean_text(entry.get("browserFallbackLastRefusalReason")),
             failure_count=max(0, int(entry.get("browserFallbackFailureCount") or 0)),
         )
 
@@ -90,6 +102,8 @@ class BrowserFallbackCircuitBreaker:
                 if not self.is_available(now=now_dt):
                     self.last_attempt_at = stamp
                     self.demand_refused += 1
+                    self.last_refused_at = stamp
+                    self.last_refusal_reason = REFUSAL_COOLDOWN
                     return "", "browser fallback unavailable (cooldown active)"
                 self.last_attempt_at = stamp
             try:
@@ -105,20 +119,22 @@ class BrowserFallbackCircuitBreaker:
                     self.disabled_until_at = ""
                     self.demand_served_with_html += 1
                 return html, ""
-            if is_browser_fallback_environment_error(error):
-                cooldown_minutes = max(0, int(self.cooldown_minutes or 0))
-                with self._lock:
+            with self._lock:
+                if is_browser_fallback_environment_error(error):
+                    cooldown_minutes = max(0, int(self.cooldown_minutes))
                     self.failure_count += 1
                     self.last_failure_at = stamp
                     self.last_error = clean_text(error)
+                    self.last_refusal_reason = ""
                     if cooldown_minutes > 0:
                         self.disabled_until_at = (
                             now_dt + timedelta(minutes=cooldown_minutes)
                         ).isoformat()
                     self.demand_served_empty += 1
-            else:
-                with self._lock:
+                    self.demand_served_empty_environment += 1
+                else:
                     self.demand_served_empty += 1
+                    self.demand_served_empty_page += 1
             return html, clean_text(error)
 
         return _wrapped
@@ -134,4 +150,12 @@ class BrowserFallbackCircuitBreaker:
             row["browserFallbackLastFailureAt"] = clean_text(self.last_failure_at)
         if clean_text(self.last_error):
             row["browserFallbackLastError"] = clean_text(self.last_error)
+        # The refusal reason is kept apart from `last_error` on purpose: `last_error` is the
+        # environment cause that tripped the cooldown, and overwriting it with "cooldown
+        # active" on every refusal would erase the only thing that explains why the breaker is
+        # closed.
+        if clean_text(self.last_refused_at):
+            row["browserFallbackLastRefusedAt"] = clean_text(self.last_refused_at)
+        if clean_text(self.last_refusal_reason):
+            row["browserFallbackLastRefusalReason"] = clean_text(self.last_refusal_reason)
         return row
