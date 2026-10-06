@@ -654,10 +654,14 @@ def fetch_evidence(data_dir: Path, report: list[dict[str, Any]]) -> dict[tuple[s
     have asked -- ``cacheDecision: run_now``, 420-5,884 ms spent, ``fetchedCount: 0`` --
     which is the opposite conclusion from the one the kept-count alone supports.
 
-    A provider board cannot be given its own evidence: the adapter fetches every board it
-    serves under one rollup row, so per-board evidence does not exist to be had. Those
-    boards report ``rollup_only`` rather than inheriting the rollup's state, because the
-    rollup keeping jobs says nothing about whether *this* board is among them.
+    A provider board's evidence *does* exist: the adapter fetches every board it serves under
+    one rollup row, but that row's ``details`` carries **one entry per board**, each with its
+    own ``status``, ``fetchedCount``, ``keptCount``, ``durationMs``, ``cacheDecision`` and
+    ``error`` -- the same shape a static row has. Reading only the rollup's own totals made
+    every provider board inherit them, which is why 25 registered boards read ``rollup_only``
+    in the v8 run: 17 greenhouse boards were asked and returned nothing, and 8 ashby boards
+    errored with "no jobs extracted from ashby board html". ``rollup_only`` is now reserved
+    for a board with no detail entry of its own, where the rollup really is all there is.
     """
     doc = read_json(data_dir / FETCH_REPORT)
     sources = doc.get("sources") if isinstance(doc, dict) else None
@@ -676,12 +680,49 @@ def fetch_evidence(data_dir: Path, report: list[dict[str, Any]]) -> dict[tuple[s
             out[key] = _classify_source(by_name.get(static_source_name(str(row["listing_url"]))))
             continue
         rollup = _ROLLUP_SOURCE.get(adapter, "")
-        evidence = _classify_source(by_name.get(rollup)) if rollup else _classify_source(None)
+        rollup_row = by_name.get(rollup) if rollup else None
+        detail = _rollup_detail_for_board(
+            (rollup_row or {}).get("details"),
+            board_id=str(row.get("id") or ""),
+            tenant=key[1],
+        )
+        if detail is not None:
+            evidence = dict(_classify_source(detail))
+            evidence["rollup"] = rollup
+            out[key] = evidence
+            continue
+        evidence = _classify_source(rollup_row)
         evidence = dict(evidence)
         evidence["state"] = "rollup_only" if evidence["state"] != "not_selected" else "no_report"
         evidence["rollup"] = rollup
         out[key] = evidence
     return out
+
+
+def _rollup_detail_for_board(details: Any, *, board_id: str, tenant: str) -> dict[str, Any] | None:
+    """The one entry in a rollup row's ``details`` that belongs to this board.
+
+    Matched on the registry id when the entry records one, else on the tenant -- a provider
+    board's tenant *is* its platform slug (``taketwo``, ``supercell``), which is the field
+    that survives into a registration-report row. A tenant claimed by two entries is not
+    resolvable and returns nothing, the same rule ``_source_key_index`` applies for
+    attribution: two boards sharing a slug is a platform ambiguity, not a licence to read
+    one board's evidence as another's. Name and studio are never used -- the registry carries
+    one board under two studio labels.
+    """
+    if not isinstance(details, list):
+        return None
+    entries = [entry for entry in details if isinstance(entry, dict)]
+    wanted_id = str(board_id or "").strip()
+    if wanted_id:
+        for entry in entries:
+            if str(entry.get("sourceId") or "").strip() == wanted_id:
+                return entry
+    wanted_tenant = str(tenant or "").strip()
+    if not wanted_tenant:
+        return None
+    matches = [entry for entry in entries if str(entry.get("slug") or "").strip() == wanted_tenant]
+    return matches[0] if len(matches) == 1 else None
 
 
 def attribute_collected(
