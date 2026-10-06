@@ -172,10 +172,10 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | — | **Name the two populations** so delivery and catalogue gap stop sharing a join | metric — **DONE**, see [Correction on record](#correction-on-record) |
 | — | Split `failedSources` into its component findings in the drain tool | 86 rows → 6 kinds — **DONE** |
 | — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings — **DONE**, `deferredByCap` 662 → 0 |
-| **T** | `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` default 25s → **90s** | 134 live rows time out; locally 11 of 14 boards converted — **agreed, not landed** |
-| **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reports **0** while **199** rows need fallback — **agreed, not landed** |
+| **T** | `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` default 25s → **90s** | 134 live rows time out; locally 11 of 14 boards converted — **DONE**, plus `coerce_int` on three numeric static vars |
+| **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reported **0** while **199** rows needed fallback — **DONE**, verified against the live report |
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
-| **DG** | Discovery gap: 242 audited boards / 1,990 openings never reached by the probe, and demonstrably real (12 of 12 sampled return 200 with jobs) | discovery, not measurement — **not started** |
+| **DG** | Audited boards Baluffo lacks. Measured 2026-10-06: **94 openings / 20 boards** in EU, **2,324 / 147** in ANY | **24 boards confirmed collecting, 149 game jobs** — see below |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings — **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows — **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
@@ -184,13 +184,12 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | — | Classify the remaining fetched-and-empty static boards by extraction shape | ~825 openings — per-board |
 | — | Duplicate rows: WBD 5 rows for one 80-job board, EA 4 overlapping rows, 72 `site_changed` | cleanup |
 
-**On D.** It was written as "`ok` + `kept 0` + no error → `unknown`". The premise is now
-verified against a real population: the 168 fetched-and-empty boards do carry `status: ok`,
-`fetchedCount: 0` and `healthReason: "latest fetch kept no jobs"`, and all are already
-`needs_review` with **0** `legit_empty` and **0** `health: healthy`. A further 23 reach the
-same state through the `error` channel — `no jobs extracted from source pages` — which
-`reporting_breakdowns` already buckets as `needs_review`. The reporting layer handles the
-shape; what remains is that `failedSources` counts those 23 as failures, and that feeds
+**On D.** It was written as "`ok` + `kept 0` + no error → `unknown`", against a real
+population: the 168 boards carry `status: ok`, `fetchedCount: 0`, `healthReason: "latest fetch
+kept no jobs"`, and are all already `needs_review` with **0** `legit_empty` and **0**
+`health: healthy`. A further 23 reach the same state via `error` — `no jobs extracted from
+source pages` — which `reporting_breakdowns` also buckets as `needs_review`. The reporting
+layer handles the shape; what remains is `failedSources` counting those 23 as failures, feeding
 `failedSourceRatioLatest`. Narrowing a persisted contract is a compatibility change, so the
 split lives in the drain tool. Write D against the 168 and the 23 together.
 
@@ -200,20 +199,6 @@ fallback attempt errors — `browserFallbackCap` only limits concurrency, so rai
 nothing. Until `BF2` records why sources enter cooldown, the 78 HTTP-403 rows are not
 decidable. `transport` (83 rows, median 15s, max 298s) is a different class: hangs and
 timeouts, not blocks.
-
-
-
-**On D.** It was written as "`ok` + `kept 0` + no error → `unknown`". That premise is now
-verified against a real population rather than an assumed one: the 168 fetched-and-empty
-boards do carry `status: ok`, `fetchedCount: 0`, and
-`healthReason: "latest fetch kept no jobs"`, and all are already classified `needs_review`
-with **0** `legit_empty` and **0** `health: healthy`. A further 23 boards reach the same
-state through the `error` channel instead — `no jobs extracted from source pages` — which
-`reporting_breakdowns._classify_unknown_static_shape` already buckets as `needs_review`. So
-the reporting layer handles the shape; what remains is that `sourceHealth.failedSources`
-counts those 23 as failures, and that number feeds `failedSourceRatioLatest`. Narrowing a
-persisted report contract is a compatibility change, so the split lives in the drain tool
-for now. Write D against the 168, and treat the 23 as the second half of the same finding.
 
 ### R: a refused redirect now says what it refused
 
@@ -314,15 +299,38 @@ The lesson: **every one was a harness assumption, not a board failure, and none 
 without running discovery.** A recorded zero is the most expensive kind of finding, because it
 is indistinguishable from a board that genuinely has nothing.
 
+### DG: the gap re-measured, and the filter it needs
+
+The GJI snapshot was never a manual artifact. `gamesjobsindex.com/jobs.json` is live and
+self-refreshing — `run_at 2026-10-06`, 15,394 records, 934 studios — so this is repeatable.
+Re-ran the repo's chain (`coverage_audit` → `coverage_boards` → `coverage_verify`) against the
+live feed:
+
+| region | GJI considered | matched | `unregistered_board` | boards |
+|---|---:|---:|---:|---:|
+| EU | 2,265 | 1,150 | 94 openings | 20 |
+| ANY | 15,395 | 7,171 | 2,324 openings | 147 |
+
+**The recorded 242 / 1,990 reproduces at neither region.** EU is the decision-relevant view.
+Of the 27 boards verified `collects`, 3 already collect live, so **24 are genuinely absent**.
+Then the gate this section exists for: those 24 yield **486 listings but 149 game jobs, 31%**
+— `voodoo` 71 of 122, `2k` 41 of 125, `playson` 8 of 20, `hyperhug` 7 of 13, `volka` 7 of 10.
+
+**11 of the 24 yield zero, and the classifier is right every time** — Kambi is its betting
+business (Compliance Manager, Head of Tax), i3D is infrastructure (Data Center Lead, Lead
+Security Analyst), keensoft's one game-franchise role is *Senior Marketing Artist*. Same finding
+as [the 1,468 extraction gaps](#the-1468-extraction-gaps-are-mostly-not-coverage-work) on a
+different population: **a raw miss count is not recoverable coverage.** DG must be intersected
+with "would Baluffo keep these roles" before it sizes anything. `oracle_hcm` on
+`edix...oraclecloud.com` stays `unknown` — no CXS endpoint, and a guessed URL's 404 is not
+evidence. The ANY remainder is adapter work: feishu 481, hrmos 336, mokahr 123, recruiterkr 61 —
+1,001 of 2,324 on platforms with no adapter.
+
 ## What is left, in priority order
 
-The actionable list, with current numbers, is [Fix order](#fix-order). This section keeps only
-what that table cannot carry: the items deferred by agreement, and the two findings whose size
-is the argument for leaving them.
-
-Items 1–3 and 6–8 are **done** — the freshness window, the second registration wave, the review
-boards, the 404-while-active registry rows, the per-board extraction gaps and the carried-over
-defects. Their mechanisms are in the commits and the tests.
+Items 1–3 and 6–8 are **done** — freshness window, second registration wave, review boards,
+404-while-active registry rows, per-board extraction gaps, carried-over defects. Their
+mechanisms are in the commits and the tests. Current numbers are in [Fix order](#fix-order).
 
 ### Feishu — 826 openings, not reachable by anything the runtime has
 
@@ -340,20 +348,19 @@ on recorded openings — 105 boards of that shape already are. It would be false
 
 **And the delivery metric would have called it landed** — a static row reaches the registry
 and counts as delivered, exactly as the 105 JS boards do, while producing zero jobs. Hence
-Feishu stays unregistered. Recovering it is a project, not a registration task: a CSRF-aware,
-rate-limit-respecting client, a payload parser, and a fixture. Kurogame alone is 411 openings.
+Feishu stays unregistered. Recovering it is a project: a CSRF-aware, rate-limit-respecting
+client, a payload parser, and a fixture. Kurogame alone is 411 openings.
 
 ### The 1,468 extraction gaps are mostly not coverage work
 
 `tools/coverage_classifier_candidates.py` shows the remainder after the 238 recovered roles is
-dominated by business roles at studios — Logistics Director, Marketing Manager — which this
-product should not be collecting. Chasing them would be volume for its own sake.
+dominated by business roles at studios — Logistics Director, Marketing Manager. DG reproduces
+this on a different population.
 
 ### The 82% Google Sheet dependency is an asset, not a liability
 
 The Sheet is the best base source and stays. It was never the ceiling — it was being read as
-one, because the delivery metric credited sheet rows to whichever board's host the posting
-link happened to point at.
+one, because delivery credited sheet rows to whichever board's host the posting link pointed at.
 
 ### 5. Data quality, deferred by agreement
 
