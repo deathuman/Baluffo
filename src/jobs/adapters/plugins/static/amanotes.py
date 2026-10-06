@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable
-from html import unescape
 from typing import Any
 from urllib.parse import urljoin
 
@@ -11,8 +9,8 @@ from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_extract import next_data_payload
 
-_NEXT_DATA_RE = re.compile(r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>')
 _HOSTS = {"careers.amanotes.com", "www.careers.amanotes.com"}
 
 
@@ -21,12 +19,8 @@ def can_handle(ctx: AdapterPluginContext) -> bool:
 
 
 def _next_data_positions(html: str) -> list[Any]:
-    match = _NEXT_DATA_RE.search(html)
-    if not match:
-        return []
-    try:
-        payload = json.loads(unescape(match.group(1).strip()))
-    except json.JSONDecodeError:
+    payload = next_data_payload(html)
+    if not isinstance(payload, dict):
         return []
     positions = ((payload.get("props") or {}).get("pageProps") or {}).get("positions") or []
     return positions if isinstance(positions, list) else []

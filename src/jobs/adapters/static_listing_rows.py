@@ -23,6 +23,7 @@ from src.jobs.adapters.plugins.static._runner import (
     static_listing_anchor_link,
     static_listing_job_row,
 )
+from src.jobs.adapters.plugins.static.embedded_json import extract_embedded_json_rows
 from src.jobs.adapters.static_detail_heuristics import (
     add_detail_link,
     is_probable_job_detail_url,
@@ -187,6 +188,45 @@ def _append_parsed_listing_rows(
 
 
 # pure — reads ctx field
+def _append_embedded_json_rows(
+    ctx: StaticSourceContext,
+    listing_html: str,
+    page_url: str,
+) -> int:
+    """Lane 2.5: rows from JSON embedded in the listing, when anchors carry none.
+
+    Emitted like the parsed listing rows (full rows, no detail fetch), and never into
+    ``listing_htmls``: the fingerprint hashes that list, so a synthetic entry would
+    change it.
+    """
+    emitted = 0
+    for row in extract_embedded_json_rows(
+        listing_html,
+        board_url=page_url,
+        fallback_company=ctx.company,
+    ):
+        link = normalize_url(row.get("jobLink"))
+        if not link or link in ctx.seen_links:
+            continue
+        if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+            ctx.stats["junk_provenance_rows_dropped"] = (
+                int(ctx.stats.get("junk_provenance_rows_dropped") or 0) + 1
+            )
+            continue
+        if looks_like_static_parser_noise_title(clean_text(row.get("title"))):
+            continue
+        ctx.seen_links.add(link)
+        row["adapter"] = "static"
+        row["studio"] = _source_studio(ctx)
+        ctx.jobs.append(row)
+        emitted += 1
+    if emitted:
+        ctx.stats["embedded_json_rows_found"] = (
+            int(ctx.stats.get("embedded_json_rows_found") or 0) + emitted
+        )
+    return emitted
+
+
 def _detail_host_shell_skipped(ctx: StaticSourceContext, link: str) -> bool:
     """True when this detail's host already burned its 2 shell strikes."""
     host = (urlparse(link).hostname or "").lower()
@@ -546,6 +586,9 @@ def _extract_listing_candidates(
         )
         listing_jobs_found += parsed_count
         provisional_rows_found += parsed_provisional
+        if listing_jobs_found == 0:
+            # Lane 2.5: boards whose listings are embedded JSON rather than anchors.
+            listing_jobs_found += _append_embedded_json_rows(ctx, listing_html, page_url)
         if listing_jobs_found == 0:
             rendered_count, has_job_like_title, rendered_provisional = _append_rendered_card_rows(
                 ctx,

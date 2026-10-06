@@ -81,7 +81,6 @@ _RENDERED_CARD_HOSTS = frozenset(
         "jobs.moonrover.games",
         "gs-studio.eu",
         "www.gs-studio.eu",
-        "careers.bungie.com",
         "hitberrygames.com",
         "www.hitberrygames.com",
         "purebang.com",

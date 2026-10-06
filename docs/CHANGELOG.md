@@ -34,6 +34,26 @@ Two rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.013] - 2026-10-06
+### Added
+
+- **Boards whose listings live inside the page's own data now work without a browser.**
+  When a careers page returns its openings as JSON embedded in the HTML - schema.org job
+  data, Next.js page data, or a script array - the app now reads them directly instead of
+  concluding the page has nothing. Bungie's careers page is the measured case: its
+  postings arrive inside the page payload, and they are read from there now; the host
+  rule that sent the page to a full browser render is gone.
+
+### Notes
+
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.012:
+  the same-origin Linux container,
+  Umbrel raw-LAN installs,
+  GHCR multi-arch image publishing,
+  private community app-store metadata,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
+
 ## [0.3.012] - 2026-10-06
 ### Added
 
@@ -208,29 +228,3 @@ Two rules the guardrail enforces so this cannot quietly regress:
   GHCR multi-arch image publishing, private community app-store metadata, and
   wildcard browser CORS allow headers all behave as they did in 0.3.008, as does
   desktop localhost bridge compatibility. Umbrel raw-LAN installs are likewise unchanged.
-
-## [0.3.008] - 2026-10-05
-### Fixed
-
-- **Workday boards no longer stop after 100 openings.** The CXS collector paged five times
-  regardless of board size, so a large board was silently truncated: NVIDIA's 2,000
-  openings resolved to 100. Pagination now follows the total the API reports. Verified
-  against the live boards — NVIDIA 100 → 2,000, Intel 100 → 602, Aristocrat 100 → 209.
-- **A board is no longer suppressed for sharing a careers platform with another studio.**
-  Workday and BambooHR were matched by adapter name rather than by tenant, so every board on
-  either platform looked like a duplicate of whichever registered first. 64 boards carrying
-  1,257 openings were affected, including NVIDIA's — the largest single block in the
-  catalogue. Board identity is now host plus tenant.
-- **Registration is no longer reported as delivery.** The coverage audit counted a board as
-  delivered when a registry row existed, which is why the previous release reported 6,844 of
-  6,929 openings delivered while a live run collected none of them. The audit now reports
-  registration, readability, and collected openings separately, and fails when boards
-  register but nothing collects.
-- **Ubisoft's careers boards are read from the system that actually serves them.** Every
-  Ubisoft board is a regional subdomain — toronto, berlin, mainz, duesseldorf, saguenay,
-  stockholm, winnipeg — and none were recognised as SmartRecruiters-served, so each was
-  scraped as a plain page. `toronto.ubisoft.com/jobs` spent 2,760 seconds to yield a single
-  job from a 223 KB page containing no job links, while the SmartRecruiters tenant that
-  carries the same listings showed 333 openings including Berlin.
-
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, and wildcard browser CORS allow headers all behave exactly as they did in 0.3.007, as does desktop localhost bridge compatibility. The only differences are the job-source coverage and fixes above.

@@ -25,6 +25,7 @@ from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.shared.json_extract import next_data_payload
 from src.shared.json_shapes import as_json_object as _as_dict
 
 
@@ -568,15 +569,8 @@ def parse_wellfound_html(
 
 
 def _wellfound_next_data_nodes(html_text: str) -> list[dict[str, Any]]:
-    match = re.search(
-        r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
-        html_text,
-    )
-    if not match:
-        return []
-    try:
-        payload = json.loads(unescape(match.group(1).strip()))
-    except json.JSONDecodeError:
+    payload = next_data_payload(html_text)
+    if payload is None:
         return []
     nodes: list[dict[str, Any]] = []
     stack: list[Any] = [payload]

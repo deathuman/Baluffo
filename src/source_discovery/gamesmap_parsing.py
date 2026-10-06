@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlparse
 
 from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _as_list
+from src.shared.json_extract import extract_json_array as _extract_json_array
 
 from .config import CAREERS_URL_HINTS
 from .scoring import unique_string_list
@@ -69,57 +70,6 @@ def _extract_gamesmap_js_data_container(markup: str) -> list[Any] | None:
                     return None
                 return payload if isinstance(payload, list) else None
     return None
-
-
-def _advance_json_string_state(
-    char: str, *, in_string: bool, escape: bool
-) -> tuple[bool, bool, bool]:
-    if not in_string:
-        return char == '"', False, False
-    if escape:
-        return True, False, True
-    if char == "\\":
-        return True, True, True
-    if char == '"':
-        return False, False, True
-    return True, False, True
-
-
-def _json_array_end(markup: str, array_start: int) -> int | None:
-    depth = 0
-    in_string = False
-    escape = False
-    for idx in range(array_start, len(markup)):
-        char = markup[idx]
-        in_string, escape, consumed = _advance_json_string_state(
-            char,
-            in_string=in_string,
-            escape=escape,
-        )
-        if consumed:
-            continue
-        if char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                return idx
-    return None
-
-
-def _decode_json_array(markup: str, array_start: int, array_end: int) -> list[Any] | None:
-    try:
-        payload = json.loads(markup[array_start : array_end + 1])
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, list) else None
-
-
-def _extract_json_array(markup: str, array_start: int) -> list[Any] | None:
-    array_end = _json_array_end(markup, array_start)
-    if array_end is None:
-        return None
-    return _decode_json_array(markup, array_start, array_end)
 
 
 def _extract_gamesmap_next_companies(markup: str) -> list[dict[str, Any]] | None:
