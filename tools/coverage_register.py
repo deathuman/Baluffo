@@ -35,11 +35,36 @@ import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+_ROOT_DIR = str(Path(__file__).resolve().parents[1])
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
 
 _TOOLS_DIR = str(Path(__file__).resolve().parent)
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
+
+# The guardrail check this tool must satisfy before writing. Imported here rather than inside
+# `apply_rows` so a missing path fails at startup with a clear name instead of mid-write.
+_REPO_HEALTH_DIR = str(Path(__file__).resolve().parent / "repo_health")
+if _REPO_HEALTH_DIR not in sys.path:
+    sys.path.insert(0, _REPO_HEALTH_DIR)
+
+# Past this line the imports are path-dependent by design: this tool is run from the repo
+# root as `python tools/coverage_register.py`, so `sys.path` has to be prepared first.
+from source_registry_duplicate_url_policy import (  # noqa: E402
+    list_seed_rows_not_registrations,
+)
+
+from src.shared.utils import now_iso  # noqa: E402
+from src.source_registry_state import transition_registry_to_active  # noqa: E402
+
+# Provenance for rows this tool registers. The boards arrive already verified by
+# `coverage_verify` -- a real per-adapter fetch, three-way verdict -- so the honest actor is
+# that evidence, not a discovery approval this tool never performed.
+REGISTRY_REASON_COVERAGE_VERIFIED = "coverage_verified_register"
+COVERAGE_REGISTER_ACTOR = "coverage_verify_register"
 
 from coverage_board_identity import (  # noqa: E402, I001
     candidate_identity,
@@ -190,8 +215,62 @@ def render(buckets: Mapping[str, Sequence[Mapping[str, Any]]], limit: int = 25) 
     return "\n".join(lines)
 
 
+def build_registration_row(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Turn a coverage candidate into a row that is actually a registration.
+
+    Candidates arrive from ``coverage_boards`` carrying evidence fields and no state. Written
+    unchanged they load, count, and collect nothing: ``_infer_registry_state`` reads a missing
+    ``registryState`` as ``pending``, and pending rows are not watched. That is how 27 verified
+    boards ended up in the seed looking registered while fetching zero.
+
+    The state is stamped through the repo's own transition, so provenance is real rather than
+    invented here. ``coverage_register`` has no approval opinion of its own -- it is handed
+    boards that ``coverage_verify`` already ran a real fetch for -- so the actor says exactly
+    that rather than claiming a discovery approval it did not perform.
+    """
+    row = {k: v for k, v in candidate.items() if not str(k).startswith("_")}
+    # Candidate bookkeeping has no meaning in a registry row and would read as evidence.
+    for field in ("decision", "missingCount", "sampleTitles", "status", "companies"):
+        row.pop(field, None)
+
+    board_id = str(candidate.get("_id") or candidate.get("id") or "").strip()
+    if board_id:
+        row["id"] = board_id
+
+    company = str(row.get("company") or "").strip()
+    if company:
+        row.setdefault("studio", company)
+        row.setdefault("name", f"{company} ({row.get('adapter') or 'board'})")
+
+    return cast(
+        dict[str, Any],
+        transition_registry_to_active(
+            row,
+            reason=REGISTRY_REASON_COVERAGE_VERIFIED,
+            actor=COVERAGE_REGISTER_ACTOR,
+            at=now_iso(),
+        ),
+    )
+
+
 def apply_rows(registry_path: Path, rows: Sequence[Mapping[str, Any]], backup_dir: Path) -> int:
-    """Append rows to the registry, backing up first and reading back after."""
+    """Append rows to the registry, backing up first and reading back after.
+
+    Every row is built and validated as a *registration* before anything is written, using the
+    same check the repo guardrail runs on the committed seed
+    (``list_seed_rows_not_registrations``). It is imported rather than restated so the tool
+    and the gate cannot drift apart -- this function is how such rows get in, so it owes the
+    standard the gate enforces on them afterwards.
+    """
+    prepared = [build_registration_row(row) for row in rows]
+    failures = list_seed_rows_not_registrations(prepared)
+    if failures:
+        raise SystemExit(
+            f"refusing to write {len(failures)} row(s) that are not registrations; the "
+            f"committed seed would fail the guardrail:\n  "
+            + "\n  ".join(str(message) for message in failures[:5])
+        )
+
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup = backup_dir / registry_path.name
     shutil.copy2(registry_path, backup)
@@ -201,11 +280,11 @@ def apply_rows(registry_path: Path, rows: Sequence[Mapping[str, Any]], backup_di
     existing_ids = {str(row.get("id")) for row in existing if isinstance(row, Mapping)}
 
     added = 0
-    for row in rows:
-        board_id = str(row.pop("_id", "") or "")
+    for row in prepared:
+        board_id = str(row.get("id") or "")
         if not board_id or board_id in existing_ids:
             continue
-        existing.append({**row, "id": board_id})
+        existing.append(row)
         existing_ids.add(board_id)
         added += 1
 
@@ -216,7 +295,8 @@ def apply_rows(registry_path: Path, rows: Sequence[Mapping[str, Any]], backup_di
     # Read back rather than trusting the write.
     readback = json.loads(registry_path.read_text(encoding="utf-8"))
     readback_ids = {str(r.get("id")) for r in readback if isinstance(r, Mapping)}
-    missing = {r.get("_id") for r in rows if r.get("_id")} - readback_ids
+    wanted = {str(row.get("id")) for row in prepared if row.get("id")}
+    missing = wanted - readback_ids
     if missing:
         raise SystemExit(
             f"read-back found {len(missing)} rows absent after write: {sorted(missing)[:5]}"
