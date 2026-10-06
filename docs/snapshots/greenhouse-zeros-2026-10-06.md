@@ -1,10 +1,11 @@
 # Greenhouse Zeros and Provider Attribution Shadowing — Evidence Snapshot — 2026-10-06
 
 > - **Status:** Hypothesis settled; attribution defect **fixed** in `tools/coverage_drain.py`
->   (tools-only, with regression tests). The discovery-queue collapse below is a shipped-code
->   finding (`src/source_discovery/`), measured and recorded but **not changed** — it needs a
->   decision. The 39 verified greenhouse boards are **not yet registered**: a seed edit is a
->   shipped-data change and rides the next release commit.
+>   (tools-only, with regression tests). The discovery-queue collapse and the game row filter
+>   were fixed in shipped code, and the 39 verified greenhouse boards were registered, all as
+>   part of **v0.3.012** (`c5edd64d`): the seed moved 1,811 → 1,850 rows, the parser paths all
+>   apply `looks_like_game_job`, and `MULTI_TENANT_PROVIDER_DOMAINS` now keeps every studio's
+>   board distinct on the shared platforms.
 > - **Basis:** the isolated drain run `_out/coverage/verify-v7/` (2026-10-05: discovery,
 >   fetch, and a 43,221-row output), its `source-discovery-report.json`, and a live
 >   per-board re-probe of the 40 unregistered curated greenhouse boards on 2026-10-06.
@@ -14,7 +15,7 @@
 > - **Then inspect:** `tools/coverage_drain.py` (`_match_board`, `_source_key_index`,
 >   `attribute_collected`), `src/source_discovery/core_identity.py` (`queue_family_key`,
 >   `MULTI_TENANT_PROVIDER_DOMAINS`), `src/source_discovery/core_queue.py` (`_process`),
->   `_out/coverage/greenhouse-verify/verified.json`.
+>   `src/jobs/game_detection.py`, `_out/coverage/greenhouse-verify/verified.json`.
 
 ## The hypothesis, and what actually produced the zeros
 
@@ -87,13 +88,11 @@ on 2026-10-06 (`_out/coverage/greenhouse-verify/`):
 | unknown | 0 | — | — |
 
 Rockstar 36/36, NetEase 30/30, Loonshot 20/20, Tangogameworks 12/12 are all-game boards;
-the mixed ones show why registration shape matters: **the New York Times board is 10 game
-roles of 138** (its Games division beside its newsroom), Samsung Semiconductor 1 of 65,
-Twitch 3 of 49, Take-Two 0 of 31. Registering all 39 as-is delivers 670 rows of which 215
-are game roles — and because the greenhouse parser applies no row filter (see the role-gate
-snapshot), those rows arrive unfiltered. The registration itself waits for the release
-commit (seed edits carry the version bump); whether it should land before or after a
-provider-parser filter is the open decision, not the board set.
+the mixed ones show why the filter matters: **the New York Times board is 10 game roles of
+138** (its Games division beside its newsroom), Samsung Semiconductor 1 of 65, Twitch 3 of
+49, Take-Two 0 of 31. All 39 were registered in v0.3.012 through the registry's activation
+transition, at the same time as the game row filter that keeps exactly the game subset
+(215 of the 670 rows) and the queue fix that stops the shared platforms collapsing.
 
 ## Reproduction
 

@@ -170,7 +170,8 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reported **0** while **199** rows needed fallback **DONE**, verified against the live report |
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
 | **DG** | Audited boards Baluffo lacks. Measured 2026-10-06: **94 openings / 20 boards** in EU, **2,324 / 147** in ANY | **24 boards confirmed collecting, 149 game jobs**; role gate shipped — see below |
-| — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run; shipped-code decision pending — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |
+| — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run — **shipped in v0.3.012** |
+| — | Game row filter on every source path; 39 verified greenhouse boards registered | **shipped in v0.3.012** — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings **DONE** — the 168 and the 23 classify `unknown` |
@@ -308,14 +309,12 @@ Then the gate this section exists for: those 24 yield **486 listings but 149 gam
 31%** — per-board yields in the [role-gate snapshot](../snapshots/dg-role-gate-2026-10-06.md).
 
 **11 of the 24 yield zero, and the classifier is right every time** — Kambi is its betting
-business (Compliance Manager, Head of Tax), i3D is infrastructure (Data Center Lead, Lead
-Security Analyst), keensoft's one game-franchise role is *Senior Marketing Artist*. Same finding
-as [the 1,468 extraction gaps](#the-1468-extraction-gaps-are-mostly-not-coverage-work) on a
-different population: **a raw miss count is not recoverable coverage**, so DG must be intersected
-with "would Baluffo keep these roles" before it sizes anything. `oracle_hcm` on
-`edix...oraclecloud.com` stays `unknown` — no CXS endpoint, and a guessed URL's 404 is not
-evidence. The ANY remainder is adapter work: feishu 481, hrmos 336, mokahr 123, recruiterkr 61 —
-1,001 of 2,324 on platforms with no adapter.
+business, i3D is infrastructure, keensoft's one game-franchise role is *Senior Marketing
+Artist*. Same finding as [the 1,468 extraction gaps](#the-1468-extraction-gaps-are-mostly-not-coverage-work)
+on a different population: **a raw miss count is not recoverable coverage**, so DG must be
+intersected with "would Baluffo keep these roles" before it sizes anything. `oracle_hcm` on
+`edix...oraclecloud.com` stays `unknown`. The ANY remainder is adapter work: feishu 481,
+hrmos 336, mokahr 123, recruiterkr 61 — 1,001 of 2,324 on platforms with no adapter.
 
 ### The role gate
 
@@ -337,10 +336,10 @@ accounting, and reproduction commands:
 **The gate exposed a parse-path asymmetry.** The row filter runs on most
 parsers but **not** on the greenhouse parser, the HTML-board providers (ashby,
 breezy, jazzhr), the community Google Sheets path, or the static listing lanes:
-the public feed carries 4,734 greenhouse-hosted and 1,212 ashby-hosted rows of
-which only 341 and 74 pass the filter. The 0.3.011 registration sits on the
-unfiltered paths, so whether the feed should carry the rest is a product
-decision — measured in the snapshot, not fixed unilaterally.
+the public feed carried 4,734 greenhouse-hosted and 1,212 ashby-hosted rows of
+which only 341 and 74 passed the filter. The 0.3.011 registration sat on those
+unfiltered paths; the filter now runs on every path except the Sheet, whose
+Game/Tech rows are both product content — **shipped in v0.3.012**.
 
 ## What is left, in priority order
 
