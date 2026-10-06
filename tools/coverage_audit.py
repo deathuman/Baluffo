@@ -27,6 +27,14 @@ Buckets:
                       upstream; re-check before acting.
   unknown             Could not decide without a live probe.
 
+Every miss also carries the role gate: ``gameRole`` is whether the
+production row filter (``looks_like_game_job``, the same call the parsers
+make) would keep the role, applied to the fields a GJI record carries.
+A raw miss count is not recoverable coverage -- the 2026-10-06
+re-measurement sized 24 absent boards at 486 listings, of which 149
+(31%) were game roles -- so the split is made where the numbers are
+produced, not after the fact.
+
 `role_not_on_board` is deliberately PROVISIONAL. A fetchable detail page does not
 prove a job is still open, so this bucket needs a list-API or live confirmation
 before anyone acts on it.
@@ -60,6 +68,14 @@ from coverage_board_identity import (  # noqa: E402, I001
     candidate_identity,
     registry_identity,
 )
+
+# The repo root must be importable too: the role gate reuses the production
+# row filter rather than a second copy of the rule, so `src` has to resolve.
+_ROOT_DIR = str(Path(__file__).resolve().parents[1])
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+
+from src.jobs.game_detection import looks_like_game_job  # noqa: E402
 
 # EU 27 + EEA non-EU (IS, LI, NO) + CH. Mirrors gamesjobsindex.com
 # assets/js/jobs-page-utils.js EUROPEAN_COUNTRIES exactly. GB and TR are
@@ -463,6 +479,8 @@ def audit(
     label_mismatches: list[dict[str, Any]] = []
     buckets: dict[str, int] = {}
     match_basis: dict[str, int] = {}
+    missing_game_roles = 0
+    missing_non_game_roles = 0
 
     for gji_row in gji_rows:
         if region.upper() == "EU" and not in_europe(gji_row):
@@ -500,9 +518,26 @@ def audit(
             company_key=gji_company_key,
         )
         buckets[bucket] = buckets.get(bucket, 0) + 1
+        # The role gate. The predicate is the production row filter --
+        # the same `looks_like_game_job` call the parsers make -- applied
+        # to the fields a GJI record carries. The pipeline also consults
+        # tags, which the index does not publish, so a title-only match
+        # is monotone in the pipeline's inputs: everything the gate calls
+        # a game role is a role the pipeline keeps, and the gate's
+        # non-game remainder may still contain roles the pipeline keeps
+        # through tags. The game-role count is therefore a floor, never
+        # an over-promise of recoverable coverage.
+        game_role = looks_like_game_job(
+            strip_bracket_prefix(gji_row.get("title")), gji_row.get(gji_company_key)
+        )
+        if game_role:
+            missing_game_roles += 1
+        else:
+            missing_non_game_roles += 1
         misses.append(
             {
                 "bucket": bucket,
+                "gameRole": game_role,
                 "title": gji_row.get("title"),
                 "company": gji_row.get(gji_company_key),
                 "ats": gji_row.get("source_ats"),
@@ -535,6 +570,8 @@ def audit(
         "gjiMatchedByUrl": match_basis.get("url", 0),
         "gjiMatchedByTitleOnly": match_basis.get("title", 0),
         "gjiMissing": len(misses),
+        "gjiMissingGameRoles": missing_game_roles,
+        "gjiMissingNonGameRoles": missing_non_game_roles,
         "feedOnlyCount": len(feed_only),
         "buckets": {name: buckets.get(name, 0) for name in BUCKET_ORDER if buckets.get(name)},
         "misses": sorted(misses, key=lambda row: (row["bucket"], str(row["company"]))),
@@ -549,6 +586,9 @@ def audit(
             "neither, so region counts are a lower bound.",
             "label_mismatches are counted as matched, not reported as gaps: GJI "
             "and Baluffo publish the same studio under different labels.",
+            "The game-role split consults title and company only: GJI does not "
+            "publish the tags the pipeline also reads, so the split is a floor "
+            "on roles the pipeline would keep, never an over-count.",
         ],
     }
 
@@ -560,6 +600,8 @@ def render_summary(result: Mapping[str, Any]) -> str:
         f"missing {result['gjiMissing']}, feed-only {result['feedOnlyCount']}",
         f"  matched by URL (definitive) : {result.get('gjiMatchedByUrl', 0)}",
         f"  matched by title only       : {result.get('gjiMatchedByTitleOnly', 0)}",
+        f"  missing game roles          : {result.get('gjiMissingGameRoles', 0)}",
+        f"  missing non-game roles      : {result.get('gjiMissingNonGameRoles', 0)}",
         "",
         "misses by bucket:",
     ]
@@ -601,6 +643,8 @@ def sweep(
             "gjiConsidered": considered,
             "gjiMatched": result["gjiMatched"],
             "gjiMissing": result["gjiMissing"],
+            "gjiMissingGameRoles": result["gjiMissingGameRoles"],
+            "gjiMissingNonGameRoles": result["gjiMissingNonGameRoles"],
             "matchRatePct": round(result["gjiMatched"] * 100 / considered, 1)
             if considered
             else None,

@@ -12,6 +12,13 @@ host plus tenant. Never the studio label — the registry carries one board as b
 "Lost Boys Interactive" and "Lost Boys Interactive (Embracer Group)", and a
 label-keyed join calls a covered board missing.
 
+Candidates are sized with the role gate: ``missingCount`` counts every miss on
+the board, and ``gameRoleCount`` / ``nonGameRoleCount`` split those misses by
+whether the production row filter would keep the role. The raw count stays the
+authority — a report from before the gate carries no tag, so an untagged miss
+counts in the total and in neither split, and the split is additive information,
+never a replacement for the total.
+
 Candidates are emitted, not applied. Writing to the registry is a separate,
 deliberate step so the plan can be printed and asserted first.
 
@@ -75,9 +82,27 @@ def collect_candidates(
             key = f"unsupported:{candidate.get('adapter')}:{candidate.get('tenant') or key}"
         entry = grouped.setdefault(
             key,
-            {**candidate, "id": key, "missingCount": 0, "sampleTitles": [], "companies": set()},
+            {
+                **candidate,
+                "id": key,
+                "missingCount": 0,
+                "gameRoleCount": 0,
+                "nonGameRoleCount": 0,
+                "sampleTitles": [],
+                "companies": set(),
+            },
         )
         entry["missingCount"] += 1
+        # The sizing split. The tag is produced by the audit, which applies
+        # the production row filter to the GJI record; it is tri-state,
+        # because a report written before the gate carries no tag at all.
+        # An untagged miss is counted in the total and in neither split --
+        # guessing a label would manufacture a split that was never measured.
+        game_role = miss.get("gameRole")
+        if game_role is True:
+            entry["gameRoleCount"] += 1
+        elif game_role is False:
+            entry["nonGameRoleCount"] += 1
         title = str(miss.get("title") or "")
         if title and len(entry["sampleTitles"]) < 3:
             entry["sampleTitles"].append(title)
@@ -98,6 +123,8 @@ def summarise(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     by_status: dict[str, int] = {}
     by_adapter: dict[str, int] = {}
     openings = 0
+    game_openings = 0
+    non_game_openings = 0
     backlog: dict[str, dict[str, int]] = {}
     for row in candidates:
         status = str(row.get("status"))
@@ -105,6 +132,8 @@ def summarise(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         by_status[status] = by_status.get(status, 0) + 1
         if status == STATUS_NEW:
             openings += int(row.get("missingCount") or 0)
+            game_openings += int(row.get("gameRoleCount") or 0)
+            non_game_openings += int(row.get("nonGameRoleCount") or 0)
             by_adapter[adapter] = by_adapter.get(adapter, 0) + 1
         elif status == STATUS_UNSUPPORTED:
             entry = backlog.setdefault(adapter, {"boards": 0, "openings": 0})
@@ -114,6 +143,8 @@ def summarise(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "boards": len(candidates),
         "byStatus": by_status,
         "openingsRecoverable": openings,
+        "openingsRecoverableGameRoles": game_openings,
+        "openingsRecoverableNonGameRoles": non_game_openings,
         "newBoardsByAdapter": dict(sorted(by_adapter.items(), key=lambda kv: -kv[1])),
         "unsupportedVendorBacklog": dict(
             sorted(backlog.items(), key=lambda kv: -kv[1]["openings"])
@@ -133,6 +164,13 @@ def render(
         f"  already registered  : {sum(1 for c in candidates if c.get('status') == STATUS_ALREADY)}",
         f"  unsupported vendor  : {sum(1 for c in candidates if c.get('status') == STATUS_UNSUPPORTED)}",
         f"  no tenant resolved  : {sum(1 for c in candidates if c.get('status') == STATUS_NO_TENANT)}",
+    ]
+    if summary and "openingsRecoverable" in summary:
+        lines.append(
+            f"  openings recoverable: {summary['openingsRecoverable']} "
+            f"(game roles: {summary.get('openingsRecoverableGameRoles', 0)})"
+        )
+    lines += [
         "",
         f"{'openings':>8}  {'adapter':<16} {'id':<62} company",
         "-" * 120,

@@ -49,6 +49,7 @@ from src.jobs.adapters.static_detail_heuristics_filter import (  # noqa: E402, I
     _DEFAULT_DETAIL_QUERY_KEYS,
     is_probable_job_detail_url,
 )
+from src.jobs.game_detection import looks_like_game_job  # noqa: E402
 
 
 def _load(name: str, path: Path) -> Any:
@@ -299,6 +300,78 @@ def _row_count(data: Any) -> int:
     return 0 if not data else None
 
 
+def _listing_rows(data: Any) -> list[Any] | None:
+    """The row list of a recognised listing payload, or ``None``.
+
+    Same recognition rule as ``_row_count`` -- the first key in ``_ROW_KEYS``
+    that holds a list -- so the game-role count and the row count can never
+    disagree about which list is the listing. Envelopes that report a total
+    without carrying rows (BambooHR's ``meta.totalCount``) return ``None``:
+    their titles are not readable from the payload, and that is an answer.
+    """
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return None
+    for key in _ROW_KEYS:
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    return None
+
+
+def game_role_rows(payload: Any) -> int | None:
+    """Rows in a listing whose title the pipeline would keep, or ``None``.
+
+    The listing-basis half of the role gate: the audit tags GJI records by
+    title, but the titles a board actually serves are the ground truth, and
+    the two bases differ (GJI is a snapshot that goes stale). This runs the
+    same production row filter on the fetched rows, so a board's own
+    ``gameRoles`` is measured, not inferred from the catalogue.
+
+    ``None`` -- never a guess -- when the payload is not a recognised JSON
+    listing: HTML and XML boards carry no generic title field a GET can read,
+    which is exactly the population whose rows cannot be enumerated here.
+    An empty listing is a real ``0``, not an unknown: the endpoint answered.
+
+    The predicate is the production filter's canonical call shape --
+    title, company and tags, as the JSON-feed parsers invoke it -- so the
+    count matches what a filtering parser would keep. Note what this
+    measures against: the greenhouse and HTML-board parsers do not apply
+    the filter at all, so ``rows`` and ``gameRoles`` differ there by
+    design, and both are reported so the gap is visible rather than
+    silently absorbed into the feed.
+    """
+    if isinstance(payload, (str, bytes)):
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return None
+    else:
+        data = payload
+    rows = _listing_rows(data)
+    if rows is None:
+        return None
+    return sum(
+        1
+        for row in rows
+        if isinstance(row, Mapping)
+        and looks_like_game_job(
+            row.get("title") or row.get("name"),
+            row.get("company") or row.get("company_name"),
+            _row_tags(row),
+        )
+    )
+
+
+def _row_tags(row: Mapping[str, Any]) -> str:
+    """A row's tags as one string, the way the parsers build ``tags_text``."""
+    tags = row.get("tags")
+    if isinstance(tags, list):
+        return " ".join(str(tag) for tag in tags)
+    return str(tags) if tags is not None else ""
+
+
 def verify_structured_candidate(
     candidate: Mapping[str, Any], *, timeout: float = 40.0
 ) -> dict[str, Any]:
@@ -362,7 +435,13 @@ def verify_structured_candidate(
     if not rows:
         return {**base, "verdict": VERDICT_UNKNOWN, "reason": "CXS returned no listing envelope"}
     verdict = VERDICT_COLLECTS if rows else VERDICT_EMPTY
-    return {**base, "verdict": verdict, "reason": f"CXS reports {rows} openings", "rows": rows}
+    return {
+        **base,
+        "verdict": verdict,
+        "reason": f"CXS reports {rows} openings",
+        "rows": rows,
+        "gameRoles": game_role_rows(payload),
+    }
 
 
 def verify_candidate(candidate: Mapping[str, Any], *, timeout: float = 40.0) -> dict[str, Any]:
@@ -458,6 +537,7 @@ def verify_candidate(candidate: Mapping[str, Any], *, timeout: float = 40.0) -> 
         "rows": rows or 0,
         "anchors": anchors,
         "url": url,
+        "gameRoles": game_role_rows(payload),
     }
 
 
