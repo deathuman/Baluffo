@@ -496,3 +496,4 @@ DAYFORCE_PAGE_SIZE  # unused variable (src\jobs\adapters\plugins\provider_api\da
 newurl  # unused variable (src\jobs\adapters\provider_structured_listing.py) — urllib HTTPRedirectHandler.redirect_request protocol signature parameter
 looks_like_terminal_report_text  # unused function (src\report_history_slots.py) — consumed by tests/test_report_history_slots.py, outside vulture's src-only scope
 probe_rebranded_target  # unused function (src\source_discovery\rebrand_detection.py) — consumed by tests/source_discovery/test_rebrand_detection.py, outside vulture's src-only scope. Public API for discovery's promotion path, which lands in a later slice; the probe gate has no in-slice caller yet.
+transition_registry_to_retired  # unused function (src\source_registry_state.py) — consumed by tools/coverage_retire.py and tests/test_source_registry_retirement_gate.py, outside vulture's src-only scope. The gate for the evidence-gated retirement path.

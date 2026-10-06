@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from src.shared.utils import int_or_default as _coerce_int
@@ -26,6 +27,12 @@ REGISTRY_REASON_FETCH_EMPTY_DEMOTE = "fetch_empty_demote"
 REGISTRY_REASON_FETCH_FAILURE_DEMOTE = "fetch_failure_demote"
 REGISTRY_REASON_DUPLICATE_FAMILY = "duplicate_family_weaker_variant"
 REGISTRY_REASON_REPEATED_ZERO_JOBS = "repeated_zero_jobs"
+REGISTRY_REASON_EVIDENCE_GATED_RETIRE = "evidence_gated_retire"
+# The one redirect classification that is terminal. Duplicated as a literal because this
+# module must not import source_discovery (source_discovery imports source_registry, so the
+# reverse import is a cycle); `tests/test_source_registry_retirement_gate.py` pins the two
+# strings equal, which is what keeps the duplication honest.
+RETIRE_TERMINAL_CLASSIFICATION = "site_gone_or_moved"
 REGISTRY_MIGRATION_V2 = "registry_migration_v2"
 ZERO_JOB_HIDDEN_DEFER_THRESHOLD = 3
 
@@ -259,6 +266,44 @@ def transition_registry_to_rejected(
 ) -> dict[str, Any]:
     return _transition_registry_state(
         row, registry_state=REGISTRY_STATE_REJECTED, reason=reason, actor=actor, at=at
+    )
+
+
+def transition_registry_to_retired(
+    row: dict[str, Any],
+    *,
+    classification: str,
+    probe: Mapping[str, Any],
+    actor: str,
+    at: str | None = None,
+) -> dict[str, Any]:
+    """Retire a row, but only with terminal evidence.
+
+    The gate lives here rather than in the caller, so no code path can retire a board
+    without the two pieces the plan requires: a ``site_gone_or_moved`` redirect
+    classification (closure or acquisition -- the rebrand, migration and downgrade kinds
+    are explicitly *not* terminal) and a board-root probe that came back terminal **with a
+    known-good control passing through the same probe**. Anything else raises rather than
+    retiring: the costliest direction for this decision to err in is retiring a live board,
+    and the Bungie rebrand is what that looked like the last time it was guessed.
+    """
+    if str(classification or "").strip().lower() != RETIRE_TERMINAL_CLASSIFICATION:
+        raise ValueError(
+            f"refusing to retire: classification {classification!r} is not "
+            f"{RETIRE_TERMINAL_CLASSIFICATION!r} (a rebrand, migration or downgrade is not terminal)"
+        )
+    if not bool(probe.get("terminal")):
+        raise ValueError("refusing to retire: the board-root probe did not come back terminal")
+    if not bool(probe.get("control_ok")):
+        raise ValueError(
+            "refusing to retire: the known-good control failed through the same probe, so the "
+            "probe proves nothing"
+        )
+    return transition_registry_to_rejected(
+        row,
+        reason=REGISTRY_REASON_EVIDENCE_GATED_RETIRE,
+        actor=actor,
+        at=at,
     )
 
 
