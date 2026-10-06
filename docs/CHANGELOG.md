@@ -43,6 +43,12 @@ Two rules the guardrail enforces so this cannot quietly regress:
   concluding the page has nothing. Bungie's careers page is the measured case: its
   postings arrive inside the page payload, and they are read from there now; the host
   rule that sent the page to a full browser render is gone.
+- **Twenty-eight Japanese studio boards on the hrmos platform are now watched, with 833
+  openings between them.** Capcom, Square Enix, Nexon, GREE, Aiming, Dwango, Lasengle and
+  the others each serve their listings as plain pages, and every tenant was fetched for
+  real before it was added. Two other platforms probed for the same treatment (mokahr,
+  recruiterkr) did not serve their listings to a plain fetch, so they stay out rather than
+  being registered on faith.
 
 ### Fixed
 
