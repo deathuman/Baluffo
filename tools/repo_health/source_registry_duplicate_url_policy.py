@@ -78,6 +78,100 @@ def _row_careers_url(row: dict[str, Any]) -> str:
     return row.get("board_url") or row.get("listing_url") or row.get("url") or ""
 
 
+SEED_REGISTRY_STATES = frozenset({"active", "pending", "rejected"})
+
+# A row can encode its address in any one of these, depending on adapter.
+_SEED_FETCHABLE_URL_FIELDS = ("board_url", "listing_url", "careersUrl", "api_url", "url")
+
+# Provider adapters derive their list endpoint from a tenant rather than storing a URL.
+# `greenhouse:slug:bandainamco` and `lever:account:grand` are both real, active, collecting
+# rows with no URL field at all, so demanding a URL field alone would flag working rows.
+_SEED_PROVIDER_ADDRESS_FIELDS = ("slug", "account", "tenant", "base_url", "board_id")
+
+
+def _row_has_fetchable_address(row: dict[str, Any]) -> bool:
+    """Whether a seed row carries anything an adapter can turn into a list URL."""
+    if any(str(row.get(field) or "").strip() for field in _SEED_FETCHABLE_URL_FIELDS):
+        return True
+    return any(str(row.get(field) or "").strip() for field in _SEED_PROVIDER_ADDRESS_FIELDS)
+
+
+def list_seed_rows_not_registrations(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Return failure messages for seed rows that would never be fetched.
+
+    A seed row is a *registration*, not a candidate. Three things make it one: an
+    explicit ``registryState`` the loader recognises, an ``adapter``, and some address a
+    fetch can use. Without the state field the row is not broken in an obvious way --
+    it loads, counts, and passes every other check here -- but
+    ``_infer_registry_state`` reads a missing field as ``pending``, and pending rows are
+    not watched. So the row contributes nothing on every pass while every count that
+    includes it says otherwise.
+
+    That is the exact shape ``coverage_register.py --apply`` produced: candidate fields
+    (``decision``, ``missingCount``, ``status: new_candidate``) and no ``registryState``.
+    Twenty-seven such rows read as 27 registered boards in the preflight's row count while
+    collecting nothing, which is the false green this project keeps having to undo.
+    """
+    failures: list[str] = []
+    for row in rows:
+        # A committed seed is a JSON array of row objects. Anything else is a load error
+        # already reported by the sibling checks, not a per-row shape failure -- and
+        # reporting it as one would bury the real message under a dumped row.
+        if not isinstance(row, dict):
+            failures.append(f"seed row is not an object: {type(row).__name__}")
+            continue
+        row_id = str(row.get("id") or "").strip()
+        label = row_id or "<row with no id>"
+        if not row_id:
+            failures.append(f"{label}: seed row has no id, so nothing can address it.")
+            continue
+
+        raw_state = row.get("registryState")
+        state = str(raw_state or "").strip()
+        if not state:
+            hint = ""
+            if str(row.get("status") or "").strip() == "new_candidate" or "decision" in row:
+                hint = (
+                    " Candidate fields (status/decision/missingCount) are present, so this "
+                    "looks like a coverage_boards/coverage_register candidate written into "
+                    "the registry rather than a registration."
+                )
+            failures.append(
+                f"{label}: no registryState, so the loader infers 'pending' and the row is "
+                f"never fetched. Add registryState explicitly.{hint}"
+            )
+        elif state.lower() not in SEED_REGISTRY_STATES:
+            failures.append(
+                f"{label}: registryState={state!r} is not one of "
+                f"{sorted(SEED_REGISTRY_STATES)}, so the loader cannot act on it."
+            )
+
+        if not str(row.get("adapter") or "").strip():
+            failures.append(f"{label}: no adapter, so no loader is named for this row.")
+
+        if not _row_has_fetchable_address(row):
+            failures.append(
+                f"{label}: no fetchable address. Expected one of "
+                f"{', '.join(_SEED_FETCHABLE_URL_FIELDS)}, or a provider addressing field "
+                f"({'/'.join(_SEED_PROVIDER_ADDRESS_FIELDS)}) the adapter builds its list "
+                f"URL from."
+            )
+    return failures
+
+
+def check_active_seed_rows_are_registrations(repo_root: Path) -> list[str]:
+    """Guardrail entrypoint: fail when a committed active-seed row is not a registration."""
+    seed_path = _active_seed_path(repo_root)
+    loaded = _load_active_seed(seed_path)
+    # `_load_active_seed` returns `list[dict]` on success and `list[str]` of failure
+    # messages on error -- both are lists, so `isinstance(loaded, list)` cannot tell them
+    # apart. Keying on the element type is the only honest discriminator, and getting it
+    # wrong returns the 1,784 rows themselves as 1,784 "failures".
+    if loaded and isinstance(loaded[0], str):
+        return loaded
+    return list_seed_rows_not_registrations(loaded)
+
+
 def list_active_url_collisions(
     active_rows: Iterable[dict[str, Any]],
     known_urls: Iterable[str] = (),
