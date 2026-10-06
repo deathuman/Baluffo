@@ -177,7 +177,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
 | **DG** | Discovery gap: 242 audited boards / 1,990 openings never reached by the probe, and demonstrably real (12 of 12 sampled return 200 with jobs) | discovery, not measurement — **not started** |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings — **DONE**, the feed carries no URL element |
-| **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows — **DONE**, see below |
+| **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows — **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
 | — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
 | — | Five small platform hosts in the zero set | 18 boards / 256 openings — needs embedded-JSON extraction, no host rule |
@@ -226,10 +226,42 @@ worked. Replayed through the new classifier:
 | `insecure_downgrade` | 13 | same site, scheme dropped — a server misconfiguration |
 | `platform_migration` | **5** | the careers page moved to an applicant-tracking host |
 
-Only the last is the Ubisoft shape. The 117 are the dominant case and **none** of it is a
-platform move: `foxandsheep.com → linkedin.com` (closed), `exozet.com → endava.com` and
-`game-labs.net → stillfront.com` (acquired), `roblox.com → corp.roblox.com` (rebrand). Calling
-those migrations would point discovery at `linkedin.com`.
+Only the last is the Ubisoft shape, and the middle is where the first cut of this work was
+wrong. Classifying all 117 as "gone" filed **13 rebrands as dead boards** — `bungie.net →
+careers.bungie.com`, `traviangames.de → traviangames.com`, `softgames.de → softgames.com`,
+`talespin.company → talespin.com`, `gabagoogames.ca → gabagoogames.com`, `starklearning.nl →
+starklearning.eu` and more. Bungie is a board this catalogue already tracks; reading its
+redirect as "the studio left" is how a live board gets retired.
+
+Split on the registrable domain's label and the class separates cleanly:
+
+| tag | rows | recoverable |
+|---|---:|---|
+| `platform_migration` | 5 | yes, against the ATS adapter |
+| `site_rebranded` | 13 | **yes, if the new address lists jobs** |
+| `insecure_downgrade` | 13 | no — a server misconfiguration |
+| `site_gone_or_moved` | 104 | no — closure or acquisition |
+
+An acquisition is deliberately **not** a rebrand: `exozet → endava` and `echtragames → zynga`
+share no label, and treating those as rebrands would credit a dead board with a live company's
+openings. The rule needs a public suffix list, because a naive last-two-labels split reads
+`.co.za` as the suffix and invents registrable domains.
+
+**The rebrand tag says "same studio, new address", not "this address works."** Those are
+separate steps, and probing five of the thirteen against the runtime's own detector:
+
+| target | verdict |
+|---|---|
+| `traviangames.com/career` | **confirmed** — job links |
+| `talespin.com` | **confirmed** — job links |
+| `careers.bungie.com` | not confirmed — 27 anchors, `/jobs` is a landing page, data in `__NEXT_DATA__` |
+| `starklearning.eu` | not confirmed — 55 anchors, zero job-ish |
+| `joybits.games` | not confirmed |
+
+So two of five re-point immediately and three need the same JS-shell treatment as the platform
+boards — a landing page whose listings are embedded rather than linked. That is the honest
+result: the classification finds the candidates, and the probe decides, and "not confirmed"
+is a real answer rather than a failure.
 
 The classification is attached to the **existing refusal**; the guard still declines to follow
 every one of these redirects, and that is pinned in

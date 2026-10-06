@@ -24,6 +24,9 @@ than being folded in:
 
 - ``platform_migration`` -- target host is a known ATS host. Carries the adapter, because that
   is what tells discovery which loader to register against.
+- ``site_rebranded`` -- the same studio on a new domain, matched on the registrable
+  domain's label. Recoverable: the board can be re-pointed, once the new address is probed for
+  job links.
 - ``site_gone_or_moved`` -- cross-site to a host we do not recognise. The board left; there is
   nothing to register.
 - ``insecure_downgrade`` -- same site, scheme dropped. Not a move at all: `ninjatheory.com`
@@ -48,6 +51,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+from src.source_discovery.rebrand_detection import REBRANDED, is_rebrand
 
 # Host patterns that identify an applicant-tracking platform. Matched as suffixes, so
 # `job-boards.eu.greenhouse.io` is recognised while `notgreenhouse.io` is not.
@@ -215,11 +220,32 @@ def classify_cross_site_redirect(source_url: str, target_url: str) -> RedirectCl
             reason=f"careers page moved to {adapter}",
         )
 
+    cleaned = _strip_path_parameters(str(target_url or ""))
+
+    # A studio that moved to its own new domain is not gone. `www.bungie.net` answering with a
+    # redirect to `careers.bungie.com` is Bungie still hiring, on a new address -- and Bungie is
+    # a board the catalogue already knows. Filing that as `site_gone_or_moved` is how a live
+    # board reads as dead, which is the costliest direction for this classification to err in.
+    #
+    # Checked *after* the platform test, because a move to an ATS host is better news than a
+    # move to a bare domain and carries a tenant with it. And checked on the registrable domain
+    # and its label, so an acquisition to a differently-named company (`exozet` -> `endava`)
+    # stays terminal rather than being mistaken for a rebrand.
+    if is_rebrand(source_site, target_site):
+        return RedirectClassification(
+            kind=REBRANDED,
+            source_site=source_site,
+            target_host=target_host,
+            target_site=target_site,
+            target_url=cleaned,
+            reason="same studio, new domain",
+        )
+
     return RedirectClassification(
         kind=SITE_GONE,
         source_site=source_site,
         target_host=target_host,
         target_site=target_site,
-        target_url=_strip_path_parameters(str(target_url or "")),
+        target_url=cleaned,
         reason="redirect left the site for a host no platform owns",
     )

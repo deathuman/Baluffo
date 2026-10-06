@@ -495,3 +495,4 @@ normalize_manual_promotion_rows  # unused function (src\jobs\registry.py) — co
 DAYFORCE_PAGE_SIZE  # unused variable (src\jobs\adapters\plugins\provider_api\dayforce.py) — documents the provider's fixed 50/page search contract; Dayforce's API has no client page-size param
 newurl  # unused variable (src\jobs\adapters\provider_structured_listing.py) — urllib HTTPRedirectHandler.redirect_request protocol signature parameter
 looks_like_terminal_report_text  # unused function (src\report_history_slots.py) — consumed by tests/test_report_history_slots.py, outside vulture's src-only scope
+probe_rebranded_target  # unused function (src\source_discovery\rebrand_detection.py) — consumed by tests/source_discovery/test_rebrand_detection.py, outside vulture's src-only scope. Public API for discovery's promotion path, which lands in a later slice; the probe gate has no in-slice caller yet.
