@@ -45,6 +45,16 @@ Two rules the guardrail enforces so this cannot quietly regress:
   collections. Boards with nothing to offer are unaffected, because the ceiling is a limit and
   not a wait. This brings the default path in line with the `uncapped` preset, which has run
   at 180 seconds since before.
+- **Personio boards collect again.** Personio's XML feed has no URL element — a live
+  posting carries an id, an office, a department and a description, and nothing that points at
+  the advertisement. Every row therefore arrived with an empty link and was discarded as
+  incomplete, which is why the provider read as having nothing while its feeds were being read
+  successfully. Links are now built from the feed's own address and the posting id, so a
+  studio's board resolves to a page a person can open.
+- **A memory-growth flaw in a networking dependency is no longer pinned.** An advisory
+  against the HTTP client stack's dictionary type let a remote request drive memory growth
+  that was never reclaimed. The affected version was pinned but not the version actually
+  installed, so the lock file now matches what ships.
 - **A mistyped static tuning variable no longer fails the whole run.** The three numeric
   static environment variables were read with a bare `int()`, so an unparseable value raised
   straight out of the configuration builder and took the fetch down with it instead of

@@ -170,7 +170,7 @@ def _run_personio_registry_source(
         return [], "", entry_report
     try:
         text = fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
-        parsed = parse_personio_feed_xml(text, source_name=studio)
+        parsed = parse_personio_feed_xml(text, source_name=studio, feed_url=feed_url)
         entry_report["fetchedCount"] = len(parsed)
         entry_report["keptCount"] = len(parsed)
         if not parsed:

@@ -176,7 +176,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reports **0** while **199** rows need fallback — **agreed, not landed** |
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
 | **DG** | Discovery gap: 242 audited boards / 1,990 openings never reached by the probe, and demonstrably real (12 of 12 sampled return 200 with jobs) | discovery, not measurement — **not started** |
-| **P** | `personio` 0 of 12 boards, dark in two releases | bounded — **not started** |
+| **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings — **DONE**, the feed carries no URL element |
 | **R** | `Unsafe static redirect` boards cannot self-repair — **not a one-line token add, see below** | 136 live rows — **not started** |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
 | — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
@@ -243,6 +243,40 @@ security decision rather than a coverage one, and it is not made here.
 Two smaller findings in the same class, neither yet diagnosed: two rows whose extracted URL is a
 `twitter.com/intent/tweet?url=` share link, and two `personio` rows whose error mentions a
 redirect only upstream of a `no jobs extracted`.
+
+### On P: the provider was not dark, it was linkless
+
+`personio` read as 0 of 12 boards collecting, dark across two releases, and the row's error
+named an HTTP 429 on one tenant — which is what I reached for first. **The 429 was incidental.**
+
+| | |
+|---|---|
+| tenants registered | 12 |
+| tenants that parsed | 10 (Welevel 429, Yager no-parse) |
+| sum of per-tenant detail `keptCount` | **54** |
+| row `fetchedCount` / `keptCount` | 54 / **0** |
+| `canonicalDropReasons` | **`missing_job_link: 54`** |
+| `source == "personio_sources"` in the output | **0 of 49,240** |
+
+The adapter was healthy and said so: `entry_report["keptCount"] = len(parsed)`, and
+`run_personio_sources_source` took its `if jobs or not errors: return jobs` branch. The 54 rows
+then died at canonicalisation, which is why the failure looked like an empty provider rather
+than a discarded one. Every other rollup tracks its detail sum closely — bamboohr 335/383,
+workable 870/1,139, greenhouse 1,621/1,623 — so this was personio-specific, not rollup
+accounting.
+
+**Cause: the feed has no URL element.** A live `<position>` carries `id, office, department,
+recruitingCategory, name, jobDescriptions, employmentType, seniority, schedule, keywords,
+occupation, occupationCategory, createdAt, yearsOfExperience`, and no attributes. So
+`posting.findtext("url")` was always `None`.
+
+The public shape is `https://<tenant>.jobs.personio.<tld>/job/<id>`, visible in the same run's
+output as `https://remotecontrol.jobs.personio.com/job/2628436`. Links are now derived from
+the feed's own host and the posting id, and an explicit `<url>` still wins when a feed carries
+one. Verified against a live feed: **22 rows, 22 linkless before, 0 after**.
+
+The lesson is the one this plan keeps paying for: the provider-level symptom pointed at a rate
+limit, and the actual defect was only visible in the loss accounting nobody reads.
 
 
 ### Verification gate for each step

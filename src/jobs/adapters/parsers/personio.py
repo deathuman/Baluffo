@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Personio parser 
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from src.jobs.game_detection import looks_like_game_job
@@ -37,7 +38,38 @@ def looks_like_personio_marketing_html(xml_text: str) -> bool:
     return any(marker in text for marker in _PERSONIO_MARKETING_MARKERS)
 
 
-def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob]:
+def personio_posting_url(feed_url: str, posting_id: str) -> str:
+    """Build a posting URL from the feed host and the posting id.
+
+    **Personio's XML feed carries no URL element.** A live feed's ``<position>`` children are
+    ``id, office, department, recruitingCategory, name, jobDescriptions, employmentType,
+    seniority, schedule, keywords, occupation, occupationCategory, createdAt,
+    yearsOfExperience`` -- there is no ``<url>``, and ``<position>`` carries no attributes.
+
+    So ``posting.findtext("url")`` was always ``None``, every parsed row got an empty
+    ``jobLink``, and canonicalisation dropped the lot: a live run recorded
+    ``rawFetched 54, canonicalDropped 54, canonicalKept 0`` with
+    ``canonicalDropReasons {missing_job_link: 54}``. The adapter reported itself healthy --
+    10 of 12 tenants parsed and the per-tenant detail ``keptCount`` summed to 54 -- while the
+    rollup kept 0, which is why the provider read as dark rather than broken.
+
+    The public shape is ``https://<tenant>.jobs.personio.<tld>/job/<id>``, visible in that same
+    run's output as ``https://remotecontrol.jobs.personio.com/job/2628436``. Deriving it from
+    the feed URL keeps the link on the tenant's own host rather than inventing one.
+
+    Returns ``""`` when either part is missing, so a row with no id keeps its previous
+    behaviour instead of gaining a wrong link.
+    """
+    host = (urlparse(str(feed_url or "")).hostname or "").strip().lower()
+    clean_id = clean_text(posting_id)
+    if not host or not clean_id:
+        return ""
+    return f"https://{host}/job/{clean_id}"
+
+
+def parse_personio_feed_xml(
+    xml_text: str, source_name: str = "", *, feed_url: str = ""
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     if looks_like_personio_marketing_html(xml_text):
         # Marketing payload, not XML: return no rows and let the runner's
@@ -59,8 +91,10 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob
         department = clean_text(posting.findtext("department"))
         city, country, work_type = parse_generic_location_fields(office)
         location_details = normalize_location_details(office)
-        job_link = clean_text(posting.findtext("url"))
         posting_id = clean_text(posting.findtext("id") or posting.get("id"))
+        # The feed carries no <url> element, so the tenant's public job URL is built
+        # from the posting id. Without this every row is dropped as `missing_job_link`.
+        job_link = clean_text(posting.findtext("url")) or personio_posting_url(feed_url, posting_id)
         tags = " ".join([department, office])
         if not looks_like_game_job(title, company, tags):
             continue
