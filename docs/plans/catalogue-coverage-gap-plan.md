@@ -173,7 +173,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run; shipped-code decision pending — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows **DONE**; 13 rebrands found, see below |
-| **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
+| **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings **DONE** — the 168 and the 23 classify `unknown` |
 | — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
 | — | Five small platform hosts in the zero set | 18 boards / 256 openings — needs embedded-JSON extraction, no host rule |
 | — | Classify the remaining fetched-and-empty static boards by extraction shape | ~825 openings — per-board |
@@ -185,8 +185,8 @@ led instead; it is not missing, and could not land until **A** was fixed.
 from source pages`), which `reporting_breakdowns` also buckets as `needs_review`. The
 reporting layer handles the shape; what remains is `failedSources` counting those 23 as
 failures, feeding `failedSourceRatioLatest`. Narrowing a persisted contract is a
-compatibility change, so the split lives in the drain tool. Write D against the 168 and the
-23 together.
+compatibility change, so the split lives in the drain tool — **DONE**, both populations
+classify `unknown`, `failedSources` untouched.
 
 **On T, and why the cap is not the lever.** Browser fallback demand was 1,032 attempts,
 988 refused, 40 served. Refusal comes from a *per-source 30-minute cooldown* set after a

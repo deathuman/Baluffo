@@ -518,6 +518,7 @@ _SKIP_DECISIONS = frozenset({"skip_fresh", "cooldown_skip", "skip_revalidate", "
 FETCH_STATES = (
     "collected",
     "fetched_empty",
+    "unknown",
     "error",
     "not_selected",
     "rollup_only",
@@ -533,6 +534,14 @@ FETCH_STATES = (
 # `failedSources` itself is left alone: it feeds `failedSourceRatioLatest` in ops_health and
 # `ops_live_payload`, and narrowing a persisted report contract to make a local number read
 # better is the wrong trade. The split is surfaced here instead.
+#
+# The D work item adds two shapes to `unknown` rather than `fetched_empty`/`error`: the
+# `ok` + `kept 0` + `latest fetch kept no jobs` rows (168 in v7) and the `no jobs
+# extracted` errors (23). The runtime files both as `needs_review`, never `legit_empty` --
+# so "asked and empty" is a conclusion it refuses to draw, and this harness must not draw
+# it either. `failedSources` keeps counting the second group as failures, by design: that
+# divergence is the persisted contract doing its job while this harness reports what the
+# evidence actually decides.
 ERROR_KINDS = (
     "no_openings",
     "time_budget",
@@ -578,6 +587,14 @@ def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
     The distinction this exists for: ``fetchedCount == 0`` alone cannot tell a board that
     was asked and had nothing from one that was never asked. A board reported as zero on
     the strength of a skip is a measurement artifact wearing a coverage finding's clothes.
+
+    ``unknown`` is the third answer, and it is neither a softer ``error`` nor an empty
+    board. A static row whose fetch spent seconds, kept nothing, and whose own
+    ``healthReason`` is "latest fetch kept no jobs" is bucketed ``needs_review`` by the
+    runtime -- 168 of them in the v7 run, 0 ``legit_empty``. The same state arrives via
+    ``error`` for "no jobs extracted from source pages" (23 in v7). Both say the pipeline
+    cannot tell whether the board is empty; calling either "asked and empty" claims a
+    conclusion the runtime itself does not.
     """
     if row is None:
         return {
@@ -594,17 +611,33 @@ def _classify_source(row: dict[str, Any] | None) -> dict[str, Any]:
     duration = int(row.get("durationMs") or 0)
     decision = str(((row.get("details") or [{}])[0] or {}).get("cacheDecision") or "")
     error = str(row.get("error") or "")
+    health_reason = str(row.get("healthReason") or "")
     if error:
-        state = "error"
-    elif kept > 0:
+        error_kind = classify_error_kind(error)
+        # `no_openings` is the one error kind that is not a failure: the board answered and
+        # extraction found nothing. With zero kept it is undecidable, and leaving it as
+        # `error` would repeat the failure-count mistake the kind split exists to stop.
+        state = "unknown" if error_kind == "no_openings" and kept == 0 else "error"
+        return {
+            "state": state,
+            "error_kind": error_kind,
+            "kept_count": kept,
+            "fetched_count": fetched,
+            "duration_ms": duration,
+            "cache_decision": decision,
+            "error": error[:120],
+        }
+    if kept > 0:
         state = "collected"
     elif decision in _SKIP_DECISIONS or (duration == 0 and fetched == 0):
         state = "not_selected"
+    elif fetched == 0 and health_reason == "latest fetch kept no jobs":
+        state = "unknown"
     else:
         state = "fetched_empty"
     return {
         "state": state,
-        "error_kind": classify_error_kind(error) if state == "error" else "",
+        "error_kind": "",
         "kept_count": kept,
         "fetched_count": fetched,
         "duration_ms": duration,
