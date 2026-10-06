@@ -80,6 +80,21 @@ def test_a_root_board_owns_the_whole_host() -> None:
     assert drain._match_board(_url("/anything/at/all"), only_root) == ("jobs.jobvite.com", "root")
 
 
+def test_an_ambiguous_root_claim_is_not_guessed() -> None:
+    """Two empty-prefix claimants on one host must resolve to neither.
+
+    The shape that produced the false zeros: every URL-less curated provider row lands in
+    the index with an empty prefix, and a shared provider host then has dozens of "root"
+    claimants. Returning the first credited one greenhouse board with 728 postings while
+    the other 50 read zero -- the tenant rule is the only rule that can tell them apart.
+    """
+    crowd = [
+        ("job-boards.greenhouse.io", "", ("job-boards.greenhouse.io", "2k")),
+        ("job-boards.greenhouse.io", "", ("job-boards.greenhouse.io", "hasbro")),
+    ]
+    assert drain._match_board("https://job-boards.greenhouse.io/2k/jobs/1", crowd) is None
+
+
 def test_the_longest_matching_prefix_wins() -> None:
     """One board can sit under another; the more specific board owns the posting."""
     nested = [

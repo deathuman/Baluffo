@@ -125,6 +125,35 @@ def test_each_tenant_gets_its_own_board_not_the_first_one():
     assert razor != koei
 
 
+def _canonical_greenhouse_job(slug, job_id="12345"):
+    """A posting on the host the registry's own identity derives, where shadowing bit."""
+    url = f"https://job-boards.greenhouse.io/{slug}/jobs/{job_id}"
+    return {
+        "source": "greenhouse_boards",
+        "jobLink": url,
+        "sourceBundle": [
+            {"adapter": "greenhouse", "jobLink": url, "source": "greenhouse_boards", "studio": slug}
+        ],
+    }
+
+
+def test_postings_on_the_canonical_host_do_not_shadow_to_the_first_board():
+    """The measured defect: 50 greenhouse boards read zero while the first took 728.
+
+    Curated rows carry no URL, so they reach the prefix index with an empty prefix; on the
+    canonical host the root-owns-host fallback credited the first of them with every
+    posting. The host root is only trustworthy when a single board claims it -- with many
+    claimants the tenant rule is the only rule that can tell them apart.
+    """
+    report = _greenhouse_report("razorgames", "koeitecmo")
+    _by_source, prefix_index, _rollup, tenant_index = cd._source_key_index(report)
+    razor = cd._match_bundle(_canonical_greenhouse_job("razorgames"), prefix_index, tenant_index)
+    koei = cd._match_bundle(_canonical_greenhouse_job("koeitecmo"), prefix_index, tenant_index)
+    assert razor is not None and koei is not None
+    assert razor[1] == "razorgames"
+    assert koei[1] == "koeitecmo"
+
+
 def test_the_tenant_segment_is_read_case_insensitively():
     """The registry lowercases path segments; a mixed-case posting URL is the same board."""
     report = _greenhouse_report("RazorGames")

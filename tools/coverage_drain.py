@@ -757,10 +757,16 @@ def _match_board(url: str, index: list[tuple[str, str, tuple[str, str]]]) -> tup
             return key
         if prefix and path == prefix:
             return key
-    # A board whose listing URL is the site root owns the whole host.
-    for _candidate_host, prefix, key in matches:
-        if not prefix:
-            return key
+    # A board whose listing URL is the site root owns the whole host -- but only when it is
+    # the *single* claimant. A curated provider row that carries no URL lands in the index
+    # with an empty prefix too, and on a shared provider host (greenhouse, ashby, workable,
+    # lever, smartrecruiters) that made the first row the owner of every posting: one
+    # greenhouse board was credited with 728 postings while the other 50 read zero. An
+    # ambiguous host is not guessed here; `_match_bundle`'s tenant rule is the rule for
+    # those boards, and it resolves each posting by its own path segment.
+    roots = [key for _candidate_host, prefix, key in matches if not prefix]
+    if len(roots) == 1:
+        return roots[0]
     return None
 
 

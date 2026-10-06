@@ -58,9 +58,9 @@ of the curated-only provider boards returned HTTP 200 with live job counts on 12
 125, Applovin 44, Bluehole 18, Crystal Dynamics 1). It is a *discovery* gap.
 
 **Local (`tools/coverage_drain.py --verify-collected`, isolated `--data-dir`, run `v7`):**
-322 of 688 registered boards keep a non-zero count, against 688 of 695 registered and 7 / 71
-unregistered. The harness reported four wrong numbers before that one; 42 tests now pin the
-invariants.
+322 of 688 registered boards keep a non-zero count — **438** of 688 after the attribution
+fix below — against 688 of 695 registered and 7 / 71 unregistered. The harness reported four
+wrong numbers before that one; 42 tests now pin the invariants.
 
 The 168 boards that fetched and kept nothing are **not** cache skips and **not**
 misattribution: measured on the source rows, `cacheDecision: run_now`, `durationMs`
@@ -93,7 +93,8 @@ collapse to 16 rollup rows by design, and the rollups collected 7,956 openings; 
 267 prefix entries held an **empty** prefix (the 193 rows with no `listing_url`), so those
 boards could not be attributed at all. Matching the tenant — the posting URL's first path
 segment — fixed it: **all 7,186 rollup jobs now attribute, zero unmatched**, 194 by tenant,
-collecting boards 322 → 331. The 41 greenhouse boards still at zero are a real zero.
+collecting boards 322 → 331. **The zeros were not real** — an attribution shadow, fixed;
+v7's corrected tally is 438 — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md).
 
 Delivery is reported in openings, not boards: one board with 176 promised openings and one
 with a single opening are not comparable units. Both prior delivery tables are withdrawn — the
@@ -169,6 +170,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reported **0** while **199** rows needed fallback **DONE**, verified against the live report |
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
 | **DG** | Audited boards Baluffo lacks. Measured 2026-10-06: **94 openings / 20 boards** in EU, **2,324 / 147** in ANY | **24 boards confirmed collecting, 149 game jobs**; role gate shipped — see below |
+| — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run; shipped-code decision pending — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
@@ -332,17 +334,13 @@ listings, 132 game roles (27%)**. Per-board yields, the feed-staleness
 accounting, and reproduction commands:
 [`docs/snapshots/dg-role-gate-2026-10-06.md`](../snapshots/dg-role-gate-2026-10-06.md).
 
-**The gate exposed a parse-path asymmetry.** The row filter runs on the lever,
-smartrecruiters, recruitee, personio, remotive, social and static detail-page
-parsers — but **not** on the greenhouse parser, the HTML-board providers (ashby,
-breezy, jazzhr), the community Google Sheets path, or the static
-listing-extraction lanes. The public feed consequently carries 4,734
-greenhouse-hosted and 1,212 ashby-hosted rows of which only 341 and 74 pass the
-filter — overwhelmingly sheet-sourced from non-game employers. The 0.3.011
-registration sits on exactly the unfiltered paths, so its next fetch delivers
-~488 rows of which ~132 are game roles; the rest are business roles at game
-studios. Whether the public feed should carry those is a product decision with a
-~4,700-row blast radius — measured in the snapshot, not fixed unilaterally.
+**The gate exposed a parse-path asymmetry.** The row filter runs on most
+parsers but **not** on the greenhouse parser, the HTML-board providers (ashby,
+breezy, jazzhr), the community Google Sheets path, or the static listing lanes:
+the public feed carries 4,734 greenhouse-hosted and 1,212 ashby-hosted rows of
+which only 341 and 74 pass the filter. The 0.3.011 registration sits on the
+unfiltered paths, so whether the feed should carry the rest is a product
+decision — measured in the snapshot, not fixed unilaterally.
 
 ## What is left, in priority order
 
