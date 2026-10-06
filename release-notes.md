@@ -1,44 +1,36 @@
-## [0.3.009] - 2026-10-06
+## [0.3.010] - 2026-10-06
+### Added
+
+- **A board that moved platforms now says so.** When a studio's careers page answers with a
+  redirect to somewhere else, the fetch used to record one anonymous failure for four different
+  situations — a studio that closed, one that rebranded, one whose server dropped to an
+  insecure connection, and one whose listings genuinely moved to an applicant-tracking system.
+  Each is now named. The boards that moved are recognised as belonging to the platform that
+  serves them, so they can be registered there rather than kept on a page that no longer lists
+  them.
+
 ### Fixed
 
-- **Boards are no longer reported as broken for being slow.** The per-source static fetch
-  ceiling was 25 seconds, and a board that was mid-fetch when it expired was filed as a
-  failure — `time_budget_exceeded` — so a configured limit read as 134 broken boards on a live
-  run. It is now 90 seconds, which is the value measured rather than a larger untested one:
-  raising it alone moved time-budget errors from 14 to 1 and turned 11 boards into real
-  collections. Boards with nothing to offer are unaffected, because the ceiling is a limit and
-  not a wait. This brings the default path in line with the `uncapped` preset, which has run
-  at 180 seconds since before.
-- **Personio boards collect again.** Personio's XML feed has no URL element — a live
-  posting carries an id, an office, a department and a description, and nothing that points at
-  the advertisement. Every row therefore arrived with an empty link and was discarded as
-  incomplete, which is why the provider read as having nothing while its feeds were being read
-  successfully. Links are now built from the feed's own address and the posting id, so a
-  studio's board resolves to a page a person can open.
-- **A memory-growth flaw in a networking dependency is no longer pinned.** An advisory
-  against the HTTP client stack's dictionary type let a remote request drive memory growth
-  that was never reclaimed. The affected version was pinned but not the version actually
-  installed, so the lock file now matches what ships.
-- **A mistyped static tuning variable no longer fails the whole run.** The three numeric
-  static environment variables were read with a bare `int()`, so an unparseable value raised
-  straight out of the configuration builder and took the fetch down with it instead of
-  falling back to its default.
-- **Browser-fallback escalations are no longer invisible.** Per-source outcome fields are
-  written into a source row's first detail entry, but the health summary read them from the
-  top of the row. A live run therefore reported that **no** source needed browser fallback
-  while **199** rows said otherwise — including 78 boards failing HTTP 403 — and recorded no
-  reason for any source being in fallback cooldown, which is why refusals could not be
-  diagnosed. Both are now read from the detail row.
+- **A stray character no longer rides along on a board's address.** Some careers pages redirect
+  to an address ending in a semicolon. It is a legal part of a web address and the page loads,
+  but the character was being carried into the address we store for the board, leaving every
+  later reader to strip it again.
 
 ### Notes
 
-- The coverage figures in the release plan were corrected. "The live run collected 0 of 6,929
-  openings" was a measurement that scored the hand-audited board list against the live
-  registry and called non-membership a collection failure. Measured on its own registry rows,
-  the same release writes 49,240 jobs with 1,019 boards keeping a non-zero count. Delivery is
-  now reported over registry rows and catalogue gap over the audited list, rather than one
-  number standing for both.
-- Distribution surfaces are unchanged. The same-origin Linux container,
-  GHCR multi-arch image publishing, private community app-store metadata, and
-  wildcard browser CORS allow headers all behave as they did in 0.3.008, as does
-  desktop localhost bridge compatibility. Umbrel raw-LAN installs are likewise unchanged.
+- Nothing about what the runtime will and will not fetch has changed. A redirect that leaves a
+  site's own domain is still refused rather than followed, including one that leads to a
+  platform we recognise; the new classification explains the refusal instead of permitting it.
+  This was measured on a live run: of 135 such redirects, 117 were studios that closed,
+  rebranded or were acquired, 13 were insecure same-site redirects, and 5 were genuine moves to
+  a recruitment platform.
+- The closed, rebranded and acquired boards are labelled but deliberately **not** retired. A
+  retirement is a visibility change with real consequences, so it is not something to do as a
+  side effect of a better error message.
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.009:
+  the same-origin Linux container,
+  Umbrel raw-LAN installs,
+  GHCR multi-arch image publishing,
+  private community app-store metadata,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.

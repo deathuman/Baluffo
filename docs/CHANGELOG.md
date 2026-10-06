@@ -34,6 +34,43 @@ Two rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.010] - 2026-10-06
+### Added
+
+- **A board that moved platforms now says so.** When a studio's careers page answers with a
+  redirect to somewhere else, the fetch used to record one anonymous failure for four different
+  situations — a studio that closed, one that rebranded, one whose server dropped to an
+  insecure connection, and one whose listings genuinely moved to an applicant-tracking system.
+  Each is now named. The boards that moved are recognised as belonging to the platform that
+  serves them, so they can be registered there rather than kept on a page that no longer lists
+  them.
+
+### Fixed
+
+- **A stray character no longer rides along on a board's address.** Some careers pages redirect
+  to an address ending in a semicolon. It is a legal part of a web address and the page loads,
+  but the character was being carried into the address we store for the board, leaving every
+  later reader to strip it again.
+
+### Notes
+
+- Nothing about what the runtime will and will not fetch has changed. A redirect that leaves a
+  site's own domain is still refused rather than followed, including one that leads to a
+  platform we recognise; the new classification explains the refusal instead of permitting it.
+  This was measured on a live run: of 135 such redirects, 117 were studios that closed,
+  rebranded or were acquired, 13 were insecure same-site redirects, and 5 were genuine moves to
+  a recruitment platform.
+- The closed, rebranded and acquired boards are labelled but deliberately **not** retired. A
+  retirement is a visibility change with real consequences, so it is not something to do as a
+  side effect of a better error message.
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.009:
+  the same-origin Linux container,
+  Umbrel raw-LAN installs,
+  GHCR multi-arch image publishing,
+  private community app-store metadata,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
+
 ## [0.3.009] - 2026-10-06
 ### Fixed
 
@@ -156,28 +193,3 @@ Two rules the guardrail enforces so this cannot quietly regress:
 - **A developer-only report script no longer advertises an option it never had.** It accepted a time filter, ignored it, and documented it in its usage line. The option is gone and the usage line now matches what the script does.
 
 - **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.002. The only user-visible difference is that a tooltip you dismissed with Escape stays dismissed, and that a failed attachment load now says so.
-
-
-## [0.3.002] - 2026-10-01
-> Housekeeping release. Nothing you can see looks different: this removes
-> styling that no page could ever display, and fixes a test that was failing on
-> its own about one run in four. It exists so the cleanup below can actually
-> reach you instead of sitting on the development branch.
-
-### Changed
-
-- **Removed styling that nothing was ever able to display.** The stylesheets carried rules for 18 classes that no part of the app could put on a page, plus two colour settings nothing referred to. Nothing you saw was affected and nothing you see will change — the pages are pixel-for-pixel identical, checked on all three main screens. Removing them makes the stylesheet smaller and easier to trust: what is left in it is styling that is genuinely in use.
-
-- **Container updates no longer rebuild for tool-only dependency bumps.** Updating a developer-only tool — a linter, a type checker — rebuilt the container image and republished the current version under the same version number. Nothing about the running app changed, but the image behind a version you already had was quietly replaced. Those updates no longer trigger a rebuild. Real changes to what the app runs still do.
-
-### Fixed
-
-- **A check that was failing intermittently for no reason.** One of the Admin interface tests failed roughly one time in four depending on how busy the machine was, which was making it hard to trust the test suite. It was timing its own observation rather than recording it, so it could miss the thing it was looking at. It now records what it saw and checks that, and passed ten consecutive full runs.
-
-### Notes
-
-- **No behaviour, data, or upgrade changes.** No saved jobs, settings, or tracked applications are touched, and there is no migration to run.
-
-- **Distribution surfaces are unchanged.** The same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave exactly as they did in 0.3.001. Install and update paths are the same, and the Linux AppImage, portable Windows app, and recovery bundle are all published as before.
-
-- **What changed about how releases are guarded.** Because a stylesheet edit is part of what ships, a change of this kind can no longer land while an already-published version is current — it would replace the image behind a version you have. That is now caught automatically, with a clear explanation, before it reaches you.

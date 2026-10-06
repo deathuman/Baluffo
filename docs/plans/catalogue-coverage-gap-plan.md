@@ -177,7 +177,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **BF2** | Persist `browserFallbackLastError` into report rows | cooldown causes unrecorded; 988 of 1,032 attempts refused — **not started** |
 | **DG** | Discovery gap: 242 audited boards / 1,990 openings never reached by the probe, and demonstrably real (12 of 12 sampled return 200 with jobs) | discovery, not measurement — **not started** |
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings — **DONE**, the feed carries no URL element |
-| **R** | `Unsafe static redirect` boards cannot self-repair — **not a one-line token add, see below** | 136 live rows — **not started** |
+| **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows — **DONE**, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings — see below |
 | — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
 | — | Five small platform hosts in the zero set | 18 boards / 256 openings — needs embedded-JSON extraction, no host rule |
@@ -215,69 +215,40 @@ counts those 23 as failures, and that number feeds `failedSourceRatioLatest`. Na
 persisted report contract is a compatibility change, so the split lives in the drain tool
 for now. Write D against the 168, and treat the 23 as the second half of the same finding.
 
-### On R: the token addition is not the fix
+### R: a refused redirect now says what it refused
 
-`Unsafe static redirect` is **136 live rows**, not the 20 an earlier classifier bucket
-suggested, and none of the 136 matches any token in `PATCHABLE_ERROR_TOKENS`. So the class
-cannot self-repair. But adding `"unsafe static redirect"` to that tuple would be the wrong
-repair, for two reasons found by reading the code rather than the plan:
+The 135 rows were never one class, and the shape of the class is why no token would have
+worked. Replayed through the new classifier:
 
-**The error is a deliberate security guard.** `_safe_redirect_url` raises it when the redirect
-target has a non-http(s) scheme, carries credentials, **changes site** (`www.` stripped), or
-downgrades https to http. The dominant case for a careers board is a cross-site move — a studio
-leaving its own site for a platform — which is the Ubisoft shape, and the right answer there is
-to register the board against the platform, not to patch the old URL.
+| tag | rows | what it is |
+|---|---:|---|
+| `site_gone_or_moved` | 117 | the studio closed, rebranded, or was acquired |
+| `insecure_downgrade` | 13 | same site, scheme dropped — a server misconfiguration |
+| `platform_migration` | **5** | the careers page moved to an applicant-tracking host |
 
-**The patcher has no destination to work from.** `resolve_patch_target` tries
-`extract_redirect_location`, which parses only `Redirect location: '...'` — a form this error
-does not use. It then falls back to extracting the first URL from the message (the *original*,
-not the target) and guessing among `suggest_alternate_career_urls`. The caller probes before
-accepting, so a wrong guess costs probe budget rather than bad data — which makes it safe and
-merely wasteful.
+Only the last is the Ubisoft shape. The 117 are the dominant case and **none** of it is a
+platform move: `foxandsheep.com → linkedin.com` (closed), `exozet.com → endava.com` and
+`game-labs.net → stillfront.com` (acquired), `roblox.com → corp.roblox.com` (rebrand). Calling
+those migrations would point discovery at `linkedin.com`.
 
-The better fix is to parse the destination out of this error form, since the message carries
-it: `Unsafe static redirect from <a> to <b>`. That turns a guess into a known target. **It also
-means deliberately routing a redirect the safety guard rejected into a fetch**, so it is a
-security decision rather than a coverage one, and it is not made here.
+The classification is attached to the **existing refusal**; the guard still declines to follow
+every one of these redirects, and that is pinned in
+`tests/jobs_static/test_static_redirect_guard.py`. The classifier reads a target's **host and
+nothing else** — no fetch, no socket — because feeding a rejected target back into a request
+is the thing the guard exists to prevent. The old message is a substring of the new one, so
+existing log searches still match.
 
-Two smaller findings in the same class, neither yet diagnosed: two rows whose extracted URL is a
-`twitter.com/intent/tweet?url=` share link, and two `personio` rows whose error mentions a
-redirect only upstream of a `no jobs extracted`.
+**The `;` fix is narrower than I first described it.** Servers do emit a trailing semicolon
+(`https://corp.roblox.com/careers;`), and I called the target malformed. It is not: `;` is a
+legal path character under RFC 3986, and the URL parses with a clean host. The real harm is
+downstream — copied verbatim into a registration URL it leaves a stray character on the end.
+Worth noting that `urlparse` puts the text before `;` in `path` and the rest in `params`, so
+stripping `path` is a no-op and the character has to come off the raw string. My first
+implementation did exactly the no-op version and the test caught it.
 
-### On P: the provider was not dark, it was linkless
-
-`personio` read as 0 of 12 boards collecting, dark across two releases, and the row's error
-named an HTTP 429 on one tenant — which is what I reached for first. **The 429 was incidental.**
-
-| | |
-|---|---|
-| tenants registered | 12 |
-| tenants that parsed | 10 (Welevel 429, Yager no-parse) |
-| sum of per-tenant detail `keptCount` | **54** |
-| row `fetchedCount` / `keptCount` | 54 / **0** |
-| `canonicalDropReasons` | **`missing_job_link: 54`** |
-| `source == "personio_sources"` in the output | **0 of 49,240** |
-
-The adapter was healthy and said so: `entry_report["keptCount"] = len(parsed)`, and
-`run_personio_sources_source` took its `if jobs or not errors: return jobs` branch. The 54 rows
-then died at canonicalisation, which is why the failure looked like an empty provider rather
-than a discarded one. Every other rollup tracks its detail sum closely — bamboohr 335/383,
-workable 870/1,139, greenhouse 1,621/1,623 — so this was personio-specific, not rollup
-accounting.
-
-**Cause: the feed has no URL element.** A live `<position>` carries `id, office, department,
-recruitingCategory, name, jobDescriptions, employmentType, seniority, schedule, keywords,
-occupation, occupationCategory, createdAt, yearsOfExperience`, and no attributes. So
-`posting.findtext("url")` was always `None`.
-
-The public shape is `https://<tenant>.jobs.personio.<tld>/job/<id>`, visible in the same run's
-output as `https://remotecontrol.jobs.personio.com/job/2628436`. Links are now derived from
-the feed's own host and the posting id, and an explicit `<url>` still wins when a feed carries
-one. Verified against a live feed: **22 rows, 22 linkless before, 0 after**.
-
-The lesson is the one this plan keeps paying for: the provider-level symptom pointed at a rate
-limit, and the actual defect was only visible in the loss accounting nobody reads.
-
+The 5 migrations are registered by discovery from the classification. The 117 are classified
+but **not retired** — retiring a row is a visibility change with real consequences, and this
+plan's standing rule is not to retire a board for one without saying so.
 
 ### Verification gate for each step
 

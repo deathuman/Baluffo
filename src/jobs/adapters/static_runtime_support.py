@@ -144,6 +144,40 @@ class StaticHtmlFetchRequest:
     retries: int
 
 
+def _static_redirect_error(source_url: str, target_url: str) -> str:
+    """The refusal message for an unsafe static redirect, carrying its classification.
+
+    The guard's behaviour is unchanged: the redirect is still not followed and the fetch still
+    fails. What changed is that the refusal now says **what it found**, because one message
+    previously covered four different situations -- bad scheme, credentials, cross-site, and
+    https downgrade -- and a reader of the fetch report could not tell a studio that moved to
+    an applicant-tracking platform from one that closed or one whose server dropped to http.
+
+    Measured on the live 0.3.008 run, 135 rows carried this error: 5 cross-site to a known
+    platform, 118 cross-site to a host no platform owns (closures, rebrands, acquisitions),
+    and 12 same-site https downgrades. Only the first is a platform migration.
+
+    The classification is imported lazily and defensively. This module sits under
+    ``jobs/adapters`` while the classifier lives in ``source_discovery``, which is a layering
+    edge: importing at module scope would make static fetching depend on discovery being
+    importable. A failure here degrades to the old bare message rather than breaking the fetch.
+    """
+    try:
+        from src.source_discovery.redirect_classification import (
+            MIGRATION,
+            classify_cross_site_redirect,
+        )
+    except Exception:  # pragma: no cover - defensive, see docstring
+        return f"Unsafe static redirect from {source_url} to {target_url}"
+
+    verdict = classify_cross_site_redirect(source_url, target_url)
+    message = f"Unsafe static redirect from {source_url} to {target_url}"
+    if verdict.kind == MIGRATION:
+        tenant = verdict.tenant or "unknown"
+        return f"{message} [platform_migration adapter={verdict.adapter} tenant={tenant}]"
+    return f"{message} [{verdict.kind}]"
+
+
 class StaticHtmlFetcher:
     _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
@@ -216,19 +250,18 @@ class StaticHtmlFetcher:
         raw_source = clean_text(source_url)
         raw_target = urljoin(raw_source, clean_location)
         parsed = urlparse(raw_target)
-        if parsed.scheme not in {"http", "https"}:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
-        if parsed.username or parsed.password:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
         source = urlparse(normalize_url(source_url) or source_url)
         source_host = (source.hostname or "").lower()
         target_host = (parsed.hostname or "").lower()
         source_site = source_host[4:] if source_host.startswith("www.") else source_host
         target_site = target_host[4:] if target_host.startswith("www.") else target_host
+
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+            raise RuntimeError(_static_redirect_error(raw_source, raw_target))
         if not source_site or source_site != target_site:
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
+            raise RuntimeError(_static_redirect_error(raw_source, raw_target))
         if source.scheme == "https" and parsed.scheme != "https":
-            raise RuntimeError(f"Unsafe static redirect from {source_url} to {raw_target}")
+            raise RuntimeError(_static_redirect_error(raw_source, raw_target))
         if raw_target == raw_source:
             raise RuntimeError(f"Static redirect loop for {source_url}")
         return raw_target
