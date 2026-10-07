@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from threading import Lock
 from typing import Any, Protocol, cast
@@ -281,12 +281,28 @@ def _stamp_browser_fallback_cause(
     if not cause and not refusal:
         return
     for row in source_reports:
-        if not isinstance(row, dict) or not row.get("browserFallbackRecommended"):
+        if not isinstance(row, dict) or not _row_recommends_browser_fallback(row):
             continue
         if cause:
             row["browserFallbackRunLastError"] = cause
         if refusal:
             row["browserFallbackRunRefusalReason"] = refusal
+
+
+def _row_recommends_browser_fallback(row: Mapping[str, Any]) -> bool:
+    """Whether a report row asked for browser fallback, at the time this runs.
+
+    The flag is written on the row's **detail** during the fetch and only hoisted to the top
+    level later, by report normalization. Checking the top level alone stamped nothing: the v9
+    replay had 95 rows recommending fallback and 0 carrying the run's cause, which is the
+    false green this change was meant to remove.
+    """
+    if bool(row.get("browserFallbackRecommended")):
+        return True
+    for detail in row.get("details") or []:
+        if isinstance(detail, dict) and bool(detail.get("browserFallbackRecommended")):
+            return True
+    return False
 
 
 def _browser_fallback_runtime(

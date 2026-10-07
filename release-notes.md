@@ -18,6 +18,12 @@
 
 ### Fixed
 
+- **Boards that recommend a browser now carry the reason their request was refused or failed.**
+  A run with 617 browser-fallback attempts refused out of 851 recorded no reason at all, so a
+  closed circuit and a missing browser looked identical. The reason is now recorded, kept apart
+  from the failure that closed the circuit, and stamped onto the rows that asked for a browser
+  - including the ones that only record the request on their per-page details.
+
 - **A studio board's fetch evidence is read from its own entry, not its platform's totals.**
   When an adapter serves many studios under one summary row, every one of them inherited that
   row's totals, so 25 boards registered in recent releases read as "unknown, only the

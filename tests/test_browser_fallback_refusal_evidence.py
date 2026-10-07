@@ -204,6 +204,30 @@ def test_a_refusal_reason_reaches_the_rows_too() -> None:
     assert rows[0]["browserFallbackRunRefusalReason"] == REFUSAL_COOLDOWN
 
 
+def test_a_detail_level_recommendation_is_enough_to_stamp() -> None:
+    """The v9 false green: 95 rows recommended fallback, 0 got the run's cause.
+
+    The flag is written on the row's **detail** during the fetch and hoisted to the top level
+    later, by report normalization. Reading only the top level stamped nothing at all.
+    """
+    rows: list[dict[str, Any]] = [
+        {
+            "name": "gismart",
+            "details": [
+                {"name": "Gismart (Sheet)", "browserFallbackRecommended": True, "status": "error"}
+            ],
+        }
+    ]
+    _stamp_browser_fallback_cause(rows, _tripped())
+    assert rows[0]["browserFallbackRunLastError"] == _ENVIRONMENT_ERROR
+
+
+def test_a_top_level_recommendation_still_counts() -> None:
+    rows: list[dict[str, Any]] = [{"browserFallbackRecommended": True, "details": []}]
+    _stamp_browser_fallback_cause(rows, _tripped())
+    assert rows[0]["browserFallbackRunLastError"] == _ENVIRONMENT_ERROR
+
+
 def test_a_healthy_run_stamps_nothing() -> None:
     rows: list[dict[str, Any]] = [{"browserFallbackRecommended": True}]
     _stamp_browser_fallback_cause(rows, BrowserFallbackCircuitBreaker())
