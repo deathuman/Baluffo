@@ -98,12 +98,77 @@ cannot spend browser time while the breaker is closed, and its demand lands in t
 A render that produced payloads counts as served; one that rendered and captured nothing counts
 as an empty *page*, because the browser demonstrably worked.
 
+## The JS-shell platforms, probed through the capture lane
+
+The lane was pointed at the four platforms the earlier work could not read, with Tencent as the
+known-good control in the same run (it returned its 45 KB `/post/Query` and 10 rows, so the
+capture path itself was healthy).
+
+| Board | Plain GET | Capture | Rows |
+|---|---|---|---:|
+| `careers.tencent.com` (control) | 200 | 3 payloads | **10** |
+| `hire-r1.mokahr.com/…/firstfun` | **302 loop** | 14 payloads, 39 KB | 0 |
+| `app.mokahr.com/…/ourpalm` | **302 loop** | 10 payloads, departments endpoints | 0 |
+| `com2us.recruiter.co.kr/career/jobs` | 200, zero anchors | 13 payloads | 0 |
+| `webzen.recruiter.co.kr/career/jobs` | **404** | 3 payloads | 0 |
+| `herp.careers/v1/pgrecruit` | 200, 134 KB | 2 payloads (Facebook/Twitter only) | 0 |
+| `ea.com/careers` | 200, 155 KB | `ERR_HTTP2_PROTOCOL_ERROR` | 0 |
+
+**The 302 loop was a plain-GET artifact.** The browser reaches both mokahr boards without
+difficulty (4.2 s and 6.5 s, 39 KB of rendered HTML), and the capture shows their API host
+answering: `/api/env`, feature switches, `jobs/departments/flat`, `jobs/departments/structure`.
+So mokahr is not unreachable — but the **job list** is not among the payloads either. Only the
+department taxonomy is requested on load; the openings arrive after the same filter interaction
+that Feishu's count endpoint sits behind. This is the Feishu shape again, on a platform whose
+listing endpoint is otherwise plain: probed directly, `jobs/list` answers 404 and
+`jobs/departments/flat` answers 405 — the routes exist but not at those paths.
+
+**recruiterkr's API wants credentials.** Every guessed path on `api-recruiter.recruiter.co.kr`
+answers **401** (`/career/v1/jobs`, `/company/v1/com2us`, `/company/v1/list`), including the
+`marketing/v1/plugin` endpoint the page itself fetched successfully from the browser. So the
+host is reachable and the API is real; the capture's 13 payloads are marketing/brand config and
+a Sentry envelope, never the openings.
+
+**herp and ea-careers** are not JS-shell problems at all: herp serves 134 KB and the capture
+picks up only Facebook and Twitter widgets, so its listings are in the HTML on a path the lane
+does not need; `ea.com/careers` refuses the browser outright with an HTTP/2 protocol error, which
+is a server-side answer no extraction lane can read past.
+
+**So the same stop condition applies to all four: not readable.** Each one is parked with the
+evidence above rather than registered on faith. That is the decision the plan's phase 4 called
+for, and the capture lane is what makes the negatives *specific* — "we rendered it and the job
+list is not in what the page fetches", which is a different statement from "it is a JavaScript
+shell".
+
+## Tencent registers zero rows, because its Workday board is already registered
+
+The capture wave registered `careers.tencent.com` (1 row, verified, backed up, read back) and
+then **reverted it**. The reason is the plan's own rule about naming two populations:
+
+The 10 captured postings all carry **Workday posting URLs** —
+`tencent.wd1.myworkdayjobs.com/Tencent_Careers/job/…`. That host is already registered as
+`workday:listing_url:https://tencent.wd1.myworkdayjobs.com/timi_careers` and is one of the
+largest contributors in the v8 replay (221 rows already in the feed from `workday_sources`).
+So a static row for `careers.tencent.com` would be a **second path onto a board already
+watched**: it adds fetch cost and a duplicate identity, and the openings it yields are credited
+to the Workday board that already serves them. Registering it would inflate the registry with a
+row whose value is zero and whose coverage is already counted.
+
+The lane's job was to make these rows *readable*, and it did. Whether a readable board is worth
+a registry row is the shadow-row question, and the answer here is no. Seed unchanged at 1,878
+rows.
+
+That distinction is the one the coverage metric is built on: the delivery metric counts a
+registry row as landed, so registering a board whose openings another row already serves would
+have reported progress that no user could observe.
+
 ## Not settled
 
-- **mokahr, recruiterkr, herp, ea-careers** were not re-probed in this pass; the lane is
-  available to them and their verdicts come from the next full replay, not from this snapshot.
 - Whether the 17 greenhouse `fetched_empty` boards (v8) are dormant, filtered, or were served
   empty because the API was already rate-limiting — still unproven, still needs a healthy
   control.
 - Tencent's board paginates (`Count: 2240`, ten per query). This snapshot measured one page;
   paging belongs to the registration decision, not to the lane.
+- mokahr's and recruiterkr's listing endpoints are *known to exist* (the browser fetched their
+  config; recruiterkr's API answers 401 not 404) but their paths and auth are not known. That is
+  a per-platform client, and it is not what this lane is.
