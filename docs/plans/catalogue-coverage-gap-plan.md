@@ -176,10 +176,10 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | **P** | `personio` kept 0 while parsing 54 — every row dropped `missing_job_link` | 12 boards / 54 openings **DONE**, the feed carries no URL element |
 | **R** | Cross-site static redirects classified instead of refused anonymously | 135 live rows **DONE**; 13 rebrands found, see below |
 | **D** | `ok` + `kept 0` + no error → `unknown` | 168 boards / 1,081 openings **DONE** — the 168 and the 23 classify `unknown` |
-| — | Retire redundant `static` rows shadowing working provider paths | 34 boards / 128 openings, **already collecting** — cleanup |
-| — | Five small platform hosts in the zero set | 18 boards / 256 openings — needs embedded-JSON extraction, no host rule |
-| — | Classify the remaining fetched-and-empty static boards by extraction shape | ~825 openings — per-board |
-| — | Duplicate rows: WBD 5 rows for one 80-job board, EA 4 overlapping rows, 72 `site_changed` | cleanup |
+| **N** | `static` rows shadowing working provider paths | **ZERO demoted** — 18 openings serve alone; the rest are sole watches |
+| **N** | Five small platform hosts in the zero set | **0 registerable** — 351 probed, 3 false greens |
+| **N** | Classify fetched-and-empty static boards by shape | **DONE** — 348 empty, 0 with captured JSON |
+| — | Duplicates: WBD 5, EA 4, 72 `site_changed` | **DONE** — 10 retired, 3 held; seed has 0 dup URLs |
 
 **On D.** It was written as "`ok` + `kept 0` + no error → `unknown`", against the
 168-board population above — all already `needs_review` with **0** `legit_empty` and **0**
