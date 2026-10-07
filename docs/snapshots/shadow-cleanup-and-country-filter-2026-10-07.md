@@ -91,10 +91,38 @@ into a public feed and into every country filter. That is the line the plan drew
 "no new dependencies without approval" and "an unfilled country is honest, a guessed one is not".
 A country gazetteer is the missing input, and it is a dependency decision, not a code change.
 
+## Phase 6: zero demotions, after two more identity errors
+
+The demotion candidates were re-verified individually, control-first, and **none of them was
+demoted.** Only two of the five are in the shipped seed at all (`jobs.eu.lever.co` and
+`careers.sunandmoonstudios.co.uk` are live-registry rows; the live store's own sweeps own those).
+Both fresh probes returned `empty` — 0 rows, 0 game roles — and both failed the redundancy test:
+
+**`studiowildcard.bamboohr.com/careers`.** The "provider rows on the same site" were `inxile`,
+`tornbanner`, `beamdog`, `high5games` — *other studios' BambooHR tenants*. A platform is not a
+tenant. No row registers studiowildcard's own tenant, and no other row sits on that exact host, so
+the static row is the only thing watching that board. Demoting it removes the watch.
+
+**`www.frontier.co.uk/careers`.** The provider match was `careers.steelcityinteractive.co.uk`,
+because the registrable-domain helper folded both to `co.uk` — a **public suffix**, not a domain.
+Steel City Interactive is a different studio on a different board. With a multi-part suffix list
+the two separate cleanly (`frontier.co.uk` vs `steelcityinteractive.co.uk`).
+
+That is three identity errors in one cleanup, on three different axes: source-name string
+(host+tenant), tenant (platform), and public suffix (registrable domain). Each produced a confident
+number pointing the wrong way, and each was caught only because the plan's rule — *board identity is
+host + tenant, compared case-insensitively* — was applied literally before writing.
+
+The seed is unchanged at **1,878 rows**. It also has **zero** duplicated listing URLs, so the
+`jobs.fatsharkgames.com` duplicate seen in the v9 registry is a live-store artefact and not a seed
+defect. The four rows that do serve openings — personio (2), Red Kite (3), Star Stable (1),
+Fat Shark (4) — are all still `active`, with `jobsFound` 11, 1, 16 and 29 respectively.
+
 ## What this leaves
 
-- The 351-board Phase 5 probe is still running; its verdicts decide the registration wave.
-- Three shadow rows are ready to demote (`studiowildcard.bamboohr.com`, `careers.lionbridge.com`,
-  `jobs.eu.lever.co`, plus the two at `fetched_empty`), pending the probe's read on whether any
-  of them collects on a fresh fetch.
-- `https://jobs.fatsharkgames.com` carried by 2 rows is the one duplicate worth collapsing.
+- The 351-board Phase 5 probe is done: **0 registerable boards**. See
+  [`phase5-zero-set-classification-2026-10-07.md`](phase5-zero-set-classification-2026-10-07.md).
+- The 72 `site_changed` rows still await `tools/coverage_retire.py` with probe, control and
+  `--expect-rows`. That is the one remaining Phase 6 instrument, and the only one that changes
+  seed state.
+- DG round 2 (Phase 7) is untouched.
