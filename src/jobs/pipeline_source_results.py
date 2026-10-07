@@ -63,6 +63,7 @@ def _build_loader_kwargs(
     static_listing_async_fetch: Any,
     source_state_rows: Any,
     guarded_try_playwright: Any,
+    guarded_try_playwright_json: Any = None,
 ) -> dict[str, Any]:
     loader_kwargs: dict[str, Any] = {
         "fetch_text": fetch_text_limited,
@@ -79,6 +80,10 @@ def _build_loader_kwargs(
             loader_kwargs["listing_async_fetch"] = static_listing_async_fetch
         if guarded_try_playwright is not None:
             loader_kwargs["try_playwright"] = guarded_try_playwright
+        # The rendered-JSON lane. Optional and additive: a loader that does not declare the
+        # parameter never sees it, and `_accepted_loader_kwargs` filters it out otherwise.
+        if guarded_try_playwright_json is not None:
+            loader_kwargs["try_playwright_json"] = guarded_try_playwright_json
     elif adapter_name in {"ashby", "breezy", "jazzhr"} and guarded_try_playwright is not None:
         loader_kwargs["try_playwright"] = guarded_try_playwright
     if name == "scrapy_static_sources":
@@ -758,6 +763,7 @@ def execute_loader(
     thread_local,
     write_task_state,
     guarded_try_playwright,
+    guarded_try_playwright_json=None,
 ) -> tuple[dict[str, Any], list[CanonicalJob]]:
     root_module = _require_root()
     source_started = time.perf_counter()
@@ -786,6 +792,7 @@ def execute_loader(
             static_listing_async_fetch=static_listing_async_fetch,
             source_state_rows=source_state_rows,
             guarded_try_playwright=guarded_try_playwright,
+            guarded_try_playwright_json=guarded_try_playwright_json,
         )
         loader_kwargs["heartbeat_callback"] = heartbeat_callback
         loader_kwargs["progress_callback"] = progress_callback

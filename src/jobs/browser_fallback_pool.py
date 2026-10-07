@@ -50,6 +50,12 @@ _POOL_THREAD_JOIN_TIMEOUT_S = 5.0
 _BROWSER_POOL_RECYCLE_ENV = "BALUFFO_BROWSER_POOL_RECYCLE_ACQUISITIONS"
 _BROWSER_POOL_RECYCLE_DEFAULT = 20
 
+# Capture limits for the rendered-JSON lane: a page's own data responses are small and few,
+# and a cap keeps one pathological app from pinning the renderer's memory.
+CAPTURE_SETTLE_MS = 1500
+CAPTURED_PAYLOAD_LIMIT = 24
+CAPTURED_BODY_BYTE_LIMIT = 4 * 1024 * 1024
+
 _BACKEND_CHROMIUM = "chromium"
 _BACKEND_OBSCURA = "obscura"
 _BACKEND_ENV = "BALUFFO_BROWSER_FALLBACK_BACKEND"
@@ -299,24 +305,136 @@ class BrowserFallbackPool:
             if self._available:
                 self._available = False
 
+    async def _capture_json_response(self, response: Any, captured: list[tuple[str, str]]) -> None:
+        """Record one JSON response worth keeping. A failed sub-request is not a failure.
+
+        The render may still be worth reading and the other payloads are still worth keeping,
+        so every failure here returns rather than propagating.
+        """
+        if len(captured) >= CAPTURED_PAYLOAD_LIMIT:
+            return
+        try:
+            if int(getattr(response, "status", 0) or 0) != 200:
+                return
+            headers = response.headers or {}
+            if "json" not in str(headers.get("content-type", "")).lower():
+                return
+            body = await response.body()
+        except Exception:
+            return
+        if not body or len(body) > CAPTURED_BODY_BYTE_LIMIT:
+            return
+        captured.append((str(response.url), body.decode("utf-8", errors="replace")))
+
+    async def _settle_page(self, page: Any, settle_ms: int) -> None:
+        """Let the page's own data requests land.
+
+        This is what the plain render lacks: it returns on ``domcontentloaded``, before the
+        request a single-page board actually renders from has been made. Network-idle is
+        best-effort because a chatty page never reaches it, hence the fixed wait as fallback.
+        """
+        if int(settle_ms) <= 0:
+            return
+        try:
+            await page.wait_for_load_state("networkidle", timeout=max(1, int(settle_ms)) * 2)
+        except Exception:
+            try:
+                await page.wait_for_timeout(max(0, int(settle_ms)))
+            except Exception:
+                pass
+
+    async def _fetch_captured(
+        self, url: str, timeout_s: int, *, settle_ms: int
+    ) -> tuple[str, list[tuple[str, str]]]:
+        """Render ``url`` and return its HTML plus the JSON responses it fetched.
+
+        A single-page app's openings are not in its markup -- they arrive in the XHR the page
+        makes after load, which is why the existing render finds almost nothing on those
+        boards. Capturing the responses is the host-agnostic way to reach them: no per-platform
+        parser, and a board that changes platform keeps working.
+        """
+        captured: list[tuple[str, str]] = []
+        context = await self._browser.new_context()
+        try:
+            page = await context.new_page()
+            listener = lambda response: self._capture_json_response(response, captured)
+            page.on("response", listener)
+            try:
+                try:
+                    await page.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=max(1, int(timeout_s)) * 1000,
+                    )
+                except BaseException as exc:
+                    if self._browser_death_marker(exc):
+                        self._mark_unavailable()
+                    raise
+                await self._settle_page(page, settle_ms)
+                html = await page.content() or ""
+            finally:
+                try:
+                    page.remove_listener("response", listener)
+                except Exception:
+                    pass
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+            return self._cap_html(html, url), captured
+        finally:
+            try:
+                await context.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _cap_html(html: str, url: str) -> str:
+        """Cap browser-fetched HTML like the httpx path.
+
+        ponytail: outlier listings (603 MiB) would otherwise pin the pool browser's renderer,
+        and a captured-payload run reads the body into memory besides.
+        """
+        try:
+            from src.jobs.common.http import fetch_max_bytes_for_url
+
+            cap = fetch_max_bytes_for_url(url)
+        except Exception:
+            cap = 20 * 1024 * 1024
+        return html[:cap] if len(html) > cap else html
+
     def fetch(self, url: str, timeout_s: int) -> tuple[str, str]:
         """Sync entry-point for worker threads; returns (html, error)."""
+        html, error, _captured = self.fetch_captured(url, timeout_s, settle_ms=0)
+        return html, error
+
+    def fetch_captured(
+        self, url: str, timeout_s: int, *, settle_ms: int = CAPTURE_SETTLE_MS
+    ) -> tuple[str, str, list[tuple[str, str]]]:
+        """Sync entry-point returning ``(html, error, [(payload_url, body), ...])``.
+
+        Payloads are returned even when the HTML is empty: a board whose listings live
+        entirely in an XHR is the case this exists for, and an empty render is its normal
+        outcome rather than a failure.
+        """
         self._maybe_recycle_browser()
         try:
             self._ensure_started()
             loop = self._loop
             if loop is None:
                 raise RuntimeError("browser pool event loop not started")
-            future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s), loop)
-            html = future.result(timeout=max(1, int(timeout_s)) + 30)
+            future = asyncio.run_coroutine_threadsafe(
+                self._fetch_captured(url, timeout_s, settle_ms=settle_ms), loop
+            )
+            html, captured = future.result(timeout=max(1, int(timeout_s)) + 30)
         except BaseException as exc:
-            return "", normalize_browser_fallback_error(str(exc))
+            return "", normalize_browser_fallback_error(str(exc)), []
         self.metrics.incr("pool_acquisitions")
         with self._start_lock:
             self._acquisitions_since_launch += 1
         if not html:
-            return "", "browser fallback returned empty content"
-        return html, ""
+            return "", "browser fallback returned empty content", captured
+        return html, "", captured
 
     def close(self) -> None:
         with self._start_lock:

@@ -75,6 +75,32 @@ def _build_capped_try_playwright(
     return capped_try_playwright
 
 
+def _build_capped_try_playwright_capture(
+    try_capture: Any,
+    *,
+    max_concurrent: int,
+    pool: Any = None,
+) -> Any:
+    """Cap a capture callable the way :func:`_build_capped_try_playwright` caps an HTML one.
+
+    The concurrency cap is shared policy, not an optimisation: a browser pool with one browser
+    and twelve callers is how a fetch stage starves itself.
+    """
+    gate = BoundedSemaphore(max(1, int(max_concurrent or 1)))
+    capture: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] = (
+        pool.fetch_captured if pool is not None else try_capture
+    )
+
+    def capped_capture(url: str, timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+        gate.acquire()
+        try:
+            return capture(url, timeout_s)
+        finally:
+            gate.release()
+
+    return capped_capture
+
+
 def _default_adapter_for_loader(name: str, base_meta: dict[str, Any]) -> str:
     adapter = clean_text(base_meta.get("adapter"))
     if adapter:

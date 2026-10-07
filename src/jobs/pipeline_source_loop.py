@@ -46,6 +46,11 @@ class _RootLike(Protocol):
         pool: Any = None,
     ) -> Callable[[str, int], tuple[str, str]]: ...
 
+    # `_build_capped_try_playwright_capture` is deliberately *not* on this protocol: the
+    # capture lane resolves it with getattr and treats its absence as "no capture", which is
+    # what keeps a root that predates the lane working unchanged. Making it required would
+    # break every existing root implementation for a feature it does not use.
+
     def set_browser_fallback_state(
         self,
         source_state_rows: dict[str, dict[str, Any]] | None,
@@ -180,6 +185,13 @@ def run_source_execution_stage(
             pool=pool,
         )
         _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
+        guarded_try_playwright_json = _browser_fallback_capture_runtime(
+            root_mod,
+            browser_fallback_guard,
+            max_workers=config.max_workers,
+            browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
+            pool=pool,
+        )
 
         def execute_started(source_name, loader):
             return _execute_loader_started(
@@ -198,6 +210,7 @@ def run_source_execution_stage(
                 write_task_state=write_task_state,
                 write_progress_report=write_progress_report,
                 guarded_try_playwright=guarded_try_playwright,
+                guarded_try_playwright_json=guarded_try_playwright_json,
                 show_progress=bool(config.show_progress),
             )
 
@@ -305,6 +318,44 @@ def _browser_fallback_runtime(
     return browser_fallback_guard, browser_fallback_guard.wrap(capped_try_playwright)
 
 
+def _browser_fallback_capture_runtime(
+    root_mod: _RootLike,
+    browser_fallback_guard: BrowserFallbackCircuitBreaker,
+    *,
+    max_workers: int,
+    browser_fallback_max_workers: int = -1,
+    pool: BrowserFallbackPool | None = None,
+) -> Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None:
+    """The guarded capture callable the rendered-JSON lane uses, or ``None``.
+
+    Built beside the HTML fallback and gated by the *same* breaker, so the capture lane
+    cannot spend browser time while the breaker is closed for an environment failure -- and
+    so its demand lands in the same counters, which is the only way the two are comparable.
+    ``browser_fallback_max_workers == 0`` disables fallback entirely, so it disables capture
+    too.
+    """
+    if pool is None or int(browser_fallback_max_workers or 0) == 0:
+        return None
+    try:
+        try_capture = getattr(pool, "fetch_captured", None)
+    except Exception:  # pragma: no cover - a pool without capture support
+        return None
+    if not callable(try_capture):
+        return None
+    fallback_cap = int(browser_fallback_max_workers or 0)
+    if fallback_cap < 0:
+        fallback_cap = int(max_workers or 1)
+    build_capture = getattr(root_mod, "_build_capped_try_playwright_capture", None)
+    if not callable(build_capture):
+        return None
+    capped = build_capture(
+        try_capture,
+        max_concurrent=max(1, min(fallback_cap, int(max_workers or 1))),
+        pool=pool,
+    )
+    return browser_fallback_guard.wrap_capture(capped)
+
+
 def _emit_browser_fallback_status(
     show_progress: bool,
     guarded_try_playwright: Callable[[str, int], tuple[str, str]] | None,
@@ -340,6 +391,7 @@ def _execute_loader_started(
     write_task_state,
     write_progress_report,
     guarded_try_playwright,
+    guarded_try_playwright_json=None,
     show_progress: bool,
 ) -> tuple[dict[str, Any], list[CanonicalJob]]:
     mark_task_started(
@@ -368,6 +420,7 @@ def _execute_loader_started(
             thread_local=thread_local,
             write_task_state=write_task_state,
             guarded_try_playwright=guarded_try_playwright,
+            guarded_try_playwright_json=guarded_try_playwright_json,
             profile_name=f"adapter_{source_name}",
         )
 

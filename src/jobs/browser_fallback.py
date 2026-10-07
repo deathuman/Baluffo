@@ -20,10 +20,15 @@ from src.shared.browser_fallback_tokens import matches_browser_fallback_environm
 from src.shared.utils import now_iso
 
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
+# A capture returns the rendered HTML plus the JSON the page's own app fetched, as
+# ``(payload_url, body)`` pairs. Feishu's board answers its openings from
+# ``POST /api/v1/search/job_post/count``, which no plain fetch can reach.
+TryPlaywrightCaptureFn = Callable[[str, int], tuple[str, str, list[tuple[str, str]]]]
 
 BROWSER_FALLBACK_STATE_KEY = "__browser_fallback__"
 DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES = 30
 REFUSAL_COOLDOWN = "cooldown_active"
+REFUSAL_ERROR_TEXT = "browser fallback unavailable (cooldown active)"
 
 
 def is_browser_fallback_environment_error(error_text: str) -> bool:
@@ -93,49 +98,98 @@ class BrowserFallbackCircuitBreaker:
         current = now or datetime.now(UTC)
         return until <= current
 
+    def _refusal_error(self, now_dt: datetime) -> str:
+        """Record an attempt; return the refusal error, or "" when it may proceed.
+
+        Split out because the capture lane goes through the same gate: a refusal has to be
+        counted, timestamped and explained once, whatever was being asked for.
+        """
+        stamp = now_iso()
+        with self._lock:
+            self.demand_attempts += 1
+            if not self.is_available(now=now_dt):
+                self.last_attempt_at = stamp
+                self.demand_refused += 1
+                self.last_refused_at = stamp
+                self.last_refusal_reason = REFUSAL_COOLDOWN
+                return REFUSAL_ERROR_TEXT
+            self.last_attempt_at = stamp
+        return ""
+
+    def _record_served_html(self, stamp: str) -> None:
+        with self._lock:
+            self.last_success_at = stamp
+            self.last_error = ""
+            self.failure_count = 0
+            self.disabled_until_at = ""
+            self.demand_served_with_html += 1
+
+    def _record_served_empty(self, stamp: str, now_dt: datetime, error: str) -> None:
+        """Split the two empties: a browser that could not run, and a page with nothing in it."""
+        with self._lock:
+            self.demand_served_empty += 1
+            if not is_browser_fallback_environment_error(error):
+                self.demand_served_empty_page += 1
+                return
+            cooldown_minutes = max(0, int(self.cooldown_minutes))
+            self.failure_count += 1
+            self.last_failure_at = stamp
+            self.last_error = clean_text(error)
+            self.last_refusal_reason = ""
+            if cooldown_minutes > 0:
+                self.disabled_until_at = (now_dt + timedelta(minutes=cooldown_minutes)).isoformat()
+            self.demand_served_empty_environment += 1
+
     def wrap(self, try_playwright: TryPlaywrightFn) -> TryPlaywrightFn:
         def _wrapped(url: str, timeout_s: int) -> tuple[str, str]:
             now_dt = datetime.now(UTC)
             stamp = now_iso()
-            with self._lock:
-                self.demand_attempts += 1
-                if not self.is_available(now=now_dt):
-                    self.last_attempt_at = stamp
-                    self.demand_refused += 1
-                    self.last_refused_at = stamp
-                    self.last_refusal_reason = REFUSAL_COOLDOWN
-                    return "", "browser fallback unavailable (cooldown active)"
-                self.last_attempt_at = stamp
+            refusal = self._refusal_error(now_dt)
+            if refusal:
+                return "", refusal
             try:
                 html, error = try_playwright(url, timeout_s)
             except (OSError, RuntimeError, ValueError) as exc:
                 html = ""
                 error = str(exc)
             if html and not clean_text(error):
-                with self._lock:
-                    self.last_success_at = stamp
-                    self.last_error = ""
-                    self.failure_count = 0
-                    self.disabled_until_at = ""
-                    self.demand_served_with_html += 1
+                self._record_served_html(stamp)
                 return html, ""
-            with self._lock:
-                if is_browser_fallback_environment_error(error):
-                    cooldown_minutes = max(0, int(self.cooldown_minutes))
-                    self.failure_count += 1
-                    self.last_failure_at = stamp
-                    self.last_error = clean_text(error)
-                    self.last_refusal_reason = ""
-                    if cooldown_minutes > 0:
-                        self.disabled_until_at = (
-                            now_dt + timedelta(minutes=cooldown_minutes)
-                        ).isoformat()
-                    self.demand_served_empty += 1
-                    self.demand_served_empty_environment += 1
-                else:
-                    self.demand_served_empty += 1
-                    self.demand_served_empty_page += 1
+            self._record_served_empty(stamp, now_dt, error)
             return html, clean_text(error)
+
+        return _wrapped
+
+    def wrap_capture(self, try_capture: TryPlaywrightCaptureFn) -> TryPlaywrightCaptureFn:
+        """Guard a capture callable: HTML plus the JSON the render fetched.
+
+        Same gate, cooldown and counters as :meth:`wrap` -- the capture lane is the same
+        browser doing the same work, not a cheaper thing to attempt. A render that produced
+        payloads counts as served; one that rendered and captured nothing counts as an empty
+        *page*, because the browser demonstrably worked.
+        """
+
+        def _wrapped(url: str, timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+            now_dt = datetime.now(UTC)
+            stamp = now_iso()
+            refusal = self._refusal_error(now_dt)
+            if refusal:
+                return "", refusal, []
+            try:
+                html, error, payloads = try_capture(url, timeout_s)
+            except (OSError, RuntimeError, ValueError) as exc:
+                html = ""
+                error = str(exc)
+                payloads = []
+            clean_error = clean_text(error)
+            if payloads:
+                self._record_served_html(stamp)
+                return html, "", list(payloads)
+            if clean_error:
+                self._record_served_empty(stamp, now_dt, clean_error)
+                return html, clean_error, []
+            self._record_served_empty(stamp, now_dt, "")
+            return html, "", []
 
         return _wrapped
 

@@ -67,6 +67,7 @@ def run_static_studio_pages_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    try_playwright_json: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
@@ -86,6 +87,7 @@ def run_static_studio_pages_source(
         source_state_rows=source_state_rows,
         listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
+        try_playwright_json=try_playwright_json,
         force_refresh_all=force_refresh_all,
     )
     runtime_config = build_static_source_runtime_config(static_detail_concurrency)
@@ -160,6 +162,7 @@ def run_static_source_entry_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    try_playwright_json: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
     return run_static_studio_pages_source(
@@ -175,6 +178,7 @@ def run_static_source_entry_source(
         source_state_rows=source_state_rows,
         listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
+        try_playwright_json=try_playwright_json,
         force_refresh_all=force_refresh_all,
     )
 
@@ -191,6 +195,7 @@ def _run_static_studio_pages_shard_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    try_playwright_json: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None = None,
     force_refresh_all: bool = False,
     shard: str,
 ) -> list[RawJob]:
@@ -208,6 +213,7 @@ def _run_static_studio_pages_shard_source(
         source_state_rows=source_state_rows,
         listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
+        try_playwright_json=try_playwright_json,
         force_refresh_all=force_refresh_all,
     )
 

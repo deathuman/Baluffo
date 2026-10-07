@@ -1,6 +1,13 @@
 ## [0.3.014] - 2026-10-07
 ### Added
 
+- **Boards whose openings exist only inside the page's own data requests are now read.**
+  When a careers site is a single-page app, its openings are not in the page you download -
+  they arrive in the request the page makes while rendering. The app now reads them, so those
+  boards can be collected instead of being counted as empty. Measured on a board whose page
+  carries no job links at all: ten openings read, one kept, the rest correctly filtered as
+  non-game roles. No per-site code: a board that moves platform keeps working.
+
 - **The fetch report now says why a browser fallback was refused, and which kind of empty a
   render was.** A refused attempt records its reason, and the counters separate "the browser
   could not launch" from "the page rendered with no jobs in it" - two opposite findings that

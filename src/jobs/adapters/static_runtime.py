@@ -93,6 +93,11 @@ class StaticRunDeps:
     source_state_rows: dict[str, dict[str, Any]] | None = None
     listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None
+    # The rendered-JSON lane's browser seam: returns the HTML plus the JSON the page's own app
+    # fetched. Separate from `try_playwright` because it settles the page and intercepts
+    # responses, which costs real time -- it is the last lane to run and only when the
+    # cheaper ones found nothing.
+    try_playwright_json: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None = None
     force_refresh_all: bool = False
 
 

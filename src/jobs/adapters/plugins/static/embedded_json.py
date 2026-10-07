@@ -33,23 +33,80 @@ from src.jobs.text_utils import clean_text, normalize_url
 from src.shared.json_extract import extract_json_array, next_data_payload
 from src.shared.json_shapes import as_json_object as _as_dict
 
-_TITLE_KEYS = ("title", "position", "role", "jobtitle")
+# Measured key names, not guesses. `RecruitPostName` / `PostURL` are Tencent's
+# (`/tencentcareer/api/post/Query`), `job_post_url` Feishu's, `absolute_url` Greenhouse's,
+# `title`/`url` the common case. A board's platform names the field its own API uses, and
+# there is no way to know that name in advance -- one key per platform is the per-platform
+# parser this avoids. Extra keys are harmless: a node still has to carry a fetchable URL and
+# pass the asset / `@type` / navigation guards.
+_TITLE_KEYS = (
+    "title",
+    "position",
+    "role",
+    "jobtitle",
+    "jobtitlename",
+    "recruitpostname",
+    "positionname",
+    "jobname",
+    "recruitposttitle",
+    "positiontitle",
+)
+# Deliberately many spellings of "the link to this posting". A board that ships its listings
+# in its own XHR names the field its platform uses, and there is no way to know that name in
+# advance -- guessing one per platform is the per-platform parser this avoids. Extra keys cost
+# nothing: a node still has to pass the asset and `@type` guards and carry a title.
 _URL_KEYS = (
     "absolute_url",
     "joblink",
     "joburl",
     "job_url",
+    "job_post_url",
+    "jobposturl",
+    "posturl",
+    "position_url",
+    "positionurl",
+    "posting_url",
+    "postingurl",
+    "career_url",
+    "careerurl",
+    "careers_url",
+    "vacancy_url",
+    "vacancyurl",
     "applyurl",
     "apply_url",
     "hostedurl",
+    "hosted_url",
     "externalpath",
+    "external_path",
     "url",
     "link",
+    "href",
 )
 _ASSET_KEYS = frozenset({"filename", "contenttype", "contenttypeid", "filesize", "width", "height"})
-_EMPLOYER_KEYS = ("company_name", "company", "employer")
-_ID_KEYS = ("id", "internal_job_id", "requisition_id", "jobid", "job_id", "postingid", "posting_id")
-_LOCATION_KEYS = ("location", "joblocation", "locationname", "locations", "workplace", "city")
+_EMPLOYER_KEYS = ("company_name", "company", "employer", "comname", "companyname")
+_ID_KEYS = (
+    "id",
+    "internal_job_id",
+    "requisition_id",
+    "jobid",
+    "job_id",
+    "postingid",
+    "posting_id",
+    "postid",
+    "recruitpostid",
+)
+# `LocationName` is Tencent's; `location` a string or object is the common case; `city` alone is
+# a weaker hint but is all some APIs carry.
+_LOCATION_KEYS = (
+    "location",
+    "joblocation",
+    "locationname",
+    "locations",
+    "workplace",
+    "city",
+    "workcity",
+    "worklocation",
+)
 _POSTED_KEYS = (
     "first_published",
     "dateposted",
@@ -71,6 +128,37 @@ _ARRAY_START_RE = re.compile(r"[=:]\s*(\[)")
 # document costs a bounded amount of work rather than a recursion error.
 _WALK_BUDGET = 20000
 _MAX_ARRAY_STARTS_PER_SCRIPT = 12
+
+
+def rows_from_json_payload(
+    payload_text: str, *, board_url: str, fallback_company: str = ""
+) -> list[RawJob]:
+    """Rows from a standalone JSON body, by the same posting-shape rule.
+
+    The rendered-JSON lane captures the responses a page's own app fetches -- bodies that are
+    JSON documents rather than HTML with JSON inside it -- so this is the entry point that
+    skips the script-tag scan and hands the document straight to the walker. One definition of
+    "this object is a posting" for both lanes: the payload is a different *container*, not a
+    different rule, and a second rule is how the two would drift.
+    """
+    text = str(payload_text or "").strip()
+    if not text:
+        return []
+    try:
+        document = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    rows: list[RawJob] = []
+    seen: set[str] = set()
+    _collect_rows(
+        document,
+        rows=rows,
+        seen=seen,
+        board_url=board_url,
+        fallback_company=fallback_company,
+        budget=_WALK_BUDGET,
+    )
+    return rows
 
 
 def extract_embedded_json_rows(
@@ -179,6 +267,13 @@ def _row_from_node(node: dict[str, Any], *, board_url: str, fallback_company: st
     location_text = _location_text(lower)
     location_details = normalize_location_details(location_text)
     identifier = _first_text(lower, _ID_KEYS)
+    if identifier in {"0", "-1"}:
+        # Tencent's `/post/query` answers `Id: 0` on every post and carries the real
+        # identifier in `PostId` / `RecruitPostId`. Accepting `0` would give every row on the
+        # board the same `sourceJobId`, which dedupes them into one.
+        identifier = _first_text(
+            lower, ("postid", "recruitpostid", "jobid", "job_id", "postingid", "posting_id")
+        )
     return {
         "sourceJobId": f"embedded:{identifier or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
         "title": title,

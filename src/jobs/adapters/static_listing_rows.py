@@ -10,6 +10,7 @@ call time so tests can patch them.
 from __future__ import annotations
 
 import re
+import time
 from html import unescape
 from typing import Any
 from urllib.parse import urlparse
@@ -24,6 +25,10 @@ from src.jobs.adapters.plugins.static._runner import (
     static_listing_job_row,
 )
 from src.jobs.adapters.plugins.static.embedded_json import extract_embedded_json_rows
+from src.jobs.adapters.plugins.static.rendered_json import (
+    describe_capture,
+    extract_rendered_json_rows,
+)
 from src.jobs.adapters.static_detail_heuristics import (
     add_detail_link,
     is_probable_job_detail_url,
@@ -420,6 +425,83 @@ def _append_rendered_row(
 
 
 # mutation — modifies in-place state
+def _rendered_json_capture(
+    ctx: StaticSourceContext, page_url: str
+) -> tuple[str, str, list[tuple[str, str]]]:
+    """Run the capture seam under the source budget, or report why it did not run.
+
+    Split out so the lane below reads as what it is -- a guarded emit -- rather than as budget
+    arithmetic and browser plumbing with a row loop buried inside it.
+    """
+    capture = ctx.run_deps.try_playwright_json
+    if not callable(capture):
+        return "", "", []
+    if ctx.source_deadline and time.perf_counter() >= ctx.source_deadline:
+        return "", "source budget exhausted before the rendered-json lane", []
+    budget_s = max(3, min(int(ctx.run_deps.timeout_s or 0) or 25, 25))
+    try:
+        html, error, payloads = capture(page_url, budget_s)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return "", f"rendered json capture failed: {exc}", []
+    return str(html or ""), str(error or ""), list(payloads or [])
+
+
+def _append_rendered_json_rows(
+    ctx: StaticSourceContext,
+    page_url: str,
+) -> int:
+    """Lane 2.6: rows from the JSON a page's own app fetched while rendering.
+
+    The last lane, run only when the anchors, the embedded JSON and the rendered card all
+    found nothing. It is the most expensive per source -- a browser render that settles and
+    intercepts responses -- so it earns its place only on a board whose openings are in an XHR
+    and nowhere else: Feishu's board answers ``POST /api/v1/search/job_post/count`` and its
+    rendered markup holds no job links at all.
+
+    Rows go out through the same guards as every other lane, and the game's row filter still
+    runs at the boundary, so a board's back-office roles are dropped here exactly as they
+    would be on any other path.
+    """
+    _html, error, payloads = _rendered_json_capture(ctx, page_url)
+    if payloads:
+        ctx.stats["rendered_json_payloads_captured"] = int(
+            ctx.stats.get("rendered_json_payloads_captured") or 0
+        ) + len(payloads)
+    if not payloads:
+        if error:
+            ctx.errors.append(f"rendered json capture failed for {page_url}: {error}")
+        return 0
+    emitted = 0
+    for row in extract_rendered_json_rows(
+        payloads,
+        board_url=page_url,
+        fallback_company=ctx.company,
+    ):
+        link = normalize_url(row.get("jobLink"))
+        if not link or link in ctx.seen_links:
+            continue
+        if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+            ctx.stats["junk_provenance_rows_dropped"] = (
+                int(ctx.stats.get("junk_provenance_rows_dropped") or 0) + 1
+            )
+            continue
+        if looks_like_static_parser_noise_title(clean_text(row.get("title"))):
+            continue
+        ctx.seen_links.add(link)
+        row["adapter"] = "static"
+        row["studio"] = _source_studio(ctx)
+        ctx.jobs.append(row)
+        emitted += 1
+    if emitted:
+        ctx.stats["rendered_json_rows_found"] = (
+            int(ctx.stats.get("rendered_json_rows_found") or 0) + emitted
+        )
+        ctx.warnings.append(
+            f"rendered json rows from {describe_capture(payloads) or 'captured payloads'}"
+        )
+    return emitted
+
+
 def _append_rendered_card_rows(
     ctx: StaticSourceContext,
     listing_html: str,
@@ -626,4 +708,11 @@ def _extract_listing_candidates(
             listing_jobs_found += fallback_count
             ctx.entry_report["classification"] = "ok_with_jobs"
             ctx.entry_report["extractorHint"] = "block_title_fallback"
+    if listing_jobs_found == 0 and not detail_links:
+        # Lane 2.6, last of all. The page produced no rows and left no detail link to
+        # follow, so nothing cheaper remains: only a JSON payload the page fetched for itself
+        # can still answer it. Placed after the detail-link collection and the block-title
+        # fallback on purpose -- a board with anchors or a block-structured listing must never
+        # pay for a settling browser render.
+        listing_jobs_found += _append_rendered_json_rows(ctx, page_url)
     return listing_jobs_found, detail_links, provisional_rows_found
