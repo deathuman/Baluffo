@@ -66,6 +66,14 @@ Two rules the guardrail enforces so this cannot quietly regress:
   platform's result is known". Read from each board's own record: 17 boards were asked and
   genuinely returned nothing, and 8 errored asking for a browser. Both are decidable now.
 
+### Fixed
+
+- **Choosing a region in the Jobs filter no longer hides the region's own country.** The
+  Europe filter matched 2,146 fewer UK openings than it should have, because the UK's job
+  locations arrive labelled three different ways and only one of them was recognised. All
+  three - "GB", "UK" and "England" - are now found by the Europe filter, and by the
+  United Kingdom filter where that applies.
+
 ### Notes
 
 - Distribution surfaces are unchanged. Each behaves as it did in 0.3.013:

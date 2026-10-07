@@ -1,5 +1,8 @@
 import { fullCountryName as fullCountryNameFromData } from "../../shared/data/index.js";
-import { COUNTRY_ACCEPTANCE } from "../../shared/data/country-acceptance.js";
+import {
+  COUNTRY_ACCEPTANCE,
+  resolveCountryAcceptanceValue
+} from "../../shared/data/country-acceptance.js";
 import {
   canonicalizeCountryName,
   fullCountryName as fullCountryNameFromDomainLayer,
@@ -109,10 +112,45 @@ const REMOTE_WORLDWIDE_TOKENS = new Set(
   ["remote", "worldwide", "global", "anywhere"].map(item => normalizeCountryToken(item))
 );
 
+// Labels the contract carries as distinct from their country but that belong to one.
+// England is the live case: 356 feed rows carry `country: "England"` rather than `GB`, so
+// without this they are excluded from the Europe region that contains them, while the
+// contract keeps "England" a first-class label and the UI offers it as its own filter.
+const REGION_EXTRA_MEMBER_TOKENS = {
+  "region:europe": ["England"]
+};
+
+// A region has to be findable by every spelling its members can arrive as.
+//
+// Canonicalising only the list's own label made `region:europe` exclude its own member:
+// the list says "United Kingdom", which the contract's alias map resolves to `UK`
+// (token `uk`), while a stored row of `GB` or `UK` tokenises to `unitedkingdom` -- so every
+// UK row (2,146 in the v9 feed) was invisible to a Europe selection. Both spellings are
+// indexed now, and so is the code a label resolves from.
+function regionCountryTokens(countryLabel) {
+  const tokens = new Set();
+  for (const value of [
+    countryLabel,
+    canonicalizeCountryName(countryLabel, COUNTRY_NAME_OPTIONS),
+    resolveCountryAcceptanceValue(countryLabel)
+  ]) {
+    const token = normalizeCountryToken(value);
+    if (token) tokens.add(token);
+    if (/^[a-z]{2}$/.test(token)) {
+      const fromCode = COUNTRY_ACCEPTANCE.countryNameByCode?.[token.toUpperCase()];
+      if (fromCode) tokens.add(normalizeCountryToken(fromCode));
+    }
+  }
+  return tokens;
+}
+
 const REGION_COUNTRY_TOKEN_LOOKUP = Object.fromEntries(
   REGION_DEFINITIONS.map(region => [
     region.value,
-    new Set(region.countries.map(item => normalizeCountryToken(canonicalizeCountryName(item, COUNTRY_NAME_OPTIONS))).filter(Boolean))
+    new Set([
+      ...region.countries.flatMap(item => [...regionCountryTokens(item)]),
+      ...(REGION_EXTRA_MEMBER_TOKENS[region.value] || []).map(item => normalizeCountryToken(item))
+    ])
   ])
 );
 
