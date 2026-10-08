@@ -108,7 +108,9 @@ run_smartrecruiters_sources_source = _make_sources_runner("smartrecruiters_sourc
 run_workable_sources_source = _make_sources_runner("workable_sources")
 run_recruitee_sources_source = _make_sources_runner("recruitee_sources")
 run_pinpoint_sources_source = _make_sources_runner("pinpoint_sources")
-run_ashby_sources_source = _make_sources_runner("ashby_sources", accepts_try_playwright=True)
+# No browser seam: Ashby's posting API is a plain JSON endpoint, so it never needs
+# the rendered-page fallback the HTML board path did.
+run_ashby_sources_source = _make_sources_runner("ashby_sources")
 run_breezy_sources_source = _make_sources_runner("breezy_sources", accepts_try_playwright=True)
 run_jazzhr_sources_source = _make_sources_runner("jazzhr_sources", accepts_try_playwright=True)
 run_oracle_hcm_sources_source = _make_sources_runner("oracle_hcm_sources")

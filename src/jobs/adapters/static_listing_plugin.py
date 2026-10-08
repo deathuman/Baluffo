@@ -9,6 +9,7 @@ helpers are resolved through the coordinator at call time so tests can patch the
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -57,12 +58,32 @@ def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | N
 
 
 # network — calls plugin.run() with HTTP fetch
-def _invoke_static_plugin(ctx: StaticSourceContext, plugin: Any) -> list[dict[str, Any]]:
+def _invoke_static_plugin(
+    ctx: StaticSourceContext,
+    plugin: Any,
+    *,
+    network_bookings: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Run the plugin with its network callables timed.
+
+    ponytail: measurement only. The plugin fast path did its own fetching and parsing
+    inside `plugin.run()` and booked neither, so 603 of 2,316 static sources were 85%
+    unattributed in the 2026-10-07 replay (59 of 163 minutes invisible). Every plugin's
+    network goes through `fetch_text` or `fetch_html_cached`, so wrapping those two
+    attributes yields an honest split without touching any plugin: network time reaches
+    `listing_fetch_ms`, and the remainder of the invocation is the plugin's parsing.
+    """
     from src.jobs.adapters import static_listing as _sl
+
+    fetch_text = ctx.run_deps.fetch_text
+    fetch_html_cached = ctx.html_fetcher.fetch_html_cached
+    if network_bookings is not None:
+        fetch_text = _booked_fetch_text(ctx, fetch_text, network_bookings)
+        fetch_html_cached = _booked_fetch_html_cached(ctx, fetch_html_cached, network_bookings)
 
     return list(
         plugin.run(
-            fetch_text=ctx.run_deps.fetch_text,
+            fetch_text=fetch_text,
             timeout_s=ctx.run_deps.timeout_s,
             retries=ctx.run_deps.retries,
             backoff_s=ctx.run_deps.backoff_s,
@@ -70,11 +91,51 @@ def _invoke_static_plugin(ctx: StaticSourceContext, plugin: Any) -> list[dict[st
             pages=ctx.pages,
             source_row=ctx.source,
             parse_jobpostings_from_html=_sl.parse_jobpostings_from_html,
-            fetch_html_cached=ctx.html_fetcher.fetch_html_cached,
+            fetch_html_cached=fetch_html_cached,
             maybe_fetch_kojima_job_listing_html=_sl.maybe_fetch_kojima_job_listing_html,
             try_playwright=ctx.run_deps.try_playwright,
         )
     )
+
+
+def _book_network_elapsed(bookings: dict[str, int], started: float) -> None:
+    bookings["ms"] = int(bookings.get("ms") or 0) + int((time.perf_counter() - started) * 1000)
+
+
+def _booked_fetch_text(
+    ctx: StaticSourceContext,
+    fetch_text: Any,
+    bookings: dict[str, int],
+) -> Any:
+    def _wrapped(url: str, timeout_s: int, *args: Any, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return fetch_text(url, timeout_s, *args, **kwargs)
+        finally:
+            _book_network_elapsed(bookings, started)
+            ctx.stats["listing_fetch_ms"] = int(ctx.stats.get("listing_fetch_ms") or 0) + int(
+                (time.perf_counter() - started) * 1000
+            )
+
+    return _wrapped
+
+
+def _booked_fetch_html_cached(
+    ctx: StaticSourceContext,
+    fetch_html_cached: Any,
+    bookings: dict[str, int],
+) -> Any:
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return fetch_html_cached(*args, **kwargs)
+        finally:
+            _book_network_elapsed(bookings, started)
+            ctx.stats["listing_fetch_ms"] = int(ctx.stats.get("listing_fetch_ms") or 0) + int(
+                (time.perf_counter() - started) * 1000
+            )
+
+    return _wrapped
 
 
 # mutation — sets ctx.entry_report meta fields
@@ -327,7 +388,16 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
         return False
     try:
         plugin, _ = default_registry.select(plugin_ctx)
-        plugin_jobs = _invoke_static_plugin(ctx, plugin)
+        network_bookings: dict[str, int] = {"ms": 0}
+        invoke_started = time.perf_counter()
+        plugin_jobs = _invoke_static_plugin(ctx, plugin, network_bookings=network_bookings)
+        # The remainder of the invocation is the plugin's own parsing work. Book it so
+        # the fast path is attributed the same way the generic funnel is.
+        plugin_total_ms = int((time.perf_counter() - invoke_started) * 1000)
+        parse_ms = max(0, plugin_total_ms - int(network_bookings.get("ms") or 0))
+        ctx.stats["candidate_extraction_ms"] = (
+            int(ctx.stats.get("candidate_extraction_ms") or 0) + parse_ms
+        )
         plugin_meta = ctx.source.get("_staticPluginMeta") if isinstance(ctx.source, dict) else None
         _finalize_plugin_fast_path(
             ctx, plugin_jobs, plugin_meta if isinstance(plugin_meta, dict) else None

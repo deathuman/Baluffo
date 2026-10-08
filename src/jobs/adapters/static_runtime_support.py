@@ -569,6 +569,11 @@ def build_static_entry_report(
             "listing_browser_fallbacks": 0,
             "listing_batch_count": 0,
             "listing_terminal_reason": "",
+            # ponytail: pre-extraction listing work (three playwright-fallback passes
+            # plus the zero-kept guard's re-read). Booked so it stops being the
+            # unbooked remainder of a source's duration; see static_listing_runner
+            # _prepare_listing_htmls and static_zero_kept_guard _fetch_listing_bodies.
+            "listing_prepare_ms": 0,
             "candidate_extraction_ms": 0,
             "detail_fetch_ms": 0,
             "detail_batch_count": 0,

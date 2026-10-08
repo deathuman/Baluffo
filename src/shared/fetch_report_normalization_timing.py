@@ -23,6 +23,8 @@ def _normalize_stage_totals(payload: Any) -> dict[str, int]:
     return {
         "fetchAndParse": _clamped_int(src.get("fetchAndParse"), maximum=86_400_000),
         "listingFetch": _clamped_int(src.get("listingFetch"), maximum=86_400_000),
+        # ponytail: pre-extraction listing work; additive, absent keys read as 0.
+        "listingPrepare": _clamped_int(src.get("listingPrepare"), maximum=86_400_000),
         "parseCsv": _clamped_int(src.get("parseCsv"), maximum=86_400_000),
         "candidateExtraction": _clamped_int(src.get("candidateExtraction"), maximum=86_400_000),
         "detailFetch": _clamped_int(src.get("detailFetch"), maximum=86_400_000),
@@ -157,6 +159,8 @@ def normalize_fetch_report_stage_timings(src: dict[str, Any]) -> dict[str, int]:
     return {
         "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
         "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+        # ponytail: additive; a report written before this key reads 0.
+        "listingPrepare": _clamped_int(raw_stage_timings.get("listingPrepare"), 0, 0),
         "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
         "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
         "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),

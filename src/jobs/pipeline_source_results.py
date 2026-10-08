@@ -465,6 +465,7 @@ def _apply_provider_or_social_counts(
 def _static_detail_stats(detail_rows: list[dict[str, Any]]) -> dict[str, int]:
     totals = {
         "listing_fetch_ms": 0,
+        "listing_prepare_ms": 0,
         "candidate_extraction_ms": 0,
         "detail_fetch_ms": 0,
         "domain_gate_wait_ms": 0,
@@ -492,6 +493,7 @@ def _apply_static_stage_timings(
     stage_timings.update(
         {
             "listingFetch": int(totals["listing_fetch_ms"]),
+            "listingPrepare": int(totals["listing_prepare_ms"]),
             "candidateExtraction": int(totals["candidate_extraction_ms"]),
             "detailFetch": int(totals["detail_fetch_ms"]),
         }

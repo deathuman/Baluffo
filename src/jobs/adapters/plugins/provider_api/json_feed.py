@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from src.ashby_board_urls import ashby_source_api_url
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
@@ -148,6 +149,11 @@ def _fetch_json_feed_payload(
 
 
 def _build_json_feed_url(source: dict[str, object], spec: JsonFeedSpec) -> str:
+    if spec.source_key == "board_url":
+        # Ashby: the slug lives in the board URL's path, so the posting-API URL is
+        # derived rather than templated. A row that already carries its API URL
+        # keeps it.
+        return ashby_source_api_url(source)
     api_url = clean_text(source.get("api_url"))
     if api_url:
         return api_url
@@ -215,6 +221,18 @@ JSON_FEED_SPECS: dict[str, JsonFeedSpec] = {
         url_template="https://api.lever.co/v0/postings/{value}?mode=json",
         parser=_provider_parsers.parse_lever_jobs_payload,
         list_payload=True,
+    ),
+    # Ashby boards are client-rendered: `jobs.ashbyhq.com/<slug>` serves no `/job/`
+    # anchors at all, so the HTML-board path read every Ashby board as empty and the
+    # registered ones kept 0. The posting API is the same data the page renders from.
+    # `source_key` is `board_url` and the slug is extracted from it, because that is
+    # the field Ashby registry rows actually carry.
+    "ashby": JsonFeedSpec(
+        default_error="missing board_url",
+        source_key="board_url",
+        url_template="",
+        parser=_provider_parsers.parse_ashby_jobs_from_payload,
+        payload_key="jobs",
     ),
 }
 

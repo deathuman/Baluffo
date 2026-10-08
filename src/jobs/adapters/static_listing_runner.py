@@ -677,6 +677,21 @@ class StaticFetchRunner:
             return False
 
     def _prepare_listing_htmls(self, page_url: str, result: dict[str, Any]) -> list[str]:
+        # ponytail: measurement only. The 2026-10-07 replay left 46% of static source
+        # time unbooked: `_prepare_listing_htmls` runs three `_try_playwright_fallback`
+        # passes (js_shell / jobs_path / empty_page), each re-parsing the listing and
+        # possibly driving a render, and none of it reached `listingFetch`,
+        # `candidateExtraction` or `detailFetch`. Book it so the next report attributes
+        # it instead of leaving a hole. No behaviour change.
+        prepare_started = time.perf_counter()
+        try:
+            return self._prepare_listing_htmls_timed(page_url, result)
+        finally:
+            self.stats["listing_prepare_ms"] = int(self.stats.get("listing_prepare_ms") or 0) + int(
+                (time.perf_counter() - prepare_started) * 1000
+            )
+
+    def _prepare_listing_htmls_timed(self, page_url: str, result: dict[str, Any]) -> list[str]:
         from src.jobs.adapters import static_listing as _sl
 
         listing_meta = self.stage_state.batch_meta.get(page_url) or {}
@@ -756,6 +771,17 @@ class StaticFetchRunner:
             event_level="muted",
             message=f"Extracting listing candidates for {self.source_name}.",
         )
+        # ponytail: `_extract_listing_candidates` reaches `_append_rendered_card_rows`
+        # -> `_fetch_rendered_detail_rows`, which performs a real HTTP detail fetch per
+        # rendered card and already books it to `detail_fetch_ms`. Timing the whole call
+        # as "extraction" therefore billed network wait under a CPU-sounding name: the
+        # 2026-10-07 run reported candidateExtraction 24.8M ms vs listingFetch 3.1M ms,
+        # which reads as "parsing is 8x the network" when in fact parsing is sub-ms and
+        # the 24.8M ms was the inline detail fetches. Subtract the delta so the two
+        # buckets are disjoint and `detailFetch` carries its true cost — which also
+        # means the detail-limit heuristic in static_detail_heuristics_config (keyed on
+        # last_detail_fetch_ms) sees the real number for the first time.
+        detail_fetch_ms_before = int(self.stats.get("detail_fetch_ms") or 0)
         listing_jobs_found, detail_links, provisional_rows_found = _extract_listing_candidates(
             self.ctx,
             page_url=page_url,
@@ -763,8 +789,13 @@ class StaticFetchRunner:
             listing_htmls=listing_htmls,
         )
         self.stats["candidate_links_found"] += len(detail_links)
-        self.stats["candidate_extraction_ms"] += int(
-            (time.perf_counter() - extraction_started) * 1000
+        inline_detail_ms = max(
+            0,
+            int(self.stats.get("detail_fetch_ms") or 0) - detail_fetch_ms_before,
+        )
+        self.stats["candidate_extraction_ms"] += max(
+            0,
+            int((time.perf_counter() - extraction_started) * 1000) - inline_detail_ms,
         )
         self.ctx.emit_source_progress(
             phase_key="static_candidate_extraction",

@@ -13,6 +13,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused provider parser 
 from __future__ import annotations
 
 from src.jobs.adapters.parsers.json_payloads import (
+    parse_ashby_jobs_from_payload,
     parse_epic_games_jobs_payload,
     parse_greenhouse_jobs_payload,
     parse_lever_jobs_payload,
@@ -46,6 +47,7 @@ from src.jobs.adapters.parsers.structured_listing import (
 __all__ = [
     "_looks_like_country_token",
     "parse_ashby_jobs_from_html",
+    "parse_ashby_jobs_from_payload",
     "parse_bamboohr_jobs_html",
     "parse_breezy_jobs_html",
     "parse_epic_games_jobs_payload",

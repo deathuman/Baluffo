@@ -261,6 +261,67 @@ def parse_greenhouse_jobs_payload(
     return jobs
 
 
+def parse_ashby_jobs_from_payload(
+    payload: Any, board_url: str, fallback_company: str = ""
+) -> list[RawJob]:
+    """Rows from an Ashby posting-API payload (``{"apiVersion": ..., "jobs": [...]}``).
+
+    The API is the board's own data; the rendered page is not a substitute,
+    because Ashby serves it with zero ``/job/`` anchors. ``board_url`` is the
+    board the payload came from and only supplies the link prefix, so a row
+    missing ``jobUrl`` still resolves to a stable link.
+    """
+    jobs: list[RawJob] = []
+    payload_object = _as_dict(payload)
+    for row_value in _as_list(payload_object.get("jobs")):
+        row = _as_dict(row_value)
+        if row.get("isListed") is False:
+            continue
+        posting_id = clean_text(row.get("id"))
+        title = clean_text(row.get("title"))
+        if not posting_id or not title:
+            continue
+        company = clean_text(fallback_company) or "Unknown"
+        if not looks_like_game_job(title, company):
+            # The row filter every JSON-feed parser applies: an Ashby board serves
+            # the studio's whole board, and back-office roles are not the feed.
+            continue
+        location_parts = [clean_text(row.get("location"))]
+        location_parts.extend(
+            clean_text(item.get("location"))
+            for item in _as_list(row.get("secondaryLocations"))
+            if isinstance(item, dict)
+        )
+        location_parts = [part for part in location_parts if part]
+        # The primary location decides city/country/workType; the secondaries are kept
+        # as additional locations. Joining them into one string stops parsing as a city
+        # ("Paris; Warsaw" yields no city at all).
+        primary_location = location_parts[0] if location_parts else ""
+        city, country, work_type = parse_generic_location_fields(primary_location)
+        location_details = _normalized_location_details(location_parts)
+        job_link = clean_text(row.get("jobUrl") or row.get("applyUrl"))
+        if not job_link:
+            job_link = f"{clean_text(board_url).rstrip('/')}/{posting_id}"
+        contract_type = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", clean_text(row.get("employmentType")))
+        jobs.append(
+            {
+                "sourceJobId": f"ashby:{posting_id}",
+                "title": title,
+                "company": company,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
+                "workType": clean_text(row.get("workplaceType")) or work_type,
+                "contractType": contract_type,
+                "jobLink": job_link,
+                "sector": "Game",
+                "postedAt": clean_text(row.get("publishedAt")),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
+            }
+        )
+    return jobs
+
+
 def _is_general_application_title(title: str) -> bool:
     normalized = re.sub(r"\s+", " ", clean_text(title)).strip().lower()
     return bool(

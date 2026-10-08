@@ -51,6 +51,7 @@ no demotable line, no marker) keeps refusing.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from src.jobs.common.no_openings import contains_no_openings_marker
@@ -148,10 +149,30 @@ _BROKEN_PRIOR_BUCKETS = {
 
 
 def _fetch_listing_bodies(ctx: StaticSourceContext) -> list[str]:
-    """Fetch (cache-backed) the listing pages; [] when none read successfully."""
+    """Fetch (cache-backed) the listing pages; [] when none read successfully.
+
+    ponytail: measurement only. This re-read runs a cache-backed fetch per listing
+    page and, on a miss, a raw-URL `fetch_text` fallback — both network calls that
+    reach no stage timer, so zero-kept sources spent their guard time invisibly
+    (46% of static source time was unbooked in the 2026-10-07 replay). Book it to
+    `listing_prepare_ms` so the next report attributes it. No behaviour change.
+    """
     fetch_html_cached = getattr(ctx.html_fetcher, "fetch_html_cached", None)
     if fetch_html_cached is None:
         return []
+    guard_started = time.perf_counter()
+    try:
+        return _fetch_listing_bodies_timed(ctx, fetch_html_cached)
+    finally:
+        ctx.stats["listing_prepare_ms"] = int(ctx.stats.get("listing_prepare_ms") or 0) + int(
+            (time.perf_counter() - guard_started) * 1000
+        )
+
+
+def _fetch_listing_bodies_timed(
+    ctx: StaticSourceContext,
+    fetch_html_cached: Any,
+) -> list[str]:
     bodies: list[str] = []
     for page in ctx.pages[:_MAX_MARKER_PROBE_PAGES]:
         page_url = clean_text(page)

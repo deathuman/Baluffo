@@ -21,6 +21,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from src.ashby_board_urls import ashby_source_api_url
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.personio import looks_like_personio_marketing_html
@@ -559,6 +560,12 @@ def fallback_probe_urls(candidate: dict[str, Any]) -> list[str]:
 
 
 def _fallback_probe_url(candidate: dict[str, Any], adapter: str) -> str:
+    if adapter == "ashby":
+        # The board page is client-rendered and serves no `/job/` anchors, so
+        # counting them reads a live board as empty -- which is how Voodoo's board
+        # was quarantined as `zero_jobs` three times while serving 122 jobs. The
+        # posting API is the data the page renders from.
+        return ashby_source_api_url(candidate)
     if adapter in {"greenhouse", "lever", "smartrecruiters", "workable"}:
         return _provider_homepage_probe_url(candidate, adapter)
     if adapter in {"recruitee", "pinpoint"}:

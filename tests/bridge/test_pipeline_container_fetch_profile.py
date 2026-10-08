@@ -22,7 +22,8 @@ def test_pipeline_fetch_child_uses_bounded_container_profile(monkeypatch) -> Non
         "preset": "default",
         "maxWorkers": 12,
         "maxPerDomain": 3,
-        "adapterHttpConcurrency": 32,
+        # min(ADAPTER_CONCURRENCY_CAP=64, maxWorkers*4=48) -> httpx pool of 96.
+        "adapterHttpConcurrency": 48,
         "staticDetailConcurrency": 6,
         "browserFallbackMaxWorkers": 4,
     }
@@ -45,10 +46,10 @@ def test_pipeline_fetch_child_clamps_container_profile_env(monkeypatch) -> None:
     service._start_fetch_child()
 
     assert payloads[0]["maxWorkers"] == 12
-    assert payloads[0]["adapterHttpConcurrency"] == 32
+    assert payloads[0]["adapterHttpConcurrency"] == 48
     assert payloads[0]["browserFallbackMaxWorkers"] == 6
     assert payloads[1]["maxWorkers"] == 12
-    assert payloads[1]["adapterHttpConcurrency"] == 32
+    assert payloads[1]["adapterHttpConcurrency"] == 48
     assert payloads[1]["browserFallbackMaxWorkers"] == 4
 
 

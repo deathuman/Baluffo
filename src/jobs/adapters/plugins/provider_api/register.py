@@ -130,4 +130,7 @@ def ensure_registered() -> None:
     )
     default_registry.register(_html_board_plugin("breezy"))
     default_registry.register(_html_board_plugin("jazzhr"))
-    default_registry.register(_html_board_plugin("ashby"))
+    # Ashby reads its posting API, not the rendered board: the board page is
+    # client-rendered and serves no `/job/` anchors, so the HTML path kept 0 for
+    # every registered Ashby board. The API is what the page renders from.
+    default_registry.register(_json_feed_plugin("ashby"))

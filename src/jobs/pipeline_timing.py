@@ -42,6 +42,10 @@ def build_runtime_timing_summary(
     stage_keys = [
         "fetchAndParse",
         "listingFetch",
+        # ponytail: pre-extraction listing work (playwright-fallback passes + the
+        # zero-kept guard re-read). Additive key; see static_listing_runner
+        # _prepare_listing_htmls.
+        "listingPrepare",
         "parseCsv",
         "candidateExtraction",
         "detailFetch",

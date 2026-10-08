@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import ParseResult, urlparse
 
+from src.ashby_board_urls import ashby_posting_api_url
 from src.url_hosts import host_matches_any_domain_pattern, host_matches_domain
 
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
@@ -284,9 +285,14 @@ def _ashby_candidate(
     slug = clean_token((_path_tokens(path) or [""])[0])
     if not slug:
         return None
+    board_url = f"https://jobs.ashbyhq.com/{slug}"
     return {
         **base,
-        "board_url": f"https://jobs.ashbyhq.com/{slug}",
+        "board_url": board_url,
+        # The board page is client-rendered and carries no `/job/` anchors, so a
+        # probe that reads the board URL counts 0 and quarantines a live board.
+        # The posting API is the same data the page renders from.
+        "api_url": ashby_posting_api_url(board_url),
     }
 
 

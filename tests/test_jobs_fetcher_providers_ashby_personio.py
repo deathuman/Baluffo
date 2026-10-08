@@ -1,4 +1,20 @@
-"""Tests for jobs fetcher providers Ashby and Personio runtime behavior."""
+"""Tests for jobs fetcher providers Ashby and Personio runtime behavior.
+
+The Ashby cases here pin that the adapter reads the board's posting API. It used
+to read the rendered board page and fall back across candidate URLs, because the
+page is client-rendered: `jobs.ashbyhq.com/<slug>` serves no `/job/` anchors, so
+the page read as empty and registered boards kept 0. The two scenarios those
+tests covered are preserved, but they are now settled by resolving the posting
+API from the row instead of by walking board URLs:
+
+- a stale `.../<slug>/jobs` board URL still reaches the right board (the slug is
+  extracted, so there is no stale-URL fallback to need), and
+- the rendered board page is never requested at all.
+
+Measured live on 2026-10-08, both pages and the API carry the same 122 Voodoo
+postings and both parse to the same 53 game rows; the API is what answers for
+every board, the page only for some.
+"""
 
 import json
 from collections.abc import Callable
@@ -10,125 +26,102 @@ import pytest
 from src import jobs_fetcher as jf
 from src.exceptions import AdapterValidationError
 
+_THAT_GAME_JOB_ID = "7ea5dd25-3fcb-4d42-8217-89dd9b6f5083"
 
-def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale() -> None:
-    from src.jobs.adapters.plugins.provider_api import html_board as html_board_module
 
-    source_rows = [
+def _ashby_posting_payload(
+    job_id: str = _THAT_GAME_JOB_ID, title: str = "Senior 3D Environment Artist"
+) -> str:
+    return json.dumps(
         {
-            "name": "thatgamecompany (Ashby)",
-            "studio": "thatgamecompany",
-            "adapter": "ashby",
-            "board_url": "https://jobs.ashbyhq.com/thatgamecompany/jobs",
-            "careersUrl": "https://thatgamecompany.com/careers/",
-            "enabledByDefault": True,
+            "apiVersion": "1",
+            "jobs": [
+                {
+                    "id": job_id,
+                    "title": title,
+                    "location": "Los Angeles",
+                    "employmentType": "FullTime",
+                    "isListed": True,
+                    "publishedAt": "2026-05-04T11:24:20.290+00:00",
+                    "jobUrl": f"https://jobs.ashbyhq.com/thatgamecompany/{job_id}",
+                }
+            ],
         }
-    ]
+    )
 
-    class _Deps:
-        def registry_entries(self, adapter: str):
-            assert adapter == "ashby"
-            return source_rows
 
-        def fetch_with_retries(
-            self,
-            url: str,
-            fetch_text: Callable[[str, int], str],
-            timeout_s: int,
-            retries: int,
-            backoff_s: float,
-        ) -> str:
-            return fetch_text(url, timeout_s)
+def _patched_ashby_rows(
+    source_rows: list[dict[str, object]], fake_fetch: Callable[[str, int], str]
+) -> list[dict[str, object]]:
+    from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_module
 
-        def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
-            return None
-
-    deps = _Deps()
     with (
-        mock.patch.object(html_board_module, "registry_entries", deps.registry_entries),
-        mock.patch.object(html_board_module, "fetch_with_retries", deps.fetch_with_retries),
-        mock.patch.object(html_board_module, "set_source_diagnostics", deps.set_source_diagnostics),
+        mock.patch.object(json_feed_module, "registry_entries", lambda adapter: source_rows),
+        mock.patch.object(
+            json_feed_module, "fetch_with_retries", lambda url, fetch_text, *_: fetch_text(url, 5)
+        ),
+        mock.patch.object(json_feed_module, "set_source_diagnostics", lambda name, **kwargs: None),
     ):
-
-        def fake_fetch(url: str, _: int) -> str:
-            if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
-                return "<html><body><h1>Job not found</h1><a href='/'>View all open positions</a></body></html>"
-            if url == "https://jobs.ashbyhq.com/thatgamecompany":
-                return "<html><body><h1>Page not found</h1></body></html>"
-            if url == "https://thatgamecompany.com/careers/":
-                return """
-                    <a href="https://thatgamecompany.com/careers/?ashby_jid=7ea5dd25-3fcb-4d42-8217-89dd9b6f5083#/">
-                      Senior 3D Environment Artist
-                    </a>
-                    """
-            raise AssertionError(f"unexpected url {url}")
-
         rows = jf.run_ashby_sources_source(
             fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
         )
-        assert len(rows) == 1
-        assert str(rows[0].get("title") or "") == "Senior 3D Environment Artist"
+    # The runner returns `list[RawJob]` (an untyped `TypedDict` alias), which mypy
+    # sees as `Any`; re-wrap so the declared return type holds.
+    return [dict(row) for row in rows]
 
 
-def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> None:
-    from src.jobs.adapters.plugins.provider_api import html_board as html_board_module
+def test_run_ashby_sources_source_reads_the_posting_api_never_the_board_page() -> None:
+    """The board page is the thing that reads as empty, so it must not be requested."""
+    requested: list[str] = []
 
-    source_rows = [
-        {
-            "name": "thatgamecompany (Ashby)",
-            "studio": "thatgamecompany",
-            "adapter": "ashby",
-            "board_url": "https://jobs.ashbyhq.com/thatgamecompany/jobs",
-            "enabledByDefault": True,
-        }
-    ]
+    def fake_fetch(url: str, _: int) -> str:
+        requested.append(url)
+        if url == "https://api.ashbyhq.com/posting-api/job-board/thatgamecompany":
+            return _ashby_posting_payload()
+        raise AssertionError(f"unexpected url {url}")
 
-    class _Deps:
-        def registry_entries(self, adapter: str):
-            assert adapter == "ashby"
-            return source_rows
+    rows = _patched_ashby_rows(
+        [
+            {
+                "name": "thatgamecompany (Ashby)",
+                "studio": "thatgamecompany",
+                "adapter": "ashby",
+                "board_url": "https://jobs.ashbyhq.com/thatgamecompany",
+                "careersUrl": "https://thatgamecompany.com/careers/",
+                "enabledByDefault": True,
+            }
+        ],
+        fake_fetch,
+    )
 
-        def fetch_with_retries(
-            self,
-            url: str,
-            fetch_text: Callable[[str, int], str],
-            timeout_s: int,
-            retries: int,
-            backoff_s: float,
-        ) -> str:
-            return fetch_text(url, timeout_s)
+    assert requested == ["https://api.ashbyhq.com/posting-api/job-board/thatgamecompany"]
+    assert len(rows) == 1
+    assert str(rows[0].get("title") or "") == "Senior 3D Environment Artist"
 
-        def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
-            return None
 
-    deps = _Deps()
-    with (
-        mock.patch.object(html_board_module, "registry_entries", deps.registry_entries),
-        mock.patch.object(html_board_module, "fetch_with_retries", deps.fetch_with_retries),
-        mock.patch.object(html_board_module, "set_source_diagnostics", deps.set_source_diagnostics),
-    ):
+def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_the_board_slug() -> None:
+    """A stale `.../<slug>/jobs` row still reaches its board, with no URL walking."""
 
-        def fake_fetch(url: str, _: int) -> str:
-            # The code tries multiple candidate URLs - first the original, then normalized
-            if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
-                # Original URL returns "Job not found" - triggers fallback to next candidate
-                return "<html><body><h1>Job not found</h1></body></html>"
-            if url == "https://jobs.ashbyhq.com/thatgamecompany":
-                # Normalized URL returns actual job
-                return """
-                    <a href="/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083">
-                      Senior 3D Environment Artist
-                    </a>
-                    """
-            raise AssertionError(f"unexpected url {url}")
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://api.ashbyhq.com/posting-api/job-board/thatgamecompany":
+            return _ashby_posting_payload()
+        raise AssertionError(f"unexpected url {url}")
 
-        rows = jf.run_ashby_sources_source(
-            fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
-        )
-        assert len(rows) == 1
-        assert str(rows[0].get("jobLink") or "").endswith(
-            "/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083"
-        )
+    rows = _patched_ashby_rows(
+        [
+            {
+                "name": "thatgamecompany (Ashby)",
+                "studio": "thatgamecompany",
+                "adapter": "ashby",
+                "board_url": "https://jobs.ashbyhq.com/thatgamecompany/jobs",
+                "enabledByDefault": True,
+            }
+        ],
+        fake_fetch,
+    )
+
+    assert len(rows) == 1
+    assert str(rows[0].get("jobLink") or "").endswith(f"/thatgamecompany/{_THAT_GAME_JOB_ID}")
 
 
 def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> None:

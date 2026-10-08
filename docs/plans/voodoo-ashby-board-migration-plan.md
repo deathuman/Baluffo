@@ -1,7 +1,7 @@
 > - **Class:** shipped-defect
 > - **Trigger:** Voodoo's careers ATS moved from Lever to Ashby; `lever:account:voodoo` now 404s, so job `13968523-e0f2-4cdb-81a1-4ac338bd5e0a` (published 2026-10-01) is absent from the feed
-> - **Verified against:** be26a0f0
-> - **Status:** items 1-4 implemented; release + live verification deferred by request
+> - **Verified against:** be26a0f0 (diagnosis); 64fd27b2 (still missing on v0.3.014, root cause found)
+> - **Status:** items 1-4 implemented but **not effective**; the probe/fetch reader defect is fixed 2026-10-08, release + live verification deferred
 
 # Voodoo Ashby board migration
 
@@ -36,11 +36,48 @@ control): 120 Voodoo rows including
 Full Time. No quality-gate risk — `normalize_contract_type` matches `"full time"` before
 `"freelance"`.
 
+## Why it was still missing on v0.3.014 (found 2026-10-08)
+
+Item 1 landed as *code*, which is not the same as a registered board — and the job
+stayed absent through every release since. Verified on live Umbrel v0.3.014
+(`appVersion 0.3.014`, pipeline `pipeline_d799a3b921`):
+
+| Check | Result |
+|---|---|
+| Ashby posting-api `voodoo` (control) | **122 jobs**, target job present |
+| `ashby_sources` per-board detail | 48 children, **Voodoo not among them** |
+| Live registry, all three buckets | no `ashby:…/voodoo` row; `lever:account:voodoo` still active and 404ing |
+| Discovery report | `{"name":"Voodoo (Ashby)","stage":"probe_quarantined","dropReason":"zero_jobs"}` — consecutive=3 |
+
+So item 1 never ran on the box: `refresh_active_ashby_registry()` is reachable only
+from `src/ashby_registry_refresh.py`'s own `main()`, and nothing in the runtime,
+pipeline, or bridge calls it. A curated row in a test is not a board in a registry.
+
+The deeper cause is a **reader defect, not a registration defect**. Ashby serves
+`jobs.ashbyhq.com/<slug>` client-rendered with zero `/job/` anchors, and both readers
+counted anchors:
+
+- discovery's probe read `zero_jobs` three times and quarantined a live board;
+- the fetch adapter parsed the same page, so registered Ashby boards such as
+  supercell kept 0 against a board holding 32.
+
+Measured 2026-10-08 — detail links vs posting-API jobs: voodoo **0 / 122**,
+thatgamecompany **0 / 40**, supercell **0 / 32**.
+
+Fixed: probe and fetch both resolve `api.ashbyhq.com/posting-api/job-board/<slug>`
+through `src/ashby_board_urls.py`, and Ashby moved from the HTML-board plugin to
+`JSON_FEED_SPECS`. Verified against the live board through the production fetch path:
+53 game rows kept, target collected as `ashby:13968523-…`, Paris / FR, Full Time —
+identical to what the HTML reader produced, so nothing was traded away.
+
+**Live verification is still owed.** This is delivery, and delivery is only proven by a
+fetch run keeping the job — on the box, after a release.
+
 ## Open items
 
 | # | Item | Where it is handled | Pinned by | Status |
 |---|---|---|---|---|
-| 1 | Register Voodoo's Ashby board | `src/ashby_registry_refresh.py` `CURATED_ASHBY_ROWS` | `tests/test_ashby_registry_refresh.py` | **landed** `37e79f19` |
+| 1 | Register Voodoo's Ashby board | `src/ashby_registry_refresh.py` `CURATED_ASHBY_ROWS` | `tests/test_ashby_registry_refresh.py` | **landed `37e79f19`, but ineffective** — the curator runs only from its own `main()`, and the probe quarantined the candidate anyway |
 | 2 | Repoint Voodoo discovery seed | `src/discovery_seed_catalog.json:32`, `src/source_discovery/config.py:424` | `tests/source_discovery/test_voodoo_ashby_seed.py` | implemented |
 | 3 | Treat explicit `likelyProviders` as a prior, not a ceiling | `src/source_discovery/provider_patterns.py:37` `likely_providers_for_seed` | `tests/source_discovery/test_provider_prior_not_ceiling.py` | implemented |
 | 4 | Surface provider-family child 404s in source health | `src/jobs/common/contracts_source_health.py:190` `derive_source_health`, `_provider_child_rows` | `tests/test_provider_child_failures.py` | implemented |
