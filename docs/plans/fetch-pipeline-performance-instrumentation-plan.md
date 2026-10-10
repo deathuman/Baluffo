@@ -1,7 +1,7 @@
 > - **Class:** performance-tooling
 > - **Trigger:** the shipped pool-tuning claim (`61c43fab`, "−11.3% wall") rests on a replay that is **not hermetic** — the frozen seed carries state and rows but no HTTP responses, so live board drift sits inside the variance. The 2026-09-25 paired benchmark reached the same conclusion and left the fix open: *"a larger controlled/replayed timing study is required."*
 > - **Verified against:** `61c43fab`
-> - **Status:** **Scope decided; documentation only — nothing in this plan is implemented.** Slices, order, and compromises below are agreed. See [Decisions taken](#decisions-taken) for the settled choices and [Open questions](#open-questions) for what is still outstanding.
+> - **Status:** **Executed 2026-10-08 (S1–S7); S0 adjudicated on the harness.** Plan: design and acceptance criteria. Receipts: [corpus evidence for S2–S7 and S0](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md), [S1 attribution](../snapshots/fetch-pipeline-cpu-attribution-2026-10-08.md). S0's verdict is **inconclusive by harness**, so `61c43fab` stands unverified rather than disproven.
 
 # Fetch pipeline performance and debug instrumentation plan
 
@@ -95,7 +95,7 @@ for admitting which parts are load-bearing.
 | Only 45% of boards can ever answer 304 | 20-board probe: 6 ETag, 4 Last-Modified, 1 both | **Medium** — small sample, live |
 | Conditional GET is unwired for static, not absent | headers set at `transport.py:130-132`; validators fed at `static_listing_flow.py:149-150`; persisted at `state_source_state.py:137-140`. `_static_cache_decision` (`state_incremental.py:239-264`) has **no `revalidate_only` branch**. 0 of 1,450 entries carry validators | **High** — read in code + state |
 
-**Explicitly not established:** which code burns the core. That is slice S1.
+**S1 settles it and revises two rows:** the loop thread holds only **3.2%** of child CPU, the seat was **~50% used**, and the top cost is `re.sub` normalisation at **31.6%** — the event loop is real but is not the constraint.
 
 ## The clock gap: the one that would have silently broken replay
 
@@ -287,19 +287,20 @@ validates the tooling and the shipped claim in a single pass.
   the work demonstrably did not shrink — but a **confirmation** would still need a live paired
   run before anyone quotes it as a production wall-clock win. The report must say which it is.
 - **Depends on:** S6, S7.
+- **Result (2026-10-08):** **inconclusive by harness** — the claim's variable is inert in a replay. [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s0--adjudicating-61c43fab).
 
 ### S1 — Attribute the core *(validates the plan's premise)*
 
-Use the existing `BALUFFO_PROFILE=1` hooks to get a CPU profile of a full-path run and answer:
-which functions burn the ~1.05 cores, and how much is protocol I/O versus parsing versus
-canonicalisation.
+Measure **which thread** holds the core before asking which functions. The per-source
+`BALUFFO_PROFILE=1` capture cannot answer it: it wraps worker threads while TLS, protocol and
+body decode run on the single transport loop thread (`transport.py:369-437`), and its lock
+serializes sources, so a full run under it takes hours. S1 instead runs a free stage-share pass
+over an existing run report, samples the fetch child's per-thread CPU from outside
+(`tools/measurements/pipeline/thread_cpu.py`), and takes per-function weight from the opt-in
+all-threads sampler `BALUFFO_PROFILE_SAMPLE`, aggregated by `cpu_attribution.py`.
 
 - **Acceptance:** a ranked attribution that either confirms GIL-bound Python work or overturns it.
-- **Why first among the new work:** every downstream slice is sized by this. If the core is
-  actually spent somewhere unconsidered, the priority order changes — and finding that out
-  before building a corpus is cheaper than finding it out after.
-- **Compromise:** cProfile distorts timing and is single-threaded-blind. Directional, not exact.
-- **Depends on:** nothing.
+- **Result (2026-10-08):** GIL story **overturned** — see the [S1 attribution snapshot](../snapshots/fetch-pipeline-cpu-attribution-2026-10-08.md).
 
 ### S2 — Extend source-level fetch counters *(cheap, always-useful)*
 
@@ -314,6 +315,8 @@ outcome, retry count. Surfaced on the existing ops routes and folded into the fe
 - **Compromise:** counts, not latency distributions. Full histograms are deliberately out —
   per-request bookkeeping is exactly the tax we refuse to pay.
 - **Depends on:** nothing.
+- **Result (2026-10-08):** shipped; always-on ceiling **−0.77%**, inside the noise floor.
+  [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s2--per-source-fetch-counters).
 
 ### S3 — Corpus store and reader *(offline, unit-tested, no container)*
 
@@ -333,6 +336,7 @@ records** (DNS, timeout, TLS, 5xx as exception class + message).
 - **Compromise:** bodies may carry CSRF nonces that will not replay faithfully. Detected by S5
   parity, not discovered later.
 - **Depends on:** nothing.
+- **Result (2026-10-08):** shipped; layout sized first (28.5 MB compressed, 506 MB naive). [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s3--corpus-store).
 
 ### S4 — Record mode *(one real run)*
 
@@ -352,6 +356,8 @@ One full-path run writes the corpus.
 - **Compromise:** the corpus is a snapshot of one day. It cannot reflect boards that change,
   and it cannot be regenerated (see [Retention](#retention-a-corpus-is-not-reproducible)).
 - **Depends on:** S3.
+- **Result (2026-10-08):** shipped; the reference epoch is recorded and enumerated.
+  [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s4--record-mode).
 
 ### S5 — Replay mode with a proven egress bar *(the actual hermeticity)*
 
@@ -366,6 +372,7 @@ rather than asserted.
   entries will appear as cache-decision differences rather than as corpus errors — check this
   first when parity fails.
 - **Depends on:** S4.
+- **Result (2026-10-08):** parity-ok on four units, literal `blockedRemote == 0`, four harness defects found and pinned by tests. [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s5--replay-mode-and-the-egress-bar).
 
 ### S6 — Determinism proof *(the gate on all future claims)*
 
@@ -373,13 +380,13 @@ Three replayed runs of unchanged code.
 
 - **Acceptance:** identical rows and a tight wall-clock spread. **Only after this does any A/B
   on this harness mean anything.**
-- **Also demonstrated here (per D1):** the two overhead ceilings, measured and reported —
-  always-on instrumentation ≤0.5%, opt-in ≤2%. A slice that cannot meet its ceiling ships
-  counters disabled rather than over budget.
-- **Compromise:** replay removes network time, so it measures the *engine*, not the wire. It
-  will shift which stage dominates, because TLS and protocol CPU disappear. It complements live
-  runs and never replaces them.
+- **Compromise:** replay removes network time, so it measures the *engine*, not the wire (D5).
 - **Depends on:** S5, S2.
+- **Result (2026-10-08):** **deterministic** in its graded window (spread 1.63%; a later busy window was refused). Both D1 ceilings measured — cProfile misses the opt-in one. [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s6--determinism-and-both-d1-ceilings).
+- **Result (2026-10-10):** whole-registry drains diverged on completion order; with submission-order
+  drains two replays agree on every graded unit and the residue is three named non-ordering causes
+  (per-render tokens, the batch deadline, the dayforce transport).
+  [Fix section](../snapshots/fetch-pipeline-full-source-epoch-2026-10-10.md#the-submission-order-fix-implemented-measured-and-what-the-re-record-still-refuses-on).
 
 ### S7 — One-command A/B *(the "fast and easy" deliverable)*
 
@@ -390,6 +397,7 @@ Paired, alternating-order arms over replay, driving the existing `perf_compare.p
 - **Acceptance:** one command produces a report a human can act on without reading raw JSON.
 - **Compromise:** advisory, not CI-gating, per D7 — the existing smoke gate already blocks PRs.
 - **Depends on:** S6.
+- **Result (2026-10-08):** exercised for real by S0, `--resume` included; one wrong proxy found and fixed. [Snapshot](../snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md#s7--one-command-and-an-interruption).
 
 ## Order and dependencies
 
@@ -444,9 +452,9 @@ enablement.
   retention rather than automatic pruning.
 - **Browser-fallback sources are not replayed** (D9). They stay at whatever refusal state was
   recorded — faithful only while the fallback is refused, which is the common case.
-- **D3 leaves the shipped claim uncorrected until S0**, which is post-S6. A real cost: 0.3.015
-  ships an unverified performance claim. Accepted because a large non-hermetic study would not
-  have settled it anyway, and D2 makes the later correction cheap.
+- **D3 left the shipped claim uncorrected until S0 ran.** The cost was real — 0.3.015 ships an
+  unverified claim — and accepted because a non-hermetic study would not have settled it, while
+  D2 makes a later correction cheap.
 - **cProfile distortion in S1.** Directional attribution, not a precise flame graph.
 - **The 90 s source budget is not enforced as documented** — `sheet_studios.py:192` sets it to
   `max(5, timeout_s * 2)` and `static_detail_heuristics_entry.py:266` checks it only at decision
@@ -476,10 +484,10 @@ Deliberately not in this plan, to keep it landable:
 
 | Risk | Why it matters | Mitigation |
 |---|---|---|
-| Corpus size | ~5,600 requests/run; bodies plausibly 100–300 MB before dedupe | gzip + content-addressing; measure in S3 before choosing a layout |
+| Corpus size | answered by S3 (28.5 MB compressed, five sources) | gzip + content-addressing, sized before the layout choice |
 | Nonce/CSRF HTML | may not replay faithfully | detected by S5 parity, not in production |
 | Harness measures the wrong thing | a fast replay could be mistaken for a healthy fetch | every replay report carries the "not production" banner |
-| Premise is wrong | S1 may overturn GIL-bound, reordering everything | that is why S1 runs first |
+| Premise is wrong | answered by S1: it was, and D4 reordered accordingly | that is why S1 runs first |
 | Instrumentation tax | new counters could tax the hot path | default-off; ceilings measured in S6 |
 | `scripts/` edit trips release gate | other sessions release concurrently | all new code in `tools/`; `scripts/perf_*.py` untouched |
 | Coverage is narrower than it looks | only the fetch lane is replayed (D6) | S4 enumerates every transport caller and classifies each |
@@ -487,18 +495,21 @@ Deliberately not in this plan, to keep it landable:
 
 ## Open questions
 
-**None block the plan.** D1–D10 are settled. What remains are recorded here so they are not
-rediscovered as if they were open.
+**None block the plan.** D1–D10 are settled; these are recorded so they are not rediscovered
+as if they were open.
 
 1. **Who enforces no-skipping (D8)?** The requirement stands and is currently met but
    unenforced; `coverage_drain.py` buckets skips as `not_selected` without failing. A no-skip
    assertion in the acceptance path is proposed but not scheduled. *Decide whether that lands
    with this plan or immediately after it.*
-2. **Corpus size.** Unknown until S3 measures it. Every retention and runtime estimate downstream
-   of S3 is provisional. *Blocks nothing; S3 resolves it.*
+2. **Corpus size.** *Answered by S3.*
 3. **Does replay's `force_refresh_all` workload distort absolute figures?** Settled as acceptable
    (D5 + the side effect that production fetches ~everything), but if absolute replay wall-clock
    is ever quoted as a production number, that report is wrong. *Convention, not a question.*
+4. **D1's opt-in ceiling is missed by its own instrument.** `BALUFFO_PROFILE=1` measured
+   **+96.8%**; the sampler that might sit under 2% is invisible from an in-process driver.
+   *Restate the ceiling, or wire the sampler where the harness can measure it.*
+
 
 ## Verification ladder
 
