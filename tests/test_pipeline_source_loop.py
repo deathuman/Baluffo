@@ -307,3 +307,112 @@ def test_run_selected_loaders_sequential_path_unchanged(
 
     assert submitted == ["a", "b"]
     assert len(reports) == 2
+
+
+def _resolving_executor(*, newest_first: bool) -> Any:
+    """A pool that resolves its whole window in one go, newest-first or oldest-first.
+
+    Newest-first is the shape a slow first source produces: everything submitted after it
+    finishes while it is still running, so results arrive in the reverse of submission order.
+    The futures stay unresolved until ``wait`` is called, so the loop's real waiting still runs.
+    """
+    from concurrent.futures import Future
+
+    class _ResolvingExecutor:
+        def __init__(self, max_workers: int = 1) -> None:
+            self.max_workers = max_workers
+            self.calls: list[tuple[Any, str, Any]] = []
+            self.futures: list[Future] = []
+
+        def __enter__(self) -> _ResolvingExecutor:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def submit(self, fn: Any, source_name: str, loader: Any) -> Future:
+            future: Future = Future()
+            self.calls.append((fn, source_name, loader))
+            self.futures.append(future)
+            return future
+
+        def resolve_all(self) -> list[Future]:
+            pairs = list(zip(self.futures, self.calls, strict=True))
+            if newest_first:
+                pairs = list(reversed(pairs))
+            resolved: list[Future] = []
+            for future, (fn, source_name, loader) in pairs:
+                future.set_result(fn(source_name, loader))
+                resolved.append(future)
+            self.futures.clear()
+            self.calls.clear()
+            return resolved
+
+    return _ResolvingExecutor()
+
+
+def test_run_selected_loaders_canonical_order_is_independent_of_completion_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The canonical row sequence is a property of the run, not of who finished first.
+
+    Regression: rows were appended as futures resolved, so ``deduplicate_jobs``' first-wins
+    merge targets -- and therefore which row survived and what payload it carried -- depended
+    on completion order. Two runs over the same responses disagreed: a full-source corpus
+    replay recorded 5,541 merges and 40,428 rows, and reproduced 6,029 merges and 39,920 rows.
+    Ordering the appends by submission index is what makes the second run equal the first.
+
+    The writer is asserted too: in production the batches go to the fetched-rows sidecar in
+    append order, and the sidecar is read back in file order.
+    """
+    from concurrent.futures import FIRST_COMPLETED
+
+    loaders = [(f"src_{i:04d}", i) for i in range(12)]
+
+    def run_with(executor: Any) -> tuple[list[Any], list[dict[str, Any]], list[list[Any]]]:
+        monkeypatch.setattr(
+            pipeline_source_loop, "ThreadPoolExecutor", lambda max_workers=1: executor
+        )
+        monkeypatch.setattr(
+            pipeline_source_loop,
+            "wait",
+            lambda pending, return_when=FIRST_COMPLETED: (executor.resolve_all(), set()),
+        )
+
+        def fake_execute(source_name: str, _loader: Any) -> tuple[dict[str, Any], list[Any]]:
+            return ({"name": source_name}, [f"{source_name}#0", f"{source_name}#1"])
+
+        rows: list[Any] = []
+        reports: list[dict[str, Any]] = []
+        batches: list[list[Any]] = []
+
+        class _RecordingWriter:
+            count = 0
+
+            def append_canonical_jobs(self, batch: list[Any]) -> None:
+                batches.append(list(batch))
+                self.count += len(batch)
+
+        pipeline_source_loop._run_selected_loaders(
+            selected_loaders=loaders,
+            max_workers=2,  # window = max(8, 2*4) = 8
+            execute_loader_started=fake_execute,
+            canonical_rows=rows,
+            source_reports=reports,
+            fetched_rows_writer=_RecordingWriter(),
+        )
+        return rows, reports, batches
+
+    backwards = run_with(_resolving_executor(newest_first=True))
+    forwards = run_with(_resolving_executor(newest_first=False))
+
+    expected_names = [name for name, _ in loaders]
+    for rows, reports, batches in (backwards, forwards):
+        assert [report["name"] for report in reports] == expected_names
+        # Nothing stayed in the in-memory list: every batch went to the writer, in that order.
+        assert rows == []
+        assert [batch[0] for batch in batches] == [f"{name}#0" for name in expected_names]
+
+    # The two completion orders are indistinguishable in their output, which is the point:
+    # the sidecar a replay reads back is byte-for-byte the same file either way.
+    assert backwards == forwards

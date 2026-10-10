@@ -245,7 +245,58 @@ def normalize_fetch_report_source_row_base(
     payload.update(_source_row_count_fields(src, options))
     if options.include_duplicate_rate:
         payload["duplicateRate"] = _float_or_zero(src.get("duplicateRate"))
+    http_counters = _source_row_http_counters(src)
+    if http_counters is not None:
+        payload["httpCounters"] = http_counters
     return payload
+
+
+# Per-source HTTP counters (S2 of the fetch perf plan) are the one source-row block that
+# is carried through as a nested object rather than a flat counter. Additive: a row
+# without the key normalizes to exactly the same payload as before, so no existing reader
+# or stored report sees a new field appear.
+_HTTP_COUNTER_NUMBER_KEYS = (
+    "attempts",
+    "succeeded",
+    "failed",
+    "repeatFetches",
+    "distinctUrls",
+    "decodedChars",
+    "textBytes",
+)
+_HTTP_COUNTER_BUCKET_KEYS = ("statusCodes", "errorClasses")
+
+
+def _source_row_http_counters(src: dict[str, Any]) -> dict[str, Any] | None:
+    """Validated ``httpCounters`` block, or ``None`` when the row carries none.
+
+    Counting that ran and recorded nothing returns ``None`` here, so an empty object can
+    never be read as "this source was measured and made no requests".
+    """
+
+    raw = src.get("httpCounters")
+    if not isinstance(raw, dict):
+        return None
+    counters: dict[str, Any] = {}
+    for key in _HTTP_COUNTER_NUMBER_KEYS:
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            continue
+        counters[key] = max(0, int(value))
+    for key in _HTTP_COUNTER_BUCKET_KEYS:
+        buckets = raw.get(key)
+        if not isinstance(buckets, dict):
+            continue
+        cleaned = {
+            str(name): max(0, int(count))
+            for name, count in buckets.items()
+            if isinstance(count, int) and not isinstance(count, bool)
+        }
+        if cleaned:
+            counters[key] = cleaned
+    if not counters.get("attempts"):
+        return None
+    return counters
 
 
 def normalize_jobs_fetch_report_source_row_base(

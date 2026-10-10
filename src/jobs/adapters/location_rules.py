@@ -9,8 +9,10 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused location rule te
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
+from src.jobs import text_utils as _text_utils
 from src.jobs.text_utils import (
     classify_city_filter_rejection,
     clean_text,
@@ -646,7 +648,7 @@ def _looks_like_location_name(token: str, words: list[str]) -> bool:
     )
 
 
-def _fragment_looks_like_location_value(fragment: str) -> bool:
+def _fragment_looks_like_location_value_impl(fragment: str) -> bool:
     text = clean_text(fragment)
     if not text:
         return False
@@ -663,6 +665,19 @@ def _fragment_looks_like_location_value(fragment: str) -> bool:
     if any(separator in text for separator in (",", "/", "-")):
         return True
     return _looks_like_location_name(text, words)
+
+
+_fragment_looks_like_location_value_cached = lru_cache(
+    maxsize=_text_utils.TEXT_NORMALIZATION_CACHE_SIZE
+)(_fragment_looks_like_location_value_impl)
+
+
+def _fragment_looks_like_location_value(fragment: str) -> bool:
+    """Pure predicate over one fragment; memoised because a summary re-tests every part."""
+
+    if isinstance(fragment, str) and not _text_utils.LEGACY_NORMALIZATION:
+        return _fragment_looks_like_location_value_cached(fragment)
+    return _fragment_looks_like_location_value_impl(fragment)
 
 
 def _looks_like_pipe_joined_location_summary(token: str) -> bool:
@@ -799,7 +814,7 @@ def _classify_unopened_city_closer(token: str) -> str:
     return ""
 
 
-def classify_city_garbage(value: Any) -> str:
+def _classify_city_garbage_impl(value: Any) -> str:
     token = clean_text(value)
     if not token:
         return ""
@@ -832,7 +847,20 @@ def classify_city_garbage(value: Any) -> str:
     return _classify_multi_city_words(token, words, alpha_words)
 
 
-def is_plausibly_location_candidate(value: Any) -> bool:
+_classify_city_garbage_cached = lru_cache(maxsize=_text_utils.TEXT_NORMALIZATION_CACHE_SIZE)(
+    _classify_city_garbage_impl
+)
+
+
+def classify_city_garbage(value: Any) -> str:
+    """Pure; memoised because callers reclassify the same token across parse attempts."""
+
+    if isinstance(value, str) and not _text_utils.LEGACY_NORMALIZATION:
+        return _classify_city_garbage_cached(value)
+    return _classify_city_garbage_impl(value)
+
+
+def _is_plausibly_location_candidate_impl(value: Any) -> bool:
     token = clean_text(value)
     if not token:
         return False
@@ -854,3 +882,16 @@ def is_plausibly_location_candidate(value: Any) -> bool:
     if normalized in _WORK_TYPE_NOISE_TOKENS:
         return False
     return classify_city_garbage(token) == ""
+
+
+_is_plausibly_location_candidate_cached = lru_cache(
+    maxsize=_text_utils.TEXT_NORMALIZATION_CACHE_SIZE
+)(_is_plausibly_location_candidate_impl)
+
+
+def is_plausibly_location_candidate(value: Any) -> bool:
+    """Pure; memoised because the fragment walk judges the same token repeatedly."""
+
+    if isinstance(value, str) and not _text_utils.LEGACY_NORMALIZATION:
+        return _is_plausibly_location_candidate_cached(value)
+    return _is_plausibly_location_candidate_impl(value)

@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs text/qualit
 from __future__ import annotations
 
 import json
+import os
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
@@ -24,6 +25,15 @@ from src.jobs.country_contract import (
     resolve_contract_path,
 )
 from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
+
+TEXT_NORMALIZATION_ENV = "BALUFFO_TEXT_NORMALIZATION"
+TEXT_NORMALIZATION_CACHE_SIZE = 4096
+# One measurement switch, resolved once at import: ``legacy`` restores the pre-pass spellings and
+# bypasses the memo caches below, so the corpus A/B can price this pass as a paired study. It is
+# read as a module global at call time (one LOAD_GLOBAL, never an env lookup) so the equivalence
+# test can exercise both paths in a single process; unset -- production and every other caller --
+# runs the cheap, cached path.
+LEGACY_NORMALIZATION = os.environ.get(TEXT_NORMALIZATION_ENV, "").strip().lower() == "legacy"
 
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 HTML_TAG_RE = re.compile(r"(?is)<[^>]+>")
@@ -187,6 +197,35 @@ def _resolve_contract_path(filename: str) -> Path:
     return resolve_contract_path(filename, anchor=Path(__file__))
 
 
+def _unescape_if_needed(text: str) -> str:
+    """``html.unescape`` only when an entity can exist: without ``&`` it returns the input."""
+
+    if LEGACY_NORMALIZATION or "&" in text:
+        return unescape(text)
+    return text
+
+
+def _strip_html_tags(text: str) -> str:
+    """``HTML_TAG_RE.sub`` only when a tag can open: the pattern needs a ``<`` to match."""
+
+    if LEGACY_NORMALIZATION or "<" in text:
+        return HTML_TAG_RE.sub(" ", text)
+    return text
+
+
+def _collapse_whitespace(text: str) -> str:
+    r"""``re.sub(r"\s+", " ", text).strip()``, sharing the whitespace predicate.
+
+    CPython's splitter and ``re``'s ``\s`` agree on every whitespace code point, and
+    ``" ".join(text.split())`` is several times cheaper on the short strings this sees. The
+    equivalence test pins the two spellings against each other.
+    """
+
+    if LEGACY_NORMALIZATION:
+        return re.sub(r"\s+", " ", text).strip()
+    return " ".join(text.split())
+
+
 def _clean_mapping_text(value: Mapping[Any, Any]) -> str:
     for key in ("name", "title", "value", "text", "label", "content"):
         candidate = clean_text(value.get(key))
@@ -222,7 +261,7 @@ def clean_text(value: Any) -> str:
 
 
 def norm_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", clean_text(value)).strip().lower()
+    return _collapse_whitespace(clean_text(value)).lower()
 
 
 def title_identity_tokens(value: Any) -> list[str]:
@@ -255,11 +294,11 @@ def location_summary_from_entries(entries: Sequence[Mapping[str, Any]]) -> str:
 
 
 def sanitize_public_text(value: Any) -> str:
-    text = unescape(clean_text(value))
+    text = _unescape_if_needed(clean_text(value))
     if not text:
         return ""
-    stripped = HTML_TAG_RE.sub(" ", text)
-    normalized = re.sub(r"\s+", " ", stripped).strip()
+    stripped = _strip_html_tags(text)
+    normalized = _collapse_whitespace(stripped)
     if not normalized:
         return ""
     if "<" in normalized or ">" in normalized:
@@ -270,7 +309,7 @@ def sanitize_public_text(value: Any) -> str:
     return normalized
 
 
-def normalize_country_acceptance_token(value: Any) -> str:
+def _normalize_country_acceptance_token_impl(value: Any) -> str:
     text = sanitize_public_text(value)
     if not text:
         return ""
@@ -278,11 +317,24 @@ def normalize_country_acceptance_token(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", re.sub(r"[\u0300-\u036f]", "", normalized.lower()))
 
 
+_normalize_country_acceptance_token_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _normalize_country_acceptance_token_impl
+)
+
+
+def normalize_country_acceptance_token(value: Any) -> str:
+    """NFD-folded alphanumeric token; memoised on the string because the fold is not cheap."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _normalize_country_acceptance_token_cached(value)
+    return _normalize_country_acceptance_token_impl(value)
+
+
 def normalize_city_noise_text(value: Any) -> str:
     text = sanitize_public_text(value)
     if not text:
         return ""
-    return re.sub(r"\s+", " ", text).strip().lower()
+    return _collapse_whitespace(text).lower()
 
 
 @lru_cache(maxsize=1)
@@ -399,7 +451,7 @@ def _matches_city_sentence_prefix(text: str, prefix: str) -> bool:
     return not text[len(prefix)].isalnum()
 
 
-def is_city_noise_fragment(value: Any) -> bool:
+def _is_city_noise_fragment_impl(value: Any) -> bool:
     text = normalize_city_noise_text(value)
     if not text:
         return False
@@ -413,6 +465,19 @@ def is_city_noise_fragment(value: Any) -> bool:
     return any(
         _matches_city_sentence_prefix(text, prefix) for prefix in contract["sentencePrefixes"]
     )
+
+
+_is_city_noise_fragment_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _is_city_noise_fragment_impl
+)
+
+
+def is_city_noise_fragment(value: Any) -> bool:
+    """Pure contract lookup; memoised because the fragment scan walks the whole contract."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _is_city_noise_fragment_cached(value)
+    return _is_city_noise_fragment_impl(value)
 
 
 def _city_filter_contract_rejection(normalized: str, contract: dict[str, Any]) -> str:
@@ -439,7 +504,7 @@ def _is_ambiguous_city_filter_code(text: str, normalized: str) -> bool:
     )
 
 
-def classify_city_filter_rejection(value: Any) -> str:
+def _classify_city_filter_rejection_impl(value: Any) -> str:
     text = sanitize_public_text(value)
     if not text:
         return "empty"
@@ -463,6 +528,19 @@ def classify_city_filter_rejection(value: Any) -> str:
     return ""
 
 
+_classify_city_filter_rejection_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _classify_city_filter_rejection_impl
+)
+
+
+def classify_city_filter_rejection(value: Any) -> str:
+    """Pure; memoised because one fragment is reclassified several times along the parse chain."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _classify_city_filter_rejection_cached(value)
+    return _classify_city_filter_rejection_impl(value)
+
+
 def _city_filter_country_key(value: Any) -> str:
     text = clean_text(value)
     if not text or norm_text(text) in {"unknown", "remote", "worldwide", "hybrid", "onsite"}:
@@ -484,39 +562,52 @@ def _city_filter_compound_parts(value: Any) -> list[str]:
     return parts
 
 
-def get_city_filter_option_values(value: Any, country: Any = "") -> list[str]:
+def _get_city_filter_option_values_impl(value: Any, country: Any = "") -> tuple[str, ...]:
     text = sanitize_public_text(value)
     if not text:
-        return []
+        return ()
     rejection = classify_city_filter_rejection(text)
     if not rejection:
-        return [text]
+        return (text,)
     if rejection != "compound_non_city":
-        return []
+        return ()
     country_key = _city_filter_country_key(country)
     if not country_key:
-        return []
+        return ()
     hints = load_city_noise_contract()["cityFilterSplitCountryHints"]
     parts = _city_filter_compound_parts(text)
     if not parts:
-        return []
+        return ()
     option_values: list[str] = []
     seen: set[str] = set()
     for part in parts:
         if classify_city_filter_rejection(part):
-            return []
+            return ()
         hinted_country = hints.get(normalize_city_noise_text(part), "")
         if not hinted_country or normalize_country(hinted_country) != country_key:
-            return []
+            return ()
         option_key = normalize_city_noise_text(part)
         if option_key in seen:
             continue
         seen.add(option_key)
         option_values.append(part)
-    return option_values
+    return tuple(option_values)
 
 
-def resolve_country_acceptance_value(value: Any) -> str:
+_get_city_filter_option_values_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _get_city_filter_option_values_impl
+)
+
+
+def get_city_filter_option_values(value: Any, country: Any = "") -> list[str]:
+    """Memoised on ``(city, country)``; the caller gets a fresh list, never the cached tuple."""
+
+    if isinstance(value, str) and isinstance(country, str) and not LEGACY_NORMALIZATION:
+        return list(_get_city_filter_option_values_cached(value, country))
+    return list(_get_city_filter_option_values_impl(value, country))
+
+
+def _resolve_country_acceptance_value_impl(value: Any) -> str:
     token = normalize_country_acceptance_token(value)
     if not token:
         return ""
@@ -524,6 +615,19 @@ def resolve_country_acceptance_value(value: Any) -> str:
     alias_map = contract["aliasToCanonical"]
     exact_map = contract["exactLabelMap"]
     return str(alias_map.get(token) or exact_map.get(token, ""))
+
+
+_resolve_country_acceptance_value_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _resolve_country_acceptance_value_impl
+)
+
+
+def resolve_country_acceptance_value(value: Any) -> str:
+    """Two contract lookups over an NFD fold; pure, so the fold is paid once per distinct label."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _resolve_country_acceptance_value_cached(value)
+    return _resolve_country_acceptance_value_impl(value)
 
 
 def resolve_country_contract_name(value: Any) -> str:
@@ -539,7 +643,7 @@ def resolve_country_contract_name(value: Any) -> str:
     return str(_country_contract_names().get(token, ""))
 
 
-def looks_like_country_token(value: Any) -> bool:
+def _looks_like_country_token_impl(value: Any) -> bool:
     token = clean_text(value)
     if not token:
         return False
@@ -551,6 +655,19 @@ def looks_like_country_token(value: Any) -> bool:
     if resolve_country_acceptance_value(token):
         return True
     return len(token) == 2 and token.isalpha()
+
+
+_looks_like_country_token_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _looks_like_country_token_impl
+)
+
+
+def looks_like_country_token(value: Any) -> bool:
+    """Pure predicate; memoised because it runs once per fragment per parse attempt."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _looks_like_country_token_cached(value)
+    return _looks_like_country_token_impl(value)
 
 
 def _resolved_country_label(text: str, resolved: str) -> tuple[str, str]:
@@ -657,7 +774,7 @@ def _invalid_location_punctuation_reason(text: str, *, field_name: str) -> str:
     return ""
 
 
-def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
+def _invalid_location_reason_impl(value: Any, field_name: str = "city") -> str:
     text = sanitize_public_text(value)
     if not text:
         return ""
@@ -685,6 +802,19 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
     if field_name == "city" and is_city_noise_fragment(text):
         return f"invalid_{field_name}_semantic_noise"
     return ""
+
+
+_invalid_location_reason_cached = lru_cache(maxsize=TEXT_NORMALIZATION_CACHE_SIZE)(
+    _invalid_location_reason_impl
+)
+
+
+def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
+    """Pure; memoised because every location fragment is judged several times per parse."""
+
+    if isinstance(value, str) and not LEGACY_NORMALIZATION:
+        return _invalid_location_reason_cached(value, field_name)
+    return _invalid_location_reason_impl(value, field_name=field_name)
 
 
 def sanitize_location_text(value: Any, *, field_name: str = "city") -> tuple[str, str]:

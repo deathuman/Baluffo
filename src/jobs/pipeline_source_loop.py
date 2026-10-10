@@ -550,6 +550,10 @@ def _run_selected_loaders(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         loader_iter = iter(selected_loaders)
         pending: set[Future] = set()
+        index_of: dict[Future, int] = {}
+        buffered: dict[int, tuple[dict[str, Any], list[CanonicalJob]]] = {}
+        submitted = 0
+        next_append = 0
         exhausted = False
         while not exhausted or pending:
             while not exhausted and len(pending) < window:
@@ -558,14 +562,28 @@ def _run_selected_loaders(
                 except StopIteration:
                     exhausted = True
                     break
-                pending.add(executor.submit(execute_loader_started, source_name, loader))
+                future = executor.submit(execute_loader_started, source_name, loader)
+                pending.add(future)
+                index_of[future] = submitted
+                submitted += 1
             if not pending:
                 break
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
+                buffered[index_of.pop(future)] = future.result()
+            # Canonical row order must be a property of the run, not of which loader
+            # finished first: append in submission (selection) order -- the order the
+            # serial path below produces and a corpus replay must reproduce. Completion
+            # order made dedup first-wins picks, so surviving payloads varied between
+            # two runs over the same responses (measured: 5,541 vs 6,029 merges, 508
+            # rows). Cost: one window of results is held, so a slow low-index source
+            # keeps its successors' batches in memory (tens of MiB at this scale)
+            # until it resolves -- ordering only; no row is dropped or reordered.
+            while next_append in buffered:
                 _append_loader_result(
-                    future.result(),
+                    buffered.pop(next_append),
                     canonical_rows=canonical_rows,
                     source_reports=source_reports,
                     fetched_rows_writer=fetched_rows_writer,
                 )
+                next_append += 1

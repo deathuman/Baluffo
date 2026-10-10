@@ -12,9 +12,10 @@ import inspect
 import time
 from collections import Counter
 from collections.abc import Mapping
+from http.client import InvalidURL
 from typing import Any, Protocol, cast
 
-from src.jobs import pipeline_root
+from src.jobs import fetch_counters, pipeline_root
 from src.jobs.canonicalize import (
     CanonicalNormalizer,
     GoogleSheetsCategoryLinkStatusResolver,
@@ -46,7 +47,18 @@ _CANONICAL_DROP_REASON_KEYS = (
     "google_sheets_category_row",
 )
 _GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S = 4
-_EXPECTED_SOURCE_OPERATION_EXCEPTIONS = (OSError, RuntimeError, TimeoutError, ValueError)
+# InvalidURL is here because a *source* can carry a malformed URL: observed live, a static
+# board's templated detail link (`/careers/" + root + "/moonactive-position?uid=%22...`) reached
+# urllib and raised http.client.InvalidURL, which escaped the worker future and killed a
+# 2,046-source run at source 1,579. A URL that can never be fetched is a per-source failure
+# with a message, exactly like a timeout -- not a reason to abandon the remaining 467 boards.
+_EXPECTED_SOURCE_OPERATION_EXCEPTIONS = (
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    ValueError,
+    InvalidURL,
+)
 
 
 class _SourceExecutionFailure(RuntimeError):
@@ -773,6 +785,17 @@ def execute_loader(
     report = _build_initial_report(name=name, base_meta=base_meta, root_module=root_module)
     report_loss = as_json_object(report.get("loss"))
     adapter_name = norm_text(report.get("adapter"))
+    # S2: per-source HTTP counters. Off unless BALUFFO_FETCH_COUNTERS is set; with it off
+    # `wrap_fetch_text` hands back the same callable objects, so this branch cannot change
+    # behavior on the disabled path. Both per-source fetch callables share one counter, so
+    # a static source's detail fetches and listing fetches land in the same row.
+    source_counters = fetch_counters.start_source_counters()
+    counted_fetch_text = fetch_counters.wrap_fetch_text(fetch_text_limited, source_counters)
+    counted_static_fetch_text = (
+        fetch_counters.wrap_fetch_text(fetch_text_static_limited, source_counters)
+        if fetch_text_static_limited
+        else fetch_text_static_limited
+    )
     canonical_batch: list[CanonicalJob] = []
     heartbeat_callback, progress_callback = _build_loader_callbacks(
         name=name,
@@ -789,8 +812,8 @@ def execute_loader(
             name=name,
             adapter_name=adapter_name,
             config=config,
-            fetch_text_limited=fetch_text_limited,
-            fetch_text_static_limited=fetch_text_static_limited,
+            fetch_text_limited=counted_fetch_text,
+            fetch_text_static_limited=counted_static_fetch_text,
             static_listing_async_fetch=static_listing_async_fetch,
             source_state_rows=source_state_rows,
             guarded_try_playwright=guarded_try_playwright,
@@ -817,7 +840,7 @@ def execute_loader(
             name=name,
             raw_rows=raw_rows,
             config=config,
-            fetch_text_limited=fetch_text_limited,
+            fetch_text_limited=counted_fetch_text,
             redirect_resolver=redirect_resolver,
             report=report,
             report_loss=report_loss,
@@ -883,5 +906,6 @@ def execute_loader(
         thread_local.source_name = ""
 
     report["durationMs"] = int((time.perf_counter() - source_started) * 1000)
+    fetch_counters.fold_source_counters(report, source_counters)
     _classify_report_outcome(report=report, root_module=root_module)
     return report, canonical_batch

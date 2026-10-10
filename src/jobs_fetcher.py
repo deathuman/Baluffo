@@ -9,6 +9,8 @@ AI boundary verify: `npm run test:refactor:changed` plus focused fetcher tests.
 
 from __future__ import annotations
 
+import atexit
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -386,5 +388,23 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_COMPAT_VALUES) | set(_COMPAT_MODULE_EXPORTS))
 
 
+def _start_optional_sampling() -> None:
+    """Start the opt-in all-threads CPU sampler for this process.
+
+    Gated solely by ``BALUFFO_PROFILE_SAMPLE``: unset, this is one env lookup and
+    no thread. It sits at the process entry because that is the only place that
+    can see every thread -- the per-source ``run_profiled`` capture wraps worker
+    threads only, so the transport event loop never appears in it. The sampler
+    dumps on the same cadence whether or not this process exits cleanly.
+    """
+    from src.shared.profile_utils import start_sample_profile, stop_sample_profile
+
+    run_id = str(os.environ.get("BALUFFO_FETCH_RUN_ID") or "").strip()
+    sampler = start_sample_profile(profile_name=run_id or f"fetch-pid{os.getpid()}")
+    if sampler is not None:
+        atexit.register(stop_sample_profile, sampler)
+
+
 if __name__ == "__main__":
+    _start_optional_sampling()
     raise SystemExit(main())

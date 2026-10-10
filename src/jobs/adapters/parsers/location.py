@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Any
 
+from src.jobs import text_utils as _text_utils
 from src.jobs.adapters.location_rules import (
     _LOCATION_WORK_TYPE_TOKENS,
     _REMOTEISH_LOCATION_TOKENS,
@@ -32,6 +34,12 @@ from src.jobs.text_utils import (
     looks_like_country_token,
     norm_text,
 )
+
+_LOCATION_KEY_SEPARATOR_RE = re.compile(r"[\s_-]+")
+_LOCATION_KEY_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]+")
+# The combining range NFKD decomposition overwhelmingly produces; anything outside it falls back
+# to the per-character check, so this table only ever shortens the common path.
+_COMBINING_MARKS_0300_036F: dict[int, None] = {code: None for code in range(0x300, 0x370)}
 
 _CITY_LOCATION_KEY_ALIASES = {
     "munchen": "munich",
@@ -438,16 +446,46 @@ def parse_greenhouse_location(location_name: Any) -> tuple[str, str, str]:
     return parse_generic_location_fields(location_name)
 
 
-def _normalize_location_key(value: Any) -> str:
+def _strip_combining_marks(normalized: str) -> str:
+    """Drop the combining marks ``NFKD`` decomposition leaves behind.
+
+    ``str.translate`` deletes the Latin range that carries almost every occurrence, so the
+    per-character ``unicodedata.combining`` spelling stays only for marks outside it -- and as the
+    legacy arm the A/B measures this pass against.
+    """
+
+    if _text_utils.LEGACY_NORMALIZATION:
+        return "".join(char for char in normalized if not unicodedata.combining(char))
+    if normalized.isascii():
+        return normalized
+    stripped = normalized.translate(_COMBINING_MARKS_0300_036F)
+    if stripped.isascii():
+        return stripped
+    return "".join(char for char in stripped if not unicodedata.combining(char))
+
+
+def _normalize_location_key_impl(value: Any) -> str:
     text = clean_text(value)
     if not text:
         return ""
     normalized = unicodedata.normalize("NFKD", text)
-    stripped = "".join(char for char in normalized if not unicodedata.combining(char))
-    lowered = norm_text(stripped)
-    lowered = re.sub(r"[\s_-]+", " ", lowered).strip()
-    lowered = re.sub(r"[^a-z0-9 ]+", "", lowered)
+    lowered = norm_text(_strip_combining_marks(normalized))
+    lowered = _LOCATION_KEY_SEPARATOR_RE.sub(" ", lowered).strip()
+    lowered = _LOCATION_KEY_NON_ALNUM_RE.sub("", lowered)
     return lowered
+
+
+_normalize_location_key_cached = lru_cache(maxsize=_text_utils.TEXT_NORMALIZATION_CACHE_SIZE)(
+    _normalize_location_key_impl
+)
+
+
+def _normalize_location_key(value: Any) -> str:
+    """NFKD key, memoised: one fragment is keyed many times along a single parse."""
+
+    if isinstance(value, str) and not _text_utils.LEGACY_NORMALIZATION:
+        return _normalize_location_key_cached(value)
+    return _normalize_location_key_impl(value)
 
 
 def _normalize_city_key(value: Any) -> str:
@@ -891,11 +929,11 @@ def _multi_part_location(parts: list[str]) -> tuple[str, str, str]:
     return _pick_city_candidate(parts), _normalize_country_fragment(parts[-1]) or "Unknown", ""
 
 
-def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
+def _parse_generic_location_fields_impl(location_value: Any) -> tuple[str, str, str]:
     text = clean_text(location_value)
     if not text:
         return "", "Unknown", ""
-    normalized = re.sub(r"[\s_-]+", " ", norm_text(text)).strip()
+    normalized = _LOCATION_KEY_SEPARATOR_RE.sub(" ", norm_text(text)).strip()
     remote_parse = _remote_location_parse(text, normalized)
     if remote_parse is not None:
         return remote_parse
@@ -908,3 +946,16 @@ def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
     if len(parts) == 1:
         return _single_part_location(parts[0])
     return _multi_part_location(parts)
+
+
+_parse_generic_location_fields_cached = lru_cache(
+    maxsize=_text_utils.TEXT_NORMALIZATION_CACHE_SIZE
+)(_parse_generic_location_fields_impl)
+
+
+def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
+    """Pure; memoised because callers re-parse the same fragment to cross-check it."""
+
+    if isinstance(location_value, str) and not _text_utils.LEGACY_NORMALIZATION:
+        return _parse_generic_location_fields_cached(location_value)
+    return _parse_generic_location_fields_impl(location_value)
