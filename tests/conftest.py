@@ -31,6 +31,10 @@ from pathlib import Path
 
 import pytest
 
+# Imported by name, because the name is what pytest registers: this autouse fixture is the
+# suite-wide compat-seam guard. tests/test_compat_seam_guard.py loads the same fixture as a plugin
+# to prove its failure path still bites (see tests/helpers/compat_seams.py for why it exists).
+from tests.helpers.compat_seams import compat_seam_guard as compat_seam_guard
 from tests.helpers.discovery_artifact_hygiene import (
     changed_discovery_audit_artifacts,
     format_discovery_audit_change,
@@ -62,31 +66,6 @@ def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
     yield
     for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
         os.environ.pop(key, None)
-
-
-@pytest.fixture(autouse=True)
-def _assert_compat_seams_hold_no_test_doubles() -> Generator[None]:
-    """Fail the test that leaves a fake installed on a ``fetcher_compat_runtime`` seam.
-
-    Those shims copy a facade binding onto a leaf module and keep the copy when they found no
-    previous value, so the first run in a process that happened while the facade was mocked
-    leaves the fake installed for the rest of the process -- including every later file the
-    same xdist worker runs. Imported inside the fixture so this conftest still imports no
-    Baluffo module before the env above is cleared.
-    """
-
-    from tests.helpers.compat_seams import leaked_compat_seams
-
-    yield
-    leaked = leaked_compat_seams()
-    if leaked:
-        pytest.fail(
-            "compat seam left holding a test double: "
-            + ", ".join(leaked)
-            + ". Patch the facade through"
-            " tests.helpers.compat_seams.patched_root_redirect_resolver, or restore the leaf"
-            " binding, so the fake cannot outlive the test."
-        )
 
 
 @pytest.fixture(scope="session")

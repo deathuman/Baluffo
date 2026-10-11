@@ -8,10 +8,17 @@ name for the rest of the process -- every later file an xdist worker runs includ
 resolver that maps every link to one URL then rewrites another file's rows, which is how
 ``tests/tools/test_corpus_parity.py`` failed in CI while passing on its own.
 
-Two things live here: :func:`leaked_compat_seams`, which the suite-wide autouse guard in
-``tests/conftest.py`` uses to fail a test that leaves a test double installed, and
-:func:`patched_root_redirect_resolver`, which restores the seam exactly for tests that mock the
-facade on purpose.
+Three things live here:
+
+- :data:`COMPAT_SEAM_LEAVES`, one entry per shim-written binding,
+- :func:`leaked_compat_seams`, the detector :func:`compat_seam_guard` fails on, and
+- :func:`patched_root_redirect_resolver`, which restores the seam exactly for tests that mock the
+  facade on purpose.
+
+``compat_seam_guard`` is defined here rather than in ``tests/conftest.py`` so the self-test in
+``tests/test_compat_seam_guard.py`` can load the *same* fixture into a child pytest process (as a
+plugin) and watch it fail a leaking test -- a guard nothing exercises is a guard that can go
+silently blind.
 """
 
 from __future__ import annotations
@@ -22,6 +29,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+import pytest
+
 # One entry per binding a ``fetcher_compat_runtime`` shim writes onto a leaf module:
 # ``run_pipeline`` -> build_redirect_resolver, ``run_scrapy_static_source`` -> registry_entries,
 # ``build_redirect_resolver`` -> httpx, ``maybe_fetch_job_listing_html`` -> urlopen.
@@ -30,6 +39,12 @@ COMPAT_SEAM_LEAVES: tuple[tuple[str, str], ...] = (
     ("src.jobs.adapters.static_scrapy", "registry_entries"),
     ("src.jobs.transport", "httpx"),
     ("src.jobs.adapters.html_parsers", "urlopen"),
+)
+
+_GUARD_MESSAGE = (
+    "compat seam left holding a test double: {seams}. Patch the facade through"
+    " tests.helpers.compat_seams.patched_root_redirect_resolver, or restore the leaf binding,"
+    " so the fake cannot outlive the test."
 )
 
 
@@ -58,6 +73,28 @@ def leaked_compat_seams() -> list[str]:
         if _is_test_double(getattr(module, attribute)):
             leaked.append(f"{module_name}.{attribute}")
     return leaked
+
+
+def compat_seam_guard_message() -> str:
+    """The failure text for :func:`compat_seam_guard`, or ``""`` when no seam is holding a fake."""
+
+    leaked = leaked_compat_seams()
+    if not leaked:
+        return ""
+    return _GUARD_MESSAGE.format(seams=", ".join(leaked))
+
+
+@pytest.fixture(autouse=True)
+def compat_seam_guard() -> Iterator[None]:
+    """Fail the test that leaves a test double installed on a compat seam.
+
+    Registered for the whole suite by ``tests/conftest.py``, which imports this fixture by name.
+    """
+
+    yield
+    message = compat_seam_guard_message()
+    if message:
+        pytest.fail(message)
 
 
 @contextmanager
