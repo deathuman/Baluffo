@@ -1,9 +1,13 @@
+import ast
 import json
 import re
+import subprocess
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from src.app_version import get_app_version
+from tools.repo_health.policy_wiring_policy import registered_policy_checks
 
 # Release notes are the only changelog surface a user is expected to read. These
 # budgets stop a release section drifting back into a work log. Calibrated from
@@ -336,6 +340,552 @@ def test_changelog_clamps_released_sections(repo_root: Path) -> None:
         f"({', '.join(released)}); the clamp is {CHANGELOG_MAX_RELEASED_SECTIONS}. Drop "
         "the oldest -- `git log` keeps that history -- and keep the clamp described in "
         "docs/DOCS_WORKFLOW.md so nobody adds them back."
+    )
+
+
+@dataclass(frozen=True)
+class ChangelogRule:
+    """One rule of the changelog's shape and the phrase that names it in each list.
+
+    ``workflow_row`` and ``changelog_bullet`` are fragments rather than whole sentences, so
+    the prose around them can still be rewritten. Matching by phrase is what lets this audit
+    tell "the lists describe these rules" from "the lists happen to have this many bullets".
+    """
+
+    key: str
+    guardrail: str
+    workflow_row: str
+    changelog_bullet: str
+
+
+# The changelog's rules are stated three times -- CHANGELOG.md's bullet list, DOCS_WORKFLOW.md's
+# Rule|Guardrail table (the only place that names a guardrail), and RELEASE.md's release-commit
+# procedure -- and enforced by the checks in this module. Two of those statements are lists, and
+# a list is exactly the kind of thing that goes stale in one place: 0.3.016's section sat in the
+# file claiming a release the tag list disagreed with, and the guardrail written to catch that had
+# no bullet and no table row. Nothing failed, because nothing compared the lists to the
+# registration.
+#
+# So this table is the join. Each row names a rule, the check that enforces it, and the phrase
+# that identifies it in each list;
+# `test_changelog_rule_lists_match_registered_guardrails` fails when the two sides disagree in
+# either direction.
+CHANGELOG_RULES: tuple[ChangelogRule, ...] = (
+    ChangelogRule(
+        key="max_released_sections",
+        guardrail="test_changelog_clamps_released_sections",
+        workflow_row="released sections, plus `[Unreleased]`",
+        changelog_bullet="plus `[Unreleased]`",
+    ),
+    ChangelogRule(
+        key="one_claim_per_change",
+        guardrail="test_no_change_is_claimed_by_two_release_sections",
+        workflow_row="A change is described by exactly one release section",
+        changelog_bullet="No bullet appears in two sections",
+    ),
+    ChangelogRule(
+        key="no_unshipped_section_above_the_tag",
+        guardrail="test_changelog_holds_no_unpublished_section_above_the_last_release_tag",
+        workflow_row="No versioned section without a release tag",
+        changelog_bullet="never shipped may not queue above the last release tag",
+    ),
+    ChangelogRule(
+        key="unreleased_above_the_rollup",
+        guardrail="test_changelog_keeps_unreleased_above_versioned_rollup",
+        workflow_row="sits directly above the versioned rollup",
+        changelog_bullet="sits above the versioned sections",
+    ),
+)
+
+# Checks that read docs/CHANGELOG.md without enforcing one of the rules above. Every entry
+# states where the work it does *is* described instead, because each of these is registered and
+# can fail a release: an exemption with no stated home for the rule is how a changelog guardrail
+# leaves the lists unnoticed, which is the failure this audit exists to catch. A stale entry
+# fails too -- the check it names must still read the changelog.
+_CHANGELOG_READERS_WITHOUT_A_LISTED_RULE = {
+    "test_top_release_notes_stay_user_readable": (
+        "the shipped section's shape budget and leak advisory, stated in CHANGELOG.md's intro "
+        "paragraph and docs/RELEASE.md; the audit compares both limits to the constants"
+    ),
+    "test_release_docs_cover_the_current_public_release_line": (
+        "the released section's required content -- its heading, a Keep-a-Changelog "
+        "subsection, a bullet, and the six compatibility phrases -- part of the release "
+        "procedure docs/RELEASE.md owns"
+    ),
+    "test_docs_avoid_stale_archive_and_generated_artifact_links": (
+        "docs-tree link hygiene, which reads the changelog only to reject archive links in it"
+    ),
+    "test_changelog_rule_lists_match_registered_guardrails": (
+        "this audit itself: it reads the rule lists rather than the log"
+    ),
+}
+
+# Every place a doc states one of the changelog's limits. The regex captures the number the doc
+# advertises; the audit compares it to the constant its guardrail enforces, so the two cannot
+# drift apart, and a site that stops matching fails as well -- deleting the sentence that tells a
+# release owner the budget is how the budget stops being known. Numbers are compared with every
+# match, not the first, so a doc holding two different numbers fails instead of passing on one.
+_CHANGELOG_LIMIT_CLAIMS: tuple[tuple[str, str, int], ...] = (
+    ("docs/CHANGELOG.md", r"At most (\d+) versioned sections", CHANGELOG_MAX_RELEASED_SECTIONS),
+    ("docs/CHANGELOG.md", r"at most\s+([\d,]+)\s+words", RELEASE_NOTE_WORD_BUDGET),
+    (
+        "docs/CHANGELOG.md",
+        r"bullet over\s+([\d,]+)\s+characters",
+        RELEASE_NOTE_BULLET_CHAR_BUDGET,
+    ),
+    (
+        "docs/DOCS_WORKFLOW.md",
+        r"most recent (\d+) released versions",
+        CHANGELOG_MAX_RELEASED_SECTIONS,
+    ),
+    (
+        "docs/DOCS_WORKFLOW.md",
+        r"At most (\d+) released sections",
+        CHANGELOG_MAX_RELEASED_SECTIONS,
+    ),
+    ("docs/RELEASE.md", r"newest (\d+) released versions", CHANGELOG_MAX_RELEASED_SECTIONS),
+    ("docs/RELEASE.md", r"at most\s+([\d,]+)\s+words", RELEASE_NOTE_WORD_BUDGET),
+    ("docs/RELEASE.md", r"bullet over\s+([\d,]+)\s+characters", RELEASE_NOTE_BULLET_CHAR_BUDGET),
+)
+
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+# DOCS_WORKFLOW.md explains two of its rules by position ("The second rule has one deliberate
+# exception"), so a probe that inserts, removes, or reorders a row can leave a paragraph pointing
+# at a rule that no longer exists. Only words an ordinal reference can use are checked; "the next
+# rule" and friends are prose, not positions.
+_ORDINAL_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+}
+
+
+def _rule_count_sentence(text: str, phrase: str, source: str) -> re.Match[str]:
+    """The sentence in which a doc says how many rules its list holds."""
+    match = re.search(rf"(\w+) rules? {phrase}", text)
+    assert match is not None, (
+        f"{source} no longer says how many changelog rules the guardrail enforces (expected a "
+        f"sentence matching `{phrase}`). The rule lists are audited against the guardrails "
+        "registered for them, so the count has to be stated."
+    )
+    return match
+
+
+def _rule_count(match: re.Match[str], source: str) -> int:
+    token = match.group(1).lower()
+    if token.isdigit():
+        return int(token)
+    assert token in _NUMBER_WORDS, (
+        f"{source} states its rule count as {token!r}, which this audit cannot read. Write it "
+        'as a number word ("Four rules") or a digit.'
+    )
+    return _NUMBER_WORDS[token]
+
+
+def _changelog_rule_bullets(text: str, start: int) -> list[str]:
+    """The rule list's `- ` bullets after ``start``, each bullet's continuations joined."""
+    bullets: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            bullets.append(" ".join(current))
+            current.clear()
+
+    for line in text[start:].splitlines():
+        stripped = line.strip()
+        if line.startswith("- "):
+            flush()
+            current.append(line[2:].strip())
+        elif current and line[:1] in {" ", "\t"} and stripped:
+            current.append(stripped)
+        else:
+            flush()
+            if bullets and (not stripped or stripped == "---" or stripped.startswith("## ")):
+                break
+    flush()
+    return bullets
+
+
+def _changelog_rule_rows(text: str, start: int) -> list[tuple[str, str]]:
+    """The `| Rule | Guardrail |` rows after ``start``, as ``(rule, guardrail)`` cells."""
+    rows: list[tuple[str, str]] = []
+    for line in text[start:].splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            if len(cells) == 2 and re.search(r"`test_\w+`", cells[1]):
+                rows.append((cells[0], cells[1]))
+            continue
+        if rows and stripped:
+            break
+    return rows
+
+
+def _policy_checks(module_path: Path) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Every top-level ``test_*`` in a policy module, by name, read from its source.
+
+    Read from ``repo_root`` rather than from this module's namespace for the same reason
+    ``container_version_policy`` reads the version from a git revision: the audit judges the
+    tree it was handed, and its tests hand it throwaway trees.
+    """
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    return {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+
+
+def _reads_the_changelog(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether a check opens ``docs/CHANGELOG.md``, judged by the path it builds.
+
+    A string mention would be far too broad: several checks assert that *other* docs do not
+    link `docs/CHANGELOG.md`, so a text search reads them as changelog guardrails. The path
+    join is what says the file is opened.
+    """
+    for node in ast.walk(function):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            for operand in (node.left, node.right):
+                if isinstance(operand, ast.Constant) and operand.value == "CHANGELOG.md":
+                    return True
+    return False
+
+
+def test_changelog_rule_lists_match_registered_guardrails(repo_root: Path) -> None:
+    """The rules the docs describe and the guardrails registered for them must agree.
+
+    docs/CHANGELOG.md states the changelog's rules as a bullet list and docs/DOCS_WORKFLOW.md as
+    a Rule|Guardrail table;    docs/RELEASE.md repeats the limits in the release-commit procedure and names the guardrails
+    that procedure relies on. All three are claims about code, and a claim is only worth reading
+    if something fails when it stops being true. That last guardrail proved the point: it shipped
+    with no bullet and no row, and only a hand audit noticed.
+
+    So this check reads both lists, the release guide's limit sentences and named guardrails, and
+    the guardrail groups in ``repo_guardrails.py``, and fails on any disagreement -- a rule with no
+    registered guardrail, a guardrail a group never runs, a documented number the enforcement does
+    not use, a release-guide name no group runs, a list whose length disagrees with the others, or
+    a registered check that reads the changelog without appearing in either list or in the
+    exemptions above.
+    """
+    policy_path = repo_root / "tools" / "repo_health" / "release_docs_policy.py"
+    changelog_text = (repo_root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    workflow_text = (repo_root / "docs" / "DOCS_WORKFLOW.md").read_text(encoding="utf-8")
+    release_text = (repo_root / "docs" / "RELEASE.md").read_text(encoding="utf-8")
+    doc_texts = {
+        "docs/CHANGELOG.md": changelog_text,
+        "docs/DOCS_WORKFLOW.md": workflow_text,
+        "docs/RELEASE.md": release_text,
+    }
+
+    declared = len(CHANGELOG_RULES)
+    changelog_sentence = _rule_count_sentence(
+        changelog_text, "the guardrail enforces", "docs/CHANGELOG.md"
+    )
+    workflow_sentence = _rule_count_sentence(
+        workflow_text, "keep this from quietly regrowing", "docs/DOCS_WORKFLOW.md"
+    )
+    changelog_claim = _rule_count(changelog_sentence, "docs/CHANGELOG.md")
+    workflow_claim = _rule_count(workflow_sentence, "docs/DOCS_WORKFLOW.md")
+
+    assert changelog_claim == workflow_claim == declared, (
+        "The changelog's rule lists disagree about how many rules there are: "
+        f"docs/CHANGELOG.md says {changelog_claim}, docs/DOCS_WORKFLOW.md says {workflow_claim}, "
+        f"and CHANGELOG_RULES declares {declared}. Move the bullets, the table rows, and this "
+        "module's table together, or drop the rule the lists no longer describe."
+    )
+
+    bullets = _changelog_rule_bullets(changelog_text, changelog_sentence.end())
+    rows = _changelog_rule_rows(workflow_text, workflow_sentence.end())
+    assert len(bullets) == declared, (
+        f"docs/CHANGELOG.md's rule list holds {len(bullets)} bullets but claims {declared}: "
+        + ", ".join(repr(bullet[:60]) for bullet in bullets)
+    )
+    assert len(rows) == declared, (
+        f"docs/DOCS_WORKFLOW.md's rule table holds {len(rows)} rows but claims {declared}."
+    )
+
+    unlisted_rows = [
+        row[0] for row in rows if not any(rule.workflow_row in row[0] for rule in CHANGELOG_RULES)
+    ]
+    assert not unlisted_rows, (
+        "docs/DOCS_WORKFLOW.md documents rules that CHANGELOG_RULES does not declare: "
+        + "; ".join(unlisted_rows)
+        + ". Add a ChangelogRule naming the guardrail that enforces it, or delete the row."
+    )
+    unlisted_bullets = [
+        bullet[:70]
+        for bullet in bullets
+        if not any(rule.changelog_bullet in bullet for rule in CHANGELOG_RULES)
+    ]
+    assert not unlisted_bullets, (
+        "docs/CHANGELOG.md states rules that CHANGELOG_RULES does not declare: "
+        + "; ".join(unlisted_bullets)
+        + ". Add a ChangelogRule naming the guardrail that enforces it, or delete the bullet."
+    )
+    for rule in CHANGELOG_RULES:
+        assert sum(rule.workflow_row in row[0] for row in rows) == 1, (
+            f"the phrase `{rule.workflow_row}` identifies the {rule.key} rule in "
+            "docs/DOCS_WORKFLOW.md's table, but it appears in "
+            f"{sum(rule.workflow_row in row[0] for row in rows)} rows. Make each rule's phrase "
+            "unique so a row can be matched to a rule."
+        )
+        assert sum(rule.changelog_bullet in bullet for bullet in bullets) == 1, (
+            f"the phrase `{rule.changelog_bullet}` identifies the {rule.key} rule in "
+            "docs/CHANGELOG.md's list, but it appears in "
+            f"{sum(rule.changelog_bullet in bullet for bullet in bullets)} bullets. Make each "
+            "rule's phrase unique so a bullet can be matched to a rule."
+        )
+
+    documented = {name for _, cell in rows for name in re.findall(r"`(test_\w+)`", cell)}
+    declared_guardrails = {rule.guardrail for rule in CHANGELOG_RULES}
+    assert documented == declared_guardrails, (
+        "The rule lists name guardrails CHANGELOG_RULES does not: "
+        + ", ".join(sorted(documented - declared_guardrails))
+        + "; and CHANGELOG_RULES names guardrails the lists do not: "
+        + ", ".join(sorted(declared_guardrails - documented))
+        + ". The table in docs/DOCS_WORKFLOW.md and this module's table must name the same "
+        "checks."
+    )
+
+    checks = _policy_checks(policy_path)
+    registered = registered_policy_checks(repo_root).get("release_docs_policy", set())
+    unregistered = sorted(name for name in declared_guardrails if name not in registered)
+    assert not unregistered, (
+        "The rule lists name guardrails no run_*_group registers, so they never run: "
+        + ", ".join(unregistered)
+        + ". Register them in tools/repo_health/repo_guardrails.py or remove the claim that "
+        "they enforce a rule."
+    )
+    undefined = sorted(name for name in declared_guardrails if name not in checks)
+    assert not undefined, (
+        "The rule lists name guardrails release_docs_policy.py does not define: "
+        + ", ".join(undefined)
+        + ". A renamed check leaves the lists claiming enforcement nobody performs."
+    )
+    decorative = sorted(
+        name for name in declared_guardrails if not _reads_the_changelog(checks[name])
+    )
+    assert not decorative, (
+        "CHANGELOG_RULES pairs a rule with a check that never opens docs/CHANGELOG.md: "
+        + ", ".join(decorative)
+        + ". A guardrail that does not read the document cannot enforce a rule about it."
+    )
+
+    # docs/RELEASE.md names the guardrails its release-commit procedure relies on, and three of
+    # the names are changelog rules. Those names are claims like any other: a release guide can
+    # point at a check no group runs. This audit owns the policy modules, so it judges the names
+    # that live in one; a name the repo defines as a pytest test elsewhere is out of its reach,
+    # because suite_contract_policy owns test discovery.
+    named_guardrails = set(re.findall(r"`(test_\w+)`", release_text))
+    health = repo_root / "tools" / "repo_health"
+    defined_anywhere = {
+        name for module in sorted(health.glob("*_policy.py")) for name in _policy_checks(module)
+    }
+    registered_anywhere = {
+        name for names in registered_policy_checks(repo_root).values() for name in names
+    }
+    dangling = sorted(
+        name
+        for name in named_guardrails
+        if name in defined_anywhere and name not in registered_anywhere
+    )
+    assert not dangling, (
+        "docs/RELEASE.md names policy guardrails that no run_*_group registers, so the release "
+        "procedure describes enforcement that never runs: "
+        + ", ".join(dangling)
+        + ". Register them in tools/repo_health/repo_guardrails.py or drop the reference."
+    )
+
+    readers = {
+        name
+        for name, function in checks.items()
+        if name in registered and _reads_the_changelog(function)
+    }
+    exemptions = _CHANGELOG_READERS_WITHOUT_A_LISTED_RULE
+    undocumented = sorted(readers - declared_guardrails - set(exemptions))
+    assert not undocumented, (
+        "These registered checks read docs/CHANGELOG.md but appear in neither rule list: "
+        + ", ".join(undocumented)
+        + ". A changelog guardrail nobody documented is one an editor cannot know about: add a "
+        "bullet to docs/CHANGELOG.md, a row to docs/DOCS_WORKFLOW.md, a ChangelogRule here, or "
+        "an exemption stating where its rule is documented instead."
+    )
+    stale = sorted(name for name in exemptions if name not in readers)
+    assert not stale, (
+        "_CHANGELOG_READERS_WITHOUT_A_LISTED_RULE exempts checks that do not read the "
+        "changelog (or are gone or unregistered): "
+        + ", ".join(stale)
+        + ". Drop the exemption; a stale one hides a real changelog guardrail from this audit."
+    )
+    unexplained = sorted(name for name, reason in exemptions.items() if not reason.strip())
+    assert not unexplained, (
+        "An exemption must state where the rule it enforces is documented instead: "
+        + ", ".join(unexplained)
+    )
+
+    drifted: list[str] = []
+    for rel_path, pattern, expected in _CHANGELOG_LIMIT_CLAIMS:
+        found = [int(value.replace(",", "")) for value in re.findall(pattern, doc_texts[rel_path])]
+        if not found:
+            drifted.append(f"{rel_path} no longer states the limit `{pattern}`")
+        drifted.extend(
+            f"{rel_path} states {value} where {expected} is enforced"
+            for value in found
+            if value != expected
+        )
+    assert not drifted, (
+        "The changelog's limits are described differently in the docs and the guardrails: "
+        + "; ".join(drifted)
+        + ". A documented budget the enforcement does not use teaches the wrong number."
+    )
+
+    dangling_ordinals = sorted(
+        {
+            token
+            for token in re.findall(r"[Tt]he (\w+) rule\b", workflow_text)
+            if token.lower() in _ORDINAL_WORDS and _ORDINAL_WORDS[token.lower()] > declared
+        }
+    )
+    assert not dangling_ordinals, (
+        "docs/DOCS_WORKFLOW.md explains a rule by position that the list no longer reaches: "
+        + ", ".join(f"`the {token} rule`" for token in dangling_ordinals)
+        + f". The table holds {declared} rules, so those paragraphs point at nothing."
+    )
+
+
+# A versioned section is a claim that that version ships. One may await its tag -- that is
+# every day between a bump and its release -- but an older one may not.
+_VERSIONED_SECTION_RE = re.compile(r"^\d+(?:\.\d+)+$")
+
+
+def _repo_declared_version(repo_root: Path) -> str:
+    """The version the repo under test declares, read from that repo's own files.
+
+    Read from ``repo_root`` rather than the imported ``get_app_version()`` for the same
+    reason ``container_version_policy`` reads it from a git revision: this check judges the
+    tree it was handed, and its tests build throwaway trees with their own versions.
+    """
+    app_version_path = repo_root / "src" / "app_version.py"
+    if app_version_path.is_file():
+        match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', app_version_path.read_text("utf-8"))
+        if match:
+            return match.group(1).strip()
+    return get_app_version()
+
+
+def _release_tags(repo_root: Path) -> set[str]:
+    """Every local ``v*`` tag, or an empty set when git cannot answer.
+
+    Offline and deterministic on purpose, exactly like the container version gate: this
+    runs in pre-commit and pre-push, where a network call would add round-trips and fail
+    without a registry. The tag is the release marker, so a version that reached a registry
+    without ever being tagged reads as unpublished -- the inert window, since nothing can
+    hold the version string. A checkout holding no tags at all (shallow, or fetched with
+    ``--no-tags``) yields an empty set, and the check skips rather than reading every
+    section as unpublished and blocking commits it cannot judge.
+    """
+    completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "-C", str(repo_root), "tag", "-l", "v*"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return set()
+    return {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+
+
+def _unjudgeable_checkout_reason(repo_root: Path) -> str | None:
+    """Why this checkout cannot answer the changelog's shipping state, or None.
+
+    Two shapes make the tag list untrustworthy, and both are ordinary in automation: a
+    shallow clone (`actions/checkout` defaults to fetch-depth 1) holds only the tags it was
+    asked for, and a clone fetched with `--no-tags` holds none. Reading either as "every
+    section is unpublished" would block the commits that ship a release, so the check
+    declines to judge instead of guessing. A developer's full clone is the place this has
+    to bite, because that is where the release decision is made.
+    """
+    shallow = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "-C", str(repo_root), "rev-parse", "--is-shallow-repository"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if shallow.returncode == 0 and shallow.stdout.strip() == "true":
+        return "this checkout is shallow, so it does not hold the release tags"
+    if not _release_tags(repo_root):
+        return "this checkout holds no v* tags"
+    return None
+
+
+def test_changelog_holds_no_unpublished_section_above_the_last_release_tag(
+    repo_root: Path,
+) -> None:
+    """One versioned section may await its tag; no older one may.
+
+    0.3.016 was bumped, never tagged, and then skipped by 0.3.017. Both sections sat in the
+    file as claims that their versions shipped, so the notes generated for the next tag
+    described one changeset while the other's two fixes were readable only inside the
+    changelog. docs/RELEASE.md's cross-channel checkpoint asks the release owner to decide
+    what a release contains when sections queue up above the last published tag, and nothing
+    failed when nobody decided.
+
+    Between a bump and its release the version in flight legitimately has no tag, so it is
+    allowed to queue. Any *other* versioned section without a tag is a release that will not
+    ship, and its changes are owed either to the next release or to deletion.
+    """
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    assert changelog_path.is_file(), "docs/CHANGELOG.md must exist."
+
+    tags = _release_tags(repo_root)
+    reason = _unjudgeable_checkout_reason(repo_root)
+    if reason:
+        print(
+            f"  [skipped] {reason}, so the changelog's shipping state cannot be judged "
+            "offline; fetch full history and tags to enable this check."
+        )
+        return
+
+    current_version = _repo_declared_version(repo_root)
+    unpublished = [
+        version
+        for version, _ in _changelog_sections(changelog_path.read_text(encoding="utf-8"))
+        if _VERSIONED_SECTION_RE.match(version)
+        and version != current_version
+        and f"v{version}" not in tags
+    ]
+    assert not unpublished, (
+        "docs/CHANGELOG.md holds versioned section(s) with no release tag: "
+        + ", ".join(unpublished)
+        + f". {current_version} is the version in flight, and it may queue without its tag; an "
+        "older section describes a release that never shipped, so the notes generated for the "
+        "next tag omit it -- the rollup decision docs/RELEASE.md's cross-channel checkpoint "
+        "asks the release owner to make. Decide it, then either roll those changes into "
+        f"`## [{current_version}]` or delete the stale section (`git log` keeps that history). "
+        "If that version is about to ship instead, release it before bumping past it."
     )
 
 

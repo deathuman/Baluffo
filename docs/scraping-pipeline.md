@@ -149,7 +149,9 @@ Two constraints are durable regardless of that verdict:
 ### Registry retirement rules
 
 Two rules govern whether a source row may be removed, and both were learned by nearly getting the
-wrong answer.
+wrong answer. `tools/coverage_drain.py` is what keeps them: the demotion provenance is pinned in
+`tests/bridge/test_registry_conflict_demotion_provenance.py`, and the coverage reading that stops a
+whole studio family being pruned is pinned in `tests/test_source_registry_preflight_board_coverage.py`.
 
 **A demote reason decides staleness.** A row absent from the active set is only a *stale seed copy*
 when the store demoted it for a superseded reason. Retry-state reasons mean the opposite — the row
@@ -202,7 +204,9 @@ Google Sheets can be fetched through several endpoints, and they are **not** equ
 (`Art`, `Design`, `Animation`, `Product-management`) get copied straight into `RawJob.title` and can
 survive to the shipped feed. Direct export preserves the real header row.
 
-Two rules follow, and both are structural rather than sheet-specific:
+Two rules follow, and both are structural rather than sheet-specific. They live in
+`src/jobs/adapters/community/google_sheets.py` and are pinned by
+`tests/test_jobs_fetcher_google_sheets.py`:
 
 - **A non-empty parse is not a correct parse.** Judge candidates by parsed *shape*, not by whether
   they returned rows. Do not globally remove an endpoint either — some sheets only work through

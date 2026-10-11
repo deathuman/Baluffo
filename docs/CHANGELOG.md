@@ -24,11 +24,21 @@ this file exists because a 153-section changelog had become a version ledger nob
 read, and because keeping it current meant restating past entries every time the
 version moved. A change is described once, in the release that actually shipped it.
 
-Two rules the guardrail enforces so this cannot quietly regress:
+Four rules the guardrail enforces so this cannot quietly regress:
 
 - **At most 5 versioned sections**, plus `[Unreleased]`.
 - **No bullet appears in two sections.** A change is claimed by exactly one release,
   so a release can never claim to have fixed something an earlier one already fixed.
+- **A versioned section that never shipped may not queue above the last release tag.**
+  One version is allowed to wait for its tag -- that is every day between a bump and a
+  release -- but an older section whose version was bumped and then skipped describes a
+  release nobody can install, and the notes generated for the next tag would leave its
+  changes unread. Roll those changes into the section being released, or delete that
+  section: `git log` keeps the history. The cross-channel checkpoint in
+  [`RELEASE.md`](RELEASE.md) is the decision this rule refuses to let go unmade.
+- **`[Unreleased]` sits above the versioned sections.** In-progress changes accumulate at
+  the top of the file, directly above the section a release rolls up, so a reader meets
+  them in the order they happened.
 
 ---
 

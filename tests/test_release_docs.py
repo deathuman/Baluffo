@@ -6,6 +6,7 @@ import pytest
 
 from src.app_version import get_app_version
 from tools.repo_health.release_docs_policy import (
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag,
     test_changelog_keeps_unreleased_above_versioned_rollup,
     test_release_notes_artifact_matches_current_version,
 )
@@ -212,3 +213,110 @@ def test_loc_budget_writes_lf_baseline_on_this_platform(tmp_path: Path) -> None:
     raw = (tmp_path / module.BASELINE_RELATIVE_PATH).read_bytes()
     assert b"\r\n" not in raw, f"loc_budget wrote CRLF into the baseline: {raw!r}"
     assert raw.endswith(b"\n")
+
+
+# --- queued-version drift --------------------------------------------------
+#
+# 0.3.016 was bumped, never tagged, then skipped by 0.3.017. Both sections sat in the
+# changelog claiming their versions had shipped, so the notes generated for the next tag
+# covered one changeset while the other's two fixes were readable only inside the file.
+# The rule is pinned against repository shapes, not changelog text alone, so these build
+# throwaway repos -- including the tag-less and shallow shapes automation actually uses.
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", *args], cwd=repo, capture_output=True, text=True, check=False
+    )
+
+
+def _drifting_repo(tmp_path: Path, *, version: str, sections: list[str]) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "src").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test Runner")
+    (repo / "src" / "app_version.py").write_text(f'APP_VERSION = "{version}"\n', encoding="utf-8")
+    body = "\n".join(
+        f"## [{item}] - 2026-01-0{index}\n### Changed\n\n- something shipped in {item}\n"
+        for index, item in enumerate(sections, start=1)
+    )
+    (repo / "docs" / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## [Unreleased]\n\n{body}", encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    completed = _git(repo, "commit", "-q", "-m", "seed changelog")
+    assert completed.returncode == 0, completed.stderr
+    return repo
+
+
+def _tag(repo: Path, version: str) -> None:
+    completed = _git(repo, "tag", f"v{version}")
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_drift_check_fails_the_version_that_was_bumped_and_skipped(tmp_path: Path) -> None:
+    """The 0.3.016 -> 0.3.017 shape: a queued section whose version never tagged."""
+    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016", "0.3.015"])
+    _tag(repo, "0.3.015")
+
+    with pytest.raises(AssertionError) as excinfo:
+        test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
+
+    message = str(excinfo.value)
+    flagged = message.split("with no release tag: ", 1)[1].split(". ", 1)[0]
+    assert flagged == "0.3.016", (
+        f"only the unshipped 0.3.016 should be flagged, not the version in flight: {message!r}"
+    )
+    assert "cross-channel checkpoint" in message, "the remedy must point at the release guide"
+
+
+def test_drift_check_allows_the_version_in_flight_to_await_its_tag(tmp_path: Path) -> None:
+    """Between a bump and its release the current version legitimately has no tag."""
+    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016"])
+    _tag(repo, "0.3.016")
+    _tag(repo, "0.3.015")
+
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
+
+
+def test_drift_check_still_fails_once_the_current_version_is_tagged(tmp_path: Path) -> None:
+    """A stale section stays flagged even when the version in flight already shipped."""
+    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016"])
+    _tag(repo, "0.3.017")
+
+    with pytest.raises(AssertionError, match=r"0\.3\.016"):
+        test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
+
+
+def test_drift_check_declines_to_judge_a_checkout_with_no_tags(tmp_path: Path) -> None:
+    """A clone fetched with `--no-tags` must not read every section as unpublished."""
+    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016", "0.3.015"])
+    _tag(repo, "0.3.015")
+
+    clone = tmp_path / "no-tags-clone"
+    completed = _git(tmp_path, "clone", "-q", "--no-tags", str(repo), str(clone))
+    assert completed.returncode == 0, completed.stderr
+    assert _git(clone, "tag", "-l", "v*").stdout.strip() == "", "precondition: no tags"
+
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(clone)
+
+
+def test_drift_check_declines_to_judge_a_shallow_checkout(tmp_path: Path) -> None:
+    """`actions/checkout` defaults to a depth that holds only the tags it asked for."""
+    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016", "0.3.015"])
+    _tag(repo, "0.3.015")
+
+    clone = tmp_path / "shallow-clone"
+    completed = _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{repo}", str(clone))
+    shallow = _git(clone, "rev-parse", "--is-shallow-repository").stdout.strip()
+    if completed.returncode != 0 or shallow != "true":
+        pytest.skip(f"git here cannot produce a shallow clone (rc={completed.returncode})")
+
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(clone)
+
+
+def test_drift_guardrail_accepts_the_current_tree(repo_root: Path) -> None:
+    """Every versioned section in this repo either shipped or is the version in flight."""
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo_root)

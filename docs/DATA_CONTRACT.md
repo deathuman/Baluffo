@@ -539,7 +539,7 @@ move, and they were previously recorded only in a retired plan:
 - **Keep backup import tolerant** across older versions. v1/v2/v3 rows normalize into split `pipelinePhase`/`outcomeStatus` tracking on import.
 - **Keep `applicationStatus` as a derived compatibility mirror** until compatibility callers are intentionally removed.
 
-Two rules are about not leaking storage semantics into tracking:
+Two rules are about not leaking storage semantics into tracking, and `src/local_data_store_tracking.py` keeps both — pinned by the fixtures in `tests/test_local_data_store_tracking.py`:
 
 - **Source lifecycle is read-only overlay data.** Do not persist it as user-owned tracking state, and do not infer user outcomes from it. Match lifecycle rows by generated job key, not fuzzy title/company matching.
 - **Do not add a flexible `tracking` bag opportunistically.** `applicationStatus` is a compatibility mirror precisely because a loose bag became an untyped dumping ground; new split-model work belongs in `pipelinePhase`/`outcomeStatus`.

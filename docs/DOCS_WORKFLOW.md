@@ -5,7 +5,7 @@
 > - **Canonical for:** documentation discovery, ownership, freshness checks, and maintenance workflow
 > - **Not canonical for:** subsystem behavior, data contracts, release notes, or runtime behavior outside this guide's process scope
 > - **Then inspect:** [`INDEX.md`](INDEX.md), then the smallest authoritative doc set for the task
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-10-11
 
 ## Core Rules
 
@@ -237,13 +237,15 @@ nobody reading it.
 it can describe the version someone is about to install, which is the only job it
 can do well.
 
-Two rules keep this from quietly regrowing, both enforced by
+Four rules keep this from quietly regrowing, all enforced by
 [`tools/repo_health/release_docs_policy.py`](../tools/repo_health/release_docs_policy.py):
 
 | Rule | Guardrail |
 | --- | --- |
 | At most 5 released sections, plus `[Unreleased]` | `test_changelog_clamps_released_sections` |
 | A change is described by exactly one release section | `test_no_change_is_claimed_by_two_release_sections` |
+| No versioned section without a release tag except the version in flight | `test_changelog_holds_no_unpublished_section_above_the_last_release_tag` |
+| `[Unreleased]` sits directly above the versioned rollup | `test_changelog_keeps_unreleased_above_versioned_rollup` |
 
 The second rule has one deliberate exception. A **rollup** release restates an
 earlier release's notes so users skipping versions see the whole line, and may
@@ -253,5 +255,34 @@ carries no such declaration, and that is the whole difference: `0.3.004` and
 `0.3.005` both re-claimed the tooltip fix without declaring anything, so two
 releases appeared to ship a single change.
 
+The third rule is what caught nothing on its own until now. `0.3.016` was bumped, never
+tagged, and then skipped by `0.3.017`: both sections sat in the file claiming a release,
+so the notes generated for the next tag described one changeset while the other's two
+fixes were readable only inside the file. It reads the tag list, so it is only as good as
+the checkout it runs in — a shallow or `--no-tags` clone holds some or none of the tags,
+and reading that as "every section is unpublished" would block the very commits that ship
+a release, so the check declines to judge those checkouts instead of guessing.
+
 When you cut a release, drop the oldest section in the same commit rather than
 leaving the clamp for the guardrail to fail.
+
+### A rule count is generated from the list beneath it
+
+A sentence that counts rules goes stale silently: a bullet is added and the number stays, or a
+rule is deleted and the sentence outlives it. Every such count in the docs and in a module
+docstring is registered in
+[`../tools/repo_health/rule_list_policy.py`](../tools/repo_health/rule_list_policy.py), and the
+number is **rendered from the list's own items** rather than written by hand:
+
+```bash
+python -m tools.repo_health.rule_list_policy --write
+```
+
+The docs guardrail fails when a claim is unregistered, when the stated number is not the one the
+generator would render (the failure names `--write`), or when the identifiers beside a list are not
+exactly the ones the registry declares — a check named beside a rule that the registry does not
+declare is an enforcement claim nobody registered. A list no check can decide says so in the
+registry instead of naming a guardrail that would not enforce it, and the check that keeps a rule
+true has to be readable — beside the rule, or in the doc the entry names. A count stated inside a
+paragraph has no items to render from, so its number stays authored and only its registration and
+enforcement are audited.

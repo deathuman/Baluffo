@@ -710,6 +710,8 @@ def run_docs_group() -> list[GuardFailure]:
             "test_release_docs_cover_the_current_public_release_line",
             "test_changelog_keeps_unreleased_above_versioned_rollup",
             "test_changelog_clamps_released_sections",
+            "test_changelog_holds_no_unpublished_section_above_the_last_release_tag",
+            "test_changelog_rule_lists_match_registered_guardrails",
             "test_no_change_is_claimed_by_two_release_sections",
             "test_top_release_notes_stay_user_readable",
             "test_release_notes_artifact_matches_current_version",
@@ -732,6 +734,9 @@ def run_docs_group() -> list[GuardFailure]:
             "test_plan_lifecycle_tripwires",
         )
     ]
+    # The generalized rule-list audit owns its own module: it holds every documented rule count
+    # to its list, not only the changelog's, so it is not a release-doc check.
+    checks += [("rule_list_policy", "test_documented_rule_lists_name_their_enforcement")]
     failures = _run_python_checks("docs", checks)
     markdown_failure = _failure_from_messages(
         "docs", "check_markdown_links", check_markdown_links()

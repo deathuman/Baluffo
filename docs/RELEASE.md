@@ -28,6 +28,13 @@ For example, when the latest public desktop release is behind `main`, the releas
 - a container-only patch with no desktop tag; or
 - a deferred desktop release, with the gap recorded in Basic Memory or the release handoff.
 
+The decision is now failed rather than remembered. `tools/repo_health/release_docs_policy.py`
+fails the docs guardrail when a versioned changelog section other than the version in flight
+carries no `v<version>` tag, because that section describes a release nobody can install —
+`0.3.016` sat that way under a bumped `0.3.017`. The check reads the local tag list (offline,
+like the container version gate) and declines to judge a shallow or `--no-tags` checkout,
+which holds no trustworthy tag list.
+
 Do not move or recreate an existing desktop tag to fix release-note scope. Bump forward and keep the old tag as historical evidence.
 
 ## Versioning Policy

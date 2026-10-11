@@ -11,7 +11,9 @@ during registration, and the phase that was supposed to fix it goes looking in t
 wrong place. That is not hypothetical -- it is how 4,589 rows were labelled a
 collection failure when the boards were never registered.
 
-Three rules are load-bearing, and each is measured rather than assumed.
+Three rules are load-bearing, and each is measured rather than assumed:
+``tests/tools/test_coverage_board_identity.py`` pins every one of them to the measurement that
+contradicted the obvious implementation.
 
 **Identity is host + tenant, never the id string.** The registry is internally
 inconsistent about trailing slashes: of 2,030 active static rows, 778 end in ``/``

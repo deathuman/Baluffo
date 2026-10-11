@@ -216,6 +216,23 @@ def _module_name(filename: str) -> str:
     return filename.removesuffix(".py")
 
 
+def registered_policy_checks(repo_root: Path) -> dict[str, set[str]]:
+    """The ``module -> check names`` pairs ``repo_guardrails.py`` registers explicitly.
+
+    Exposed so a policy module can audit its own wiring without importing the composition
+    root: a check that claims to enforce something is only enforcing it if a group names it,
+    and reading the group lists here keeps that claim verifiable from either side.
+
+    Discovery groups (``run_compat_group``'s ``inspect.getmembers``) are deliberately absent:
+    they register every name their module defines minus an ``excluded`` set, so membership is
+    a property of the module rather than of a list. A caller asking "is this check
+    registered" should read a module in the second return value of ``_collect_registrations``
+    as registered by construction.
+    """
+    explicit, _ = _collect_registrations(_guardrail_tree(repo_root))
+    return explicit
+
+
 def test_every_policy_check_is_registered_in_a_group(repo_root: Path) -> None:
     """No defined policy check may be unreachable from a guardrail group."""
     explicit, discovery = _collect_registrations(_guardrail_tree(repo_root))
