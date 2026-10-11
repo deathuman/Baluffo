@@ -188,7 +188,11 @@ def test_a_row_carried_by_an_undeclared_source_refuses_even_when_its_winner_is_d
     refused = binding.bind(epoch_dir=epoch, run_dir=replay_run)
 
     assert refused["bound"] is False
-    assert "boards.example.com" in refused["reason"]
+    # Exact, not a substring: the host may only be named by the wording that refuses the bind,
+    # and a substring check on a host reads to CodeQL as URL sanitisation (it flagged it).
+    assert refused["reason"] == (
+        "differing rows belong to 1 host(s) the record did not declare: boards.example.com"
+    )
     assert binding.summary(refused)["outsideHosts"] == ["boards.example.com"]
 
 

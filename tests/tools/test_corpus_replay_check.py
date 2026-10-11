@@ -142,7 +142,9 @@ def test_an_egress_block_is_not_reported_as_a_corpus_hole(tmp_path: Path) -> Non
     assert judged["verdict"] == check.VERDICT_EGRESS
     assert judged["verdict"] not in check.FALSIFYING
     assert judged["verdict"] in check.UNJUDGEABLE
-    assert "example.com:443" in judged["problems"][0]["detail"]
+    # The detail *is* the transport's own error text: a substring check here would pass on a
+    # wrapped or prefixed message, and reads to CodeQL as URL sanitisation (it flagged it).
+    assert judged["problems"][0]["detail"] == "egress blocked during replay: example.com:443"
 
 
 def test_a_divergence_from_the_record_refuses_the_certification(tmp_path: Path) -> None:
