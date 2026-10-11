@@ -1,15 +1,21 @@
 """Regression guard for the bounded probe fetch in source_discovery/probe_runtime.py.
 
-Defect: `run_bounded_probe_batch_async._call_fetch` had an unbounded
+Defect one: `run_bounded_probe_batch_async._call_fetch` had an unbounded
 `await asyncio.to_thread(fetcher, url, call_timeout_s)`. The module contains no
 `asyncio.wait_for` anywhere, so a fetcher whose socket read never returns parks
 `_probe_one` forever: its total/bucket semaphores stay held, `as_completed`
 never yields, and the whole probe batch stops with no error and no timeout.
 
-Same class as the shared/http_batch total-deadline defect found via the GameDevMap
-stall. It is LATENT here: on the default path (`fetcher is default_fetcher`) the
-bounded httpx branch is used, so the hazard needs an injected fetcher -- which
-the repo's own tests and injection seams do supply.
+Defect two, the default path: `httpx.Timeout` is a PER-OPERATION budget and the read
+timeout re-arms on every chunk, so a server that trickles bytes holds the request open far
+past `timeout_s` -- and then returns SUCCESSFULLY. Measured before the fix on the loopback
+drip server below: 40.3 s against a 2 s timeout, every candidate counted as a success. The
+shared batcher documents the same loophole (40.7 s against `Timeout(2.0)`, and a GameDevMap
+batch parked 900 s), and the fix follows its shape: bound each call, then bound the batch by
+rows/concurrency so one candidate cannot hold the stage.
+
+Both are the same class as the shared/http_batch total-deadline defect found via the
+GameDevMap stall.
 
 Test style follows the repo convention (`asyncio.run` inside sync test functions;
 there are no `async def test_` functions in this suite).
@@ -18,7 +24,11 @@ there are no `async def test_` functions in this suite).
 from __future__ import annotations
 
 import asyncio
+import http.server
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -168,6 +178,140 @@ def test_healthy_fetcher_is_unaffected_by_the_bound() -> None:
     assert len(results) == 5
     assert all(ok for _row, ok, _j, _e, _ms in results), "healthy probes must succeed"
     assert batch_elapsed < 10, "healthy probes must not be delayed by the bound"
+
+
+# --- the default httpx path: a trickling server must not park the batch ----------------
+
+_DRIP_S = 30.0
+_DRIP_CHUNK_INTERVAL_S = 0.3
+_DRIP_BOUND_ASSERT_S = 15.0
+
+
+class _DripHandler(http.server.BaseHTTPRequestHandler):
+    """Answers slowly and forever: one chunk per interval, far past any per-request timeout."""
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server's naming
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        chunk = b"<html>" + b" " * 64
+        deadline = time.monotonic() + _DRIP_S
+        try:
+            while time.monotonic() < deadline:
+                self.wfile.write(b"%x\r\n" % len(chunk) + chunk + b"\r\n")
+                self.wfile.flush()
+                time.sleep(_DRIP_CHUNK_INTERVAL_S)
+            self.wfile.write(b"0\r\n\r\n")
+        except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+            return None
+
+    def log_message(self, *args: Any) -> None:
+        return None
+
+
+@contextmanager
+def _drip_server() -> Iterator[str]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _DripHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/drip"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+async def _probe_fetching_its_url(
+    row: dict[str, Any],
+    timeout_s: int,
+    *,
+    fetcher: Any,
+    **_kwargs: Any,
+) -> tuple[bool, int, str]:
+    await fetcher(str(row.get("url") or ""), timeout_s)
+    return True, 1, ""
+
+
+def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
+    """A trickling board must fail at its own timeout, not park the batch until it finishes."""
+    with _drip_server() as drip_url:
+        candidates = [
+            {"id": f"c{i}", "url": f"{drip_url}?i={i}", "adapter": "static"} for i in range(3)
+        ]
+        timeout_s = 2
+
+        def _call() -> tuple[list[Any], float]:
+            elapsed = 0.0
+
+            async def _inner() -> list[Any]:
+                nonlocal elapsed
+                started = time.perf_counter()
+                try:
+                    return await probe_runtime.run_bounded_probe_batch_async(
+                        candidates,
+                        timeout_s=timeout_s,
+                        fetcher=probe_runtime.fetch_text,  # IS default_fetcher
+                        async_probe=_probe_fetching_its_url,
+                        default_fetcher=probe_runtime.fetch_text,
+                    )
+                finally:
+                    elapsed = time.perf_counter() - started
+
+            return asyncio.run(_inner()), elapsed
+
+        results, batch_elapsed = _call()
+
+    assert len(results) == len(candidates), "one result per candidate is the contract"
+    assert batch_elapsed < _DRIP_BOUND_ASSERT_S, (
+        f"the probe batch took {batch_elapsed:.1f}s against a {timeout_s}s timeout; a "
+        f"trickling response must not hold the stage until the server stops trickling"
+    )
+    assert not any(ok for _row, ok, _j, _e, _ms in results), (
+        "a response that never completes is a failed probe, never a success"
+    )
+    assert all("timed out" in str(error) for _row, _ok, _j, error, _ms in results), [
+        error for _row, _ok, _j, error, _ms in results
+    ]
+
+
+def test_batch_deadline_reports_the_candidates_it_cut_short() -> None:
+    """A candidate cannot hold the batch past rows/concurrency of its own timeout."""
+    candidates = [{"id": f"c{i}", "adapter": "static"} for i in range(4)]
+    # timeout_s=2 over 4 candidates at 40-way concurrency: deadline = 2 * (4/4) + 2 = 4s.
+    probe_sleep_s = 6.0
+
+    async def slow_probe(
+        _row: dict[str, Any], _timeout_s: int, **_kwargs: Any
+    ) -> tuple[bool, int, str]:
+        await asyncio.sleep(probe_sleep_s)
+        return True, 1, ""
+
+    elapsed = 0.0
+
+    async def _inner() -> list[Any]:
+        nonlocal elapsed
+        started = time.perf_counter()
+        try:
+            return await probe_runtime.run_bounded_probe_batch_async(
+                candidates,
+                timeout_s=2,
+                fetcher=_fast_fetcher,
+                async_probe=slow_probe,
+                default_fetcher=probe_runtime.fetch_text,
+            )
+        finally:
+            elapsed = time.perf_counter() - started
+
+    results = asyncio.run(_inner())
+
+    assert len(results) == len(candidates), "one result per candidate is the contract"
+    assert elapsed < probe_sleep_s, f"batch parked for {elapsed:.1f}s past its own deadline"
+    assert all(
+        not ok and "total probe deadline exceeded" in str(error)
+        for _row, ok, _j, error, _ms in results
+    ), results
 
 
 def test_default_fetcher_path_still_uses_the_httpx_client(

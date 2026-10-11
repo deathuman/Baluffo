@@ -175,23 +175,39 @@ async def run_bounded_probe_batch_async(
     }
 
     async def _call_fetch(url: str, call_timeout_s: int) -> str:
-        if fetcher is default_fetcher:
-            return await async_fetch_text_httpx(client, url, call_timeout_s)
-        # ponytail: the sync branch runs in a worker thread, which cannot be
-        # cancelled. The module has no wait_for anywhere, so a fetcher whose
-        # socket read never returns parks `_probe_one` forever: its semaphores
-        # stay held, as_completed never yields, and the whole probe batch stops
-        # with no error. Give the await its own deadline so a hung fetch becomes
-        # an ordinary per-candidate TimeoutError (already handled by the probe
-        # retry/except path) instead of an unbounded stall. The thread itself
-        # still runs to completion -- unavoidable for sync callables -- but the
-        # batch is no longer blocked by it.
-        return await asyncio.wait_for(
-            asyncio.to_thread(fetcher, url, call_timeout_s),
-            timeout=max(1.0, float(call_timeout_s)),
-        )
+        # ponytail: `httpx.Timeout` is a PER-OPERATION budget, not a total one -- the read timeout
+        # re-arms on every chunk received -- so a slow-drip server holds this call open past its
+        # own timeout and returns "successfully" minutes later (measured 40.3 s against a 2 s
+        # timeout on the loopback drip server, and 40.7 s against Timeout(2.0) in the shared
+        # batcher, where the same loophole parked a GameDevMap batch for 900 s). The sync branch
+        # below has always been wrapped this way; the default httpx branch was not.
+        budget = max(1.0, float(call_timeout_s))
+        try:
+            if fetcher is default_fetcher:
+                return await asyncio.wait_for(
+                    async_fetch_text_httpx(client, url, call_timeout_s),
+                    timeout=budget,
+                )
+            # ponytail: the sync branch runs in a worker thread, which cannot be
+            # cancelled. The module has no wait_for anywhere, so a fetcher whose
+            # socket read never returns parks `_probe_one` forever: its semaphores
+            # stay held, and the whole probe batch stops with no error. Give the
+            # await its own deadline so a hung fetch becomes an ordinary
+            # per-candidate TimeoutError (already handled by the probe
+            # retry/except path) instead of an unbounded stall. The thread itself
+            # still runs to completion -- unavoidable for sync callables -- but the
+            # batch is no longer blocked by it.
+            return await asyncio.wait_for(
+                asyncio.to_thread(fetcher, url, call_timeout_s),
+                timeout=budget,
+            )
+        except TimeoutError as exc:
+            # say why: asyncio's own TimeoutError stringifies to "", and an empty error is a
+            # failure row an operator cannot classify. The wording keeps the "timed out" token
+            # the retry predicate and the failure-stage classifier already recognise.
+            raise TimeoutError(f"fetch timed out after {budget:.0f}s") from exc
 
-    async def _probe_one(row: dict[str, Any]) -> ProbeResult:
+    async def _probe_one(index: int, row: dict[str, Any]) -> tuple[int, ProbeResult]:
         bucket = probe_bucket_for(row)
         bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
         async with total_sem:
@@ -213,14 +229,66 @@ async def run_bounded_probe_batch_async(
                     )
                 except _EXPECTED_PROBE_BATCH_EXCEPTIONS as exc:
                     ok, jobs_found, error = False, 0, str(exc)
-                return row, ok, jobs_found, error, audit_ledger.duration_ms(started)
+                return index, (row, ok, jobs_found, error, audit_ledger.duration_ms(started))
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-        tasks = [asyncio.create_task(_probe_one(row)) for row in candidates]
-        results: list[ProbeResult] = []
+    tasks: list[asyncio.Task[tuple[int, ProbeResult]]] = []
+    by_index: dict[int, ProbeResult] = {}
+    finished: list[int] = []
+
+    async def _run(client: Any) -> list[ProbeResult]:
+        tasks.extend(
+            asyncio.create_task(_probe_one(index, row)) for index, row in enumerate(candidates)
+        )
         for fut in asyncio.as_completed(tasks):
-            results.append(await fut)
-        return results
+            index, result = await fut
+            by_index[index] = result
+            finished.append(index)
+        return [by_index[index] for index in finished]
+
+    # ponytail: the same defect class as src/shared/http_batch.py, and the same shape of bound. A
+    # probe batch funnels every candidate in the wave, so one candidate whose requests never
+    # return parks the whole stage with no error and no timeout -- the pathological case is one
+    # board that trickles bytes, not one that is slow. Bounding it at `timeout_s` would be wrong:
+    # that is a per-request budget and a probe may make several requests (fallbacks, structured
+    # APIs) plus retries. Let every candidate spend its own timeout, divided by the concurrency
+    # actually available, plus a grace for scheduling -- measured at 4 s for 3 candidates at a 2 s
+    # timeout, against 40.3 s unbounded on the loopback drip server.
+    per_row_s = max(1.0, float(timeout_s))
+    effective_concurrency = max(1, min(int(limits["total"]), max(1, len(candidates))))
+    total_deadline_s = per_row_s * (len(candidates) / effective_concurrency) + per_row_s
+    deadline_error = f"total probe deadline exceeded ({total_deadline_s:.0f}s)"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
+            return await asyncio.wait_for(_run(client), timeout=total_deadline_s)
+    except TimeoutError:
+        _cancel_pending(tasks)
+        return _deadline_results(
+            candidates,
+            by_index,
+            error=deadline_error,
+            duration_ms=int(total_deadline_s * 1000),
+        )
+
+
+def _cancel_pending(tasks: list[asyncio.Task[Any]]) -> None:
+    """Cancel every wave task still running, so a deadline leaves no orphan work behind."""
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+
+
+def _deadline_results(
+    candidates: list[dict[str, Any]],
+    completed: dict[int, ProbeResult],
+    *,
+    error: str,
+    duration_ms: int,
+) -> list[ProbeResult]:
+    """One result per candidate for a wave that ran out of time: what finished, plus failures."""
+    return [
+        completed[index] if index in completed else (row, False, 0, error, duration_ms)
+        for index, row in enumerate(candidates)
+    ]
 
 
 async def probe_candidates_async(
