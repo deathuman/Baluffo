@@ -11,6 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused lifecycle tests.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.common.url import fingerprint_url
@@ -18,7 +19,7 @@ from src.jobs.state_lifecycle_availability import _normalize_availability_aliase
 from src.jobs.text_utils import clean_text
 
 
-def job_identity_aliases(job: dict[str, Any]) -> list[str]:
+def job_identity_aliases(job: Mapping[str, Any]) -> list[str]:
     aliases: list[str] = []
     availability_id = clean_text(job.get("availabilityId"))
     if availability_id:
@@ -33,7 +34,7 @@ def job_identity_aliases(job: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(aliases))
 
 
-def availability_id_for_job(job: dict[str, Any]) -> str:
+def availability_id_for_job(job: Mapping[str, Any]) -> str:
     existing = clean_text(job.get("availabilityId"))
     if existing:
         return existing
@@ -48,7 +49,7 @@ def availability_id_for_job(job: dict[str, Any]) -> str:
     )
 
 
-def _job_identity_key(job: dict[str, Any]) -> str:
+def _job_identity_key(job: Mapping[str, Any]) -> str:
     aliases = job_identity_aliases(job)
     return aliases[0] if aliases else ""
 
@@ -106,7 +107,7 @@ def _index_lifecycle_entry_aliases(
 
 
 def _resolve_lifecycle_key(
-    job: dict[str, Any], rows: dict[str, dict[str, Any]], alias_index: dict[str, str]
+    job: Mapping[str, Any], rows: dict[str, dict[str, Any]], alias_index: dict[str, str]
 ) -> str:
     availability_id = clean_text(job.get("availabilityId"))
     if availability_id:

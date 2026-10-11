@@ -30,6 +30,7 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
@@ -394,7 +395,7 @@ def _apply_source_fingerprint(
     canonical_batch: list[CanonicalJob],
     report: dict[str, Any],
 ) -> None:
-    current_fingerprint = source_rows_fingerprint([row.to_dict() for row in canonical_batch])
+    current_fingerprint = source_rows_fingerprint([row_payload(row) for row in canonical_batch])
     previous_fingerprint = clean_text((source_state_rows.get(name) or {}).get("lastFingerprint"))
     report["sourceFingerprint"] = current_fingerprint
     report["fingerprintChanged"] = bool(current_fingerprint != previous_fingerprint)

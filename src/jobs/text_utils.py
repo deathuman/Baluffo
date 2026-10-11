@@ -34,6 +34,13 @@ TEXT_NORMALIZATION_CACHE_SIZE = 4096
 # test can exercise both paths in a single process; unset -- production and every other caller --
 # runs the cheap, cached path.
 LEGACY_NORMALIZATION = os.environ.get(TEXT_NORMALIZATION_ENV, "").strip().lower() == "legacy"
+URL_NORMALIZATION_ENV = "BALUFFO_URL_NORMALIZATION"
+URL_NORMALIZATION_CACHE_SIZE = 4096
+# A second, narrower switch for the URL family only. It is separate from the text switch above
+# because the two seams are priced on separate studies: a URL A/B runs both arms with text
+# normalisation at its production setting, so the memo below is the only moving part. Unset --
+# production and every other caller -- runs the cached path.
+LEGACY_URL_NORMALIZATION = os.environ.get(URL_NORMALIZATION_ENV, "").strip().lower() == "legacy"
 
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 HTML_TAG_RE = re.compile(r"(?is)<[^>]+>")
@@ -831,8 +838,8 @@ def sanitize_location_text(value: Any, *, field_name: str = "city") -> tuple[str
     return text, ""
 
 
-def normalize_url(url: Any) -> str:
-    raw = clean_text(url)
+def _normalize_url_uncached(raw: str) -> str:
+    """The normalisation itself; ``normalize_url`` decides whether to memoise it."""
     if not raw:
         return ""
     try:
@@ -852,3 +859,22 @@ def normalize_url(url: Any) -> str:
     query = urlencode(pairs, doseq=True)
     path = parsed.path.rstrip("/") or "/"
     return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, "", query, ""))
+
+
+_normalize_url_cached = lru_cache(maxsize=URL_NORMALIZATION_CACHE_SIZE)(_normalize_url_uncached)
+
+
+def normalize_url(url: Any) -> str:
+    """This URL's canonical form, memoised on the cleaned URL.
+
+    The key is ``clean_text(url)`` -- the exact string the uncached body would derive before it
+    does any work -- so the cache cannot hold an input the function did not already re-derive, and
+    every non-string input lands on the same key its cleaned form would. The recorded run calls
+    this ~3.2 million times for far fewer distinct URLs, dragging ``urlparse``/``parse_qs``/
+    ``urlencode``/``urlunparse`` along each time; the strings it returns are immutable, so sharing
+    one cached result between callers is observably the same value.
+    """
+    raw = clean_text(url)
+    if LEGACY_URL_NORMALIZATION:
+        return _normalize_url_uncached(raw)
+    return _normalize_url_cached(raw)

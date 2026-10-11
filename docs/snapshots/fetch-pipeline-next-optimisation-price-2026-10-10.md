@@ -12,6 +12,19 @@ own Python work on worker threads and in the phases those workers feed.
 **Nothing was optimised here.** `src/` is byte-identical to the first pass's tree; what this slice
 produces is a decision and its price.
 
+> **Follow-up, same day:** the change this document priced is now
+> [implemented and measured](fetch-pipeline-row-payload-conversion-2026-10-10.md) — **−17.49%**
+> (95% CI [−18.69, −15.69]), parity intact, its win attributed to `deduplicating` (−4.9 s) and
+> `reconciling_identities` (−4.0 s) while the unconverted `applying_lifecycle` phase stays flat.
+> Two notes on this document's own instructions stand, and both are findings rather than nits:
+> the shipped result lands **below the −25.7%** priced here because the probe's ablation shares
+> nested containers (a copy contract the shipped `to_dict` preserves, as step 1 asked) and because
+> ~13% of the priced calls stay unconverted; and **`ab.py --resume` does not verify arm
+> environments**, so step 2's "re-measure on the same study directory with `--resume`" would have
+> spliced four probe-ablated candidate arms into a study about shipped code. The re-measurement was
+> run as a fresh paired study on this epoch and these flags instead, which is the comparability the
+> step was actually asking for.
+
 ## What the first pass already spent
 
 Pass 1 took the target S1 named — the regex-heavy text/location normalisation path, where
@@ -75,7 +88,8 @@ Two candidates ranked below it, and neither is priced here:
   `urllib.parse` self time under it is the second-largest cluster, with 853k `fingerprint_url` /
   `canonical_url_fingerprint_seed` calls and 728k `is_public_job_url` calls. It is the same seam
   pass 1 memoised, so it is the natural *next* target after this one — but the to_dict storm is
-  larger, and its work is a copy nobody reads.
+  larger, and its work is a copy nobody reads. It was taken next and measured **−15.10%**
+  ([snapshot](fetch-pipeline-url-family-2026-10-11.md)).
 - **Progress and task-state bookkeeping** (S1's 25.6 s + 7.3 s). Ticks scale with sources, not
   rows, and the reference epoch has five sources: this epoch cannot price it, so it stays
   unpriced rather than guessed.
@@ -171,7 +185,10 @@ own build, and the eventual implementation should pin the same thing for `to_dic
 `ruff`/`mypy` stay clean on the touched files.
 
 The URL family is the next target after this one, and it is worth noting that the two do not
-compete: they are different seams in the same lane.
+compete: they are different seams in the same lane. **Taken on 2026-10-11:** it measured
+**−15.10%** median paired engine wall clock on this same subset epoch, parity intact — see
+[`fetch-pipeline-url-family-2026-10-11`](fetch-pipeline-url-family-2026-10-11.md). This ranking is
+unchanged by that outcome; the entry it named was the entry that was next.
 
 ## Reproduce
 

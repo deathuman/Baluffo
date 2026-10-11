@@ -55,6 +55,7 @@ from src.jobs.dedup_targeting import (
 )
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 
 
 def _sort_enrich_and_number(rows: list[CanonicalJob]) -> list[CanonicalJob]:
@@ -119,7 +120,7 @@ def deduplicate_jobs(
 
     for row in rows:
         current = row if isinstance(row, CanonicalJob) else CanonicalJob.from_mapping(row)
-        payload = current.to_dict()
+        payload = row_payload(current)
         primary = fingerprint_url(payload.get("jobLink"))
         secondary = dedup_secondary_key(current)
         social_key = _social_key(payload)

@@ -18,6 +18,7 @@ import json
 import threading
 import time
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -72,6 +73,11 @@ from src.jobs.reporting_queues import (
 )
 from src.jobs.reporting_social import summarize_social_experiment
 from src.jobs.reporting_summary import build_pipeline_summary
+from src.jobs.row_payload import (
+    LEGACY_ROW_COPY_ON_WRITE,
+    mutable_payload,
+    row_payload,
+)
 from src.jobs.state_lifecycle import (
     lifecycle_archive_state_path as lifecycle_archive_state_path,
 )
@@ -257,15 +263,21 @@ def _record_sector_gate_loss(
 
 
 def _apply_sector_gate(
-    deduped_payload_rows: list[dict[str, Any]],
+    deduped_payload_rows: Sequence[Mapping[str, Any]],
     source_reports: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[Mapping[str, Any]], int]:
+    """The rows this gate keeps, read through the payload view: it writes nothing.
+
+    It is the first consumer of the published row list, so reading here is what lets the whole
+    list stay a list of views until the rows that survive have to be written to.
+    """
+
     if not STRICT_GAME_ONLY_ENABLED:
-        return deduped_payload_rows, 0
-    game_rows: list[dict[str, Any]] = []
+        return list(deduped_payload_rows), 0
+    game_rows: list[Mapping[str, Any]] = []
     non_game_by_source: Counter[str] = Counter()
     for row in deduped_payload_rows:
-        if not isinstance(row, dict):
+        if not isinstance(row, Mapping):
             continue
         if row.get("sector") == "Game":
             game_rows.append(row)
@@ -396,7 +408,17 @@ def finalize_pipeline_run(
     del observed_rows
     _return_freed_memory_to_os()
 
-    deduped_payload_rows = [row.to_dict() for row in deduped_rows]
+    # Read, not copied: the published row list stays a list of payload views (this line used to
+    # build ~30k whole-row payloads up front) and is materialised -- shallowly, once -- right
+    # after the sector gate, for the rows that survive it. The gate and the audits only read, and
+    # the one writer below that has to change a row (the location guardrail) assigns a fresh
+    # container rather than mutating the one it was handed, so nothing that follows reaches back
+    # into the rows these views point at.
+    row_views: list[Mapping[str, Any]] = (
+        [row.to_dict() for row in deduped_rows]
+        if LEGACY_ROW_COPY_ON_WRITE
+        else [row_payload(row) for row in deduped_rows]
+    )
     with _finalization_phase(
         key="running_quality_audits",
         label="Running quality audits",
@@ -406,9 +428,8 @@ def finalize_pipeline_run(
         write_task_state=write_task_state,
         timings=finalization_timings,
     ):
-        deduped_payload_rows, _sector_gate_dropped = _apply_sector_gate(
-            deduped_payload_rows, source_reports
-        )
+        gated_rows, _sector_gate_dropped = _apply_sector_gate(row_views, source_reports)
+        deduped_payload_rows: list[dict[str, Any]] = [mutable_payload(row) for row in gated_rows]
         dedup_stats["outputCount"] = len(deduped_payload_rows)
         if _sector_gate_dropped:
             dedup_stats["sectorGateFiltered"] = _sector_gate_dropped

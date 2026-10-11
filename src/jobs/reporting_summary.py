@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_list, json_object_rows
 
@@ -82,9 +83,7 @@ def build_pipeline_summary(
     lifecycle_counts_map: dict[str, int] | None = None,
     summary_source_rows: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    deduped_payload = [
-        row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows
-    ]
+    deduped_payload = [row_payload(row) for row in deduped_rows]
     lifecycle = lifecycle_counts_map or {}
     cache_rows = _cache_rows(source_reports)
     cache_decision_counts: dict[str, int] = {}

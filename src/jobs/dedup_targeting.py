@@ -9,6 +9,7 @@ AI boundary implement in: this leaf for target selection; gate accounting lives 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.canonicalize import (
@@ -39,6 +40,7 @@ from src.jobs.dedup_state import (
     _source_bundle_working_sample,
 )
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 
 from .common.smartrecruiters_identity import (
     is_smartrecruiters_title_location_alias_match,
@@ -46,7 +48,7 @@ from .common.smartrecruiters_identity import (
 )
 
 
-def _has_provider_identity(payload: dict[str, Any]) -> bool:
+def _has_provider_identity(payload: Mapping[str, Any]) -> bool:
     return _merge_source_class(payload) == "provider"
 
 
@@ -56,8 +58,8 @@ def _blocks_trusted_distinct_non_primary_merge(
     target: CanonicalJob,
     current_primary: str,
 ) -> bool:
-    current_payload = current.to_dict()
-    target_payload = target.to_dict()
+    current_payload = row_payload(current)
+    target_payload = row_payload(target)
     if "provider" not in {
         _merge_source_class(current_payload),
         _merge_source_class(target_payload),
@@ -91,7 +93,7 @@ def _find_elevato_static_google_sheets_target(
     return None
 
 
-def _social_key(payload: dict[str, Any]) -> str:
+def _social_key(payload: Mapping[str, Any]) -> str:
     if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
         payload.get("sourceJobId")
     ):
@@ -179,13 +181,15 @@ def _find_smartrecruiters_title_location_alias_target(
     merged_rows: list[CanonicalJob],
     by_smartrecruiters_title_location_alias: dict[str, int],
 ) -> int | None:
-    current_payload = current.to_dict()
+    current_payload = row_payload(current)
     for alias_key in smartrecruiters_title_location_alias_keys(current_payload):
         alias_target_idx = by_smartrecruiters_title_location_alias.get(alias_key)
         if alias_target_idx is None:
             continue
         alias_target = merged_rows[alias_target_idx]
-        if is_smartrecruiters_title_location_alias_match(current_payload, alias_target.to_dict()):
+        if is_smartrecruiters_title_location_alias_match(
+            current_payload, row_payload(alias_target)
+        ):
             return alias_target_idx
     return None
 
@@ -222,8 +226,8 @@ def _record_google_sheets_generic_role_guard_sample(
     counts[blocked_merge_reason] = int(counts.get(blocked_merge_reason) or 0) + 1
     if len(samples) >= 10:
         return
-    current_payload = current.to_dict()
-    target_payload = target.to_dict()
+    current_payload = row_payload(current)
+    target_payload = row_payload(target)
     samples.append(
         {
             "classification": "fixed_by_generic_role_guard",
@@ -350,14 +354,14 @@ def _index_smartrecruiters_title_location_alias_keys(
     row: CanonicalJob | dict[str, Any],
     by_smartrecruiters_title_location_alias: dict[str, int],
 ) -> None:
-    payload = row.to_dict() if isinstance(row, CanonicalJob) else dict(row)
+    payload = row_payload(row)
     for key in smartrecruiters_title_location_alias_keys(payload):
         by_smartrecruiters_title_location_alias[key] = idx
 
 
 def _append_new_dedup_row(
     *,
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
     primary: str,
     secondary: str,
     sparse_identity: str,

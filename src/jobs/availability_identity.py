@@ -14,6 +14,7 @@ from typing import Any
 
 from src.jobs.common.url import fingerprint_url, is_public_job_url
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import clean_text
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
@@ -229,7 +230,7 @@ def _post_assignment_repair_plan(
         payload_availability_id = clean_text(getattr(canonical_row, "availabilityId", ""))
         if not payload_availability_id:
             continue
-        row = canonical_row.to_dict()
+        row = row_payload(canonical_row)
         token = _row_identity_token(row)
         if token:
             ids_to_tokens[payload_availability_id].add(token)
@@ -322,7 +323,7 @@ def _partition_prepared_rows(
     accepted: list[CanonicalJob] = []
     rejected: list[tuple[CanonicalJob, str]] = []
     for row in rows:
-        payload = row.to_dict()
+        payload = row_payload(row)
         if _row_identity_token(payload) and not clean_text(payload.get("availabilityId")):
             token = _row_identity_token(payload)
             rejected.append(
@@ -341,7 +342,7 @@ def _partition_prepared_rows(
 
 
 def _rejection_key(row: CanonicalJob, reason: str) -> tuple[str, ...]:
-    payload = row.to_dict()
+    payload = row_payload(row)
     identity = _source_alias(payload) or _row_identity_token(payload)
     if identity:
         return (reason, identity)
@@ -412,7 +413,7 @@ def _dump_preflight_diagnostics(rows: Sequence[CanonicalJob], missing: int, conf
         ids_to_tokens: dict[str, set[str]] = defaultdict(set)
         missing_rows: list[dict[str, Any]] = []
         for canonical_row in rows:
-            row = canonical_row.to_dict()
+            row = row_payload(canonical_row)
             token = _row_identity_token(row)
             if not token:
                 continue
@@ -432,7 +433,7 @@ def _dump_preflight_diagnostics(rows: Sequence[CanonicalJob], missing: int, conf
         rows_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
         if conflict_ids:
             for canonical_row in rows:
-                row = canonical_row.to_dict()
+                row = row_payload(canonical_row)
                 availability_id = clean_text(row.get("availabilityId"))
                 if availability_id not in conflict_ids:
                     continue
@@ -483,7 +484,7 @@ def _identity_audit(rows: Sequence[CanonicalJob]) -> tuple[int, int, int]:
     missing = 0
     ids_to_tokens: dict[str, set[str]] = defaultdict(set)
     for canonical_row in rows:
-        row = canonical_row.to_dict()
+        row = row_payload(canonical_row)
         token = _row_identity_token(row)
         if not token:
             continue
@@ -518,7 +519,7 @@ def _resolve_residual_identity_conflicts(
     """
     ids_to_tokens: dict[str, set[str]] = defaultdict(set)
     for canonical_row in rows:
-        row = canonical_row.to_dict()
+        row = row_payload(canonical_row)
         token = _row_identity_token(row)
         availability_id = clean_text(row.get("availabilityId"))
         if token and availability_id:
@@ -562,7 +563,7 @@ def prepare_availability_identities(
 ) -> AvailabilityIdentityPreparation:
     """Repair ambiguous legacy identities using exact current URL/source evidence only."""
 
-    payload_rows = [row.to_dict() for row in rows]
+    payload_rows = [row_payload(row) for row in rows]
     alias_ids = _lifecycle_alias_ids(lifecycle_rows)
     conflicting_source_aliases, contaminated_ids = _find_identity_conflicts(payload_rows, alias_ids)
     identity_by_token, replacement_ids, replacement_urls, repaired_count = (
@@ -590,7 +591,7 @@ def prepare_availability_identities(
             replacements=post_replacements,
         )
         for canonical_row in all_prepared_rows:
-            payload = canonical_row.to_dict()
+            payload = row_payload(canonical_row)
             prior_id = clean_text(payload.get("availabilityId"))
             if prior_id not in post_contaminated_ids:
                 continue
@@ -650,9 +651,9 @@ def prepare_availability_identities(
         if clean_text(key) and clean_text(entry.get("availabilityId")) not in contaminated_ids
     }
     resolved_id_by_token = {
-        _row_identity_token(row.to_dict()): clean_text(row.availabilityId)
+        _row_identity_token(row_payload(row)): clean_text(row.availabilityId)
         for row in [*prepared_rows, *prepared_observed]
-        if _row_identity_token(row.to_dict()) and clean_text(row.availabilityId)
+        if _row_identity_token(row_payload(row)) and clean_text(row.availabilityId)
     }
     quarantine_context_by_identity: dict[tuple[str, str], CanonicalJob] = {}
     for row in [*all_prepared_rows, *all_prepared_observed]:

@@ -8,6 +8,7 @@ selection lives in ``dedup_targeting.py``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.canonicalize import (
@@ -29,6 +30,7 @@ from src.jobs.dedup_preferences import (
 )
 from src.jobs.dedup_state import _extend_location_state, _extend_source_bundle_state
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 
 from .common import config as common_config
 
@@ -73,12 +75,12 @@ def _merge_records_with_source_bundle_state(
     return merged, source_bundle_count
 
 
-def _is_unknown_company(job: dict[str, Any]) -> bool:
+def _is_unknown_company(job: Mapping[str, Any]) -> bool:
     company = clean_text(job.get("company"))
     return norm_text(company) in {norm_text(common_config.UNKNOWN_COMPANY_LABEL), "unknown"}
 
 
-def _gracklehq_redirect_urls(job: dict[str, Any]) -> list[str]:
+def _gracklehq_redirect_urls(job: Mapping[str, Any]) -> list[str]:
     urls: list[str] = []
     bundle = job.get("sourceBundle")
     if not isinstance(bundle, list):
@@ -95,7 +97,7 @@ def _gracklehq_redirect_urls(job: dict[str, Any]) -> list[str]:
 def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) -> list[CanonicalJob]:
     url_to_company: dict[str, str] = {}
     for row in rows:
-        payload = row.to_dict()
+        payload = row_payload(row)
         if not _is_unknown_company(payload):
             for url in _gracklehq_redirect_urls(payload):
                 url_to_company[url] = clean_text(payload.get("company"))
@@ -105,7 +107,7 @@ def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) ->
 
     enriched = []
     for row in rows:
-        payload = row.to_dict()
+        payload = row_payload(row)
         if _is_unknown_company(payload):
             for url in _gracklehq_redirect_urls(payload):
                 known_company = url_to_company.get(url)

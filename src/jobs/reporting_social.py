@@ -8,10 +8,11 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused social reporting
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import clean_text
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
@@ -59,11 +60,11 @@ def _social_channel_for_source(source_name: Any) -> str:
     return ""
 
 
-def _source_bundle_items(row: dict[str, Any]) -> list[dict[str, Any]]:
+def _source_bundle_items(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], json_object_rows(row.get("sourceBundle")))
 
 
-def _row_origin_info(row: dict[str, Any]) -> tuple[list[str], bool]:
+def _row_origin_info(row: Mapping[str, Any]) -> tuple[list[str], bool]:
     channels: set[str] = set()
     official = False
     for item in _source_bundle_items(row):
@@ -84,7 +85,7 @@ def build_social_experiment_review_sample(
 ) -> list[dict[str, Any]]:
     sample: list[dict[str, Any]] = []
     for row in deduped_rows:
-        payload = row.to_dict() if isinstance(row, CanonicalJob) else dict(row)
+        payload = row_payload(row)
         channels, official = _row_origin_info(payload)
         if not channels:
             continue
@@ -189,7 +190,7 @@ def summarize_social_experiment(
         unique_count = 0
         overlap_count = 0
         for row in deduped_rows:
-            payload = row.to_dict() if isinstance(row, CanonicalJob) else dict(row)
+            payload = row_payload(row)
             channels, official = _row_origin_info(payload)
             if channel not in channels:
                 continue

@@ -10,6 +10,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused lifecycle tests.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,6 +21,11 @@ from src.jobs.common.config import (
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
 from src.jobs.common.origin_junk import count_active_junk_class_rows
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import (
+    LEGACY_ROW_COPY_ON_WRITE,
+    mutable_payload,
+    row_payload,
+)
 from src.jobs.state_lifecycle_availability import (
     _empty_lifecycle_summary,
     _normalize_availability_aliases,
@@ -43,7 +49,7 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 
 def _apply_active_lifecycle_rows(
-    payload_rows: list[dict[str, Any]],
+    payload_rows: Sequence[Mapping[str, Any]],
     next_rows: dict[str, dict[str, Any]],
     finished_at: str,
     summary: dict[str, int],
@@ -68,17 +74,23 @@ def _apply_active_lifecycle_rows(
 
 
 def _initialize_carried_lifecycle_rows(
-    payload_rows: list[dict[str, Any]],
+    rows: Sequence[CanonicalJob | Mapping[str, Any]],
     next_rows: dict[str, dict[str, Any]],
     *,
     seen_keys: set[str],
     finished_at: str,
 ) -> int:
-    """Give exact-identity seed rows lifecycle state without observing them."""
+    """Give exact-identity seed rows lifecycle state without observing them.
+
+    Reads only, so a row is read through the payload view and no payload is built.
+    """
 
     initialized = 0
     alias_index = _lifecycle_alias_index(next_rows)
-    for row in payload_rows:
+    for canonical_row in rows:
+        # An input that is already a mapping is read as-is: copying a caller's payload here would
+        # be the very work the view exists to avoid.
+        row = canonical_row if isinstance(canonical_row, Mapping) else row_payload(canonical_row)
         availability_id = clean_text(row.get("availabilityId"))
         if not availability_id:
             continue
@@ -241,17 +253,39 @@ def _prune_archived_lifecycle_rows(
 
 
 def _project_available_payload_rows(
-    payload_rows: list[dict[str, Any]], next_rows: dict[str, dict[str, Any]]
-) -> list[dict[str, Any]]:
+    rows: Sequence[CanonicalJob | Mapping[str, Any]], next_rows: dict[str, dict[str, Any]]
+) -> list[Mapping[str, Any]]:
+    """The rows that survive projection, copying a payload only where one is actually written.
+
+    Every row is read through the payload view. A row with no lifecycle entry is carried on as
+    the view itself (the caller only reads it into ``from_mapping``), and a row whose availability
+    status is not ``available`` is dropped *without* being copied -- the two cases that used to be
+    paid for with a whole-row payload built up front and then thrown away. Only a row that is both
+    kept and projected gets the one shallow copy it needs before the twelve fields are written.
+    """
+
     alias_index = _lifecycle_alias_index(next_rows)
-    projected: list[dict[str, Any]] = []
-    for row in payload_rows:
+    projected: list[Mapping[str, Any]] = []
+    for canonical_row in rows:
+        # As-is when it is already a mapping, so a row that is carried through unprojected is the
+        # object the caller handed in rather than a copy of it. The control arm builds a payload
+        # for every row here, before the decision that needs one.
+        if LEGACY_ROW_COPY_ON_WRITE and isinstance(canonical_row, CanonicalJob):
+            row: Mapping[str, Any] = canonical_row.to_dict()
+        else:
+            row = (
+                canonical_row if isinstance(canonical_row, Mapping) else row_payload(canonical_row)
+            )
         key = _resolve_lifecycle_key(row, next_rows, alias_index)
         entry = next_rows.get(key) if key else None
         if not isinstance(entry, dict):
             projected.append(row)
             continue
         availability_status = _normalize_availability_status(entry)
+        if availability_status != "available":
+            continue
+        # The one shallow copy: no-op when the row is already a payload dict the caller owns.
+        row = mutable_payload(row)
         row["availabilityId"] = clean_text(entry.get("availabilityId"))
         row["availabilityStatus"] = availability_status
         row["availabilityCheckedAt"] = clean_text(entry.get("availabilityCheckedAt"))
@@ -266,8 +300,7 @@ def _project_available_payload_rows(
         row["removedAt"] = clean_text(entry.get("removedAt"))
         row["lifecycleEvent"] = clean_text(entry.get("lifecycleEvent"))
         row["lifecycleReason"] = clean_text(entry.get("lifecycleReason"))
-        if availability_status == "available":
-            projected.append(row)
+        projected.append(row)
     return projected
 
 
@@ -289,7 +322,6 @@ def apply_job_lifecycle_state(
     dict[int, dict[str, dict[str, Any]]],
     dict[str, int],
 ]:
-    payload_rows = [row.to_dict() for row in deduped_rows]
     # ponytail: share untouched entry dicts with the caller instead of copying
     # all ~55k rows up front; every mutation site below materializes a private
     # copy first (copy-on-write). The normalized fast-path reader returns the
@@ -299,12 +331,19 @@ def apply_job_lifecycle_state(
     }
     archive_rows_by_year: dict[int, dict[str, dict[str, Any]]] = {}
     summary = _empty_lifecycle_summary()
-    observed_payload_rows = [
-        row.to_dict() for row in (observed_rows if observed_rows is not None else deduped_rows)
-    ]
+    # Read, not copied: ``_lifecycle_entry_from_active_job`` builds its entry from ``previous``
+    # and the row's own fields and no longer writes into the row it is given, so these rows can be
+    # payload views. They were the whole-row payloads of the observed list (~30k conversions);
+    # ``BALUFFO_ROW_COPY_ON_WRITE=legacy`` restores that up-front build for the control arm.
+    observed_source_rows = observed_rows if observed_rows is not None else deduped_rows
+    observed_payload_rows = (
+        [row.to_dict() for row in observed_source_rows]
+        if LEGACY_ROW_COPY_ON_WRITE
+        else [row_payload(row) for row in observed_source_rows]
+    )
     seen_keys = _apply_active_lifecycle_rows(observed_payload_rows, next_rows, finished_at, summary)
     summary["carriedInitialized"] = _initialize_carried_lifecycle_rows(
-        payload_rows,
+        deduped_rows,
         next_rows,
         seen_keys=seen_keys,
         finished_at=finished_at,
@@ -350,7 +389,7 @@ def apply_job_lifecycle_state(
             archive_retention_days=archive_retention_days,
             archive_rows_by_year=archive_rows_by_year,
         )
-    projected_rows = _project_available_payload_rows(payload_rows, next_rows)
+    projected_rows = _project_available_payload_rows(deduped_rows, next_rows)
     availability_counts = {"available": 0, "verification_overdue": 0, "unavailable": 0}
     for entry in next_rows.values():
         availability_counts[_normalize_availability_status(entry)] += 1

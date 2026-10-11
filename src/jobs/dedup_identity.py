@@ -11,6 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup tests.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,6 +23,7 @@ from src.jobs.canonicalize import (
 from src.jobs.common.datetime_utils import posted_ts
 from src.jobs.models import CanonicalJob
 from src.jobs.page_gating import looks_like_job_title_candidate
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import sanitize_location_text
 
 from .common import config as common_config
@@ -188,8 +190,8 @@ def _is_meaningful_location_value(value: Any) -> bool:
     return lowered not in {"unknown", "n/a", "na", "none"}
 
 
-def _has_meaningful_locations(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _has_meaningful_locations(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     entries = payload.get("locations")
     if isinstance(entries, list):
         for item in entries:
@@ -242,8 +244,8 @@ def _normalize_title_identity(value: Any) -> str:
     return norm_text(best_prefix or title)
 
 
-def _is_google_sheets_row(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _is_google_sheets_row(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     return clean_text(payload.get("source")).startswith("google_sheets")
 
 
@@ -259,8 +261,8 @@ def _is_elevato_url(value: Any) -> bool:
     return host == "elevato.net" or host.endswith(".elevato.net")
 
 
-def _is_elevato_static_row(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _is_elevato_static_row(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     source = clean_text(payload.get("source"))
     adapter = norm_text(payload.get("adapter"))
     return (
@@ -268,13 +270,13 @@ def _is_elevato_static_row(job: CanonicalJob | dict[str, Any]) -> bool:
     ) and _is_elevato_url(payload.get("jobLink"))
 
 
-def _is_google_sheets_elevato_row(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _is_google_sheets_elevato_row(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     return _is_google_sheets_row(payload) and _is_elevato_url(payload.get("jobLink"))
 
 
-def _elevato_company_identity(job: CanonicalJob | dict[str, Any]) -> str:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _elevato_company_identity(job: CanonicalJob | Mapping[str, Any]) -> str:
+    payload = row_payload(job)
     company = _normalize_company_identity(payload.get("company"))
     for suffix in (" careers", " career", " jobs"):
         if company.endswith(suffix):
@@ -284,10 +286,10 @@ def _elevato_company_identity(job: CanonicalJob | dict[str, Any]) -> str:
 
 
 def _elevato_rows_have_compatible_locations(
-    left: CanonicalJob | dict[str, Any], right: CanonicalJob | dict[str, Any]
+    left: CanonicalJob | Mapping[str, Any], right: CanonicalJob | Mapping[str, Any]
 ) -> bool:
-    left_payload = left.to_dict() if isinstance(left, CanonicalJob) else dict(left)
-    right_payload = right.to_dict() if isinstance(right, CanonicalJob) else dict(right)
+    left_payload = row_payload(left)
+    right_payload = row_payload(right)
     for field in ("city", "country"):
         left_value = norm_text(left_payload.get(field))
         right_value = norm_text(right_payload.get(field))
@@ -297,10 +299,10 @@ def _elevato_rows_have_compatible_locations(
 
 
 def _is_elevato_static_google_sheets_pair(
-    left: CanonicalJob | dict[str, Any], right: CanonicalJob | dict[str, Any]
+    left: CanonicalJob | Mapping[str, Any], right: CanonicalJob | Mapping[str, Any]
 ) -> bool:
-    left_payload = left.to_dict() if isinstance(left, CanonicalJob) else dict(left)
-    right_payload = right.to_dict() if isinstance(right, CanonicalJob) else dict(right)
+    left_payload = row_payload(left)
+    right_payload = row_payload(right)
     if not (
         (_is_elevato_static_row(left_payload) and _is_google_sheets_elevato_row(right_payload))
         or (_is_elevato_static_row(right_payload) and _is_google_sheets_elevato_row(left_payload))
@@ -315,8 +317,8 @@ def _is_elevato_static_google_sheets_pair(
     return _elevato_rows_have_compatible_locations(left_payload, right_payload)
 
 
-def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _has_google_sheets_generic_role_title(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     title = norm_text(payload.get("title"))
     normalized = norm_text(
         clean_text(payload.get("title")).replace("-", " ").replace("_", " ").replace("&", " ")
@@ -332,8 +334,8 @@ def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) ->
     )
 
 
-def _has_sheet_role_bucket_title(job: CanonicalJob | dict[str, Any]) -> bool:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _has_sheet_role_bucket_title(job: CanonicalJob | Mapping[str, Any]) -> bool:
+    payload = row_payload(job)
     raw_title = clean_text(payload.get("title"))
     title = norm_text(raw_title)
     normalized = norm_text(raw_title.replace("-", " ").replace("_", " ").replace("&", " "))
@@ -358,8 +360,8 @@ def _has_sheet_role_bucket_title(job: CanonicalJob | dict[str, Any]) -> bool:
     )
 
 
-def _sparse_identity_key(job: CanonicalJob | dict[str, Any]) -> str:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def _sparse_identity_key(job: CanonicalJob | Mapping[str, Any]) -> str:
+    payload = row_payload(job)
     company = _normalize_company_identity(payload.get("company"))
     title = _normalize_title_identity(payload.get("title"))
     if not company or not title:
@@ -367,8 +369,8 @@ def _sparse_identity_key(job: CanonicalJob | dict[str, Any]) -> str:
     return "|".join([company, title])
 
 
-def dedup_secondary_key(job: CanonicalJob | dict[str, Any]) -> str:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def dedup_secondary_key(job: CanonicalJob | Mapping[str, Any]) -> str:
+    payload = row_payload(job)
     return "|".join(
         [
             norm_text(payload.get("company")),
@@ -379,8 +381,8 @@ def dedup_secondary_key(job: CanonicalJob | dict[str, Any]) -> str:
     )
 
 
-def record_richness(job: CanonicalJob | dict[str, Any]) -> int:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def record_richness(job: CanonicalJob | Mapping[str, Any]) -> int:
+    payload = row_payload(job)
     fields = [
         "title",
         "company",
@@ -397,8 +399,8 @@ def record_richness(job: CanonicalJob | dict[str, Any]) -> int:
     return sum(1 for field in fields if clean_text(payload.get(field)))
 
 
-def company_preference_score(job: CanonicalJob | dict[str, Any]) -> int:
-    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+def company_preference_score(job: CanonicalJob | Mapping[str, Any]) -> int:
+    payload = row_payload(job)
     company = clean_text(payload.get("company"))
     if not company:
         return 0
@@ -465,7 +467,7 @@ _PROVIDER_MERGE_SOURCE_PREFIXES = tuple(f"{adapter}:" for adapter in _PROVIDER_M
 _SOCIAL_MERGE_ADAPTERS = frozenset({"mastodon", "reddit", "social", "twitter", "x"})
 
 
-def _merge_source_class(payload: dict[str, Any]) -> str:
+def _merge_source_class(payload: Mapping[str, Any]) -> str:
     adapter = norm_text(payload.get("adapter"))
     source = norm_text(payload.get("source"))
     source_job_id = norm_text(payload.get("sourceJobId"))
@@ -482,7 +484,7 @@ def _merge_source_class(payload: dict[str, Any]) -> str:
     return "other"
 
 
-def _is_gracklehq_redirect_identity(payload: dict[str, Any]) -> bool:
+def _is_gracklehq_redirect_identity(payload: Mapping[str, Any]) -> bool:
     source = norm_text(payload.get("source"))
     source_job_id = norm_text(payload.get("sourceJobId"))
     job_link = normalize_url(payload.get("jobLink")).lower()
@@ -496,9 +498,9 @@ def _is_gracklehq_redirect_identity(payload: dict[str, Any]) -> bool:
 def _is_provider_gracklehq_redirect_alias(
     *,
     existing: CanonicalJob,
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
 ) -> bool:
-    existing_payload = existing.to_dict()
+    existing_payload = row_payload(existing)
     classes = {_merge_source_class(existing_payload), _merge_source_class(payload)}
     if "provider" not in classes:
         return False

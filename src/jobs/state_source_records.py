@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -347,7 +347,7 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
+def source_rows_fingerprint(rows: Sequence[Mapping[str, Any]]) -> str:
     keys = []
     for row in rows:
         link = normalize_url(row.get("jobLink"))

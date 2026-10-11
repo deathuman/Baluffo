@@ -56,10 +56,20 @@ def git_identity(repo_root: Path) -> tuple[str, str]:
                 check=False,
                 capture_output=True,
                 text=True,
+                # A diff is bytes, not console text: decoding it in the host code page (cp1252 on
+                # Windows) raises in the reader thread whenever the dirty tree contains a byte
+                # that code page leaves undefined -- a CJK title is enough (`東` carries 0x9d) --
+                # and the failed read surfaces as ``stdout=None``, which broke every caller of
+                # this function rather than this one hash. ``replace`` keeps the hash lossy for
+                # those bytes and deterministic for the same tree, which is what a provenance
+                # label needs; ``surrogateescape`` would decode exactly but cannot be re-encoded
+                # to utf-8 for hashing below.
+                encoding="utf-8",
+                errors="replace",
             )
         except OSError:
             return ""
-        return completed.stdout if completed.returncode == 0 else ""
+        return completed.stdout or ""
 
     sha = _run("rev-parse", "HEAD").strip()
     dirty = _run("status", "--porcelain") + _run("diff", "HEAD")

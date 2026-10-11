@@ -222,6 +222,8 @@ metadata  # unused variable (src\jobs\models.py:60)
 FetchContext  # public jobs contract type (kept for downstream type consumers)
 FetchResult  # public jobs contract type (kept for downstream type consumers)
 locationSummary  # unused variable (src\jobs\models.py:91)
+lifecycleEvent  # public canonical contract field; every reader reaches it as a payload dict key
+lifecycleReason  # public canonical contract field; every reader reaches it as a payload dict key
 availabilityId  # public canonical and Saved contract field
 availabilityStatus  # public canonical contract field
 availabilityCheckedAt  # public canonical contract field

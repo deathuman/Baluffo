@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.game_detection import has_positive_game_evidence
-from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text
 
 from . import config as common_config
@@ -93,7 +93,7 @@ def normalize_company_value(value: Any) -> str:
     return company
 
 
-def compute_quality_score(job: RawJob) -> int:
+def compute_quality_score(job: Mapping[str, Any]) -> int:
     fields = [
         "title",
         "company",
@@ -130,7 +130,7 @@ def title_has_focus_role(title: Any) -> bool:
     return any(token in lower for token in focus_tokens)
 
 
-def compute_focus_score(job: RawJob) -> int:
+def compute_focus_score(job: Mapping[str, Any]) -> int:
     score = 0
     profession = norm_text(job.get("profession"))
     title = job.get("title")

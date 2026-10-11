@@ -9,11 +9,20 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs contract te
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Any, TypedDict
 
 from src.jobs.text_utils import clean_text
+
+ROW_PAYLOAD_ENV = "BALUFFO_ROW_PAYLOAD"
+# One measurement switch, resolved once at import: ``legacy`` restores the recursive
+# ``dataclasses.asdict`` build that ``CanonicalJob.to_dict`` replaced, so the corpus A/B can
+# price the change as a paired study on one tree, the way pass 1 priced normalisation. Unset
+# -- production and every other caller -- takes the cheap build.
+ROW_PAYLOAD_LEGACY = os.environ.get(ROW_PAYLOAD_ENV, "").strip().lower() == "legacy"
 
 RawJob = dict[str, Any]
 RawJobLike = Mapping[str, Any]
@@ -164,7 +173,29 @@ class CanonicalJob:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["lifecycleEvent"] = self.lifecycleEvent
-        payload["lifecycleReason"] = self.lifecycleReason
+        """This row's field->value payload, independent of every other payload.
+
+        ``asdict`` re-derives the field list, filters it, and recurses a deep copy over all
+        40 fields on every call, which is per-call machinery waste on a path a recorded run
+        hits ~2 million times for 30,053 rows. The field names cannot change, so this build
+        reads the same fields and copies the same containers as ``asdict`` did: equal in
+        value, and the same contract of one fresh top-level dict and fresh nested containers
+        per caller (pinned by ``tests/test_jobs_row_payload.py``).
+        """
+        if ROW_PAYLOAD_LEGACY:
+            return asdict(self)
+        payload: dict[str, Any] = {name: getattr(self, name) for name in CANONICAL_JOB_FIELDS}
+        for name in CANONICAL_JOB_CONTAINER_FIELDS:
+            payload[name] = deepcopy(payload[name])
         return payload
+
+
+# Read once, from the class, so a field added above cannot drift out of the payload.
+CANONICAL_JOB_FIELDS: tuple[str, ...] = tuple(CanonicalJob.__dataclass_fields__)
+# The fields ``asdict`` would deep-copy for us: the only mutable values in the model. Every
+# other field is a scalar that is shared by reference either way.
+CANONICAL_JOB_CONTAINER_FIELDS: tuple[str, ...] = (
+    "availabilityEvidence",
+    "sourceBundle",
+    "locations",
+)

@@ -31,6 +31,7 @@ from src.jobs.job_link_company import company_from_job_link
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
 from src.jobs.page_gating import looks_like_source_specific_static_noise_row
+from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import (
     REMOTEISH_TOKENS,
     clean_text,
@@ -502,7 +503,7 @@ def _build_canonical_job(
 
 
 def _score_canonical_job(normalized: CanonicalJob) -> CanonicalJob:
-    normalized_dict = normalized.to_dict()
+    normalized_dict = row_payload(normalized)
     return CanonicalJob.from_mapping(
         {
             **normalized_dict,

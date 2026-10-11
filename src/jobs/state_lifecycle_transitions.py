@@ -10,6 +10,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused lifecycle tests.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,10 +29,19 @@ from src.shared.utils import now_iso
 
 
 def _lifecycle_entry_from_active_job(
-    row: dict[str, Any],
+    row: Mapping[str, Any],
     previous: dict[str, Any],
     finished_at: str,
 ) -> dict[str, Any]:
+    """The lifecycle entry for an observed row, from ``previous`` and the row's own reads.
+
+    ``row`` may be a read-only payload view. This function used to write twelve lifecycle fields
+    into it on each branch, but the entry it returns is assembled from ``previous`` and the row's
+    *unwritten* fields, so those writes were never read -- not by the caller (which stores the
+    returned entry and discards the row) and not by anyone else, because the payload list they
+    came from was a private copy. Removing them is what lets the observed rows be views instead
+    of whole-row payloads; the entry is unchanged either way.
+    """
     first_seen_at = clean_text(previous.get("firstSeenAt")) or finished_at
     previous_status = norm_text(previous.get("status"))
     lifecycle_event = "reappeared" if previous_status in {"likely_removed", "archived"} else ""
@@ -51,20 +61,6 @@ def _lifecycle_entry_from_active_job(
         previous_availability == "unavailable"
         and norm_text(previous.get("availabilityClosureOrigin")) == "direct"
     ):
-        row["status"] = "likely_removed"
-        row["firstSeenAt"] = first_seen_at
-        row["lastSeenAt"] = finished_at
-        row["removedAt"] = clean_text(previous.get("removedAt"))
-        row["lifecycleEvent"] = "preserved"
-        row["lifecycleReason"] = "direct_closure_overrides_source"
-        row["availabilityId"] = availability_id
-        row["availabilityStatus"] = "unavailable"
-        row["availabilityCheckedAt"] = clean_text(previous.get("availabilityCheckedAt"))
-        row["availabilityVerifiedAt"] = clean_text(previous.get("availabilityVerifiedAt"))
-        row["availabilityUnavailableAt"] = clean_text(previous.get("availabilityUnavailableAt"))
-        row["availabilityEvidence"] = _normalize_availability_evidence(
-            previous.get("availabilityEvidence")
-        )
         return {
             **previous,
             "status": "likely_removed",
@@ -86,18 +82,7 @@ def _lifecycle_entry_from_active_job(
     if previous_availability in {"unavailable", "verification_overdue"}:
         lifecycle_event = "reappeared"
         transition_id = _availability_transition_id(availability_id, "available", finished_at)
-    row["status"] = "active"
-    row["firstSeenAt"] = first_seen_at
-    row["lastSeenAt"] = finished_at
-    row["removedAt"] = ""
-    row["lifecycleEvent"] = lifecycle_event
-    row["lifecycleReason"] = ""
-    row["availabilityId"] = availability_id
-    row["availabilityStatus"] = "available"
-    row["availabilityCheckedAt"] = finished_at
-    row["availabilityVerifiedAt"] = finished_at
-    row["availabilityUnavailableAt"] = ""
-    row["availabilityEvidence"] = {
+    evidence = {
         "kind": "source_present",
         "confidence": "definitive",
         "checkedAt": finished_at,
@@ -120,7 +105,7 @@ def _lifecycle_entry_from_active_job(
         "availabilityStatus": "available",
         "availabilityCheckedAt": finished_at,
         "availabilityVerifiedAt": finished_at,
-        "availabilityEvidence": dict(row["availabilityEvidence"]),
+        "availabilityEvidence": dict(evidence),
         "availabilityAliases": aliases,
         "availabilityClosureOrigin": "",
         "consecutiveAvailabilityFailures": 0,

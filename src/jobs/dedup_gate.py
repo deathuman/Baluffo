@@ -8,6 +8,7 @@ AI boundary implement in: this leaf for gate/accounting; targeting lives in
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.canonicalize import (
@@ -30,6 +31,7 @@ from src.jobs.dedup_targeting import (
     _social_key,
 )
 from src.jobs.models import CanonicalJob
+from src.jobs.row_payload import row_payload
 
 
 def _merge_reason_count_key(merge_reason: str) -> str:
@@ -46,7 +48,7 @@ def _merge_gate_tier(
     *,
     merge_reason: str,
     existing: CanonicalJob,
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
 ) -> tuple[str, str]:
     reason = clean_text(merge_reason)
     if reason == "primary_url":
@@ -55,7 +57,7 @@ def _merge_gate_tier(
         return "monitor", "known_gracklehq_gamesjobsdirect_mirror_pair"
     if reason == "social_key":
         return "blocking", "trusted_social_identity"
-    existing_class = _merge_source_class(existing.to_dict())
+    existing_class = _merge_source_class(row_payload(existing))
     incoming_class = _merge_source_class(payload)
     if reason in {"secondary_key", "sparse_identity"} and _is_provider_gracklehq_redirect_alias(
         existing=existing,
@@ -119,7 +121,7 @@ def _record_merge_sample(
     blocking_merge_samples_by_reason: dict[str, list[dict[str, str]]],
     merge_reason: str,
     existing: CanonicalJob,
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
     gate_tier: str,
     gate_tier_reason: str,
     limit_per_reason: int = 5,

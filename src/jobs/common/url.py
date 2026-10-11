@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from functools import lru_cache
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -16,10 +17,15 @@ from src.jobs.common.config import (
     SUPPORTED_REDIRECT_HOSTS,
 )
 from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
-from src.jobs.text_utils import normalize_url
+from src.jobs.text_utils import (
+    LEGACY_URL_NORMALIZATION,
+    URL_NORMALIZATION_CACHE_SIZE,
+    clean_text,
+    normalize_url,
+)
 
 
-def canonical_url_fingerprint_seed(url: Any) -> str:
+def _canonical_url_fingerprint_seed_uncached(url: str) -> str:
     normalized = normalize_url(url)
     if not normalized:
         return ""
@@ -55,12 +61,30 @@ def canonical_url_fingerprint_seed(url: Any) -> str:
     return normalized
 
 
+_canonical_url_fingerprint_seed_cached = lru_cache(maxsize=URL_NORMALIZATION_CACHE_SIZE)(
+    _canonical_url_fingerprint_seed_uncached
+)
+
+
+def canonical_url_fingerprint_seed(url: Any) -> str:
+    """This URL's dedup seed, memoised on the cleaned URL.
+
+    The key is ``clean_text(url)`` -- the same value the uncached body already derives through
+    ``normalize_url`` -- so a cache hit returns exactly the string the body would have built, and
+    the seed work (a ``urlparse`` plus a host-dispatch chain that reaches an ``ipaddress`` check)
+    runs once per distinct URL instead of once per call.
+    """
+    if LEGACY_URL_NORMALIZATION:
+        return _canonical_url_fingerprint_seed_uncached(clean_text(url))
+    return _canonical_url_fingerprint_seed_cached(clean_text(url))
+
+
 def fingerprint_url(url: Any) -> str:
     seed = canonical_url_fingerprint_seed(url)
     return hashlib.sha1(seed.encode("utf-8")).hexdigest() if seed else ""
 
 
-def is_public_job_url(url: Any) -> bool:
+def _is_public_job_url_uncached(url: str) -> bool:
     normalized = normalize_url(url)
     if not normalized:
         return False
@@ -77,6 +101,24 @@ def is_public_job_url(url: Any) -> bool:
             return True
     except ValueError:
         return False
+
+
+_is_public_job_url_cached = lru_cache(maxsize=URL_NORMALIZATION_CACHE_SIZE)(
+    _is_public_job_url_uncached
+)
+
+
+def is_public_job_url(url: Any) -> bool:
+    """Whether this URL is a publicly reachable job link, memoised on the cleaned URL.
+
+    The key is ``clean_text(url)`` for the same reason as ``canonical_url_fingerprint_seed``: it is
+    the value the body already derives first. The answer is a ``bool``, so a hit cannot be mutated
+    by anyone; the body's per-host work -- including an ``ipaddress.ip_address`` call that raises
+    for every hostname -- runs once per distinct URL.
+    """
+    if LEGACY_URL_NORMALIZATION:
+        return _is_public_job_url_uncached(clean_text(url))
+    return _is_public_job_url_cached(clean_text(url))
 
 
 def is_supported_redirect_url(url: Any) -> bool:
