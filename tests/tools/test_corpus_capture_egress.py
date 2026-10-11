@@ -92,8 +92,14 @@ def test_the_guard_allows_the_self_pipe_but_blocks_a_loopback_server() -> None:
             with pytest.raises(EgressBlocked):
                 socket.create_connection((host, int(port)), timeout=1)
 
-    # Two socketpairs: the one this test made, and the event loop's own self-pipe.
-    assert guard.socketpair_allowed == 2
+    # Two allowed socketpairs on Windows -- the one this test made and the event loop's own
+    # self-pipe -- because there ``socket.socketpair()`` is emulated over loopback, so each of them
+    # arrives at the guard as a connect. On Linux and macOS it is an AF_UNIX pair that connects to
+    # nothing, so the guard never has anything to allow and the count stays at zero. The guarantee
+    # itself is platform-independent and is proven above: neither socketpair was blocked (the pair
+    # came back usable) and ``asyncio.run`` completed inside the guard, which is the failure a real
+    # subset replay hit when the self-pipe *was* blocked.
+    assert guard.socketpair_allowed == (2 if sys.platform == "win32" else 0)
     assert (guard.blocked, guard.loopback_blocked, guard.remote_blocked) == (1, 1, 0)
     assert guard.targets == [f"{host}:{port}"]
 
