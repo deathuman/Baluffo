@@ -54,7 +54,7 @@
     "tests/source_discovery/test_directory_sources.py": 800,
     "tests/test_build_ship_bundle.py": 575,
     "tests/test_desktop_updater.py": 618,
-    "tests/test_jobs_fetcher_google_sheets.py": 474,
+    "tests/test_jobs_fetcher_google_sheets.py": 503,
     "tests/test_jobs_fetcher_parsing.py": 787,
     "tests/test_jobs_package.py": 224,
     "tests/test_perf_complete.py": 493,
