@@ -1,39 +1,14 @@
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 from unittest import mock
 
 from src import jobs_fetcher as jf
 from src.jobs import pipeline as pipeline_mod
 from src.shared.json_io import read_json
 from src.url_hosts import url_host_matches_domain
+from tests.helpers.compat_seams import patched_root_redirect_resolver
 from tests.helpers.job_fixtures import _fixture
 from tests.helpers.temp_paths import workspace_tmpdir
-
-
-@contextmanager
-def _patched_root_redirect_resolver(resolver: Any) -> Iterator[Any]:
-    """Patch the facade's resolver factory and leave ``src.jobs.pipeline`` as it was found.
-
-    ``fetcher_compat_runtime.run_pipeline`` copies the facade's binding onto the pipeline module
-    and restores only a value it *found* there (``if previous is not None``), so patching the
-    facade alone installs the fake on ``src.jobs.pipeline`` for the rest of the process -- every
-    later file an xdist worker runs included. A fake that resolves every link to one fixture
-    URL then rewrites another file's rows, which is how this leaked into CI.
-    """
-
-    missing = object()
-    previous = pipeline_mod.__dict__.get("build_redirect_resolver", missing)
-    with mock.patch.object(jf, "build_redirect_resolver", return_value=resolver) as builder:
-        try:
-            yield builder
-        finally:
-            if previous is missing:
-                pipeline_mod.__dict__.pop("build_redirect_resolver", None)
-            else:
-                pipeline_mod.__dict__["build_redirect_resolver"] = previous
 
 
 def test_parse_google_sheets_csv_fixture() -> None:
@@ -298,9 +273,11 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
             """Match real resolver's close(self) signature."""
             return None
 
+    missing = object()
+    seam_before = pipeline_mod.__dict__.get("build_redirect_resolver", missing)
     with workspace_tmpdir("jobs-fetcher-google") as tmp:
         out = Path(tmp)
-        with _patched_root_redirect_resolver(_FakeResolver()):
+        with patched_root_redirect_resolver(_FakeResolver()):
 
             def fake_fetch(url: str, _: int) -> str:
                 if url_host_matches_domain(url, "docs.google.com") or url_host_matches_domain(
@@ -347,9 +324,11 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
         source_state = (state_payload.get("sources") or {}).get("google_sheets") or {}
         assert str(source_state.get("lastAdapter") or "") == "csv"
     # The run goes through ``fetcher_compat_runtime.run_pipeline``, which copies the facade's
-    # resolver binding onto the pipeline module. Nothing may survive the run: a stale binding
-    # would be picked up by every later run in this process, in this file or any other.
-    assert "build_redirect_resolver" not in pipeline_mod.__dict__
+    # resolver binding onto the pipeline module: the fake must not survive it, or every later
+    # run in this process -- any file an xdist worker runs -- would resolve links through it.
+    # Compared by identity against the pre-run value, because an earlier run may legitimately
+    # have installed the real builder there.
+    assert pipeline_mod.__dict__.get("build_redirect_resolver", missing) is seam_before
 
 
 def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None:
@@ -411,7 +390,7 @@ def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None
             json.dumps(state_payload, indent=2), encoding="utf-8"
         )
 
-        with _patched_root_redirect_resolver(_FakeResolver()) as builder:
+        with patched_root_redirect_resolver(_FakeResolver()) as builder:
 
             def fake_fetch(url: str, _: int) -> str:
                 if url_host_matches_domain(url, "docs.google.com") or url_host_matches_domain(
