@@ -107,6 +107,42 @@ def test_cleanup_old_generations_keeps_current_generation() -> None:
             assert runtime.rows_for_generation(old.generation) == []
 
 
+def test_cleanup_old_generations_keep_generations_and_unconstrained() -> None:
+    bundle: list[dict[str, object]] = [{"sourceName": "Source", "sourceJobId": "id-1"}]
+    with workspace_tmpdir("job-runtime-cleanup-multi") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+            g1 = runtime.replace_feed(run_id="run_1", rows=[_row(1, source_bundle=bundle)])
+            g2 = runtime.replace_feed(run_id="run_2", rows=[_row(2, source_bundle=bundle)])
+            g3 = runtime.replace_feed(run_id="run_3", rows=[_row(3, source_bundle=bundle)])
+            g4 = runtime.replace_feed(run_id="run_4", rows=[_row(4, source_bundle=bundle)])
+            g5 = runtime.replace_feed(run_id="run_5", rows=[_row(5, source_bundle=bundle)])
+
+            # Keep 2 generations unconstrained
+            deleted = runtime.cleanup_old_generations(keep_generations=2, delete_cap=None)
+            assert deleted == 3
+
+            remaining_jobs = store.execute_read(
+                "SELECT DISTINCT feed_generation FROM jobs ORDER BY feed_generation"
+            )
+            assert len(remaining_jobs) == 2
+            assert g5.generation in [r["feed_generation"] for r in remaining_jobs]
+            assert g4.generation in [r["feed_generation"] for r in remaining_jobs]
+
+            # Sources for g1, g2, g3 should be completely gone
+            remaining_sources = store.execute_read(
+                "SELECT DISTINCT feed_generation FROM job_sources ORDER BY feed_generation"
+            )
+            assert len(remaining_sources) == 2
+
+            # Now clean down to keep_generations=1
+            deleted_last = runtime.cleanup_old_generations(keep_generations=1, delete_cap=None)
+            assert deleted_last == 1
+            final_jobs = store.execute_read("SELECT DISTINCT feed_generation FROM jobs")
+            assert len(final_jobs) == 1
+            assert final_jobs[0]["feed_generation"] == g5.generation
+
+
 def test_job_identity_fallbacks_are_stable_for_sparse_rows() -> None:
     assert _base_job_key({"dedupKey": "dedup-a", "jobLink": "https://example.test/1"}, 0) == (
         _base_job_key({"dedupKey": "dedup-a"}, 99)

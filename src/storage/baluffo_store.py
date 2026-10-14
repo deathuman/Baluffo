@@ -31,6 +31,8 @@ DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES = 64 * 1024 * 1024
 DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES = 256 * 1024 * 1024
 DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
 DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES = 64 * 1024 * 1024
+DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES = 50 * 1024 * 1024
+DEFAULT_VACUUM_FREELIST_RATIO = 0.20
 MIGRATIONS_PACKAGE = "src.storage.migrations"
 STORAGE_SCHEMA_VERSION = 1
 
@@ -85,6 +87,8 @@ class BaluffoStore:
         wal_checkpoint_threshold_bytes: int = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES,
         wal_truncate_threshold_bytes: int = DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES,
         quick_check_max_database_bytes: int = DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES,
+        vacuum_freelist_threshold_bytes: int = DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES,
+        vacuum_freelist_ratio: float = DEFAULT_VACUUM_FREELIST_RATIO,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.db_name = str(db_name or DEFAULT_DB_NAME)
@@ -98,6 +102,8 @@ class BaluffoStore:
             self.wal_checkpoint_threshold_bytes, int(wal_truncate_threshold_bytes)
         )
         self.quick_check_max_database_bytes = max(1, int(quick_check_max_database_bytes))
+        self.vacuum_freelist_threshold_bytes = max(1, int(vacuum_freelist_threshold_bytes))
+        self.vacuum_freelist_ratio = max(0.01, min(1.0, float(vacuum_freelist_ratio)))
         self._last_write_error = ""
         self._busy_count = 0
         self._write_attempts = 0
@@ -108,6 +114,13 @@ class BaluffoStore:
             "reason": "",
             "mode": "",
             "durationMs": 0,
+            "error": "",
+        }
+        self._last_vacuum: dict[str, Any] = {
+            "status": "not-run",
+            "reason": "",
+            "durationMs": 0,
+            "reclaimedBytes": 0,
             "error": "",
         }
         self._maintenance_thread: threading.Thread | None = None
@@ -247,6 +260,7 @@ class BaluffoStore:
                 self._last_write_error = ""
                 self._write_transactions += 1
                 self.schedule_wal_maintenance_if_needed(reason="write")
+                self.schedule_compaction_if_needed(reason="write")
                 return result
             except sqlite3.OperationalError as exc:
                 self._rollback_after_error()
@@ -472,11 +486,25 @@ class BaluffoStore:
         except OSError:
             return 0
 
+    def freelist_info(self) -> dict[str, int]:
+        try:
+            freelist_count = int(self.execute_scalar("PRAGMA freelist_count") or 0)
+            page_size = int(self.execute_scalar("PRAGMA page_size") or 4096)
+            return {
+                "freelistCount": freelist_count,
+                "pageSize": page_size,
+                "freelistBytes": freelist_count * page_size,
+            }
+        except (BaluffoStoreError, sqlite3.Error, OSError):
+            return {"freelistCount": 0, "pageSize": 4096, "freelistBytes": 0}
+
     def file_sizes(self) -> dict[str, int]:
+        freelist_bytes = self.freelist_info()["freelistBytes"]
         return {
             "databaseBytes": self._path_size(self.db_path),
             "walBytes": self._path_size(self.db_path.with_name(f"{self.db_path.name}-wal")),
             "shmBytes": self._path_size(self.db_path.with_name(f"{self.db_path.name}-shm")),
+            "freelistBytes": freelist_bytes,
         }
 
     def wal_maintenance_status(self) -> dict[str, Any]:
@@ -561,6 +589,93 @@ class BaluffoStore:
         with self._maintenance_lock:
             self._last_checkpoint = status
 
+    def vacuum(self, *, reason: str = "") -> dict[str, Any]:
+        started = time.perf_counter()
+        before_bytes = self._path_size(self.db_path)
+        last_busy_error: sqlite3.OperationalError | None = None
+        for attempt in range(self.busy_retry_attempts):
+            try:
+                with self._write_lock:
+                    self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self._writer.execute("VACUUM")
+                    self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self._last_write_error = ""
+                after_bytes = self._path_size(self.db_path)
+                reclaimed = max(0, before_bytes - after_bytes)
+                status = {
+                    "status": "ok",
+                    "reason": str(reason or ""),
+                    "durationMs": int(round((time.perf_counter() - started) * 1000)),
+                    "beforeBytes": before_bytes,
+                    "afterBytes": after_bytes,
+                    "reclaimedBytes": reclaimed,
+                    "error": "",
+                }
+                with self._maintenance_lock:
+                    self._last_vacuum = status
+                return status
+            except sqlite3.OperationalError as exc:
+                if not _is_busy_error(exc):
+                    self._healthy = False
+                    self._last_write_error = str(exc)
+                    raise
+                last_busy_error = exc
+                self._busy_count += 1
+                self._last_write_error = str(exc)
+                if attempt + 1 >= self.busy_retry_attempts:
+                    self._healthy = False
+                    break
+                self._sleep_for_retry(attempt)
+        message = f"SQLite VACUUM failed after busy retry attempts: {last_busy_error}"
+        LOGGER.error(message)
+        status = {
+            "status": "failed",
+            "reason": str(reason or ""),
+            "durationMs": int(round((time.perf_counter() - started) * 1000)),
+            "beforeBytes": before_bytes,
+            "afterBytes": before_bytes,
+            "reclaimedBytes": 0,
+            "error": message,
+        }
+        with self._maintenance_lock:
+            self._last_vacuum = status
+        raise BaluffoStoreError(message)
+
+    def compaction_status(self) -> dict[str, Any]:
+        with self._maintenance_lock:
+            return {
+                **self._last_vacuum,
+                "freelistThresholdBytes": self.vacuum_freelist_threshold_bytes,
+                "freelistRatio": self.vacuum_freelist_ratio,
+            }
+
+    def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
+        sizes = self.file_sizes()
+        freelist_bytes = int(sizes.get("freelistBytes") or 0)
+        database_bytes = int(sizes.get("databaseBytes") or 0)
+        if freelist_bytes < self.vacuum_freelist_threshold_bytes:
+            return False
+        if database_bytes > 0 and (freelist_bytes / database_bytes) < self.vacuum_freelist_ratio:
+            return False
+        with self._maintenance_lock:
+            if self._maintenance_thread is not None and self._maintenance_thread.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._run_compaction_maintenance,
+                kwargs={"reason": str(reason or "")},
+                name="baluffo-sqlite-compaction-maintenance",
+                daemon=True,
+            )
+            self._maintenance_thread = thread
+            thread.start()
+            return True
+
+    def _run_compaction_maintenance(self, *, reason: str) -> None:
+        try:
+            self.vacuum(reason=reason)
+        except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
+            LOGGER.warning("SQLite compaction maintenance failed: %s", exc)
+
     def backup_to(self, target_path: Path | str) -> Path:
         quick_check = self.quick_check()
         if quick_check != "ok":
@@ -637,6 +752,7 @@ class BaluffoStore:
             "writeAttempts": self._write_attempts,
             "writeTransactions": self._write_transactions,
             "walMaintenance": self.wal_maintenance_status(),
+            "compaction": self.compaction_status(),
             "authorityModes": self.get_authority_modes(),
         }
 

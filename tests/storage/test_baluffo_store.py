@@ -359,3 +359,42 @@ def test_execute_read_reraises_non_busy_operational_error_without_retry() -> Non
                 store.execute_read("SELECT 1 AS value")
 
             assert attempts == 1
+
+
+def test_store_freelist_info_and_vacuum_reclaims_pages() -> None:
+    with workspace_tmpdir("baluffo-store-vacuum") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.write(lambda conn: conn.execute("CREATE TABLE test_bloat (id INT, data TEXT)"))
+            # Insert large payload rows to create enough pages for a meaningful vacuum
+            large_text = "x" * 20000
+            bloat_rows: list[tuple[int, str]] = [(i, large_text) for i in range(100)]
+
+            def insert_bloat(conn: sqlite3.Connection) -> None:
+                conn.executemany("INSERT INTO test_bloat VALUES (?, ?)", bloat_rows)
+
+            store.write(insert_bloat)
+
+            store.checkpoint_required(mode="TRUNCATE")
+            sizes_before_delete = store.file_sizes()
+            assert sizes_before_delete["databaseBytes"] > 100_000
+
+            # Delete rows and checkpoint to create freelist pages in the db file
+            store.write(lambda conn: conn.execute("DELETE FROM test_bloat"))
+            store.checkpoint_required(mode="TRUNCATE")
+            info = store.freelist_info()
+            assert info["freelistCount"] > 0
+            assert info["freelistBytes"] > 0
+            assert store.file_sizes()["freelistBytes"] == info["freelistBytes"]
+
+            # Vacuum
+            vac_result = store.vacuum(reason="unit-test")
+            assert vac_result["status"] == "ok"
+            assert vac_result["reclaimedBytes"] > 0
+
+            info_after = store.freelist_info()
+            assert info_after["freelistCount"] == 0
+            assert info_after["freelistBytes"] == 0
+
+            health = store.health()
+            assert health["compaction"]["status"] == "ok"
+            assert health["compaction"]["reason"] == "unit-test"

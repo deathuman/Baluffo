@@ -454,6 +454,19 @@ class DesktopUpdateService:
                 )
             )
 
+    def _prune_obsolete_downloads(self, keep_path: Path | None = None) -> list[str]:
+        if not self.paths.downloads_dir.exists():
+            return []
+        removed: list[str] = []
+        keep_resolved = keep_path.resolve() if keep_path is not None else None
+        for file in self.paths.downloads_dir.glob("*.zip"):
+            if keep_resolved is not None and file.resolve() == keep_resolved:
+                continue
+            with contextlib.suppress(OSError):
+                file.unlink()
+                removed.append(file.name)
+        return removed
+
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
         artifact = _as_dict(manifest.get("portable_artifact"))
         target = self.paths.downloads_dir / _portable_artifact_name(manifest)
@@ -487,6 +500,7 @@ class DesktopUpdateService:
             expected_hash = str(artifact.get("sha256") or "").strip().lower()
             if expected_hash and compute_sha256(target).lower() != expected_hash:
                 raise RuntimeError("Downloaded portable ZIP checksum mismatch.")
+            self._prune_obsolete_downloads(keep_path=target)
             save_status(
                 self.paths,
                 {

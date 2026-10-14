@@ -378,26 +378,75 @@ class JobRuntimeStore:
     def parity_hash(self, rows: Sequence[Mapping[str, Any]] | None = None) -> str:
         return jobs_feed_rows_hash(self.current_rows() if rows is None else rows)
 
-    def cleanup_old_generations(self, *, delete_cap: int = DEFAULT_GENERATION_DELETE_CAP) -> int:
+    def cleanup_old_generations(
+        self,
+        *,
+        delete_cap: int | None = DEFAULT_GENERATION_DELETE_CAP,
+        keep_generations: int = 1,
+    ) -> int:
+        if delete_cap is not None and int(delete_cap) <= 0:
+            return 0
         current = self.current_generation()
-        rows = self.store.execute_read(
-            """
-            SELECT feed_generation
-            FROM jobs
-            WHERE feed_generation != ?
-            GROUP BY feed_generation
-            ORDER BY MIN(updated_at) ASC
-            LIMIT ?
-            """,
-            (current, max(0, int(delete_cap or 0))),
-        )
-        generations = [_clean_text(row.get("feed_generation")) for row in rows]
+        keep_count = max(1, int(keep_generations or 1))
+        if keep_count <= 1:
+            if delete_cap is None:
+                rows = self.store.execute_read(
+                    """
+                    SELECT feed_generation
+                    FROM jobs
+                    WHERE feed_generation != ?
+                    GROUP BY feed_generation
+                    ORDER BY MIN(updated_at) ASC
+                    """,
+                    (current,),
+                )
+            else:
+                rows = self.store.execute_read(
+                    """
+                    SELECT feed_generation
+                    FROM jobs
+                    WHERE feed_generation != ?
+                    GROUP BY feed_generation
+                    ORDER BY MIN(updated_at) ASC
+                    LIMIT ?
+                    """,
+                    (current, int(delete_cap)),
+                )
+            generations = [_clean_text(row.get("feed_generation")) for row in rows]
+        else:
+            all_gens = self.store.execute_read(
+                """
+                SELECT feed_generation, MAX(updated_at) as latest_updated, MAX(rowid) as latest_rowid
+                FROM jobs
+                GROUP BY feed_generation
+                ORDER BY latest_updated DESC, latest_rowid DESC
+                """
+            )
+            to_keep = {current}
+            for row in all_gens:
+                gen = _clean_text(row.get("feed_generation"))
+                if gen:
+                    to_keep.add(gen)
+                if len(to_keep) >= keep_count:
+                    break
+            candidates = [
+                _clean_text(row.get("feed_generation"))
+                for row in all_gens
+                if _clean_text(row.get("feed_generation")) not in to_keep
+            ]
+            candidates.reverse()
+            if delete_cap is not None:
+                generations = candidates[: int(delete_cap)]
+            else:
+                generations = candidates
+
         generations = [generation for generation in generations if generation]
         if not generations:
             return 0
 
         def delete_old(conn: Any) -> None:
             for generation in generations:
+                conn.execute("DELETE FROM job_sources WHERE feed_generation = ?", (generation,))
                 conn.execute("DELETE FROM jobs WHERE feed_generation = ?", (generation,))
 
         self.store.write(delete_old)

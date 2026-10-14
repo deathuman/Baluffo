@@ -375,6 +375,10 @@ def reconcile_jobs_feed_availability(
                 write_availability_tombstones(
                     tombstone_path, next_tombstones, updated_at=ctx.now_iso()
                 )
+                try:
+                    runtime_store.cleanup_old_generations(keep_generations=2, delete_cap=None)
+                except (OSError, RuntimeError, sqlite3.Error):
+                    pass
                 return snapshot
             except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
                 rollback_jobs_feed_reconciliation(ctx, snapshot)
@@ -477,7 +481,7 @@ def mirror_jobs_feed_rows(
             ):
                 return False
             if cleanup_old_generations:
-                runtime_store.cleanup_old_generations()
+                runtime_store.cleanup_old_generations(keep_generations=1, delete_cap=None)
             _record_jobs_feed_diagnostic(
                 ctx,
                 code="jobs_feed_projection_match",

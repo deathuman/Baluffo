@@ -217,3 +217,49 @@ def test_run_download_worker_does_not_abort_when_progress_status_write_fails(mon
         assert status["downloadState"] == "downloaded"
         assert status["installState"] == "ready"
         assert status["downloadedZipPath"]
+
+
+def test_prune_obsolete_downloads_keeps_only_kept_path() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        downloads_dir = service.paths.downloads_dir
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+
+        old_zip = downloads_dir / "baluffo-portable-0.3.008.zip"
+        new_zip = downloads_dir / "baluffo-portable-0.3.017.zip"
+        old_zip.write_text("zip-old", encoding="utf-8")
+        new_zip.write_text("zip-new", encoding="utf-8")
+
+        removed = service._prune_obsolete_downloads(keep_path=new_zip)
+
+        assert removed == ["baluffo-portable-0.3.008.zip"]
+        assert not old_zip.exists()
+        assert new_zip.exists()
+
+
+def test_prune_obsolete_downloads_removes_all_when_no_keep_path() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        downloads_dir = service.paths.downloads_dir
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+
+        a = downloads_dir / "a.zip"
+        b = downloads_dir / "b.zip"
+        a.write_text("a", encoding="utf-8")
+        b.write_text("b", encoding="utf-8")
+
+        removed = service._prune_obsolete_downloads()
+
+        assert set(removed) == {"a.zip", "b.zip"}
+        assert not a.exists()
+        assert not b.exists()
+
+
+def test_prune_obsolete_downloads_noop_when_dir_missing() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+
+        assert service._prune_obsolete_downloads() == []
