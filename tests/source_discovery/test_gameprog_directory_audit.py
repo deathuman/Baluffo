@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from src.source_discovery import gameprog
+from src.source_discovery.orchestrator_generation import _scan_gameprog
+from src.source_discovery.orchestrator_runtime import DiscoveryRunDeps
 from tests.helpers.report_state import fetch_from
 
 from ._helpers import sd, workspace_tmpdir
@@ -28,7 +32,7 @@ def _gameprog_payloads() -> dict[str, str]:
     }
 
 
-def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> None:
+def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries(monkeypatch) -> None:
     with workspace_tmpdir("gameprog-audit-missing") as root:
         audit_path = root / "gameprog-audit.json"
         config = {
@@ -42,13 +46,39 @@ def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> Non
             }
         }
 
-        artifact, cache_hit = gameprog.run_gameprog_directory_audit(
-            5,
-            config=config,
-            fetcher=_fetch_from(_gameprog_payloads()),
-        )
+        scan_result = {}
+        original_scan = gameprog._gameprog_scan
 
-        assert cache_hit is False
+        def capture_scan(*args, **kwargs):
+            scan_result["value"] = original_scan(*args, **kwargs)
+            return scan_result["value"]
+
+        monkeypatch.setattr(gameprog, "_gameprog_scan", capture_scan)
+        _scan_gameprog(
+            orchestrator=sd,
+            deps=cast(
+                DiscoveryRunDeps,
+                SimpleNamespace(
+                    effective_config=config,
+                    timeout_s=5,
+                    fetcher=_fetch_from(_gameprog_payloads()),
+                    run_id="outer-gameprog-run",
+                ),
+            ),
+        )
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert "pageFetchLifecycle" in scan_result["value"]
+        lifecycle = artifact["pageFetchLifecycle"]
+        lifecycle_batches = (
+            lifecycle.get("batches", [lifecycle]) if isinstance(lifecycle, dict) else lifecycle
+        )
+        assert any(
+            batch.get("runId") == "outer-gameprog-run"
+            and batch.get("source") == "gameprog"
+            and batch.get("phase")
+            and batch.get("batchId")
+            for batch in lifecycle_batches
+        )
         assert audit_path.exists()
         assert artifact["schemaVersion"] == gameprog.GAMEPROG_AUDIT_SCHEMA_VERSION
         assert artifact["progress"]["complete"] is True

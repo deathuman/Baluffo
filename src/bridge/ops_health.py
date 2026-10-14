@@ -753,6 +753,26 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             sync_status=sync_status,
             history=history,
         )
+    get_probe_lifecycle = getattr(deps, "get_probe_lifecycle_payload", None)
+    probe_lifecycle: dict[str, Any] = {}
+    if callable(get_probe_lifecycle):
+        with time_operation("ops.dashboard.probe_lifecycle"):
+            try:
+                probe_lifecycle = as_json_object(get_probe_lifecycle())
+            except (OSError, TypeError, ValueError):
+                probe_lifecycle = {}
+
+    # The page-fetch receipt rides alongside the probe receipt, never under it: they answer
+    # different questions (probe-wave abandonment vs directory/web-search page fetches) and a
+    # reader must be able to see one without the other.
+    get_page_fetch_lifecycle = getattr(deps, "get_page_fetch_lifecycle_payload", None)
+    page_fetch_lifecycle: dict[str, Any] = {}
+    if callable(get_page_fetch_lifecycle):
+        with time_operation("ops.dashboard.page_fetch_lifecycle"):
+            try:
+                page_fetch_lifecycle = as_json_object(get_page_fetch_lifecycle())
+            except (OSError, TypeError, ValueError):
+                page_fetch_lifecycle = {}
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])
@@ -811,6 +831,8 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "conservativeStaticCleanupProposals": conservative_static_cleanup_proposals,
             "sourcePolicyRecommendationExport": source_policy_recommendation_export,
             "registrySync": registry_sync,
+            "probeLifecycle": probe_lifecycle,
+            "pageFetchLifecycle": page_fetch_lifecycle,
             "socialExperiment": {
                 "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),
                 "pilotWindowEndAt": str(social_summary.get("pilotWindowEndAt") or ""),

@@ -246,6 +246,165 @@ def test_active_audit_batch_prunes_secondary_generated_paths_after_primary_not_f
     assert result.timing["secondaryRecoveryJobs"] == 1
 
 
+def test_active_audit_batch_keeps_secondary_paths_only_where_wave1_left_the_question_open() -> None:
+    """A generated guess that answered settles the host; a guess that was not read does not.
+
+    The third case of one question, beside `recoverySkippedByGeneratedNotFound`: measured on the
+    audit's own population this drops 928 of 1,304 second-wave requests (232 of 326 hosts), and the
+    wave's one candidate in either of two full runs came from a host of the kept kind.
+    """
+    artifact: dict[str, object] = {"progress": {"batchesCompleted": 0}, "timings": {}}
+    recovery_fetches: list[list[str]] = []
+
+    def job(url: str, homepage: str, source: str) -> dict[str, object]:
+        return {
+            "url": url,
+            "payload": {"homepageUrl": homepage, "recoveryUrlSource": source},
+            "recoveryUrlSource": source,
+        }
+
+    def result(
+        url: str, homepage: str, source: str, ok: bool, error: str = ""
+    ) -> dict[str, object]:
+        return {
+            "url": url,
+            "payload": {"homepageUrl": homepage, "recoveryUrlSource": source},
+            "ok": ok,
+            "text": "<html></html>" if ok else "",
+            "error": error,
+        }
+
+    def fetch_recovery(jobs, _label):
+        recovery_fetches.append([str(job_.get("url") or "") for job_ in jobs])
+        if len(recovery_fetches) == 1:
+            return ActiveAuditRecoveryFetchResult(
+                results=[
+                    # Its own generated guess answered: the site's careers page has been read.
+                    result(
+                        "https://guessed.example/careers",
+                        "https://guessed.example",
+                        "generated_common_path",
+                        ok=True,
+                    ),
+                    # Every generated guess 404'd, but the homepage linked a job-ish page that
+                    # answered: wave 2 still has somewhere to look.
+                    result(
+                        "https://linked.example/careers",
+                        "https://linked.example",
+                        "generated_common_path",
+                        ok=False,
+                        error="Client error '404 Not Found'",
+                    ),
+                    result(
+                        "https://linked.example/joinus",
+                        "https://linked.example",
+                        "html_jobish_link",
+                        ok=True,
+                    ),
+                    # Nothing about this host could be read at all.
+                    result(
+                        "https://silent.example/careers",
+                        "https://silent.example",
+                        "generated_common_path",
+                        ok=False,
+                        error="Client error '403 Forbidden'",
+                    ),
+                ],
+                unique_jobs=len(jobs),
+                network_jobs=len(jobs),
+            )
+        return ActiveAuditRecoveryFetchResult(results=[], unique_jobs=0, network_jobs=0)
+
+    result_row = run_active_audit_batch(
+        artifact=artifact,
+        batch_rows=[
+            {"url": "https://guessed.example"},
+            {"url": "https://linked.example"},
+            {"url": "https://silent.example"},
+        ],
+        cursor=3,
+        batch_number=1,
+        strategy=ActiveAuditBatchStrategy(
+            prepare_rows=lambda rows: ActiveAuditPreparedRows(homepage_rows=rows),
+            fetch_homepages=lambda rows: [
+                {"ok": True, "url": row["url"], "payload": row, "text": "<html></html>"}
+                for row in rows
+            ],
+            analyze_homepages=lambda _results: ActiveHomepageBatchResult(
+                primary_recovery_jobs=[
+                    job(
+                        "https://guessed.example/careers",
+                        "https://guessed.example",
+                        "generated_common_path",
+                    ),
+                    job(
+                        "https://linked.example/careers",
+                        "https://linked.example",
+                        "generated_common_path",
+                    ),
+                    job(
+                        "https://silent.example/careers",
+                        "https://silent.example",
+                        "generated_common_path",
+                    ),
+                ],
+                secondary_recovery_jobs=[
+                    job(
+                        "https://guessed.example/about/careers",
+                        "https://guessed.example",
+                        "generated_common_path",
+                    ),
+                    job(
+                        "https://guessed.example/join-us",
+                        "https://guessed.example",
+                        "generated_common_path",
+                    ),
+                    job(
+                        "https://linked.example/about/careers",
+                        "https://linked.example",
+                        "generated_common_path",
+                    ),
+                    job(
+                        "https://silent.example/about/careers",
+                        "https://silent.example",
+                        "generated_common_path",
+                    ),
+                ],
+            ),
+            fetch_recovery=fetch_recovery,
+            apply_recovery=lambda results, grouped, finalize: ActiveAuditRecoveryApplicationResult(
+                pages_fetched=sum(1 for result in results if result.get("ok")),
+                grouped_state=grouped or {},
+                recovered_homepages=set(),
+            ),
+            recovery_homepage_key=lambda job: str(job.get("payload", {}).get("homepageUrl") or ""),
+            merge_candidates=lambda *_args: ActiveAuditCandidateMergeResult(candidates=[]),
+            merge_artifact_updates=lambda *_args: None,
+            update_summary=lambda _summary: None,
+            probe_candidates=lambda _candidates: [],
+            apply_probe_results=lambda _results: None,
+            row_identity=lambda row: str(row.get("url") or ""),
+            append_timing=lambda _timing: None,
+        ),
+        completed_identities=set(),
+    )
+
+    assert recovery_fetches == [
+        [
+            "https://guessed.example/careers",
+            "https://linked.example/careers",
+            "https://silent.example/careers",
+        ],
+        [
+            "https://linked.example/about/careers",
+            "https://silent.example/about/careers",
+        ],
+    ]
+    assert result_row.timing["recoverySkippedByGeneratedAnswered"] == 2
+    assert result_row.timing["recoverySkippedByGeneratedNotFound"] == 0
+    assert result_row.timing["secondaryRecoveryJobs"] == 2
+
+
 def test_active_audit_loop_writes_complete_when_no_rows_remain() -> None:
     artifact: dict[str, object] = {"progress": {}}
     order: list[str] = []

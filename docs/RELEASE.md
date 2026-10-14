@@ -29,11 +29,17 @@ For example, when the latest public desktop release is behind `main`, the releas
 - a deferred desktop release, with the gap recorded in Basic Memory or the release handoff.
 
 The decision is now failed rather than remembered. `tools/repo_health/release_docs_policy.py`
-fails the docs guardrail when a versioned changelog section other than the version in flight
-carries no `v<version>` tag, because that section describes a release nobody can install —
-`0.3.016` sat that way under a bumped `0.3.017`. The check reads the local tag list (offline,
-like the container version gate) and declines to judge a shallow or `--no-tags` checkout,
-which holds no trustworthy tag list.
+fails the docs guardrail when a versioned changelog section is stranded *below the last
+tagged release* — that is, when an untagged section is strictly older than the newest
+versioned section that carries a `v<version>` tag, because that section describes a release
+nobody can ship. The git tag is deliberately *not* the only release marker here: Baluffo
+publishes by version string (the GHCR image tag comes from `src/app_version.py`, not a git
+tag), so a real release can exist untagged — `0.3.018` shipped on GHCR with no
+`v0.3.018` tag — and both the in-flight version and the release just shipped are allowed to
+wait untagged above the newest tag. A strand below the newest tag is what `0.3.016` was when
+`0.3.017` released. The check reads the local tag list (offline, like the container version
+gate) and declines to judge a shallow or `--no-tags` checkout, which holds no trustworthy
+tag list.
 
 Do not move or recreate an existing desktop tag to fix release-note scope. Bump forward and keep the old tag as historical evidence.
 

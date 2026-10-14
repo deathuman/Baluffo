@@ -17,6 +17,12 @@ rows/concurrency so one candidate cannot hold the stage.
 Both are the same class as the shared/http_batch total-deadline defect found via the
 GameDevMap stall.
 
+The batch's other two contracts have their own modules, because this one is at the repo's
+test-shape budget with them included: the permit order in
+`tests/source_discovery/test_probe_batch_permits.py`, and the shared client's lifecycle -- who owns
+it when a fetch outlives its own deadline -- in
+`tests/source_discovery/test_probe_batch_client_lifecycle.py`.
+
 Test style follows the repo convention (`asyncio.run` inside sync test functions;
 there are no `async def test_` functions in this suite).
 """
@@ -31,9 +37,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+import httpx
 import pytest
 
 from src.source_discovery import probe_runtime
+from tests.helpers.concurrency import BlockingActiveCounter
 
 # Models a stuck socket read. `time.sleep` is uninterruptible, so the orphaned
 # thread holds the default executor open until `asyncio.run` drains it -- paid
@@ -235,12 +243,21 @@ async def _probe_fetching_its_url(
 
 
 def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
-    """A trickling board must fail at its own timeout, not park the batch until it finishes."""
+    """A trickling board must fail at its own timeout, not park the batch until it finishes.
+
+    The receipt is read here too, on the real client rather than a fake: this is the one test that
+    drives the default path end to end against a peer that outlives its per-call bound, so it is the
+    one that proves the counters a live run reads are the real path's -- in particular that
+    `fetchesThroughClient` counts these fetches at all (it reads `fetcher is default_fetcher`, and a
+    live artifact whose client counts were silently zero would say nothing). What it reports at the
+    batch's exit is the leak shape: every fetch abandoned, the client still open.
+    """
     with _drip_server() as drip_url:
         candidates = [
             {"id": f"c{i}", "url": f"{drip_url}?i={i}", "adapter": "static"} for i in range(3)
         ]
         timeout_s = 2
+        lifecycle = probe_runtime.ProbeBatchLifecycle()
 
         def _call() -> tuple[list[Any], float]:
             elapsed = 0.0
@@ -255,6 +272,7 @@ def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
                         fetcher=probe_runtime.fetch_text,  # IS default_fetcher
                         async_probe=_probe_fetching_its_url,
                         default_fetcher=probe_runtime.fetch_text,
+                        lifecycle=lifecycle,
                     )
                 finally:
                     elapsed = time.perf_counter() - started
@@ -262,6 +280,7 @@ def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
             return asyncio.run(_inner()), elapsed
 
         results, batch_elapsed = _call()
+        receipt = lifecycle.snapshot()
 
     assert len(results) == len(candidates), "one result per candidate is the contract"
     assert batch_elapsed < _DRIP_BOUND_ASSERT_S, (
@@ -274,6 +293,20 @@ def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
     assert all("timed out" in str(error) for _row, _ok, _j, error, _ms in results), [
         error for _row, _ok, _j, error, _ms in results
     ]
+    assert receipt["poolWorkers"] == len(candidates)
+    assert receipt["fetchesStarted"] == len(candidates)
+    assert receipt["fetchesThroughClient"] == len(candidates), (
+        "the default httpx path must be counted as client-carried, or a live run's client "
+        "counters read zero however many fetches it abandons"
+    )
+    assert receipt["fetchesBoundedOut"] == len(candidates)
+    assert receipt["fetchesOutstandingAtExit"] == len(candidates), "every fetch outlived the batch"
+    assert receipt["clientFetchesOutstandingAtExit"] == len(candidates)
+    assert receipt["clientClosed"] is False, (
+        "this is the leak shape the receipt exists to surface: a live run reads it as an open client"
+    )
+    assert receipt["clientRetiredBy"] == "unclosed"
+    assert receipt["deadlineExit"] is False, "the batch returned on its own, not on its deadline"
 
 
 def test_batch_deadline_reports_the_candidates_it_cut_short() -> None:
@@ -314,17 +347,24 @@ def test_batch_deadline_reports_the_candidates_it_cut_short() -> None:
     ), results
 
 
-def test_default_fetcher_path_still_uses_the_httpx_client(
+def test_default_fetcher_path_runs_its_httpx_request_on_the_batch_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The fix must not disturb the bounded default branch."""
-    calls: list[tuple[str, int]] = []
+    """The default path still speaks httpx, but its request runs off the loop.
 
-    async def fake_async_fetch(client: Any, url: str, timeout_s: int) -> str:
-        calls.append((url, timeout_s))
+    `httpx`'s async client executes the TLS handshake, the HTTP/1.1 parse and the body accumulation
+    on the event loop thread, which is the wave's one thread: measured 7.33 ms of loop CPU per
+    candidate against 1.64 ms with the same requests on the wave's own pool. So the default path must
+    reach httpx through the pool -- the client it hands the helper is still an `httpx.Client` (same
+    request shape, same certifi trust), and the thread doing the work must be the batch's.
+    """
+    calls: list[tuple[str, int, str, Any]] = []
+
+    def fake_sync_fetch(client: Any, url: str, timeout_s: int) -> str:
+        calls.append((url, timeout_s, threading.current_thread().name, client))
         return "<html>ok</html>"
 
-    monkeypatch.setattr(probe_runtime, "async_fetch_text_httpx", fake_async_fetch)
+    monkeypatch.setattr(probe_runtime, "fetch_text_httpx", fake_sync_fetch)
 
     async def probe_using_fetcher(
         row: dict[str, Any], timeout_s: int, *, fetcher: Any, **_kwargs: Any
@@ -332,8 +372,12 @@ def test_default_fetcher_path_still_uses_the_httpx_client(
         await fetcher(f"https://default.invalid/{row.get('id')}", timeout_s)
         return True, 2, ""
 
-    results = asyncio.run(
-        asyncio.wait_for(
+    loop_thread_name = ""
+
+    async def _inner() -> list[Any]:
+        nonlocal loop_thread_name
+        loop_thread_name = threading.current_thread().name
+        return await asyncio.wait_for(
             probe_runtime.run_bounded_probe_batch_async(
                 [{"id": "c0", "adapter": "static"}],
                 timeout_s=3,
@@ -343,7 +387,123 @@ def test_default_fetcher_path_still_uses_the_httpx_client(
             ),
             timeout=20,
         )
-    )
+
+    results = asyncio.run(_inner())
 
     assert len(results) == 1
-    assert calls, "the default path must still call the httpx-based fetcher"
+    assert calls, "the default path must still fetch through httpx"
+    _url, _timeout, thread_name, client = calls[0]
+    assert thread_name.startswith("probe-fetch"), (
+        f"the default httpx request must run on this batch's pool, ran on {thread_name!r}"
+    )
+    assert thread_name != loop_thread_name, "the loop thread must not do the request"
+    assert isinstance(client, httpx.Client), (
+        "the default path must keep an httpx client (shared keep-alive pool and certifi trust)"
+    )
+
+
+def test_default_path_fetches_run_at_the_configured_lanes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The batch pool carries the default (httpx) path too, sized to the configured lanes.
+
+    Same contract as the wrapping-fetcher case beside it, for the path every audit run takes: the
+    default requests must reach the configured lane count, not the shared default executor's
+    `min(32, cpu_count + 4)`.
+    """
+    lanes = int(probe_runtime.probe_concurrency_defaults()["total"])
+    candidates = [{"id": f"c{i}", "adapter": "greenhouse"} for i in range(lanes)]
+    fetches = BlockingActiveCounter()
+    released = threading.Event()
+    thread_names: set[str] = set()
+    lock = threading.Lock()
+
+    def fake_sync_fetch(_client: Any, url: str, _timeout_s: int) -> str:
+        with lock:
+            thread_names.add(threading.current_thread().name)
+        fetches.enter()
+        try:
+            if fetches.peak >= lanes:
+                released.set()
+            released.wait(timeout=2.0)
+            return f"<html>{url}</html>"
+        finally:
+            fetches.exit()
+
+    monkeypatch.setattr(probe_runtime, "fetch_text_httpx", fake_sync_fetch)
+
+    async def _inner() -> list[Any]:
+        return await asyncio.wait_for(
+            probe_runtime.run_bounded_probe_batch_async(
+                candidates,
+                timeout_s=5,
+                fetcher=probe_runtime.fetch_text,  # IS default_fetcher
+                async_probe=_probe_calls_fetcher_once,
+                default_fetcher=probe_runtime.fetch_text,
+            ),
+            timeout=60,
+        )
+
+    results = asyncio.run(_inner())
+
+    assert len(results) == lanes, "one result per candidate is the contract"
+    assert fetches.peak == lanes, (
+        f"peak in-flight was {fetches.peak} of {lanes} configured probe lanes"
+    )
+    assert thread_names and all(name.startswith("probe-fetch") for name in thread_names), (
+        f"default-path fetches must run on this module's own pool, saw {sorted(thread_names)}"
+    )
+
+
+# --- the lane contract: the sync branch runs at the configured probe lanes, not the machine's ----
+
+
+def test_sync_probe_fetches_run_at_the_configured_lanes_not_the_shared_executor() -> None:
+    """The probe's lanes are `probe_concurrency_defaults()["total"]`, not the machine's threads.
+
+    The sync branch used `asyncio.to_thread`, i.e. the event loop's shared default executor
+    (`min(32, cpu_count + 4)`, 20 on the 16-core box the audit runs use), so a wrapping fetcher --
+    the bench's instrumented one, say -- had its probe fetches capped below the configured lane
+    count with no error and no log line: `probe_candidates` peaked at exactly 20 in-flight of its
+    configured 40 in both `lane-ceiling` audit runs. The configured lanes are above the shared
+    executor's ceiling on every machine (`min(32, ...)` is at most 32), so this floor discriminates
+    here rather than depending on this box's core count.
+    """
+    lanes = int(probe_runtime.probe_concurrency_defaults()["total"])
+    # Provider-bucket candidates: the static bucket is deliberately narrower (16), and this
+    # contract is about the batch's total lanes, not a bucket's own cap.
+    candidates = [{"id": f"c{i}", "adapter": "greenhouse"} for i in range(lanes)]
+    fetches = BlockingActiveCounter()
+    released = threading.Event()
+    thread_names: set[str] = set()
+    lock = threading.Lock()
+
+    def fake_fetch(url: str, _timeout_s: int) -> str:
+        with lock:
+            thread_names.add(threading.current_thread().name)
+        fetches.enter()
+        try:
+            # Block only long enough for every lane to come alive at once: a batch that cannot
+            # reach its lane count then fails below with the count it did reach, rather than
+            # hanging here or raising a message-free assert out of a pool thread.
+            if fetches.peak >= lanes:
+                released.set()
+            released.wait(timeout=2.0)
+            return f"<html>{url}</html>"
+        finally:
+            fetches.exit()
+
+    results, _elapsed = _run(candidates, fake_fetch, 5)
+
+    assert len(results) == lanes, "one result per candidate is the contract"
+    assert fetches.peak == lanes, (
+        f"peak in-flight was {fetches.peak} of {lanes} configured probe lanes"
+    )
+    assert thread_names and all(name.startswith("probe-fetch") for name in thread_names), (
+        f"probe fetches must run on this module's own pool, saw {sorted(thread_names)}"
+    )
+
+
+# The batch's permit order (`test_probe_batch_permits.py`) and its shared client's lifecycle
+# (`test_probe_batch_client_lifecycle.py`) have their own modules: both are contracts with a
+# measured before/after, and this file is at the repo's test-shape budget without them.

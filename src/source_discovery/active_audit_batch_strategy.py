@@ -99,6 +99,8 @@ def build_active_audit_batch_strategy(
     apply_probe_results: Callable[[Any], None],
     row_identity: Callable[[dict[str, Any]], str],
     append_timing: Callable[[dict[str, Any]], None],
+    probe_lifecycle: Callable[[], dict[str, Any]] | None = None,
+    phase_runtime: Callable[[], list[dict[str, Any]]] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ActiveAuditBatchStrategy:
     return ActiveAuditBatchStrategy(
@@ -115,5 +117,7 @@ def build_active_audit_batch_strategy(
         apply_probe_results=apply_probe_results,
         row_identity=row_identity,
         append_timing=append_timing,
+        probe_lifecycle=probe_lifecycle,
+        phase_runtime=phase_runtime,
         progress_callback=progress_callback,
     )

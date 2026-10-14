@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from src.shared.page_fetch_lifecycle import PageFetchLifecycle, PageFetchLifecycleContext
 from src.source_registry import unique_sources
 
 from . import audit_ledger as audit_ledger
@@ -18,6 +19,9 @@ from . import browser_recovery as browser_recovery_helpers
 from .directory_fetch_jobs import build_directory_fetch_job
 from .directory_page_recovery import DEFAULT_RECOVERY_URL_LIMIT as DEFAULT_RECOVERY_URL_LIMIT
 from .directory_page_recovery import DirectoryRecoveryRequest as DirectoryRecoveryRequest
+from .directory_page_recovery import (
+    _merge_page_fetch_lifecycle_snapshots as _merge_page_fetch_lifecycle_snapshots,
+)
 from .directory_page_recovery import apply_recovery_to_scan_result as apply_recovery_to_scan_result
 from .directory_page_recovery import (
     http_recovery_request_from_context as http_recovery_request_from_context,
@@ -121,6 +125,7 @@ def _run_web_http_recovery(
     progress_label: str,
     timing_key: str,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     if not requests:
         return [], [], [], {}
@@ -133,6 +138,7 @@ def _run_web_http_recovery(
         analyze_result=_web_recovery_result_candidates,
         progress_label=progress_label,
         url_limit=recovery_url_limit,
+        page_fetch_context=page_fetch_context,
     )
     updated = apply_recovery_to_scan_result(
         {
@@ -152,6 +158,7 @@ def _run_web_http_recovery(
         {
             "summary": dict(updated.get("summary") or {}),
             "batchTiming": dict(updated.get("batchTiming") or {}),
+            "pageFetchLifecycle": list(updated.get("pageFetchLifecycle") or []),
         },
     )
 
@@ -247,11 +254,13 @@ def _run_web_page_job_stage(
     recovery_timing_key: str,
     enable_recovery: bool = False,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
     provider_candidates: list[dict[str, Any]] | None = None,
     static_candidates: list[dict[str, Any]] | None = None,
     failures: list[dict[str, Any]] | None = None,
     browser_recovery_candidates: list[dict[str, Any]] | None = None,
     failure_samples: list[dict[str, Any]] | None = None,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
 ) -> dict[str, Any]:
     from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
@@ -260,10 +269,23 @@ def _run_web_page_job_stage(
     static_rows_input = list(static_candidates or [])
     failure_rows = list(failures or [])
     browser_rows_input = list(browser_recovery_candidates or [])
+    page_fetch_lifecycles = page_fetch_lifecycles if page_fetch_lifecycles is not None else []
+    recovery_page_fetch_lifecycles: list[dict[str, Any]] = []
     recovery_requests: list[DirectoryRecoveryRequest] = []
     fetch_defaults = directory_fetch_concurrency_defaults()
 
     page_fetch_started = time.perf_counter()
+    page_fetch_lifecycle = None
+    if page_jobs:
+        page_fetch_lifecycle = (
+            page_fetch_context.new_receipt("page_fetch")
+            if page_fetch_context is not None
+            else PageFetchLifecycle(
+                source=discovery_method,
+                phase="page_fetch",
+            )
+        )
+        page_fetch_lifecycles.append(page_fetch_lifecycle)
     page_fetch_results = fetch_directory_pages(
         timeout_s,
         page_jobs,
@@ -271,6 +293,7 @@ def _run_web_page_job_stage(
         total_concurrency=int(fetch_defaults["total"]),
         per_host_concurrency=int(fetch_defaults["perHost"]),
         progress_label=page_fetch_progress_label,
+        page_fetch_lifecycle=page_fetch_lifecycle,
     )
     page_fetch_ms = audit_ledger.duration_ms(page_fetch_started)
 
@@ -304,6 +327,7 @@ def _run_web_page_job_stage(
                 progress_label=recovery_progress_label,
                 timing_key=recovery_timing_key,
                 recovery_url_limit=recovery_url_limit,
+                page_fetch_context=page_fetch_context,
             )
         )
         provider_rows_input.extend(recovered_providers)
@@ -311,10 +335,15 @@ def _run_web_page_job_stage(
         browser_rows_input.extend(recovered_browser)
         recovery_summary = dict(recovery_payload.get("summary") or {})
         recovery_timing = dict(recovery_payload.get("batchTiming") or {})
+        recovery_page_fetch_lifecycles = list(recovery_payload.get("pageFetchLifecycle") or [])
 
     provider_rows = collapse_competing_candidates(provider_rows_input)
     static_rows = unique_sources(static_rows_input)
     browser_rows = unique_sources(browser_rows_input)
+    page_fetch_lifecycle_snapshots = _merge_page_fetch_lifecycle_snapshots(
+        [lifecycle.snapshot() for lifecycle in page_fetch_lifecycles],
+        recovery_page_fetch_lifecycles,
+    )
     return {
         "providerCandidates": provider_rows,
         "staticCandidates": static_rows,
@@ -338,6 +367,11 @@ def _run_web_page_job_stage(
             "candidateAnalysisMs": audit_ledger.duration_ms(analysis_started),
             **recovery_timing,
         },
+        **(
+            {"pageFetchLifecycle": page_fetch_lifecycle_snapshots}
+            if page_fetch_lifecycle_snapshots
+            else {}
+        ),
         "completedUrlIdentities": [
             str(job.get("url") or "").strip() for job in page_jobs if str(job.get("url") or "")
         ],

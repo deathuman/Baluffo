@@ -10,9 +10,20 @@ function mergeKpis(existing = {}, incoming = {}, { preserveExisting = false } = 
   const result = isPlainObject(existing) ? { ...existing } : {};
   if (!isPlainObject(incoming)) return result;
   Object.entries(incoming).forEach(([key, value]) => {
-    if (key === "registrySync" && isPlainObject(value)) {
-      result.registrySync = mergePlainObjects(
-        isPlainObject(result.registrySync) ? result.registrySync : {},
+    // Both are nested KPI objects: a lightweight summary poll that omits one must not wipe the
+    // detailed reading the full health payload already supplied. `pageFetchLifecycle` carries the
+    // per-source page-fetch receipts, which is one level deeper, so it has its own merge below.
+    if (key === "pageFetchLifecycle" && isPlainObject(value)) {
+      result[key] = mergePageFetchLifecycle(
+        isPlainObject(result[key]) ? result[key] : {},
+        value,
+        { preserveUnknowns: preserveExisting }
+      );
+      return;
+    }
+    if ((key === "registrySync" || key === "probeLifecycle") && isPlainObject(value)) {
+      result[key] = mergePlainObjects(
+        isPlainObject(result[key]) ? result[key] : {},
         value,
         { preserveUnknowns: preserveExisting }
       );
@@ -51,6 +62,25 @@ function mergePlainObjects(existing = {}, incoming = {}, { preserveUnknowns = fa
     result[key] = value;
   });
   return result;
+}
+
+/**
+ * Merge the page-fetch receipt, whose `sources` map is one level deeper than the other nested KPIs.
+ *
+ * The generic nested-KPI path above merges one level, so an incoming `sources` map would wholesale
+ * replace the existing one and a summary poll that only sees one source would erase the others. Each
+ * source entry is still assigned as a whole, because a rerun's entry for a source supersedes the
+ * previous reading for that source rather than being blended with it.
+ */
+function mergePageFetchLifecycle(existing = {}, incoming = {}, { preserveUnknowns = false } = {}) {
+  const merged = mergePlainObjects(existing, incoming, { preserveUnknowns });
+  if (!isPlainObject(incoming) || !isPlainObject(incoming.sources)) return merged;
+  merged.sources = mergePlainObjects(
+    isPlainObject(existing) && isPlainObject(existing.sources) ? existing.sources : {},
+    incoming.sources,
+    { preserveUnknowns }
+  );
+  return merged;
 }
 
 export function mergeOpsHealth(existing = {}, incoming = {}, { summary = false } = {}) {

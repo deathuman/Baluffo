@@ -7,6 +7,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from src.shared.tls_https import verified_ssl_context
+
 DEFAULT_FETCH_MAX_BYTES = 20 * 1024 * 1024
 FETCH_MAX_BYTES_ENV = "BALUFFO_FETCH_MAX_BYTES"
 # ponytail: heavy outlier hosts observed at 603 MiB single-source peak (en.moonton.com)
@@ -97,7 +99,10 @@ def default_fetch_text_with_response_headers(
     """
     request = Request(url, headers=headers)
     try:
-        with urlopen(request, timeout=timeout_s) as response:
+        # ponytail: union TLS anchor (default store + certifi) -- see src/shared/tls_https.py.
+        # The bare default is the OS store alone, which fails chain building for valid hosts
+        # on a checkout whose store is stale.
+        with urlopen(request, timeout=timeout_s, context=verified_ssl_context()) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             cap = fetch_max_bytes_for_url(url)
             text = str(response.read(cap + 1)[:cap].decode(charset, errors="replace"))
@@ -120,7 +125,8 @@ def default_fetch_text(url: str, timeout_s: int, *, headers: dict[str, str]) -> 
         headers=headers,
     )
     try:
-        with urlopen(request, timeout=timeout_s) as response:
+        # ponytail: union TLS anchor (default store + certifi) -- see src/shared/tls_https.py.
+        with urlopen(request, timeout=timeout_s, context=verified_ssl_context()) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             # ponytail: read-at-most cap; absurdly large pages (~37 MiB observed)
             # are truncated instead of fully materialized. Truncation is retry-safe:

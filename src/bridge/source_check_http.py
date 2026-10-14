@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from src.shared.browser_fallback_tokens import matches_browser_fallback_environment_error
+from src.shared.tls_https import verified_ssl_context
 from src.source_registry import normalize_source_url
 
 
@@ -157,7 +158,12 @@ def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> list
         body = ""
         try:
             req = Request(root, headers={"User-Agent": "Mozilla/5.0 Baluffo/1.0"})
-            with urlopen(req, timeout=max(4, int(timeout_s))) as resp:
+            # ponytail: union TLS anchor (default store + certifi), same as the shared sync
+            # fetchers -- see src/shared/tls_https.py. A bare urlopen here failed chain building
+            # for valid hosts and was swallowed as "no redirect candidates".
+            with urlopen(
+                req, timeout=max(4, int(timeout_s)), context=verified_ssl_context()
+            ) as resp:
                 final_url = normalize_source_url(resp.geturl() or "")
                 charset = resp.headers.get_content_charset() or "utf-8"
                 body = resp.read().decode(charset, errors="replace")

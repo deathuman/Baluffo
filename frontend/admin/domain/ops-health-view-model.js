@@ -219,6 +219,41 @@ function compactSummaryObject(value) {
   );
 }
 
+/**
+ * Compact the per-source page-fetch receipt for the artifact table.
+ *
+ * The source map is bounded like the other nested maps here: a bounded entry count, scalar counters
+ * only, and every string truncated. `coverage`/`truncated`/`omittedCount` are kept rather than
+ * derived, because a reader must be able to tell a truncated reading from a complete one.
+ */
+function compactPageFetchLifecycle(receipt) {
+  if (!receipt || typeof receipt !== "object") return {};
+  const sources = receipt.sources && typeof receipt.sources === "object" ? receipt.sources : {};
+  const compacted = {};
+  Object.keys(sources)
+    .sort()
+    .slice(0, 8)
+    .forEach(source => {
+      const entry = sources[source] && typeof sources[source] === "object" ? sources[source] : {};
+      const rollup = entry.rollup && typeof entry.rollup === "object" ? entry.rollup : {};
+      compacted[truncateString(String(source), 64)] = {
+        state: truncateString(entry.state || "", 32),
+        coverage: truncateString(entry.coverage || "", 32),
+        truncated: Boolean(entry.truncated),
+        omittedCount: toNumber(entry.omittedCount),
+        receiptCount: toNumber(entry.receiptCount),
+        rollup: compactSummaryObject(rollup)
+      };
+    });
+  return {
+    runId: truncateString(receipt.runId || "", 80),
+    coverage: truncateString(receipt.coverage || "", 32),
+    truncated: Boolean(receipt.truncated),
+    omittedCount: toNumber(receipt.omittedCount),
+    sources: compacted
+  };
+}
+
 function compactAuditArtifact(row) {
   return {
     name: truncateString(row?.name || ""),
@@ -228,6 +263,12 @@ function compactAuditArtifact(row) {
     sizeBytes: toNumber(row?.sizeBytes),
     modifiedAt: truncateString(row?.modifiedAt || ""),
     sha256: truncateString(row?.sha256 || "", 80),
+    // Above the size threshold the digest is not computed on a poll, so the row carries a cheap
+    // stat identity instead. Both fields travel together with the kind, because a reader that gets
+    // an empty `sha256` has to be able to tell whether the file was not hashed or is simply absent.
+    fingerprintKind: truncateString(row?.fingerprintKind || "", 32),
+    fingerprint: truncateString(row?.fingerprint || "", 80),
+    pageFetchLifecycle: compactPageFetchLifecycle(row?.pageFetchLifecycle),
     topLevelKeys: (Array.isArray(row?.topLevelKeys) ? row.topLevelKeys : [])
       .slice(0, 12)
       .map(value => truncateString(value, 80)),

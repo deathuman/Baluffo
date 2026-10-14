@@ -386,8 +386,8 @@ CHANGELOG_RULES: tuple[ChangelogRule, ...] = (
     ChangelogRule(
         key="no_unshipped_section_above_the_tag",
         guardrail="test_changelog_holds_no_unpublished_section_above_the_last_release_tag",
-        workflow_row="No versioned section without a release tag",
-        changelog_bullet="never shipped may not queue above the last release tag",
+        workflow_row="No versioned section stranded below the last tagged release",
+        changelog_bullet="never shipped may not queue below the last tagged release",
     ),
     ChangelogRule(
         key="unreleased_above_the_rollup",
@@ -854,8 +854,12 @@ def test_changelog_holds_no_unpublished_section_above_the_last_release_tag(
     failed when nobody decided.
 
     Between a bump and its release the version in flight legitimately has no tag, so it is
-    allowed to queue. Any *other* versioned section without a tag is a release that will not
-    ship, and its changes are owed either to the next release or to deletion.
+    allowed to queue -- and so is the single release that just shipped, because Baluffo
+    publishes by version string (the GHCR image tag comes from ``src/app_version.py``, not
+    from a git tag), so a real release can exist with no git tag at all (0.3.018 is that
+    case). A versioned section is treated as a phantom -- a release that can no longer ship
+    -- only when it is *strictly older* than the last release that actually got tagged: such
+    a section sits below the newest tagged release and so was skipped, not shipped.
     """
     changelog_path = repo_root / "docs" / "CHANGELOG.md"
     assert changelog_path.is_file(), "docs/CHANGELOG.md must exist."
@@ -870,22 +874,48 @@ def test_changelog_holds_no_unpublished_section_above_the_last_release_tag(
         return
 
     current_version = _repo_declared_version(repo_root)
-    unpublished = [
-        version
-        for version, _ in _changelog_sections(changelog_path.read_text(encoding="utf-8"))
-        if _VERSIONED_SECTION_RE.match(version)
-        and version != current_version
-        and f"v{version}" not in tags
-    ]
+    sections = _changelog_sections(changelog_path.read_text(encoding="utf-8"))
+
+    # The changelog is newest first, so the first versioned section that actually carries a
+    # git tag is the most recent *tagged* release. Newer versioned sections may be untagged
+    # and still shipped (0.3.018: published to GHCR by version string, never git-tagged) or
+    # be the in-flight version awaiting its own release. Only a versioned section strictly
+    # OLDER than that newest tagged release is a phantom: it sits below the last release that
+    # reached the registry as a git tag, so it was skipped rather than shipped.
+    newest_tagged_idx = next(
+        (
+            index
+            for index, (version, _) in enumerate(sections)
+            if _VERSIONED_SECTION_RE.match(version) and f"v{version}" in tags
+        ),
+        None,
+    )
+    unpublished = []
+    for version, _ in sections:
+        if not _VERSIONED_SECTION_RE.match(version):
+            continue
+        if version == current_version or f"v{version}" in tags:
+            continue
+        if newest_tagged_idx is None:
+            # No versioned section carries a tag: fall back to treating every untagged
+            # non-current section as a phantom rather than silently accepting any of them.
+            unpublished.append(version)
+            continue
+        index = next(i for i, (candidate, _) in enumerate(sections) if candidate == version)
+        if index <= newest_tagged_idx:
+            continue
+        unpublished.append(version)
     assert not unpublished, (
-        "docs/CHANGELOG.md holds versioned section(s) with no release tag: "
+        "docs/CHANGELOG.md holds versioned section(s) stranded below the last tagged release: "
         + ", ".join(unpublished)
-        + f". {current_version} is the version in flight, and it may queue without its tag; an "
-        "older section describes a release that never shipped, so the notes generated for the "
-        "next tag omit it -- the rollup decision docs/RELEASE.md's cross-channel checkpoint "
-        "asks the release owner to make. Decide it, then either roll those changes into "
-        f"`## [{current_version}]` or delete the stale section (`git log` keeps that history). "
-        "If that version is about to ship instead, release it before bumping past it."
+        + f". {current_version} is the version in flight, and the releases above the newest tag "
+        "(including one that shipped untagged by version string) are legitimately untagged; a "
+        "section older than the newest tagged release can no longer ship, so the notes "
+        "generated for the next tag omit it -- the rollup decision docs/RELEASE.md's "
+        "cross-channel checkpoint asks the release owner to make. Decide it, then either roll "
+        "those changes into `## [{current_version}]` or delete the stale section (`git log` "
+        "keeps that history). If that version is about to ship instead, release it before "
+        "bumping past it."
     )
 
 

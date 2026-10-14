@@ -10,6 +10,8 @@ from urllib.request import Request, urlopen
 
 import httpx
 
+from src.shared.tls_https import verified_ssl_context
+
 from .config import (
     FETCH_ADAPTER_INITIAL_DELAY_S,
     FETCH_INITIAL_DELAY_ADAPTERS,
@@ -53,8 +55,13 @@ def discovery_request_headers() -> dict[str, str]:
 
 
 def fetch_text(url: str, timeout_s: int) -> str:
+    # ponytail: the OS store alone fails chain building for valid hosts on checkouts whose
+    # store is stale (506 of 3,000 audited homepages on this box), while the async httpx path
+    # reads them. `verified_ssl_context` is that same union anchor (see
+    # `src/shared/tls_https.py`); it is a superset of urlopen's default, so nothing that
+    # verifies today can start failing.
     req = Request(url, headers=discovery_request_headers())
-    with urlopen(req, timeout=timeout_s) as resp:
+    with urlopen(req, timeout=timeout_s, context=verified_ssl_context()) as resp:
         charset = resp.headers.get_content_charset() or "utf-8"
         return str(resp.read().decode(charset, errors="replace"))
 
@@ -66,11 +73,58 @@ async def async_fetch_text_httpx(client: Any, url: str, timeout_s: int) -> str:
     return str(resp.text)
 
 
+def fetch_text_httpx(client: Any, url: str, timeout_s: int) -> str:
+    """`async_fetch_text_httpx`'s blocking twin, for a wave that runs its requests off the loop.
+
+    Same request shape, same `httpx` client semantics: one shared `httpx.Client` (thread-safe) carries
+    the keep-alive pool, and `httpx.Client` resolves trust exactly as `httpx.AsyncClient` does
+    (certifi by default), so the hosts the async path can read stay readable here.
+
+    The reason a caller would prefer this is *where the work runs*, not what it does: with the async
+    client, the TLS handshake, the HTTP/1.1 parse and the body accumulation all execute on the event
+    loop thread. Measured on the discovery probe's 3,038-candidate population, the async client cost
+    **7.33 ms of loop-thread CPU per candidate** against **1.64 ms** for the same requests on the
+    wave's own pool, which is 22.28 s -> 4.97 s of loop CPU for the phase.
+    """
+    resp = client.get(
+        url, headers=discovery_request_headers(), follow_redirects=True, timeout=timeout_s
+    )
+    resp.raise_for_status()
+    resp.encoding = resp.encoding or "utf-8"
+    return str(resp.text)
+
+
 def _http_code_from_error(exc: Exception) -> int | None:
     if isinstance(exc, HTTPError):
         return int(exc.code)
     match = re.search(r"\bHTTP Error (\d{3})\b", str(exc))
     return int(match.group(1)) if match else None
+
+
+def _is_timeout_failure(exc: Exception) -> bool:
+    """True for the failures that spend a whole request budget before they fail.
+
+    Only these deserve a shorter ladder. A timeout costs `timeout_s` per attempt, so the shared
+    three-attempt ladder parks one hanging host for `3 x timeout_s` plus backoff -- 21.6 s at
+    `timeout_s=6`, which is what sets a small probe batch's clock. A 429, a 5xx or a connection
+    reset fails in milliseconds, so the full ladder stays cheap for those.
+    """
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return True
+    message = str(exc).lower()
+    return "timed out" in message or "timeout" in message
+
+
+def _attempts_for(exc: Exception, *, timeout_attempts: int | None) -> int:
+    """Total attempts this failure earns: the caller's timeout bound, else the shared ladder.
+
+    `timeout_attempts` caps *timeout-class* failures only. Silence it (`None`, every caller
+    outside the discovery probe) and the ladder is exactly the shared `FETCH_MAX_RETRIES + 1`.
+    """
+    ladder = FETCH_MAX_RETRIES + 1
+    if timeout_attempts is None or not _is_timeout_failure(exc):
+        return ladder
+    return max(1, min(ladder, int(timeout_attempts)))
 
 
 def _is_retryable_error(exc: Exception) -> bool:
@@ -122,7 +176,21 @@ def is_expected_web_search_fetch_failure(exc: Exception) -> bool:
     return any(token in message for token in _EXPECTED_RUNTIME_FETCH_TOKENS)
 
 
-def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fetch_text) -> str:
+def fetch_text_with_retry(
+    url: str,
+    timeout_s: int,
+    *,
+    adapter: str,
+    fetcher=fetch_text,
+    timeout_attempts: int | None = None,
+) -> str:
+    """Fetch with the shared retry ladder, optionally bounded for timeout-class failures.
+
+    `timeout_attempts` is the total attempts a URL that fails by *timing out* earns; every other
+    transient failure keeps the shared `FETCH_MAX_RETRIES + 1`. The discovery probe passes its own
+    bound (see `probe.probe_timeout_attempts`) because a timeout is the one failure whose retry
+    costs a whole request budget instead of milliseconds.
+    """
     _sleep_adapter_initial_delay(adapter)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Exception | None = None
@@ -131,7 +199,8 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
             return str(fetcher(url, timeout_s))
         except _EXPECTED_FETCH_RETRY_EXCEPTIONS as exc:
             last_exc = exc
-            if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(exc):
+            earned = _attempts_for(exc, timeout_attempts=timeout_attempts)
+            if attempt + 1 >= earned or not _is_retryable_error(exc):
                 break
             time.sleep(_retry_delay_s(attempt))
     if last_exc:
@@ -145,7 +214,9 @@ async def async_fetch_text_with_retry(
     *,
     adapter: str,
     fetcher,
+    timeout_attempts: int | None = None,
 ) -> str:
+    """`fetch_text_with_retry`'s async twin, with the same optional timeout bound."""
     await _async_sleep_adapter_initial_delay(adapter)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Exception | None = None
@@ -154,7 +225,8 @@ async def async_fetch_text_with_retry(
             return str(await fetcher(url, timeout_s))
         except _EXPECTED_FETCH_RETRY_EXCEPTIONS as exc:
             last_exc = exc
-            if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):
+            earned = _attempts_for(exc, timeout_attempts=timeout_attempts)
+            if attempt + 1 >= earned or not _is_retryable_error(last_exc):
                 break
             await asyncio.sleep(_retry_delay_s(attempt))
     if last_exc:

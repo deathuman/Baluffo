@@ -13,6 +13,7 @@ import {
   formatDuration,
   getRunStatusChipClass
 } from "./ops-shared.js";
+import { formatPageFetchLifecycleReceipt, formatProbeLifecycleReceipt } from "./ops-summary-fields.js";
 
 function formatDiagnosticsCopyButton(key) {
   return `
@@ -80,6 +81,12 @@ function formatDiscoveryAuditArtifacts(payload = {}) {
     const warnings = Array.isArray(row?.warnings) && row.warnings.length
       ? ` warnings: ${row.warnings.map(value => escapeHtml(value)).join(", ")}`
       : "";
+    // An artifact that carries a probe-wave receipt prints it in operator terms, so the abandoned
+    // fetches and any unclosed client are readable here instead of inside the artifact.
+    const probeLifecycle = formatProbeLifecycleReceipt(row?.probeLifecycle || {});
+    // The page-fetch receipt prints in operator terms too, so an abandoned directory/web-search
+    // fetch is readable here instead of inside the tens-of-MB artifact it was summarized from.
+    const pageFetchLifecycle = formatPageFetchLifecycleReceipt(row?.pageFetchLifecycle || {});
     return `
       <tr>
         <td>${escapeHtml(row?.name || "artifact")}</td>
@@ -88,6 +95,8 @@ function formatDiscoveryAuditArtifacts(payload = {}) {
         <td>${Number(row?.sizeBytes || 0).toLocaleString()} B</td>
         <td>${escapeHtml(row?.modifiedAt || "")}</td>
         <td>${escapeHtml(formatArtifactSummary(row?.summary || {}))}${warnings}</td>
+        <td class="admin-ops-audit-artifacts-probe-cell">${probeLifecycle || "-"}</td>
+        <td class="admin-ops-audit-artifacts-page-fetch-cell">${pageFetchLifecycle || "-"}</td>
       </tr>
     `;
   }).join("");
@@ -99,7 +108,7 @@ function formatDiscoveryAuditArtifacts(payload = {}) {
     <div class="admin-table-shell admin-ops-full-row">
       <table class="admin-table admin-ops-audit-artifacts-table">
         <thead>
-          <tr><th>Name</th><th>Status</th><th>Path</th><th>Size</th><th>Modified</th><th>Summary</th></tr>
+          <tr><th>Name</th><th>Status</th><th>Path</th><th>Size</th><th>Modified</th><th>Summary</th><th>Probe lifecycle</th><th>Page fetch lifecycle</th></tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
       </table>

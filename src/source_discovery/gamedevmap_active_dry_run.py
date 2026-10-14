@@ -21,11 +21,13 @@ from datetime import (
 from datetime import (
     timedelta as timedelta,
 )
+from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse as urlparse
 
 from src import source_registry as source_registry_module
+from src.shared.page_fetch_lifecycle import PageFetchLifecycle
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources
 
@@ -114,6 +116,9 @@ from .gamedevmap_artifact_store import (
 )
 from .gamedevmap_artifact_store import (
     gamedevmap_active_dry_run_path as gamedevmap_active_dry_run_path,
+)
+from .gamedevmap_artifact_store import (
+    write_probe_lifecycle_receipt as write_probe_lifecycle_receipt,
 )
 from .gamedevmap_recovery_comparison import (
     _classify_lost_recovery as _classify_lost_recovery,
@@ -205,8 +210,14 @@ from .page_outcomes import (
     classify_fetched_page_with_strategy,
     static_page_outcome_builders,
 )
+from .phase_runtime_receipt import (
+    PhaseRuntimeReceipt as PhaseRuntimeReceipt,
+)
 from .prevalidated_queue_policy import (
     apply_prevalidated_queue_overrides as apply_prevalidated_queue_overrides,
+)
+from .probe_runtime import (
+    ProbeBatchLifecycle as ProbeBatchLifecycle,
 )
 from .probe_runtime import (
     candidate_id as probe_candidate_id,
@@ -311,23 +322,36 @@ def _analyze_browser_recovery_fetches(
             "url": source_url,
             "sourceDirectoryEntryUrl": row.get("sourceDirectoryEntryUrl"),
         }
-        provider_candidates.extend(
-            _provider_candidates_from_html_text(
-                row=row_payload,
-                page_url=source_url,
-                html=html,
-                index_url=index_url,
-            )
-        )
-        _append_analyzed_candidates(
+        # P5: run the full page outcome first. Its own provider inference (inside
+        # _gamedevmap_page_outcome) runs the same pure function that
+        # _provider_candidates_from_html_text would run, so a further separate pass is
+        # redundant on a page that yields no candidates. When the outcome found none we
+        # skip the redundant pass A (per-page no-candidate CPU cleanup); a candidate
+        # page still runs it for its distinct provenance, and a page that grows past
+        # _append_analyzed_candidates' 1MB truncation still runs it so the outcome's
+        # truncated view can never hide a provider URL the full html found. On a
+        # candidate page pass A's rows are prepended so the assembled order is
+        # unchanged (pass A rows, then the outcome's provider rows).
+        outcome_providers: list[dict[str, Any]] = []
+        found_candidates = _append_analyzed_candidates(
             page_url=source_url,
             html=html,
             row=row_payload,
             index_url=index_url,
             recovery_source="browser_rendered_homepage",
-            provider_candidates=provider_candidates,
+            provider_candidates=outcome_providers,
             static_candidates=static_candidates,
         )
+        if found_candidates or len(html) > 1_000_000:
+            provider_candidates.extend(
+                _provider_candidates_from_html_text(
+                    row=row_payload,
+                    page_url=source_url,
+                    html=html,
+                    index_url=index_url,
+                )
+            )
+        provider_candidates.extend(outcome_providers)
         return browser_recovery_helpers.BrowserRecoveryPageAnalysis(
             all_candidates=[*provider_candidates, *static_candidates],
             rendered_static_candidates=static_candidates,
@@ -811,6 +835,8 @@ def _fetch_gamedevmap_active_homepages(
     total_concurrency: int,
     per_host_concurrency: int,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    receipt: PhaseRuntimeReceipt | None = None,
+    page_fetch_lifecycle: PageFetchLifecycle | None = None,
 ) -> list[dict[str, Any]]:
     return fetch_directory_pages(
         timeout_s,
@@ -829,6 +855,8 @@ def _fetch_gamedevmap_active_homepages(
         per_host_concurrency=per_host_concurrency,
         progress_label="GameDevMap active dry run homepage fetch",
         emit_progress_log=False,
+        receipt=receipt,
+        page_fetch_lifecycle=page_fetch_lifecycle,
         progress_callback=(
             (
                 lambda progress: progress_callback(
@@ -875,6 +903,24 @@ def _analyze_gamedevmap_active_homepages(
     )
 
 
+def _gamedevmap_recovery_fetch_phase(progress_label: str) -> str:
+    """Which recovery wave a fetch label belongs to -- one spelling, used by progress and receipts."""
+    return (
+        "recovery_wave2_fetch"
+        if "wave 2" in str(progress_label or "").lower()
+        else "recovery_wave1_fetch"
+    )
+
+
+def _gamedevmap_recovery_analysis_phase(progress_label: str) -> str:
+    """The analysis half of the same wave, so a run's CPU receipt names where the parsing went."""
+    return (
+        "recovery_wave2_analysis"
+        if "wave 2" in str(progress_label or "").lower()
+        else "recovery_wave1_analysis"
+    )
+
+
 def _fetch_gamedevmap_active_recovery(
     jobs: list[dict[str, Any]],
     progress_label: str,
@@ -885,8 +931,10 @@ def _fetch_gamedevmap_active_recovery(
     per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    receipt: PhaseRuntimeReceipt | None = None,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
 ) -> active_audit_runtime.ActiveAuditRecoveryFetchResult:
-    phase = "recovery_wave2_fetch" if "wave 2" in progress_label.lower() else "recovery_wave1_fetch"
+    phase = _gamedevmap_recovery_fetch_phase(progress_label)
     results, unique_jobs, network_jobs = directory_recovery_helpers.fetch_recovery_jobs(
         timeout_s,
         jobs,
@@ -895,7 +943,14 @@ def _fetch_gamedevmap_active_recovery(
         per_host_concurrency=per_host_concurrency,
         progress_label=progress_label,
         recovery_cache=recovery_cache,
-        fetch_pages=fetch_directory_pages,
+        page_fetch_lifecycles=page_fetch_lifecycles,
+        # PhaseRuntimeReceipt stays on the injected fetcher boundary; PageFetchLifecycle is passed
+        # how many jobs actually reach it, and `fetch_pages_batched` is what counts those lanes.
+        fetch_pages=(
+            partial(fetch_directory_pages, receipt=receipt)
+            if receipt is not None
+            else fetch_directory_pages
+        ),
         progress_callback=(
             (
                 lambda progress: progress_callback(
@@ -927,11 +982,7 @@ def _apply_gamedevmap_active_recovery(
     index_url: str,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditRecoveryApplicationResult:
-    phase = (
-        "recovery_wave2_analysis"
-        if "wave 2" in progress_label.lower()
-        else "recovery_wave1_analysis"
-    )
+    phase = _gamedevmap_recovery_analysis_phase(progress_label)
     (
         recovery_provider_rows,
         recovery_static_rows,
@@ -988,47 +1039,136 @@ def _build_gamedevmap_active_batch_strategy(
     recovery_fetch_concurrency: int,
     recovery_per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
+    probe_lifecycles: list[ProbeBatchLifecycle] | None = None,
+    phase_receipts: list[PhaseRuntimeReceipt] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
 ) -> active_audit_runtime.ActiveAuditBatchStrategy:
+    # One receipt per batch, kept live: the deferred client close lands after the batch returns, so
+    # the object is read again when the artifact is written rather than only at the batch's exit.
+    receipts = probe_lifecycles if probe_lifecycles is not None else []
+    # The run-wide CPU/lane receipts, and the current batch's slice of them. A batch starts at
+    # `prepare_rows`, which is the only hook the batch runtime calls before any phase, so clearing
+    # here is what keeps `timings.batches[].phaseRuntime` to this batch's phases.
+    all_phase_receipts = phase_receipts if phase_receipts is not None else []
+    all_page_fetch_lifecycles = page_fetch_lifecycles if page_fetch_lifecycles is not None else []
+    batch_phase_receipts: list[PhaseRuntimeReceipt] = []
+
+    def _run_phase(phase: str, call: Callable[[PhaseRuntimeReceipt], Any]) -> Any:
+        """Run one lane phase with its receipt: wall and CPU here, lanes from the fetches below."""
+        receipt = PhaseRuntimeReceipt(phase=phase)
+        try:
+            return call(receipt)
+        finally:
+            receipt.finish()
+            batch_phase_receipts.append(receipt)
+            all_phase_receipts.append(receipt)
+
+    def _prepare_rows(rows: list[dict[str, Any]]) -> Any:
+        # Clearing first makes this call the batch's boundary; the receipt then covers the inference
+        # itself, which is where the batch's first CPU goes.
+        batch_phase_receipts.clear()
+        return _run_phase(
+            "direct_inference",
+            lambda _receipt: _prepare_gamedevmap_active_batch_rows(rows, index_url=index_url),
+        )
+
+    def _batch_phase_receipts() -> list[dict[str, Any]]:
+        return [receipt.snapshot() for receipt in batch_phase_receipts]
+
+    def _probe_with_lifecycle(all_candidates: list[dict[str, Any]]) -> Any:
+        receipt = ProbeBatchLifecycle()
+        receipts.append(receipt)
+        return _run_phase(
+            "probe",
+            lambda phase_receipt: asyncio.run(
+                _probe_candidates_async(
+                    all_candidates,
+                    timeout_s=timeout_s,
+                    fetcher=fetcher,
+                    lifecycle=receipt,
+                    receipt=phase_receipt,
+                )
+            ),
+        )
+
+    def _merge_candidates(
+        direct_provider_rows: list[dict[str, Any]],
+        provider_rows: list[dict[str, Any]],
+        static_rows: list[dict[str, Any]],
+        recovery_provider_rows: list[dict[str, Any]],
+        recovery_static_rows: list[dict[str, Any]],
+    ) -> Any:
+        return _run_phase(
+            "merge",
+            lambda _receipt: _merge_gamedevmap_active_batch_candidates(
+                direct_provider_rows,
+                provider_rows,
+                static_rows,
+                recovery_provider_rows,
+                recovery_static_rows,
+            ),
+        )
+
+    def _latest_receipt() -> dict[str, Any]:
+        return receipts[-1].snapshot() if receipts else {}
+
+    def _new_page_fetch_lifecycle(phase: str) -> PageFetchLifecycle:
+        lifecycle = PageFetchLifecycle(source="gamedevmap", phase=phase)
+        all_page_fetch_lifecycles.append(lifecycle)
+        return lifecycle
+
     return active_audit_runtime.build_active_audit_batch_strategy(
-        prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
-            rows,
-            index_url=index_url,
+        prepare_rows=_prepare_rows,
+        fetch_homepages=lambda rows: _run_phase(
+            "homepage_fetch",
+            lambda receipt: _fetch_gamedevmap_active_homepages(
+                rows,
+                timeout_s=timeout_s,
+                fetcher=fetcher,
+                total_concurrency=homepage_fetch_concurrency,
+                per_host_concurrency=per_host_concurrency,
+                progress_callback=progress_callback,
+                receipt=receipt,
+                page_fetch_lifecycle=(
+                    _new_page_fetch_lifecycle("homepage_fetch") if rows else None
+                ),
+            ),
         ),
-        fetch_homepages=lambda rows: _fetch_gamedevmap_active_homepages(
-            rows,
-            timeout_s=timeout_s,
-            fetcher=fetcher,
-            total_concurrency=homepage_fetch_concurrency,
-            per_host_concurrency=per_host_concurrency,
-            progress_callback=progress_callback,
+        analyze_homepages=lambda results: _run_phase(
+            "homepage_analysis",
+            lambda _receipt: _analyze_gamedevmap_active_homepages(results, index_url=index_url),
         ),
-        analyze_homepages=lambda results: _analyze_gamedevmap_active_homepages(
-            results,
-            index_url=index_url,
+        fetch_recovery=lambda jobs, label: _run_phase(
+            _gamedevmap_recovery_fetch_phase(label),
+            lambda receipt: _fetch_gamedevmap_active_recovery(
+                jobs,
+                label,
+                timeout_s=recovery_timeout_s,
+                fetcher=fetcher,
+                total_concurrency=recovery_fetch_concurrency,
+                per_host_concurrency=recovery_per_host_concurrency,
+                recovery_cache=recovery_cache,
+                progress_callback=progress_callback,
+                receipt=receipt,
+                page_fetch_lifecycles=all_page_fetch_lifecycles,
+            ),
         ),
-        fetch_recovery=lambda jobs, label: _fetch_gamedevmap_active_recovery(
-            jobs,
-            label,
-            timeout_s=recovery_timeout_s,
-            fetcher=fetcher,
-            total_concurrency=recovery_fetch_concurrency,
-            per_host_concurrency=recovery_per_host_concurrency,
-            recovery_cache=recovery_cache,
-            progress_callback=progress_callback,
-        ),
-        apply_recovery=lambda results, grouped, finalize, label: _apply_gamedevmap_active_recovery(
-            results,
-            grouped,
-            finalize,
-            label,
-            index_url=index_url,
-            progress_callback=progress_callback,
+        apply_recovery=lambda results, grouped, finalize, label: _run_phase(
+            _gamedevmap_recovery_analysis_phase(label),
+            lambda _receipt: _apply_gamedevmap_active_recovery(
+                results,
+                grouped,
+                finalize,
+                label,
+                index_url=index_url,
+                progress_callback=progress_callback,
+            ),
         ),
         recovery_homepage_key=lambda job: str(
             _as_dict(job.get("payload")).get("homepageUrl") or ""
         ).strip(),
-        merge_candidates=_merge_gamedevmap_active_batch_candidates,
+        merge_candidates=_merge_candidates,
         merge_artifact_updates=lambda all_candidates, browser_recovery_rows, homepage_failures, recovery_failures, rejected_rows: (
             active_audit_runtime.merge_active_audit_batch_artifact_updates(
                 artifact,
@@ -1048,9 +1188,9 @@ def _build_gamedevmap_active_batch_strategy(
             artifact,
             batch_counts,
         ),
-        probe_candidates=lambda all_candidates: asyncio.run(
-            _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
-        ),
+        probe_candidates=_probe_with_lifecycle,
+        probe_lifecycle=_latest_receipt,
+        phase_runtime=_batch_phase_receipts,
         apply_probe_results=lambda probe_results: (
             active_audit_runtime.apply_active_audit_probe_results(
                 artifact,
@@ -1197,6 +1337,11 @@ def run_gamedevmap_active_source_dry_run(
             recovery_cache,
             subtask_progress_callback,
         )
+    # Shared between the batch strategy (which fills them) and the loop strategy (which reports them
+    # in the artifact's summary), so a run's receipts outlive the batch that produced them.
+    probe_lifecycles: list[ProbeBatchLifecycle] = []
+    phase_receipts: list[PhaseRuntimeReceipt] = []
+    page_fetch_lifecycles: list[PageFetchLifecycle] = []
     batch_strategy = _build_gamedevmap_active_batch_strategy(
         artifact=artifact,
         index_url=index_url,
@@ -1208,7 +1353,10 @@ def run_gamedevmap_active_source_dry_run(
         recovery_fetch_concurrency=recovery_fetch_concurrency,
         recovery_per_host_concurrency=recovery_per_host_concurrency,
         recovery_cache=recovery_cache,
+        probe_lifecycles=probe_lifecycles,
+        phase_receipts=phase_receipts,
         progress_callback=strategy_progress_callback,
+        page_fetch_lifecycles=page_fetch_lifecycles,
     )
     loop_strategy = _build_gamedevmap_active_loop_strategy(
         artifact=artifact,
@@ -1218,6 +1366,9 @@ def run_gamedevmap_active_source_dry_run(
         completed_urls=completed_urls,
         compare_artifact_path=compare_artifact_path,
         batch_strategy=batch_strategy,
+        probe_lifecycles=probe_lifecycles,
+        phase_receipts=phase_receipts,
+        page_fetch_lifecycles=page_fetch_lifecycles,
         progress_callback=subtask_progress_callback,
     )
 
@@ -1230,6 +1381,15 @@ def run_gamedevmap_active_source_dry_run(
         strategy=loop_strategy,
     )
 
+    # The artifact is tens of MB on a real walk, so the probe-wave receipt the Ops view polls is
+    # published beside it. Both come from the same live receipts that filled the artifact's own
+    # `summary.probeLifecycle`.
+
+    write_probe_lifecycle_receipt(
+        artifact_path=output_path,
+        artifact=artifact,
+        lifecycles=probe_lifecycles,
+    )
     emit_log(f"GameDevMap active-source dry run written to {output_path}.")
     if subtask_progress_callback is not None:
         subtask_progress_callback(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import threading
 import time
 from typing import Any
 
@@ -277,6 +278,54 @@ def test_browser_fetch_pages_async_honors_concurrency_and_durations() -> None:
     assert len(results) == 4
     assert fetches.peak <= 2
     assert all(duration_ms >= 0 for _row, _html, _error, duration_ms in results)
+
+
+def test_browser_fetch_pages_run_at_the_configured_lanes_not_the_shared_executor() -> None:
+    """The wave's lanes are `concurrency`, not `min(32, cpu_count + 4)`.
+
+    The browser fetch used `asyncio.to_thread`, i.e. the event loop's shared default executor, so a
+    wave configured above the machine's worker count ran at that count instead of its lanes, with
+    no error and no log line. 40 lanes is above the shared executor's ceiling on every machine
+    (`min(32, ...)` is at most 32), so this floor discriminates here rather than depending on this
+    box's core count.
+    """
+    lane_count = 40
+    fetches = BlockingActiveCounter()
+    released = threading.Event()
+    thread_names: set[str] = set()
+    lock = threading.Lock()
+
+    def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
+        with lock:
+            thread_names.add(threading.current_thread().name)
+        fetches.enter()
+        try:
+            # Block only long enough for every lane to come alive at once: a wave that cannot
+            # reach its lane count then fails below with the count it did reach, rather than
+            # hanging here or raising a message-free assert out of a pool thread.
+            if fetches.peak >= lane_count:
+                released.set()
+            released.wait(timeout=2.0)
+            return f"<html>{url}</html>", ""
+        finally:
+            fetches.exit()
+
+    results = asyncio.run(
+        browser_recovery.fetch_browser_recovery_pages_async(
+            [{"url": f"https://studio{index}.example/jobs"} for index in range(lane_count)],
+            timeout_s=5,
+            browser_fetcher=fake_browser,
+            concurrency=lane_count,
+        )
+    )
+
+    assert len(results) == lane_count
+    assert fetches.peak == lane_count, (
+        f"peak in-flight was {fetches.peak} of {lane_count} configured lanes"
+    )
+    assert thread_names and all(name.startswith("browser-fetch") for name in thread_names), (
+        f"browser fetches must run on this module's own pool, saw {sorted(thread_names)}"
+    )
 
 
 def test_browser_recovery_samples_are_capped_and_state_updates_counts() -> None:

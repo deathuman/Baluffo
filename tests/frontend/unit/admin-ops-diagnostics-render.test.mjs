@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   renderAdminOpsDedupLists,
-  renderAdminOpsFetcherMetrics
+  renderAdminOpsFetcherMetrics,
+  renderAdminOpsKpis
 } from "../../../frontend/admin/render.js";
 import {
   createButtonMapEl as makeEl,
@@ -187,6 +188,39 @@ test("admin render: discovery audit artifact diagnostics are bounded and actiona
           warnings: []
         },
         {
+          name: "page-fetch-lifecycle",
+          exists: true,
+          pathDisplay: "/data/page-fetch-lifecycle.v1.json",
+          sizeBytes: 262144,
+          modifiedAt: "2026-10-13T09:00:00Z",
+          fingerprintKind: "sha256",
+          fingerprint: "def456",
+          sha256: "def456",
+          topLevelKeys: ["sources"],
+          summary: { status: "ok", candidateCount: 1 },
+          pageFetchLifecycle: {
+            runId: "run-1",
+            coverage: "full",
+            truncated: false,
+            omittedCount: 0,
+            sources: {
+              gameprog: {
+                source: "gameprog",
+                state: "clean",
+                coverage: "full",
+                truncated: false,
+                omittedCount: 0,
+                receiptCount: 1,
+                rollup: {
+                  batchCount: 1, submitted: 3, finished: 3, failed: 0,
+                  outstandingNow: 0, pendingAsyncCleanup: 0, state: "clean"
+                }
+              }
+            }
+          },
+          warnings: []
+        },
+        {
           name: "web-search",
           exists: false,
           pathDisplay: "/data/web-search-discovery-audit.json",
@@ -202,19 +236,99 @@ test("admin render: discovery audit artifact diagnostics are bounded and actiona
 
   assert.match(metricsEl.innerHTML, /Audit Artifacts/i);
   assert.match(metricsEl.innerHTML, /Discovery audit artifacts/i);
-  assert.match(metricsEl.innerHTML, /1\/2 present/i);
+  assert.match(metricsEl.innerHTML, /2\/3 present/i);
   assert.match(metricsEl.innerHTML, /sheet-directory-discovery-audit\.json/i);
   assert.match(metricsEl.innerHTML, /Refresh artifacts/i);
   assert.doesNotMatch(metricsEl.innerHTML, /do-not-expose|rawSourceRows/i);
+  // The view model carries the new fields end to end: the row keeps its fingerprint and the
+  // per-source projection travels through the compact view model rather than being dropped.
+  assert.match(metricsEl.innerHTML, /page-fetch-lifecycle/i);
+  assert.match(metricsEl.innerHTML, /Page fetch lifecycle/i);
+  assert.match(metricsEl.innerHTML, /gameprog/i);
+  assert.match(metricsEl.innerHTML, /3 page fetches/i);
 
   copyButton.click();
   refreshButton.click();
 
   assert.equal(copied.length, 1);
   assert.equal(copied[0].key, "auditArtifacts");
-  assert.equal(copied[0].artifacts.length, 2);
+  assert.equal(copied[0].artifacts.length, 3);
   assert.equal(copied[0].artifacts[0].summary.candidatesCount, 1);
+  // The copy-diagnostics path must carry the new fields through compactAuditArtifact:
+  // fingerprint identity and the per-source page-fetch-lifecycle projection survive, so a
+  // future revert that drops them from the allowlist fails this assertion (discriminating).
+  const copiedPfl = copied[0].artifacts[1];
+  assert.equal(copiedPfl.name, "page-fetch-lifecycle");
+  assert.equal(copiedPfl.fingerprintKind, "sha256");
+  assert.equal(copiedPfl.fingerprint, "def456");
+  assert.equal(copiedPfl.pageFetchLifecycle.sources.gameprog.state, "clean");
+  assert.equal(copiedPfl.pageFetchLifecycle.sources.gameprog.rollup.outstandingNow, 0);
   assert.equal(refreshed, 1);
+});
+
+test("admin render: the probe lifecycle receipt reads as abandoned fetches and an unclosed client", () => {
+  const metricsEl = makeEl();
+
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    discoveryAuditArtifacts: {
+      ok: true,
+      artifacts: [
+        {
+          name: "gamedevmap-receipt",
+          exists: true,
+          pathDisplay: "/data/gamedevmap-audit-receipt.json",
+          sizeBytes: 412,
+          modifiedAt: "2026-10-12T14:54:04Z",
+          summary: {},
+          probeLifecycle: {
+            batches: 1,
+            fetchesStarted: 17,
+            fetchesBoundedOut: 2,
+            fetchesOutstandingAtExit: 1,
+            clientFetchesOutstandingAtExit: 1,
+            clientsUnclosed: 1,
+            deadlineExits: 0
+          },
+          warnings: []
+        }
+      ]
+    }
+  });
+
+  assert.match(metricsEl.innerHTML, /Probe lifecycle/i);
+  assert.match(metricsEl.innerHTML, /client left unclosed/i);
+  assert.match(metricsEl.innerHTML, /17 probe fetches/i);
+  assert.match(metricsEl.innerHTML, /2 abandoned by their own bound/i);
+  assert.match(metricsEl.innerHTML, /1 inside the shared client/i);
+  assert.match(metricsEl.innerHTML, /1 clients unclosed/i);
+});
+
+test("admin render: probe lifecycle KPI says so when no receipt is published, and when it is clean", () => {
+  const pendingEl = makeEl();
+  renderAdminOpsKpis(pendingEl, {}, "healthy", {});
+
+  assert.match(pendingEl.innerHTML, /Probe lifecycle/i);
+  assert.match(pendingEl.innerHTML, /no probe-wave receipt published/i);
+
+  const cleanEl = makeEl();
+  renderAdminOpsKpis(cleanEl, {
+    probeLifecycle: {
+      batches: 1,
+      fetchesStarted: 17,
+      fetchesBoundedOut: 0,
+      fetchesOutstandingAtExit: 0,
+      clientFetchesOutstandingAtExit: 0,
+      clientsUnclosed: 0,
+      deadlineExits: 0
+    }
+  }, "healthy", {});
+
+  assert.match(cleanEl.innerHTML, /Probe lifecycle/i);
+  assert.match(cleanEl.innerHTML, /admin-status-chip healthy">clean</i);
+  assert.match(cleanEl.innerHTML, /0 clients unclosed/i);
+  assert.doesNotMatch(cleanEl.innerHTML, /no probe-wave receipt published/i);
 });
 
 test("admin render: task failure-attempt diagnostics are bounded and copyable", () => {
@@ -323,4 +437,115 @@ test("admin render: dedup review action wiring survives disclosure", () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].action, "reviewed_safe");
   assert.equal(calls[0].row.title, "Designer");
+});
+
+test("admin render: the page-fetch receipt reads per source and marks a truncated reading", () => {
+  const metricsEl = makeEl();
+
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    discoveryAuditArtifacts: {
+      ok: true,
+      artifacts: [
+        {
+          name: "page-fetch-lifecycle",
+          exists: true,
+          pathDisplay: "/data/page-fetch-lifecycle.v1.json",
+          sizeBytes: 2048,
+          modifiedAt: "2026-10-13T09:00:00Z",
+          summary: {},
+          pageFetchLifecycle: {
+            runId: "run-42",
+            coverage: "partial",
+            truncated: true,
+            omittedCount: 7,
+            sources: {
+              gameprog: {
+                source: "gameprog",
+                runId: "run-42",
+                state: "pending",
+                coverage: "partial",
+                truncated: true,
+                omittedCount: 7,
+                receiptCount: 3,
+                rollup: {
+                  batchCount: 3,
+                  submitted: 12,
+                  finished: 9,
+                  failed: 1,
+                  outstandingNow: 2,
+                  pendingAsyncCleanup: 1,
+                  state: "pending"
+                }
+              },
+              gamesmap: {
+                source: "gamesmap",
+                runId: "run-42",
+                state: "clean",
+                coverage: "full",
+                truncated: false,
+                omittedCount: 0,
+                receiptCount: 1,
+                rollup: {
+                  batchCount: 1,
+                  submitted: 4,
+                  finished: 4,
+                  failed: 0,
+                  outstandingNow: 0,
+                  pendingAsyncCleanup: 0,
+                  state: "clean"
+                }
+              }
+            }
+          },
+          warnings: []
+        }
+      ]
+    }
+  });
+
+  const html = metricsEl.innerHTML;
+  assert.match(html, /Page fetch lifecycle/i);
+  assert.match(html, /gameprog/i);
+  assert.match(html, /gamesmap/i);
+  assert.match(html, /12 page fetches/i);
+  assert.match(html, /2 still out when the batch left/i);
+  // A truncated reading must never render as clean, and the omitted count is visible.
+  assert.match(html, /reading truncated/i);
+  assert.match(html, /7 omitted/i);
+});
+
+test("admin render: page-fetch KPI says so when no receipt is published", () => {
+  const pendingEl = makeEl();
+  renderAdminOpsKpis(pendingEl, {}, "healthy", {});
+
+  assert.match(pendingEl.innerHTML, /Page fetch lifecycle/i);
+  assert.match(pendingEl.innerHTML, /no page-fetch receipt published/i);
+
+  const cleanEl = makeEl();
+  renderAdminOpsKpis(
+    cleanEl,
+    {
+      pageFetchLifecycle: {
+        runId: "run-1",
+        sources: {
+          gameprog: {
+            source: "gameprog",
+            state: "clean",
+            coverage: "full",
+            truncated: false,
+            omittedCount: 0,
+            receiptCount: 1,
+            rollup: { batchCount: 1, submitted: 3, finished: 3, failed: 0, outstandingNow: 0, pendingAsyncCleanup: 0, state: "clean" }
+          }
+        }
+      }
+    },
+    "healthy",
+    {}
+  );
+
+  assert.doesNotMatch(cleanEl.innerHTML, /no page-fetch receipt published/i);
+  assert.match(cleanEl.innerHTML, /3 page fetches/i);
 });

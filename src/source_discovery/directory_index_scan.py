@@ -26,6 +26,7 @@ def _scan_payload(
     summary: dict[str, Any],
     progress: dict[str, Any],
     batch_timing: dict[str, Any],
+    page_fetch_lifecycle: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "providerCandidates": provider_candidates,
@@ -34,6 +35,7 @@ def _scan_payload(
         "summary": summary,
         "progress": progress,
         "batchTiming": batch_timing,
+        **({"pageFetchLifecycle": page_fetch_lifecycle} if page_fetch_lifecycle else {}),
     }
 
 
@@ -52,6 +54,7 @@ def run_directory_index_scan(
     parse_failure: Callable[[], dict[str, Any]],
     completed_identity: Callable[[dict[str, Any]], str],
     batch_timing: dict[str, Any],
+    page_fetch_lifecycle: list[dict[str, Any]] | None = None,
     parsed_callback: Callable[[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]], None]
     | None = None,
     candidates_callback: Callable[[list[dict[str, Any]], list[dict[str, Any]], int], None]
@@ -70,6 +73,7 @@ def run_directory_index_scan(
             summary=build_empty_summary(len(failures), 0),
             progress=_empty_progress(),
             batch_timing=batch_timing,
+            page_fetch_lifecycle=page_fetch_lifecycle,
         )
 
     started = time.perf_counter()
@@ -84,6 +88,7 @@ def run_directory_index_scan(
             summary=build_empty_summary(0, 1),
             progress=_empty_progress(),
             batch_timing=batch_timing,
+            page_fetch_lifecycle=page_fetch_lifecycle,
         )
 
     entries = select_entries(raw_entries)
@@ -119,4 +124,5 @@ def run_directory_index_scan(
             ],
         },
         batch_timing=batch_timing,
+        page_fetch_lifecycle=page_fetch_lifecycle,
     )

@@ -10,6 +10,7 @@ from src.source_discovery.directory_page_recovery import (
     dedupe_recovery_fetch_jobs,
     default_recovery_summary,
     fetch_recovery_jobs,
+    generated_answered_recovery_homepages,
     generated_common_path_not_found_homepages,
     http_recovery_request_from_context,
     looks_like_js_shell,
@@ -277,6 +278,35 @@ def test_generated_common_path_not_found_homepages_requires_only_generated_404s(
     ]
 
     assert generated_common_path_not_found_homepages(results) == {"https://one.example"}
+
+
+def test_generated_answered_recovery_homepages_counts_only_the_generated_guess() -> None:
+    """Only a *generated* guess that answered settles the host; a linked page that answered does not."""
+
+    def fetch(homepage: str, source: str, *, ok: bool) -> dict[str, object]:
+        payload: dict[str, object] = {"homepageUrl": homepage, "recoveryUrlSource": source}
+        return {"ok": ok, "text": "<html></html>" if ok else "", "payload": payload}
+
+    deduped: dict[str, object] = {
+        "homepageUrl": "https://deduped.example",
+        "recoveryUrlSource": "generated_common_path",
+    }
+    results = [
+        fetch("https://guessed.example", "generated_common_path", ok=True),
+        fetch("https://guessed.example", "generated_common_path", ok=False),
+        # The homepage linked this one and it answered: wave 2 still has a question to ask.
+        fetch("https://linked.example", "html_jobish_link", ok=True),
+        fetch("https://blocked.example", "generated_common_path", ok=False),
+        # A deduped job carries its requests nested.
+        {"ok": True, "payload": {"requests": [deduped], "dedupeCount": 1}},
+        # No homepage on the payload: nothing to key the decision on.
+        {"ok": True, "payload": {}},
+    ]
+
+    assert generated_answered_recovery_homepages(results) == {
+        "https://guessed.example",
+        "https://deduped.example",
+    }
 
 
 def test_fetch_recovery_jobs_uses_cache_and_updates_uncached_results() -> None:

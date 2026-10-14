@@ -45,6 +45,7 @@ PYINSTALLER_HIDDEN_IMPORTS = [
     "src.shared",
     "src.shared.github_https",
     "src.shared.regex",
+    "src.shared.tls_https",
     "src.shared.utils",
     "src.ship.migrations",
     "src.ship.desktop_update",

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 """Shared bounded-concurrency fetch helpers for directory adapters."""
 
+import inspect
 from typing import Any
 
 from src.shared.http_batch import fetch_pages_batched
+from src.shared.page_fetch_lifecycle import PageFetchLifecycle
 
 from .config import env_int
+from .phase_runtime_receipt import PhaseRuntimeReceipt
 from .web_search_fetch import async_fetch_text_httpx, fetch_text
 
 
@@ -34,6 +37,20 @@ def resolve_directory_fetch_limits(config: dict[str, Any] | None = None) -> tupl
     )
 
 
+def accepts_keyword(callback: Any, keyword: str) -> bool:
+    """Whether a callback's available signature can receive a keyword."""
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return False
+    parameter = parameters.get(keyword)
+    return (
+        parameter is not None
+        and parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    ) or any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+
+
 def fetch_directory_pages(
     timeout_s: int,
     jobs: list[dict[str, Any]],
@@ -45,6 +62,8 @@ def fetch_directory_pages(
     progress_every: int = 25,
     progress_callback: Any | None = None,
     emit_progress_log: bool = True,
+    receipt: PhaseRuntimeReceipt | None = None,
+    page_fetch_lifecycle: PageFetchLifecycle | None = None,
 ) -> list[dict[str, Any]]:
     from .reporting import emit_log
 
@@ -74,6 +93,8 @@ def fetch_directory_pages(
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_callback=_progress,
+        receipt=receipt,
+        page_fetch_lifecycle=page_fetch_lifecycle,
     )
     normalized_results: list[dict[str, Any]] = []
     for result in results:

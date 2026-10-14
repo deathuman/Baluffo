@@ -477,6 +477,7 @@ def _gamesmap_scan(
     emit_log: Any,
     enable_recovery: bool = False,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context=None,
 ) -> dict[str, Any]:
     parse_index_entries = _root_attr(
         "_parse_gamesmap_index_entries_with_diagnostics",
@@ -502,6 +503,7 @@ def _gamesmap_scan(
         "indexUrlCount": len(index_urls),
         "maxDetailPages": max_detail_pages,
     }
+    page_fetch_lifecycles: list[Any] = []
 
     started = time.perf_counter()
     collected = collect_directory_index_entries(
@@ -596,9 +598,11 @@ def _gamesmap_scan(
         recovery_progress_label="Gamesmap",
         unique_sources_fn=unique_sources_fn,
         batch_timing=batch_timing,
+        page_fetch_lifecycles=page_fetch_lifecycles,
         summary=base_summary,
         recovery_url_limit=recovery_url_limit,
         initial_failures=failures,
+        page_fetch_context=page_fetch_context,
     )
     emit_log(
         "Gamesmap candidates: "
@@ -614,6 +618,7 @@ def run_gamesmap_directory_audit(
     *,
     config: dict[str, Any] | None = None,
     fetcher: Any = fetch_text,
+    page_fetch_context=None,
 ) -> tuple[dict[str, Any], bool]:
     from .reporting import emit_log
 
@@ -636,6 +641,7 @@ def run_gamesmap_directory_audit(
                 emit_log=emit_log,
                 enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
                 recovery_url_limit=recovery_url_limit,
+                page_fetch_context=page_fetch_context,
             ),
             runtime={
                 "fetchConcurrency": fetch_concurrency,
@@ -671,6 +677,7 @@ def discover_gamesmap_candidates(
     *,
     config: dict[str, Any] | None = None,
     fetcher=fetch_text,
+    page_fetch_context=None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from .reporting import emit_log
 
@@ -682,5 +689,6 @@ def discover_gamesmap_candidates(
         timeout_s,
         config=config,
         fetcher=fetcher,
+        page_fetch_context=page_fetch_context,
     )
     return directory_audit_rows(artifact)

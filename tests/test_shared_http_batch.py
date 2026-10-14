@@ -1,6 +1,9 @@
+import ast
 import builtins
 import importlib
+import inspect
 import threading
+import time
 
 import pytest
 
@@ -8,6 +11,10 @@ from src.shared import http_batch
 from tests.helpers.concurrency import BlockingActiveCounter
 
 fetch_pages_batched = http_batch.fetch_pages_batched
+
+
+def _is_none_literal(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def test_optional_httpx_import_failure_falls_back_to_sync_path(monkeypatch) -> None:
@@ -212,6 +219,129 @@ def test_fetch_pages_batched_async_path_isolates_httpx_invalid_url_per_page() ->
     assert "For absolute URLs" in str(results[1].get("error") or "")
 
 
+def test_sync_path_runs_at_the_configured_concurrency_beyond_the_default_executor_ceiling() -> None:
+    """The lane count is the caller's budget, not `min(32, cpu_count + 4)`.
+
+    The sync path used `asyncio.to_thread`, i.e. the event loop's shared default executor, so 40
+    configured lanes ran as at most 32 (20 on a 16-core box) with no error and no log line -- and
+    whether a caller got that cap or its real lane count came down to whether its fetcher happened
+    to be `fetch_text` by identity.
+    """
+    lane_count = 40
+    jobs = [{"url": f"https://lane{i}.example/", "payload": {"i": i}} for i in range(lane_count)]
+    fetches = BlockingActiveCounter()
+    released = threading.Event()
+    thread_names: set[str] = set()
+    lock = threading.Lock()
+
+    def fake_fetch(_job: dict[str, object], url: str, _timeout_s: int) -> str:
+        with lock:
+            thread_names.add(threading.current_thread().name)
+        fetches.enter()
+        try:
+            # Block only long enough for every lane to come alive at once: a batch that cannot
+            # reach its lane count then fails below with the count it did reach, rather than
+            # hanging here or raising a message-free assert out of a pool thread.
+            if fetches.peak >= lane_count:
+                released.set()
+            released.wait(timeout=1.0)
+            return f"<html>{url}</html>"
+        finally:
+            fetches.exit()
+
+    results = fetch_pages_batched(
+        5,
+        jobs,
+        sync_fetch=fake_fetch,
+        total_concurrency=lane_count,
+        per_host_concurrency=lane_count,
+    )
+
+    assert len(results) == lane_count
+    assert all(row["ok"] for row in results)
+    assert fetches.peak == lane_count, (
+        f"peak in-flight was {fetches.peak} of {lane_count} configured lanes"
+    )
+    assert thread_names and all(name.startswith("page-fetch") for name in thread_names), (
+        f"fetches must run on this module's own pool, saw {sorted(thread_names)}"
+    )
+
+
+def test_shared_page_batch_module_never_submits_to_an_executor_it_did_not_size() -> None:
+    """The cap was one call, so it must not come back as a call on any path.
+
+    `asyncio.to_thread` submits to the event loop's shared default executor, `min(32, cpu_count +
+    4)`, so a batch that uses it runs at the machine's worker count instead of the caller's lane
+    count -- silently, and for every caller whose fetcher is not `fetch_text` by identity. The lane
+    contracts above can only see the paths they drive; this reads every call in the module,
+    including ones added later.
+    """
+    tree = ast.parse(inspect.getsource(http_batch))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        call = func.attr if isinstance(func, ast.Attribute) else str(getattr(func, "id", ""))
+        if call == "to_thread":
+            offenders.append("asyncio.to_thread() submits to the loop's shared default executor")
+        elif call == "run_in_executor" and node.args and _is_none_literal(node.args[0]):
+            offenders.append("run_in_executor(None, ...) submits to the shared default executor")
+        elif call == "ThreadPoolExecutor":
+            keywords = [keyword for keyword in node.keywords if keyword.arg]
+            if "max_workers" not in {keyword.arg for keyword in keywords}:
+                offenders.append(
+                    "ThreadPoolExecutor() without max_workers uses its own default size"
+                )
+            prefix = next(
+                (
+                    str(keyword.value.value)
+                    for keyword in keywords
+                    if keyword.arg == "thread_name_prefix"
+                    and isinstance(keyword.value, ast.Constant)
+                ),
+                "",
+            )
+            if not prefix.startswith("page-fetch"):
+                offenders.append(
+                    "ThreadPoolExecutor() must keep its page-fetch thread prefix, which the lane "
+                    "contracts key on to tell this module's pool from the shared default executor"
+                )
+    assert not offenders, (
+        "src/shared/http_batch.py may only run sync fetches on a pool it sizes to the batch: "
+        + "; ".join(offenders)
+    )
+
+
+def test_sync_path_deadline_does_not_wait_for_a_straggler_thread() -> None:
+    """A bounded batch must return at its deadline even on the sync path.
+
+    Sync work cannot be cancelled, so the pool is abandoned (`wait=False`): its thread finishes on
+    its own budget and its result is discarded. Waiting instead -- which is what the shared default
+    executor does when the loop closes -- would make the total-batch deadline a fiction for every
+    caller that passes a plain callable.
+    """
+    jobs = [{"url": f"https://stall{i}.example/", "payload": {"i": i}} for i in range(2)]
+
+    def hanging_fetch(_job: dict[str, object], _url: str, _timeout_s: int) -> str:
+        time.sleep(5.0)
+        return "<html>late</html>"
+
+    started = time.perf_counter()
+    results = fetch_pages_batched(
+        1,
+        jobs,
+        sync_fetch=hanging_fetch,
+        total_concurrency=2,
+        per_host_concurrency=2,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 4.0, f"batch took {elapsed:.1f}s against its 2 s deadline"
+    assert [row["ok"] for row in results] == [False, False]
+    assert all("total batch deadline exceeded" in str(row["error"]) for row in results)
+
+
 def test_fetch_pages_batched_uses_async_fetch_when_provided() -> None:
     jobs = [
         {"url": "https://async.example/a", "payload": {"id": "a"}},
@@ -244,3 +374,67 @@ def test_fetch_pages_batched_uses_async_fetch_when_provided() -> None:
         "async:https://async.example/a",
         "async:https://async.example/b",
     ]
+
+
+def test_real_http_batch_host_ready_lets_fast_hosts_finish_before_slow_host() -> None:
+    """Direct-coverage: the SHIPPED fetch_pages_batched uses host-ready acquisition.
+
+    Reviewed in P3 as the one gap in the fairness experiment: that test models the scheduler's
+    semaphore order locally instead of driving the real function, so a future revert of the
+    `async with host_sem: async with total_sem` ordering in `_fetch_one` would go undetected.
+    This test drives the real `fetch_pages_batched` with a grouped fixture: one slow host and
+    several fast hosts, slow jobs first in the list. Under host-ready, the fast-host jobs finish
+    while the slow host is still running its serial work; under total-before-host they are starved
+    and finish only as slow slots free. It fails if the ordering ever regresses.
+    """
+    import time
+
+    slow_delay = 0.25
+    fast_cap = 2
+    slow_host = "slow.example"
+    fast_hosts = [f"fast-{i}.example" for i in range(3)]
+
+    # Slow jobs first in the list reproduces the worst-case starvation input.
+    slow_jobs = [{"url": f"https://{slow_host}/s{i}", "payload": {}} for i in range(6)]
+    fast_jobs = [
+        {"url": f"https://{host}/f{i}", "payload": {}} for host in fast_hosts for i in range(4)
+    ]
+    jobs = slow_jobs + fast_jobs
+
+    fast_done_at: dict[str, float] = {}
+    slow_done_at: dict[str, float] = {}
+    started = time.perf_counter()
+
+    async def fake_async_fetch(_client, job: dict[str, object], url: str, _t: int) -> str:
+        if slow_host in url:
+            await __import__("asyncio").sleep(slow_delay)
+            slow_done_at[url] = time.perf_counter() - started
+        else:
+            fast_done_at[url] = time.perf_counter() - started
+        return f"<html>{url}</html>"
+
+    results = fetch_pages_batched(
+        5,
+        jobs,
+        sync_fetch=lambda _job, _url, _t: (_ for _ in ()).throw(AssertionError("sync unused")),
+        async_fetch=fake_async_fetch,
+        total_concurrency=6,
+        per_host_concurrency=fast_cap,
+    )
+
+    assert len(results) == len(jobs)
+    assert all(row.get("ok") for row in results)
+    assert len(fast_done_at) == len(fast_jobs)
+    assert len(slow_done_at) == len(slow_jobs)
+
+    # Host-ready: fast-host jobs complete promptly (well before slow serial throughput ends).
+    # 6 slow jobs at .25s with per_host_cap=2 => 3 waves => ~0.75s+ of slow serial work.
+    # Fast jobs finish in a single early wave, so their max completion must be far below that.
+    fast_max = max(fast_done_at.values())
+    slow_max = max(slow_done_at.values())
+    # A starved (total-before-host) ordering would push fast_max up to ~slow_max; host-ready
+    # must keep it below half the slow completion time. Generous margin to avoid flake.
+    assert fast_max < slow_max * 0.5, (
+        f"fast-host max completion {fast_max:.3f}s not early relative to slow max {slow_max:.3f}s "
+        f"— total-before-host starvation likely regressed"
+    )

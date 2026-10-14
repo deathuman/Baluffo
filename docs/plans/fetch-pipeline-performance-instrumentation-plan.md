@@ -468,7 +468,8 @@ Deliberately not in this plan, to keep it landable:
   produces the evidence those decisions need.
 - **Discovery subsystem.** It has its own harness (`discovery_sanity_benchmark.py`) and its own
   transport path (`source_discovery/probe.py` uses `async_fetch_text_with_retry`). Out of corpus
-  scope per D6 and D9; a separate plan, not a slice.
+  scope per D6 and D9; probe permits:
+  [`discovery-probe-permit-allocation-plan.md`](discovery-probe-permit-allocation-plan.md).
 - **Browser fallback.** Playwright runs as a Node driver outside the Python transport, so it
   cannot sit at the `fetch_text` seam. Out of scope per D9; those sources stay at their recorded
   refusal state under replay.

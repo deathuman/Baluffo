@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.shared.page_fetch_lifecycle import PageFetchLifecycleContext
 from src.source_registry import (
     load_json_array,
     load_runtime_evidence_array,
@@ -51,6 +52,12 @@ from .web_search import is_blocked_generic_static_url
 
 root: Any | None = None
 ProviderStaticScanRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
+
+
+def _page_fetch_context_for_run(deps, source):
+    if not deps.run_id:
+        return None
+    return PageFetchLifecycleContext(run_id=deps.run_id, source=source)
 
 
 def _require_root() -> Any:
@@ -216,6 +223,7 @@ def _load_web_search_audit_rows(
             include_web_search=bool(deps.include_web_search and stage_enabled["webSearch"]),
             config=deps.effective_config,
             fetcher=deps.fetcher,
+            page_fetch_context=_page_fetch_context_for_run(deps, "web_search"),
         )
         cache["artifact"] = artifact
     return directory_audit_rows(artifact)
@@ -496,6 +504,7 @@ def _run_gamesmap_stage(
             deps.timeout_s,
             config=deps.effective_config,
             fetcher=deps.fetcher,
+            page_fetch_context=_page_fetch_context_for_run(deps, "gamesmap"),
         ),
         provider_stream="web_provider",
         static_stream="generic_static",
@@ -513,6 +522,7 @@ def _scan_gameprog(*, orchestrator: Any, deps: DiscoveryRunDeps) -> ProviderStat
             deps.timeout_s,
             config=config_with_gameprog,
             fetcher=deps.fetcher,
+            page_fetch_context=_page_fetch_context_for_run(deps, "gameprog"),
         ),
     )
 

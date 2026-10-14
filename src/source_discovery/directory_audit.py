@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import audit_ledger, audit_report_summary, candidate_collections
+from .page_fetch_lifecycle_sidecar import publish_page_fetch_lifecycle_sidecar
 
 DirectoryAuditRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
 DirectoryAuditScan = Callable[[int], dict[str, Any]]
@@ -214,6 +215,8 @@ def run_directory_audit(
     for key in ("browserRecoveryCandidates",):
         if key in scan_result:
             artifact[key] = list(scan_result.get(key) or [])
+    if "pageFetchLifecycle" in scan_result:
+        artifact["pageFetchLifecycle"] = scan_result["pageFetchLifecycle"]
     audit_ledger.record_failures(artifact, failures, sample_limit=sample_limit)
 
     artifact_summary = dict(artifact.get("summary") or {})
@@ -236,6 +239,11 @@ def run_directory_audit(
     artifact["finishedAt"] = datetime.now(UTC).isoformat()
     artifact["updatedAt"] = artifact["finishedAt"]
     audit_ledger.save_artifact_atomic(artifact, output_path)
+    publish_page_fetch_lifecycle_sidecar(
+        artifact=artifact,
+        output_path=output_path,
+        emit_log=emit_log,
+    )
     _LATEST_DIRECTORY_AUDIT_SUMMARIES[str(adapter)] = directory_audit_report_summary(
         artifact,
         adapter=adapter,

@@ -155,10 +155,19 @@ def run_active_audit_batch(
     generated_not_found_homepages = (
         directory_recovery_helpers.generated_common_path_not_found_homepages(wave1_fetch.results)
     )
+    # The second wave is four more spellings of the guess wave 1 already made, so it is queued only
+    # where wave 1 left the question open: a guess that could not be read at all, or a site whose
+    # only job-ish pages are the ones its own homepage links. A guess that *answered* says the site
+    # has a careers page we have read and found nothing on (measured: 232 of 326 wave-2 hosts,
+    # 928 of the wave's 1,304 requests, and none of the wave's candidates).
+    generated_answered_homepages = directory_recovery_helpers.generated_answered_recovery_homepages(
+        wave1_fetch.results
+    )
     secondary_jobs_to_fetch = [
         job
         for job in homepage_result.secondary_recovery_jobs
         if strategy.recovery_homepage_key(job) not in wave1_apply.recovered_homepages
+        and strategy.recovery_homepage_key(job) not in generated_answered_homepages
         and not (
             strategy.recovery_homepage_key(job) in generated_not_found_homepages
             and directory_recovery_helpers.recovery_job_is_generated_common_path(job)
@@ -239,6 +248,11 @@ def run_active_audit_batch(
         if strategy.recovery_homepage_key(job) in generated_not_found_homepages
         and directory_recovery_helpers.recovery_job_is_generated_common_path(job)
     )
+    batch_timing["recoverySkippedByGeneratedAnswered"] = sum(
+        1
+        for job in homepage_result.secondary_recovery_jobs
+        if strategy.recovery_homepage_key(job) in generated_answered_homepages
+    )
     batch_timing["recoveryRecoveredHomepages"] = len(recovered_homepages)
 
     merge_started = time.perf_counter()
@@ -299,6 +313,20 @@ def run_active_audit_batch(
     probe_results = strategy.probe_candidates(merged.candidates)
     strategy.apply_probe_results(probe_results)
     batch_timing["probeMs"] = _duration_ms(probe_started)
+    # The probe wave's own receipts: how many fetches it abandoned, and whether its pool and shared
+    # client retired. Recorded here rather than inside the probe so a live run's artifact carries it
+    # per batch. `probeLifecycle` is not an `Ms` key, so the timing rollup leaves it alone.
+    if strategy.probe_lifecycle is not None:
+        probe_lifecycle = strategy.probe_lifecycle()
+        if probe_lifecycle:
+            batch_timing["probeLifecycle"] = dict(probe_lifecycle)
+    # The batch's phase receipts: wall and process CPU per phase, plus the lane occupancy its fetches
+    # reported. `phaseRuntime` is not an `Ms` key, so the timing rollup leaves it out of `totalsMs` --
+    # those totals are wall-clock consumers' numbers and must not gain CPU.
+    if strategy.phase_runtime is not None:
+        phase_runtime = strategy.phase_runtime()
+        if phase_runtime:
+            batch_timing["phaseRuntime"] = [dict(row) for row in phase_runtime]
 
     completed_identities.update(
         strategy.row_identity(row) for row in batch_rows if strategy.row_identity(row)

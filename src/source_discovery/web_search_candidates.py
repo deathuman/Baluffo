@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import quote_plus as quote_plus
 from urllib.parse import urlparse as urlparse
 
+from src.shared.page_fetch_lifecycle import PageFetchLifecycleContext
 from src.shared.regex import find_urls_in_text as find_urls_in_text
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources as unique_sources
@@ -47,6 +48,18 @@ from .directory_page_recovery import (
 from .directory_page_recovery import run_recovery_for_requests as run_recovery_for_requests
 from .page_diagnostics import browser_recoverable_error as browser_recoverable_error
 from .page_diagnostics import looks_like_js_shell as looks_like_js_shell
+from .page_fetch_lifecycle_sidecar import (
+    publish_page_fetch_lifecycle_sidecar as publish_page_fetch_lifecycle_sidecar,
+)
+from .page_fetch_lifecycle_sidecar import (
+    read_page_fetch_lifecycle_sidecar as read_page_fetch_lifecycle_sidecar,
+)
+from .page_fetch_lifecycle_sidecar import (
+    receipt_run_id_or_none as receipt_run_id_or_none,
+)
+from .page_fetch_lifecycle_sidecar import (
+    sidecar_path_for_artifact as sidecar_path_for_artifact,
+)
 from .page_outcomes import FetchedPageContext as FetchedPageContext
 from .page_outcomes import PageOutcome as PageOutcome
 from .page_outcomes import PageOutcomeStrategy as PageOutcomeStrategy
@@ -167,6 +180,7 @@ def run_web_search_directory_audit(
     config: dict[str, Any] | None = None,
     fetcher=None,
     max_queries: int = 18,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> tuple[dict[str, Any], bool]:
     from .reporting import emit_log
 
@@ -189,6 +203,7 @@ def run_web_search_directory_audit(
                     fetcher=fetcher,
                     enable_recovery=recovery_enabled,
                     recovery_url_limit=recovery_url_limit,
+                    page_fetch_context=page_fetch_context,
                 )
             )
         if include_web_search:
@@ -201,6 +216,7 @@ def run_web_search_directory_audit(
                     max_links_per_query=max_links_per_query,
                     enable_recovery=recovery_enabled,
                     recovery_url_limit=recovery_url_limit,
+                    page_fetch_context=page_fetch_context,
                 )
             )
         merged = _merge_web_scan_results(results)
@@ -221,6 +237,11 @@ def run_web_search_directory_audit(
             "failures": list(merged.get("failures") or []),
             "summary": summary,
             "batchTiming": dict(merged.get("batchTiming") or {}),
+            **(
+                {"pageFetchLifecycle": list(merged.get("pageFetchLifecycle") or [])}
+                if merged.get("pageFetchLifecycle")
+                else {}
+            ),
             "progress": {
                 "complete": True,
                 "cursor": len(studio_seeds),
@@ -326,4 +347,36 @@ def run_web_search_browser_recovery(
     artifact["summary"] = summary
     artifact["updatedAt"] = now_iso()
     audit_ledger.save_artifact_atomic(artifact, output_path)
+    _publish_web_search_browser_recovery_sidecar_if_eligible(artifact, output_path, emit_log)
     return artifact
+
+
+def _publish_web_search_browser_recovery_sidecar_if_eligible(
+    artifact: dict[str, Any],
+    output_path: Path,
+    emit_log: Any,
+) -> None:
+    """Best-effort sidecar refresh for the browser-recovery artifact.
+
+    This runner has no run context of its own (unlike the directory audits, which publish inside
+    their own non-cache path), so eligibility is: the artifact must carry receipts AND the sidecar
+    must be absent or already own the same runId. A stale artifact from an earlier run never
+    clobbers a newer run's sidecar.
+    """
+    receipts = [r for r in list(artifact.get("pageFetchLifecycle") or []) if isinstance(r, dict)]
+    if not receipts:
+        return
+    artifact_run_id = receipt_run_id_or_none(receipts)
+    if artifact_run_id is None:
+        # No run context in the artifact (or a mixed-run one) means there is nothing honest to
+        # republish: the guard cannot tell an older artifact from a newer one without an identity.
+        return
+    sidecar_path = sidecar_path_for_artifact(output_path)
+    existing = read_page_fetch_lifecycle_sidecar(sidecar_path)
+    if existing is not None and str(existing.get("runId") or "") != artifact_run_id:
+        return
+    publish_page_fetch_lifecycle_sidecar(
+        artifact=artifact,
+        output_path=output_path,
+        emit_log=emit_log,
+    )

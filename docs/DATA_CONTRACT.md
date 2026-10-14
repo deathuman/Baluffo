@@ -689,6 +689,20 @@ The legacy v2 monolith shape is retained only for reading older snapshots:
 
 `rejected` rows are intentionally excluded from remote snapshot writes: only `active` and `pending` rows are sharded, so rejected rows stay local-only. Snapshot readers still accept legacy v1 input and infer the transition metadata needed to merge into the canonical model. Tombstones are never included in remote snapshots.
 
+### Admin/Ops probe lifecycle receipt
+
+A GameDevMap active audit publishes its probe wave's own receipt as `gamedevmap-audit-receipt.json`
+beside `gamedevmap-active-source-dry-run.json`, because the artifact it summarizes runs to tens of MB
+and an operator watching Ops health cannot pay for that parse. The file is a read-only projection of
+the artifact's `summary.probeLifecycle` (`fetchesStarted`, `fetchesBoundedOut` — the fetches that
+outlived their per-call bound and kept running — `fetchesOutstandingAtExit`,
+`clientFetchesOutstandingAtExit`, `clientsRetiredByBatch`, `clientsRetiredByLastFetch`,
+`clientsUnclosed`, `maxClientCloseDeferredMs`, `poolThreadsAliveNow`, `deadlineExits`) plus the run's
+`runId` and timestamps. `/ops/health` may include it as additive `kpis.probeLifecycle` and
+`/ops/discovery-audit-artifacts` projects it per row. It is diagnostics only: it must not feed queue
+decisions, source verdicts, promotion, demotion, or freshness, and a missing receipt reads as absent
+rather than as a clean wave.
+
 ### Admin/Ops registry sync confidence
 
 `/ops/health` may include additive `kpis.registrySync` for Admin/Ops observability. It is derived from existing local registry buckets, tombstones, sync runtime state, and sync run history; it must not be copied into source rows or used to auto-promote, demote, reject, tombstone, hide, delete, or merge sources.

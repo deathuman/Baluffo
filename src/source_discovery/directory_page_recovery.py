@@ -19,10 +19,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.shared.json_shapes import as_json_object, json_object_rows
+from src.shared.page_fetch_lifecycle import PageFetchLifecycle, PageFetchLifecycleContext
 
 from . import audit_ledger, wordpress_feed_probe
 from .browser_recovery import browser_recovery_candidate_row
-from .directory_fetch import fetch_directory_pages
+from .directory_fetch import accepts_keyword, fetch_directory_pages
 from .page_diagnostics import (
     looks_like_js_shell as page_looks_like_js_shell,
 )
@@ -80,6 +81,7 @@ class DirectoryRecoveryResult:
     recovered_keys: set[str] = field(default_factory=set)
     summary: dict[str, int] = field(default_factory=dict)
     batch_timing: dict[str, int] = field(default_factory=dict)
+    page_fetch_lifecycles: list[PageFetchLifecycle] = field(default_factory=list)
 
 
 RecoveryAnalyzer = Callable[
@@ -192,6 +194,31 @@ def page_outcome_scan_rows(
     }
 
 
+def _merge_page_fetch_lifecycle_snapshots(*values: Any) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    seen_batches: set[tuple[str, str, str, str]] = set()
+    for value in values:
+        entries = value if isinstance(value, (list, tuple)) else (value,)
+        for entry in entries:
+            if isinstance(entry, PageFetchLifecycle):
+                entry = entry.snapshot()
+            if not isinstance(entry, dict):
+                continue
+            batch_id = str(entry.get("batchId") or "").strip()
+            scope_key = (
+                str(entry.get("runId") or ""),
+                str(entry.get("source") or ""),
+                str(entry.get("phase") or ""),
+                batch_id,
+            )
+            if batch_id and scope_key in seen_batches:
+                continue
+            if batch_id:
+                seen_batches.add(scope_key)
+            snapshots.append(dict(entry))
+    return snapshots
+
+
 def merge_scan_result_payloads(
     results: list[dict[str, Any]],
     *,
@@ -230,7 +257,10 @@ def merge_scan_result_payloads(
         summary.update(browser_recovery_summary(browser_rows))
     for key, value in dict(summary_defaults or {}).items():
         summary.setdefault(key, value)
-    return {
+    page_fetch_lifecycle = _merge_page_fetch_lifecycle_snapshots(
+        *(result.get("pageFetchLifecycle") for result in results)
+    )
+    merged = {
         "providerCandidates": provider_candidates,
         "staticCandidates": static_candidates,
         "browserRecoveryCandidates": browser_rows,
@@ -239,6 +269,9 @@ def merge_scan_result_payloads(
         "batchTiming": batch_timing,
         "completedUrlIdentities": completed_url_identities,
     }
+    if page_fetch_lifecycle:
+        merged["pageFetchLifecycle"] = page_fetch_lifecycle
+    return merged
 
 
 def recovery_result_candidates_from_strategy(
@@ -544,6 +577,33 @@ def _recovery_request_source(payload: dict[str, Any]) -> str:
     return str(payload.get("recoveryUrlSource") or "").strip()
 
 
+def generated_answered_recovery_homepages(
+    recovery_fetch_results: list[dict[str, Any]],
+) -> set[str]:
+    """Homepages whose own *generated* recovery guess answered (a read, not a failure).
+
+    One question has three answers. `generated_common_path_not_found_homepages` covers "every
+    guess 404'd and nothing else answered"; this covers "a guess answered", which says the site
+    has a careers page we have already read and held no candidate. What is left — a guess that
+    could not be read at all, or a site whose only job-ish pages are the ones its homepage links —
+    still earns the second wave.
+
+    Measured on the GameDevMap audit's own population (two full 3,000-studio runs): 232 of the 326
+    wave-2 hosts are in this set, they carry 928 of the wave's 1,304 requests, and the wave's one
+    candidate by URL attribution (a `zero_jobs` static page) came from a host that is *not*. Skipping
+    this set costs one candidate in either run — an events page, again not an active board.
+    """
+    homepages: set[str] = set()
+    for result in recovery_fetch_results:
+        if not bool(result.get("ok")):
+            continue
+        for payload in recovery_requests_from_result(result):
+            homepage = _recovery_request_homepage(payload)
+            if homepage and _recovery_request_source(payload) == GENERATED_RECOVERY_URL_SOURCE:
+                homepages.add(homepage)
+    return homepages
+
+
 def generated_common_path_not_found_homepages(
     recovery_fetch_results: list[dict[str, Any]],
 ) -> set[str]:
@@ -621,6 +681,9 @@ def fetch_recovery_jobs(
     recovery_cache: dict[str, dict[str, Any]],
     fetch_pages: Any = fetch_directory_pages,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
+    page_fetch_phase: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     deduped_jobs = dedupe_recovery_fetch_jobs(jobs)
     cached_results: list[dict[str, Any]] = []
@@ -632,15 +695,30 @@ def fetch_recovery_jobs(
             cached_results.append(recovery_cache_result(cached, job))
         else:
             fetch_jobs.append(job)
-    fetched_results = fetch_pages(
-        timeout_s,
-        fetch_jobs,
-        fetcher=fetcher,
-        total_concurrency=total_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        progress_label=progress_label,
-        progress_callback=progress_callback,
-    )
+    page_fetch_lifecycle = None
+    if (
+        fetch_jobs
+        and (page_fetch_lifecycles is not None or page_fetch_context is not None)
+        and accepts_keyword(fetch_pages, "page_fetch_lifecycle")
+    ):
+        phase = page_fetch_phase or progress_label
+        page_fetch_lifecycle = (
+            page_fetch_context.new_receipt(phase)
+            if page_fetch_context is not None
+            else PageFetchLifecycle(source="directory_recovery", phase=phase)
+        )
+        if page_fetch_lifecycles is not None:
+            page_fetch_lifecycles.append(page_fetch_lifecycle)
+    fetch_kwargs = {
+        "fetcher": fetcher,
+        "total_concurrency": total_concurrency,
+        "per_host_concurrency": per_host_concurrency,
+        "progress_label": progress_label,
+        "progress_callback": progress_callback,
+    }
+    if page_fetch_lifecycle is not None:
+        fetch_kwargs["page_fetch_lifecycle"] = page_fetch_lifecycle
+    fetched_results = fetch_pages(timeout_s, fetch_jobs, **fetch_kwargs)
     for result in fetched_results:
         url = str(result.get("url") or "").strip()
         if not url:
@@ -880,6 +958,7 @@ def _run_recovery_wave(
     remaining_keys: set[str],
     url_limit: int,
     output: DirectoryRecoveryResult,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> None:
     jobs, requests_by_url = _dedupe_jobs(
         requests,
@@ -891,14 +970,22 @@ def _run_recovery_wave(
     output.summary["recoveryFetchAttempts"] += len(jobs)
     if not jobs:
         return
-    results = fetch_directory_pages(
-        timeout_s,
-        jobs,
-        fetcher=fetcher,
-        total_concurrency=total_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        progress_label=f"{progress_label} recovery wave {wave_index}",
-    )
+    phase = f"{progress_label} recovery wave {wave_index}"
+    fetch_kwargs: dict[str, Any] = {
+        "fetcher": fetcher,
+        "total_concurrency": total_concurrency,
+        "per_host_concurrency": per_host_concurrency,
+        "progress_label": phase,
+    }
+    if accepts_keyword(fetch_directory_pages, "page_fetch_lifecycle"):
+        page_fetch_lifecycle = (
+            page_fetch_context.new_receipt(phase)
+            if page_fetch_context is not None
+            else PageFetchLifecycle(source="directory_recovery", phase=phase)
+        )
+        output.page_fetch_lifecycles.append(page_fetch_lifecycle)
+        fetch_kwargs["page_fetch_lifecycle"] = page_fetch_lifecycle
+    results = fetch_directory_pages(timeout_s, jobs, **fetch_kwargs)
     for result in results:
         fanout_requests = requests_by_url.get(str(result.get("url") or "").strip(), [])
         if bool(result.get("ok")):
@@ -924,20 +1011,22 @@ def run_recovery_for_requests(
     progress_label: str,
     url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
     recovery_runner: Any = None,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> DirectoryRecoveryResult:
     if not requests:
         return DirectoryRecoveryResult(summary=default_recovery_summary())
     runner = recovery_runner or run_directory_page_recovery
-    return runner(
-        timeout_s,
-        requests,
-        fetcher=fetcher,
-        total_concurrency=total_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        analyze_result=analyze_result,
-        progress_label=progress_label,
-        url_limit=url_limit,
-    )
+    runner_kwargs: dict[str, Any] = {
+        "fetcher": fetcher,
+        "total_concurrency": total_concurrency,
+        "per_host_concurrency": per_host_concurrency,
+        "analyze_result": analyze_result,
+        "progress_label": progress_label,
+        "url_limit": url_limit,
+    }
+    if page_fetch_context is not None and accepts_keyword(runner, "page_fetch_context"):
+        runner_kwargs["page_fetch_context"] = page_fetch_context
+    return runner(timeout_s, requests, **runner_kwargs)
 
 
 def _identity_fallback_candidate(entry: Any) -> dict[str, Any] | None:
@@ -1015,6 +1104,12 @@ def apply_recovery_to_scan_result(
         }
     batch_timing.update(recovery_timing)
     updated["batchTiming"] = batch_timing
+    page_fetch_lifecycle = _merge_page_fetch_lifecycle_snapshots(
+        updated.get("pageFetchLifecycle"),
+        getattr(recovery, "page_fetch_lifecycles", ()),
+    )
+    if page_fetch_lifecycle:
+        updated["pageFetchLifecycle"] = page_fetch_lifecycle
     return updated
 
 
@@ -1028,6 +1123,7 @@ def run_directory_page_recovery(
     analyze_result: RecoveryAnalyzer,
     progress_label: str,
     url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> DirectoryRecoveryResult:
     output = DirectoryRecoveryResult(summary=default_recovery_summary())
     if not requests:
@@ -1061,6 +1157,7 @@ def run_directory_page_recovery(
             remaining_keys=remaining_keys,
             url_limit=url_limit,
             output=output,
+            page_fetch_context=page_fetch_context,
         )
         if not remaining_keys:
             break

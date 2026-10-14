@@ -73,7 +73,9 @@ def _install_urlopen(monkeypatch: pytest.MonkeyPatch, handler: Any) -> list[tupl
 
     calls: list[tuple[str, str]] = []
 
-    def _urlopen(request: Any, timeout: float) -> Any:
+    def _urlopen(request: Any, timeout: float, context: Any = None) -> Any:
+        # `context=`: the shared verified TLS anchor `common.http` now passes (see
+        # src/shared/tls_https.py); this fake never reaches the network.
         cookie = request.headers.get("Cookie") or request.get_header("Cookie") or ""
         calls.append((request.full_url, str(cookie)))
         return handler(request.full_url, str(cookie))

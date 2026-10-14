@@ -12,6 +12,7 @@ import time
 from typing import Any
 from urllib.parse import quote_plus, urlparse
 
+from src.shared.page_fetch_lifecycle import PageFetchLifecycleContext
 from src.source_registry import unique_sources
 
 from . import audit_ledger as audit_ledger
@@ -115,6 +116,7 @@ def _scan_seed_careers_page_candidates(
     fetcher: Any,
     enable_recovery: bool = False,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> dict[str, Any]:
     provider_candidates: list[dict[str, Any]] = []
     page_jobs: list[dict[str, Any]] = []
@@ -158,6 +160,7 @@ def _scan_seed_careers_page_candidates(
         recovery_timing_key="seedRecoveryFetchMs",
         enable_recovery=enable_recovery,
         recovery_url_limit=recovery_url_limit,
+        page_fetch_context=page_fetch_context,
         provider_candidates=provider_candidates,
     )
     page_summary = dict(page_stage.get("summary") or {})
@@ -192,6 +195,11 @@ def _scan_seed_careers_page_candidates(
                 if key not in {"pageFetchMs", "candidateAnalysisMs"}
             },
         },
+        **(
+            {"pageFetchLifecycle": list(page_stage.get("pageFetchLifecycle") or [])}
+            if page_stage.get("pageFetchLifecycle")
+            else {}
+        ),
         "completedUrlIdentities": list(page_stage.get("completedUrlIdentities") or []),
     }
 
@@ -208,6 +216,7 @@ def _scan_web_search_candidates(
     max_links_per_query: int = MAX_SEARCH_LINKS_PER_QUERY,
     enable_recovery: bool = False,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> dict[str, Any]:
     provider_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -278,6 +287,7 @@ def _scan_web_search_candidates(
         recovery_timing_key="webRecoveryFetchMs",
         enable_recovery=enable_recovery,
         recovery_url_limit=recovery_url_limit,
+        page_fetch_context=page_fetch_context,
         provider_candidates=provider_candidates,
         failures=failures,
         failure_samples=web_failure_samples,
@@ -323,6 +333,11 @@ def _scan_web_search_candidates(
                 if key not in {"pageFetchMs", "candidateAnalysisMs"}
             },
         },
+        **(
+            {"pageFetchLifecycle": list(page_stage.get("pageFetchLifecycle") or [])}
+            if page_stage.get("pageFetchLifecycle")
+            else {}
+        ),
         "completedUrlIdentities": list(page_stage.get("completedUrlIdentities") or []),
     }
 

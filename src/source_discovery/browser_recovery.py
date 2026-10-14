@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -301,20 +302,34 @@ async def fetch_browser_recovery_pages_async(
     browser_fetcher,
     concurrency: int,
 ) -> list[BrowserFetchResult]:
-    sem = asyncio.Semaphore(max(1, int(concurrency or 1)))
+    # The wave's lanes are `concurrency`, clipped by the rows this batch actually has.
+    # ponytail: the browser fetch below used `asyncio.to_thread`, i.e. the event loop's SHARED
+    # default executor, whose size is `min(32, cpu_count + 4)`: a wave configured above that would
+    # run at the machine's worker count instead of its lanes, silently and with no log line. Give
+    # the wave a pool it sizes to its own lanes and retires when the batch is done.
+    lanes = max(1, min(int(concurrency or 1), max(1, len(rows))))
+    sem = asyncio.Semaphore(lanes)
+    pool = ThreadPoolExecutor(max_workers=lanes, thread_name_prefix="browser-fetch")
+    loop = asyncio.get_running_loop()
 
     async def _one(row: dict[str, Any]) -> BrowserFetchResult:
         url = str(row.get("url") or "").strip()
         async with sem:
             started = time.perf_counter()
-            html, error = await asyncio.to_thread(browser_fetcher, url, timeout_s)
+            html, error = await loop.run_in_executor(pool, browser_fetcher, url, timeout_s)
             duration_ms = max(0, int((time.perf_counter() - started) * 1000))
             return row, str(html or ""), str(error or ""), duration_ms
 
     tasks = [asyncio.create_task(_one(row)) for row in rows]
     results: list[BrowserFetchResult] = []
-    for fut in asyncio.as_completed(tasks):
-        results.append(await fut)
+    try:
+        for fut in asyncio.as_completed(tasks):
+            results.append(await fut)
+    finally:
+        # A sync browser fetch cannot be cancelled: every normal path has already awaited them all,
+        # so this is immediate, and a cancelled caller is not held open by a straggler whose thread
+        # finishes on its own budget.
+        pool.shutdown(wait=False)
     return results
 
 

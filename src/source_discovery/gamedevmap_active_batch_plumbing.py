@@ -119,6 +119,9 @@ def _build_gamedevmap_active_loop_strategy(
     completed_urls: set[str],
     compare_artifact_path: Path | str | None,
     batch_strategy: active_audit_runtime.ActiveAuditBatchStrategy,
+    probe_lifecycles: list[Any] | None = None,
+    phase_receipts: list[Any] | None = None,
+    page_fetch_lifecycles: list[Any] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditLoopStrategy:
     return active_audit_runtime.build_active_audit_loop_strategy(
@@ -146,6 +149,9 @@ def _build_gamedevmap_active_loop_strategy(
                 parsed_rows=parsed_rows,
                 representative_rows=representative_rows,
                 completed_urls=identities,
+                probe_lifecycles=probe_lifecycles,
+                phase_receipts=phase_receipts,
+                page_fetch_lifecycles=page_fetch_lifecycles,
             ),
         ),
         progress_callback=progress_callback,

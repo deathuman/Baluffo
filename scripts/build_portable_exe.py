@@ -167,6 +167,7 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.shared",
     "src.shared.github_https",
     "src.shared.regex",
+    "src.shared.tls_https",
     "src.shared.utils",
     "src.ship.migrations",
     "src.ship.desktop_update",
@@ -230,6 +231,7 @@ MAIN_RUNTIME_EXCLUDED_MODULES = (
 UPDATER_HELPER_HIDDEN_IMPORTS = (
     "encodings.idna",
     "src.shared.github_https",
+    "src.shared.tls_https",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     "tkinter",
     "tkinter.ttk",

@@ -4,8 +4,10 @@ import time
 from typing import Any, cast
 
 from src.shared.json_shapes import as_json_object
+from src.shared.page_fetch_lifecycle import PageFetchLifecycle, PageFetchLifecycleContext
 
 from . import audit_ledger
+from .directory_fetch import accepts_keyword
 from .directory_fetch_jobs import build_directory_fetch_jobs
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -18,6 +20,10 @@ from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 
 ProviderInferenceFn = Any
+
+
+def _accepts_page_fetch_lifecycle(callback: Any) -> bool:
+    return accepts_keyword(callback, "page_fetch_lifecycle")
 
 
 def build_directory_static_candidate(
@@ -266,6 +272,8 @@ def run_directory_website_scan(
     write_cache: bool = True,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
     recovery_runner: Any = run_directory_page_recovery,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> dict[str, Any]:
     provider_candidates = list(initial_provider_candidates or [])
     static_candidates = list(initial_static_candidates or [])
@@ -275,6 +283,7 @@ def run_directory_website_scan(
     fallback_static_candidates: list[dict[str, Any]] = []
     bad_provider_inferences = 0
     recovery_summary: dict[str, int] = default_recovery_summary()
+    page_fetch_lifecycles = page_fetch_lifecycles if page_fetch_lifecycles is not None else []
 
     website_fetch_jobs = build_directory_fetch_jobs(
         entries,
@@ -285,14 +294,21 @@ def run_directory_website_scan(
     )
 
     started = time.perf_counter()
-    website_fetch_results = fetch_pages(
-        timeout_s,
-        website_fetch_jobs,
-        fetcher=fetcher,
-        total_concurrency=fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        progress_label=progress_label,
-    )
+    fetch_kwargs = {
+        "fetcher": fetcher,
+        "total_concurrency": fetch_concurrency,
+        "per_host_concurrency": per_host_concurrency,
+        "progress_label": progress_label,
+    }
+    if website_fetch_jobs and _accepts_page_fetch_lifecycle(fetch_pages):
+        page_fetch_lifecycle = (
+            page_fetch_context.new_receipt("directory_page_fetch")
+            if page_fetch_context is not None
+            else PageFetchLifecycle(source=adapter, phase="directory_page_fetch")
+        )
+        page_fetch_lifecycles.append(page_fetch_lifecycle)
+        fetch_kwargs["page_fetch_lifecycle"] = page_fetch_lifecycle
+    website_fetch_results = fetch_pages(timeout_s, website_fetch_jobs, **fetch_kwargs)
     batch_timing["websiteFetchMs"] = audit_ledger.duration_ms(started)
 
     website_fetch_failures = 0
@@ -319,6 +335,7 @@ def run_directory_website_scan(
         progress_label=recovery_progress_label,
         url_limit=recovery_url_limit,
         recovery_runner=recovery_runner,
+        page_fetch_context=page_fetch_context,
     )
     recovery_summary = dict(recovery.summary)
 
@@ -337,6 +354,15 @@ def run_directory_website_scan(
             "browserRecoveryCandidates": browser_recovery_candidates,
             "summary": {},
             "batchTiming": batch_timing,
+            **(
+                {
+                    "pageFetchLifecycle": [
+                        lifecycle.snapshot() for lifecycle in page_fetch_lifecycles
+                    ]
+                }
+                if page_fetch_lifecycles
+                else {}
+            ),
         },
         recovery,
         provider_dedupe=unique_sources_fn,
@@ -376,6 +402,11 @@ def run_directory_website_scan(
         },
         "batchTiming": batch_timing,
         "writeCache": bool(write_cache),
+        **(
+            {"pageFetchLifecycle": scan_payload["pageFetchLifecycle"]}
+            if scan_payload.get("pageFetchLifecycle")
+            else {}
+        ),
     }
 
 
@@ -406,6 +437,8 @@ def run_directory_adapter_website_scan(
     initial_failures: list[dict[str, Any]] | None = None,
     write_cache: bool = True,
     recovery_runner: Any = run_directory_page_recovery,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> dict[str, Any]:
     fetch_concurrency, per_host_concurrency = resolve_fetch_limits(cfg)
     batch_timing["fetchConcurrency"] = fetch_concurrency
@@ -436,6 +469,8 @@ def run_directory_adapter_website_scan(
         initial_failures=initial_failures,
         write_cache=write_cache,
         recovery_runner=recovery_runner,
+        page_fetch_lifecycles=page_fetch_lifecycles,
+        page_fetch_context=page_fetch_context,
     )
 
 
@@ -466,9 +501,16 @@ def run_directory_entry_selection_scan(
     required_fields: tuple[str, ...] = (),
     initial_failures: list[dict[str, Any]] | None = None,
     write_cache: bool = True,
+    page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
+    page_fetch_context: PageFetchLifecycleContext | None = None,
 ) -> dict[str, Any]:
     if not parsed_entries:
-        return cast(dict[str, Any], empty_result())
+        result = cast(dict[str, Any], empty_result())
+        if page_fetch_lifecycles:
+            result["pageFetchLifecycle"] = [
+                lifecycle.snapshot() for lifecycle in page_fetch_lifecycles
+            ]
+        return result
 
     started = time.perf_counter()
     selected = select_entries(parsed_entries)
@@ -510,4 +552,6 @@ def run_directory_entry_selection_scan(
         initial_static_candidates=static_candidates,
         initial_failures=[*list(initial_failures or []), *selected_failures],
         write_cache=write_cache,
+        page_fetch_lifecycles=page_fetch_lifecycles,
+        page_fetch_context=page_fetch_context,
     )

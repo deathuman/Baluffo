@@ -138,6 +138,12 @@ class ActiveAuditBatchStrategy:
     apply_probe_results: Callable[[Any], None]
     row_identity: Callable[[dict[str, Any]], str]
     append_timing: Callable[[dict[str, Any]], None]
+    # What the batch's probe wave did with its pool, its fetches and its shared client, for the
+    # artifact to carry. Optional: a batch that does not report one records no `probeLifecycle` row.
+    probe_lifecycle: Callable[[], dict[str, Any]] | None = None
+    # The batch's per-phase wall/CPU/lane receipts, in phase order. Optional for the same reason:
+    # a batch that reports none records no `phaseRuntime` row, and the artifact's shape is unchanged.
+    phase_runtime: Callable[[], list[dict[str, Any]]] | None = None
     progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 

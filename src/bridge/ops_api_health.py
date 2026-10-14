@@ -14,6 +14,12 @@ from typing import Any
 
 from src.bridge import active_task_snapshot as _active_snapshot
 from src.bridge import ops_health as _ops_health
+from src.bridge.discovery_audit_artifacts import (
+    load_page_fetch_lifecycle_receipt as load_page_fetch_lifecycle_receipt,
+)
+from src.bridge.discovery_audit_artifacts import (
+    load_probe_lifecycle_receipt as load_probe_lifecycle_receipt,
+)
 from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active, _task_type
 from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
@@ -43,6 +49,12 @@ class OpsHealthDeps:
     get_source_policy_soak_report: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
+    get_probe_lifecycle_payload: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
+    get_page_fetch_lifecycle_payload: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
     get_updater_status_payload: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
@@ -63,6 +75,15 @@ class OpsApiHealthMixin(OpsApiState):
             ),
             get_state=self._deps.load_state,
             get_registry_summary_payload=self._deps.get_registry_summary_payload,
+            # The receipt is published beside the discovery report (both live in the active data
+            # dir), so the read is a small file's own stat-and-parse rather than the tens-of-MB
+            # audit artifact it summarizes.
+            get_probe_lifecycle_payload=lambda: load_probe_lifecycle_receipt(
+                self._paths.discovery_report.parent
+            ),
+            get_page_fetch_lifecycle_payload=lambda: load_page_fetch_lifecycle_receipt(
+                self._paths.discovery_report.parent
+            ),
             get_tombstones=self._deps.load_tombstones,
             get_sync_status_payload=self._deps.get_sync_status_payload,
             now_iso=self._deps.now_iso,
@@ -202,6 +223,28 @@ class OpsApiHealthMixin(OpsApiState):
                 sync_status=sync_status,
                 history=history,
             )
+            # The receipt is a few hundred bytes beside the report, so the summary -- the poll the
+            # Admin page runs at its steady cadence -- carries it too, read from the same place
+            # `build_ops_health_deps` reads it for the full payload. Omitting it here made this view
+            # read as "no probe-wave receipt published" until a full payload happened to be fetched,
+            # which is a different statement from a wave that left nothing behind.
+            with time_operation("ops.dashboard_health.summary.probe_lifecycle"):
+                try:
+                    probe_lifecycle = as_json_object(
+                        load_probe_lifecycle_receipt(self._paths.discovery_report.parent)
+                    )
+                except (OSError, TypeError, ValueError):
+                    probe_lifecycle = {}
+            # Same reasoning as the probe receipt above: the page-fetch envelope is read from the
+            # published sidecar (a bounded stat-and-parse, never the artifact), so the summary view
+            # does not need the full payload to report it.
+            with time_operation("ops.dashboard_health.summary.page_fetch_lifecycle"):
+                try:
+                    page_fetch_lifecycle = as_json_object(
+                        load_page_fetch_lifecycle_receipt(self._paths.discovery_report.parent)
+                    )
+                except (OSError, TypeError, ValueError):
+                    page_fetch_lifecycle = {}
             pending_count = int(registry_summary.get("pendingCount") or 0)
             sync_ready = bool(as_json_object(sync_status.get("config")).get("ready", True))
             alert_result = _ops_health.evaluate_alerts_summary(
@@ -243,6 +286,8 @@ class OpsApiHealthMixin(OpsApiState):
                     "pendingApprovalsCount": pending_count,
                     "sourcePolicyRecommendationExport": {},
                     "registrySync": registry_sync,
+                    "probeLifecycle": probe_lifecycle,
+                    "pageFetchLifecycle": page_fetch_lifecycle,
                 },
                 "schedule": schedule,
                 "alerts": alerts,

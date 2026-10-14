@@ -8,6 +8,8 @@ DISCOVERY_AUDIT_ARTIFACT_NAMES = (
     "web-search-discovery-audit.json",
     "sheet-directory-discovery-audit.json",
     "gamedevmap-active-source-dry-run.json",
+    "gamedevmap-audit-receipt.json",
+    "page-fetch-lifecycle.v1.json",
 )
 
 

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
 import src.source_discovery.web_search_candidates as web_candidates
-from src.source_discovery import directory_audit
+from src.source_discovery import directory_audit, orchestrator_generation
+from src.source_discovery.orchestrator_runtime import DiscoveryRunDeps
 from src.url_hosts import url_host_matches_domain
 from tests.helpers.discovery_fakes import seeds
 
@@ -50,22 +52,52 @@ def _fetcher(url: str, _timeout_s: int) -> str:
     raise RuntimeError(f"unexpected URL: {url}")
 
 
-def test_web_search_directory_audit_missing_artifact_runs_both_substages() -> None:
+def test_web_search_directory_audit_missing_artifact_runs_both_substages(monkeypatch) -> None:
     with workspace_tmpdir("web-search-audit-missing") as root:
         audit_path = root / "web-audit.json"
 
-        artifact, cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=_seeds(),
-            include_seed_careers=True,
+        cache_hits: list[bool] = []
+
+        def run_web_search_directory_audit(
+            *args: Any, **kwargs: Any
+        ) -> tuple[dict[str, Any], bool]:
+            artifact, cache_hit = web_candidates.run_web_search_directory_audit(*args, **kwargs)
+            cache_hits.append(cache_hit)
+            return artifact, cache_hit
+
+        monkeypatch.setattr(
+            orchestrator_generation.discovery_config_module,
+            "studio_seeds_with_feed_recheck_priority",
+            _seeds,
+        )
+        deps = SimpleNamespace(
+            timeout_s=5,
             include_web_search=True,
-            config=_audit_config(str(audit_path)),
+            effective_config=_audit_config(str(audit_path), max_queries=1),
             fetcher=_fetcher,
-            max_queries=1,
+            run_id="outer-web-search-run",
+        )
+        orchestrator_generation._load_web_search_audit_rows(
+            orchestrator=SimpleNamespace(
+                run_web_search_directory_audit=run_web_search_directory_audit,
+            ),
+            deps=cast(DiscoveryRunDeps, deps),
+            stage_enabled={"seedCareersScan": True, "webSearch": True},
+            cache={},
         )
 
-        assert cache_hit is False
+        assert cache_hits == [False]
         assert audit_path.exists()
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        page_fetch_lifecycle = artifact["pageFetchLifecycle"]
+        assert page_fetch_lifecycle
+        assert all(
+            entry["runId"] == "outer-web-search-run"
+            and entry["source"] == "web_search"
+            and entry["phase"]
+            and entry["batchId"]
+            for entry in page_fetch_lifecycle
+        )
         assert artifact["adapter"] == "web_search"
         assert artifact["schemaVersion"] == web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION
         assert artifact["progress"]["complete"] is True

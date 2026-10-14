@@ -217,11 +217,14 @@ def test_loc_budget_writes_lf_baseline_on_this_platform(tmp_path: Path) -> None:
 
 # --- queued-version drift --------------------------------------------------
 #
-# 0.3.016 was bumped, never tagged, then skipped by 0.3.017. Both sections sat in the
-# changelog claiming their versions had shipped, so the notes generated for the next tag
-# covered one changeset while the other's two fixes were readable only inside the file.
-# The rule is pinned against repository shapes, not changelog text alone, so these build
-# throwaway repos -- including the tag-less and shallow shapes automation actually uses.
+# The git tag is not the release marker for Baluffo: it publishes by version string (the
+# GHCR image tag comes from src/app_version.py, not a git tag), so a real release can exist
+# with no git tag (0.3.018 is that case -- published to GHCR, untagged). The guardrail
+# therefore flags a versioned section as a phantom only when it is *strictly below the last
+# tagged release* -- a version that was skipped and superseded by a release that did get
+# tagged, whose notes the next tag would silently omit. These rules are pinned against
+# repository shapes, not changelog text alone, so they build throwaway repos -- including the
+# tag-less and shallow shapes automation actually uses.
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -256,20 +259,43 @@ def _tag(repo: Path, version: str) -> None:
     assert completed.returncode == 0, completed.stderr
 
 
-def test_drift_check_fails_the_version_that_was_bumped_and_skipped(tmp_path: Path) -> None:
-    """The 0.3.016 -> 0.3.017 shape: a queued section whose version never tagged."""
-    repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016", "0.3.015"])
+def test_drift_check_fails_a_section_below_the_last_tagged_release(tmp_path: Path) -> None:
+    """A versioned section strictly below the last tagged release is a phantom.
+
+    The old rule flagged *any* untagged non-current section, which is wrong once a
+    release ships by version string with no git tag (0.3.018). The corrected rule flags
+    only a section older than the newest tagged release -- here 0.3.014, buried below the
+    tagged 0.3.015 -- while a newer untagged section (0.3.016) is a legitimately shipped
+    or in-flight release and stays allowed.
+    """
+    repo = _drifting_repo(
+        tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016", "0.3.015", "0.3.014"]
+    )
     _tag(repo, "0.3.015")
 
     with pytest.raises(AssertionError) as excinfo:
         test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
 
     message = str(excinfo.value)
-    flagged = message.split("with no release tag: ", 1)[1].split(". ", 1)[0]
-    assert flagged == "0.3.016", (
-        f"only the unshipped 0.3.016 should be flagged, not the version in flight: {message!r}"
+    flagged = message.split("stranded below the last tagged release: ", 1)[1].split(". ", 1)[0]
+    assert flagged == "0.3.014", (
+        "only the section below the last tagged release should be flagged, "
+        f"not a shipped/untagged or in-flight one: {message!r}"
     )
     assert "cross-channel checkpoint" in message, "the remedy must point at the release guide"
+
+
+def test_drift_check_allows_a_shipped_untagged_release_above_the_last_tag(tmp_path: Path) -> None:
+    """The 0.3.018 shape: a version published by version string with no git tag is fine.
+
+    The guardrail must not require every released version to carry a git tag. Here 0.3.018
+    (shipped on GHCR, untagged) sits above the last tagged release 0.3.017 and below the
+    in-flight 0.3.019; it is a real release, so nothing is flagged.
+    """
+    repo = _drifting_repo(tmp_path, version="0.3.019", sections=["0.3.019", "0.3.018", "0.3.017"])
+    _tag(repo, "0.3.017")
+
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
 
 
 def test_drift_check_allows_the_version_in_flight_to_await_its_tag(tmp_path: Path) -> None:

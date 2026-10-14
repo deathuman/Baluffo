@@ -127,18 +127,22 @@ def test_gamedevmap_recovery_cache_scope_default_and_compatibility_fallback() ->
 
 
 def _is_volatile_measurement(key: str) -> bool:
-    """True for fields that record *when* or *how long*, not *what* was found.
+    """Exclude operational measurements, not business outcomes.
 
-    The claim under test is that a batch-scoped recovery cache yields the same
-    candidate outcomes as a per-run cache. Wall-clock measurements are not part
-    of that claim and jitter by a millisecond or two between otherwise identical
-    runs, which made this test fail intermittently. ``probeDurationMs`` alone
-    accounted for it: the helper already stripped the timestamp fields, and the
-    durations slipped through.
+    Timing and artifact-size measurements vary between otherwise identical runs.
+    ``phaseRuntime`` records runtime/lane measurements; phase/lane shapes remain
+    asserted independently below. ``pageFetchLifecycle`` contains run-specific
+    batch identities and physical recovery workload, which naturally differ
+    across cache scopes and are not business outcomes. Each run's receipts are
+    validated independently rather than compared.
     """
-    return key in {"artifactSizeBytes", "discoveredAt", "lastProbedAt"} or key.endswith(
-        ("DurationMs", "ElapsedMs", "Ms")
-    )
+    return key in {
+        "artifactSizeBytes",
+        "discoveredAt",
+        "lastProbedAt",
+        "pageFetchLifecycle",
+        "phaseRuntime",
+    } or key.endswith(("DurationMs", "ElapsedMs", "Ms"))
 
 
 def _without_volatile_timestamps(value: Any) -> Any:
@@ -198,3 +202,66 @@ def test_batch_scoped_recovery_cache_preserves_fixture_outcomes() -> None:
         assert _without_volatile_timestamps(batch_result[key]) == _without_volatile_timestamps(
             run_result[key]
         )
+
+    # The receipt's numbers are excluded above; which phases produced them is not a measurement, so
+    # the two scopes are required to have run the same phases with the same lane budgets.
+    def _receipt_shape(result: dict[str, Any]) -> dict[str, int]:
+        rows = result["summary"].get("phaseRuntime", {}).get("phases", [])
+        assert rows, "both cache scopes record an in-situ runtime receipt"
+        return {str(row["phase"]): int(row["configuredLanes"]) for row in rows}
+
+    assert _receipt_shape(batch_result) == _receipt_shape(run_result)
+
+    for result in (run_result, batch_result):
+        assert "pageFetchLifecycle" in result["summary"]
+        receipts = result["summary"]["pageFetchLifecycle"]
+        assert isinstance(receipts, list)
+        batch_ids: set[str] = set()
+        total_started = 0
+        for receipt in receipts:
+            assert receipt["schemaVersion"] == 1
+            assert receipt["receiptType"] == "pageFetchLifecycle"
+            for key in ("source", "batchId"):
+                assert isinstance(receipt[key], str) and receipt[key].strip()
+            assert receipt["batchId"] not in batch_ids
+            batch_ids.add(receipt["batchId"])
+            counts = [
+                receipt[key]
+                for key in (
+                    "submitted",
+                    "started",
+                    "finished",
+                    "failed",
+                    "cancelledBeforeStart",
+                    "queuedNow",
+                    "outstandingNow",
+                )
+            ]
+            assert all(isinstance(value, int) and value >= 0 for value in counts)
+            submitted, started, finished, failed, cancelled, queued, outstanding = counts
+            assert submitted == started + cancelled + queued
+            assert started == finished + outstanding
+            assert failed <= finished
+            assert queued == outstanding == 0
+            assert receipt["deadlineExit"] == "completed"
+            total_started += started
+        assert total_started > 0  # Zero-request batches are valid; each run must do real work.
+
+
+def test_cache_parity_comparator_excludes_only_telemetry() -> None:
+    results: list[dict[str, Any]] = [
+        {
+            "summary": {
+                "activeCandidateCount": 1,
+                "pageFetchLifecycle": [{"batchId": batch_id, "started": started}],
+            },
+            "activeCandidates": [{"name": "Fixture Studio"}],
+        }
+        for batch_id, started in (("run", 1), ("batch", 2))
+    ]
+    assert _without_volatile_timestamps(results[0]) == _without_volatile_timestamps(results[1])
+    results[1]["summary"]["activeCandidateCount"] = 2
+    assert _without_volatile_timestamps(results[0]) != _without_volatile_timestamps(results[1])
+    results[1]["summary"]["activeCandidateCount"] = 1
+    results[1]["activeCandidates"][0]["name"] = "Changed Studio"
+    assert _without_volatile_timestamps(results[0]) != _without_volatile_timestamps(results[1])

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import sys
 from collections.abc import Callable, Mapping
@@ -488,6 +489,106 @@ def _is_valid_identity_token(token: str) -> bool:
     )
 
 
+PROBE_TIMEOUT_RETRY_ENV = "BALUFFO_PROBE_TIMEOUT_RETRY"
+# A probe URL that fails by **timing out** earns ONE retry here, not the shared ladder's two.
+# Measured across the audit's own 2,935-candidate population, four arms: a second attempt rescued
+# 2 boards (both at `static` listing pages, and both real), a third attempt rescued 0 of the 5 it
+# was given -- while the third attempt is exactly what sets a probe batch's clock, because a
+# timeout costs a whole request budget (`3 x timeout_s` plus backoff = 21.6 s at `timeout_s=6`).
+# Failures that cost milliseconds (429, 5xx, a reset) keep the full ladder.
+#
+# `legacy` restores the shared ladder, so the A/B can price this cut in one process. Read as a
+# module global at call time, like the other measurement switches.
+LEGACY_PROBE_TIMEOUT_ATTEMPTS = (
+    os.environ.get(PROBE_TIMEOUT_RETRY_ENV, "").strip().lower() == "legacy"
+)
+_PROBE_TIMEOUT_ATTEMPTS = 2
+
+
+def probe_timeout_attempts() -> int | None:
+    """Total attempts a timed-out probe URL earns; None = the shared ladder (control arm)."""
+    return None if LEGACY_PROBE_TIMEOUT_ATTEMPTS else _PROBE_TIMEOUT_ATTEMPTS
+
+
+# The provider keys every probe URL of a candidate is built from: the board-page fallback reads
+# `slug` (Greenhouse), `account` (Lever, Workable) and `company_id` (SmartRecruiters), and the
+# subdomain fallbacks read the host label that `subdomain` names.
+_PROVIDER_IDENTITY_KEYS = ("slug", "account", "company_id", "subdomain")
+
+# Providers whose own listing endpoint answers authoritatively for the board it names: a 404/410
+# from `boards-api.greenhouse.io/v1/boards/<slug>/jobs` or `api.lever.co/v0/postings/<account>`
+# says that board does not exist, and the sibling URL `_fallback_probe_url` builds from the same
+# slug/account addresses that same board. Measured across 244 real audit candidates: 152 sibling
+# requests followed such a 404, and every one of them answered 404 (or timed out) as well -- no
+# board was rescued, and 39% of the phase's requests were spent restating a known answer.
+#
+# Workable is deliberately not on this list, and a measured counterexample is why: its widget API
+# answers 404 for `abhitechgames` while `apply.workable.com/abhitechgames` serves that board
+# (verified directly, and the one live case where a sibling request changed a verdict). An
+# adapter joins this set only on that evidence; trying the sibling stays the default.
+_AUTHORITATIVE_BOARD_ENDPOINTS = frozenset({"greenhouse", "lever"})
+
+# A provider's own listing API answers "this board does not exist" with 404 and 410 for one taken
+# down. Nothing else in the failure family means that: a timeout, a 403 or a 5xx says the URL could
+# not be read, not that the identifier is unknown -- and those keep the sibling request.
+_DEFINITIVE_NOT_FOUND_CODES = frozenset({404, 410})
+
+_HTTP_STATUS_RES = (
+    re.compile(r"\bHTTP Error (\d{3})\b"),  # urllib.error.HTTPError
+    re.compile(r"\b(?:Client|Server) error '(\d{3})"),  # httpx.HTTPStatusError
+    re.compile(r"\bHTTP (\d{3})\b"),
+)
+
+
+def probe_http_status(exc: BaseException) -> int | None:
+    """The HTTP status behind a probe failure, from whichever client raised it."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        return status
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        return code
+    text = str(exc)
+    for pattern in _HTTP_STATUS_RES:
+        match = pattern.search(text)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def is_definitive_not_found(exc: BaseException) -> bool:
+    """True when the board identifier itself does not exist (404/410), not merely unreadable."""
+    return probe_http_status(exc) in _DEFINITIVE_NOT_FOUND_CODES
+
+
+def _provider_identity_token(candidate: Mapping[str, Any] | None) -> str:
+    """The candidate's own provider key, as the fallback builders read it."""
+    if not isinstance(candidate, Mapping):
+        return ""
+    for key in _PROVIDER_IDENTITY_KEYS:
+        token = str(candidate.get(key) or "").strip()
+        if token:
+            return token
+    return ""
+
+
+def _settles_the_board(exc: BaseException, *, adapter: str, probe_url: str, token: str) -> bool:
+    """True when this failure answers for every remaining probe URL of the same board.
+
+    Only the adapters in `_AUTHORITATIVE_BOARD_ENDPOINTS` answer that way, only for 404/410, and
+    only from a URL carrying the candidate's own provider key -- the sibling URL is built from
+    that key (`_fallback_probe_url` reads `slug`/`account`/`company_id`, `_subdomain_candidate`
+    reads the host label), so it addresses the same board and can only restate the answer.
+    """
+    return (
+        adapter in _AUTHORITATIVE_BOARD_ENDPOINTS
+        and is_definitive_not_found(exc)
+        and bool(token)
+        and token.lower() in str(probe_url or "").lower()
+    )
+
+
 # Personio operates two domains and a board is real on either. The feed format and the
 # runtime's parser are identical across them.
 _PERSONIO_HOST_SUFFIXES = ("jobs.personio.de", "jobs.personio.com")
@@ -755,6 +856,39 @@ def _probe_urls(candidate: dict[str, Any]) -> list[str]:
     return [endpoint_url(candidate), *fallback_probe_urls(candidate)]
 
 
+def probe_row_timeout_units(candidate: dict[str, Any] | None, timeout_s: int) -> int:
+    """Upper bound, in units of `timeout_s`, a single candidate may consume while probing.
+
+    1 = a single fetch of `timeout_s`, which is what every deadline formula currently assumes.
+    >1 means legitimate multi-request work — fallback URLs, per-URL timeout retries, and the
+    Workday structured POST with its retries + backoff — that a deadline sized for a single request
+    would falsely truncate. It is a ceiling (never truncates valid work), not a measured sum, and it
+    is bounded so a pathological row cannot inflate it without bound.
+
+    The bound is intentionally adapter-known rather than counted from a live fetch, so the deadline
+    can be computed before any request starts.
+    """
+    if not isinstance(candidate, dict):
+        return 1
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    listing = str(candidate.get("listing_url") or candidate.get("careersUrl") or "").strip()
+    if adapter == "workday" and listing:
+        # The structured POST (`structured_api_probe_count`) fires first; when it returns, the
+        # probe is _that_ one POST with `retries=2` and `backoff_s=1.0`, plus the shared timeout
+        # retry — up to 4 attempts at `max(5, timeout_s)` each, then the fixed 2 s backoff. Express
+        # the whole budget in `timeout_s` units as a ceiling.
+        step = max(5, int(timeout_s))
+        backoff_s = 2.0
+        units = (4 * step + backoff_s) / timeout_s
+        return max(1, int(units) + 1)
+    # Ordinary adapter: tries each URL in `_probe_urls` in turn; a timed-out URL earns
+    # `probe_timeout_attempts()` attempts (2 default, the shared ladder otherwise), never fewer than
+    # one, so each URL can consume up to `attempts * timeout_s`. Actually the retry only fires on
+    # timeout, so some rows use 1 — but the deadline must not truncate the ones that fully retry.
+    attempts = probe_timeout_attempts() or 3  # 2 default, 3 for the legacy shared ladder
+    return max(1, len(_probe_urls(candidate)) * attempts)
+
+
 def structured_api_probe_count(
     candidate: Mapping[str, Any] | None, *, timeout_s: int
 ) -> int | None:
@@ -816,6 +950,7 @@ def _probe_fetch_urls(
     structured = structured_api_probe_count(candidate, timeout_s=timeout_s)
     if structured is not None:
         return True, structured, ""
+    identity_token = _provider_identity_token(candidate)
     seen_urls = set()
     last_error = "probe failed"
     for probe_url in probe_urls:
@@ -823,7 +958,13 @@ def _probe_fetch_urls(
             continue
         seen_urls.add(probe_url)
         try:
-            text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            text = fetch_text_with_retry(
+                probe_url,
+                timeout_s,
+                adapter=adapter,
+                fetcher=fetcher,
+                timeout_attempts=probe_timeout_attempts(),
+            )
             if adapter == "static":
                 evidence = static_probe_evidence(text, probe_url)
                 if candidate is not None:
@@ -832,6 +973,8 @@ def _probe_fetch_urls(
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except _EXPECTED_PROBE_FETCH_EXCEPTIONS as exc:
             last_error = f"{probe_url}: {exc}"
+            if _settles_the_board(exc, adapter=adapter, probe_url=probe_url, token=identity_token):
+                break
     return False, 0, last_error
 
 
@@ -917,6 +1060,7 @@ async def _async_probe_fetch_urls(
     structured = await asyncio.to_thread(structured_api_probe_count, candidate, timeout_s=timeout_s)
     if structured is not None:
         return True, structured, ""
+    identity_token = _provider_identity_token(candidate)
     seen_urls = set()
     last_error = "probe failed"
     for probe_url in probe_urls:
@@ -925,7 +1069,11 @@ async def _async_probe_fetch_urls(
         seen_urls.add(probe_url)
         try:
             text = await async_fetch_text_with_retry(
-                probe_url, timeout_s, adapter=adapter, fetcher=fetcher
+                probe_url,
+                timeout_s,
+                adapter=adapter,
+                fetcher=fetcher,
+                timeout_attempts=probe_timeout_attempts(),
             )
             if adapter == "static":
                 evidence = static_probe_evidence(text, probe_url)
@@ -935,6 +1083,8 @@ async def _async_probe_fetch_urls(
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except _EXPECTED_PROBE_FETCH_EXCEPTIONS as exc:
             last_error = f"{probe_url}: {exc}"
+            if _settles_the_board(exc, adapter=adapter, probe_url=probe_url, token=identity_token):
+                break
     return False, 0, last_error
 
 

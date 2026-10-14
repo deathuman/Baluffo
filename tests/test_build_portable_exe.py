@@ -182,14 +182,14 @@ def test_helper_hidden_imports_include_tkinter_progress_ui_modules() -> None:
     assert "encodings.idna" in UPDATER_HELPER_HIDDEN_IMPORTS
     assert "tkinter" in UPDATER_HELPER_HIDDEN_IMPORTS
     assert "tkinter.ttk" in UPDATER_HELPER_HIDDEN_IMPORTS
-    assert "src.shared.github_https" in UPDATER_HELPER_HIDDEN_IMPORTS
+    assert {"src.shared.github_https", "src.shared.tls_https"} <= set(UPDATER_HELPER_HIDDEN_IMPORTS)
 
 
 def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support() -> None:
     assert "encodings.idna" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.admin_bridge" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "tkinter" in MAIN_RUNTIME_HIDDEN_IMPORTS
-    assert "src.shared.github_https" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert {"src.shared.github_https", "src.shared.tls_https"} <= set(MAIN_RUNTIME_HIDDEN_IMPORTS)
     assert "src.local_data_store_attachments" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.local_data_store_backup" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.local_data_store_profiles" in MAIN_RUNTIME_HIDDEN_IMPORTS

@@ -9,7 +9,7 @@ import pytest
 
 from src import source_sync as sync
 from src import source_sync_crypto
-from src.shared import github_https
+from src.shared import github_https, tls_https
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 
 
@@ -901,8 +901,8 @@ def test_request_raw_json_loads_sync_specific_ca_bundle(monkeypatch, tmp_path):
         seen["context"] = context
         return _FakeResponse(200, {"ok": True})
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", None)
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", None)
     monkeypatch.setenv(sync.SYNC_CA_BUNDLE_ENV, str(cafile))
     monkeypatch.setattr(sync, "urlopen", fake_urlopen)
 
@@ -937,8 +937,8 @@ def test_request_raw_json_uses_shared_ca_bundle(monkeypatch, tmp_path):
         seen["context"] = context
         return _FakeResponse(200, {"ok": True})
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", None)
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", None)
     monkeypatch.setenv(github_https.GITHUB_CA_BUNDLE_ENV, str(cafile))
     monkeypatch.setattr(sync, "urlopen", fake_urlopen)
 

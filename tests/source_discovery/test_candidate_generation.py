@@ -781,7 +781,7 @@ def test_probe_candidate_maps_jobs_found_for_recruitee_and_pinpoint() -> None:
     assert error == ""
 
 
-def test_probe_candidate_uses_fallback_when_primary_fails() -> None:
+def test_probe_candidate_uses_fallback_when_primary_fails() -> None:  # 403: see probe_failures
     greenhouse = {
         "adapter": "greenhouse",
         "slug": "example",
@@ -790,7 +790,7 @@ def test_probe_candidate_uses_fallback_when_primary_fails() -> None:
 
     def fake_fetch(url: str, _: int) -> str:
         if url.split("/", 3)[2] == "boards-api.greenhouse.io":
-            raise RuntimeError("HTTP Error 404: Not Found")
+            raise RuntimeError("HTTP Error 403: Forbidden")
         if url.split("/", 3)[2] == "boards.greenhouse.io" and "/example" in url:
             return '<a href="https://boards.greenhouse.io/example/jobs/123">Role</a>'
         raise RuntimeError(f"unexpected URL: {url}")

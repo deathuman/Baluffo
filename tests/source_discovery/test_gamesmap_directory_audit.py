@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
-from src.source_discovery import directory_audit
-from src.source_discovery.gamesmap_candidates import run_gamesmap_directory_audit
+from src.source_discovery import directory_audit, orchestrator_generation
+from src.source_discovery.orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
 from tests.helpers.report_state import fetch_from
 
 from ._helpers import _gamesmap_next_payload_html, sd, workspace_tmpdir
@@ -135,7 +137,7 @@ def test_gamesmap_audit_reuses_fresh_artifact_without_network_work() -> None:
         assert second_rows == first_rows
 
 
-def test_gamesmap_public_discovery_returns_audit_rows_for_same_inputs() -> None:
+def test_gamesmap_public_discovery_returns_audit_rows_for_same_inputs(monkeypatch) -> None:
     with workspace_tmpdir("gamesmap-audit-equivalence") as root:
         public_audit_path = root / "gamesmap-public-audit.json"
         audit_path = root / "gamesmap-direct-audit.json"
@@ -147,10 +149,45 @@ def test_gamesmap_public_discovery_returns_audit_rows_for_same_inputs() -> None:
             config=public_config,
             fetcher=_fetch_from(_gamesmap_payloads()),
         )
-        artifact, _cache_hit = run_gamesmap_directory_audit(
-            5,
-            config=audit_config,
-            fetcher=_fetch_from(_gamesmap_payloads()),
+
+        def run_scan_stage(**kwargs):
+            for callback in kwargs.values():
+                if callable(callback):
+                    callback()
+                    return
+            raise AssertionError("Gamesmap stage did not provide a scan callback")
+
+        monkeypatch.setattr(
+            orchestrator_generation,
+            "_run_provider_static_scan_stage",
+            run_scan_stage,
+        )
+        orchestrator_generation._run_gamesmap_stage(
+            orchestrator=sd,
+            deps=cast(
+                DiscoveryRunDeps,
+                SimpleNamespace(
+                    effective_config=audit_config,
+                    timeout_s=5,
+                    fetcher=_fetch_from(_gamesmap_payloads()),
+                    run_id="outer-gamesmap-run",
+                ),
+            ),
+            state=cast(DiscoveryRunState, SimpleNamespace()),
+            enabled=True,
+        )
+        audit_path = Path(audit_config["gamesmap"]["activeAuditPath"])
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        lifecycle = artifact["pageFetchLifecycle"]
+        lifecycle_batches = (
+            lifecycle.get("batches", [lifecycle]) if isinstance(lifecycle, dict) else lifecycle
+        )
+        assert any(
+            batch.get("runId") == "outer-gamesmap-run"
+            and batch.get("source") == "gamesmap"
+            and batch.get("phase")
+            and batch.get("batchId")
+            for batch in lifecycle_batches
         )
         audit_rows = directory_audit.directory_audit_rows(artifact)
 

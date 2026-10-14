@@ -16,7 +16,7 @@ import {
   tooltipAttrs
 } from "../../shared/ui/index.js";
 import { formatDedupReviewStateSummary } from "./ops-summary-dedup.js";
-import { hasOwnField, formatOptionalDuration, formatOptionalNumber, formatOptionalPercent, formatOptionalText, formatPendingField } from "./ops-summary-fields.js";
+import { hasOwnField, formatOptionalDuration, formatOptionalNumber, formatOptionalPercent, formatOptionalText, formatPendingField, formatPageFetchLifecycleReceipt, formatProbeLifecycleReceipt } from "./ops-summary-fields.js";
 
 function formatRegistryCountBasis(summary) {
   const basis = String(summary?.countBasis || "").toLowerCase();
@@ -108,7 +108,9 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     lastSuccessfulFetchAge: hasOwnField(kpis, "lastSuccessfulFetchAge") ? String(kpis?.lastSuccessfulFetchAge || "") : "__pending__",
     registrySync: kpis?.registrySync || {},
     providerCoverage: kpis?.providerCoverage || {},
-    dedupReviewState: kpis?.dedupReviewState || {}
+    dedupReviewState: kpis?.dedupReviewState || {},
+    probeLifecycle: kpis?.probeLifecycle || {},
+    pageFetchLifecycle: kpis?.pageFetchLifecycle || {}
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
@@ -121,6 +123,30 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
   const dedupReviewState = kpis?.dedupReviewState && typeof kpis.dedupReviewState === "object"
     ? kpis.dedupReviewState
     : {};
+  const probeLifecycle = kpis?.probeLifecycle && typeof kpis.probeLifecycle === "object"
+    ? kpis.probeLifecycle
+    : {};
+  const probeLifecycleReceipt = formatProbeLifecycleReceipt(probeLifecycle);
+  // A receipt the operator can act on is the point of the row, so an absent one says so rather than
+  // rendering an empty line: only a GameDevMap audit that ran a probe wave publishes one at all.
+  const probeLifecycleHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Probe lifecycle</strong>:
+      ${probeLifecycleReceipt || "no probe-wave receipt published by the latest GameDevMap audit yet"}
+    </div>
+  `;
+  const pageFetchLifecycle = kpis?.pageFetchLifecycle && typeof kpis.pageFetchLifecycle === "object"
+    ? kpis.pageFetchLifecycle
+    : {};
+  const pageFetchLifecycleReceipt = formatPageFetchLifecycleReceipt(pageFetchLifecycle);
+  // Same reasoning as the probe receipt above, and the two are rendered as separate rows: they
+  // answer different questions, and a run that published one but not the other must say so.
+  const pageFetchLifecycleHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Page fetch lifecycle</strong>:
+      ${pageFetchLifecycleReceipt || "no page-fetch receipt published by a directory or web-search audit yet"}
+    </div>
+  `;
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
   const pendingSourcesKpis = hasOwnField(kpis, "pendingSourcesCount")
     ? kpis
@@ -209,6 +235,8 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
       <div class="admin-total-value">${formatOptionalNumber(pendingSourcesKpis, "pendingSourcesCount")}</div>
     </div>
     ${registryDiagnosticsHtml}
+    ${probeLifecycleHtml}
+    ${pageFetchLifecycleHtml}
   `;
 }
 

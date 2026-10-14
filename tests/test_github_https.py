@@ -4,7 +4,7 @@ from urllib.error import URLError
 
 import pytest
 
-from src.shared import github_https
+from src.shared import github_https, tls_https
 
 
 def test_build_github_ssl_context_loads_default_certs_and_custom_bundle(
@@ -21,8 +21,8 @@ def test_build_github_ssl_context_loads_default_certs_and_custom_bundle(
         def load_verify_locations(self, *, cafile=None) -> None:  # noqa: ANN001
             seen["cafiles"].append(cafile)
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", None)
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", None)
     monkeypatch.setenv("BALUFFO_TEST_CA_BUNDLE", str(cafile))
 
     context = github_https.build_github_ssl_context(ca_bundle_envs=("BALUFFO_TEST_CA_BUNDLE",))
@@ -47,8 +47,8 @@ def test_build_github_ssl_context_loads_certifi_bundle(monkeypatch: pytest.Monke
         def where() -> str:
             return "/tmp/certifi/cacert.pem"
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", FakeCertifi())
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", FakeCertifi())
 
     context = github_https.build_github_ssl_context()
 
@@ -71,8 +71,8 @@ def test_build_github_ssl_context_ignores_missing_certifi_where(
     class BrokenCertifi:
         pass
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", BrokenCertifi())
 
     context = github_https.build_github_ssl_context()
 
@@ -97,8 +97,8 @@ def test_build_github_ssl_context_ignores_certifi_os_error(
         def where() -> str:
             raise OSError("certifi bundle unavailable")
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", BrokenCertifi())
 
     context = github_https.build_github_ssl_context()
 
@@ -121,8 +121,8 @@ def test_build_github_ssl_context_does_not_swallow_unexpected_certifi_error(
         def where() -> str:
             raise RuntimeError("unexpected certifi failure")
 
-    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+    monkeypatch.setattr(tls_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(tls_https, "certifi", BrokenCertifi())
 
     with pytest.raises(RuntimeError, match="unexpected certifi failure"):
         github_https.build_github_ssl_context()
@@ -130,7 +130,7 @@ def test_build_github_ssl_context_does_not_swallow_unexpected_certifi_error(
 
 def test_build_github_ssl_context_rejects_missing_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BALUFFO_TEST_CA_BUNDLE", "C:/missing-ca.pem")
-    monkeypatch.setattr(github_https, "certifi", None)
+    monkeypatch.setattr(tls_https, "certifi", None)
 
     with pytest.raises(RuntimeError, match="CA bundle not found"):
         github_https.build_github_ssl_context(ca_bundle_envs=("BALUFFO_TEST_CA_BUNDLE",))

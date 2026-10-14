@@ -244,7 +244,7 @@ Four rules keep this from quietly regrowing, all enforced by
 | --- | --- |
 | At most 5 released sections, plus `[Unreleased]` | `test_changelog_clamps_released_sections` |
 | A change is described by exactly one release section | `test_no_change_is_claimed_by_two_release_sections` |
-| No versioned section without a release tag except the version in flight | `test_changelog_holds_no_unpublished_section_above_the_last_release_tag` |
+| No versioned section stranded below the last tagged release | `test_changelog_holds_no_unpublished_section_above_the_last_release_tag` |
 | `[Unreleased]` sits directly above the versioned rollup | `test_changelog_keeps_unreleased_above_versioned_rollup` |
 
 The second rule has one deliberate exception. A **rollup** release restates an

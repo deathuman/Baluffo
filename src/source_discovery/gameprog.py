@@ -411,6 +411,7 @@ def _gameprog_scan(
     emit_log: Any,
     enable_recovery: bool = False,
     recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    page_fetch_context=None,
 ) -> dict[str, Any]:
     teams_url = str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip()
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
@@ -421,6 +422,7 @@ def _gameprog_scan(
         "teamsUrl": teams_url,
         "maxStudios": max_studios,
     }
+    page_fetch_lifecycles: list[Any] = []
 
     teams_json = ""
     started = time.perf_counter()
@@ -517,6 +519,7 @@ def _gameprog_scan(
         recovery_progress_label="Gameprog",
         unique_sources_fn=unique_sources,
         batch_timing=batch_timing,
+        page_fetch_lifecycles=page_fetch_lifecycles,
         summary={
             "teamsRows": parsed_count,
             "parsedRows": parsed_count,
@@ -524,6 +527,7 @@ def _gameprog_scan(
         selection_timing_key="",
         recovery_url_limit=recovery_url_limit,
         initial_failures=failures,
+        page_fetch_context=page_fetch_context,
     )
 
 
@@ -532,6 +536,7 @@ def run_gameprog_directory_audit(
     *,
     config: dict[str, Any] | None = None,
     fetcher: Any = None,
+    page_fetch_context=None,
 ) -> tuple[dict[str, Any], bool]:
     from .reporting import emit_log
 
@@ -554,6 +559,7 @@ def run_gameprog_directory_audit(
                 emit_log=emit_log,
                 enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
                 recovery_url_limit=recovery_url_limit,
+                page_fetch_context=page_fetch_context,
             ),
             runtime={
                 "fetchConcurrency": fetch_concurrency,
@@ -585,6 +591,7 @@ def discover_gameprog_candidates(
     *,
     config: dict[str, Any] | None = None,
     fetcher=None,
+    page_fetch_context=None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from .reporting import emit_log
 
@@ -595,5 +602,6 @@ def discover_gameprog_candidates(
         timeout_s,
         config=config,
         fetcher=fetcher or fetch_text,
+        page_fetch_context=page_fetch_context,
     )
     return directory_audit_rows(artifact)

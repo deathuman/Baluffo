@@ -129,7 +129,7 @@ def test_playwright_runtime_does_not_hide_unexpected_failures(monkeypatch) -> No
 
 
 def test_redirect_career_candidates_ignore_expected_probe_failures(monkeypatch) -> None:
-    def fail_urlopen(_request, *, timeout: int):  # noqa: ANN001
+    def fail_urlopen(_request, *, timeout: int, context=None):  # noqa: ANN001
         raise OSError("network unavailable")
 
     monkeypatch.setattr(source_check_http, "urlopen", fail_urlopen)
@@ -144,7 +144,7 @@ def test_redirect_career_candidates_ignore_expected_probe_failures(monkeypatch) 
 
 
 def test_redirect_career_candidates_ignore_expected_decode_failures(monkeypatch) -> None:
-    def fail_urlopen(_request, *, timeout: int):  # noqa: ANN001
+    def fail_urlopen(_request, *, timeout: int, context=None):  # noqa: ANN001
         return _InvalidCharsetResponse(url="https://jobs.example.com/", body=b"x")
 
     monkeypatch.setattr(source_check_http, "urlopen", fail_urlopen)
@@ -161,7 +161,7 @@ def test_redirect_career_candidates_ignore_expected_decode_failures(monkeypatch)
 def test_redirect_career_candidates_do_not_hide_unexpected_probe_failures(
     monkeypatch,
 ) -> None:
-    def fail_urlopen(_request, *, timeout: int):  # noqa: ANN001
+    def fail_urlopen(_request, *, timeout: int, context=None):  # noqa: ANN001
         raise AssertionError("probe bug")
 
     monkeypatch.setattr(source_check_http, "urlopen", fail_urlopen)

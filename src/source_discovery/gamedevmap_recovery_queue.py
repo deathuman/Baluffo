@@ -226,5 +226,13 @@ async def _probe_candidates_async(
     *,
     timeout_s: int,
     fetcher,
+    lifecycle: Any | None = None,
+    receipt: Any | None = None,
 ) -> list[tuple[dict[str, Any], bool, int, str, int]]:
-    return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
+    return await shared_probe_candidates_async(
+        candidates,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+        lifecycle=lifecycle,
+        receipt=receipt,
+    )
