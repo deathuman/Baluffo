@@ -139,11 +139,13 @@ export function createSavedBoot(deps) {
 
   async function refreshAvailabilityAttention() {
     const uid = deps.viewState.currentUser?.uid || "";
-    if (!uid) {
+    const accountKey = String(uid).trim();
+    if (!accountKey) {
       renderAvailabilityAttention({ count: 0, events: [] });
       return { ok: true, data: { count: 0, events: [] } };
     }
     const result = await deps.savedPageService.getAvailabilityAttention(uid);
+    if (String(deps.viewState.currentUser?.uid || "").trim() !== accountKey) return result;
     renderAvailabilityAttention(result.data || { count: 0, events: [] });
     return result;
   }

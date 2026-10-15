@@ -7,6 +7,14 @@ import {
 } from "../../../frontend/saved/app/runtime/boot.js";
 import { createButton, createElement } from "./helpers/saved-runtime-helpers.mjs";
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 test("Saved renders the current availability-attention summary", async () => {
   const banner = createElement();
   const count = createElement();
@@ -32,6 +40,38 @@ test("Saved renders the current availability-attention summary", async () => {
   assert.equal(banner.classList.contains("hidden"), false);
   assert.equal(count.textContent, "2 availability updates need attention.");
   assert.equal(filter.textContent, "Availability attention (2)");
+});
+
+test("Saved ignores an availability summary returned for a previous profile", async () => {
+  const response = deferred();
+  const viewState = { currentUser: { uid: "user-1" } };
+  const banner = createElement();
+  banner.classList.add("hidden");
+  const count = createElement();
+  const boot = createSavedBoot({
+    startupMetrics: null,
+    dom: {
+      availabilityAttentionBannerEl: banner,
+      availabilityAttentionCountEl: count,
+      savedCustomFilterBtnEls: []
+    },
+    viewState,
+    savedPageService: {
+      getAvailabilityAttention(uid) {
+        assert.equal(uid, "user-1");
+        return response.promise;
+      }
+    }
+  });
+
+  const refresh = boot.refreshAvailabilityAttention();
+  viewState.currentUser = { uid: "user-2" };
+  response.resolve({ ok: true, data: { count: 3, events: [{ transitionId: "old" }] } });
+  await refresh;
+
+  assert.equal(banner.classList.contains("hidden"), true);
+  assert.equal(count.textContent, "");
+  assert.deepEqual(viewState.availabilityAttentionSummary, undefined);
 });
 
 test("Saved availability report confirms the named job and supports Undo", async () => {
