@@ -7,10 +7,12 @@ import {
   createElement,
   stubDateNow
 } from "./helpers/admin-controller-test-helpers.mjs";
+import { createDeferred } from "./helpers/async-test-helpers.mjs";
 
 function createOpsReviewQueueFixture({
   nowMs = Date.parse("2026-05-01T10:00:00.000Z"),
-  failMigrationPost = false
+  failMigrationPost = false,
+  postBridge: postBridgeOverride = null
 } = {}) {
   const state = {
     latestOpsHealthCache: null,
@@ -99,13 +101,13 @@ function createOpsReviewQueueFixture({
       }
       throw new Error(`unexpected path ${path}`);
     },
-    postBridge: async (path, payload) => {
+    postBridge: postBridgeOverride || (async (path, payload) => {
       posts.push({ path, payload });
       if (failMigrationPost && path === "/source-policy/migration-link-action") {
         throw new Error("backend_rejected_link");
       }
       return {};
-    },
+    }),
     deriveAdminRunsModel: () => ({
       currentRows: [],
       visibleCompletedRows: [],
@@ -193,6 +195,36 @@ test("admin ops controller posts source policy review action payloads", async ()
         providerSourceName: "Studio Provider"
       }
     });
+  } finally {
+    fixture.restore();
+  }
+});
+
+test("admin ops controller admits one source-policy mutation per target until refresh settles", async () => {
+  const postRequests = [createDeferred(), createDeferred(), createDeferred()];
+  let postIndex = 0;
+  const fixture = createOpsReviewQueueFixture({
+    postBridge: async () => postRequests[postIndex++].promise
+  });
+  try {
+    const rendered = await loadSourcePolicyPanel(fixture);
+    const firstAction = rendered.handlers.onSourcePolicyAction(fixture.rows[0], "clear_override");
+    const duplicateAction = rendered.handlers.onSourcePolicyAction(fixture.rows[0], "snooze");
+    const otherTargetAction = rendered.handlers.onSourcePolicyAction({
+      ...fixture.rows[0],
+      staticSourceId: "static:other"
+    }, "clear_override");
+
+    assert.equal(postIndex, 2);
+    postRequests[0].resolve({});
+    postRequests[1].resolve({});
+    await Promise.all([firstAction, duplicateAction, otherTargetAction]);
+
+    const retryAction = rendered.handlers.onSourcePolicyAction(fixture.rows[0], "snooze");
+    assert.equal(postIndex, 3);
+    postRequests[2].resolve({});
+    await retryAction;
+    assert.equal(postIndex, 3);
   } finally {
     fixture.restore();
   }

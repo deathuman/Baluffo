@@ -23,6 +23,22 @@ export function createOpsActions({
   renderAdminSourcePolicyReviewImpl,
   currentRenderToken
 }) {
+  const reviewMutationTargetsInFlight = new Set();
+
+  function beginReviewMutation(targetKey) {
+    if (reviewMutationTargetsInFlight.has(targetKey)) return false;
+    reviewMutationTargetsInFlight.add(targetKey);
+    return true;
+  }
+
+  function endReviewMutation(targetKey) {
+    reviewMutationTargetsInFlight.delete(targetKey);
+  }
+
+  function reviewMutationKey(kind, identity) {
+    return `${kind}:${JSON.stringify(identity)}`;
+  }
+
   function buildSourcePolicyActionPayload(row, action) {
     const payload = {
       action,
@@ -81,12 +97,19 @@ export function createOpsActions({
 
   async function handleSourcePolicyAction(row, action) {
     if (!row || !action) return;
+    const targetKey = reviewMutationKey("source-policy", [
+      String(row?.staticSourceId || ""),
+      String(row?.providerSourceId || "")
+    ]);
+    if (!beginReviewMutation(targetKey)) return;
     try {
       await postBridge("/source-policy/review-action", buildSourcePolicyActionPayload(row, action));
       await loadOpsHealthData();
       await loadSourcePolicyDetail({ force: true });
     } catch (err) {
       showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
+    } finally {
+      endReviewMutation(targetKey);
     }
   }
 
@@ -128,11 +151,15 @@ export function createOpsActions({
 
   async function handleDedupReviewAction(row, action) {
     if (!row || !action) return;
+    const targetKey = reviewMutationKey("dedup", String(row?.dedupKey || ""));
+    if (!beginReviewMutation(targetKey)) return;
     try {
       await postBridge("/dedup/review-action", buildDedupReviewActionPayload(row, action));
       await loadOpsHealthData();
     } catch (err) {
       showToast(`Could not update dedup review: ${getErrorMessage(err)}`, "error");
+    } finally {
+      endReviewMutation(targetKey);
     }
   }
 
@@ -236,8 +263,14 @@ export function createOpsActions({
 
   async function handleMigrationLinkAction(candidate, action) {
     if (!candidate || !action) return;
+    const payload = buildMigrationLinkActionPayload(candidate, action);
+    const targetKey = reviewMutationKey("migration-link", [
+      String(payload?.providerSourceId || ""),
+      String(payload?.staticSourceId || "")
+    ]);
+    if (!beginReviewMutation(targetKey)) return;
     try {
-      await postBridge("/source-policy/migration-link-action", buildMigrationLinkActionPayload(candidate, action));
+      await postBridge("/source-policy/migration-link-action", payload);
       showToast(
         action === "clear_migration_identity_link"
           ? "Migration identity link cleared."
@@ -248,6 +281,8 @@ export function createOpsActions({
       await loadSourcePolicyDetail({ force: true });
     } catch (err) {
       showToast(`Could not update migration identity link: ${getErrorMessage(err)}`, "error");
+    } finally {
+      endReviewMutation(targetKey);
     }
   }
 
