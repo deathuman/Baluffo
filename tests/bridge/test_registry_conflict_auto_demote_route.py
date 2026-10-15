@@ -106,6 +106,8 @@ def _pending_provider_replacement_state() -> dict[str, list[dict[str, Any]]]:
             "adapter": "greenhouse",
             "registryState": "pending",
             "jobsFound": 7,
+            "lastStatus": "ok",
+            "lastKeptCount": 7,
             "rankScore": 0,
             "score": 0,
         },

@@ -29,6 +29,7 @@ from src.bridge.registry_conflicts_row import (
     SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION,
     SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_LABEL,
     _effective_provider_adapter,
+    _has_delivery_evidence,
     _has_homepage_to_career_site_path,
     _is_provider_row,
     _is_static_row,
@@ -307,6 +308,15 @@ def _analyze_pending_provider_replacement_automation(
     provider_adapter = _effective_provider_adapter(pending_provider)
     active_is_static = _is_static_row(active)
     weak_static_false_positive = False
+
+    # Delivery-evidence guard: a pending provider may only be promoted over an
+    # active static row when it has actually delivered (a real fetch run with a
+    # success status and a kept count > 0). Probe `jobsFound` counts are not
+    # delivery evidence and never satisfy this check, so a provider that was
+    # only ever probed (or excluded / cache-skipped / zero-kept) must not retire
+    # the working static fallback.
+    if _row_identity(pending_provider) and not _has_delivery_evidence(pending_provider):
+        blocked.append("provider_missing_delivery_evidence")
 
     if active_jobs is None:
         blocked.append("active_missing_jobs_found")

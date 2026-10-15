@@ -443,13 +443,11 @@ That is four wrong numbers from one mistake. The other three, all in the same ha
 
 - host-matching credited Google-Sheet rows to boards — 70 "n-ix jobs" for a board that kept zero;
 - `tenant == host` where `registry_identity` yields `tenant == ""` — 57 of 695 boards read as registered when 498 were;
-- reading `jobs-fetch-report.json` beside `jobs-fetch-report.json.gz`, so a run reported 0 collected while 41,277 rows sat in the file it never opened.
+- reading `jobs-fetch-report.json` beside `jobs-fetch-report.json.gz`, reporting 0 collected while 41,277 rows sat in the file it never opened.
 
-The generalisable lesson, and the reason `tests/tools/test_coverage_drain_identity.py`
-exists: **assert identity as an invariant, never a count.** A count is what moved; all four
-wrong numbers were reported with the same confidence as a correct one, and each was
-discovered only by checking the underlying rows after the summary had already been written
-down.
+The generalisable lesson (and why `tests/tools/test_coverage_drain_identity.py` exists):
+**assert identity as an invariant, never a count** — a count is what moved, and all four
+wrong numbers were reported with the same confidence as a correct one.
 
 **Second correction.** This plan reported "6,844 of 6,929 openings proven delivered
 (98.8%)" and a per-adapter table showing workday 17/17. The live run collected **0**.
@@ -471,7 +469,9 @@ collapse to one title.
 ## Standing verification for every step
 
 - **A board is delivered when a fetch run keeps its openings.** Registry presence, adapter
-  presence, and a probe's job count are not delivery.
+  presence, and probe job count are not delivery — a provider likewise retires a static
+  fallback only on delivery evidence (`lastStatus: ok` + `lastKeptCount > 0`; see
+  opening-coverage plan, F-2).
 - **Identity is asserted as an invariant, never as a count.** A curated board resolves to
   the same `(host, tenant)` as its registry row whether or not it carries a `listing_url`;
   an unidentifiable board resolves to `("", "")` and must register `false`; two tenants on

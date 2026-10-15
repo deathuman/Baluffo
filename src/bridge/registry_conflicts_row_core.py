@@ -205,6 +205,21 @@ def _has_fresh_or_healthy_signal(row: dict[str, Any]) -> bool:
     return health in {"healthy", "ok", "success"}
 
 
+def _has_delivery_evidence(row: dict[str, Any]) -> bool:
+    """True only when a real fetch run delivered at least one job for this row.
+
+    Probe counts (``jobsFound``/``sampleCount``) are not delivery evidence and
+    never satisfy this predicate. A row only has delivery evidence when its
+    latest fetch reported a success status (``ok``, ``success`` or ``healthy``)
+    and kept a non-zero count. ``excluded`` (not fetched this run), HTTP 304
+    cache skips, and a zero kept count are **no evidence**, so they return
+    False regardless of any probe count present on the row.
+    """
+    if _clean_text(row.get("lastStatus")).lower() not in {"ok", "success", "healthy"}:
+        return False
+    return _int_value(read_counter(row, "lastKeptCount")) > 0
+
+
 def _row_urls(row: dict[str, Any]) -> list[str]:
     values = [
         row.get(key)

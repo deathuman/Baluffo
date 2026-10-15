@@ -270,3 +270,34 @@ the exact measured totals for the tracked working tree at the F-1 commit.
 
 All other areas unchanged. Exact measured values, no spare headroom, written by
 `loc_budget.py --update`.
+
+## Coverage-audit F-2 slice allowance (2026-10-14)
+
+F-2 adds the delivery-evidence guard before a pending provider may retire an active static
+fallback (the 09-07 Vivid-class decision).
+
+| Area | Previous committed baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 183125 | 183151 | +26 |
+| `tests` | 240664 | 240825 | +161 |
+
+- `src` +26: `_has_delivery_evidence` in `registry_conflicts_row_core.py` (with its
+  docstring), the re-export line in `registry_conflicts_row.py`, and the guard plus comment
+  in `_analyze_pending_provider_replacement_automation`.
+- `tests` +161: six new guard tests in
+  `tests/bridge/test_registry_conflicts_provider_replacement.py` (probe-only, excluded,
+  zero-kept, kept-delivery, plus a direct `_has_delivery_evidence` unit test) and the
+  delivery evidence added to the two pre-existing promotion fixtures — the bamboohr
+  weak-static fixture was converted from "promotes a zero-delivery provider" to the new
+  blocked assertion, since that shape is exactly what the guard forbids.
+
+The per-file line budget for `tests/bridge/test_registry_conflicts_provider_replacement.py`
+was raised from the 800 integration default to 878 in
+`tools/repo_health/test_line_budget_baseline.json`. `tools`/`scripts` are unchanged (the
+JSON baseline edit is not counted by the LOC gate). All other areas unchanged; exact
+measured values, no spare headroom.
+
+> Note: the catalogue-coverage-gap plan's word count was already at the 5000-word tripwire.
+> The F-2 runbook rule therefore lives in this opening-coverage plan's F-2 slice, and the
+> catalogue plan carries only a one-clause pointer; three redundant sentences in the
+> catalogue plan were condensed to make room without dropping information.

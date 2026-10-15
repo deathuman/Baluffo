@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** three-opening coverage audit (Hatsu Labs/Dover apply URL, Vivid Games job `8351271`, Studio Gloam `#careers`) — only 1 of 3 openings is delivered, and the audit surfaced three further defects on the way
 > - **Verified against:** 9b8901f8 (diagnosis); portable 0.3.017, fetch run `6138ba610943a2e9` completed 2026-10-12 16:11 UTC (live state); readiness re-verified at `3508b8f9` 2026-10-14
-> - **Status:** Phase 0 done (clean HEAD `3508b8f9`); Phase 1 (F-1) implemented and verified — 6,815 tests green; Phases 2–5 pending
+> - **Status:** Phase 0 done; F-1 committed `02ef7fcd`; Phase 2 (F-2) implemented and verified — Phases 3–5 pending
 
 # Opening coverage audit fixes
 
@@ -96,7 +96,12 @@ family:
 `dead_board_sweep_*` are not in this repo; record the rule in the
 catalogue-coverage-gap plan: *never tombstone a static row for a host+tenant whose
 provider row lacks a kept>0 run — verify with `tools/coverage_drain.py --verify-collected`
-or a targeted fetch first.*
+or a targeted fetch first.* The full rule: a provider identity replaces an active static
+fallback only once it has **delivery** evidence — a real fetch with `lastStatus: ok` and
+`lastKeptCount > 0`. `excluded` (not fetched this run), cache skips, HTTP 304, and
+`lastKeptCount: 0` are no evidence, not disproof; a probe `jobsFound` count never
+substitutes. Verify with an isolated targeted fetch before retiring the row:
+`python src/jobs_fetcher.py --only-sources static_source::<id> --force-refresh-all --output-dir <dir>`.
 
 **Tests.** Unit fixtures: provider with jobsFound>0 but no kept record → blocked;
 provider with `keptCount>0` → allowed; excluded/304 rows → blocked. Assert the blocker's
@@ -104,6 +109,16 @@ presence/absence, never the tool's current report output.
 
 **Acceptance.** Replaying the Vivid 09-07 decision through the guarded code yields
 "blocked", while the real 10-12 state (teamtailor kept 1) yields "eligible".
+
+**Landed.** `_has_delivery_evidence` in `registry_conflicts_row_core.py` (re-exported from
+`registry_conflicts_row.py`); the guard in
+`_analyze_pending_provider_replacement_automation` blocks with
+`provider_missing_delivery_evidence`. Acceptance replay (`_out/coverage/f2_acceptance.py`):
+09-07 probe-only (108) → `eligible=False` blocked; 10-12 real fetch kept 1 → `eligible=True`.
+Six new tests assert the blocker's presence/absence; the three pre-existing promotion
+fixtures now carry real delivery evidence, and the bamboohr weak-static fixture — which
+promoted a *zero-delivery* provider — was converted to assert the new block, since that
+shape is exactly the decision F-2 forbids.
 
 ## Slice 3 — F-3: retire the redirect-dead duplicate static row
 

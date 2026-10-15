@@ -535,6 +535,8 @@ def test_registry_conflicts_safe_automation_promotes_pending_provider_with_more_
                 "adapter": "greenhouse",
                 "registryState": "pending",
                 "jobsFound": 8,
+                "lastStatus": "ok",
+                "lastKeptCount": 8,
             },
         ],
         "rejected": [],
@@ -621,7 +623,7 @@ def test_registry_conflicts_promotes_pending_provider_when_static_jobs_are_equal
                 "studio": "Studio",
                 "adapter": "static",
                 "registryState": "active",
-                "jobsFound": 0,
+                "jobsFound": 2,
             },
         ],
         "pending": [
@@ -631,7 +633,8 @@ def test_registry_conflicts_promotes_pending_provider_when_static_jobs_are_equal
                 "studio": "Studio",
                 "adapter": "greenhouse",
                 "registryState": "pending",
-                "jobsFound": 0,
+                "lastStatus": "ok",
+                "lastKeptCount": 2,
             },
         ],
         "rejected": [],
@@ -644,41 +647,90 @@ def test_registry_conflicts_promotes_pending_provider_when_static_jobs_are_equal
     assert automation["targetIds"] == ["greenhouse:slug:studio"]
 
 
-def test_registry_conflicts_promotes_pending_bamboohr_host_over_weak_static_count() -> None:
-    state = {
-        "active": [
-            {
-                "id": "static:listing_url:https://www.beamdog.com/careers/",
-                "name": "Beamdog (GameDevMap)",
-                "studio": "Beamdog",
-                "adapter": "static",
-                "registryState": "active",
-                "jobsFound": 1,
-                "lastProbeWeakSignal": True,
-                "rankScore": 39,
-                "score": 21,
-            },
-        ],
-        "pending": [
-            {
-                "id": "static:listing_url:https://beamdog.bamboohr.com/careers",
-                "name": "Beamdog (Sheet)",
-                "studio": "Beamdog",
-                "adapter": "static",
-                "registryState": "pending",
-                "jobsFound": 0,
-                "rankScore": 0,
-                "score": 23,
-            },
-        ],
-        "rejected": [],
-    }
+def test_registry_conflicts_blocks_pending_bamboohr_host_without_delivery_evidence() -> None:
+    """F-2: a zero-delivery provider must not retire the active static fallback.
 
-    automation = derive_registry_conflict_queue(state)["conflicts"][0]["safeAutomation"]
+    The pending row is a static row whose host resolves to bamboohr (a provider
+    identity). It was previously promoted over the weak active static count, but
+    it has no delivery evidence (no fetch kept any job), which is exactly the
+    09-07-style decision the delivery-evidence guard forbids. The card is no
+    longer eligible for the provider-replacement promotion.
+    """
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
 
-    assert automation["eligible"] is True
-    assert automation["action"] == "auto_promote_pending_provider_higher_jobs"
-    assert automation["targetIds"] == ["static:listing_url:https://beamdog.bamboohr.com/careers"]
+    rows = [
+        {
+            "id": "static:listing_url:https://www.beamdog.com/careers/",
+            "name": "Beamdog (GameDevMap)",
+            "studio": "Beamdog",
+            "adapter": "static",
+            "registryState": "active",
+            "jobsFound": 1,
+            "lastProbeWeakSignal": True,
+            "rankScore": 39,
+            "score": 21,
+        },
+        {
+            "id": "static:listing_url:https://beamdog.bamboohr.com/careers",
+            "name": "Beamdog (Sheet)",
+            "studio": "Beamdog",
+            "adapter": "static",
+            "registryState": "pending",
+            "jobsFound": 0,
+            "rankScore": 0,
+            "score": 23,
+        },
+    ]
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="beamdog",
+        rows=rows,
+    )
+
+    assert result["eligible"] is False
+    assert "provider_missing_delivery_evidence" in result["blockedReasons"]
+
+
+def test_registry_conflicts_promotes_pending_bamboohr_host_with_delivery_evidence() -> None:
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
+
+    rows = [
+        {
+            "id": "static:listing_url:https://www.beamdog.com/careers/",
+            "name": "Beamdog (GameDevMap)",
+            "studio": "Beamdog",
+            "adapter": "static",
+            "registryState": "active",
+            "jobsFound": 1,
+            "lastProbeWeakSignal": True,
+            "rankScore": 39,
+            "score": 21,
+        },
+        {
+            "id": "static:listing_url:https://beamdog.bamboohr.com/careers",
+            "name": "Beamdog (Sheet)",
+            "studio": "Beamdog",
+            "adapter": "static",
+            "registryState": "pending",
+            "jobsFound": 0,
+            "lastStatus": "ok",
+            "lastKeptCount": 1,
+            "rankScore": 0,
+            "score": 23,
+        },
+    ]
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="beamdog",
+        rows=rows,
+    )
+
+    assert result["eligible"] is True
+    assert result["action"] == "auto_promote_pending_provider_higher_jobs"
 
 
 def test_registry_conflicts_suppresses_pending_static_homepage_when_active_careers_wins() -> None:
@@ -717,3 +769,110 @@ def test_registry_conflicts_suppresses_pending_static_homepage_when_active_caree
     audit = payload["automation"]["audit"]["safePendingStaticAlias"]
     assert audit["summary"] == {"familyCount": 1, "rowCount": 1}
     assert audit["families"][0]["rows"][0]["id"] == "static:listing_url:https://adictiz.com"
+
+
+def _pending_provider_rows(*, provider_extra: dict[str, object]) -> list[dict[str, object]]:
+    """Active static fallback + pending provider replacement, analyzer-shaped."""
+    provider: dict[str, object] = {
+        "id": "greenhouse:slug:studio",
+        "name": "Studio Provider",
+        "studio": "Studio",
+        "adapter": "greenhouse",
+        "registryState": "pending",
+    }
+    provider.update(provider_extra)
+    return [
+        {
+            "id": "static:listing_url:https://studio.example/careers",
+            "name": "Studio Static",
+            "studio": "Studio",
+            "adapter": "static",
+            "registryState": "active",
+            "jobsFound": 2,
+        },
+        provider,
+    ]
+
+
+def test_pending_provider_blocked_when_only_probe_count_present() -> None:
+    """F-2: a probe `jobsFound` count is not delivery evidence.
+
+    The provider has a higher probe count than the active static row, which the
+    old logic promoted on. With no fetched-and-kept run it must be blocked so the
+    static fallback survives.
+    """
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="studio",
+        rows=_pending_provider_rows(provider_extra={"jobsFound": 9}),
+    )
+
+    assert result["eligible"] is False
+    assert "provider_missing_delivery_evidence" in result["blockedReasons"]
+
+
+def test_pending_provider_blocked_when_excluded_status() -> None:
+    """F-2: `excluded` means "not fetched this run" — no evidence, not disproof."""
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="studio",
+        rows=_pending_provider_rows(
+            provider_extra={"lastStatus": "excluded", "lastKeptCount": 9},
+        ),
+    )
+
+    assert result["eligible"] is False
+    assert "provider_missing_delivery_evidence" in result["blockedReasons"]
+
+
+def test_pending_provider_blocked_when_zero_kept() -> None:
+    """F-2: a completed run that kept zero jobs is not delivery evidence."""
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="studio",
+        rows=_pending_provider_rows(provider_extra={"lastStatus": "ok", "lastKeptCount": 0}),
+    )
+
+    assert result["eligible"] is False
+    assert "provider_missing_delivery_evidence" in result["blockedReasons"]
+
+
+def test_pending_provider_allowed_with_kept_delivery() -> None:
+    """F-2: a real fetch (ok + kept > 0) keeps the promotion eligible."""
+    from src.bridge.registry_conflicts_automation_static import (
+        _analyze_pending_provider_replacement_automation,
+    )
+
+    result = _analyze_pending_provider_replacement_automation(
+        family_key="studio",
+        rows=_pending_provider_rows(provider_extra={"lastStatus": "ok", "lastKeptCount": 3}),
+    )
+
+    assert result["eligible"] is True
+    assert result["action"] == "auto_promote_pending_provider_higher_jobs"
+    assert "provider_missing_delivery_evidence" not in result["blockedReasons"]
+
+
+def test_has_delivery_evidence_requires_ok_status_and_positive_kept_count() -> None:
+    from src.bridge.registry_conflicts_row import _has_delivery_evidence
+
+    assert _has_delivery_evidence({"lastStatus": "ok", "lastKeptCount": 4}) is True
+    assert _has_delivery_evidence({"lastStatus": "success", "lastKeptCount": 1}) is True
+    # Probe count alone is not delivery evidence.
+    assert _has_delivery_evidence({"jobsFound": 12}) is False
+    # excluded / error statuses are no evidence.
+    assert _has_delivery_evidence({"lastStatus": "excluded", "lastKeptCount": 4}) is False
+    assert _has_delivery_evidence({"lastStatus": "error", "lastKeptCount": 4}) is False
+    # ok but zero kept is no evidence.
+    assert _has_delivery_evidence({"lastStatus": "ok", "lastKeptCount": 0}) is False
+    # Legacy alias spelling still converges to the canonical counter.
+    assert _has_delivery_evidence({"lastStatus": "ok", "lastJobsKept": 2}) is True

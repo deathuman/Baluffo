@@ -36,6 +36,7 @@ from src.bridge.registry_conflicts_row_core import (
     _as_list,
     _clean_text,
     _effective_provider_adapter,
+    _has_delivery_evidence,
     _has_fresh_or_healthy_signal,
     _int_value,
     _is_provider_like_row,
