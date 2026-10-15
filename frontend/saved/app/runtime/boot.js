@@ -328,15 +328,18 @@ export function createSavedBoot(deps) {
         runSavedAvailabilityReport(deps, refreshAvailabilityAttention, jobKey, action)
       ),
       acknowledgeAvailability: async jobKey => {
-        if (!deps.viewState.currentUser) return;
+        const uid = deps.viewState.currentUser?.uid || "";
+        const accountKey = String(uid).trim();
+        if (!accountKey) return;
         const job = deps.viewState.lastSavedJobsByKey.get(jobKey);
         const events = Array.isArray(job?.availabilityAttention?.events) ? job.availabilityAttention.events : [];
         const unread = events.find(event => event?.alert && !event?.acknowledgedAt);
         if (!unread) return;
         const result = await deps.savedPageService.acknowledgeAvailabilityAttention(
-          deps.viewState.currentUser.uid, { transitionId: unread.transitionId }
+          uid, { transitionId: unread.transitionId }
         );
-        showToast(result.ok ? "Availability update acknowledged." : result.error, result.ok ? "info" : "error");
+        if (String(deps.viewState.currentUser?.uid || "").trim() !== accountKey) return;
+        (deps.showToast || showToast)(result.ok ? "Availability update acknowledged." : result.error, result.ok ? "info" : "error");
         if (result.ok) await refreshAvailabilityAttention();
       }
     });
@@ -374,12 +377,14 @@ export function createSavedBoot(deps) {
       },
       acknowledgeAllAvailability: async () => {
         const uid = deps.viewState.currentUser?.uid || "";
-        if (!uid) return;
+        const accountKey = String(uid).trim();
+        if (!accountKey) return;
         const result = await deps.savedPageService.acknowledgeAvailabilityAttention(
           uid,
           { allCurrent: true }
         );
-        showToast(
+        if (String(deps.viewState.currentUser?.uid || "").trim() !== accountKey) return;
+        (deps.showToast || showToast)(
           result.ok ? "All current availability updates acknowledged." : result.error,
           result.ok ? "success" : "error"
         );
