@@ -5,6 +5,22 @@ import {
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
+function createTrackedInput(overrides = {}) {
+  const listeners = new Map();
+  const element = createElement({
+    addEventListener(type, listener) {
+      const handlers = listeners.get(type) || [];
+      handlers.push(listener);
+      listeners.set(type, handlers);
+    },
+    dispatchEvent(event) {
+      for (const listener of listeners.get(event?.type) || []) listener(event);
+    },
+    ...overrides
+  });
+  return element;
+}
+
 test("admin sync controller hydrates status and runs save/test/pull/push flows", async () => {
   const toasts = [];
   const paths = [];
@@ -107,6 +123,191 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
     "syncRun:true",
     "syncRun:false"
   ]);
+});
+
+test("admin sync mutation admission rejects overlapping actions synchronously", async () => {
+  let resolveSave;
+  const toasts = [];
+  const postCalls = [];
+  const busyTransitions = [];
+  const state = { syncConfigDirty: true };
+  const refs = { adminSyncEnabledEl: createTrackedInput({ checked: true }) };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge(path, payload) {
+      postCalls.push({ path, payload });
+      return new Promise(resolve => { resolveSave = resolve; });
+    },
+    isSyncBusy: () => false,
+    setBusyFlag(key, value) { busyTransitions.push(`${key}:${value}`); },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast(message, level) { toasts.push({ message, level }); },
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  const pendingSave = controller.saveSyncConfig();
+  const overlappingTest = controller.testSyncConfig();
+
+  assert.equal(postCalls.length, 1);
+  assert.equal(postCalls[0].path, "/sync/config");
+  assert.ok(toasts.some(({ message, level }) => level === "info" && /no new action was started/i.test(message)));
+  resolveSave({ ok: true, savedConfig: { enabled: true }, config: { enabled: true, state: "ready" } });
+  await Promise.all([pendingSave, overlappingTest]);
+  assert.deepEqual(busyTransitions, ["syncRun:true", "syncRun:false"]);
+});
+
+test("admin sync save preserves a newer dirty draft while reporting persistence success", async () => {
+  let resolveSave;
+  const toasts = [];
+  const state = { syncConfigDirty: true };
+  const refs = {
+    adminSyncEnabledEl: createTrackedInput({ checked: true }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge: async () => new Promise(resolve => { resolveSave = resolve; }),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast(message, level) { toasts.push({ message, level }); },
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  const pendingSave = controller.saveSyncConfig();
+  refs.adminSyncEnabledEl.checked = false;
+  refs.adminSyncEnabledEl.dispatchEvent({ type: "input" });
+  state.syncConfigDirty = true;
+  resolveSave({ ok: true, savedConfig: { enabled: true }, config: { enabled: true, state: "ready" } });
+  await pendingSave;
+
+  assert.equal(state.syncConfigDirty, true);
+  assert.equal(refs.adminSyncEnabledEl.checked, false);
+  assert.ok(toasts.some(({ message, level }) => message === "Source sync preference updated." && level === "success"));
+  assert.ok(!toasts.some(({ message }) => /task started/i.test(message)));
+});
+
+test("admin sync status GET started before a mutation cannot overwrite its save", async () => {
+  let resolveStatus;
+  let resolveSave;
+  const state = { syncConfigDirty: false, latestSyncStatusCache: null };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: false }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => new Promise(resolve => { resolveStatus = resolve; }),
+    postBridge: async () => new Promise(resolve => { resolveSave = resolve; }),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  const pendingStatus = controller.loadSyncStatus({ forceForm: true, includeLive: false });
+  const pendingSave = controller.saveSyncConfig();
+  resolveSave({ ok: true, savedConfig: { enabled: true }, config: { enabled: true, state: "ready", repo: "new/repo" } });
+  await pendingSave;
+  resolveStatus({ savedConfig: { enabled: false }, config: { enabled: false, state: "disabled", repo: "stale/repo" } });
+  await pendingStatus;
+
+  assert.equal(state.latestSyncStatusCache.config.repo, "new/repo");
+  assert.equal(refs.adminSyncEnabledEl.checked, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /new\/repo/);
+  assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /stale\/repo/);
+});
+
+test("admin sync status GET cannot overwrite a newer GET or a dirty draft", async () => {
+  const statusResolvers = [];
+  const state = { syncConfigDirty: false, latestSyncStatusCache: null };
+  const refs = {
+    adminSyncEnabledEl: createTrackedInput({ checked: false }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => new Promise(resolve => statusResolvers.push(resolve)),
+    postBridge: async () => ({}),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  const olderStatus = controller.loadSyncStatus({ forceForm: true, includeLive: false });
+  const newerStatus = controller.loadSyncStatus({ forceForm: true, includeLive: false });
+  statusResolvers[1]({ savedConfig: { enabled: true }, config: { enabled: true, state: "ready", repo: "new/repo" } });
+  await newerStatus;
+  statusResolvers[0]({ savedConfig: { enabled: false }, config: { enabled: false, state: "disabled", repo: "old/repo" } });
+  await olderStatus;
+
+  assert.equal(refs.adminSyncEnabledEl.checked, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /new\/repo/);
+  assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /old\/repo/);
+
+  const pendingStatus = controller.loadSyncStatus({ forceForm: true, includeLive: false });
+  refs.adminSyncEnabledEl.checked = false;
+  refs.adminSyncEnabledEl.dispatchEvent({ type: "input" });
+  state.syncConfigDirty = true;
+  statusResolvers[2]({ savedConfig: { enabled: true }, config: { enabled: true, state: "ready", repo: "late/repo" } });
+  await pendingStatus;
+  assert.equal(refs.adminSyncEnabledEl.checked, false);
+  assert.equal(state.syncConfigDirty, true);
+});
+
+test("admin sync save success remains truthful when status rendering fails", async () => {
+  const toasts = [];
+  const state = { syncConfigDirty: true };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: true }),
+    get adminSyncStatusEl() { throw new Error("status render unavailable"); },
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge: async () => ({ ok: true, savedConfig: { enabled: true }, config: { enabled: true, state: "ready" } }),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast(message, level) { toasts.push({ message, level }); },
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  await controller.saveSyncConfig();
+
+  assert.equal(state.syncConfigDirty, false);
+  assert.ok(toasts.some(({ message, level }) => message === "Source sync preference updated." && level === "success"));
+  assert.ok(toasts.some(({ message, level }) => level === "info" && /was saved, but refreshing displayed sync status failed/i.test(message)));
+  assert.ok(!toasts.some(({ message, level }) => level === "error" && /save sync settings/i.test(message)));
 });
 
 test("admin sync status hydrates live state from summary task-live route", async () => {

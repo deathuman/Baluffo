@@ -15,6 +15,46 @@ export function createAdminSyncController({
   scheduleOpsHealthPolling,
   escapeHtml
 }) {
+  let syncMutationInFlight = false;
+  let syncStatusRevision = 0;
+  let syncStatusRequestId = 0;
+  let syncConfigDraftRevision = 0;
+  const markSyncConfigDraftChanged = () => {
+    syncConfigDraftRevision += 1;
+    invalidateSyncStatusReads();
+  };
+  refs.adminSyncEnabledEl?.addEventListener?.("input", markSyncConfigDraftChanged);
+  refs.adminSyncEnabledEl?.addEventListener?.("change", markSyncConfigDraftChanged);
+
+  function beginSyncMutation() {
+    if (syncMutationInFlight || isSyncBusy()) {
+      showToast("Sync is busy; no new action was started.", "info");
+      return false;
+    }
+    syncMutationInFlight = true;
+    syncStatusRevision += 1;
+    try {
+      setBusyFlag("syncRun", true);
+    } catch (err) {
+      syncMutationInFlight = false;
+      throw err;
+    }
+    return true;
+  }
+
+  function endSyncMutation() {
+    try {
+      setBusyFlag("syncRun", false);
+    } finally {
+      invalidateSyncStatusReads();
+      syncMutationInFlight = false;
+    }
+  }
+
+  function invalidateSyncStatusReads() {
+    syncStatusRevision += 1;
+  }
+
   function setLiveSyncRunning(value) {
     const nextValue = Boolean(value);
     const currentValue = Boolean(
@@ -148,109 +188,153 @@ export function createAdminSyncController({
     const forceForm = Boolean(options?.forceForm);
     const includeLive = options?.includeLive !== false;
     const summary = Boolean(options?.summary);
+    const requestRevision = syncStatusRevision;
+    const requestId = ++syncStatusRequestId;
+    const requestDraftRevision = syncConfigDraftRevision;
     try {
       const [payload, livePayload] = await Promise.all([
         getBridge(summary ? "/sync/status?view=summary" : "/sync/status"),
         includeLive ? getBridge("/ops/task-live/sync?view=summary").catch(() => null) : Promise.resolve(null)
       ]);
+      if (
+        requestRevision !== syncStatusRevision
+        || requestId !== syncStatusRequestId
+        || syncMutationInFlight
+      ) return payload || null;
       state.latestSyncStatusCache = payload || null;
       setLiveSyncRunning(Boolean(livePayload?.active));
-      renderSyncStatus(payload || {}, { forceForm, livePayload });
+      const canForceForm = forceForm && requestDraftRevision === syncConfigDraftRevision;
+      renderSyncStatus(payload || {}, { forceForm: canForceForm, livePayload });
       return payload || null;
     } catch (err) {
-      setLiveSyncRunning(false);
-      if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = `Sync status unavailable: ${getErrorMessage(err)}`;
-      if (!silent) showToast(`Could not load sync status: ${getErrorMessage(err)}`, "error");
+      if (
+        requestRevision === syncStatusRevision
+        && requestId === syncStatusRequestId
+        && !syncMutationInFlight
+      ) {
+        setLiveSyncRunning(false);
+        if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = `Sync status unavailable: ${getErrorMessage(err)}`;
+        if (!silent) showToast(`Could not load sync status: ${getErrorMessage(err)}`, "error");
+      }
       throw err;
     }
   }
 
   async function saveSyncConfig() {
-    if (isSyncBusy()) {
-      showToast("Sync task is already running.", "info");
-      return;
-    }
-    setBusyFlag("syncRun", true);
+    if (!beginSyncMutation()) return;
+    const draftRevision = syncConfigDraftRevision;
+    const payload = collectSyncConfigPayload();
+    state.syncConfigDirty = true;
     try {
-      const result = await postBridge("/sync/config", collectSyncConfigPayload());
+      let result;
+      try {
+        result = await postBridge("/sync/config", payload);
+      } catch (err) {
+        showToast(`Could not save sync settings: ${getErrorMessage(err)}`, "error");
+        return;
+      }
+      invalidateSyncStatusReads();
+      const postOk = result?.ok !== false;
+      if (!postOk) {
+        showToast(`Could not save sync settings: ${String(result?.error || "unknown error")}`, "error");
+        return;
+      }
       state.latestSyncStatusCache = result || null;
-      state.syncConfigDirty = false;
-      renderSyncStatus(result || {}, { forceForm: true });
+      const draftUnchanged = draftRevision === syncConfigDraftRevision;
+      state.syncConfigDirty = !draftUnchanged;
       showToast("Source sync preference updated.", "success");
-    } catch (err) {
-      showToast(`Could not save sync settings: ${getErrorMessage(err)}`, "error");
+      try {
+        renderSyncStatus(result || {}, { forceForm: draftUnchanged });
+      } catch (err) {
+        showToast(`Sync preference was saved, but refreshing displayed sync status failed: ${getErrorMessage(err)}`, "info");
+      }
     } finally {
-      setBusyFlag("syncRun", false);
+      endSyncMutation();
     }
   }
 
   async function testSyncConfig() {
-    if (isSyncBusy()) {
-      showToast("Sync task is already running.", "info");
-      return;
-    }
-    setBusyFlag("syncRun", true);
+    if (!beginSyncMutation()) return;
     try {
-      const result = await postBridge("/sync/test", {});
-      if (result?.ok) {
-        showToast(
-          result?.remoteFound
-            ? "Sync test passed. Remote snapshot found."
-            : "Sync test passed. Remote snapshot not created yet.",
-          "success"
-        );
-        await loadSyncStatus({ silent: true });
+      let result;
+      try {
+        result = await postBridge("/sync/test", {});
+      } catch (err) {
+        showToast(`Sync test failed: ${getErrorMessage(err)}`, "error");
         return;
       }
-      showToast(`Sync test failed: ${String(result?.error || "unknown error")}`, "error");
-    } catch (err) {
-      showToast(`Sync test failed: ${getErrorMessage(err)}`, "error");
+      if (!result?.ok) {
+        showToast(`Sync test failed: ${String(result?.error || "unknown error")}`, "error");
+        return;
+      }
+      invalidateSyncStatusReads();
+      showToast(
+        result?.remoteFound
+          ? "Sync test passed. Remote snapshot found."
+          : "Sync test passed. Remote snapshot not created yet.",
+        "success"
+      );
     } finally {
-      setBusyFlag("syncRun", false);
+      endSyncMutation();
+    }
+    try {
+      await loadSyncStatus({ silent: true });
+    } catch (err) {
+      showToast(`Sync test passed, but refreshing sync status failed: ${getErrorMessage(err)}`, "info");
     }
   }
 
   async function pullSourcesSync() {
-    if (isSyncBusy()) {
-      showToast("Sync task is already running.", "info");
-      return;
-    }
-    setBusyFlag("syncRun", true);
+    if (!beginSyncMutation()) return;
     try {
-      const result = await postBridge("/tasks/run-sync-pull", {});
-      if (result?.started) {
-        showToast("Sources sync pull started.", "success");
-        await loadOpsHealthData();
-        scheduleOpsHealthPolling(900);
+      let result;
+      try {
+        result = await postBridge("/tasks/run-sync-pull", {});
+      } catch (err) {
+        showToast(`Sources sync pull failed: ${getErrorMessage(err)}`, "error");
         return;
       }
-      showToast(`Sources sync pull failed: ${String(result?.error || "unknown error")}`, "error");
-    } catch (err) {
-      showToast(`Sources sync pull failed: ${getErrorMessage(err)}`, "error");
+      if (!result?.started) {
+        showToast(`Sources sync pull failed: ${String(result?.error || "unknown error")}`, "error");
+        return;
+      }
+      invalidateSyncStatusReads();
+      showToast("Sources sync pull started.", "success");
+      try {
+        await loadOpsHealthData();
+        scheduleOpsHealthPolling(900);
+      } catch (err) {
+        showToast(`Sources sync pull started, but refreshing Admin operations status failed: ${getErrorMessage(err)}`, "info");
+      }
     } finally {
-      setBusyFlag("syncRun", false);
+      endSyncMutation();
     }
   }
 
   async function pushSourcesSync() {
-    if (isSyncBusy()) {
-      showToast("Sync task is already running.", "info");
-      return;
-    }
-    setBusyFlag("syncRun", true);
+    if (!beginSyncMutation()) return;
     try {
-      const result = await postBridge("/tasks/run-sync-push", {});
-      if (result?.started) {
-        showToast("Sources sync push started.", "success");
-        await loadOpsHealthData();
-        scheduleOpsHealthPolling(900);
+      let result;
+      try {
+        result = await postBridge("/tasks/run-sync-push", {});
+      } catch (err) {
+        showToast(`Sources sync push failed: ${getErrorMessage(err)}`, "error");
         return;
       }
-      showToast(`Sources sync push failed: ${String(result?.error || "unknown error")}`, "error");
-    } catch (err) {
-      showToast(`Sources sync push failed: ${getErrorMessage(err)}`, "error");
+      if (!result?.started) {
+        showToast(`Sources sync push failed: ${String(result?.error || "unknown error")}`, "error");
+        return;
+      }
+      invalidateSyncStatusReads();
+      showToast("Sources sync push started.", "success");
+      try {
+        await loadOpsHealthData();
+        scheduleOpsHealthPolling(900);
+      } catch (err) {
+        showToast(`Sources sync push started, but refreshing Admin operations status failed: ${getErrorMessage(err)}`, "info");
+      }
     } finally {
-      setBusyFlag("syncRun", false);
+      endSyncMutation();
     }
   }
 

@@ -24,6 +24,23 @@ export function createAdminDiscoveryProgressController({
   appendDiscoveryLog,
   appendDiscoveryLogEvent
 }) {
+  let activeDiscoveryConfigSave = null;
+  let discoveryConfigSaveQueued = false;
+  let discoveryConfigOperationRevision = 0;
+  let discoveryConfigLoadRequestId = 0;
+
+  function isDiscoveryConfigPayloadEqual(left, right) {
+    return Boolean(left?.autoApproveHealthyPendingOnComplete)
+      === Boolean(right?.autoApproveHealthyPendingOnComplete);
+  }
+
+  function setDiscoveryConfigSavePending(pending) {
+    setBusyFlag("discoveryConfigSave", pending);
+    if (typeof refs.adminDiscoveryAutoApproveToggleEl?.setAttribute === "function") {
+      refs.adminDiscoveryAutoApproveToggleEl.setAttribute("aria-busy", pending ? "true" : "false");
+    }
+  }
+
   function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
     if (!refs.adminDiscoveryAutoApproveToggleEl) return;
     if (state.discoveryConfigDirty && !force) return;
@@ -39,10 +56,19 @@ export function createAdminDiscoveryProgressController({
   async function loadDiscoveryConfig(options = {}) {
     const silent = Boolean(options?.silent);
     const forceForm = Boolean(options?.forceForm);
+    const requestId = ++discoveryConfigLoadRequestId;
+    const operationRevision = discoveryConfigOperationRevision;
     try {
       const payload = await getBridge("/discovery/config");
-      state.latestDiscoveryConfigCache = payload || null;
-      populateDiscoveryConfigForm((payload || {}).savedConfig || {}, { force: forceForm });
+      if (
+        requestId === discoveryConfigLoadRequestId
+        && operationRevision === discoveryConfigOperationRevision
+        && !activeDiscoveryConfigSave
+        && !state.adminBusyState?.discoveryConfigSave
+      ) {
+        state.latestDiscoveryConfigCache = payload || null;
+        populateDiscoveryConfigForm((payload || {}).savedConfig || {}, { force: forceForm });
+      }
       return payload || null;
     } catch (err) {
       if (!silent) showToast(`Could not load discovery settings: ${getErrorMessage(err)}`, "error");
@@ -68,20 +94,76 @@ export function createAdminDiscoveryProgressController({
   }
 
   async function saveDiscoveryConfig() {
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/discovery/config", collectDiscoveryConfigPayload());
-      state.latestDiscoveryConfigCache = result || null;
-      state.discoveryConfigDirty = false;
-      populateDiscoveryConfigForm((result || {}).savedConfig || {}, { force: true });
-      showToast("Discovery auto-approve preference updated.", "success");
-      return result || null;
-    } catch (err) {
-      showToast(`Could not save discovery settings: ${getErrorMessage(err)}`, "error");
-      throw err;
-    } finally {
-      setBusyFlag("discoveryWrite", false);
+    if (activeDiscoveryConfigSave) {
+      discoveryConfigSaveQueued = true;
+      return activeDiscoveryConfigSave;
     }
+
+    const busyState = state.adminBusyState || {};
+    if (
+      busyState.discoveryWrite
+      || busyState.manualAdd
+      || busyState.manualCheck
+      || busyState.discoveryConfigSave
+    ) {
+      state.discoveryConfigDirty = true;
+      showToast("Could not save discovery settings while a source registry operation is in progress. Try again when it finishes.", "info");
+      return null;
+    }
+
+    let valueToSave = collectDiscoveryConfigPayload();
+    let revision = ++discoveryConfigOperationRevision;
+    setDiscoveryConfigSavePending(true);
+
+    activeDiscoveryConfigSave = (async () => {
+      let result;
+      try {
+        while (true) {
+          discoveryConfigSaveQueued = false;
+          try {
+            result = await postBridge("/discovery/config", { ...valueToSave }) || null;
+          } catch (err) {
+            const latestValue = collectDiscoveryConfigPayload();
+            if (discoveryConfigSaveQueued && !isDiscoveryConfigPayloadEqual(latestValue, valueToSave)) {
+              valueToSave = latestValue;
+              revision = ++discoveryConfigOperationRevision;
+              continue;
+            }
+            state.discoveryConfigDirty = true;
+            showToast(`Could not save discovery settings: ${getErrorMessage(err)}`, "error");
+            throw err;
+          }
+
+          const latestValue = collectDiscoveryConfigPayload();
+          const draftMatchesSubmittedValue = isDiscoveryConfigPayloadEqual(latestValue, valueToSave);
+          if (discoveryConfigSaveQueued && !draftMatchesSubmittedValue) {
+            state.discoveryConfigDirty = true;
+            valueToSave = latestValue;
+            revision = ++discoveryConfigOperationRevision;
+            continue;
+          }
+
+          if (revision === discoveryConfigOperationRevision) {
+            if (draftMatchesSubmittedValue) {
+              state.latestDiscoveryConfigCache = result;
+              state.discoveryConfigDirty = false;
+              populateDiscoveryConfigForm((result || {}).savedConfig || {}, { force: true });
+            } else {
+              state.discoveryConfigDirty = true;
+            }
+            showToast("Discovery auto-approve preference updated.", "success");
+          }
+          return result;
+        }
+      } finally {
+        if (revision === discoveryConfigOperationRevision) discoveryConfigOperationRevision += 1;
+        activeDiscoveryConfigSave = null;
+        discoveryConfigSaveQueued = false;
+        setDiscoveryConfigSavePending(false);
+      }
+    })();
+
+    return activeDiscoveryConfigSave;
   }
 
   function setDiscoveryProgress(view) {

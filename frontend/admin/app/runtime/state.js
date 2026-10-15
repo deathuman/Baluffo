@@ -8,6 +8,7 @@ function createAdminBusyState() {
     discoveryWatch: false,
     discoveryLoad: false,
     discoveryWrite: false,
+    discoveryConfigSave: false,
     manualAdd: false,
     manualCheck: false,
     opsLoad: false,

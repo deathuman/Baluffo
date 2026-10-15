@@ -13,6 +13,7 @@ function isDiscoveryBusy(busyState) {
     "discoveryRun",
     "discoveryWatch",
     "discoveryWrite",
+    "discoveryConfigSave",
     "manualAdd",
     "manualCheck",
     "liveDiscoveryRunning"
@@ -106,6 +107,10 @@ export function syncAdminBusyUi({
     el.setAttribute("aria-disabled", (syncBusy || lockBusy) ? "true" : "false");
   });
 
+  const discoveryConfigSaveBusy = Boolean(busyState.discoveryConfigSave);
+  if (typeof refs.adminDiscoveryAutoApproveToggleEl?.setAttribute === "function") {
+    refs.adminDiscoveryAutoApproveToggleEl.setAttribute("aria-busy", discoveryConfigSaveBusy ? "true" : "false");
+  }
   setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...", "Run Discovery");
   setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Discovery Running...", "Run Uncapped Discovery");
   setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || discoveryLoadBusy || lockBusy, "Loading Discovery...", "Load Discovery");

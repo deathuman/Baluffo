@@ -139,6 +139,7 @@ export function deriveAdminActiveWorkContext({
   );
   const registryMutationActive = Boolean(
     busyFlag(busyState, "discoveryWrite")
+    || busyFlag(busyState, "discoveryConfigSave")
     || busyFlag(busyState, "manualAdd")
     || busyFlag(busyState, "manualCheck")
   );
