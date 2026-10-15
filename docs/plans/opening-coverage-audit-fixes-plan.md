@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** three-opening coverage audit (Hatsu Labs/Dover apply URL, Vivid Games job `8351271`, Studio Gloam `#careers`) — only 1 of 3 openings is delivered, and the audit surfaced three further defects on the way
 > - **Verified against:** 9b8901f8 (diagnosis); portable 0.3.017, fetch run `6138ba610943a2e9` completed 2026-10-12 16:11 UTC (live state); readiness re-verified at `3508b8f9` 2026-10-14
-> - **Status:** F-1 `02ef7fcd`; F-2 `b7e97429`; F-3 `52024ae6` (rescoped to a packaging fix); F-4 Dover adapter implemented and live-accepted; F-5 pending
+> - **Status:** F-1 `02ef7fcd`; F-2 `b7e97429`; F-3 `52024ae6` (rescoped to a packaging fix); F-4 `053cef5d`; F-5 implemented and live-accepted (Phase 6 on-box verification excluded from this slice)
 
 # Opening coverage audit fixes
 
@@ -323,33 +323,43 @@ box (Phase 6), not a local probe.
 
 ## Slice 5 — F-5: Studio Gloam coverage
 
-**Spike (time-boxed, evidence-only commit allowed).** The board has **no job anchors at
-all** — roles are `<button>` accordions, applications are an in-page form — so neither
-plain static nor plain browser-escalation anchor extraction can work. Choose one:
+**Spike result (2026-10-14):** Option B works without build-hash coupling. The ~8.5KB
+Vite/Base44 shell has one anchor and no `#careers` fragment; its openings are hardcoded in
+the hashed `/assets/*.js` entry bundle. Fetch `index.html`, resolve that script URL from the
+HTML, then match objects by `{title,type,location,contract}` shape—not the minified array
+name. Require literal `title:` as the first key: a reviewer caught a `name:"Company award"`
+decoy with otherwise opening-shaped metadata, now covered by regression test. The approach
+finds the two actual roles and ignores team-member bio objects. `robots.txt` allows `/`;
+rendered-DOM extraction would add browser cost without surfacing different data.
 
-- **Option A (preferred): rendered-DOM extraction.** Under browser escalation, read the
-  `#careers` role blocks from the rendered DOM (title/location/contract from the `QN`
-  data) and synthesize per-role links `https://studiogloam.com/#careers-<slug>` —
-  unique per title so url-based dedup keeps **two** rows (both resolve to the live
-  page; the apply step is the on-page form / `mailto:hello@studiogloam.com`).
-- **Option B (fallback): bundle-JSON extraction.** Fetch `index.html`, resolve the
-  hashed `/assets/index-*.js` script src, parse the openings array. Deterministic but
-  build-hash-coupled and site-specific — acceptable as a scoped special case only.
+**Per-role links.** There are no role URLs. Each row uses a synthesized query link:
+`https://studiogloam.com/?careers=<slug>`. The earlier fragment proposal
+(`/#careers-<slug>`) was incorrect: `clean_text.normalize_url` strips fragments before
+URL dedup, collapsing the two roles. The query survives normalization, remains on-domain,
+and resolves HTTP 200 for each role.
 
-**Registration.** Seed `https://studiogloam.com/` (bare origin, **no `#careers`
-fragment** — fragment identities get swept, cf. `steerstudios.com/careers#joblist`) into
-`src/curated_coverage_boards.json`, plus a GameDevMap/sheet directory entry so machine
-discovery can find the studio independently.
+**Implemented extraction.** Fetch `index.html`, resolve its hashed `/assets/*.js` entry
+script URL (never hardcode the build hash), then match opening objects by their
+`title/type/location/contract` shape, not by a minified array name. This is deterministic,
+site-specific, and not coupled to the generated bundle name.
 
-**Tests / acceptance.**
+**Registration.** Seed `https://studiogloam.com/` (bare origin, no `#careers` fragment)
+in `src/curated_coverage_boards.json`; this slice does not add a separate directory entry.
+The shared title filter is bypassed only for the `studiogloam` plugin, whose bundle
+extractor identifies the site's actual craft openings. Every other static plugin remains
+subject to the shared filter; the regression control confirms that a `Senior Lighting
+Artist` row from an unrelated plugin is still dropped.
 
-- Unit: two role blocks → two rows, distinct `sourceJobId`/`dedupKey`, titles match the
-  bundle data (`Senior Lighting Artist`, `Senior Technical Artist`), locations
-  `Remote · Europe`, contract `Fixed Term Contract`.
-- Isolated targeted run against the live site keeps **2** rows; both links resolve
-  HTTP 200.
-- If the spike proves neither option robust, record Gloam as a known limitation in the
-  catalogue plan (Bucket D) rather than shipping a brittle parser.
+**Acceptance evidence (isolated run, 2026-10-14).**
+
+- `python src/jobs_fetcher.py --only-sources static_source::studiogloam --ignore-circuit-breaker --force-refresh-all --output-dir _out/coverage/f5-live` → `status=ok fetched=2 kept=2`; inputCount 2, rawFetched 2, canonicalKept 2, finalOutput 2, successfulSources 1. A temporary isolated runtime source registry was used because Studio Gloam is not yet in the packaged runtime registry; committed curated registration is included for its intended runtime path.
+- Both per-role query links returned HTTP 200. The two rows have the exact titles, `Remote · Europe` location and `Fixed Term Contract` contract above.
+- `python -m pytest tests/test_studiogloam_plugin.py tests/source_discovery/test_curated_boards_landing.py -q` → **21 passed, 1 skipped**, including the non-opening `name:`-object decoy regression and the static kept-opening count update from 3,440 to 3,442.
+- `npm run test:py` → **6,871 passed, 3 skipped, 198 deselected** (exit 0).
+- `npm run lint:repo-guardrails` in the isolated F-5-only worktree → workflow, compatibility, routes, frontend, repo-root, test-shape, fixtures, line-budget, registry, bundle, duplication and dead-code groups passed. Existing unrelated blockers are missing markdown-link targets in the performance follow-up plan and the pre-existing container version gate on commits F-5 does not address.
+- `python tools/repo_health/loc_budget.py --report` in the isolated worktree measured `src=184156`, `tests=241579`, with all other areas at their baselines. The exact F-5 allowances are recorded in `docs/notes/discovery-receipt-loc-allowance.md`; no concurrent frontend files or baseline drift are included.
+- `git status data/` → clean; isolated acceptance artifacts remain under gitignored `_out/coverage/f5-live`.
+- Phase 6 on-box verification is explicitly outside this slice.
 
 ## Sequencing
 
@@ -367,9 +377,9 @@ standing sections) and a status-line update in this plan.
 
 ## End-to-end execution sequence (prepared 2026-10-14)
 
-Order: **Phase 0 (clean HEAD)** → **Phases 1–5** (the slices above) → **Phase 6 (release
-+ on-box verification)** → closeout. Every phase ends at a gate; a red gate stops the
-sequence. Nothing starts on a dirty HEAD.
+Original order: **Phase 0 (clean HEAD)** → **Phases 1–5** (the slices above) → **Phase 6
+(release + on-box verification)** → closeout. The F-5 slice is closed on isolated local/live
+fetch evidence; Phase 6 on-box verification remains explicitly out of scope for its commit.
 
 ### Phase 0 — reach a clean HEAD (DONE 2026-10-14, HEAD `3508b8f9`)
 
@@ -480,7 +490,10 @@ priority); `git status data/` clean.
 - `git status data/` must show no `gameprog-*`/`gamesmap-*`/`*-discovery-audit.json`
   artifacts after any test run.
 
-## Overall acceptance
+## Overall acceptance (F-5 slice closeout; Phase 6 excluded)
+
+The F-5 implementation and isolated live delivery criteria are complete in this slice. The
+remaining on-box verification is Phase 6 and is not a blocker for this commit.
 
 | Finding | Done means |
 |---|---|
@@ -488,7 +501,7 @@ priority); `git status data/` clean.
 | F-2 | Guard test proves the 09-07-style decision is blocked without delivery evidence |
 | F-3 | **Revised (2026-10-14):** the planned retirement was withdrawn — the row's real failure was the unbundled `tldextract` snapshot, not a redirect. Done means the next frozen build ships `_internal/tldextract/.tld_set_snapshot` and the report's `tld_set_snapshot` error count drops toward zero; no registry delta |
 | Opening 1 (Hatsu) | **Landed (adapter level):** the live Dover runner keeps a row with `sourceJobId` containing `8dbe43b3-…` and the real title, from the registered `Hatsu Labs (dover)` board. On-box confirmation rides the next scheduled run (Phase 6) |
-| Opening 3 (Gloam) | Two distinct Gloam rows (Lighting/Technical Artist) in a real run, links resolve |
+| Opening 3 (Gloam) | Isolated live fetch keeps 2/2 rows: *Senior Lighting Artist* and *Senior Technical Artist*, each with its own HTTP 200 query link; see F-5 evidence above (Phase 6 on-box verification excluded) |
 | Process | All plans/status updated; `npm run test:py` + lint green; `data/` clean; Basic Memory handoff with counts, commands, next priority |
 
 ## Out of scope

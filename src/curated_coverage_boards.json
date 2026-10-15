@@ -1,5 +1,13 @@
 [
  {
+  "name": "Studio Gloam (static)",
+  "studio": "Studio Gloam",
+  "adapter": "static",
+  "nlPriority": false,
+  "listing_url": "https://studiogloam.com/",
+  "coverageAuditOpenings": 2
+ },
+ {
   "name": "Hatsu Labs (dover)",
   "studio": "Hatsu Labs",
   "adapter": "dover",

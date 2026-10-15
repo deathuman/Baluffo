@@ -5,7 +5,7 @@ Draining discovery over the 695 curated boards, per adapter:
 ===============  ======  =======  ==========
 adapter          boards  landed   openings
 ===============  ======  =======  ==========
-static              425     420      3,440
+static              425     420      3,442
 workday              17      17      1,065
 greenhouse           52      51        655
 workable             29      29        440
@@ -167,7 +167,7 @@ def _load_tool(name: str):
 # `tools/coverage_drain.py --verify-collected`, which exits non-zero when boards register
 # and nothing collects.
 _LANDED = {
-    "static": (425, 420, 3_440),
+    "static": (425, 420, 3_442),
     "workday": (17, 17, 1_065),
     "greenhouse": (52, 51, 655),
     "workable": (29, 29, 440),

@@ -354,13 +354,19 @@ def _finalize_plugin_fast_path(
     ctx: StaticSourceContext,
     plugin_jobs: list[dict[str, Any]],
     plugin_meta: dict[str, Any] | None,
+    *,
+    plugin_name: str,
 ) -> None:
     original_plugin_count = len(plugin_jobs)
     plugin_jobs = _repair_plugin_static_artifact_rows(ctx, plugin_jobs)
     _apply_one_man_studio_cleanup(ctx, plugin_jobs)
     ctx.emit_heartbeat()
     ctx.jobs.extend(plugin_jobs)
-    dropped = drop_non_game_rows(ctx)
+    # Studio Gloam's dedicated bundle extractor has already selected the site's
+    # actual game openings. Keep its confirmed craft roles even where the common
+    # title vocabulary cannot classify them; every other plugin still uses the
+    # shared feed filter.
+    dropped = 0 if plugin_name == "studiogloam" else drop_non_game_rows(ctx)
     ctx.entry_report["fetchedCount"] = len(ctx.pages)
     ctx.entry_report["keptCount"] = len(plugin_jobs) - dropped
     rejected_static_artifacts = max(0, original_plugin_count - len(plugin_jobs))
@@ -387,7 +393,7 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
     if plugin_ctx is None:
         return False
     try:
-        plugin, _ = default_registry.select(plugin_ctx)
+        plugin, selection = default_registry.select(plugin_ctx)
         network_bookings: dict[str, int] = {"ms": 0}
         invoke_started = time.perf_counter()
         plugin_jobs = _invoke_static_plugin(ctx, plugin, network_bookings=network_bookings)
@@ -400,7 +406,10 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
         )
         plugin_meta = ctx.source.get("_staticPluginMeta") if isinstance(ctx.source, dict) else None
         _finalize_plugin_fast_path(
-            ctx, plugin_jobs, plugin_meta if isinstance(plugin_meta, dict) else None
+            ctx,
+            plugin_jobs,
+            plugin_meta if isinstance(plugin_meta, dict) else None,
+            plugin_name=selection.plugin_name,
         )
         _complete_source_without_generic_flow(ctx)
         return True

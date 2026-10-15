@@ -351,6 +351,25 @@ parser plus the peer-provider wiring, the curated row, and 34 tests.
   `APP_RUNTIME_SCRIPTS` — without it the packaged app would not ship the new leaf (the same
   class of defect F-3 fixed).
 
+## Coverage-audit F-5 slice allowance (2026-10-14)
+
+F-5 adds a Studio Gloam static bundle extractor, the plugin-specific filter exception,
+registration and regression tests. The measured tracked-area changes from the inherited
+baseline are:
+
+| Area | Previous exact baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 183903 | 184152 | +249 |
+| `tests` | 241305 | 241579 | +274 |
+
+`src` +249 comprises the 239-line dedicated plugin and +10 lines in the narrowly scoped
+fast-path exception/dispatch. `tests` +274 is the new parser, source-flow, decoy regression,
+and unrelated-plugin negative-control coverage. This exact F-5 worktree measures
+`src=184156` and `tests=241579`; the source increase comprises the prior +249 allowance plus
+four lines already present in F-5's shared-filter exception. Concurrent frontend work is
+excluded from this F-5 commit and from its baseline. All tracked areas are ratcheted to exact
+measured totals with no spare headroom.
+
 The per-file line budget for `tests/test_dover_provider.py` was raised from the 400 default
 to 437 in `tools/repo_health/test_line_budget_baseline.json`. All other areas unchanged;
 exact measured values, no spare headroom. The new files were staged before re-baselining so

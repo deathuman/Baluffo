@@ -74,6 +74,7 @@ STATIC_PLUGINS: tuple[tuple[str, int], ...] = (
     ("twirlbound", 90),
     ("tworobots", 90),
     ("sheet_studios", 90),
+    ("studiogloam", 90),
     ("upsurge", 90),
 )
 
