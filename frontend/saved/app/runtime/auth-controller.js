@@ -140,8 +140,10 @@ export function createSavedAuthController({
     setActivityPanelOpen(false, { persist: false });
     updateTimelineScopeButtons();
     renderSelectedJobHint();
+    const uid = String(user.uid || "").trim();
     subscribeToSavedJobs(user.uid);
     refreshActivityLog().catch(err => {
+      if (String(viewState.currentUser?.uid || "").trim() !== uid) return;
       console.error("Failed to load activity:", err);
       setActivityStatus("Could not load activity.");
     });
