@@ -143,6 +143,76 @@ rejected by the unsafe-redirect guard) — this is the plan's known duplicate-ro
 **Acceptance.** Next run: zero `Unsafe static redirect … vividgames` entries in the
 report; teamtailor board still `kept ≥ 1`; no other row changed (row-count delta = −1).
 
+**BLOCKED on a decision (2026-10-14, live evidence).** The slice's premise is not what the
+live run recorded, so the planned retirement cannot be executed honestly:
+
+- Live 10-12 evidence for `static:listing_url:https://vividgames.com/jobs`
+  (`jobs-source-state.json.gz`): `lastStatus: error`, `lastKeptCount: 0`,
+  `consecutiveFailures: 4`, `cacheDecision: skip_fresh` (the row was **not fetched** on 10-12;
+  last real attempt was 2026-06-12). Its recorded error is **not** a redirect:
+  `[Errno 2] No such file or directory: '…\baluffo-portable-0.3.0\_internal\tldextract\.tld_set_snapshot'`
+  + `no jobs extracted from source pages`.
+- The 10-12 report contains **no `Unsafe static redirect … vividgames` pair** at all
+  (checked directly; 60 redirect pairs, all `insecure_downgrade` except three
+  `platform_migration`s). So `tools/coverage_retire.py` — the gated retirement tool —
+  finds 0 rows to retire and `--expect-rows 1` refuses. There is no evidence-backed way to
+  retire this row.
+- The redirect *does* exist when probed live today: `https://vividgames.com/jobs` → **302 →
+  `https://jobs.vividgames.com/`**. But the classifier returns
+  `site_gone_or_moved` with reason *"redirect left the site for a host no platform owns"* —
+  a **misdiagnosis**: `jobs.vividgames.com` is the same studio's own Teamtailor-hosted jobs
+  subdomain (the delivering row). This is the slice's documented alternative (teach the
+  redirect guard/classifier to accept same-brand cross-host moves), not a retirement.
+- Root cause found, and it is much wider than one row: `tldextract` (pinned 5.3.1;
+  used by `src/source_discovery/rebrand_detection.py` via
+  `tldextract.TLDExtract(suffix_list_urls=())`) is **missing from
+  `MAIN_RUNTIME_COLLECT_DATA_PACKAGES` in `scripts/build_portable_exe.py`**, so its
+  `.tld_set_snapshot` data file is never bundled into the frozen `_internal/`. Every
+  `is_rebrand` call in the shipped app raises `[Errno 2]`, which is why the 10-12 report
+  carries **491** `tld_set_snapshot` errors and **2,187** `no jobs extracted from source
+  pages`. A dev checkout has the snapshot (so the bug is invisible locally).
+
+Three separable remediations exist; the choice is a user decision (the plan already marks
+F-3's approach as a slice-time decision):
+
+| Option | Change | Blast radius |
+|---|---|---|
+| **A (recommended). Packaging fix** | add `tldextract` to `MAIN_RUNTIME_COLLECT_DATA_PACKAGES` (+ a build-contract test proving `.tld_set_snapshot` lands in `_internal/`) | fixes ~491 rows' failure mode for the next build; does not touch the live registry |
+| **B. Classifier fix** | teach the redirect classifier / rebrand path to accept a same-registrable-domain cross-host move (`vividgames.com` → `jobs.vividgames.com`) as non-terminal | prevents a future false retirement of this exact shape; F-3's documented alternative |
+| **C. Retire the row anyway** | mutate the live registry by hand | **rejected**: no in-report evidence, and the retain-tool gate refuses; would retire on a premise the evidence contradicts |
+
+**Resolution (user, 2026-10-14): Option A.** The row is *not* retired. Instead the real
+root cause is fixed — the frozen build never bundled the `tldextract` suffix snapshot, which
+is what actually failed these static rows — and a build-contract test locks it in. See the
+"Landed" note below.
+
+**Landed.** `tldextract` was added to `MAIN_RUNTIME_COLLECT_DATA_PACKAGES` in
+`scripts/build_portable_exe.py` (so `--collect-data tldextract` ships `.tld_set_snapshot`
+into `_internal/tldextract/`). Because the build plan's `pyinstaller.collectData` list and
+the cache fingerprint both read that tuple, the change also invalidates any stale cached
+portable build — a rebuild is forced, which is what makes the fix actually reach a box.
+
+Three tests in `tests/test_build_portable_exe.py` lock it in:
+`test_portable_build_collects_tldextract_suffix_snapshot_data` (tuple membership),
+`test_tldextract_bundled_snapshot_exists_in_this_environment` (the snapshot the entry is
+meant to ship exists), and
+`test_pyinstaller_collect_data_for_tldextract_ships_the_snapshot` — which asserts the
+**real** `PyInstaller.utils.hooks.collect_data_files("tldextract")` output maps
+`.tld_set_snapshot` to destination `tldextract`, i.e. the exact mechanism, not a restatement
+of our own constant.
+
+No registry mutation was made: the live `vividgames.com/jobs` row stays active and the
+delivering teamtailor row (`kept 1` on 10-12) is untouched. Row-count delta is **0**, not
+−1, and the "zero redirect errors" acceptance below no longer applies — the errors were
+never redirect errors. F-2's guard independently makes the original 09-07-style retirement
+impossible in the in-repo path even if the classification were accepted.
+
+**Acceptance (revised).** F-3's original acceptance (row gone, delta −1) is **withdrawn**
+because it rested on a premise the live evidence contradicts. The revised acceptance is:
+the next frozen build ships `_internal/tldextract/.tld_set_snapshot` and the report's
+`tld_set_snapshot` error count drops toward zero — verified on the box in Phase 6, not by a
+local probe.
+
 ## Slice 4 — F-4: Dover platform coverage (Hatsu Labs opening)
 
 **Gate (time-boxed recon, its own commit if it only produces evidence).** Determine the
@@ -348,7 +418,7 @@ priority); `git status data/` clean.
 |---|---|
 | Opening 2 (Vivid) | Feed title reads *Senior Technical Artist (Remote, Hybrid or On-site)*; no `8351271 …` slug titles remain in teamtailor rows |
 | F-2 | Guard test proves the 09-07-style decision is blocked without delivery evidence |
-| F-3 | `vividgames.com/jobs` row gone (delta −1); no vividgames redirect errors; teamtailor keeps ≥ 1 |
+| F-3 | **Revised (2026-10-14):** the planned retirement was withdrawn — the row's real failure was the unbundled `tldextract` snapshot, not a redirect. Done means the next frozen build ships `_internal/tldextract/.tld_set_snapshot` and the report's `tld_set_snapshot` error count drops toward zero; no registry delta |
 | Opening 1 (Hatsu) | A row with jobLink containing `8dbe43b3-…` exists in a real run, correct title, attributed to a registered Dover-readable source |
 | Opening 3 (Gloam) | Two distinct Gloam rows (Lighting/Technical Artist) in a real run, links resolve |
 | Process | All plans/status updated; `npm run test:py` + lint green; `data/` clean; Basic Memory handoff with counts, commands, next priority |

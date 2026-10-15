@@ -301,3 +301,27 @@ measured values, no spare headroom.
 > The F-2 runbook rule therefore lives in this opening-coverage plan's F-2 slice, and the
 > catalogue plan carries only a one-clause pointer; three redundant sentences in the
 > catalogue plan were condensed to make room without dropping information.
+
+## Coverage-audit F-3 slice allowance (2026-10-14)
+
+F-3 was **rescoped at slice time**: the planned registry retirement was withdrawn (its
+premise — a redirect failure — was contradicted by the live evidence), and the real root
+cause was fixed instead: the frozen portable build never bundled `tldextract`'s suffix
+snapshot, so every `is_rebrand` call in the shipped app raised `[Errno 2]` (491 rows in the
+2026-10-12 report).
+
+| Area | Previous committed baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `tests` | 240825 | 240868 | +43 |
+| `scripts` | 24793 | 24802 | +9 |
+
+- `scripts` +9: the `tldextract` entry plus its explanatory comment in
+  `MAIN_RUNTIME_COLLECT_DATA_PACKAGES` (`scripts/build_portable_exe.py`).
+- `tests` +43: three regression tests in `tests/test_build_portable_exe.py` — collect-data
+  tuple membership, the snapshot's presence in this environment, and the real
+  `PyInstaller.utils.hooks.collect_data_files("tldextract")` mapping.
+
+`src` is unchanged (the defective call site `rebrand_detection.py` was correct; the build
+config was not). The per-file line budget for `tests/test_build_portable_exe.py` was raised
+from the 400 default to 443 in `tools/repo_health/test_line_budget_baseline.json`. All other
+areas unchanged; exact measured values, no spare headroom.

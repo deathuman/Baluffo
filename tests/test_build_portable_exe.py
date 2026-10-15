@@ -225,6 +225,49 @@ def test_portable_build_collects_storage_migration_resources() -> None:
     assert "src.storage" in MAIN_RUNTIME_COLLECT_DATA_PACKAGES
 
 
+def test_portable_build_collects_tldextract_suffix_snapshot_data() -> None:
+    """The frozen build must bundle `tldextract`'s public-suffix snapshot.
+
+    `tldextract.TLDExtract(suffix_list_urls=())` (used by
+    `src/source_discovery/rebrand_detection.py`) loads `.tld_set_snapshot` from beside the
+    package. PyInstaller only bundles a package's data files when `--collect-data` names it,
+    so without this entry the frozen app raises `[Errno 2] .../_internal/tldextract/
+    .tld_set_snapshot` on every `is_rebrand` call. Measured on the 2026-10-12 portable run:
+    491 rows failed this way.
+    """
+    assert "tldextract" in MAIN_RUNTIME_COLLECT_DATA_PACKAGES
+
+
+def test_tldextract_bundled_snapshot_exists_in_this_environment() -> None:
+    """Ground truth for the above: the snapshot `--collect-data` is meant to ship exists.
+
+    If tldextract's layout ever stops carrying `.tld_set_snapshot` beside the module, the
+    collect-data entry no longer fixes anything and this must be noticed here, not on a box.
+    """
+    import tldextract
+
+    snapshot = Path(tldextract.__file__).resolve().parent / ".tld_set_snapshot"
+    assert snapshot.is_file(), f"tldextract snapshot missing at {snapshot}"
+
+
+def test_pyinstaller_collect_data_for_tldextract_ships_the_snapshot() -> None:
+    """The exact mechanism the fix relies on: PyInstaller maps the snapshot into `_internal`.
+
+    Asserts the real hook output rather than re-stating our own constant, so a change in how
+    PyInstaller resolves tldextract's data (or a tldextract release that drops the snapshot)
+    fails here instead of silently shipping a broken build.
+    """
+    pytest.importorskip("PyInstaller")
+    from PyInstaller.utils.hooks import collect_data_files
+
+    collected = collect_data_files("tldextract")
+    snapshot_entries = [entry for entry in collected if ".tld_set_snapshot" in entry[0]]
+    assert snapshot_entries, f"collect_data_files('tldextract') yielded no snapshot: {collected}"
+    source, destination = snapshot_entries[0]
+    assert destination == "tldextract"
+    assert Path(source).is_file()
+
+
 def test_portable_build_excludes_test_only_pyinstaller_dependency_trees() -> None:
     expected_exclusions = {
         "twisted.trial.test",

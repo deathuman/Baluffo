@@ -450,15 +450,13 @@ The generalisable lesson (and why `tests/tools/test_coverage_drain_identity.py` 
 wrong numbers were reported with the same confidence as a correct one.
 
 **Second correction.** This plan reported "6,844 of 6,929 openings proven delivered
-(98.8%)" and a per-adapter table showing workday 17/17. The live run collected **0**.
-"Delivered" meant *a registry row exists*; delivery needs that row to carry the declared
-adapter, to be selected, and to keep a non-zero count — a metric that cannot tell a collected
-board from a registered one keeps reporting 98% while delivering nothing.
+(98.8%)" and a per-adapter table showing workday 17/17. The live run collected **0**: the
+metric counted registrations, not collections, so it kept reporting 98% while delivering
+nothing.
 
 **First correction.** An earlier version reported 4,589 rows as "registered but not
 collecting" and scoped a phase around diagnosing them. That was a **measurement bug**: the
-audit matched rows by testing whether *any* path segment was a substring of *any* registry
-id, labelling 4,564 as registered when those boards were never registered. The real figure
+audit labelled 4,564 as registered when those boards were never registered. The real figure
 is **58**.
 
 Measured coverage is **31.7%**, not the 25.4% first quoted: that came from title matching
@@ -471,7 +469,9 @@ collapse to one title.
 - **A board is delivered when a fetch run keeps its openings.** Registry presence, adapter
   presence, and probe job count are not delivery — a provider likewise retires a static
   fallback only on delivery evidence (`lastStatus: ok` + `lastKeptCount > 0`; see
-  opening-coverage plan, F-2).
+  opening-coverage plan, F-2). A frozen build's *own* missing data files masquerade as board
+  failures (491 rows on `_internal/tldextract/.tld_set_snapshot`, 2026-10-12) — check whether
+  "no jobs extracted" is the pipeline's or the packaging's before retiring a row (F-3).
 - **Identity is asserted as an invariant, never as a count.** A curated board resolves to
   the same `(host, tenant)` as its registry row whether or not it carries a `listing_url`;
   an unidentifiable board resolves to `("", "")` and must register `false`; two tenants on

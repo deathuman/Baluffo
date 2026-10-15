@@ -189,6 +189,15 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "tkinter.ttk",
 )
 MAIN_RUNTIME_COLLECT_DATA_PACKAGES = (
+    # `tldextract` loads its bundled public-suffix snapshot (`.tld_set_snapshot`) from the
+    # package directory. PyInstaller does not bundle a package's data files unless asked, so
+    # without this the frozen app raises `[Errno 2] No such file or directory:
+    # '...\\_internal\\tldextract\\.tld_set_snapshot'` on every `is_rebrand` call, which is the
+    # redirect classifier's rebrand path. Measured on the 2026-10-12 portable run: 491 rows
+    # failed this way and 2,187 reported "no jobs extracted from source pages". A dev checkout
+    # has the snapshot beside the site-packages module, so the defect is invisible without a
+    # frozen build.
+    "tldextract",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     *STORAGE_RUNTIME_COLLECT_DATA_PACKAGES,
 )
