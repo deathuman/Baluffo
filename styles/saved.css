@@ -1712,6 +1712,24 @@
   max-width: 100%;
 }
 
+.saved-tracking-controls {
+  display: block;
+}
+
+.saved-tracking-status {
+  margin: 0.08rem 1.1rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.saved-tracking-status.is-pending {
+  color: var(--text-muted);
+}
+
+.saved-tracking-status.is-error {
+  color: var(--admin-danger-text);
+}
+
 .tracking-phase-summary {
   display: flex;
   justify-content: center;
@@ -2339,4 +2357,40 @@
   border-color: var(--accent);
   background-color: var(--surface-12);
   color: var(--accent-soft-text);
+}
+
+/* Keep Saved-page control state changes subtle without animating the job list. */
+.saved-custom-filter-btn,
+.saved-sort-btn,
+.saved-group-btn,
+.saved-details-tab-btn,
+.details-toggle-btn,
+.phase-next-btn,
+.phase-change-toggle,
+.outcome-menu-toggle {
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.saved-tracking-pending .phase-next-btn,
+.saved-tracking-pending .phase-change-toggle,
+.saved-tracking-pending .outcome-menu-toggle,
+.phase-next-btn[aria-busy="true"],
+.phase-change-toggle[aria-busy="true"],
+.outcome-menu-toggle[aria-busy="true"] {
+  cursor: wait;
+  opacity: 0.74;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saved-custom-filter-btn,
+  .saved-sort-btn,
+  .saved-group-btn,
+  .saved-details-tab-btn,
+  .details-toggle-btn,
+  .details-toggle-arrow,
+  .phase-next-btn,
+  .phase-change-toggle,
+  .outcome-menu-toggle {
+    transition: none;
+  }
 }

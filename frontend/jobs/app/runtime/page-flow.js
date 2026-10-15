@@ -180,6 +180,7 @@ export function createJobsPageFlow(deps) {
       currentUser: deps.userState.currentUser,
       seenJobKeys: deps.userState.seenJobKeys,
       savedJobKeys: deps.userState.savedJobKeys,
+      pendingSavedJobActions: deps.userState.pendingSavedJobActions,
       isJobsApiReady: deps.isJobsApiReady,
       canManageAvailability: Boolean(deps.canManageAvailability?.()),
       getJobKeyForJob: deps.getJobKeyForJob,

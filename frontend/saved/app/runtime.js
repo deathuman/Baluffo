@@ -41,8 +41,11 @@ import {
   PIPELINE_PHASES,
   canSetOutcomeStatus,
   canTransitionPipelinePhase,
+  clearFuturePhaseTimestamps,
+  isPipelinePhaseRewind,
   normalizeOutcomeStatus,
-  normalizePipelinePhase
+  normalizePipelinePhase,
+  toApplicationStatusMirror
 } from "../../local-data/tracking.js";
 import { computeAnchorScrollDelta } from "./render-cycle.js";
 import {
@@ -225,6 +228,10 @@ savedNotes = createSavedRuntimeNotes({
 savedMutations = createSavedMutations({
   viewState: savedRuntime.viewState,
   savedPageService,
+  phaseOptions: PHASE_OPTIONS,
+  isPipelinePhaseRewind,
+  clearFuturePhaseTimestamps,
+  toApplicationStatusMirror,
   normalizePhase: (...args) => savedRuntime.normalizePhase(...args),
   normalizeOutcome: (...args) => savedRuntime.normalizeOutcome(...args),
   canTransition: (...args) => savedRuntime.canTransition(...args),

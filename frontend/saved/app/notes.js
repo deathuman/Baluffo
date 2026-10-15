@@ -100,7 +100,10 @@ export async function flushNotesSave(jobKey, value, deps) {
   } finally {
     noteSaveState.lastInteractionAt = Date.now();
     noteSaveState.inFlight.delete(jobKey);
-    if (noteSaveState.pendingValues.has(jobKey) && currentUser) {
+    const hasNewerPendingValue =
+      noteSaveState.pendingValues.has(jobKey) &&
+      noteSaveState.pendingValues.get(jobKey) !== saveValue;
+    if (hasNewerPendingValue && currentUser) {
       setTimeout(() => {
         deps.flushNotesSave(jobKey).catch(() => {});
       }, 0);

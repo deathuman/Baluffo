@@ -93,6 +93,7 @@ export function createSavedAuthController({
     viewState.selectedJobKey = "";
     viewState.phaseOverrideContext = null;
     viewState.trackingOverrideContext = null;
+    viewState.pendingTrackingByJobKey = new Map();
     viewState.loadedAttachmentJobKeys = new Set();
     viewState.loadingAttachmentJobKeys = new Set();
     viewState.timelineScope = timelineScopeAll;

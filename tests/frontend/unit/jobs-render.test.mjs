@@ -266,6 +266,39 @@ test("jobs render uses accepted default row hierarchy and save icon", () => {
   });
   assert.match(savedHtml, /aria-label="Job saved"/);
   assert.match(savedHtml, />✓<\/span>/);
+
+  const pendingSaveHtml = render({
+    id: "9",
+    title: "Artist",
+    company: "Studio",
+    sector: "Game",
+    city: "London",
+    country: "United Kingdom",
+    workType: "Remote",
+    contractType: "Full-time"
+  }, {
+    pendingSavedJobActions: new Map([["job_key", "saving"]])
+  });
+  assert.match(pendingSaveHtml, /class="save-job-btn job-inline-save-btn pending"/);
+  assert.match(pendingSaveHtml, /disabled/);
+  assert.match(pendingSaveHtml, /aria-busy="true"/);
+  assert.match(pendingSaveHtml, /aria-label="Saving…"/);
+  assert.match(pendingSaveHtml, />…<\/span>/);
+
+  const pendingRemoveHtml = render({
+    id: "10",
+    title: "Artist",
+    company: "Studio",
+    sector: "Game",
+    city: "London",
+    country: "United Kingdom",
+    workType: "Remote",
+    contractType: "Full-time"
+  }, {
+    savedJobKeys: new Set(["job_key"]),
+    pendingSavedJobActions: new Map([["job_key", "removing"]])
+  });
+  assert.match(pendingRemoveHtml, /aria-label="Removing…"/);
 });
 
 test("jobs render marks unseen rows with New badge and seen rows with class", () => {

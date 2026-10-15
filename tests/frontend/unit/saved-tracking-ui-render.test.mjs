@@ -114,6 +114,37 @@ test("saved tracking UI: Applied shows a visible date-only milestone when reache
   assert.doesNotMatch(missingHtml, /phase-step-applied-date[^>]*>Not recorded</);
 });
 
+test("saved tracking UI: pending and failed tracking mutations are announced and guarded", () => {
+  const jobView = {
+    jobKey: "job-1",
+    pipelinePhase: "applied",
+    outcomeStatus: "active",
+    trackingMutation: { state: "pending" }
+  };
+  const options = {
+    phaseOptions: ["bookmark", "applied", "screening"],
+    phaseLabels: { bookmark: "Saved", applied: "Applied", screening: "Screening" },
+    canTransition: () => true,
+    canSetOutcome: () => true,
+    currentUser: { uid: "u1" }
+  };
+  const pendingHtml = renderApplicationTrackingControls(jobView, options);
+
+  assert.match(pendingHtml, /saved-tracking-controls saved-tracking-pending/);
+  assert.match(pendingHtml, /aria-busy="true"/);
+  assert.match(pendingHtml, /role="status" aria-live="polite">Saving tracking change/);
+  assert.match(pendingHtml, /phase-next-btn[^>]*disabled/);
+  assert.match(pendingHtml, /outcome-status-btn[^>]*disabled/);
+  assert.match(pendingHtml, /outcome-menu-popover[^>]*inert/);
+
+  const errorHtml = renderApplicationTrackingControls({
+    ...jobView,
+    trackingMutation: { state: "error", error: "Network unavailable" }
+  }, options);
+  assert.match(errorHtml, /saved-tracking-status is-error[^>]*role="alert"[^>]*>Network unavailable/);
+  assert.doesNotMatch(errorHtml, /aria-busy="true"/);
+});
+
 test("saved tracking UI: action row exposes next phase and change phase controls", () => {
   const phaseOptions = ["bookmark", "applied", "screening", "assignment"];
   const phaseLabels = {

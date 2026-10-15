@@ -151,7 +151,8 @@ function renderPhaseActionButton({
   label,
   classes,
   currentUser,
-  tooltip = ""
+  tooltip = "",
+  disabled = false
 }) {
   const normalizedPhase = normalizePipelinePhase(phase);
   const safeJobKey = escapeHtml(String(jobKey || ""));
@@ -164,8 +165,9 @@ function renderPhaseActionButton({
       data-phase="${escapeHtml(normalizedPhase)}"
       data-current-phase="${escapeHtml(currentPhase)}"
       data-current-outcome="${escapeHtml(currentOutcome)}"
-      ${currentUser ? "" : "disabled"}
-      aria-label="Set phase to ${escapeHtml(label)}"
+      ${currentUser && !disabled ? "" : "disabled"}
+      ${disabled ? "aria-disabled=\"true\"" : ""}
+      aria-label="Set phase to ${escapeHtml(label)}${disabled ? ", saving tracking change" : ""}"
       ${tooltipAttrs(tooltip)}
     >
       ${escapeHtml(label)}
@@ -219,6 +221,7 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     canTransition = () => false,
     currentUser = null,
     trackingOverrideContext = null,
+    trackingMutation = null,
     outcomeStatus = "active",
     now = Date.now
   } = options;
@@ -238,7 +241,8 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     const isApplied = normalizedOption === "applied";
     const appliedReached = isApplied && activeIndex >= idx;
     const canChangeNormally = canTransition(normalizedPhase, normalizedOption, normalizedOutcome);
-    const canClick = Boolean(currentUser);
+    const trackingPending = trackingMutation?.state === "pending";
+    const canClick = Boolean(currentUser) && !trackingPending;
     const selectedTimestamp = getPhaseTimestamp(timestamps, normalizedOption, savedAt);
     const selectedAtFull = formatTrackingTimestamp(selectedTimestamp);
     const appliedDate = isApplied && appliedReached
@@ -291,6 +295,7 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
     currentUser = null,
     outcomeStatus = "active",
     jobView = null,
+    trackingMutation = null,
     now = Date.now
   } = options;
   const normalizedPhase = normalizePipelinePhase(activePhase);
@@ -310,6 +315,7 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
     lastActivityFull ? `Last activity ${lastActivityFull}` : ""
   ].filter(Boolean).join(" · ");
   const attentionChip = renderAttentionChip(jobView);
+  const trackingPending = trackingMutation?.state === "pending";
   const isFinalPhase = activeIndex >= 0 && activeIndex === phaseOptions.length - 1;
   const finalIndicator = isFinalPhase
     ? `<span class="tracking-final-indicator">${isTerminalOutcome(normalizedOutcome) ? "Final stage" : "Awaiting outcome"}</span>`
@@ -332,7 +338,8 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
       currentOutcome: normalizedOutcome,
       label: `Move to ${nextLabel}`,
       classes: "btn back-btn phase-next-btn",
-      currentUser
+      currentUser,
+      disabled: trackingPending
     })
     : "";
   const menuItems = phaseOptions
@@ -359,16 +366,17 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
         label,
         classes,
         currentUser,
-        tooltip
+        tooltip,
+        disabled: trackingPending
       });
     }).join("");
   const changeMenu = currentUser && menuItems
     ? `
       <details class="phase-change-menu">
-        <summary class="btn back-btn phase-change-toggle" aria-label="Change phase">
+        <summary class="btn back-btn phase-change-toggle"${trackingPending ? " aria-disabled=\"true\"" : ""} aria-label="Change phase"${trackingPending ? tooltipAttrs("Saving tracking change…") : ""}>
           Change phase
         </summary>
-        <div class="phase-change-popover" role="menu" aria-label="Phase options">
+        <div class="phase-change-popover" role="menu" aria-label="Phase options"${trackingPending ? " inert" : ""}>
           ${menuItems}
         </div>
       </details>
@@ -406,12 +414,14 @@ export function renderOutcomeControls(jobKey, outcomeStatus, outcomeTimestamps, 
     outcomeLabels = OUTCOME_STATUS_LABELS,
     canSetOutcome = () => false,
     currentUser = null,
-    trackingOverrideContext = null
+    trackingOverrideContext = null,
+    trackingMutation = null
   } = options;
   const normalizedOutcome = normalizeOutcomeStatus(outcomeStatus);
   const safeJobKey = escapeHtml(String(jobKey || ""));
   const timestamps = outcomeTimestamps && typeof outcomeTimestamps === "object" ? outcomeTimestamps : {};
   const terminalOutcome = isTerminalOutcome(normalizedOutcome);
+  const trackingPending = trackingMutation?.state === "pending";
   const outcomeLabel = outcomeLabels[normalizedOutcome] || normalizedOutcome;
   const selectedTimestamp = terminalOutcome ? timestamps[normalizedOutcome] : "";
   const selectedAt = terminalOutcome
@@ -456,7 +466,8 @@ export function renderOutcomeControls(jobKey, outcomeStatus, outcomeTimestamps, 
         data-outcome-status="${escapeHtml(normalizedOption)}"
         data-current-outcome="${escapeHtml(normalizedOutcome)}"
         role="menuitem"
-        aria-label="${escapeHtml(actionLabel)}"
+        ${trackingPending ? "disabled" : ""}
+        aria-label="${escapeHtml(actionLabel)}${trackingPending ? ", saving tracking change" : ""}"
       >
         <span class="phase-step-text">${escapeHtml(actionLabel)}</span>
       </button>
@@ -465,10 +476,10 @@ export function renderOutcomeControls(jobKey, outcomeStatus, outcomeTimestamps, 
   const menuControl = currentUser && menuItems
     ? `
       <details class="outcome-menu">
-        <summary class="btn back-btn outcome-menu-toggle" aria-label="${escapeHtml(menuLabel)}">
+        <summary class="btn back-btn outcome-menu-toggle"${trackingPending ? " aria-disabled=\"true\"" : ""} aria-label="${escapeHtml(menuLabel)}"${trackingPending ? tooltipAttrs("Saving tracking change…") : ""}>
           ${escapeHtml(menuLabel)}
         </summary>
-        <div class="outcome-menu-popover" role="menu" aria-label="Final outcome options">
+        <div class="outcome-menu-popover" role="menu" aria-label="Final outcome options"${trackingPending ? " inert" : ""}>
           ${menuItems}
         </div>
       </details>
@@ -504,26 +515,38 @@ export function renderApplicationTrackingControls(jobView, options = {}) {
   const savedAt = String(jobView?.savedAt || job?.savedAt || "");
   const renderPhase = options.renderPhaseBar || renderPhaseBar;
   const renderOutcome = options.renderOutcomeControls || renderOutcomeControls;
+  const trackingMutation = options.trackingMutation || jobView?.trackingMutation || null;
+  const trackingPending = trackingMutation?.state === "pending";
+  const mutationStatus = trackingPending
+    ? '<div class="saved-tracking-status is-pending" role="status" aria-live="polite">Saving tracking change…</div>'
+    : trackingMutation?.state === "error"
+      ? `<div class="saved-tracking-status is-error" role="alert">${escapeHtml(trackingMutation.error || "Could not save tracking change.")}</div>`
+      : "";
   const phaseActions = renderPhaseActions(jobKey, pipelinePhase, phaseTimestamps, savedAt, {
     ...options,
     outcomeStatus,
-    jobView
+    jobView,
+    trackingMutation
   });
   return `
-    <div class="saved-phase-row saved-tracking-phase-row">
-      <div class="phase-label">Phase</div>
-      <div class="phase-value">
-        ${renderPhase(jobKey, pipelinePhase, phaseTimestamps, savedAt, {
-          ...options,
-          outcomeStatus
-        })}
+    <div class="saved-tracking-controls${trackingPending ? " saved-tracking-pending" : ""}"${trackingPending ? ' aria-busy="true"' : ""}>
+      <div class="saved-phase-row saved-tracking-phase-row">
+        <div class="phase-label">Phase</div>
+        <div class="phase-value">
+          ${renderPhase(jobKey, pipelinePhase, phaseTimestamps, savedAt, {
+            ...options,
+            outcomeStatus,
+            trackingMutation
+          })}
+        </div>
       </div>
-    </div>
-    <div class="saved-tracking-action-row">
-      <div class="tracking-status-slot">
-        ${renderOutcome(jobKey, outcomeStatus, outcomeTimestamps, options)}
+      <div class="saved-tracking-action-row">
+        <div class="tracking-status-slot">
+          ${renderOutcome(jobKey, outcomeStatus, outcomeTimestamps, { ...options, trackingMutation })}
+        </div>
+        ${phaseActions}
       </div>
-      ${phaseActions}
+      ${mutationStatus}
     </div>
   `;
 }

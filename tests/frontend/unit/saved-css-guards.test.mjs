@@ -146,6 +146,65 @@ test("saved mobile card labels line up and values start on one x", () => {
   assert.match(companyRule, /white-space:\s*normal/);
 });
 
+test("saved controls use subtle transitions with reduced-motion support", () => {
+  const transitionSelectors = [
+    ".saved-custom-filter-btn",
+    ".saved-sort-btn",
+    ".saved-group-btn",
+    ".saved-details-tab-btn",
+    ".details-toggle-btn",
+    ".phase-next-btn",
+    ".phase-change-toggle",
+    ".outcome-menu-toggle",
+  ];
+  const transitionRule = ruleBodies(css, transitionSelectors[0]).find((body) => /transition:/.test(body));
+  assert.ok(transitionRule, "Saved controls must have a transition rule");
+  assert.match(transitionRule, /transition:\s*background-color 0\.16s ease, border-color 0\.16s ease, color 0\.16s ease, box-shadow 0\.16s ease/);
+  for (const selector of transitionSelectors) {
+    assert.ok(
+      ruleBodies(css, selector).some((body) => /transition:/.test(body)),
+      `${selector} must receive the control transition`,
+    );
+  }
+
+  const reducedMotion = mediaBlocks
+    .filter((block) => block.condition === "(prefers-reduced-motion: reduce)")
+    .map((block) => block.body)
+    .join("\n");
+  assert.ok(reducedMotion, "Saved transitions must respect reduced-motion preferences");
+  for (const selector of transitionSelectors.concat(".details-toggle-arrow")) {
+    assert.ok(
+      ruleBodies(reducedMotion, selector).some((body) => /transition:\s*none/.test(body)),
+      `${selector} transitions must be disabled when reduced motion is preferred`,
+    );
+  }
+});
+
+test("saved tracking controls indicate pending work", () => {
+  const busyRules = [
+    ".saved-tracking-pending .phase-next-btn",
+    ".saved-tracking-pending .phase-change-toggle",
+    ".saved-tracking-pending .outcome-menu-toggle",
+    '.phase-next-btn[aria-busy="true"]',
+    '.phase-change-toggle[aria-busy="true"]',
+    '.outcome-menu-toggle[aria-busy="true"]',
+  ];
+  for (const selector of busyRules) {
+    const body = ruleBodies(css, selector)[0];
+    assert.ok(body, `${selector} pending feedback rule must exist`);
+    assert.match(body, /cursor:\s*wait/);
+    assert.match(body, /opacity:\s*0\.74/);
+  }
+});
+
+test("saved tracking status uses pending and error feedback styles", () => {
+  const statusRules = ruleBodies(css, ".saved-tracking-status.is-pending")
+    .concat(ruleBodies(css, ".saved-tracking-status.is-error"))
+    .join("\n");
+  assert.match(statusRules, /color:/);
+  assert.match(css, /\.saved-tracking-controls\s*\{\s*display:\s*block;/);
+});
+
 test("saved mobile remove button moves out of the content gutter", () => {
   // It used to be centred on the whole row (`top: 50%`), which on a 322px card
   // put it at y=769 — below the title it deletes and alongside the COMPANY cell

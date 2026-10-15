@@ -242,6 +242,7 @@ export function createSavedRenderController({
     });
     const job = view.job;
     const lifecycleOverlay = view.lifecycleOverlay;
+    const trackingMutation = view.trackingMutation || null;
     return renderSavedJobBlockHtml(job, {
       isCustomJob,
       customSourceLabel,
@@ -276,6 +277,7 @@ export function createSavedRenderController({
       canTransition,
       canSetOutcome,
       trackingOverrideContext: viewState.trackingOverrideContext || viewState.phaseOverrideContext,
+      trackingMutation,
       renderPhaseBar: (jobKey, activePhase, phaseTimestamps, savedAt) => renderPhaseBar(
         jobKey,
         activePhase,
@@ -323,14 +325,46 @@ export function createSavedRenderController({
     const { savedJobsListEl } = dom;
     if (!savedJobsListEl) return;
     const renderContext = captureRenderContext();
-    const allJobs = Array.isArray(jobs) ? jobs : [];
-    const allViews = allJobs.map(job => buildSavedJobViewModel(job, {
-      lifecycleOverlay: lifecycleOverlayForSavedJob(
-        viewState.savedLifecycleOverlayByJobKey, job
-      ),
-      parseIsoDate,
-      currentUser: viewState.currentUser
-    }));
+    const pendingTrackingByJobKey = viewState.pendingTrackingByJobKey instanceof Map
+      ? viewState.pendingTrackingByJobKey
+      : new Map();
+    const canonicalJobs = Array.isArray(jobs) ? jobs : [];
+    const allJobs = canonicalJobs.map(job => {
+      const jobKey = String(job?.jobKey || "").trim();
+      const trackingMutation = pendingTrackingByJobKey.get(jobKey);
+      if (!trackingMutation) return job;
+      const trackingSource = trackingMutation.state === "pending"
+        ? trackingMutation.optimisticJob
+        : trackingMutation.originalJob;
+      if (!trackingSource) return job;
+      return {
+        ...job,
+        pipelinePhase: trackingSource.pipelinePhase,
+        outcomeStatus: trackingSource.outcomeStatus,
+        applicationStatus: trackingSource.applicationStatus,
+        phaseTimestamps: trackingSource.phaseTimestamps,
+        outcomeTimestamps: trackingSource.outcomeTimestamps,
+        updatedAt: trackingSource.updatedAt,
+        trackingUpdatedAt: trackingSource.trackingUpdatedAt,
+        lastActivityAt: trackingSource.lastActivityAt
+      };
+    });
+    const allViews = allJobs.map(job => {
+      const trackingMutation = pendingTrackingByJobKey.get(String(job?.jobKey || "").trim());
+      return {
+        ...buildSavedJobViewModel(job, {
+          lifecycleOverlay: lifecycleOverlayForSavedJob(
+            viewState.savedLifecycleOverlayByJobKey, job
+          ),
+          parseIsoDate,
+          currentUser: viewState.currentUser
+        }),
+        trackingMutation: trackingMutation ? {
+          state: trackingMutation.state,
+          error: trackingMutation.error || ""
+        } : null
+      };
+    });
     const filteredViews = sortSavedJobViews(
       filterSavedJobViews(allViews, viewState.activeSavedFilter),
       viewState.activeSavedSort

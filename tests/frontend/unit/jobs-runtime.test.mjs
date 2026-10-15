@@ -315,6 +315,7 @@ test("jobs runtime state builder groups mutable runtime state and clones filter 
   assert.equal(runtime.runtimeState.desktopUpdateAutoCheckScheduled, false);
   assert.equal(runtime.runtimeState.desktopUpdateController, null);
   assert.ok(runtime.userState.savedJobKeys instanceof Set);
+  assert.ok(runtime.userState.pendingSavedJobActions instanceof Map);
   assert.ok(runtime.userState.seenJobKeys instanceof Set);
   assert.equal(runtime.pipelineUiState.bridgeOnline, false);
 });

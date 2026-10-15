@@ -88,6 +88,7 @@ function createSavedViewState({
     selectedJobKey: "",
     phaseOverrideContext: null,
     trackingOverrideContext: null,
+    pendingTrackingByJobKey: new Map(),
     loadedAttachmentJobKeys: new Set(),
     loadingAttachmentJobKeys: new Set(),
     timelineScope: defaultTimelineScope,

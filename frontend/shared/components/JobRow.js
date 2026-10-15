@@ -1,7 +1,7 @@
 /**
  * Renders a single job row HTML string. Used by jobs page.
  * @param {object} job - Job with title, company, jobLink, freshnessScore, etc.
- * @param {{ fullCountryName: function, sanitizeUrl: function, getJobKeyForJob: function, savedJobKeys: Set, isSeen?: boolean, isNew?: boolean, isJobsApiReady: function, toContractClass: function, capitalizeFirst: function }} options
+ * @param {{ fullCountryName: function, sanitizeUrl: function, getJobKeyForJob: function, savedJobKeys: Set, pendingSavedJobActions?: Map, isSeen?: boolean, isNew?: boolean, isJobsApiReady: function, toContractClass: function, capitalizeFirst: function }} options
  * @returns {string} HTML string for the row
  */
 import { escapeHtml, tooltipAttrs } from "../ui/index.js";
@@ -143,6 +143,7 @@ function renderJobRowContent(job, {
   safeJobLink,
   jobKey,
   isSaved,
+  pendingSaveAction,
   isJobsApiReady,
   canManageAvailability,
   isSeen,
@@ -155,6 +156,8 @@ function renderJobRowContent(job, {
   const newBadge = isNew ? '<span class="job-new-badge">New</span>' : "";
   const lifecycleBadge = renderLifecycleBadgeHtml(job);
   const isUnavailable = String(job.availabilityStatus || "").toLowerCase() === "unavailable";
+  const isSavePending = Boolean(pendingSaveAction);
+  const saveLabel = pendingSaveAction === "removing" ? "Removing…" : "Saving…";
   const sectorLine = isUnknownValue(job.sector)
     ? ""
     : `<div class="job-sector-line">${escapeHtml(job.sector)}</div>`;
@@ -198,15 +201,16 @@ function renderJobRowContent(job, {
         ${canManageAvailability && job.availabilityId ? `<button type="button" class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}"${tooltipAttrs("Check availability now")} aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
         <button
           type="button"
-          class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
+          class="save-job-btn job-inline-save-btn${isSaved ? " saved" : ""}${isSavePending ? " pending" : ""}"
           data-job-id="${job.id}"
           data-job-key="${jobKey}"
           data-ui="save-job-btn"
-          ${!isJobsApiReady() ? "disabled" : ""}
-          aria-label="${isSaved ? "Job saved" : "Save job"}"
-          title="${isSaved ? "Saved" : "Save job"}"
+          ${!isJobsApiReady() || isSavePending ? "disabled" : ""}
+          ${isSavePending ? 'aria-busy="true"' : ""}
+          aria-label="${isSavePending ? saveLabel : (isSaved ? "Job saved" : "Save job")}"
+          title="${isSavePending ? saveLabel : (isSaved ? "Saved" : "Save job")}"
         >
-          <span aria-hidden="true">${isSaved ? "✓" : "＋"}</span>
+          <span aria-hidden="true">${isSavePending ? "…" : (isSaved ? "✓" : "＋")}</span>
         </button>
       </div>
     </div>
@@ -219,6 +223,7 @@ export function renderJobRow(job, options = {}) {
     sanitizeUrl,
     getJobKeyForJob,
     savedJobKeys,
+    pendingSavedJobActions,
     isSeen = false,
     isNew = false,
     isJobsApiReady,
@@ -232,6 +237,7 @@ export function renderJobRow(job, options = {}) {
   const safeJobLink = sanitizeUrl(job.jobLink);
   const jobKey = getJobKeyForJob(job);
   const isSaved = savedJobKeys.has(jobKey);
+  const pendingSaveAction = pendingSavedJobActions?.get(jobKey) || "";
   return renderJobRowContent(job, {
     safeTitle,
     safeCompany,
@@ -239,6 +245,7 @@ export function renderJobRow(job, options = {}) {
     safeJobLink,
     jobKey,
     isSaved,
+    pendingSaveAction,
     isJobsApiReady,
     canManageAvailability,
     isSeen,

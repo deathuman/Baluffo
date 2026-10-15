@@ -226,9 +226,16 @@ export function createJobsAuthController({
     }
 
     const jobKey = getJobKeyForJob(job);
+    const pendingSavedJobActions = userState.pendingSavedJobActions instanceof Map
+      ? userState.pendingSavedJobActions
+      : (userState.pendingSavedJobActions = new Map());
+    if (pendingSavedJobActions.has(jobKey)) return;
+
     const isSaved = userState.savedJobKeys.has(jobKey);
+    pendingSavedJobActions.set(jobKey, isSaved ? "removing" : "saving");
 
     try {
+      if (getAllJobs().length) applyFiltersAndRender({ resetPage: false });
       if (isSaved) {
         const removeResult = await jobsSavedJobsService.removeSavedJobForUser(userState.currentUser.uid, jobKey);
         if (!removeResult.ok) throw new Error(removeResult.error);
@@ -241,10 +248,12 @@ export function createJobsAuthController({
         showToast("Saved job to your profile.", "success");
       }
       jobsDispatch.dispatch({ type: JOBS_ACTIONS.SAVE_TOGGLED, payload: { jobKey } });
-      if (getAllJobs().length) applyFiltersAndRender({ resetPage: false });
     } catch (err) {
       logJobsError("Could not toggle saved job", err);
       showToast("Could not update saved jobs right now.", "error");
+    } finally {
+      pendingSavedJobActions.delete(jobKey);
+      if (getAllJobs().length) applyFiltersAndRender({ resetPage: false });
     }
   }
 

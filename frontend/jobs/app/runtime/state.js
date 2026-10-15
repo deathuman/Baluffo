@@ -43,6 +43,7 @@ export function createJobsUserState() {
   return {
     currentUser: null,
     savedJobKeys: new Set(),
+    pendingSavedJobActions: new Map(),
     seenJobKeys: new Set(),
     authStateListenerBound: false
   };
