@@ -175,10 +175,11 @@ export function createSavedAttachmentsController({
   }
 
   async function openAttachment(jobKey, attachmentId) {
-    if (!viewState.currentUser) return;
+    const currentUser = viewState.currentUser;
+    if (!currentUser) return;
     try {
       const directUrl = savedPageService.getAttachmentOpenUrl(
-        viewState.currentUser.uid,
+        currentUser.uid,
         jobKey,
         attachmentId
       );
@@ -187,10 +188,11 @@ export function createSavedAttachmentsController({
         return;
       }
       const blobResult = await savedPageService.getAttachmentBlob(
-        viewState.currentUser.uid,
+        currentUser.uid,
         jobKey,
         attachmentId
       );
+      if (viewState.currentUser?.uid !== currentUser.uid) return;
       if (!blobResult.ok) throw new Error(blobResult.error || "Could not read attachment.");
       const blob = blobResult.data?.blob;
       if (!blob) {
@@ -201,16 +203,18 @@ export function createSavedAttachmentsController({
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
+      if (viewState.currentUser?.uid !== currentUser.uid) return;
       console.error("Could not open attachment:", err);
       showToast("Could not open attachment.", "error");
     }
   }
 
   async function downloadAttachment(jobKey, attachmentId, filename) {
-    if (!viewState.currentUser) return;
+    const currentUser = viewState.currentUser;
+    if (!currentUser) return;
     try {
       const directUrl = savedPageService.getAttachmentDownloadUrl(
-        viewState.currentUser.uid,
+        currentUser.uid,
         jobKey,
         attachmentId
       );
@@ -220,10 +224,11 @@ export function createSavedAttachmentsController({
       }
 
       const blobResult = await savedPageService.getAttachmentBlob(
-        viewState.currentUser.uid,
+        currentUser.uid,
         jobKey,
         attachmentId
       );
+      if (viewState.currentUser?.uid !== currentUser.uid) return;
       if (!blobResult.ok) throw new Error(blobResult.error || "Could not read attachment.");
       const blob = blobResult.data?.blob;
       if (!blob) {
@@ -239,6 +244,7 @@ export function createSavedAttachmentsController({
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
+      if (viewState.currentUser?.uid !== currentUser.uid) return;
       console.error("Could not download attachment:", err);
       showToast("Could not download attachment.", "error");
     }
