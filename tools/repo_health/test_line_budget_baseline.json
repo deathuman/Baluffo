@@ -37,6 +37,7 @@
     "tests/frontend/unit/admin-domain.test.mjs": 766,
     "tests/frontend/unit/admin-fetcher-controller.test.mjs": 1343,
     "tests/frontend/unit/admin-live-task.test.mjs": 440,
+    "tests/frontend/unit/saved-revert-mutations.test.mjs": 458,
     "tests/frontend/packaged-desktop-smoke.mjs": 430,
     "tests/frontend/unit/admin-ops-controller.test.mjs": 979,
     "tests/frontend/unit/admin-ops-diagnostics-render.test.mjs": 551,

@@ -81,6 +81,23 @@ export function createSavedMutations(deps) {
     deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
   }
 
+  function beginTrackingRevert(uid, jobKey, matchesChangedValue) {
+    if (String(deps.viewState.currentUser?.uid || "").trim() !== uid) return false;
+    const pendingEntry = getPendingTrackingMap().get(jobKey);
+    if (inFlightTrackingByJobKey.has(jobKey) || pendingEntry?.state === "pending") return false;
+    const currentRow = deps.viewState.lastSavedJobsByKey.get(jobKey);
+    if (!currentRow || !matchesChangedValue(currentRow)) {
+      notify("This tracking update is no longer current; revert was skipped.", "info");
+      return false;
+    }
+    inFlightTrackingByJobKey.add(jobKey);
+    return true;
+  }
+
+  function isCurrentTrackingUser(uid) {
+    return String(deps.viewState.currentUser?.uid || "").trim() === uid;
+  }
+
   function withOptimisticTracking(row, patch, options = {}) {
     const nowIso = new Date().toISOString();
     const phaseTimestamps = { ...(row?.phaseTimestamps || {}) };
@@ -223,7 +240,8 @@ export function createSavedMutations(deps) {
   }
 
   async function updatePhase(jobKey, phase, options = {}) {
-    if (!deps.viewState.currentUser) {
+    const initiatingUid = String(deps.viewState.currentUser?.uid || "").trim();
+    if (!initiatingUid) {
       notify("Sign in required.", "error");
       return;
     }
@@ -330,11 +348,16 @@ export function createSavedMutations(deps) {
         deps.viewState.trackingOverrideContext = null;
       }
       const previousPhase = currentPhase;
+      let revertConsumed = false;
       notify(`Phase updated to ${deps.phaseLabels[normalized] || normalized}.`, "success", {
         durationMs: 6500,
         actionLabel: "Revert",
         onAction: async () => {
-          if (!deps.viewState.currentUser) return;
+          if (revertConsumed) return;
+          revertConsumed = true;
+          if (!beginTrackingRevert(initiatingUid, safeJobKey, currentRow => (
+            deps.normalizePhase(currentRow.pipelinePhase || currentRow.applicationStatus) === normalized
+          ))) return;
           try {
             const revertOptions = {
               override: true,
@@ -348,24 +371,30 @@ export function createSavedMutations(deps) {
             };
             const revertResult = typeof deps.savedPageService.updateApplicationTracking === "function"
               ? await deps.savedPageService.updateApplicationTracking(
-                deps.viewState.currentUser.uid,
+                initiatingUid,
                 safeJobKey,
                 { pipelinePhase: previousPhase },
                 revertOptions
               )
               : await deps.savedPageService.updateApplicationStatus(
-                deps.viewState.currentUser.uid,
+                initiatingUid,
                 safeJobKey,
                 previousPhase,
                 revertOptions
               );
+            if (!isCurrentTrackingUser(initiatingUid)) return;
             if (!revertResult.ok) throw new Error(revertResult.error || "Could not revert phase.");
             notify(`Phase reverted to ${deps.phaseLabels[previousPhase] || previousPhase}.`, "success");
             await deps.refreshActivityLog();
-            deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+            if (isCurrentTrackingUser(initiatingUid)) {
+              deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+            }
           } catch (revertErr) {
+            if (!isCurrentTrackingUser(initiatingUid)) return;
             console.error("Could not revert phase change:", revertErr);
             notify("Could not revert phase.", "error");
+          } finally {
+            inFlightTrackingByJobKey.delete(safeJobKey);
           }
         }
       });
@@ -385,7 +414,8 @@ export function createSavedMutations(deps) {
   }
 
   async function updateOutcome(jobKey, outcomeStatus, options = {}) {
-    if (!deps.viewState.currentUser) {
+    const initiatingUid = String(deps.viewState.currentUser?.uid || "").trim();
+    if (!initiatingUid) {
       notify("Sign in required.", "error");
       return;
     }
@@ -479,14 +509,19 @@ export function createSavedMutations(deps) {
         deps.viewState.trackingOverrideContext = null;
         deps.viewState.phaseOverrideContext = null;
       }
+      let revertConsumed = false;
       notify(`Outcome updated to ${deps.outcomeLabels[normalized] || normalized}.`, "success", {
         durationMs: 6500,
         actionLabel: "Revert",
         onAction: async () => {
-          if (!deps.viewState.currentUser) return;
+          if (revertConsumed) return;
+          revertConsumed = true;
+          if (!beginTrackingRevert(initiatingUid, safeJobKey, currentRow => (
+            deps.normalizeOutcome(currentRow.outcomeStatus || currentRow.applicationStatus) === normalized
+          ))) return;
           try {
             const revertResult = await deps.savedPageService.updateApplicationTracking(
-              deps.viewState.currentUser.uid,
+              initiatingUid,
               safeJobKey,
               { outcomeStatus: previousOutcome },
               {
@@ -498,13 +533,19 @@ export function createSavedMutations(deps) {
                 restoredOutcomeTimestamp: previousOutcomeTimestamp
               }
             );
+            if (!isCurrentTrackingUser(initiatingUid)) return;
             if (!revertResult.ok) throw new Error(revertResult.error || "Could not revert outcome.");
             notify(`Outcome reverted to ${deps.outcomeLabels[previousOutcome] || previousOutcome}.`, "success");
             await deps.refreshActivityLog();
-            deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+            if (isCurrentTrackingUser(initiatingUid)) {
+              deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+            }
           } catch (revertErr) {
+            if (!isCurrentTrackingUser(initiatingUid)) return;
             console.error("Could not revert outcome change:", revertErr);
             notify("Could not revert outcome.", "error");
+          } finally {
+            inFlightTrackingByJobKey.delete(safeJobKey);
           }
         }
       });

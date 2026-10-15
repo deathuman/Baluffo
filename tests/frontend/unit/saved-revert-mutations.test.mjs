@@ -390,3 +390,69 @@ test("outcome revert toast sends explicit audit detail options", async () => {
     }
   ]);
 });
+
+test("phase Revert is one-shot and rejects overlapping clicks", async () => {
+  const revertWrite = createDeferred();
+  const { mutations, updateCalls, toastCalls } = createMutationHarness({
+    jobKey: "job_1",
+    pipelinePhase: "bookmark",
+    outcomeStatus: "active",
+    phaseTimestamps: {},
+    outcomeTimestamps: {}
+  }, {
+    updateApplicationTracking: (...args) => args[2].pipelinePhase === "bookmark"
+      ? revertWrite.promise
+      : { ok: true }
+  });
+
+  await mutations.updatePhase("job_1", "applied");
+  const onRevert = toastCalls.find(call => call.options.actionLabel === "Revert").options.onAction;
+  const first = onRevert();
+  const second = onRevert();
+  await Promise.resolve();
+  assert.equal(updateCalls.length, 2, "one original write and one Revert write");
+  assert.equal(updateCalls[1][0], "u1");
+  revertWrite.resolve({ ok: true });
+  await Promise.all([first, second]);
+  await onRevert();
+  assert.equal(updateCalls.length, 2, "the consumed callback cannot retry");
+});
+
+test("outcome Revert is skipped after switching profiles", async () => {
+  const { mutations, updateCalls, toastCalls, viewState } = createMutationHarness({
+    jobKey: "job_1",
+    pipelinePhase: "offer",
+    outcomeStatus: "active",
+    outcomeTimestamps: {}
+  });
+
+  await mutations.updateOutcome("job_1", "rejected");
+  const onRevert = toastCalls.find(call => call.options.actionLabel === "Revert").options.onAction;
+  viewState.currentUser = { uid: "u2" };
+  await onRevert();
+
+  assert.equal(updateCalls.length, 1, "only the initiating profile's original update was sent");
+  assert.equal(toastCalls.length, 1, "no stale notice is shown to the new profile");
+});
+
+test("phase Revert skips a value mismatch and informs the current profile", async () => {
+  const { mutations, updateCalls, toastCalls, viewState } = createMutationHarness({
+    jobKey: "job_1",
+    pipelinePhase: "bookmark",
+    outcomeStatus: "active",
+    phaseTimestamps: {},
+    outcomeTimestamps: {}
+  });
+
+  await mutations.updatePhase("job_1", "applied");
+  const onRevert = toastCalls.find(call => call.options.actionLabel === "Revert").options.onAction;
+  viewState.lastSavedJobsByKey.set("job_1", {
+    ...viewState.lastSavedJobsByKey.get("job_1"),
+    pipelinePhase: "offer"
+  });
+  await onRevert();
+
+  assert.equal(updateCalls.length, 1, "no stale write is sent");
+  assert.match(toastCalls.at(-1).message, /no longer current/i);
+  assert.equal(toastCalls.at(-1).type, "info");
+});
