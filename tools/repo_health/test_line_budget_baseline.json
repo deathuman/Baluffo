@@ -57,6 +57,7 @@
     "tests/test_build_ship_bundle.py": 575,
     "tests/test_build_portable_exe.py": 443,
     "tests/test_desktop_updater.py": 618,
+    "tests/test_dover_provider.py": 437,
     "tests/test_jobs_fetcher_google_sheets.py": 482,
     "tests/test_jobs_fetcher_parsing.py": 787,
     "tests/test_jobs_package.py": 224,

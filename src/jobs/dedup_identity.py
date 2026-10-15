@@ -452,6 +452,7 @@ _PROVIDER_MERGE_ADAPTERS = frozenset(
         "ashby",
         "bamboohr",
         "breezy",
+        "dover",
         "greenhouse",
         "jazzhr",
         "lever",

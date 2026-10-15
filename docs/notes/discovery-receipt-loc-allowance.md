@@ -325,3 +325,33 @@ snapshot, so every `is_rebrand` call in the shipped app raised `[Errno 2]` (491 
 config was not). The per-file line budget for `tests/test_build_portable_exe.py` was raised
 from the 400 default to 443 in `tools/repo_health/test_line_budget_baseline.json`. All other
 areas unchanged; exact measured values, no spare headroom.
+
+## Coverage-audit F-4 slice allowance (2026-10-14)
+
+F-4 adds the `dover` provider adapter (the Hatsu Labs opening) — a new leaf, runner, and
+parser plus the peer-provider wiring, the curated row, and 34 tests.
+
+| Area | Previous committed baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 183151 | 183902 | +751 |
+| `tests` | 240868 | 241305 | +437 |
+| `scripts` | 24802 | 24803 | +1 |
+
+- `src` +751: `src/dover_board_urls.py` (the slug/URL leaf, also registered in the
+  ship-bundle runtime manifest), `src/jobs/adapters/plugins/provider_api/dover_runner.py`
+  (the two-step slug → client_id → jobs runner), `parse_dover_jobs_payload` in
+  `src/jobs/adapters/parsers/json_payloads.py`, the Dover probe counter in
+  `src/source_discovery/probe.py`, the inference/pattern candidate builders, and the
+  single-token `dover` additions at each peer-provider seam (`PROVIDER_ADAPTERS`, host maps,
+  `SUPPORTED_PROVIDERS` and its weights, dedup namespace, registry loader selection,
+  source-state keying, `SOURCE_REPORT_META`).
+- `tests` +437: the new `tests/test_dover_provider.py` (34 tests) plus the one-line
+  provider-weight expectation update in `tests/source_discovery/test_config_and_helpers.py`.
+- `scripts` +1: the `dover_board_urls.py` entry in `scripts/ship_bundle_manifest.py`'s
+  `APP_RUNTIME_SCRIPTS` — without it the packaged app would not ship the new leaf (the same
+  class of defect F-3 fixed).
+
+The per-file line budget for `tests/test_dover_provider.py` was raised from the 400 default
+to 437 in `tools/repo_health/test_line_budget_baseline.json`. All other areas unchanged;
+exact measured values, no spare headroom. The new files were staged before re-baselining so
+the LOC ratchet counts them (the plan's explicit warning about untracked files).

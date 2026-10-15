@@ -30,6 +30,7 @@ _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS = (HttpStatusError, OSError, 
 # when a static source's page HTML contains an ATS signature.
 _ATS_SIGNATURE_HINTS: list[tuple[str, str]] = [
     ("teamtailor", "teamtailor"),
+    ("dover", "app.dover.com"),
     ("greenhouse", "greenhouse.io"),
     ("bamboohr", "bamboohr"),
     ("workday", "myworkdayjobs"),

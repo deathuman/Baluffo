@@ -75,7 +75,7 @@ def _source_state_for_row(
 
 def _adapter_priority(row: dict[str, Any]) -> int:
     adapter = str(row.get("adapter") or "").strip().lower()
-    if adapter in {"greenhouse", "lever", "ashby", "teamtailor"}:
+    if adapter in {"greenhouse", "lever", "ashby", "teamtailor", "dover"}:
         return 4
     if adapter in {"workable", "smartrecruiters", "bamboohr", "personio", "recruitee"}:
         return 3

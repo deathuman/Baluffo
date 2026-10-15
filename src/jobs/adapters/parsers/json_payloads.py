@@ -13,6 +13,7 @@ import re
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
+from src.dover_board_urls import dover_board_slug
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.normalizers import normalize_country
@@ -317,6 +318,114 @@ def parse_ashby_jobs_from_payload(
                 "postedAt": clean_text(row.get("publishedAt")),
                 "locations": location_details.get("locations") or [],
                 "locationSummary": clean_text(location_details.get("locationSummary")),
+            }
+        )
+    return jobs
+
+
+DOVER_JOB_LINK_TEMPLATE = "https://app.dover.com/apply/{slug}/{job_id}"
+
+
+def _dover_row_location(row: dict[str, Any]) -> tuple[str, str, str, list[Any]]:
+    """``(location_text, city, country, locations)`` from a Dover row's ``locations``.
+
+    Dover names a posting's sites in ``locations``; the primary entry decides the
+    location and the rest are kept as additional ones. ``workplace_type: REMOTE``
+    stands in when no entry names a place, so a remote-only board reads ``Remote``
+    rather than a blank city.
+    """
+    entries = [entry for entry in _as_list(row.get("locations")) if isinstance(entry, dict)]
+    names = [clean_text(entry.get("name")) for entry in entries]
+    names = [name for name in names if name]
+    primary = names[0] if names else ""
+    if not primary and clean_text(row.get("workplace_type")).lower() == "remote":
+        primary = "Remote"
+    city, country, work_type = parse_generic_location_fields(primary)
+    location_details = _normalized_location_details(names or primary)
+    return (
+        primary,
+        clean_text(location_details.get("city")) or city,
+        clean_text(location_details.get("country")) or country,
+        location_details.get("locations") or [],
+    )
+
+
+def _dover_link_slug(slug_or_source: Any) -> str:
+    """The board slug for an apply link, from a slug, a board URL, or a registry row.
+
+    The runner hands this parser the whole registry row (as ``json_feed`` hands
+    ``<source_key>``), so a mapping is resolved through the same leaf that resolves
+    the fetch URL -- otherwise the parser would stringify a dict and emit a link
+    with no slug in it.
+    """
+    if isinstance(slug_or_source, dict):
+        for key in ("board_url", "api_url", "careersUrl", "listing_url", "url"):
+            slug = dover_board_slug(slug_or_source.get(key))
+            if slug:
+                return slug
+        return ""
+    return dover_board_slug(slug_or_source)
+
+
+def parse_dover_jobs_payload(
+    payload: Any, slug_or_source: Any, fallback_company: str = ""
+) -> list[RawJob]:
+    """Rows from a Dover careers-page payload (``{"count": N, "results": [...]}``).
+
+    The board page is client-rendered and serves no job anchors, so the
+    careers-page API is the only listing; ``slug_or_source`` is the board the
+    payload came from and supplies the apply-link slug, whether it is the slug
+    itself, a board/API URL, or the registry row. ``is_published: false`` and
+    ``is_sample: true`` rows are Dover's own hidden and demo postings.
+
+    Note on row filtering, deliberately unlike the Ashby/lever/SmartRecruiters parsers:
+    this one does **not** apply ``looks_like_game_job``. That keyword gate exists to
+    strip back-office roles out of a *wide, multi-studio* feed, where the studio behind a
+    row is unknown and a keyword is the only signal available. A Dover payload is one
+    named studio's own board, fetched from that studio's own registry row, so every
+    published row on it is that studio's opening by construction -- the studio is already
+    known and a keyword test can only delete real roles. Measured on the audited board:
+    of its two openings, "Character Lighting & Look Development Artist" carries no game
+    keyword and was dropped, so the source reported one opening where the studio had two.
+    Do not restore the gate "for consistency": the inconsistency is the point.
+    """
+    rows = _as_list(payload.get("results")) if isinstance(payload, dict) else _as_list(payload)
+    if not rows:
+        return []
+    slug = _dover_link_slug(slug_or_source)
+    company = clean_text(fallback_company) or "Unknown"
+    jobs: list[RawJob] = []
+    for row_value in rows:
+        if not isinstance(row_value, dict):
+            continue
+        row = _as_dict(row_value)
+        if row.get("is_published") is False or row.get("is_sample") is True:
+            continue
+        posting_id = clean_text(row.get("id"))
+        title = clean_text(row.get("title"))
+        if not posting_id or not title:
+            continue
+        location_text, city, country, locations = _dover_row_location(row)
+        job_link = DOVER_JOB_LINK_TEMPLATE.format(slug=slug, job_id=posting_id) if slug else ""
+        jobs.append(
+            {
+                "sourceJobId": f"dover:{posting_id}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                # Held raw, as the Ashby and Pinpoint parsers hold theirs ("REMOTE"):
+                # the repo has no workplace-type normaliser, and `locations` already
+                # carries the geography, so falling back to a location string here
+                # would put a place name in a workplace-type field.
+                "workType": clean_text(row.get("workplace_type")),
+                "contractType": "",
+                "jobLink": job_link,
+                "url": job_link,
+                "sector": "Game",
+                "postedAt": row.get("published_at") or row.get("created_at"),
+                "locations": locations,
+                "locationSummary": location_text,
             }
         )
     return jobs

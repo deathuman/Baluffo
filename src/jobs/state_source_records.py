@@ -51,6 +51,7 @@ PROVIDER_COVERAGE_ADAPTERS = frozenset(
         "personio",
         "breezy",
         "jazzhr",
+        "dover",
     }
 )
 

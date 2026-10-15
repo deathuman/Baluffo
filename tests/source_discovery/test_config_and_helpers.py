@@ -44,7 +44,7 @@ def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
         "pinpoint": 6,
         "personio": 3,
         "static": 8,
-    } | {"oracle_hcm": 4}
+    } | {"oracle_hcm": 4, "dover": 8}
     assert sd.UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP == 8
     assert sd.UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS == {
         "greenhouse": 24,
@@ -57,7 +57,7 @@ def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
         "pinpoint": 12,
         "personio": 6,
         "static": 16,
-    } | {"oracle_hcm": 8}
+    } | {"oracle_hcm": 8, "dover": 16}
 
 
 def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass() -> None:

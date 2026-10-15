@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from src.jobs.adapters.parsers.json_payloads import (
     parse_ashby_jobs_from_payload,
+    parse_dover_jobs_payload,
     parse_epic_games_jobs_payload,
     parse_greenhouse_jobs_payload,
     parse_lever_jobs_payload,
@@ -50,6 +51,7 @@ __all__ = [
     "parse_ashby_jobs_from_payload",
     "parse_bamboohr_jobs_html",
     "parse_breezy_jobs_html",
+    "parse_dover_jobs_payload",
     "parse_epic_games_jobs_payload",
     "parse_generic_location_fields",
     "parse_greenhouse_jobs_payload",

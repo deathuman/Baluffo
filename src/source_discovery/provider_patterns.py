@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
+from src.dover_board_urls import DOVER_HOST, dover_board_slug, dover_slug_api_url
 from src.source_registry import unique_sources
 from src.url_hosts import host_matches_domain, host_matches_subdomain
 
@@ -76,7 +77,20 @@ def provider_reinforcement_score(seed: dict[str, Any], provider: str) -> int:
     path = (parsed.path or "").lower()
     if provider == "teamtailor":
         return _teamtailor_reinforcement_score(careers_url, host, path)
+    if provider == "dover":
+        return _dover_reinforcement_score(host, path)
     return _host_reinforcement_score(provider, host, path)
+
+
+def _dover_reinforcement_score(host: str, path: str) -> int:
+    """Dover boards are linked from studio sites as ``app.dover.com/jobs/<slug>``.
+
+    Measured host evidence is what makes the seed's own careersUrl count, so a studio
+    that links its Dover board is probed for it even when ``likelyProviders`` is stale.
+    """
+    if host != DOVER_HOST:
+        return 0
+    return 18 if dover_board_slug(f"https://{host}{path}") else 0
 
 
 def _host_reinforcement_score(provider: str, host: str, path: str) -> int:
@@ -113,7 +127,7 @@ def _pattern_aliases_for_provider(seed: dict[str, Any], provider: str) -> list[s
         if provider in {"greenhouse", "lever", "workable", "teamtailor", "recruitee"}
         else aliases[:1]
     )
-    if provider in {"lever", "teamtailor", "recruitee", "pinpoint"}:
+    if provider in {"lever", "teamtailor", "recruitee", "pinpoint", "dover"}:
         expanded: list[str] = []
         seen = set()
         for alias in scoped:
@@ -236,6 +250,19 @@ def _ashby_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[st
     }
 
 
+def _dover_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[str, Any]:
+    board_url = f"https://{DOVER_HOST}/jobs/{alias}"
+    return {
+        **base,
+        "name": f"{studio} (Dover)",
+        "adapter": "dover",
+        "board_url": board_url,
+        # The board page is client-rendered; the slug endpoint is the first of the two
+        # requests the runtime makes, so it is the URL a probe must count against.
+        "api_url": dover_slug_api_url(board_url),
+    }
+
+
 def _recruitee_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[str, Any]:
     host = alias if host_matches_subdomain(alias, "recruitee.com") else f"{alias}.recruitee.com"
     return {
@@ -284,6 +311,7 @@ def _provider_pattern_row(
         "workable": lambda: _workable_pattern_row(base, studio, alias),
         "teamtailor": lambda: _teamtailor_pattern_row(base, studio, alias, careers_url),
         "ashby": lambda: _ashby_pattern_row(base, studio, alias),
+        "dover": lambda: _dover_pattern_row(base, studio, alias),
         "recruitee": lambda: _recruitee_pattern_row(base, studio, alias),
         "pinpoint": lambda: _pinpoint_pattern_row(base, studio, alias),
         "personio": lambda: _personio_pattern_row(base, studio, alias),

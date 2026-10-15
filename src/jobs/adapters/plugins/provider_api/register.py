@@ -3,6 +3,7 @@
 All runner logic has been extracted into focused modules:
 - greenhouse_runner.py
 - teamtailor_runner.py
+- dover_runner.py
 - json_feed.py
 - html_board.py
 
@@ -20,6 +21,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
 from .dayforce import run_dayforce_sources_source
+from .dover_runner import _run_dover_sources
 from .greenhouse_runner import _run_greenhouse_boards
 from .html_board import _html_board_plugin
 from .json_feed import _json_feed_plugin
@@ -134,3 +136,18 @@ def ensure_registered() -> None:
     # client-rendered and serves no `/job/` anchors, so the HTML path kept 0 for
     # every registered Ashby board. The API is what the page renders from.
     default_registry.register(_json_feed_plugin("ashby"))
+    # Dover reads its careers-page API, not the rendered board: the board page is
+    # client-rendered and serves no job anchors. It is not a JsonFeedSpec because a
+    # board needs two requests -- the slug endpoint yields the client_id the jobs
+    # endpoint is keyed on -- so it carries its own runner.
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="dover_sources",
+            family="provider_api",
+            priority=56,
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "dover_sources"
+            ),
+            run_fn=_run_dover_sources,
+        )
+    )

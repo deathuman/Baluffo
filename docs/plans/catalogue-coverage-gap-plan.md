@@ -451,8 +451,7 @@ wrong numbers were reported with the same confidence as a correct one.
 
 **Second correction.** This plan reported "6,844 of 6,929 openings proven delivered
 (98.8%)" and a per-adapter table showing workday 17/17. The live run collected **0**: the
-metric counted registrations, not collections, so it kept reporting 98% while delivering
-nothing.
+metric counted registrations, not collections.
 
 **First correction.** An earlier version reported 4,589 rows as "registered but not
 collecting" and scoped a phase around diagnosing them. That was a **measurement bug**: the
@@ -460,9 +459,8 @@ audit labelled 4,564 as registered when those boards were never registered. The 
 is **58**.
 
 Measured coverage is **31.7%**, not the 25.4% first quoted: that came from title matching
-alone, whereas posting-URL matching is definitive. Both bases are reported separately because
-title matching over-claims — `HR Business Partner - US Operations (West)` and `(East)`
-collapse to one title.
+alone, whereas posting-URL matching is definitive. Title matching over-claims —
+`HR Business Partner - US Operations (West)` and `(East)` collapse to one title.
 
 ## Standing verification for every step
 
@@ -472,6 +470,8 @@ collapse to one title.
   opening-coverage plan, F-2). A frozen build's *own* missing data files masquerade as board
   failures (491 rows on `_internal/tldextract/.tld_set_snapshot`, 2026-10-12) — check whether
   "no jobs extracted" is the pipeline's or the packaging's before retiring a row (F-3).
+  A client-rendered ATS board may need its API read instead of its page: a Dover row's
+  `api_url` is the *slug* endpoint, not the listing (F-4).
 - **Identity is asserted as an invariant, never as a count.** A curated board resolves to
   the same `(host, tenant)` as its registry row whether or not it carries a `listing_url`;
   an unidentifiable board resolves to `("", "")` and must register `false`; two tenants on

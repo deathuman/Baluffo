@@ -23,6 +23,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from src.ashby_board_urls import ashby_source_api_url
+from src.dover_board_urls import dover_jobs_api_url, dover_slug_api_url
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.personio import looks_like_personio_marketing_html
@@ -667,6 +668,14 @@ def _fallback_probe_url(candidate: dict[str, Any], adapter: str) -> str:
         # was quarantined as `zero_jobs` three times while serving 122 jobs. The
         # posting API is the data the page renders from.
         return ashby_source_api_url(candidate)
+    if adapter == "dover":
+        # Same shape as Ashby, and the same failure it caused: the Dover board page is
+        # client-rendered, so an anchor count reads a live board as empty. `api_url` on
+        # a Dover row is the *slug* endpoint (the first of the fetch adapter's two
+        # requests), which returns the client record and no postings at all -- probing
+        # it would read every board as zero just as surely. The probe has to skip to the
+        # jobs endpoint, which is where the rows are.
+        return _dover_jobs_probe_url(candidate)
     if adapter in {"greenhouse", "lever", "smartrecruiters", "workable"}:
         return _provider_homepage_probe_url(candidate, adapter)
     if adapter in {"recruitee", "pinpoint"}:
@@ -818,6 +827,29 @@ def _ashby_probe_count(text: str, _base_url: str) -> int:
     return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))
 
 
+def _dover_probe_count(text: str, _base_url: str) -> int:
+    """Rows on a Dover board, counted from the careers-page jobs payload.
+
+    The board page itself is client-rendered and carries no anchors, so the probe has
+    to read the same API the fetch adapter reads. That API is two requests, but only
+    the second one is countable: this counter therefore only ever sees the jobs
+    payload, and ``_fallback_probe_url`` is what aims the probe at it.
+    """
+    if not text.strip().startswith("{"):
+        return 0
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return 0
+    if not isinstance(payload, dict):
+        return len(payload) if isinstance(payload, list) else 0
+    total = payload.get("count")
+    if isinstance(total, int):
+        return max(0, total)
+    results = payload.get("results")
+    return len(results) if isinstance(results, list) else 0
+
+
 def _teamtailor_probe_count(text: str, base_url: str) -> int:
     link_count = len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)))
     return max(link_count, _static_result_count(text, base_url))
@@ -833,6 +865,7 @@ def _jazzhr_probe_count(text: str, base_url: str) -> int:
 _PROBE_COUNTERS: dict[str, Callable[[str, str], int]] = {
     "personio": _personio_probe_count,
     "ashby": _ashby_probe_count,
+    "dover": _dover_probe_count,
     "teamtailor": _teamtailor_probe_count,
     "jazzhr": _jazzhr_probe_count,
     "bamboohr": _bamboohr_probe_count,
@@ -889,6 +922,60 @@ def probe_row_timeout_units(candidate: dict[str, Any] | None, timeout_s: int) ->
     return max(1, len(_probe_urls(candidate)) * attempts)
 
 
+def _dover_jobs_probe_url(candidate: Mapping[str, Any]) -> str:
+    """The jobs URL for a Dover row that only carries its slug endpoint.
+
+    ``api_url`` is the slug endpoint on every Dover row this repo writes, so the
+    probe cannot GET it: it answers with the client record, not the postings.
+    Resolving the client id is what :func:`_dover_structured_probe_count` does.
+    Returns empty when the row names no board at all.
+    """
+    return dover_slug_api_url(
+        candidate.get("board_url")
+        or candidate.get("api_url")
+        or candidate.get("careersUrl")
+        or candidate.get("listing_url")
+    )
+
+
+def _dover_structured_probe_count(candidate: Mapping[str, Any], *, timeout_s: int) -> int | None:
+    """Count a Dover board through its two-request API, or ``None`` to fall through.
+
+    A Dover board cannot be counted by a single GET: the board page is
+    client-rendered, and the row's own ``api_url`` is the *slug* endpoint, which
+    returns the client record and zero postings. Reading it as the listing is the
+    Ashby mistake in a new costume -- every board probes as zero and is quarantined
+    while it is serving jobs.
+
+    ``None`` on any failure, so the caller falls through to the ordinary probe and
+    the board is undecided rather than falsely empty.
+    """
+    slug_url = _dover_jobs_probe_url(candidate)
+    if not slug_url:
+        return None
+    client_id = ""
+    try:
+        slug_text = fetch_text_with_retry(slug_url, timeout_s, adapter="dover")
+    except Exception:
+        return None
+    try:
+        slug_payload = json.loads(slug_text)
+    except ValueError:
+        return None
+    if isinstance(slug_payload, Mapping):
+        client_id = str(slug_payload.get("id") or "").strip()
+    if not client_id:
+        return None
+    jobs_url = dover_jobs_api_url(client_id)
+    if not jobs_url:
+        return None
+    try:
+        jobs_text = fetch_text_with_retry(jobs_url, timeout_s, adapter="dover")
+    except Exception:
+        return None
+    return _dover_probe_count(jobs_text, jobs_url)
+
+
 def structured_api_probe_count(
     candidate: Mapping[str, Any] | None, *, timeout_s: int
 ) -> int | None:
@@ -912,6 +999,8 @@ def structured_api_probe_count(
     """
     if not isinstance(candidate, Mapping):
         return None
+    if str(candidate.get("adapter") or "") == "dover":
+        return _dover_structured_probe_count(candidate, timeout_s=timeout_s)
     if str(candidate.get("adapter") or "") != "workday":
         return None
     listing = str(candidate.get("listing_url") or candidate.get("careersUrl") or "").strip()

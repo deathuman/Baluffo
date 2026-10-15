@@ -97,6 +97,7 @@ PROVIDER_REGISTRY_ADAPTERS = frozenset(
         "bamboohr",
         "breezy",
         "dayforce",
+        "dover",
         "greenhouse",
         "jazzhr",
         "lever",

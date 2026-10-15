@@ -1,5 +1,14 @@
 [
  {
+  "name": "Hatsu Labs (dover)",
+  "studio": "Hatsu Labs",
+  "adapter": "dover",
+  "nlPriority": false,
+  "board_url": "https://app.dover.com/jobs/hatsulabs",
+  "api_url": "https://app.dover.com/api/v1/careers-page-slug/hatsulabs",
+  "coverageAuditOpenings": 2
+ },
+ {
   "name": "Tencent_Careers (workday)",
   "studio": "Tencent_Careers",
   "adapter": "workday",
@@ -4941,7 +4950,7 @@
   "studio": "Backbone",
   "adapter": "static",
   "nlPriority": false,
-  "listing_url": "https://app.dover.com",
+  "listing_url": "https://app.dover.com/jobs/backbone",
   "coverageAuditOpenings": 7
  },
  {

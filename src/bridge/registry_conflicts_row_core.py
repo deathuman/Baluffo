@@ -22,6 +22,7 @@ PROVIDER_ADAPTERS = {
     "ashby",
     "bamboohr",
     "breezy",
+    "dover",
     "greenhouse",
     "jazzhr",
     "lever",
@@ -47,6 +48,7 @@ PROVIDER_HOST_SUFFIX_ADAPTERS = {
 }
 
 PROVIDER_HOST_EXACT_ADAPTERS = {
+    "app.dover.com": "dover",
     "apply.workable.com": "workable",
     "bamboohr.com": "bamboohr",
     "boards.greenhouse.io": "greenhouse",

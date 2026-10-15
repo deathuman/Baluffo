@@ -25,6 +25,7 @@ from src.shared.utils import env_flag
 BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS = {
     "ashby",
     "breezy",
+    "dover",
     "greenhouse",
     "jazzhr",
     "lever",

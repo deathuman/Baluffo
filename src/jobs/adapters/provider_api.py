@@ -17,6 +17,9 @@ from typing import Any
 from src.jobs.adapters import provider_personio as _provider_personio
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
+from src.jobs.adapters.plugins.provider_api.dover_runner import (
+    make_dover_sources_runner as _make_dover_sources_runner,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
@@ -111,6 +114,10 @@ run_pinpoint_sources_source = _make_sources_runner("pinpoint_sources")
 # No browser seam: Ashby's posting API is a plain JSON endpoint, so it never needs
 # the rendered-page fallback the HTML board path did.
 run_ashby_sources_source = _make_sources_runner("ashby_sources")
+# Dover keeps its own runner rather than the dispatch factory, because the plugin's
+# `run` signature additionally takes an injectable `fetch_payload` (two requests per
+# board: slug -> client_id -> jobs) and the registry dispatches it directly.
+run_dover_sources_source = _make_dover_sources_runner()
 run_breezy_sources_source = _make_sources_runner("breezy_sources", accepts_try_playwright=True)
 run_jazzhr_sources_source = _make_sources_runner("jazzhr_sources", accepts_try_playwright=True)
 run_oracle_hcm_sources_source = _make_sources_runner("oracle_hcm_sources")

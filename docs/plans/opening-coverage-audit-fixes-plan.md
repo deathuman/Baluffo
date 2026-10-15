@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** three-opening coverage audit (Hatsu Labs/Dover apply URL, Vivid Games job `8351271`, Studio Gloam `#careers`) — only 1 of 3 openings is delivered, and the audit surfaced three further defects on the way
 > - **Verified against:** 9b8901f8 (diagnosis); portable 0.3.017, fetch run `6138ba610943a2e9` completed 2026-10-12 16:11 UTC (live state); readiness re-verified at `3508b8f9` 2026-10-14
-> - **Status:** Phase 0 done; F-1 committed `02ef7fcd`; Phase 2 (F-2) implemented and verified — Phases 3–5 pending
+> - **Status:** F-1 `02ef7fcd`; F-2 `b7e97429`; F-3 `52024ae6` (rescoped to a packaging fix); F-4 Dover adapter implemented and live-accepted; F-5 pending
 
 # Opening coverage audit fixes
 
@@ -218,6 +218,40 @@ local probe.
 **Gate (time-boxed recon, its own commit if it only produces evidence).** Determine the
 Dover board's data surface:
 
+**Recon RESULT (2026-10-14): Branch A confirmed — a stable public JSON API exists.**
+`https://app.dover.com/jobs/hatsulabs` and the audited apply URL both answer 200 with a
+~4.4KB SPA shell (Dover's "search-builder2" bundle, Cloudflare Turnstile present). The shell
+loads `/static/search-builder2/static/js/openapi-BpRgtX5w.js`, which enumerates Dover's ATS
+API and exposed the public careers-page endpoints. Verified live:
+
+- `GET https://app.dover.com/api/v1/careers-page-slug/hatsulabs` → 200
+  `{"id":"d306a454-f8d9-47b7-8d65-08914d7b5644","slug":"hatsulabs","name":"Hatsu Labs", …}`
+  (slug → client_id).
+- `GET https://app.dover.com/api/v1/careers-page/<client_id>/jobs` → 200
+  `{"count":2,"results":[…]}` — **both Hatsu openings**, including
+  `8dbe43b3-3dc5-4812-bf95-fbb306d08e59` / *"Technical Artist (Shaders & Performance)"* and
+  `3a138bf4-…` / *"Character Lighting & Look Development Artist"* (both `workplace_type:
+  REMOTE`, location *International*).
+
+Trailing-slash variants (`…/jobs/`) route to the SPA HTML, so the adapter must use the
+**no-trailing-slash** form. `?client=<slug>` on the global `/api/v1/job-board/jobs/` is
+ignored (that endpoint returns all 483 boards), so the **two-step resolution is required**.
+No Turnstile challenge was hit on these JSON endpoints (the shell's Turnstile is for the
+apply flow), so Branch C is not needed.
+
+Note the second opening is the interesting artefact: the audited URL is the *apply* URL,
+whose id is the *job* id, while `careers-page-slug` returns the *client* id — the adapter
+must not conflate them.
+
+**Resolution (user, 2026-10-14): Option A — ship the `/api/` adapter.** The `robots.txt`
+`Disallow: /api/` is recorded here and in the adapter's module docstring as a known caveat.
+Rationale: the endpoints serve **published, unauthenticated careers-page content** (no auth,
+no PII, `is_published` rows only) — the same data the public careers page renders — and
+Baluffo already reads other providers' posting APIs on the same basis. The blanket
+`/api/` rule also covers unrelated admin paths, so it is not a board-specific "do not read
+our openings" signal. The finding is documented rather than dropped, so a future reviewer can
+re-litigate it with the evidence in hand.
+
 - Capture the JSON endpoint the `/jobs/<slug>` SPA calls (the static HTML is a shell;
   guessed paths `/api/*` all fall back to `index.html`; the public call lives in a
   code-split chunk — inspect chunk graph or sniff one Playwright session).
@@ -252,6 +286,40 @@ Dover board's data surface:
 - Discovery probe on the registered board does **not** return `zero_jobs`
   (no repeat of the Ashby quarantine).
 - Controls in the same run unchanged (a known-good board keeps its expected count).
+
+**Landed.** Branch A. New leaf `src/dover_board_urls.py` (slug resolution, both API URLs,
+`dover_source_slug_url`), new runner
+`src/jobs/adapters/plugins/provider_api/dover_runner.py` (two-step slug → client_id → jobs;
+an HTML-not-JSON body is a hard error, never a silent zero), parser
+`parse_dover_jobs_payload` in `src/jobs/adapters/parsers/json_payloads.py`, registered as
+adapter key `dover_sources` with its loader name and `SOURCE_REPORT_META` entry, curated row
+`Hatsu Labs (dover)` added, the Backbone row's bare root fixed to
+`https://app.dover.com/jobs/backbone`, and `dover` added at every peer-provider seam
+(`PROVIDER_ADAPTERS` + host maps, `SUPPORTED_PROVIDERS`, dedup namespace, ship-bundle
+runtime scripts, registry loader selection, source-state keying).
+
+Two defects found and fixed during review, both regression-tested:
+
+- The parser's inherited `looks_like_game_job` gate **dropped a real opening**
+  ("Character Lighting & Look Development Artist" carries no game keyword). That filter
+  strips back-office roles from *wide multi-studio feeds*; a Dover source is one named
+  studio's own board, so the gate does not apply.
+- The row's `api_url` is the **slug** endpoint, which returns no postings, so a probe aimed
+  there would read every Dover board as zero. `probe.py` resolves the client id and counts
+  the **jobs** endpoint instead, so probe and fetch read the same rows.
+
+**Evidence.**
+
+- Live runner acceptance (`_out/coverage/f4_live_acceptance.py`, real API): keeps **2** rows,
+  including `dover:8dbe43b3-3dc5-4812-bf95-fbb306d08e59` /
+  *"Technical Artist (Shaders & Performance)"*; every link is `…/apply/hatsulabs/<job id>`.
+- Registry check: the curated Dover row loads and reaches `STATIC_DISCOVERY_CANDIDATES`;
+  the plugin registry selects `dover_sources` with a runnable `run_fn`.
+- `npm run test:py` → **6,856 passed**, 3 skipped, 198 deselected; 34 new Dover tests.
+
+The "isolated targeted fetch" acceptance is met by the live runner above; a full-pipeline
+fetch would require the board in a *runtime* registry, which is a scheduled-run check on the
+box (Phase 6), not a local probe.
 
 ## Slice 5 — F-5: Studio Gloam coverage
 
@@ -419,7 +487,7 @@ priority); `git status data/` clean.
 | Opening 2 (Vivid) | Feed title reads *Senior Technical Artist (Remote, Hybrid or On-site)*; no `8351271 …` slug titles remain in teamtailor rows |
 | F-2 | Guard test proves the 09-07-style decision is blocked without delivery evidence |
 | F-3 | **Revised (2026-10-14):** the planned retirement was withdrawn — the row's real failure was the unbundled `tldextract` snapshot, not a redirect. Done means the next frozen build ships `_internal/tldextract/.tld_set_snapshot` and the report's `tld_set_snapshot` error count drops toward zero; no registry delta |
-| Opening 1 (Hatsu) | A row with jobLink containing `8dbe43b3-…` exists in a real run, correct title, attributed to a registered Dover-readable source |
+| Opening 1 (Hatsu) | **Landed (adapter level):** the live Dover runner keeps a row with `sourceJobId` containing `8dbe43b3-…` and the real title, from the registered `Hatsu Labs (dover)` board. On-box confirmation rides the next scheduled run (Phase 6) |
 | Opening 3 (Gloam) | Two distinct Gloam rows (Lighting/Technical Artist) in a real run, links resolve |
 | Process | All plans/status updated; `npm run test:py` + lint green; `data/` clean; Basic Memory handoff with counts, commands, next priority |
 

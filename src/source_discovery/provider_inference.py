@@ -5,14 +5,18 @@ from typing import Any
 from urllib.parse import ParseResult, urlparse
 
 from src.ashby_board_urls import ashby_posting_api_url
+from src.dover_board_urls import DOVER_HOST, dover_board_slug, dover_slug_api_url
 from src.url_hosts import host_matches_any_domain_pattern, host_matches_domain
 
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
+
+DOVER_BOARD_ORIGIN = f"https://{DOVER_HOST}"
 
 PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
     "bamboohr": "BambooHR",
     "breezy": "Breezy",
+    "dover": "Dover",
     "greenhouse": "Greenhouse",
     "jazzhr": "JazzHR",
     "lever": "Lever",
@@ -36,6 +40,7 @@ _HOST_DOMAIN_PATTERNS = (
     ("pinpoint", (".pinpointhq.com",)),
     ("workable", ("apply.workable.com", ".workable.com")),
     ("teamtailor", (".teamtailor.com",)),
+    ("dover", ("app.dover.com",)),
     ("personio", (".jobs.personio.de",)),
     ("workday", (".myworkdayjobs.com",)),
 )
@@ -296,6 +301,33 @@ def _ashby_candidate(
     }
 
 
+def _dover_candidate(
+    base: dict[str, Any],
+    _parsed: ParseResult,
+    _host: str,
+    path: str,
+    _studio: str,
+) -> dict[str, Any] | None:
+    """A Dover board candidate, carrying both the board URL and the API it is read from.
+
+    The slug is the segment after ``/jobs/`` (or after ``/apply/`` in an apply link);
+    ``dover_board_slug`` owns every shape so this builder and the fetch adapter cannot
+    disagree about which board a URL names.
+    """
+    slug = dover_board_slug(f"{DOVER_BOARD_ORIGIN}{path}")
+    if not slug:
+        return None
+    board_url = f"{DOVER_BOARD_ORIGIN}/jobs/{slug}"
+    return {
+        **base,
+        "board_url": board_url,
+        # The board page is client-rendered and carries no job anchors, so a probe
+        # that reads the board URL counts 0 and quarantines a live board. The
+        # slug-resolution endpoint is the first of the two requests the runtime makes.
+        "api_url": dover_slug_api_url(board_url),
+    }
+
+
 def _bamboohr_candidate(
     base: dict[str, Any],
     parsed: ParseResult,
@@ -420,6 +452,7 @@ _PROVIDER_CANDIDATE_BUILDERS: dict[str, ProviderCandidateBuilder] = {
     "ashby": _ashby_candidate,
     "bamboohr": _bamboohr_candidate,
     "breezy": _breezy_candidate,
+    "dover": _dover_candidate,
     "greenhouse": _greenhouse_candidate,
     "jazzhr": _jazzhr_candidate,
     "lever": _lever_candidate,

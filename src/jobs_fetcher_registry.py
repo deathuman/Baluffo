@@ -17,6 +17,7 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "epic_games_careers",
     "greenhouse_boards",
     "teamtailor_sources",
+    "dover_sources",
     "lever_sources",
     "smartrecruiters_sources",
     "workable_sources",
@@ -58,6 +59,7 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "epic_games_careers": {"adapter": "api", "studio": "epic_games", "fetchStrategy": "http"},
     "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple", "fetchStrategy": "http"},
     "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple", "fetchStrategy": "http"},
+    "dover_sources": {"adapter": "dover", "studio": "multiple", "fetchStrategy": "http"},
     "lever_sources": {"adapter": "lever", "studio": "multiple", "fetchStrategy": "http"},
     "smartrecruiters_sources": {
         "adapter": "smartrecruiters",
