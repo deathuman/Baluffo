@@ -210,7 +210,9 @@ export function createSavedCustomJobController({
       try {
         await refreshActivityLog();
       } catch (err) {
-        console.error("Could not refresh activity log after saving custom job:", err);
+        if (isCurrentAccount(uid)) {
+          console.error("Could not refresh activity log after saving custom job:", err);
+        }
       }
     } finally {
       mutationInFlight = false;

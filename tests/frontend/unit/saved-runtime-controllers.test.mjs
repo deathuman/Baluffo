@@ -199,7 +199,7 @@ test("saved custom job completion is ignored after the account changes", async (
   assert.equal(harness.pulses.length, 0);
 });
 
-test("saved custom job remains successful when activity refresh fails after save", async () => {
+test("saved custom job logs activity refresh failures for the initiating account", async () => {
   const refreshError = new Error("activity refresh failed");
   const harness = createCustomJobControllerHarness({
     saveJobForUser: async () => ({ ok: true, data: { jobKey: "job-1" } }),
