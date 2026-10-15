@@ -240,3 +240,33 @@ All other areas unchanged. Values are the exact measured totals with no speculat
 written to `tools/repo_health/loc_baseline.json` by `loc_budget.py --update`. The guardrail fix is
 justified separately in the release-docs section of the change; this block only records that the
 milestone-wide totals moved.
+
+## Coverage-audit F-1 slice allowance (2026-10-14)
+
+The F-1 JSON-LD raw-parse fix and its regression suite are a small, scoped change to the
+coverage-audit plan (not the discovery milestone). The `src` and `tests` baselines were raised to
+the exact measured totals for the tracked working tree at the F-1 commit.
+
+| Area | Previous committed baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 183087 | 183125 | +38 |
+| `tests` | 240591 | 240664 | +73 |
+| `tools` | 34591 | 34616 | +25 |
+| `scripts` | 24783 | 24793 | +10 |
+
+- `src` +38: `_load_jsonld_block` + `_deep_unescape` helpers in `html_parsers.py` and
+  `_strip_leading_slug_id` in `teamtailor_runner.py`.
+- `tests` +73: three regression tests in `test_jobs_fetcher_providers_individual.py`, the
+  `teamtailor_vivid_entity_encoded.html` fixture, the plan-doc runbook edits, and the
+  gate-alignment test edit in `test_precommit_gate.py` (its fake now accepts the
+  `skip_container_version_gate` parameter). The per-file line budget for
+  `tests/test_precommit_gate.py` was raised from the 400 default to 402 in
+  `tools/repo_health/test_line_budget_baseline.json` to match its exact measured size.
+- `tools` +25 / `scripts` +10: the commit-time gate alignment — `repo_guardrails.py` gained a
+  `--skip-container-version-gate` flag and `precommit_gate.py` passes it on the local commit
+  path so the pre-push container version gate no longer forces a release decision at commit
+  (the extra `scripts` +2 beyond the first measure is ruff-format finishing the function
+  signature wrap).
+
+All other areas unchanged. Exact measured values, no spare headroom, written by
+`loc_budget.py --update`.

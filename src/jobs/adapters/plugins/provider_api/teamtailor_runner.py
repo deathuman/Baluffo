@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Teamtailor provi
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -39,6 +40,11 @@ TEAMTAILOR_DETAIL_FETCH_CONCURRENCY = 6
 TEAMTAILOR_SOURCE_FETCH_CONCURRENCY = 4
 
 
+def _strip_leading_slug_id(title: str) -> str:
+    """Strip a leading ``<digits> `` prefix from a slug-derived title."""
+    return re.sub(r"^\d+\s+", "", title)
+
+
 def _teamtailor_fallback_job(
     *,
     job_link: str,
@@ -48,6 +54,10 @@ def _teamtailor_fallback_job(
 ) -> RawJob | None:
     slug = urlparse(job_link).path.rstrip("/").split("/")[-1]
     title = slug.replace("-", " ").strip()
+    # Teamtailor job slugs commonly begin with the numeric id ("8351271-senior-
+    # technical-artist-..."), which produces a title that starts with a bare id.
+    # Drop a leading "<digits> " so the fallback reads like a role title.
+    title = _strip_leading_slug_id(title)
     if not title:
         return None
     return {

@@ -205,10 +205,18 @@ def should_run_repo_guardrails(files: list[str]) -> bool:
     return any(path in watched_exact or path.startswith(watched_roots) for path in files)
 
 
-def run_repo_guardrails(groups: tuple[str, ...] = ()) -> int:
+def run_repo_guardrails(
+    groups: tuple[str, ...] = (), *, skip_container_version_gate: bool = False
+) -> int:
     command = [PYTHON, "tools/repo_health/repo_guardrails.py"]
     for group in groups:
         command.extend(["--group", group])
+    # The container shipped-code version gate is a pre-push gate: it must not force
+    # a version/release decision at local commit time. The pre-commit hook passes this
+    # so code lands locally (AGENTS: "the offending commit always lands locally first");
+    # pre-push keeps it enforced by omitting the flag.
+    if skip_container_version_gate:
+        command.append("--skip-container-version-gate")
     completed = subprocess.run(command, cwd=ROOT, check=False)
     return completed.returncode
 
@@ -248,7 +256,9 @@ def run_changed() -> int:
             _report_failing_stage("pre-commit --hook-stage pre-push", hook_command, return_code)
             return return_code
     if should_run_repo_guardrails(files):
-        return_code = run_repo_guardrails()
+        # Local commit: skip the container shipped-code version gate (a pre-push gate).
+        # The gate stays enforced at pre-push via run_all().
+        return_code = run_repo_guardrails(skip_container_version_gate=True)
         if return_code != 0:
             _report_failing_stage("repo-guardrails", [], return_code)
         return return_code

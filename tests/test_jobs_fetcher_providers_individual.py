@@ -3,6 +3,9 @@
 import json
 
 from src import jobs_fetcher as jf
+from src.jobs.adapters.plugins.provider_api.teamtailor_runner import (
+    _teamtailor_fallback_job,
+)
 from tests.helpers.job_fixtures import _fixture
 
 
@@ -395,3 +398,42 @@ def test_parse_personio_feed_xml_fixture() -> None:
     rows = jf.parse_personio_feed_xml(_fixture("personio_feed.xml"), source_name="InnoGames")
     assert len(rows) >= 1
     assert any(row["title"] == "Environment Artist" for row in rows)
+
+
+def test_parse_jobpostings_from_html_hydrates_entity_encoded_jsonld_title() -> None:
+    """A JSON-LD title whose quotes are HTML-entity-encoded must not break the
+    parse: the raw block is valid JSON and is parsed before any unescaping, then
+    the entity-encoded characters are normalized in the decoded values."""
+    rows = jf.parse_jobpostings_from_html(
+        _fixture("teamtailor_vivid_entity_encoded.html"),
+        base_url="https://jobs.vividgames.com/",
+        fallback_company="Vivid Games",
+        fallback_source_id_prefix="teamtailor:Vivid Games (Sheet)",
+    )
+    assert len(rows) == 1
+    assert rows[0]["sourceJobId"] == "8351271"
+    assert rows[0]["title"] == 'Senior Technical Artist "(Remote, Hybrid or On-site)" & Lead'
+    assert rows[0]["company"] == "Vivid Games"
+
+
+def test_teamtailor_fallback_job_strips_leading_slug_id_from_title() -> None:
+    row = _teamtailor_fallback_job(
+        job_link="https://jobs.vividgames.com/jobs/8351271-senior-technical-artist-remote-hybrid-or-on-site",
+        source_name="Vivid Games (Sheet)",
+        fallback_company="Vivid Games",
+        studio="Vivid Games",
+    )
+    assert row is not None
+    assert row["title"] == "senior technical artist remote hybrid or on site"
+    assert "8351271" not in row["title"]
+
+
+def test_teamtailor_fallback_job_keeps_title_when_slug_has_no_id_prefix() -> None:
+    row = _teamtailor_fallback_job(
+        job_link="https://career.example.com/jobs/senior-producer",
+        source_name="Example",
+        fallback_company="Example Studio",
+        studio="Example Studio",
+    )
+    assert row is not None
+    assert row["title"] == "senior producer"

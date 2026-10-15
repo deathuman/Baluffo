@@ -385,9 +385,14 @@ def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch
     monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
 
-    def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
+    def fake_guardrails(
+        groups: tuple[str, ...] = (), *, skip_container_version_gate: bool = False
+    ) -> int:
         nonlocal guardrails_called
         assert groups == ()
+        # The local commit path skips the pre-push container version gate so a
+        # commit can land before a release decision.
+        assert skip_container_version_gate is True
         guardrails_called = True
         return 0
 

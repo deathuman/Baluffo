@@ -1,7 +1,7 @@
 > - **Class:** coverage-gap
 > - **Trigger:** three-opening coverage audit (Hatsu Labs/Dover apply URL, Vivid Games job `8351271`, Studio Gloam `#careers`) — only 1 of 3 openings is delivered, and the audit surfaced three further defects on the way
-> - **Verified against:** 9b8901f8 (diagnosis); portable 0.3.017, fetch run `6138ba610943a2e9` completed 2026-10-12 16:11 UTC (live state)
-> - **Status:** planned — five slices, none started; end-to-end runbook added 2026-10-14 (Phase 0 = land the staged 0.3.019 milestone behind four measured gate repairs, then commit this plan)
+> - **Verified against:** 9b8901f8 (diagnosis); portable 0.3.017, fetch run `6138ba610943a2e9` completed 2026-10-12 16:11 UTC (live state); readiness re-verified at `3508b8f9` 2026-10-14
+> - **Status:** Phase 0 done (clean HEAD `3508b8f9`); Phase 1 (F-1) implemented and verified — 6,815 tests green; Phases 2–5 pending
 
 # Opening coverage audit fixes
 
@@ -218,50 +218,51 @@ Order: **Phase 0 (clean HEAD)** → **Phases 1–5** (the slices above) → **Ph
 + on-box verification)** → closeout. Every phase ends at a gate; a red gate stops the
 sequence. Nothing starts on a dirty HEAD.
 
-### Phase 0 — reach a clean HEAD (measured 2026-10-14, HEAD `9b8901f8`)
+### Phase 0 — reach a clean HEAD (DONE 2026-10-14, HEAD `3508b8f9`)
 
-The tree carries the **0.3.019 milestone** prepared by earlier sessions — one unit per its
-own allowance note (`docs/notes/discovery-receipt-loc-allowance.md`, "Full-milestone
-0.3.019 re-baseline"): the discovery transport/permit/lifecycle/receipt work
-(`discovery-probe-permit-allocation-plan.md`, items 1–4 landed) **plus** the release-docs
-guardrail fix. Inventory:
+The tree that earlier sessions left dirty is now **committed and clean** — the 0.3.019
+milestone (discovery transport/permit/lifecycle/receipt work, release-docs guardrail), the
+plan docs, the evidence snapshots, and a follow-on storage fix all landed in the window
+`cbc5f35a` → `e133eba7` → `3508b8f9`. The four gate repairs this phase originally planned
+(rule-list `src/app_version.py` drift, discovery-performance plan word tripwire, three
+line-budget overruns, LOC drift) were resolved in that same window — the guardrails now
+report **line-budget passed / loc passed / registry / bundle / duplication / dead-code
+passed** and `npm run test:py` is **6,812 passed**. The junk (`$log`, the `C`+U+F03A
+redirect dir) is gone. `stash@{0}` (2026-10-10) is untouched.
 
-| Bundle | Content | State |
-|---|---|---|
-| Milestone code+tests+docs | 89 staged files (+9,382/−339): `src/source_discovery/*`, `src/shared/{page_fetch_lifecycle,tls_https,http_batch}.py`, `src/bridge/*`, frontend admin ops-health + their tests, staged docs (CHANGELOG 0.3.019 section, DATA_CONTRACT, INDEX rows, admin-bridge-api, scraping-pipeline) | staged |
-| Milestone docs, untracked | 3 discovery plan docs + 14 `docs/snapshots/discovery-*.md` + `docs/notes/discovery-receipt-loc-allowance.md` — all already referenced by the staged INDEX rows | untracked → add in C1 |
-| Release-docs half | `docs/RELEASE.md`, `docs/DOCS_WORKFLOW.md`, CHANGELOG rule bullet, `release-notes.md` ([0.3.019]), `tools/repo_health/release_docs_policy.py`, `tests/test_release_docs.py`, LOC hunk | unstaged |
-| This plan | this file + one `docs/INDEX.md` row | ours → C2 |
-| Junk | `$log` (95 B cmd-error text) and dir `C`+U+F03A (botched redirect) | delete |
-| Pre-existing stash | `stash@{0}` (2026-10-10) | untouched |
+Readiness re-verified 2026-10-14 at `3508b8f9`:
 
-**Both gates are measured red — repairs first:**
+- Working tree clean (`git status --porcelain` empty).
+- `npm run test:py` → 6,812 passed / 3 skipped / 195 deselected (exit 0).
+- `npm run test:frontend:unit` → exit 0.
+- `npm run lint:repo-guardrails` → every group passes **except** the container shipped-code
+  version gate: it flags `3508b8f9` (storage fix) as a shipping commit that landed after the
+  0.3.019 bump without a version bump or `Release-tag:` intent. That is a **release-routing
+  item for 0.3.019, not a coverage blocker** — Phase 6, not Phases 1–5.
+- `data/` hygiene clean; `data/sheet-directory-discovery-audit.json` and `_out/` are
+  gitignored (benign generated/scratch).
 
-| Gate | Finding | Repair (belongs to the milestone) |
-|---|---|---|
-| `npm run test:py` | 6 failed / 6,801 passed, all `tests/test_rule_list_guardrail.py`: the 0.3.019 CHANGELOG rule bullet writes backticked `src/app_version.py` beside the changelog rule list; `_CHANGELOG_ENFORCEMENT` (`tools/repo_health/rule_list_policy.py:112`) does not declare it (fixtures read the real doc, so one root cause) | drop the literal path from the bullet (phrase as "the app-version module"); alternative: declare it in `_CHANGELOG_ENFORCEMENT` — the audit's other named remedy. Verify: `python -m pytest tests/test_rule_list_guardrail.py tests/test_release_docs.py -q` |
-| `npm run lint:repo-guardrails` [docs] | `discovery-performance-follow-up-plan.md`: 7,049 words > 5,000 tripwire; `PLAN_LIFECYCLE_ENFORCE = True` | split: move executed P0–P5 detail into `docs/snapshots/discovery-performance-execution-2026-10-14.md`; keep scope/inventory/Post-P1 inventory/P6/verification/orchestration in the plan (<5,000 words); keep both INDEX rows honest; re-run the tripwire |
-| … [line-budget] | `admin-ops-diagnostics-render.test.mjs` 551>400; `test_web_search_directory_audit.py` 837>805; `test_shared_http_batch.py` 440>400 | set exactly those three `files` entries in `tools/repo_health/test_line_budget_baseline.json` to the measured values (exact, no headroom — the LOC note's ratchet discipline); alternative: split the files |
-| … [loc] | working tree over baseline: root +1, src +17, tests +59 | after **all** milestone files are staged (the gate counts `git ls-files` only), run `python tools/repo_health/loc_budget.py --update` and append the delta entry to `docs/notes/discovery-receipt-loc-allowance.md` |
+No commit steps remain in Phase 0. The execution runbook below starts clean at
+`3508b8f9`.
 
-**Junk removal:** enumerate both paths at full length, read `$log` and list the `C…` dir
-(expect redirect debris), then delete — untracked, so this is status-cleanliness only.
+### Phase 1 — F-1 JSON-LD raw-parse fix (DONE 2026-10-14)
 
-**Commit sequence** (hooks run on each; `--no-verify` never):
-
-| # | Contents | Proposed message |
-|---|---|---|
-| C1 | staged milestone + untracked milestone docs + the four gate repairs + refreshed baselines | match repo style at implementation time, e.g. `release 0.3.019: probe transport/permit ordering, lifecycle receipts, release-docs guardrail` |
-| C2 | this plan + the `docs/INDEX.md` row | `docs(plans): plan the three-opening coverage audit fixes` |
-
-**Phase 0 gates (definition of ready):** `npm run test:py` green; `npm run lint:repo-guardrails`
-green; `npm run test:frontend:unit` green (W1 touches frontend/admin); `git status data/`
-clean of audit artifacts; `git status --porcelain` empty after C2; push to `origin/main`
-passes the pre-push gate (`lint:precommit:ci` + knip; run `PRE_PUSH_FULL_CI=1 npm run
-prepush:full` for CI parity). **A blocked push is surfaced to the user, never bypassed.**
-
-Alternative on record (not chosen): `git stash push -u` per bundle — rejected because it
-discards the milestone's staged split and parks docs its INDEX rows already reference.
+- **Root cause** confirmed against the saved Vivid detail page (`_out/coverage/vivid_detail.html`):
+  the JSON-LD block's role title is entity-encoded (`&quot;`), so the old
+  `unescape`-then-`json.loads` order broke with `JSONDecodeError`. The raw block is valid JSON
+  and parses first.
+- **Fix**: `html_parsers.py` now uses `_load_jsonld_block` — try `json.loads(raw)` first, fall
+  back to the unescaped text only on `JSONDecodeError`, then `_deep_unescape` string values.
+  Applied to both JSON-LD sites (`parse_jobpostings_from_html`, `_gamesindustry_jsonld_rows`).
+  `teamtailor_runner.py` additionally `_strip_leading_slug_id` strips the leading `<digits> `
+  off slug-derived fallback titles.
+- **Verified**: real parser returns title *Senior Technical Artist (Remote, Hybrid or On-site)*
+  (sourceJobId `8351271`) on the live evidence. New tests:
+  `test_parse_jobpostings_from_html_hydrates_entity_encoded_jsonld_title`,
+  `test_teamtailor_fallback_job_strips_leading_slug_id_from_title`,
+  `test_teamtailor_fallback_job_keeps_title_when_slug_has_no_id_prefix` + fixture
+  `teamtailor_vivid_entity_encoded.html`. `npm run test:py` → 6,815 passed. LOC bump (src +38,
+  tests +42) to be ratified via `loc_budget.py --update` and the allowance note.
 
 ### Phases 1–5 — per-slice protocol
 
@@ -277,10 +278,17 @@ tripwired — keep added docs under 600 lines / 5,000 words each.
 
 ### Phase 6 — release and on-box verification
 
-- **0.3.019 ships the milestone only** (its CHANGELOG section is written;
-  `APP_VERSION = "0.3.019"` already bumped). Our slices target **0.3.020** unless the user
-  folds slices 1–3 into 0.3.019 before it cuts (decision below). Release work follows the
-  `baluffo-release-ship` flow (preflight → tag → desktop/GHCR/Umbrel verification).
+- **0.3.019 is drafted but not cut** (APP_VERSION, CHANGELOG and release-notes all carry
+  `[0.3.019]`; git tags stop at `v0.3.017`). The `container_shipped_code_version_gate` is
+  currently red because the storage commit `3508b8f9` landed after the 0.3.019 bump with no
+  bump or `Release-tag:` intent. Both choices are open and belong to the entity cutting
+  0.3.019:
+  - **Default: 0.3.019 cuts with the storage fix, and our slices ride 0.3.020.** Release
+    work follows the `baluffo-release-ship` flow (preflight → tag → desktop/GHCR/Umbrel
+    verification), which resolves the version gate on 0.3.019.
+  - **Fold-in alternative: if slices 1–3 land before 0.3.019 cuts**, their fixes can ride
+    the existing `[0.3.019]` section instead of 0.3.020 — still needs the 0.3.019 gate
+    resolved the same way.
 - **Batch A** (Phases 1–3 → release): verified on the next scheduled run in the portable
   data root (`C:\Users\Andrea\AppData\Roaming\Baluffo`, read-only evidence): Vivid row title
   reads *Senior Technical Artist (Remote, Hybrid or On-site)*; zero
@@ -299,11 +307,13 @@ priority); `git status data/` clean.
 
 ### Decision points for the user
 
-1. Phase 0 lands the 0.3.019 milestone as C1 (recommended) vs stashing the bundles.
-2. The LOC/line-budget ratchet above (the milestone note records explicit allowance
-   precedent; confirm this delta or shrink instead).
-3. Rule-list repair: doc reword (recommended) vs registry declare.
-4. Release routing: slices 1–3 in 0.3.020 (recommended) vs folding into 0.3.019.
+1. **Release routing (the only open one for Phases 1–5):** default 0.3.020 vs folding
+   slices 1–3 into the still-uncut 0.3.019. Also resolves how the `3508b8f9` container
+   version gate on 0.3.019 is settled (bump/`Release-tag:`). F-1's title-backfill question
+   and F-4's recon branch are slice-time decisions, not Phase-0.
+2. Phase 0's original decisions (land milestone, LOC/line-budget ratchet, rule-list repair)
+   are all **moot — already resolved and landed** across `cbc5f35a`→`3508b8f9`.
+   The `stash@{0}` snapshot remains untouched.
 
 ## Verification and isolation rules
 

@@ -103,6 +103,12 @@ GROUPS = (
 # groups, and the baseline holds exactly those.
 DUP_GATE_ENFORCING = True
 
+# The container shipped-code version gate is enforced at pre-push, not at local
+# commit (see run_release_group). Set by --skip-container-version-gate so a commit
+# hook can land code locally without forcing a release decision; pre-push leaves it
+# False and keeps the gate enforced.
+_SKIP_CONTAINER_VERSION_GATE = False
+
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
 
@@ -942,12 +948,21 @@ def run_release_group() -> list[GuardFailure]:
         ("check_ship_bundle_embedded_version", check_ship_bundle_embedded_version()),
         ("check_portable_zip_embedded_version", check_portable_zip_embedded_version()),
         ("check_desktop_update_manifest_version", check_desktop_update_manifest_version()),
-        (
-            "check_container_shipped_code_version_gate",
-            check_container_shipped_code_version_gate(),
-        ),
     ):
         failure = _failure_from_messages("release", name, messages)
+        if failure:
+            failures.append(failure)
+    # The container shipped-code version gate is a pre-push gate: it stops container
+    # code from shipping to the GHCR/Umbrel channel under a frozen version string at
+    # publish time. Local commits are meant to land first (AGENTS: "the offending
+    # commit always lands locally first -- that is by design"), so a local pre-commit
+    # run skips it via --skip-container-version-gate; pre-push runs keep it enforced.
+    if not _SKIP_CONTAINER_VERSION_GATE:
+        failure = _failure_from_messages(
+            "release",
+            "check_container_shipped_code_version_gate",
+            check_container_shipped_code_version_gate(),
+        )
         if failure:
             failures.append(failure)
     return failures
@@ -1140,7 +1155,17 @@ def main(argv: list[str] | None = None) -> int:
         choices=GROUPS,
         help="Run one guardrail group. Repeat for multiple groups. Defaults to all groups.",
     )
+    parser.add_argument(
+        "--skip-container-version-gate",
+        action="store_true",
+        help="Skip the container shipped-code version gate (a pre-push gate). Use from "
+        "the local pre-commit hook so a commit can land before a release version decision; "
+        "pre-push runs omit this and keep the gate enforced.",
+    )
     args = parser.parse_args(argv)
+    global _SKIP_CONTAINER_VERSION_GATE
+    if args.skip_container_version_gate:
+        _SKIP_CONTAINER_VERSION_GATE = True
     groups = args.group or list(GROUPS)
     failures = run_groups(groups)
     if failures:

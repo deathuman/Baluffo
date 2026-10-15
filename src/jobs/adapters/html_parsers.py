@@ -168,6 +168,42 @@ def parse_jobposting_source_id(identifier: Any, fallback: str = "") -> str:
     return clean_text(fallback)
 
 
+def _load_jsonld_block(block: str):
+    """Parse one JSON-LD script body into a payload, or return None.
+
+    The raw text is tried first because entity encoding inside JSON string values
+    (for example a role title containing ``&quot;``) is valid JSON but stops being
+    valid once ``html.unescape`` turns ``&quot;`` into an unescaped ``"``. Fall back
+    to the HTML-unescaped text only when the raw block itself is not valid JSON,
+    then normalize any entity-encoded characters inside string values so titles and
+    URLs read like the page author wrote them.
+    """
+    raw = block.strip()
+    payload = None
+    if raw:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            try:
+                payload = json.loads(unescape(raw))
+            except json.JSONDecodeError:
+                return None
+    if payload is None:
+        return None
+    return _deep_unescape(payload)
+
+
+def _deep_unescape(value):
+    """Apply html.unescape to every string within a JSON payload."""
+    if isinstance(value, str):
+        return unescape(value)
+    if isinstance(value, list):
+        return [_deep_unescape(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _deep_unescape(item) for key, item in value.items()}
+    return value
+
+
 def parse_jobpostings_from_html(
     html_text: str,
     *,
@@ -180,12 +216,8 @@ def parse_jobpostings_from_html(
     counter = 0
 
     for block in extract_json_ld_blocks(html_text):
-        decoded = unescape(block.strip())
-        if not decoded:
-            continue
-        try:
-            payload = json.loads(decoded)
-        except json.JSONDecodeError:
+        payload = _load_jsonld_block(block)
+        if payload is None:
             continue
 
         for row in iter_job_postings_from_jsonld(payload):
@@ -330,12 +362,8 @@ def _append_gamesindustry_job(jobs: list[RawJob], seen_links: set[str], row: Raw
 def _gamesindustry_jsonld_rows(html_text: str, base_url: str) -> list[RawJob]:
     rows: list[RawJob] = []
     for block in extract_json_ld_blocks(html_text):
-        decoded = unescape(block.strip())
-        if not decoded:
-            continue
-        try:
-            payload = json.loads(decoded)
-        except json.JSONDecodeError:
+        payload = _load_jsonld_block(block)
+        if payload is None:
             continue
         for row in iter_job_postings_from_jsonld(payload):
             title = clean_text(row.get("title"))
