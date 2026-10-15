@@ -37,17 +37,24 @@ export function queueNotesSave(jobKey, value, deps) {
     flushNotesSave
   } = deps;
   if (!jobKey) return;
+  const safeJobKey = String(jobKey || "").trim();
+  if (!safeJobKey) return;
   noteSaveState.lastInteractionAt = Date.now();
-  dispatchQueued(jobKey);
-  noteSaveState.pendingValues.set(jobKey, String(value || ""));
-  setNoteSaveState(jobKey, "saving");
-  if (noteSaveState.timers.has(jobKey)) {
-    clearTimeout(noteSaveState.timers.get(jobKey));
+  dispatchQueued(safeJobKey);
+  const noteValue = String(value || "");
+  if (!(noteSaveState.latestValues instanceof Map)) noteSaveState.latestValues = new Map();
+  noteSaveState.latestValues.set(safeJobKey, noteValue);
+  noteSaveState.pendingValues.set(safeJobKey, noteValue);
+  if (!(noteSaveState.saveStatusByJobKey instanceof Map)) noteSaveState.saveStatusByJobKey = new Map();
+  noteSaveState.saveStatusByJobKey.set(safeJobKey, "saving");
+  setNoteSaveState(safeJobKey, "saving");
+  if (noteSaveState.timers.has(safeJobKey)) {
+    clearTimeout(noteSaveState.timers.get(safeJobKey));
   }
   const timer = setTimeout(() => {
-    flushNotesSave(jobKey).catch(() => {});
+    flushNotesSave(safeJobKey).catch(() => {});
   }, noteAutosaveMs);
-  noteSaveState.timers.set(jobKey, timer);
+  noteSaveState.timers.set(safeJobKey, timer);
 }
 
 export async function flushNotesSave(jobKey, value, deps) {
@@ -62,59 +69,86 @@ export async function flushNotesSave(jobKey, value, deps) {
     queueActivityPulse,
     timelineScopeNotes
   } = deps;
-  if (!jobKey || !currentUser) return;
+  const safeJobKey = String(jobKey || "").trim();
+  if (!safeJobKey || !currentUser) return;
+  const generation = Number(noteSaveState.generation) || 0;
+  const uid = String(currentUser.uid || currentUser.id || "");
+  const requestToken = {};
+  const isCurrentAccount = () => (
+    (Number(noteSaveState.generation) || 0) === generation
+    && (typeof deps.getCurrentUser !== "function"
+      || String(deps.getCurrentUser()?.uid || deps.getCurrentUser()?.id || "") === uid)
+  );
+  const isCurrentSave = () => (
+    isCurrentAccount() && noteSaveState.inFlight.get(safeJobKey) === requestToken
+  );
   noteSaveState.lastInteractionAt = Date.now();
   if (typeof value === "string") {
-    noteSaveState.pendingValues.set(jobKey, value);
+    if (!(noteSaveState.latestValues instanceof Map)) noteSaveState.latestValues = new Map();
+    noteSaveState.latestValues.set(safeJobKey, value);
+    noteSaveState.pendingValues.set(safeJobKey, value);
   }
-  if (noteSaveState.timers.has(jobKey)) {
-    clearTimeout(noteSaveState.timers.get(jobKey));
-    noteSaveState.timers.delete(jobKey);
+  if (noteSaveState.timers.has(safeJobKey)) {
+    clearTimeout(noteSaveState.timers.get(safeJobKey));
+    noteSaveState.timers.delete(safeJobKey);
   }
-  if (!noteSaveState.pendingValues.has(jobKey)) return;
-  if (noteSaveState.inFlight.get(jobKey)) return;
-  noteSaveState.inFlight.set(jobKey, true);
+  if (!noteSaveState.pendingValues.has(safeJobKey)) return;
+  if (noteSaveState.inFlight.has(safeJobKey)) return;
+  noteSaveState.inFlight.set(safeJobKey, requestToken);
 
-  setNoteSaveState(jobKey, "saving");
-  const saveValue = noteSaveState.pendingValues.get(jobKey);
+  if (!(noteSaveState.saveStatusByJobKey instanceof Map)) noteSaveState.saveStatusByJobKey = new Map();
+  noteSaveState.saveStatusByJobKey.set(safeJobKey, "saving");
+  setNoteSaveState(safeJobKey, "saving");
+  const saveValue = noteSaveState.pendingValues.get(safeJobKey);
   try {
     const previousLength = typeof getPreviousNoteLength === "function"
       ? getPreviousNoteLength(jobKey)
       : undefined;
-    const notesResult = await updateJobNotes(currentUser.uid, jobKey, saveValue, {
+    const notesResult = await updateJobNotes(currentUser.uid || currentUser.id, safeJobKey, saveValue, {
       previousLength
     });
     if (!notesResult.ok) throw new Error(notesResult.error || "Could not save notes.");
-    if (noteSaveState.pendingValues.get(jobKey) === saveValue) {
-      noteSaveState.pendingValues.delete(jobKey);
-      setNoteSaveState(jobKey, "saved");
-      dispatchSaved(jobKey);
-      queueActivityPulse(jobKey, timelineScopeNotes);
+    if (!isCurrentSave()) return;
+    if (noteSaveState.pendingValues.get(safeJobKey) === saveValue) {
+      noteSaveState.pendingValues.delete(safeJobKey);
+      noteSaveState.latestValues?.delete?.(safeJobKey);
+      noteSaveState.saveStatusByJobKey.set(safeJobKey, "saved");
+      setNoteSaveState(safeJobKey, "saved");
+      dispatchSaved(safeJobKey);
+      queueActivityPulse(safeJobKey, timelineScopeNotes);
     } else {
-      setNoteSaveState(jobKey, "saving");
+      noteSaveState.saveStatusByJobKey.set(safeJobKey, "saving");
+      setNoteSaveState(safeJobKey, "saving");
     }
   } catch (err) {
+    if (!isCurrentSave()) return;
     console.error("Could not save notes:", err);
-    setNoteSaveState(jobKey, "error");
-    dispatchFailed(jobKey, err?.message || "Could not save notes.");
+    noteSaveState.saveStatusByJobKey.set(safeJobKey, "error");
+    setNoteSaveState(safeJobKey, "error");
+    dispatchFailed(safeJobKey, err?.message || "Could not save notes.");
   } finally {
-    noteSaveState.lastInteractionAt = Date.now();
-    noteSaveState.inFlight.delete(jobKey);
-    const hasNewerPendingValue =
-      noteSaveState.pendingValues.has(jobKey) &&
-      noteSaveState.pendingValues.get(jobKey) !== saveValue;
-    if (hasNewerPendingValue && currentUser) {
-      setTimeout(() => {
-        deps.flushNotesSave(jobKey).catch(() => {});
-      }, 0);
+    if (noteSaveState.inFlight.get(safeJobKey) === requestToken) {
+      noteSaveState.inFlight.delete(safeJobKey);
+      if (isCurrentAccount()) noteSaveState.lastInteractionAt = Date.now();
+      const hasNewerPendingValue =
+        noteSaveState.pendingValues.has(safeJobKey) &&
+        noteSaveState.pendingValues.get(safeJobKey) !== saveValue;
+      if (hasNewerPendingValue && isCurrentAccount()) {
+        setTimeout(() => {
+          deps.flushNotesSave(safeJobKey).catch(() => {});
+        }, 0);
+      }
     }
   }
 }
 
 export function clearNoteSaveQueues(noteSaveState) {
+  noteSaveState.generation = (Number(noteSaveState.generation) || 0) + 1;
   noteSaveState.timers.forEach(timer => clearTimeout(timer));
   noteSaveState.timers.clear();
   noteSaveState.inFlight.clear();
   noteSaveState.pendingValues.clear();
+  noteSaveState.latestValues?.clear?.();
+  noteSaveState.saveStatusByJobKey?.clear?.();
   noteSaveState.lastInteractionAt = 0;
 }

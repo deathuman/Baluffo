@@ -14,6 +14,14 @@ async function flushHydration() {
   await Promise.resolve();
 }
 
+function createDeferred() {
+  let resolve;
+  const promise = new Promise(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 async function withRenderGlobals(fn) {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
@@ -118,7 +126,7 @@ function createFakeBlock(FakeHTMLElement) {
   }));
 }
 
-function createAttachmentControllerHarness({ savedJobsListEl, listResponses = [] } = {}) {
+function createAttachmentControllerHarness({ savedJobsListEl, listResponses = [], serviceHooks = {} } = {}) {
   const listCalls = [];
   const addCalls = [];
   const deleteCalls = [];
@@ -147,14 +155,23 @@ function createAttachmentControllerHarness({ savedJobsListEl, listResponses = []
     savedPageService: {
       async listAttachmentsForJob(...args) {
         listCalls.push(args);
+        if (serviceHooks.listAttachmentsForJob) {
+          return serviceHooks.listAttachmentsForJob(...args);
+        }
         return listResponses.shift() || { ok: true, data: [] };
       },
       async addAttachmentForJob(...args) {
         addCalls.push(args);
+        if (serviceHooks.addAttachmentForJob) {
+          return serviceHooks.addAttachmentForJob(...args);
+        }
         return { ok: true, data: { id: "att_added" } };
       },
       async deleteAttachmentForJob(...args) {
         deleteCalls.push(args);
+        if (serviceHooks.deleteAttachmentForJob) {
+          return serviceHooks.deleteAttachmentForJob(...args);
+        }
         return { ok: true };
       }
     },
@@ -334,6 +351,154 @@ test("saved attachment mutation paths refresh the affected job list", async () =
       ["job_1", "attachments"],
       ["job_1", "attachments"]
     ]);
+  });
+});
+
+test("saved attachment upload and delete contend only for the same job", async () => {
+  await withToastGlobals(async toasts => {
+    const addStarted = createDeferred();
+    const finishAdd = createDeferred();
+    const harness = createAttachmentControllerHarness({
+      serviceHooks: {
+        async addAttachmentForJob(uid, jobKey) {
+          if (jobKey === "job_1") {
+            addStarted.resolve();
+            await finishAdd.promise;
+          }
+          return { ok: true, data: { id: "att_added" } };
+        }
+      }
+    });
+
+    const uploadPromise = harness.controller.uploadAttachments("job_1", [
+      { name: "notes.txt", type: "text/plain", size: 5 }
+    ]);
+    await addStarted.promise;
+
+    harness.controller.bindAttachmentActionButtons();
+    await harness.deleteButton.onclick();
+    assert.deepEqual(harness.deleteCalls, [], "delete must be rejected while this job is uploading");
+
+    // A mutation for another job must not be blocked by job_1's in-flight upload.
+    harness.deleteButton.dataset.jobKey = "job_2";
+    await harness.deleteButton.onclick();
+    assert.deepEqual(harness.deleteCalls, [["u1", "job_2", "att_1"]]);
+    assert.ok(toasts.some(toast => toast.children[0]?.textContent === "An attachment update is already in progress."));
+
+    finishAdd.resolve();
+    await uploadPromise;
+  });
+});
+
+test("saved attachment upload suppresses completion toasts after an account switch", async () => {
+  for (const addOutcome of [
+    { name: "success", result: { ok: true, data: { id: "att_added" } } },
+    { name: "failure", result: { ok: false, error: "upload failed" } }
+  ]) {
+    await withToastGlobals(async toasts => {
+      const addStarted = createDeferred();
+      const finishAdd = createDeferred();
+      const harness = createAttachmentControllerHarness({
+        serviceHooks: {
+          async addAttachmentForJob() {
+            addStarted.resolve();
+            return finishAdd.promise;
+          }
+        }
+      });
+
+      const uploadPromise = harness.controller.uploadAttachments("job_1", [
+        { name: "notes.txt", type: "text/plain", size: 5 }
+      ]);
+      await addStarted.promise;
+      harness.viewState.currentUser = { uid: "u2" };
+      finishAdd.resolve(addOutcome.result);
+      await uploadPromise;
+
+      assert.deepEqual(harness.addCalls[0].slice(0, 2), ["u1", "job_1"],
+        "the in-flight request remains bound to the original account");
+      const messages = toasts.map(toast => toast.children[0]?.textContent);
+      assert.ok(!messages.some(message => /Attachment uploaded|attachments uploaded|Could not upload notes\.txt|Could not refresh attachments|Attachment saved, but/.test(message)),
+        `no upload completion feedback should leak to the new account after ${addOutcome.name}`);
+    });
+  }
+});
+
+test("saved attachment delete blocks upload for its job through refresh", async () => {
+  await withToastGlobals(async () => {
+    const deleteStarted = createDeferred();
+    const finishDelete = createDeferred();
+    const harness = createAttachmentControllerHarness({
+      serviceHooks: {
+        async deleteAttachmentForJob() {
+          deleteStarted.resolve();
+          await finishDelete.promise;
+          return { ok: true };
+        }
+      }
+    });
+    harness.controller.bindAttachmentActionButtons();
+
+    const deletePromise = harness.deleteButton.onclick();
+    await deleteStarted.promise;
+    await harness.controller.uploadAttachments("job_1", [
+      { name: "notes.txt", type: "text/plain", size: 5 }
+    ]);
+
+    assert.deepEqual(harness.addCalls, [], "upload must be rejected while delete is in flight");
+    assert.deepEqual(harness.listCalls, [], "a rejected upload must not start its preflight");
+
+    finishDelete.resolve();
+    await deletePromise;
+    await harness.controller.uploadAttachments("job_1", [
+      { name: "notes.txt", type: "text/plain", size: 5 }
+    ]);
+
+    assert.equal(harness.addCalls.length, 1, "the job becomes writable after delete refresh settles");
+    assert.equal(harness.listCalls.length, 3, "delete refresh plus upload preflight and refresh run");
+  });
+});
+
+test("saved attachment upload stops when its initial attachment-list preflight fails", async () => {
+  await withToastGlobals(async toasts => {
+    const harness = createAttachmentControllerHarness({
+      listResponses: [{ ok: false, error: "bridge offline" }]
+    });
+
+    await harness.controller.uploadAttachments("job_1", [
+      { name: "notes.txt", type: "text/plain", size: 5 }
+    ]);
+
+    assert.equal(harness.listCalls.length, 1);
+    assert.deepEqual(harness.addCalls, [], "no file may be uploaded without a successful preflight");
+    assert.ok(toasts.some(toast => toast.children[0]?.textContent ===
+      "Could not check current attachments. Nothing was uploaded."));
+  });
+});
+
+test("saved attachment upload reports persistence when its post-upload refresh fails", async () => {
+  await withToastGlobals(async toasts => {
+    const harness = createAttachmentControllerHarness({
+      listResponses: [
+        { ok: true, data: [] },
+        { ok: false, error: "bridge offline" }
+      ]
+    });
+
+    await harness.controller.uploadAttachments("job_1", [
+      { name: "notes.txt", type: "text/plain", size: 5 }
+    ]);
+
+    const messages = toasts.map(toast => toast.children[0]?.textContent);
+    assert.equal(harness.addCalls.length, 1, "the attachment was persisted before refresh failed");
+    assert.deepEqual(harness.dispatchCalls.map(action => action.type), ["saved/attachmentMutated"]);
+    assert.deepEqual(harness.pulseCalls, [["job_1", "attachments"]]);
+    assert.equal(harness.viewState.loadedAttachmentJobKeys.has("job_1"), false,
+      "the stale list must remain eligible for manual retry");
+    assert.ok(messages.includes("Attachment uploaded."), "persistence success must remain truthful");
+    assert.ok(messages.includes("Attachment saved, but the list could not refresh. Use Refresh to try again."),
+      "the failed refresh must offer accurate retry guidance");
+    assert.ok(!messages.includes("Could not upload notes.txt"));
   });
 });
 

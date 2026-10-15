@@ -20,6 +20,7 @@ export function createSavedMutations(deps) {
     outcome !== "active" ? outcome : phase
   ));
   const notify = deps.showToast || showToast;
+  const inFlightRemovalByUserAndJob = new Set();
   const inFlightTrackingByJobKey = new Set();
 
   function getPendingTrackingMap() {
@@ -165,16 +166,26 @@ export function createSavedMutations(deps) {
   }
 
   async function removeSavedJob(jobKey) {
-    if (!deps.viewState.currentUser) {
+    const initiatingUid = String(deps.viewState.currentUser?.uid || "").trim();
+    if (!initiatingUid) {
       notify("Sign in required.", "error");
       return;
     }
     const safeJobKey = String(jobKey || "").trim();
-    const removedSnapshot = deps.viewState.lastSavedJobsByKey.get(safeJobKey) || null;
-    const confirmed = await confirmRemoveSavedJob(safeJobKey, removedSnapshot);
-    if (!confirmed) return;
+    if (!safeJobKey) return;
+    const removalKey = `${initiatingUid}\u0000${safeJobKey}`;
+    if (inFlightRemovalByUserAndJob.has(removalKey)) return;
+    inFlightRemovalByUserAndJob.add(removalKey);
+    const currentSnapshot = deps.viewState.lastSavedJobsByKey.get(safeJobKey) || null;
+    const removedSnapshot = currentSnapshot ? { ...currentSnapshot } : null;
+    const isInitiatingUserCurrent = () => (
+      String(deps.viewState.currentUser?.uid || "").trim() === initiatingUid
+    );
     try {
-      const removeResult = await deps.savedPageService.removeSavedJobForUser(deps.viewState.currentUser.uid, safeJobKey);
+      const confirmed = await confirmRemoveSavedJob(safeJobKey, removedSnapshot);
+      if (!confirmed || !isInitiatingUserCurrent()) return;
+      const removeResult = await deps.savedPageService.removeSavedJobForUser(initiatingUid, safeJobKey);
+      if (!isInitiatingUserCurrent()) return;
       if (!removeResult.ok) throw new Error(removeResult.error || "Could not remove job.");
       if (deps.viewState.phaseOverrideContext?.jobKey === safeJobKey) {
         deps.viewState.phaseOverrideContext = null;
@@ -182,24 +193,32 @@ export function createSavedMutations(deps) {
       if (deps.viewState.trackingOverrideContext?.jobKey === safeJobKey) {
         deps.viewState.trackingOverrideContext = null;
       }
+      let undoConsumed = false;
       notify("Removed saved job.", "success", {
         durationMs: 6500,
         actionLabel: "Undo",
         onAction: async () => {
-          if (!deps.viewState.currentUser || !removedSnapshot) return;
+          if (undoConsumed) return;
+          undoConsumed = true;
+          if (!isInitiatingUserCurrent() || !removedSnapshot) return;
           try {
-            const restoreResult = await deps.savedPageService.saveJobForUser(deps.viewState.currentUser.uid, removedSnapshot);
+            const restoreResult = await deps.savedPageService.saveJobForUser(initiatingUid, removedSnapshot);
+            if (!isInitiatingUserCurrent()) return;
             if (!restoreResult.ok) throw new Error(restoreResult.error || "Could not restore job.");
             notify("Saved job restored.", "success");
           } catch (restoreErr) {
+            if (!isInitiatingUserCurrent()) return;
             console.error("Could not restore removed job:", restoreErr);
             notify("Could not restore removed job.", "error");
           }
         }
       });
     } catch (err) {
+      if (!isInitiatingUserCurrent()) return;
       console.error("Could not remove saved job:", err);
       notify("Could not remove job.", "error");
+    } finally {
+      inFlightRemovalByUserAndJob.delete(removalKey);
     }
   }
 

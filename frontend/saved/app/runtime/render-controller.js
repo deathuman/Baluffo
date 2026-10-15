@@ -34,6 +34,7 @@ function captureActiveNotesContext(savedJobsListEl) {
 export function createSavedRenderController({
   dom,
   viewState,
+  noteSaveState,
   timelineScopeAll,
   timelineScopeSelected,
   phaseOptions = [],
@@ -268,6 +269,10 @@ export function createSavedRenderController({
       }),
       lifecycleOverlay,
       canManageAvailability: Boolean(canManageAvailability()),
+      notesValue: noteSaveState?.latestValues?.has(String(job?.jobKey || "").trim())
+        ? noteSaveState.latestValues.get(String(job?.jobKey || "").trim())
+        : undefined,
+      noteSaveStatus: noteSaveState?.saveStatusByJobKey?.get(String(job?.jobKey || "").trim()) || "saved",
       jobView: view,
       renderWebIcon,
       phaseOptions,

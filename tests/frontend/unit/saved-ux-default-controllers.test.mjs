@@ -8,6 +8,63 @@ import {
   createElement
 } from "./helpers/saved-runtime-helpers.mjs";
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function createActivityHarness({ currentUser, listActivityForUser, setActivityStatus }) {
+  const statusUpdates = [];
+  const viewState = {
+    activityPanelOpen: false,
+    timelineScope: "all",
+    selectedJobKey: "",
+    currentUser,
+    lastSavedJobsByKey: new Map(),
+    cachedActivityEntries: [{ id: "existing-entry" }],
+    lastActivityPulse: null
+  };
+  const dom = {
+    activityScopeBtnEls: [],
+    activityPanelEl: createElement(),
+    historyPanelToggleBtnEl: createButton(),
+    activitySelectedJobEl: createElement(),
+    savedMetricTotalEl: createElement(),
+    savedMetricRemindersEl: createElement(),
+    savedMetricActivityEl: createElement(),
+    activityPanelStatusEl: createElement(),
+    activityPanelBodyEl: createElement({ innerHTML: "untouched" })
+  };
+  const controller = createSavedActivityController({
+    dom,
+    viewState,
+    savedPageService: {
+      isAvailable: () => true,
+      listActivityForUser
+    },
+    setActivityStatus(status) {
+      statusUpdates.push(status);
+      setActivityStatus?.(status);
+    },
+    timelinePrefPrefix: "test_saved_timeline",
+    timelineScopeAll: "all",
+    activityHighlightMs: 20,
+    renderActivityEntryHtml: entry => String(entry.id),
+    getReminderMeta: () => ({ isSoon: false }),
+    loadSavedTimelinePreferences: () => ({ visible: false, scope: "all" }),
+    persistSavedTimelinePreferences: () => {},
+    activityTypeLabel: () => "activity",
+    formatActivityDetail: () => "detail",
+    formatPhaseTimestamp: () => ""
+  });
+  return { controller, dom, statusUpdates, viewState };
+}
+
 test("saved activity controller falls back selected scope when no job is selected", () => {
   const allScopeBtn = createButton({ dataset: { timelineScope: "all" } });
   const selectedScopeBtn = createButton({ dataset: { timelineScope: "selected" } });
@@ -56,6 +113,55 @@ test("saved activity controller falls back selected scope when no job is selecte
   assert.equal(viewState.timelineScope, "all");
   assert.equal(allScopeBtn.classList.contains("active"), true);
   assert.equal(selectedScopeBtn.disabled, true);
+});
+
+test("saved activity controller ignores activity results after an account switch", async () => {
+  const pending = deferred();
+  const { controller, dom, statusUpdates, viewState } = createActivityHarness({
+    currentUser: { uid: "account-a" },
+    listActivityForUser: uid => {
+      assert.equal(uid, "account-a");
+      return pending.promise;
+    }
+  });
+
+  const refresh = controller.refreshActivityLog({ manual: true });
+  assert.deepEqual(statusUpdates, ["Loading activity..."]);
+  viewState.currentUser = { uid: "account-b" };
+  pending.resolve({ ok: true, data: [{ id: "account-a-entry" }] });
+  await refresh;
+
+  assert.deepEqual(viewState.cachedActivityEntries, [{ id: "existing-entry" }]);
+  assert.deepEqual(statusUpdates, ["Loading activity..."]);
+  assert.equal(dom.activityPanelBodyEl.innerHTML, "untouched");
+});
+
+test("saved activity controller ignores older overlapping activity requests", async () => {
+  const first = deferred();
+  const second = deferred();
+  let callCount = 0;
+  const { controller, dom, statusUpdates, viewState } = createActivityHarness({
+    currentUser: { uid: "account-a" },
+    listActivityForUser: uid => {
+      assert.equal(uid, "account-a");
+      callCount += 1;
+      return callCount === 1 ? first.promise : second.promise;
+    }
+  });
+
+  const olderRefresh = controller.refreshActivityLog({ manual: true });
+  const latestRefresh = controller.refreshActivityLog();
+  assert.deepEqual(statusUpdates, ["Loading activity...", ""]);
+
+  second.resolve({ ok: true, data: [{ id: "latest-entry" }] });
+  await latestRefresh;
+  first.resolve({ ok: true, data: [{ id: "older-entry" }] });
+  await olderRefresh;
+
+  assert.deepEqual(viewState.cachedActivityEntries, [{ id: "latest-entry" }]);
+  assert.deepEqual(statusUpdates, ["Loading activity...", "", "Showing 1 all activity."]);
+  assert.match(dom.activityPanelBodyEl.innerHTML, /latest-entry/);
+  assert.doesNotMatch(dom.activityPanelBodyEl.innerHTML, /older-entry/);
 });
 
 test("saved activity controller hides workspace stats until profile rows load", () => {

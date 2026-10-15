@@ -96,36 +96,54 @@ export async function uploadAttachments(jobKey, files, deps) {
     showToast,
     dispatchAttachmentMutated,
     queueActivityPulse,
-    timelineScopeAttachments
+    timelineScopeAttachments,
+    onMutationCommitted,
+    onMutationRefreshFailed,
+    getMutationRefreshVersion,
+    isCurrentUser
   } = deps;
   if (!currentUser || !jobKey || !Array.isArray(files) || files.length === 0) return;
+
+  const showUploadToast = (...args) => {
+    if (typeof isCurrentUser !== "function" || isCurrentUser(currentUser)) {
+      showToast(...args);
+    }
+  };
 
   let currentList;
   try {
     const currentListResult = await listAttachmentsForJob(currentUser.uid, jobKey);
-    currentList = currentListResult.ok ? currentListResult.data : [];
+    if (!currentListResult?.ok) {
+      showUploadToast("Could not check current attachments. Nothing was uploaded.", "error");
+      return;
+    }
+    currentList = Array.isArray(currentListResult.data) ? currentListResult.data : [];
   } catch {
-    currentList = [];
+    showUploadToast("Could not check current attachments. Nothing was uploaded.", "error");
+    return;
   }
 
   const remainingSlots = maxAttachmentsPerJob - currentList.length;
   if (remainingSlots <= 0) {
-    showToast(`Max ${maxAttachmentsPerJob} attachments per job.`, "error");
+    showUploadToast(`Max ${maxAttachmentsPerJob} attachments per job.`, "error");
     return;
   }
 
   let accepted = 0;
+  let refreshVersion = typeof getMutationRefreshVersion === "function"
+    ? getMutationRefreshVersion(jobKey)
+    : 0;
   for (const file of files) {
     if (accepted >= remainingSlots) {
-      showToast(`Max ${maxAttachmentsPerJob} attachments per job.`, "error");
+      showUploadToast(`Max ${maxAttachmentsPerJob} attachments per job.`, "error");
       break;
     }
     if (!isAllowedAttachment(file)) {
-      showToast(`Unsupported file type: ${file.name}`, "error");
+      showUploadToast(`Unsupported file type: ${file.name}`, "error");
       continue;
     }
     if (file.size > maxAttachmentBytes) {
-      showToast(`File too large: ${file.name}`, "error");
+      showUploadToast(`File too large: ${file.name}`, "error");
       continue;
     }
 
@@ -140,19 +158,35 @@ export async function uploadAttachments(jobKey, files, deps) {
       accepted += 1;
     } catch (err) {
       console.error("Attachment upload failed:", err);
-      showToast(`Could not upload ${file.name}`, "error");
+      showUploadToast(`Could not upload ${file.name}`, "error");
     }
   }
 
+  if (accepted === 0) return;
+
+  if (typeof onMutationCommitted === "function") {
+    const committedRefreshVersion = onMutationCommitted(jobKey);
+    if (committedRefreshVersion !== undefined) refreshVersion = committedRefreshVersion;
+  } else {
+    dispatchAttachmentMutated?.(jobKey);
+    queueActivityPulse?.(jobKey, timelineScopeAttachments);
+  }
+  showUploadToast(accepted === 1 ? "Attachment uploaded." : `${accepted} attachments uploaded.`, "success");
+
   try {
     const nextResult = await listAttachmentsForJob(currentUser.uid, jobKey);
-    if (!nextResult.ok) throw new Error(nextResult.error || "Could not refresh attachments.");
-    renderAttachmentList(jobKey, nextResult.data);
-    showToast("Attachments updated.", "success");
-    dispatchAttachmentMutated(jobKey);
-    queueActivityPulse(jobKey, timelineScopeAttachments);
+    if (!nextResult?.ok) throw new Error(nextResult?.error || "Could not refresh attachments.");
+    if (typeof isCurrentUser === "function" && !isCurrentUser(currentUser)) return;
+    if (typeof getMutationRefreshVersion === "function" &&
+        getMutationRefreshVersion(jobKey) !== refreshVersion) return;
+    renderAttachmentList(jobKey, nextResult.data || []);
   } catch {
-    showToast("Could not refresh attachments.", "error");
+    if (typeof isCurrentUser === "function" && !isCurrentUser(currentUser)) return;
+    if (typeof onMutationRefreshFailed === "function") {
+      onMutationRefreshFailed(jobKey);
+    } else {
+      showUploadToast("Attachment uploaded, but the list could not refresh. Use Refresh to try again.", "error");
+    }
   }
 }
 

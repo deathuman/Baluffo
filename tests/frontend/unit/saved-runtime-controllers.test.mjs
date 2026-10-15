@@ -9,6 +9,86 @@ import {
   createElement
 } from "./helpers/saved-runtime-helpers.mjs";
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function createCustomJobControllerHarness({ saveJobForUser, refreshActivityLog = async () => {} }) {
+  const toasts = [];
+  const dispatched = [];
+  const pulses = [];
+  const formListeners = {};
+  let resetCount = 0;
+  const dom = {
+    customJobFormEl: createElement({
+      addEventListener(name, listener) {
+        formListeners[name] = listener;
+      },
+      reset() {
+        resetCount += 1;
+      }
+    }),
+    customJobTitleEl: createElement({ value: "Gameplay Programmer" }),
+    customJobCompanyEl: createElement({ value: "Example Studio" }),
+    customJobCityEl: createElement({ value: "" }),
+    customJobCountryEl: createElement({ value: "" }),
+    customJobWorkTypeEl: createElement({ value: "" }),
+    customJobContractTypeEl: createElement({ value: "" }),
+    customJobSectorEl: createElement({ value: "" }),
+    customJobProfessionEl: createElement({ value: "" }),
+    customJobLinkEl: createElement({ value: "" }),
+    customJobNotesEl: createElement({ value: "" }),
+    customJobReminderEl: createElement({ value: "" }),
+    customJobLinkWarningEl: createElement(),
+    customJobPanelEl: createElement(),
+    addCustomJobBtnEl: createButton(),
+    customJobPanelTitleEl: createElement(),
+    customJobPanelHintEl: createElement(),
+    customJobSaveBtnEl: createButton()
+  };
+  const viewState = {
+    currentUser: { uid: "user-1" },
+    customJobMode: "create",
+    customJobTargetKey: "",
+    customJobPanelOpen: true,
+    lastSavedJobsByKey: new Map()
+  };
+  const controller = createSavedCustomJobController({
+    dom,
+    viewState,
+    savedPageService: {
+      isAvailable: () => true,
+      saveJobForUser
+    },
+    normalizeCustomJobInput: values => ({ ...values }),
+    toDatetimeLocalValue: value => String(value || ""),
+    savedDispatch: { dispatch: action => dispatched.push(action) },
+    savedActions: { CUSTOM_JOB_MUTATED: "custom_job_mutated" },
+    queueActivityPulse: (...args) => pulses.push(args),
+    timelineScopeAll: "all",
+    refreshActivityLog,
+    showToast: (message, type) => toasts.push({ message, type })
+  });
+  return {
+    controller,
+    dom,
+    viewState,
+    toasts,
+    dispatched,
+    pulses,
+    formListeners,
+    get resetCount() {
+      return resetCount;
+    }
+  };
+}
+
 test("saved custom job controller resets form chrome when closing the panel", () => {
   let resetCount = 0;
   const dom = {
@@ -62,6 +142,86 @@ test("saved custom job controller resets form chrome when closing the panel", ()
   assert.equal(dom.addCustomJobBtnEl.textContent, "+ Add Custom Job");
   assert.equal(dom.customJobPanelTitleEl.textContent, "Add Custom Job");
   assert.equal(dom.customJobSaveBtnEl.textContent, "Save Custom Job");
+});
+
+test("saved custom job controller suppresses duplicate saves while one mutation is pending", async () => {
+  const pendingSave = deferred();
+  let saveCount = 0;
+  const harness = createCustomJobControllerHarness({
+    saveJobForUser: () => {
+      saveCount += 1;
+      return pendingSave.promise;
+    }
+  });
+
+  const firstSave = harness.controller.createCustomJob();
+  const duplicateSave = harness.controller.createCustomJob();
+  await duplicateSave;
+
+  assert.equal(saveCount, 1);
+  pendingSave.resolve({ ok: true, data: { jobKey: "job-1" } });
+  await firstSave;
+  assert.equal(harness.toasts.filter(toast => toast.type === "success").length, 1);
+});
+
+test("saved custom job completion does not close or replace a changed editor", async () => {
+  const pendingSave = deferred();
+  const harness = createCustomJobControllerHarness({
+    saveJobForUser: () => pendingSave.promise
+  });
+
+  const saving = harness.controller.createCustomJob();
+  harness.dom.customJobTitleEl.value = "A newer draft";
+  harness.formListeners.input();
+
+  pendingSave.resolve({ ok: true, data: { jobKey: "job-1" } });
+  await saving;
+
+  assert.equal(harness.dom.customJobTitleEl.value, "A newer draft");
+  assert.equal(harness.resetCount, 0);
+  assert.equal(harness.viewState.customJobPanelOpen, true);
+  assert.equal(harness.toasts.filter(toast => toast.type === "success").length, 1);
+});
+
+test("saved custom job completion is ignored after the account changes", async () => {
+  const pendingSave = deferred();
+  const harness = createCustomJobControllerHarness({
+    saveJobForUser: () => pendingSave.promise
+  });
+
+  const saving = harness.controller.createCustomJob();
+  harness.viewState.currentUser = { uid: "user-2" };
+  pendingSave.resolve({ ok: true, data: { jobKey: "job-1" } });
+  await saving;
+
+  assert.equal(harness.toasts.length, 0);
+  assert.equal(harness.dispatched.length, 0);
+  assert.equal(harness.pulses.length, 0);
+});
+
+test("saved custom job remains successful when activity refresh fails after save", async () => {
+  const refreshError = new Error("activity refresh failed");
+  const harness = createCustomJobControllerHarness({
+    saveJobForUser: async () => ({ ok: true, data: { jobKey: "job-1" } }),
+    refreshActivityLog: async () => {
+      throw refreshError;
+    }
+  });
+  const originalError = console.error;
+  const loggedErrors = [];
+  console.error = (...args) => loggedErrors.push(args);
+
+  try {
+    await harness.controller.createCustomJob();
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(harness.toasts, [{ message: "Custom job saved.", type: "success" }]);
+  assert.equal(harness.dispatched.length, 1);
+  assert.equal(harness.pulses.length, 1);
+  assert.equal(loggedErrors.length, 1);
+  assert.equal(loggedErrors[0][1], refreshError);
 });
 
 test("saved auth controller delays the initial guest render while desktop auth restores", () => {

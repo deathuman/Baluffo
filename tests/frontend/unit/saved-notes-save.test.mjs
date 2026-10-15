@@ -10,6 +10,9 @@ function createNoteSaveDeps({ updateJobNotes, flushNotesSaveImpl } = {}) {
   const state = {
     inFlight: new Map(),
     pendingValues: new Map(),
+    latestValues: new Map(),
+    saveStatusByJobKey: new Map(),
+    generation: 0,
     timers: new Map(),
     lastInteractionAt: 0
   };
@@ -19,6 +22,7 @@ function createNoteSaveDeps({ updateJobNotes, flushNotesSaveImpl } = {}) {
   const deps = {
     noteSaveState: state,
     currentUser: { uid: "user-1" },
+    getCurrentUser: () => deps.currentUser,
     updateJobNotes,
     getPreviousNoteLength: () => undefined,
     setNoteSaveState: (jobKey, saveState) => saveStates.push({ jobKey, saveState }),

@@ -108,6 +108,9 @@ export function createSavedPageState(options = {}) {
       timers: new Map(),
       inFlight: new Map(),
       pendingValues: new Map(),
+      latestValues: new Map(),
+      saveStatusByJobKey: new Map(),
+      generation: 0,
       lastInteractionAt: 0
     },
     attachmentPreviewUrls: new Map()

@@ -12,9 +12,37 @@ export function createSavedCustomJobController({
   savedActions,
   queueActivityPulse,
   timelineScopeAll,
-  refreshActivityLog
+  refreshActivityLog,
+  showToast: showToastFn = showToast
 }) {
+  let mutationInFlight = false;
+  let editorRevision = 0;
+
+  function markEditorChanged() {
+    editorRevision += 1;
+  }
+
+  function readCustomJobFormValues() {
+    return {
+      title: dom.customJobTitleEl?.value,
+      company: dom.customJobCompanyEl?.value,
+      city: dom.customJobCityEl?.value,
+      country: dom.customJobCountryEl?.value,
+      workType: dom.customJobWorkTypeEl?.value,
+      contractType: dom.customJobContractTypeEl?.value,
+      sector: dom.customJobSectorEl?.value,
+      profession: dom.customJobProfessionEl?.value,
+      jobLink: dom.customJobLinkEl?.value,
+      notes: dom.customJobNotesEl?.value,
+      reminderAt: dom.customJobReminderEl?.value
+    };
+  }
+
+  dom.customJobFormEl?.addEventListener?.("input", markEditorChanged);
+  dom.customJobFormEl?.addEventListener?.("change", markEditorChanged);
+
   function resetCustomJobForm() {
+    markEditorChanged();
     viewState.customJobMode = "create";
     viewState.customJobTargetKey = "";
     dom.customJobFormEl?.reset();
@@ -60,9 +88,10 @@ export function createSavedCustomJobController({
   function openCustomJobEditor(jobKey, duplicate) {
     const row = viewState.lastSavedJobsByKey.get(String(jobKey || ""));
     if (!row || !isCustomJob(row)) {
-      showToast("Custom job not found.", "error");
+      showToastFn("Custom job not found.", "error");
       return;
     }
+    markEditorChanged();
     viewState.customJobMode = duplicate ? "duplicate" : "edit";
     viewState.customJobTargetKey = duplicate ? "" : String(row.jobKey || "");
     if (dom.customJobTitleEl) dom.customJobTitleEl.value = row.title || "";
@@ -92,67 +121,99 @@ export function createSavedCustomJobController({
     updateCustomJobWarning();
   }
 
+  function isCurrentAccount(uid) {
+    return String(viewState.currentUser?.uid || "") === uid;
+  }
+
+  function isEditorUnchanged(editorSnapshot) {
+    if (editorRevision !== editorSnapshot.revision
+      || viewState.customJobMode !== editorSnapshot.mode
+      || String(viewState.customJobTargetKey || "") !== editorSnapshot.targetKey) {
+      return false;
+    }
+    const currentValues = readCustomJobFormValues();
+    return Object.entries(editorSnapshot.values).every(([key, value]) => currentValues[key] === value);
+  }
+
   async function createCustomJob() {
+    if (mutationInFlight) return;
     if (!savedPageService.isAvailable() || !viewState.currentUser) {
-      showToast("Sign in required.", "error");
+      showToastFn("Sign in required.", "error");
       return;
     }
-    const normalized = normalizeCustomJobInput({
-      title: dom.customJobTitleEl?.value,
-      company: dom.customJobCompanyEl?.value,
-      city: dom.customJobCityEl?.value,
-      country: dom.customJobCountryEl?.value,
-      workType: dom.customJobWorkTypeEl?.value,
-      contractType: dom.customJobContractTypeEl?.value,
-      sector: dom.customJobSectorEl?.value,
-      profession: dom.customJobProfessionEl?.value,
-      jobLink: dom.customJobLinkEl?.value,
-      notes: dom.customJobNotesEl?.value,
-      reminderAt: dom.customJobReminderEl?.value
-    });
+
+    const uid = String(viewState.currentUser.uid || "");
+    if (!uid) {
+      showToastFn("Sign in required.", "error");
+      return;
+    }
+    const editorSnapshot = {
+      revision: editorRevision,
+      mode: viewState.customJobMode,
+      targetKey: String(viewState.customJobTargetKey || ""),
+      values: readCustomJobFormValues()
+    };
+    const normalized = normalizeCustomJobInput(editorSnapshot.values);
 
     if (!normalized.title || !normalized.company) {
-      showToast("Title and Company are required.", "error");
+      showToastFn("Title and Company are required.", "error");
       return;
     }
 
+    let eventType = "custom_job_created";
+    let message = "Custom job saved.";
+    if (editorSnapshot.mode === "edit") {
+      normalized.jobKey = editorSnapshot.targetKey;
+      normalized.updatedBy = "manual_edit";
+      eventType = "custom_job_updated";
+      message = "Custom job updated.";
+    } else if (editorSnapshot.mode === "duplicate") {
+      normalized.updatedBy = "manual_duplicate";
+      normalized.keySalt = String(Date.now());
+      eventType = "custom_job_duplicated";
+      message = "Custom job duplicated.";
+    } else {
+      normalized.updatedBy = "manual_create";
+    }
+
+    mutationInFlight = true;
     try {
-      let eventType = "custom_job_created";
-      let message = "Custom job saved.";
-      if (viewState.customJobMode === "edit") {
-        normalized.jobKey = viewState.customJobTargetKey;
-        normalized.updatedBy = "manual_edit";
-        eventType = "custom_job_updated";
-        message = "Custom job updated.";
-      } else if (viewState.customJobMode === "duplicate") {
-        normalized.updatedBy = "manual_duplicate";
-        normalized.keySalt = String(Date.now());
-        eventType = "custom_job_duplicated";
-        message = "Custom job duplicated.";
-      } else {
-        normalized.updatedBy = "manual_create";
+      let saveResult;
+      try {
+        saveResult = await savedPageService.saveJobForUser(
+          uid,
+          normalized,
+          { eventType }
+        );
+        if (!saveResult.ok) throw new Error(saveResult.error || "Could not save custom job.");
+      } catch (err) {
+        console.error("Could not save custom job:", err);
+        if (isCurrentAccount(uid) && isEditorUnchanged(editorSnapshot)) {
+          showToastFn("Could not save custom job.", "error");
+        }
+        return;
       }
 
-      const saveResult = await savedPageService.saveJobForUser(
-        viewState.currentUser.uid,
-        normalized,
-        { eventType }
-      );
-      if (!saveResult.ok) throw new Error(saveResult.error || "Could not save custom job.");
-      showToast(message, "success");
+      // Persistence has been acknowledged. A subsequent activity refresh is a
+      // separate best-effort operation and must not turn the save into a failure.
+      if (!isCurrentAccount(uid)) return;
+      showToastFn(message, "success");
       savedDispatch.dispatch({
         type: savedActions.CUSTOM_JOB_MUTATED,
         payload: { at: new Date().toISOString() }
       });
-      setCustomJobPanelOpen(false);
+      if (isEditorUnchanged(editorSnapshot)) setCustomJobPanelOpen(false);
       queueActivityPulse(
-        String(saveResult?.data?.jobKey || normalized.jobKey || viewState.customJobTargetKey || ""),
+        String(saveResult?.data?.jobKey || normalized.jobKey || editorSnapshot.targetKey || ""),
         timelineScopeAll
       );
-      await refreshActivityLog();
-    } catch (err) {
-      console.error("Could not save custom job:", err);
-      showToast("Could not save custom job.", "error");
+      try {
+        await refreshActivityLog();
+      } catch (err) {
+        console.error("Could not refresh activity log after saving custom job:", err);
+      }
+    } finally {
+      mutationInFlight = false;
     }
   }
 

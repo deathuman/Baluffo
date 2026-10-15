@@ -79,6 +79,7 @@ export function composeSavedRuntime(deps) {
   savedRenderController = createSavedRenderController({
     dom,
     viewState,
+    noteSaveState,
     savedPageService: deps.savedPageService,
     timelineScopeAll: deps.timelineScopeAll,
     timelineScopeSelected: deps.timelineScopeSelected,

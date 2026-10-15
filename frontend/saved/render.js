@@ -53,7 +53,9 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     jobView,
     currentUser,
     maxAttachmentsPerJob,
-    maxAttachmentBytes
+    maxAttachmentBytes,
+    notesValue,
+    noteSaveStatus = "saved"
   } = options;
 
   const isCustom = isCustomJob(job);
@@ -206,8 +208,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           <div class="saved-notes-row saved-details-panel ${activeTab === "notes" ? "" : "hidden"}" data-tab-panel="notes">
             <div class="notes-label">Notes</div>
             <div class="notes-value">
-              <textarea class="job-notes-input" data-job-key="${jobKey}" data-ui="job-notes-input" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(job.notes || "")}</textarea>
-              <div class="note-save-state" data-job-key="${jobKey}">Saved</div>
+              <textarea class="job-notes-input" data-job-key="${jobKey}" data-ui="job-notes-input" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(typeof notesValue === "string" ? notesValue : job.notes || "")}</textarea>
+              <div class="note-save-state${noteSaveStatus === "saving" ? " saving" : noteSaveStatus === "error" ? " error" : ""}" data-job-key="${jobKey}">${noteSaveStatus === "saving" ? "Saving..." : noteSaveStatus === "error" ? "Error" : "Saved"}</div>
             </div>
           </div>
           <div class="saved-attachments-row saved-details-panel ${activeTab === "attachments" ? "" : "hidden"}" data-tab-panel="attachments">

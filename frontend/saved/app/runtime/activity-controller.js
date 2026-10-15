@@ -28,6 +28,12 @@ export function createSavedActivityController({
   formatActivityDetail,
   formatPhaseTimestamp
 }) {
+  let latestActivityRequestIdentity = 0;
+
+  function isCurrentActivityRequest(requestIdentity, uid) {
+    return latestActivityRequestIdentity === requestIdentity && String(viewState.currentUser?.uid || "").trim() === uid;
+  }
+
   function buildTimelinePrefsKey(uid) {
     return buildTimelinePrefsKeyFromActivity(timelinePrefPrefix, uid);
   }
@@ -159,7 +165,9 @@ export function createSavedActivityController({
 
   async function refreshActivityLog(options = {}) {
     if (!dom.activityPanelBodyEl) return;
-    if (!viewState.currentUser || !savedPageService.isAvailable()) {
+    const requestIdentity = ++latestActivityRequestIdentity;
+    const uid = String(viewState.currentUser?.uid || "").trim();
+    if (!uid || !savedPageService.isAvailable()) {
       setActivityStatus("Sign in to view history.");
       renderTimeline();
       renderWorkspaceStats();
@@ -168,12 +176,14 @@ export function createSavedActivityController({
 
     setActivityStatus(options?.manual ? "Loading activity..." : "");
     try {
-      const entriesResult = await savedPageService.listActivityForUser(viewState.currentUser.uid, 400);
+      const entriesResult = await savedPageService.listActivityForUser(uid, 400);
+      if (!isCurrentActivityRequest(requestIdentity, uid)) return;
       if (!entriesResult.ok) throw new Error(entriesResult.error || "Could not load history.");
       viewState.cachedActivityEntries = Array.isArray(entriesResult.data) ? entriesResult.data : [];
       renderTimeline();
       renderWorkspaceStats();
     } catch (err) {
+      if (!isCurrentActivityRequest(requestIdentity, uid)) return;
       console.error("Could not load activity log:", err);
       viewState.cachedActivityEntries = [];
       setActivityStatus("Could not load history.");
