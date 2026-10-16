@@ -295,6 +295,7 @@ export function createSavedMutations(deps) {
           title: "Override phase lock?",
           description: `${from} -> ${to}`
         });
+        if (!isCurrentTrackingUser(initiatingUid)) return;
         if (reason === null) {
           deps.viewState.phaseOverrideContext = null;
           deps.viewState.trackingOverrideContext = null;
@@ -307,6 +308,7 @@ export function createSavedMutations(deps) {
       const interviewTimestamp = deps.needsInterviewTimestamp(normalized)
         ? await deps.requestInterviewTimestamp(normalized, row?.phaseTimestamps?.[normalized] || "")
         : "";
+      if (!isCurrentTrackingUser(initiatingUid)) return;
       if (deps.needsInterviewTimestamp(normalized) && !interviewTimestamp) {
         return;
       }
@@ -329,17 +331,18 @@ export function createSavedMutations(deps) {
       if (!pendingEntry) return;
       const updateResult = typeof deps.savedPageService.updateApplicationTracking === "function"
         ? await deps.savedPageService.updateApplicationTracking(
-          deps.viewState.currentUser.uid,
+          initiatingUid,
           safeJobKey,
           { pipelinePhase: normalized },
           updateOptions
         )
         : await deps.savedPageService.updateApplicationStatus(
-          deps.viewState.currentUser.uid,
+          initiatingUid,
           safeJobKey,
           normalized,
           updateOptions
         );
+      if (!isCurrentTrackingUser(initiatingUid)) return;
       if (!updateResult.ok) throw new Error(updateResult.error || "Could not update phase.");
       reconcilePendingTracking(safeJobKey, pendingEntry, true);
       pendingEntry = null;
@@ -400,7 +403,9 @@ export function createSavedMutations(deps) {
       });
       deps.queueActivityPulse(safeJobKey, deps.timelineScopePhase);
       await deps.refreshActivityLog();
+      if (!isCurrentTrackingUser(initiatingUid)) return;
     } catch (err) {
+      if (!isCurrentTrackingUser(initiatingUid)) return;
       console.error("Could not update phase:", err);
       if (pendingEntry) {
         reconcilePendingTracking(safeJobKey, pendingEntry, false, err?.message || "Could not update phase.");
@@ -472,6 +477,7 @@ export function createSavedMutations(deps) {
           title: "Override outcome lock?",
           description: `${from} -> ${to}`
         });
+        if (!isCurrentTrackingUser(initiatingUid)) return;
         if (reason === null) {
           deps.viewState.trackingOverrideContext = null;
           deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
@@ -497,11 +503,12 @@ export function createSavedMutations(deps) {
       if (!pendingEntry) return;
 
       const updateResult = await deps.savedPageService.updateApplicationTracking(
-        deps.viewState.currentUser.uid,
+        initiatingUid,
         safeJobKey,
         { outcomeStatus: normalized },
         updateOptions
       );
+      if (!isCurrentTrackingUser(initiatingUid)) return;
       if (!updateResult.ok) throw new Error(updateResult.error || "Could not update outcome.");
       reconcilePendingTracking(safeJobKey, pendingEntry, true);
       pendingEntry = null;
@@ -551,7 +558,9 @@ export function createSavedMutations(deps) {
       });
       deps.queueActivityPulse(safeJobKey, deps.timelineScopePhase);
       await deps.refreshActivityLog();
+      if (!isCurrentTrackingUser(initiatingUid)) return;
     } catch (err) {
+      if (!isCurrentTrackingUser(initiatingUid)) return;
       console.error("Could not update outcome:", err);
       if (pendingEntry) {
         reconcilePendingTracking(safeJobKey, pendingEntry, false, err?.message || "Could not update outcome.");
