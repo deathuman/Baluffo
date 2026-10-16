@@ -183,8 +183,13 @@ export function createSavedBoot(deps) {
     deps.viewState.unsubscribeSavedJobs = deps.savedPageService.subscribeSavedJobs(
       uid,
       jobs => {
+        const accountKey = String(uid || "").trim();
         const overlayRequestId = (Number(deps.viewState.savedLifecycleOverlayRequestId) || 0) + 1;
         deps.viewState.savedLifecycleOverlayRequestId = overlayRequestId;
+        const isCurrentOverlayRequest = () => (
+          String(deps.viewState.currentUser?.uid || "").trim() === accountKey
+          && deps.viewState.savedLifecycleOverlayRequestId === overlayRequestId
+        );
         const count = Array.isArray(jobs) ? jobs.length : 0;
         deps.setSourceStatus(`Loaded ${count} saved jobs.`);
         const isEditingNotes = isEditingNotesField();
@@ -210,7 +215,7 @@ export function createSavedBoot(deps) {
         deps.refreshActivityLog().catch(() => {});
         deps.loadSavedLifecycleOverlay()
           .then(overlayByJobKey => {
-            if (deps.viewState.savedLifecycleOverlayRequestId !== overlayRequestId) return;
+            if (!isCurrentOverlayRequest()) return;
             deps.viewState.savedLifecycleOverlayByJobKey = overlayByJobKey instanceof Map
               ? overlayByJobKey
               : new Map();
@@ -225,7 +230,7 @@ export function createSavedBoot(deps) {
             deps.renderSavedJobs(Array.isArray(jobs) ? jobs : []);
           })
           .catch(() => {
-            if (deps.viewState.savedLifecycleOverlayRequestId !== overlayRequestId) return;
+            if (!isCurrentOverlayRequest()) return;
             deps.viewState.savedLifecycleOverlayByJobKey = new Map();
           });
       },
