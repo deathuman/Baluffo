@@ -296,20 +296,32 @@ export function createSavedBoot(deps) {
       uploadAttachments: deps.uploadAttachments,
       checkAvailability: async availabilityId => {
         if (!deps.canManageAvailability?.()) return;
+        const accountKey = String(deps.viewState.currentUser?.uid || "").trim();
+        const isCurrentProfile = () => (
+          String(deps.viewState.currentUser?.uid || "").trim() === accountKey
+        );
         const savedJob = Array.from(deps.viewState.lastSavedJobsByKey.values())
           .find(job => String(job?.availabilityId || "") === String(availabilityId || "")) || null;
         const jobLink = sanitizeUrl(String(savedJob?.jobLink || ""));
         const progress = showToast("Checking availability…", "info", { durationMs: 0 });
-        const result = await runJobAvailabilityCheck(
-          deps.savedPageService,
-          availabilityId,
-          {
-            onProgress: ({ elapsedS }) => progress.update({
-              message: `Checking availability… ${Number(elapsedS) || 1}s`
-            })
-          }
-        );
-        progress.dismiss();
+        let result;
+        try {
+          result = await runJobAvailabilityCheck(
+            deps.savedPageService,
+            availabilityId,
+            {
+              onProgress: ({ elapsedS }) => {
+                if (!isCurrentProfile()) return;
+                progress.update({
+                  message: `Checking availability… ${Number(elapsedS) || 1}s`
+                });
+              }
+            }
+          );
+        } finally {
+          progress.dismiss();
+        }
+        if (!isCurrentProfile()) return;
         if (!result.ok) {
           showToast(String(result.error || "The availability check failed — try again."), "error");
           return;
@@ -325,6 +337,7 @@ export function createSavedBoot(deps) {
         showToast(verdict.message, verdict.tone, options);
         if (result.ok) {
           const overlay = await deps.loadSavedLifecycleOverlay();
+          if (!isCurrentProfile()) return;
           deps.viewState.savedLifecycleOverlayByJobKey = overlay instanceof Map
             ? overlay
             : new Map();
