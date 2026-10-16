@@ -49,6 +49,7 @@ export async function runSavedAvailabilityReport(
   const result = await deps.savedPageService.manageAvailabilityReport(
     uid, safeJobKey, action
   );
+  if (String(deps.viewState.currentUser?.uid || "").trim() !== uid) return;
   const queued = Boolean(result.data?.queuedForCheck);
   const successMessage = action === "clear"
     ? "Unavailable report cleared."
@@ -90,6 +91,7 @@ export async function runSavedAvailabilityReport(
       const undo = await deps.savedPageService.manageAvailabilityReport(
         uid, safeJobKey, "clear"
       );
+      if (String(deps.viewState.currentUser?.uid || "").trim() !== uid) return;
       if (!undo.ok) {
         notify(undo.error, "error");
         return;

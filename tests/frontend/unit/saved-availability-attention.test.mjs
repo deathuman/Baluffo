@@ -225,4 +225,88 @@ test("Saved availability Undo stays bound to the originating profile", async () 
     { uid: "user-1", jobKey: "job-4", action: "clear" }
   ]);
   assert.equal(otherRow.availabilityAttention.hiddenByReport, true);
+  assert.equal(toasts.length, 1, "Undo completion must not notify the next profile");
+});
+
+test("Saved suppresses a report completion after switching profiles during persistence", async () => {
+  const response = deferred();
+  const row = { jobKey: "job-5", title: "Engineer", company: "Studio", availabilityAttention: {} };
+  const otherRow = { jobKey: "job-5", availabilityAttention: { hiddenByReport: true } };
+  const viewState = { currentUser: { uid: "user-1" }, lastSavedJobsByKey: new Map([[row.jobKey, row]]) };
+  const calls = [];
+  const toasts = [];
+  const renders = [];
+  let refreshCount = 0;
+  const operation = runSavedAvailabilityReport({
+    canManageAvailability: () => true,
+    viewState,
+    requestConfirmationDialog: async () => true,
+    savedPageService: {
+      manageAvailabilityReport(uid, jobKey, action) {
+        calls.push({ uid, jobKey, action });
+        return response.promise;
+      }
+    },
+    renderSavedJobs(jobs) { renders.push(jobs); },
+    showToast(message, type, options) { toasts.push({ message, type, options }); }
+  }, async () => { refreshCount += 1; }, row.jobKey, "report");
+
+  await Promise.resolve();
+  assert.deepEqual(calls, [{ uid: "user-1", jobKey: "job-5", action: "report" }]);
+  viewState.currentUser = { uid: "user-2" };
+  viewState.lastSavedJobsByKey = new Map([[otherRow.jobKey, otherRow]]);
+  response.resolve({ ok: true, data: { queuedForCheck: true } });
+  await operation;
+
+  assert.deepEqual(calls, [{ uid: "user-1", jobKey: "job-5", action: "report" }]);
+  assert.equal(row.availabilityAttention.hiddenByReport, undefined);
+  assert.equal(otherRow.availabilityAttention.hiddenByReport, true);
+  assert.deepEqual(renders, []);
+  assert.deepEqual(toasts, []);
+  assert.equal(refreshCount, 0);
+});
+
+test("Saved suppresses stale Undo success and error feedback", async t => {
+  for (const responseValue of [
+    { ok: true, data: {} },
+    { ok: false, error: "Could not clear old profile report." }
+  ]) {
+    await t.test(responseValue.ok ? "success" : "failure", async () => {
+      const undoResponse = deferred();
+      const row = { jobKey: "job-6", title: "Engineer", company: "Studio", availabilityAttention: {} };
+      const otherRow = { jobKey: "job-6", availabilityAttention: { hiddenByReport: true } };
+      const viewState = { currentUser: { uid: "user-1" }, lastSavedJobsByKey: new Map([[row.jobKey, row]]) };
+      const calls = [];
+      const toasts = [];
+      const renders = [];
+      let refreshCount = 0;
+      const deps = {
+        canManageAvailability: () => true,
+        viewState,
+        requestConfirmationDialog: async () => true,
+        savedPageService: {
+          manageAvailabilityReport(uid, jobKey, action) {
+            calls.push({ uid, jobKey, action });
+            return action === "clear" ? undoResponse.promise : Promise.resolve({ ok: true, data: {} });
+          }
+        },
+        renderSavedJobs(jobs) { renders.push(jobs); },
+        showToast(message, type, options) { toasts.push({ message, type, options }); }
+      };
+
+      await runSavedAvailabilityReport(deps, async () => { refreshCount += 1; }, row.jobKey, "report");
+      const initialRenderCount = renders.length;
+      const undoOperation = toasts[0].options.onAction();
+      viewState.currentUser = { uid: "user-2" };
+      viewState.lastSavedJobsByKey = new Map([[otherRow.jobKey, otherRow]]);
+      undoResponse.resolve(responseValue);
+      await undoOperation;
+
+      assert.deepEqual(calls.map(call => call.action), ["report", "clear"]);
+      assert.equal(toasts.length, 1, "stale Undo completion must not add a toast");
+      assert.equal(renders.length, initialRenderCount, "stale Undo completion must not render");
+      assert.equal(otherRow.availabilityAttention.hiddenByReport, true);
+      assert.equal(refreshCount, 1, "only the initial report may refresh attention");
+    });
+  }
 });
