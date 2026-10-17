@@ -210,6 +210,21 @@ def test_start_date_is_not_a_deadline(pinned_today: date, tmp_path: Path) -> Non
     assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
 
 
+def test_hyphenated_end_is_not_a_deadline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Real case: opening-coverage-audit-fixes says "end-to-end runbook added
+    2026-10-14". The "end" of a hyphenated compound is not a deadline keyword,
+    and reading it as one flagged a lapsed deferral on a plan that deferred
+    nothing.
+    """
+    import tools.repo_health.release_docs_policy as policy
+
+    monkeypatch.setattr(policy, "_PLAN_TODAY_OVERRIDE", date(2026, 10, 17))
+    status = "planned — five slices, none started; end-to-end runbook added 2026-10-14"
+    assert policy._plan_status_deadlines(status) == []
+    _plan(tmp_path, "end-to-end.md", f"> - **Status:** {status}\n\nBody.\n")
+    assert _plan_lifecycle_findings(tmp_path / "docs" / "plans") == []
+
+
 def test_today_itself_is_not_yet_lapsed(pinned_today: date, tmp_path: Path) -> None:
     """A deadline landing today is still open; only a strictly past date has lapsed."""
     _plan(tmp_path, "today.md", "> - **Status:** Parked -- window through 2026-10-01\n\nBody.\n")
