@@ -59,8 +59,8 @@ PROFILES: dict[str, dict[str, str]] = {
     "pi4-tight": {"cpus": "1.5", "memory": "1.5g"},
     # Full production-shaped fetch (500+ loader keys incl. ATS aggregates +
     # browser fallback driver) exceeds 1.5 GiB: the playwright Node driver
-    # OOMs at the ceiling. This seat mirrors the uncapped Umbrel deployment
-    # (no compose mem_limit) while staying Pi4-class.
+    # OOMs at the ceiling. This seat mirrors the uncapped container deployment
+    # (no mem_limit) while staying Pi4-class.
     "pi4-roomy": {"cpus": "2.0", "memory": "2.5g"},
     # ponytail: 3.5g probe to verify full 2125 completes after heavy-host caps;
     # uncapped production has no mem_limit, so 3.5g is still Pi-4-class headroom probe.

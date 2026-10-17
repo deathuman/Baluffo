@@ -473,8 +473,8 @@ Deliberately not in this plan, to keep it landable:
 - **Browser fallback.** Playwright runs as a Node driver outside the Python transport, so it
   cannot sit at the `fetch_text` seam. Out of scope per D9; those sources stay at their recorded
   refusal state under replay.
-- **Frontend / Umbrel UI performance.** Governed by `baluffo-umbrel-performance-triage`, which
-  is Browser-evidence-first and explicitly forbids building a benchmark layer ahead of traces.
+- **Frontend / container UI performance.** Governed by `baluffo-container-performance-triage`,
+  which is Browser-evidence-first and explicitly forbids building a benchmark layer ahead of traces.
 - **Changing the CI perf gate.** A gate already exists and is not being modified; per D7 replay
   A/B runs on schedule or dispatch instead. See [CI is not a gap](#ci-is-not-a-gap-it-already-exists).
 - **Making no-skipping enforced.** Per D8 the requirement stands and is currently met but

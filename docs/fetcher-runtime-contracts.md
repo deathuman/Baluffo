@@ -51,12 +51,12 @@ Bridge defaults:
   - `--max-workers 12`
   - `--max-per-domain 3`
   - `--adapter-http-concurrency 48`
-- Container/Umbrel bridge-started fetch runs use more conservative defaults to keep the raw-LAN UI responsive during active fetch work:
+- Container bridge-started fetch runs use more conservative defaults to keep the raw-LAN UI responsive during active fetch work:
   - `--max-workers 4`
   - `--max-per-domain 2`
   - `--adapter-http-concurrency 16`
   - `--static-detail-concurrency 4`
-- Container/Umbrel pipeline-launched fetch is a separate bounded throughput profile for the full Jobs pipeline only:
+- Container pipeline-launched fetch is a separate bounded throughput profile for the full Jobs pipeline only:
   - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `12` and is clamped to `1..12`
   - `BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS` defaults to `4` and is clamped to `0..6`; `0` disables Playwright browser fallback for this container pipeline fetch profile.
   - `--max-per-domain 3`

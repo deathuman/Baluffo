@@ -47,6 +47,29 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.021] - 2026-10-17
+> **Desktop rollup.** This is the first desktop package since 0.3.017, so it also carries the
+> user-facing work released on the container channel in 0.3.018 through 0.3.020.
+
+### Changed
+
+- **The private Umbrel app-store packaging is retired.** Baluffo still publishes the same-origin
+  container image on GHCR, but the private store metadata, the Umbrel Compose deployment files, and
+  the release steps that maintained them are gone. A version bump no longer looks for them, and the
+  container workflow no longer treats them as a publish trigger.
+
+### Notes
+
+- **First desktop package since 0.3.017.** It also carries the user-facing work from 0.3.018 through
+  0.3.020: provider boards are read directly instead of through a guessed careers page, saved-job
+  state stays with the session that asked for it, Discovery stops re-asking boards it has already
+  ruled out or that never answer, and the runtime database reclaims space instead of growing.
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.020:
+  the same-origin Linux container,
+  GHCR multi-arch image publishing,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
+
 ## [0.3.020] - 2026-10-17
 ### Added
 
@@ -288,33 +311,6 @@ Four rules the guardrail enforces so this cannot quietly regress:
   not add up. A live run also waits on the network, so the gain there will be smaller, and the
   smallest step's effect is below what that method can resolve.
 - Distribution surfaces are unchanged. Each behaves as it did in 0.3.015:
-  the same-origin Linux container,
-  Umbrel raw-LAN installs,
-  GHCR multi-arch image publishing,
-  private community app-store metadata,
-  wildcard browser CORS allow headers,
-  desktop localhost bridge compatibility.
-
-## [0.3.015] - 2026-10-08
-### Fixed
-
-- **Studios hiring on Ashby are collected again.** Ashby builds its board page in the
-  browser, so the page you download carries no job links at all, and Baluffo was
-  reading those pages. Every Ashby board therefore looked empty: Voodoo's openings -
-  122 of them, including the Technical Artist (AI) role that has been missing since the
-  studio moved off Lever - never reached the feed, and roughly twenty other Ashby studios
-  showed zero openings while hiring. The app now reads the same board data the page
-  renders from, so discovery no longer files a live Ashby board as empty and stops
-  looking at it.
-
-- **The run's stage timings now tell the truth, so slow stages can be found.** The
-  report charged network time to parsing and left about half of the static-board time
-  unattributed, which made the most expensive part of a run look cheap. Timings are now
-  booked to the stage that does the work, with identical job coverage.
-
-### Notes
-
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.014:
   the same-origin Linux container,
   Umbrel raw-LAN installs,
   GHCR multi-arch image publishing,

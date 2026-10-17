@@ -1,14 +1,12 @@
 """Guardrail: shipped container code must not land without a version bump or release-tag intent.
 
 The 0.2.140 reuse trap: the container version was bumped once (commit
-``f46baa4c``, 2026-08-27) and the Umbrel box updated to it, then ~11 commits of
+``f46baa4c``, 2026-08-27) and an install was updated to it, then ~11 commits of
 container-affecting code landed on ``main`` over the following days under the
 SAME version string. Every ``main`` push republished
-``ghcr.io/deathuman/baluffo:0.2.140`` and ``:latest`` with newer code, but
-Umbrel's app-store update detection compares the ``version:`` string in
-``deathuman-baluffo/umbrel-app.yml`` — which never changed — so the box never
-re-pulled and silently kept running the older 08-28 build while the image tag
-drifted forward.
+``ghcr.io/deathuman/baluffo:0.2.140`` and ``:latest`` with newer code, so the
+tag stopped matching the code the release assets were built from while every
+consumer pinned to that version saw nothing that told it to update.
 
 This guardrail fails when shipped container code commits land on the branch
 after the most recent version bump without either advancing the version itself
@@ -20,9 +18,9 @@ release it belongs to, so code can never again ship to the container channel
 invisibly under a frozen version string.
 
 Scope: the window is the commits after the most recent commit that changed the
-version in ``src/app_version.py`` or ``deathuman-baluffo/umbrel-app.yml``
-(the release anchor). Any shipped commit in that window triggers the gate
-unless the window carries a bump or an explicit intent declaration.
+version in ``src/app_version.py`` (the release anchor). Any shipped commit in
+that window triggers the gate unless the window carries a bump or an explicit
+intent declaration.
 """
 
 from __future__ import annotations
@@ -40,24 +38,21 @@ if str(ROOT) not in sys.path:
 
 from src.baluffo_version import compare_baluffo_versions
 
-VERSION_FILES = (
-    "src/app_version.py",
-    "deathuman-baluffo/umbrel-app.yml",
-)
+# The single version source. The container image tag is derived from it, so it is
+# the anchor every release window is measured from.
+VERSION_FILES = ("src/app_version.py",)
 
-# Paths that never change the container image or the store metadata the box
-# consumes: docs, tests, repo tooling, CI config, AI continuity notes, and
-# root-level docs/identity files. Everything else (src/, frontend/, scripts/,
-# Dockerfile, requirements, data/contracts, data/defaults, deathuman-baluffo/,
-# ...) is shipped code.
+# Paths that never change the container image: docs, tests, repo tooling, CI
+# config, AI continuity notes, and root-level docs/identity files. Everything
+# else (src/, frontend/, scripts/, Dockerfile, requirements, data/contracts,
+# data/defaults, ...) is shipped code.
 # Keep this superset of the container workflow's `paths-ignore` list so the
 # gate and the republish trigger stay aligned.
 #
 # `memory/**` is here because continuity notes are not runtime inputs: nothing
 # under src/ or scripts/ reads them. While it was shipped, committing a note
-# re-triggered Build Container and retagged the current version with newer code
-# while umbrel-app.yml still declared the old version -- exactly the 0.2.140
-# reuse trap this gate exists to prevent.
+# re-triggered Build Container and retagged the current version with newer
+# code -- exactly the 0.2.140 reuse trap this gate exists to prevent.
 #
 # `opencode.json` is the OpenCode client/agent config (MCP launchers). It is
 # not a runtime input either -- nothing under src/ or scripts/ reads it -- so
@@ -77,7 +72,6 @@ NON_SHIPPED_PATTERNS = (
     "opencode.json",
     "LICENSE",
     "release-notes.md",
-    "umbrel-app-store.yml",
     # A manifest or lockfile edit is usually a dev-dependency edit -- a linter, a
     # type checker -- and those install into the image's *build* stage only.
     # `Dockerfile` runs `npm ci` in a frontend stage and copies forward just the
@@ -126,7 +120,6 @@ IMAGE_EXCLUDED_BUT_SHIPPED = (
 )
 
 _APP_VERSION_RE = re.compile(r'APP_VERSION\s*=\s*"([^"]+)"')
-_UMBREL_VERSION_RE = re.compile(r'^version\s*:\s*"([^"]+)"', re.MULTILINE)
 _RELEASE_TAG_LINE_RE = re.compile(
     r"^release-tag\s*:\s*v?(\d+\.\d+\.\d+)\s*$", re.IGNORECASE | re.MULTILINE
 )
@@ -160,12 +153,8 @@ def _file_at(repo_root: Path, rev: str, rel_path: str) -> str:
 
 
 def _version_at(repo_root: Path, rev: str) -> str | None:
-    app_text = _file_at(repo_root, rev, "src/app_version.py")
-    match = _APP_VERSION_RE.search(app_text)
-    if match:
-        return match.group(1).strip()
-    umbrel_text = _file_at(repo_root, rev, "deathuman-baluffo/umbrel-app.yml")
-    match = _UMBREL_VERSION_RE.search(umbrel_text)
+    """Return the app version declared at ``rev``, or None when the file is absent."""
+    match = _APP_VERSION_RE.search(_file_at(repo_root, rev, "src/app_version.py"))
     return match.group(1).strip() if match else None
 
 
@@ -228,10 +217,10 @@ def _has_valid_release_tag_intent(
     # Once `current` is RELEASED that reasoning inverts. The version tag is
     # already on GHCR, so a shipped commit that does not bump mutates it: the
     # container would hold different code than the frozen release assets under
-    # one version string, and because Umbrel's update check is string
-    # inequality the change would never be offered to an existing install. That
-    # happened on 2026-10-01, when pushing the Q4/Q5 CSS deletion moved the
-    # published 0.3.001 tag from sha256:f6fa5b37 to sha256:0d0f194c.
+    # one version string, and a consumer pinned to that version has no signal
+    # that the content changed. That happened on 2026-10-01, when pushing the
+    # Q4/Q5 CSS deletion moved the published 0.3.001 tag from sha256:f6fa5b37 to
+    # sha256:0d0f194c.
     #
     # So a released version demands strictly newer intent -- i.e. a real bump.
     # Republishes BEFORE a version is tagged are deliberately still allowed:
@@ -270,10 +259,9 @@ def evaluate_window(
             f"`v{current_version}` was released, without a version bump:\n{listing}\n"
             f"`v{current_version}` is a published container tag, so shipping against it "
             "overwrites the published image: the container would hold different code than "
-            "the frozen release assets under one version string, and Umbrel's "
-            "string-equality update check would never offer the change to an existing "
-            "install. Declaring a newer `Release-tag:` does not authorise that -- the "
-            "version has to actually move.\n"
+            "the frozen release assets under one version string, and a consumer pinned to "
+            "that version has no signal that the content changed. Declaring a newer "
+            "`Release-tag:` does not authorise that -- the version has to actually move.\n"
             "Bump the version (`python scripts/bump_version.py <next>`) in this change, or "
             "keep the shipped code on a branch and release it by tagging."
         ]
@@ -285,7 +273,8 @@ def evaluate_window(
         f"{listing}\n"
         "Bump the version (`python scripts/bump_version.py <next>`) or add a "
         "`Release-tag: vX.Y.Z` line naming a version newer than the current one to a "
-        "commit message in this window, so the Umbrel box can see the update."
+        "commit message in this window, so the published tag keeps describing the code "
+        "it was built from."
     ]
 
 

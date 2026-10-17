@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record lightweight reachability evidence for the private Umbrel raw-LAN host."""
+"""Record lightweight reachability evidence for a deployed Baluffo container."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_HOST = "192.168.50.61"
-DEFAULT_UMBREL_PORT = 80
-DEFAULT_BALUFFO_PORT = 8877
+# Defaults match the documented local smoke command: `docker run --rm -p 8877:8080`.
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8877
 DEFAULT_TIMEOUT_S = 3.0
-DEFAULT_OUTPUT_ROOT = ROOT / "_out" / "umbrel-reachability"
-USER_AGENT = "BaluffoUmbrelReachabilityProbe/1.0"
+DEFAULT_OUTPUT_ROOT = ROOT / "_out" / "container-reachability"
+USER_AGENT = "BaluffoContainerReachabilityProbe/1.0"
 
 NORMAL_HTTP_PATHS = (
     "/app/ready",
@@ -258,8 +258,7 @@ def skipped_http(path: str, reason: str) -> dict[str, object]:
 def build_sample(
     *,
     host: str = DEFAULT_HOST,
-    umbrel_port: int = DEFAULT_UMBREL_PORT,
-    baluffo_port: int = DEFAULT_BALUFFO_PORT,
+    port: int = DEFAULT_PORT,
     timeout_s: float = DEFAULT_TIMEOUT_S,
     include_http: bool = True,
     include_diagnostic: bool = False,
@@ -267,28 +266,25 @@ def build_sample(
     assert_normal_route_budget()
     neighbor = probe_neighbor(host, timeout_s=timeout_s)
     ping = probe_ping(host, timeout_s=timeout_s)
-    tcp = {
-        str(umbrel_port): probe_tcp(host, umbrel_port, timeout_s=timeout_s),
-        str(baluffo_port): probe_tcp(host, baluffo_port, timeout_s=timeout_s),
-    }
+    tcp = {str(port): probe_tcp(host, port, timeout_s=timeout_s)}
     http: dict[str, object] = {}
     if include_http:
-        if bool(tcp[str(baluffo_port)].get("ok")):
+        if bool(tcp[str(port)].get("ok")):
             http = {
-                path: probe_http(host, baluffo_port, path, timeout_s=timeout_s)
+                path: probe_http(host, port, path, timeout_s=timeout_s)
                 for path in NORMAL_HTTP_PATHS
             }
         else:
-            http = {path: skipped_http(path, "baluffo-port-down") for path in NORMAL_HTTP_PATHS}
+            http = {path: skipped_http(path, "container-port-down") for path in NORMAL_HTTP_PATHS}
     diagnostic_http: dict[str, object] = {}
-    if include_diagnostic and bool(tcp[str(baluffo_port)].get("ok")):
+    if include_diagnostic and bool(tcp[str(port)].get("ok")):
         diagnostic_http = {
-            path: probe_http(host, baluffo_port, path, timeout_s=timeout_s)
+            path: probe_http(host, port, path, timeout_s=timeout_s)
             for path in DIAGNOSTIC_HTTP_PATHS
         }
     sample = {
         "timestamp": utc_timestamp(),
-        "target": {"host": host, "umbrelPort": umbrel_port, "baluffoPort": baluffo_port},
+        "target": {"host": host, "port": port},
         "neighbor": neighbor,
         "ping": ping,
         "tcp": tcp,
@@ -329,8 +325,7 @@ def _http_failures(sample: dict[str, object]) -> list[dict[str, object]]:
 
 def classify_sample(sample: dict[str, object]) -> dict[str, object]:
     target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
-    umbrel_port = int(target.get("umbrelPort") or DEFAULT_UMBREL_PORT)
-    baluffo_port = int(target.get("baluffoPort") or DEFAULT_BALUFFO_PORT)
+    port = int(target.get("port") or DEFAULT_PORT)
     neighbor = sample.get("neighbor") if isinstance(sample.get("neighbor"), dict) else {}
     ping = sample.get("ping") if isinstance(sample.get("ping"), dict) else {}
     neighbor_missing = not neighbor.get("mac") and neighbor.get("state") in {
@@ -344,17 +339,11 @@ def classify_sample(sample: dict[str, object]) -> dict[str, object]:
             "domain": "host_network",
             "reason": "host-unreachable",
         }
-    if not _tcp_ok(sample, umbrel_port):
+    if not _tcp_ok(sample, port):
         return {
             "status": "unhealthy",
-            "domain": "umbrel_proxy",
-            "reason": "umbrel-port-down",
-        }
-    if not _tcp_ok(sample, baluffo_port):
-        return {
-            "status": "unhealthy",
-            "domain": "baluffo_app_proxy",
-            "reason": "baluffo-port-down",
+            "domain": "container_port",
+            "reason": "container-port-down",
         }
     failures = _http_failures(sample)
     if failures:
@@ -402,8 +391,7 @@ def write_sample(output_dir: Path, sample: dict[str, object]) -> Path:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=DEFAULT_HOST)
-    parser.add_argument("--umbrel-port", type=int, default=DEFAULT_UMBREL_PORT)
-    parser.add_argument("--baluffo-port", type=int, default=DEFAULT_BALUFFO_PORT)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S)
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--interval", type=float, default=60.0)
@@ -428,12 +416,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     output_dir = args.run_dir or (args.output_root / run_dir_name())
     consecutive_failures = 0
-    print(f"Writing Umbrel reachability samples to {output_dir}")
+    print(f"Writing container reachability samples to {output_dir}")
     for index in range(max(1, args.samples)):
         sample = build_sample(
             host=args.host,
-            umbrel_port=args.umbrel_port,
-            baluffo_port=args.baluffo_port,
+            port=args.port,
             timeout_s=args.timeout,
             include_http=not args.no_http,
             include_diagnostic=False,
@@ -450,9 +437,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if run_diagnostic:
             sample["diagnosticHttp"] = {
-                path: probe_http(args.host, args.baluffo_port, path, timeout_s=args.timeout)
+                path: probe_http(args.host, args.port, path, timeout_s=args.timeout)
                 for path in DIAGNOSTIC_HTTP_PATHS
-                if _tcp_ok(sample, args.baluffo_port)
+                if _tcp_ok(sample, args.port)
             }
         write_sample(output_dir, sample)
         print(

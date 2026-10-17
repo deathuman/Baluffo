@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Bump the Baluffo version across every release artifact.
 
-Keeps the five version-bearing files in sync so a release bump is one command
-instead of five hand-edits (the exact drift that caused the v0.2.139 release
-notes mismatch):
+Keeps the version-bearing files in sync so a release bump is one command instead
+of three hand-edits (the exact drift that caused the v0.2.139 release notes
+mismatch):
 
   - src/app_version.py
-  - deathuman-baluffo/umbrel-app.yml
-  - deathuman-baluffo/docker-compose.yml
   - docs/CHANGELOG.md  (moves the [Unreleased] section into a dated release)
   - dist/baluffo-ship/app/current.txt
+
+Before writing anything it compares the version every present artifact declares.
+A half-applied earlier bump (app version moved but the changelog or the packaged
+`current.txt` left behind) would otherwise be carried forward silently, leaving a
+release whose notes describe a version the app never declared. Mismatches are
+reported and stop the bump; `--allow-drift` proceeds and rewrites them all.
 
 It also regenerates release-notes.md from the new changelog section via
 scripts/extract_release_notes.py so the package artifact matches.
@@ -36,6 +40,15 @@ if str(ROOT) not in sys.path:
 from src.python_version_guard import ensure_required_python
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+APP_VERSION_RE = re.compile(r'APP_VERSION = "([^"]+)"')
+
+# Every artifact that declares the version, in the order a bump touches them.
+# Used only to detect drift: the bump helpers below own the rewriting.
+_RELEASE_ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("src/app_version.py", r'APP_VERSION = "([^"]+)"'),
+    ("docs/CHANGELOG.md", r"^## \[(\d+\.\d+\.\d+)\]"),
+    ("dist/baluffo-ship/app/current.txt", r"^(\d+\.\d+\.\d+)\s*$"),
+)
 
 
 def _read(path: Path) -> str:
@@ -50,25 +63,51 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+def read_declared_versions(root: Path) -> list[tuple[str, str | None]]:
+    """Return ``(artifact, declared version)`` for every present release artifact.
+
+    An unbuilt ``current.txt`` is absent from the list: there is nothing to
+    disagree with.
+    """
+    declared: list[tuple[str, str | None]] = []
+    for rel_path, pattern in _RELEASE_ARTIFACTS:
+        path = root / rel_path
+        if not path.is_file():
+            continue
+        match = re.search(pattern, _read(path), flags=re.MULTILINE)
+        declared.append((rel_path, match.group(1) if match else None))
+    return declared
+
+
+def version_drift(declared: list[tuple[str, str | None]]) -> list[tuple[str, str]]:
+    """Return the artifacts whose declared version disagrees with ``src/app_version.py``."""
+    reference = dict(declared).get("src/app_version.py")
+    if reference is None:
+        return []
+    return [
+        (artifact, version) for artifact, version in declared if version not in (None, reference)
+    ]
+
+
+def report_drift(drift: list[tuple[str, str]], reference: str | None) -> None:
+    """Explain an incomplete earlier bump on stderr, naming each artifact's version."""
+    print(
+        f"error: version drift detected (src/app_version.py declares {reference}):", file=sys.stderr
+    )
+    for artifact, version in drift:
+        print(f"  - {artifact}: {version}", file=sys.stderr)
+    print(
+        "A previous bump reached only some artifacts. Finish or revert it before bumping\n"
+        "again, so this release does not carry the older version forward.\n"
+        "Re-run with --allow-drift to bump anyway; every present artifact is rewritten.",
+        file=sys.stderr,
+    )
+
+
 def bump_app_version(text: str, version: str) -> str:
     if f'APP_VERSION = "{version}"' in text:
         return text
     return re.sub(r'APP_VERSION = "\d+\.\d+\.\d+"', f'APP_VERSION = "{version}"', text, count=1)
-
-
-def bump_umbrel_app(text: str, version: str) -> str:
-    return re.sub(
-        r'^(version: )"\d+\.\d+\.\d+"', rf'\g<1>"{version}"', text, count=1, flags=re.MULTILINE
-    )
-
-
-def bump_docker_compose(text: str, version: str) -> str:
-    return re.sub(
-        r"(ghcr\.io/deathuman/baluffo:)\d+\.\d+\.\d+",
-        rf"\g<1>{version}",
-        text,
-        count=1,
-    )
 
 
 def bump_changelog(text: str, version: str, date: str) -> str:
@@ -105,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print changes without writing files."
     )
+    parser.add_argument(
+        "--allow-drift",
+        action="store_true",
+        help="Bump even when the artifacts disagree, rewriting them all to the new version.",
+    )
     args = parser.parse_args(argv)
 
     version = args.version.strip()
@@ -113,21 +157,24 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     app_version_path = ROOT / "src" / "app_version.py"
-    umbrel_app_path = ROOT / "deathuman-baluffo" / "umbrel-app.yml"
-    compose_path = ROOT / "deathuman-baluffo" / "docker-compose.yml"
     changelog_path = ROOT / "docs" / "CHANGELOG.md"
     current_txt_path = ROOT / "dist" / "baluffo-ship" / "app" / "current.txt"
 
-    current = re.search(r'APP_VERSION = "([^"]+)"', _read(app_version_path))
+    current = APP_VERSION_RE.search(_read(app_version_path))
     current_version = current.group(1) if current else None
+
+    drift = version_drift(read_declared_versions(ROOT))
+    if drift:
+        report_drift(drift, current_version)
+        if not args.allow_drift:
+            return 2
+
     if current_version == version:
         print(f"error: version is already {version}.", file=sys.stderr)
         return 2
 
     targets = [
         (app_version_path, bump_app_version(_read(app_version_path), version)),
-        (umbrel_app_path, bump_umbrel_app(_read(umbrel_app_path), version)),
-        (compose_path, bump_docker_compose(_read(compose_path), version)),
         (changelog_path, bump_changelog(_read(changelog_path), version, args.date)),
         (current_txt_path, bump_current_txt(version)),
     ]

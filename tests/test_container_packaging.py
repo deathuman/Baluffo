@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from src.app_version import APP_VERSION
-
 ROOT = Path(__file__).resolve().parents[1]
 
 _ESBUILD_CARET_RE = re.compile(r'"esbuild": "\^0\.\d+\.\d+"')
@@ -167,22 +165,3 @@ def test_dockerfile_generates_container_sync_config_from_buildkit_secrets() -> N
         "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM",
     ):
         assert f"--mount=type=secret,id={secret_name},required=false" in content
-
-
-def test_umbrel_metadata_uses_app_proxy_raw_lan_contract() -> None:
-    store = _read("umbrel-app-store.yml")
-    manifest = _read("deathuman-baluffo/umbrel-app.yml")
-    compose = _read("deathuman-baluffo/docker-compose.yml")
-
-    assert 'id: "deathuman"' in store
-    assert "id: deathuman-baluffo" in manifest
-    assert "manifestVersion: 1" in manifest
-    assert "category: development" in manifest
-    assert "port: 8877" in manifest
-    assert f"image: ghcr.io/deathuman/baluffo:{APP_VERSION}" in compose
-    assert "app_proxy:" in compose
-    assert "APP_PORT: 8080" in compose
-    assert 'PROXY_AUTH_ADD: "false"' in compose
-    assert "ports:" not in compose
-    assert '"8877:8080"' not in compose
-    assert "${APP_DATA_DIR}/data:/data" in compose

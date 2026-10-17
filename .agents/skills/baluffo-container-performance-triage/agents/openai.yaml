@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Container Performance Triage"
+  short_description: "Browser-first container perf and active-run triage"
+  default_prompt: "Use $baluffo-container-performance-triage to diagnose Baluffo container Admin, Jobs, or active-run slowness from Browser/Developer-mode evidence."

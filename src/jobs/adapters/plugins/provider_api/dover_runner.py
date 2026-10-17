@@ -38,6 +38,7 @@ import json
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 
 from src.dover_board_urls import dover_jobs_api_url, dover_source_slug_url
@@ -161,6 +162,188 @@ def _elapsed_ms(started: float) -> int:
     return max(0, int((time.perf_counter() - started) * 1000))
 
 
+@dataclass(frozen=True)
+class _DoverRunContext:
+    """Everything one run needs, so the per-board worker is not a closure.
+
+    As a closure the worker made ``_run_dover_sources`` the complexity owner of
+    every branch a single board can take; passing the run explicitly keeps the
+    skip and fetch rules readable on their own.
+    """
+
+    adapter_name: str
+    registry_adapter: str
+    default_error: str
+    fetch_text: FetchText
+    fetch_payload: FetchPayload | None
+    timeout_s: int
+    retries: int
+    backoff_s: float
+    source_state_rows: dict[str, dict[str, object]] | None
+    force_refresh_all: bool
+
+
+def _dover_short_circuit(
+    ctx: _DoverRunContext,
+    *,
+    source_name: str,
+    slug_url: str,
+    entry_report: dict[str, object],
+) -> tuple[bool, str]:
+    """Whether this board is settled before any fetch, and its error if it is.
+
+    A missing slug, a cache decision and a 304 all update the entry report here;
+    the caller only has to time the source.
+    """
+    if not slug_url:
+        entry_report["status"] = "error"
+        entry_report["error"] = ctx.default_error
+        return True, f"{ctx.registry_adapter}:{source_name}: {ctx.default_error}"
+    if skip_provider_for_cache(entry_report):
+        return True, ""
+    if provider_revalidate_not_modified(
+        url=slug_url,
+        entry_report=entry_report,
+        source_name=source_name,
+        source_state_rows=ctx.source_state_rows,
+        timeout_s=ctx.timeout_s,
+        revalidate_url=conditional_revalidate_url,
+    ):
+        return True, ""
+    return False, ""
+
+
+def _fetch_dover_source_rows(
+    ctx: _DoverRunContext,
+    *,
+    source: dict[str, object],
+    studio: str,
+    slug_url: str,
+    entry_report: dict[str, object],
+) -> list[RawJob]:
+    """The two requests a Dover board needs, recorded into its report as they go.
+
+    Raises rather than returning empty: an unreadable board must not look like a
+    board with no openings.
+    """
+    fetch_started = time.perf_counter()
+    slug_payload = _resolve_dover_fetch(
+        slug_url, ctx.fetch_payload, ctx.fetch_text, ctx.timeout_s, ctx.retries, ctx.backoff_s
+    )
+    client_id = _dover_client_id(slug_payload, slug_url)
+    jobs_url = dover_jobs_api_url(client_id)
+    if not jobs_url:
+        raise DoverSourceError(f"dover: no jobs url for client id {client_id!r}")
+    # The jobs URL is what the source is really read from, so that is the
+    # providerUrl the report and the revalidation identity carry.
+    entry_report["providerUrl"] = jobs_url
+    entry_report["clientId"] = client_id
+    payload = _resolve_dover_fetch(
+        jobs_url, ctx.fetch_payload, ctx.fetch_text, ctx.timeout_s, ctx.retries, ctx.backoff_s
+    )
+    entry_report["fetchMs"] = _elapsed_ms(fetch_started)
+    parse_started = time.perf_counter()
+    parsed = _provider_parsers.parse_dover_jobs_payload(payload, source, studio)
+    entry_report["parseMs"] = _elapsed_ms(parse_started)
+    entry_report["fetchedCount"] = _dover_payload_count(payload)
+    entry_report["keptCount"] = len(parsed)
+    for row in parsed:
+        row["adapter"] = ctx.adapter_name
+        row["studio"] = studio
+    return parsed
+
+
+def _process_dover_source(
+    ctx: _DoverRunContext, source: dict[str, object]
+) -> tuple[list[RawJob], dict[str, object], str, str]:
+    """One board: its rows, its entry report, and the error text if it failed."""
+    source_started = time.perf_counter()
+    source_name, studio = _dover_source_identity(source)
+    slug_url = dover_source_slug_url(source)
+    entry_report = build_provider_entry_report(
+        adapter_name=ctx.adapter_name,
+        studio=studio,
+        source_name=source_name,
+        extra={"providerUrl": slug_url},
+    )
+    apply_provider_cache_decision(
+        entry_report=entry_report,
+        source_name=source_name,
+        adapter_name=ctx.adapter_name,
+        source_state_rows=ctx.source_state_rows,
+        force_refresh_all=ctx.force_refresh_all,
+    )
+    settled, error = _dover_short_circuit(
+        ctx, source_name=source_name, slug_url=slug_url, entry_report=entry_report
+    )
+    if settled:
+        entry_report["durationMs"] = _elapsed_ms(source_started)
+        return [], entry_report, error, ""
+    try:
+        source_jobs = _fetch_dover_source_rows(
+            ctx, source=source, studio=studio, slug_url=slug_url, entry_report=entry_report
+        )
+    except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+        reraise_unexpected_provider_api_source_exception(exc)
+        entry_report["status"] = "error"
+        entry_report["error"] = str(exc)
+        entry_report["durationMs"] = _elapsed_ms(source_started)
+        error_provider_url = clean_text(entry_report.get("providerUrl")) or slug_url
+        error = f"{ctx.registry_adapter}:{source_name}: {exc}"
+        return [], entry_report, error, error_provider_url
+    entry_report["durationMs"] = _elapsed_ms(source_started)
+    return source_jobs, entry_report, "", ""
+
+
+def _collect_dover_results(
+    ctx: _DoverRunContext, sources: list[dict[str, object]]
+) -> tuple[list[tuple[list[RawJob], dict[str, object], str, str]], int]:
+    """Every board's result, fetched serially or in a small thread pool."""
+    concurrency = max(1, min(DOVER_SOURCE_FETCH_CONCURRENCY, len(sources) or 1))
+    if concurrency <= 1 or len(sources) <= 1:
+        return [_process_dover_source(ctx, source) for source in sources], concurrency
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        results = list(executor.map(lambda source: _process_dover_source(ctx, source), sources))
+    return results, concurrency
+
+
+def _dover_provider_url(details: list[dict[str, object]]) -> str:
+    return next(
+        (
+            clean_text(detail.get("providerUrl"))
+            for detail in details
+            if clean_text(detail.get("providerUrl"))
+        ),
+        "",
+    )
+
+
+def _merge_dover_results(
+    results: list[tuple[list[RawJob], dict[str, object], str, str]], concurrency: int
+) -> tuple[list[RawJob], list[dict[str, object]], list[str], str]:
+    """Fold per-board results into the run's rows, report details and errors.
+
+    The run reports the first failing board's provider URL, and only falls back to
+    the first board that named one when nothing failed.
+    """
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
+    error_provider_url = ""
+    for source_jobs, entry_report, error, board_error_provider_url in results:
+        entry_report["sourceFetchConcurrency"] = concurrency
+        jobs.extend(source_jobs)
+        details.append(entry_report)
+        if not error:
+            continue
+        errors.append(error)
+        if board_error_provider_url and not error_provider_url:
+            error_provider_url = board_error_provider_url
+    if error_provider_url:
+        return jobs, details, errors, error_provider_url
+    return jobs, details, errors, _dover_provider_url(details)
+
+
 def _run_dover_sources(
     *,
     adapter_name: str = "dover",
@@ -175,112 +358,21 @@ def _run_dover_sources(
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
     """Read every registered Dover board, two requests per board."""
-    jobs: list[RawJob] = []
-    errors: list[str] = []
-    details: list[dict[str, object]] = []
-    provider_url = ""
-
-    def _process_source(
-        source: dict[str, object],
-    ) -> tuple[list[RawJob], dict[str, object], str, str]:
-        source_started = time.perf_counter()
-        source_name, studio = _dover_source_identity(source)
-        slug_url = dover_source_slug_url(source)
-        source_jobs: list[RawJob] = []
-        error = ""
-        error_provider_url = ""
-        entry_report = build_provider_entry_report(
-            adapter_name=adapter_name,
-            studio=studio,
-            source_name=source_name,
-            extra={"providerUrl": slug_url},
-        )
-        apply_provider_cache_decision(
-            entry_report=entry_report,
-            source_name=source_name,
-            adapter_name=adapter_name,
-            source_state_rows=source_state_rows,
-            force_refresh_all=force_refresh_all,
-        )
-        if not slug_url:
-            entry_report["status"] = "error"
-            entry_report["error"] = default_error
-            entry_report["durationMs"] = _elapsed_ms(source_started)
-            error = f"{registry_adapter}:{source_name}: {default_error}"
-            return source_jobs, entry_report, error, error_provider_url
-        if skip_provider_for_cache(entry_report):
-            entry_report["durationMs"] = _elapsed_ms(source_started)
-            return source_jobs, entry_report, error, error_provider_url
-        if provider_revalidate_not_modified(
-            url=slug_url,
-            entry_report=entry_report,
-            source_name=source_name,
-            source_state_rows=source_state_rows,
-            timeout_s=timeout_s,
-            revalidate_url=conditional_revalidate_url,
-        ):
-            entry_report["durationMs"] = _elapsed_ms(source_started)
-            return source_jobs, entry_report, error, error_provider_url
-        try:
-            fetch_started = time.perf_counter()
-            slug_payload = _resolve_dover_fetch(
-                slug_url, fetch_payload, fetch_text, timeout_s, retries, backoff_s
-            )
-            client_id = _dover_client_id(slug_payload, slug_url)
-            jobs_url = dover_jobs_api_url(client_id)
-            if not jobs_url:
-                raise DoverSourceError(f"dover: no jobs url for client id {client_id!r}")
-            # The jobs URL is what the source is really read from, so that is the
-            # providerUrl the report and the revalidation identity carry.
-            entry_report["providerUrl"] = jobs_url
-            entry_report["clientId"] = client_id
-            payload = _resolve_dover_fetch(
-                jobs_url, fetch_payload, fetch_text, timeout_s, retries, backoff_s
-            )
-            entry_report["fetchMs"] = _elapsed_ms(fetch_started)
-            parse_started = time.perf_counter()
-            parsed = _provider_parsers.parse_dover_jobs_payload(payload, source, studio)
-            entry_report["parseMs"] = _elapsed_ms(parse_started)
-            entry_report["fetchedCount"] = _dover_payload_count(payload)
-            entry_report["keptCount"] = len(parsed)
-            for row in parsed:
-                row["adapter"] = adapter_name
-                row["studio"] = studio
-            source_jobs.extend(parsed)
-        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
-            reraise_unexpected_provider_api_source_exception(exc)
-            entry_report["status"] = "error"
-            entry_report["error"] = str(exc)
-            error_provider_url = clean_text(entry_report.get("providerUrl")) or slug_url
-            error = f"{registry_adapter}:{source_name}: {exc}"
-        entry_report["durationMs"] = _elapsed_ms(source_started)
-        return source_jobs, entry_report, error, error_provider_url
-
+    ctx = _DoverRunContext(
+        adapter_name=adapter_name,
+        registry_adapter=registry_adapter,
+        default_error=default_error,
+        fetch_text=fetch_text,
+        fetch_payload=fetch_payload,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
+    )
     sources = list(registry_entries(registry_adapter))
-    concurrency = max(1, min(DOVER_SOURCE_FETCH_CONCURRENCY, len(sources) or 1))
-    if concurrency <= 1 or len(sources) <= 1:
-        results = [_process_source(source) for source in sources]
-    else:
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            results = list(executor.map(_process_source, sources))
-    for source_jobs, entry_report, error, error_provider_url in results:
-        entry_report["sourceFetchConcurrency"] = concurrency
-        if source_jobs:
-            jobs.extend(source_jobs)
-        details.append(entry_report)
-        if error:
-            errors.append(error)
-            if error_provider_url and not provider_url:
-                provider_url = error_provider_url
-    if not provider_url:
-        provider_url = next(
-            (
-                clean_text(detail.get("providerUrl"))
-                for detail in details
-                if clean_text(detail.get("providerUrl"))
-            ),
-            "",
-        )
+    results, concurrency = _collect_dover_results(ctx, sources)
+    jobs, details, errors, provider_url = _merge_dover_results(results, concurrency)
 
     set_source_diagnostics(
         f"{registry_adapter}_sources",

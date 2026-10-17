@@ -25,7 +25,6 @@ on:
       - "opencode.json"
       - "LICENSE"
       - "release-notes.md"
-      - "umbrel-app-store.yml"
       # A manifest or lockfile edit is usually a dev-dependency edit, and dev
       # deps install into the image's build stage only -- `Dockerfile` copies
       # forward just the built `.container-frontend` bundle. Rebuilding here
@@ -61,7 +60,6 @@ on:
       - "opencode.json"
       - "LICENSE"
       - "release-notes.md"
-      - "umbrel-app-store.yml"
       - "package.json"
       - "package-lock.json"
       # `data/*` is excluded from the image then re-included path by path; these

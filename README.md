@@ -22,11 +22,15 @@ Baluffo aggregates game development job listings from across the web into one fa
 
 That's it. Your data stays on your machine. Windows packaged data lives under `%APPDATA%\Baluffo`; Linux follows XDG paths. See [Local Setup](docs/LOCAL_SETUP.md) and [WSL/Linux Setup](docs/WSL_SETUP.md) for development and platform details.
 
-### Umbrel / Container
+### Container
 
-Baluffo also ships as a private Umbrel/community-app container through `ghcr.io/deathuman/baluffo:<version>`. Umbrel metadata lives in `umbrel-app-store.yml` and `deathuman-baluffo/`; install it through a private Umbrel community app store, then open the Umbrel-proxied LAN app URL on port `8877`.
+Baluffo also ships as one same-origin container image, `ghcr.io/deathuman/baluffo:<version>`, for self-hosted HTTP deployments:
 
-Raw-LAN mode is for trusted local networks only because Umbrel auth is intentionally disabled for this channel. For release and deployment details, see [Release Process](docs/RELEASE.md).
+```bash
+docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:<version>
+```
+
+Raw-LAN mode is for trusted local networks only, because authentication is intentionally disabled for this channel. For release and deployment details, see [Release Process](docs/RELEASE.md).
 
 ---
 

@@ -22,7 +22,7 @@ Historical archive detail is intentionally trimmed for this personal project. [`
 | [`AI_CODER_SETUP.md`](AI_CODER_SETUP.md) | AI environment setup | You are preparing or checking Windows, WSL, or Linux tooling for AI-assisted work |
 | [`architecture-ai-map.md`](architecture-ai-map.md) | **Architecture map** | You need system boundaries, task-to-file routing, runtime guardrails, and compatibility-surface detail |
 | [`../AGENTS.md`](../AGENTS.md) | Workflow guardrails | You need repo-specific editing discipline, validation habits, and the canonical docs read path |
-| [`../.agents/skills/`](../.agents/skills/) | Repo-local workflow skills | You need the Baluffo workflow skills for desktop incident triage, job-data quality audits, provider coverage triage, catalogue coverage delivery, release shipping, or Umbrel performance triage |
+| [`../.agents/skills/`](../.agents/skills/) | Repo-local workflow skills | You need the Baluffo workflow skills for desktop incident triage, job-data quality audits, provider coverage triage, catalogue coverage delivery, release shipping, or container page-load triage |
 
 ## Compatibility Surfaces
 
@@ -184,7 +184,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Revisit Saved Job Tracker deferred work | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`frontend/local-data`](../frontend/local-data/), [`testing.md`](testing.md) |
 | Triage refactoring or dead-code candidates | [`archive/initial_findings-2026-08-20.md`](archive/initial_findings-2026-08-20.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
-| Prepare, validate, or operate Umbrel raw-LAN deployment | [`RELEASE.md`](RELEASE.md) | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
+| Prepare, validate, or operate a container deployment | [`RELEASE.md`](RELEASE.md) | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
 | Fix Google Sheets category title or redirect company leaks | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 | Improve provider discovery coverage | [`scraping-pipeline.md`](scraping-pipeline.md) | [`source-policy-runbook.md`](source-policy-runbook.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), [`snapshots/`](snapshots/) |
 | Revisit desktop RAM reduction | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | [`startup-probe-architecture.md`](startup-probe-architecture.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |

@@ -8,7 +8,7 @@ Baluffo ships through three distribution channels:
 
 - Ship bundle: the canonical zip-first release channel built around a versioned `app\versions\<version>` layout, PowerShell launchers, and the updater/recovery flow.
 - Portable EXE: a Windows desktop wrapper built with `PyInstaller` and the desktop launcher runtime that embeds the ship bundle under `ship\` and uses the ship bundle as its runtime payload.
-- Container / Umbrel: a Linux container published to `ghcr.io/deathuman/baluffo` for private Umbrel community app-store installs and other same-origin HTTP service deployments.
+- Container: a Linux container published to `ghcr.io/deathuman/baluffo` for same-origin HTTP service deployments.
 
 Important rules:
 
@@ -20,7 +20,7 @@ Important rules:
 
 ## Cross-Channel Release Checkpoint
 
-Before publishing a desktop release after a run of container/Umbrel-only patches, compare the latest public desktop tag with current `main`. If shared fixes accumulated since that tag, write a desktop-facing rollup changelog entry and use a new release identity rather than tagging a narrow container patch whose notes understate the desktop-visible change set.
+Before publishing a desktop release after a run of container-only patches, compare the latest public desktop tag with current `main`. If shared fixes accumulated since that tag, write a desktop-facing rollup changelog entry and use a new release identity rather than tagging a narrow container patch whose notes understate the desktop-visible change set.
 
 For example, when the latest public desktop release is behind `main`, the release owner should explicitly decide whether the next release is:
 
@@ -249,7 +249,7 @@ Portable desktop in-app update flow:
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
-### Container / Umbrel
+### Container
 
 Prerequisites:
 
@@ -292,33 +292,31 @@ Runtime notes:
 The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
 Docs, tests, and repo-process-only branch/PR changes are path-filtered out of the container workflow, so they should not republish the current app-version or `latest` GHCR tags. Tag pushes and manual `workflow_dispatch` runs still publish normally.
 
-Raw-LAN Umbrel installs are unauthenticated for anyone who can reach the app port. The embedded source-sync config follows the existing desktop packaging deterrence model and should use the same least-privilege GitHub App allowlist.
+Self-hosted container deployments that expose the port on a LAN are unauthenticated for anyone who can reach it: UI, Admin, and local-data routes included. Do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins. The embedded source-sync config follows the existing desktop packaging deterrence model and should use the same least-privilege GitHub App allowlist.
 
-Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`. Do not add a `web` service `ports: "8877:8080"` mapping; Umbrel binds the manifest `port: 8877` through `app_proxy`.
+Container ship checklist:
 
-Container / Umbrel ship checklist:
-
-1. Bump `src/app_version.py`, `deathuman-baluffo/umbrel-app.yml`, and `deathuman-baluffo/docker-compose.yml` to the same patch version, and add the matching changelog entry.
+1. Run `python scripts/bump_version.py <next>` to move `src/app_version.py`, `docs/CHANGELOG.md`, and `dist/baluffo-ship/app/current.txt` to the same patch version. Before writing, the command compares the version every present artifact declares and refuses to run when they disagree — a half-applied earlier bump would otherwise be carried forward, leaving release notes for a version the app never declared; pass `--allow-drift` to rewrite them all deliberately.
 2. Run the focused tests for the changed runtime surface, then the broader frontend/refactor/lint gates requested by the release plan.
 3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`.
 4. Smoke the local image with a fresh `/data` mount: `/ops/health`, UI load, same-origin runtime config, no wildcard CORS, disabled desktop-only routes, profile/job persistence, and source-sync status expectations for the build type.
 5. Push `main`, then verify normal main checks and `Build Container` are green when the change touches image-relevant paths. For docs/test/process-only changes, the container workflow may be intentionally skipped.
 6. Confirm `ghcr.io/deathuman/baluffo:<version>` exists with `linux/amd64` and `linux/arm64` manifests, and record the multi-arch digest.
 7. Smoke the published image far enough to prove `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []` for official publishes.
-8. Update or reinstall the Umbrel app, then verify the live raw-LAN app before declaring shipped.
+8. Deploy the published image to a host and verify the live app before declaring shipped.
 
-If live Umbrel smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
+If a live deployment smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
 
 #### Shipped-code version gate
 
-The `release` repo guardrail (`container_version_policy.py`) fails when container-affecting commits land on `main` after the most recent version bump without either advancing the version or declaring explicit release-tag intent. The `0.2.140` reuse trap it prevents: a version was bumped once and the Umbrel box updated to it, then container-affecting commits kept landing under the same version string — every `main` push republished the same `0.2.140`/`latest` tags with newer code, but Umbrel's app-store update detection keys purely on the `version:` string in `umbrel-app.yml`, so the box never re-pulled and silently ran an older build while the image tag drifted forward.
+The `release` repo guardrail (`container_version_policy.py`) fails when container-affecting commits land on `main` after the most recent version bump without either advancing the version or declaring explicit release-tag intent. The `0.2.140` reuse trap it prevents: a version was bumped once and a host updated to it, then container-affecting commits kept landing under the same version string — every `main` push republished the same `0.2.140`/`latest` tags with newer code, so the tag stopped describing the release it was published with while every install pinned to that version had no reason to re-pull.
 
 How to satisfy the gate:
 
 - Bump the version in the same commit batch as the container-affecting code (`python scripts/bump_version.py <next>`), or
 - Declare release-tag intent in a commit message with a `Release-tag: vX.Y.Z` line (or a `release(vX.Y.Z):` / `chore(release):` subject) naming a version strictly newer than the current one.
 
-The window the gate evaluates is the commits after the last commit that changed `src/app_version.py` or `deathuman-baluffo/umbrel-app.yml`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
+The window the gate evaluates is the commits after the last commit that changed `src/app_version.py`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
 
 #### Amending a version bump into an existing commit is a catch-22
 
@@ -444,9 +442,9 @@ Before any release:
 4. Validate any declared migrations and rollback behavior.
 5. Rehearse the release on a staging machine before publish.
 
-### Shared Desktop + Umbrel Public Closeout
+### Shared Desktop + Container Public Closeout
 
-When one version is intended to be both the public desktop release and the Umbrel Docker release:
+When one version is intended to be both the public desktop release and the container release:
 
 1. Confirm `main`, `origin/main`, `src/app_version.py`, `docs/CHANGELOG.md`, and release metadata all name the same version, and confirm the target tag/release does not already exist.
 2. Run `npm run release:preflight` on the exact commit to tag, then confirm the repo is still clean.
@@ -456,8 +454,8 @@ When one version is intended to be both the public desktop release and the Umbre
 6. Verify release assets: portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when the Linux workflow publishes it.
 7. Download `baluffo-desktop-update-manifest.json` and confirm its version, channel, schema, key id, signature, minimum updater version, rollback flag, portable artifact URL, checksum, and size match the release asset.
 8. Reconfirm GHCR `ghcr.io/deathuman/baluffo:<version>` after tag-side workflows finish, recording the final index digest and `linux/amd64` plus `linux/arm64` platforms.
-9. Reconfirm live Umbrel on the shipped version with `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary`.
-10. Record commit, tag, release URL, workflow run ids, asset names/sizes, manifest evidence, GHCR digest/platforms, Umbrel endpoint status, and residual risks in Basic Memory, then commit and push the curated BaluffoMemory repo.
+9. If a host deployment is in scope, reconfirm it on the shipped version with `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary`.
+10. Record commit, tag, release URL, workflow run ids, asset names/sizes, manifest evidence, GHCR digest/platforms, deployment endpoint status, and residual risks in Basic Memory, then commit and push the curated BaluffoMemory repo.
 
 ### Protecting Repo-Local Runtime Data During Release Prep
 
@@ -502,7 +500,7 @@ After the run completes, re-verify the published assets against the refreshed de
 
 Tags are immutable for *release assets*. A **published container tag is not**: GHCR lets any
 `Build Container` run overwrite `ghcr.io/deathuman/baluffo:<version>` in place, and the workflow fires on
-any push touching shipped code while the version in `umbrel-app.yml` is unchanged.
+any push touching shipped code while the version in `src/app_version.py` is unchanged.
 
 This is not hypothetical. On 2026-10-01, pushing the Q4/Q5 CSS deletion (`3f33e089`) republished the
 already-released `0.3.001` tag and moved it from `sha256:f6fa5b37` to `sha256:0d0f194c`. Nothing failed, no
@@ -520,8 +518,8 @@ if any(_has_valid_release_tag_intent(commit, current_version) for commit in ship
 
 One intent line discharged the whole window, and the window only reset at a bump. So once a commit declared
 `Release-tag: v<next>` while `<current>` was still published, **every later shipped push republished the live
-tag silently** — and because Umbrel's update check is string inequality, none of those republishes was ever
-offered to an existing install. That gate is fixed; see below.
+tag silently** — and because an install can only compare version strings, none of those republishes ever
+told an existing install to update. That gate is fixed; see below.
 
 - **Shipped code is not landable on `main` while the current version tag is published**, unless the same
   commit bumps the version. Either bump `src/app_version.py` in that commit, or keep the change on a branch
@@ -546,8 +544,8 @@ Two deliberate limits:
   that a version that reached GHCR without ever being tagged reads as unreleased; that is the inert window
   anyway, since nothing can hold the version string.
 - **Pre-release republishing is still allowed.** Between a bump and its tag, any shipped push republishes the
-  not-yet-released version. Nothing can install that string and Umbrel's string-equality check means it is
-  never offered, so the churn is unreachable by users and blocking it would cost a release-window fix for
+  not-yet-released version. Nothing can install that string and an install only updates when the version
+  string moves, so the churn is unreachable by users and blocking it would cost a release-window fix for
   nothing.
 
 `package.json` and `package-lock.json` are both in `NON_SHIPPED_PATTERNS` for the related reason that a
@@ -667,7 +665,7 @@ Two rows deserve to be read as decisions, not gaps:
 
 The Windows release runner needs **both** Playwright runtimes installed, because the frontend unit lane imports `@playwright/test` while the portable builder imports Python Playwright, and each resolves a different browser revision. `build-portable-exe.yml` installs both and fails fast naming a missing cache entry; a workflow that installs only one will hang the unit lane rather than fail it.
 
-Before running `python scripts/bump_version.py <version>`, author the release compatibility phrases into the `[Unreleased]` changelog section. `repo_guardrails` does not require a "compatibility sentence": `test_release_docs_cover_the_current_public_release_line` asserts six literal substrings — `same-origin Linux container`, `Umbrel raw-LAN installs`, `GHCR multi-arch image publishing`, `private community app-store metadata`, `wildcard browser CORS allow headers`, `desktop localhost bridge compatibility` — inside the new `## [<app_version>] - <date>` section, which must also carry a Keep-a-Changelog `###` subsection and at least one `- ` bullet. Bumping prose-free `[Unreleased]` content therefore fails `release:preflight` on the docs guardrail.
+Before running `python scripts/bump_version.py <version>`, author the release compatibility phrases into the `[Unreleased]` changelog section. `repo_guardrails` does not require a "compatibility sentence": `test_release_docs_cover_the_current_public_release_line` asserts four literal substrings — `same-origin Linux container`, `GHCR multi-arch image publishing`, `wildcard browser CORS allow headers`, `desktop localhost bridge compatibility` — inside the new `## [<app_version>] - <date>` section, which must also carry a Keep-a-Changelog `###` subsection and at least one `- ` bullet. Bumping prose-free `[Unreleased]` content therefore fails `release:preflight` on the docs guardrail.
 
 `test_top_release_notes_stay_user_readable` additionally bounds the shape of that top section — at most 2,000 words and no bullet over 1,200 characters — and prints a non-blocking advisory when implementation detail leaks in. It never scans historical sections.
 
@@ -675,7 +673,7 @@ The same release commit is also where the changelog's **clamp** is applied. `doc
 
 Bumping straight from one released section to the next (as 0.3.004 and 0.3.005 did) is also how a change ends up described twice. `test_no_change_is_claimed_by_two_release_sections` fails when the same bullet appears in two release sections, because it makes each of them appear to ship a change only one of them did. Fold the unreleased sections into the new one and keep each change described once. The single exception is a deliberate **rollup** release that restates an earlier release's notes for users skipping versions: it may duplicate bullets provided it declares that in a blockquote under its heading, exactly as `## [0.3.001]` does.
 
-### Container / Umbrel Verification
+### Container Verification
 
 Container builds use the checked-in `Dockerfile` and run:
 
@@ -702,18 +700,9 @@ ghcr.io/deathuman/baluffo
 
 The GHCR workflow builds `linux/amd64` and `linux/arm64` using Docker buildx and QEMU. Pull request builds validate the image without pushing; default-branch and tag builds publish to GHCR when the workflow runs. Docs, tests, and repo-process-only branch/PR changes are path-filtered out so they do not republish the current app-version or `latest` tags. Tag pushes and manual `workflow_dispatch` publishes are not skipped by those path filters.
 
-Umbrel private app-store metadata lives at:
+Raw LAN exposure is a supported deployment choice for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
 
-- `umbrel-app-store.yml`
-- `deathuman-baluffo/umbrel-app.yml`
-- `deathuman-baluffo/docker-compose.yml`
-- `deathuman-baluffo/exports.sh`
-
-Umbrel Compose uses `app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts `${APP_DATA_DIR}/data:/data`. The intended raw LAN URL is `http://192.168.50.61:8877/`; Umbrel binds that host port from `umbrel-app.yml`, so the `web` service must not publish the same port.
-
-Raw LAN exposure is intentional for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
-
-Umbrel live smoke is required for Umbrel release closeout. Verify:
+When a host deployment is in scope, live smoke is required before closeout. Verify:
 
 1. `/ops/health.appVersion` matches the shipped version, `startupReady == true`, and the pipeline is idle unless the smoke is intentionally running.
 2. `admin.html` and `jobs.html` return HTTP 200 with fresh cache-busted frontend modules.
@@ -722,7 +711,7 @@ Umbrel live smoke is required for Umbrel release closeout. Verify:
 5. The jobs data feed loads and its count matches the completed pipeline `finalOutputCount` after a pipeline smoke.
 6. A manual or scheduled Jobs pipeline terminalizes cleanly, leaves `/ops/task-state?view=summary.count == 0`, writes fetch/discovery evidence under `/data`, and does not fail through an absolute safety-cap timeout.
 
-Record the final commit SHA, workflow run ids, GHCR digest/platforms, Umbrel installed version, registry/sync/jobs/pipeline smoke results, and residual risk in Basic Memory.
+Record the final commit SHA, workflow run ids, GHCR digest/platforms, deployed version, registry/sync/jobs/pipeline smoke results, and residual risk in Basic Memory.
 
 ### Post-Release / Incident Checks
 

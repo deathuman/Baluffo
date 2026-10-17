@@ -10,6 +10,7 @@ import yaml
 from tools.repo_health.container_version_policy import (
     NON_SHIPPED_PATTERNS,
     ROOT,
+    VERSION_FILES,
     WindowCommit,
     _declared_release_tag_versions,
     _is_shipped_path,
@@ -39,11 +40,12 @@ def _init_git_repo(tmp_path: Path) -> Path:
 
 def _write_version_files(repo: Path, version: str) -> None:
     (repo / "src").mkdir(parents=True, exist_ok=True)
-    (repo / "deathuman-baluffo").mkdir(parents=True, exist_ok=True)
     (repo / "src" / "app_version.py").write_text(f'APP_VERSION = "{version}"\n', encoding="utf-8")
-    (repo / "deathuman-baluffo" / "umbrel-app.yml").write_text(
-        f'version: "{version}"\n', encoding="utf-8"
-    )
+
+
+def test_version_source_is_app_version_only() -> None:
+    """One version source: retired app-store metadata is not a release anchor here."""
+    assert VERSION_FILES == ("src/app_version.py",)
 
 
 def _commit_all(repo: Path, message: str) -> None:
@@ -61,7 +63,7 @@ def _commit_bump(repo: Path) -> None:
 
 def test_is_shipped_path_classifies_docs_vs_code() -> None:
     assert _is_shipped_path("src/jobs/adapters/plugins/static/phapp.py")
-    assert _is_shipped_path("deathuman-baluffo/docker-compose.yml")
+    assert _is_shipped_path("scripts/bump_version.py")
     assert _is_shipped_path("data/defaults/source-registry-active.seed.json")
     assert _is_shipped_path("Dockerfile")
     assert not _is_shipped_path("docs/RELEASE.md")
@@ -78,8 +80,8 @@ def test_memory_notes_are_not_shipped_paths() -> None:
     """Continuity notes must not force a container republish.
 
     ``memory/`` was a shipped path, so committing a memory note re-triggered
-    ``Build Container`` and retagged the current version with newer code while
-    ``umbrel-app.yml`` still declared the old version -- the 0.2.140 reuse trap.
+    ``Build Container`` and retagged the current version with newer code -- the
+    0.2.140 reuse trap.
     """
     assert not _is_shipped_path("memory/platform-improvement-report-2026-08-26.md")
     assert not _is_shipped_path("memory/notes/anything.md")
@@ -140,8 +142,7 @@ def test_dockerignore_and_nonshipped_agree_on_dev_tooling() -> None:
     Not a blanket cross-check: the two lists are deliberately not 1:1.
     `package-lock.json` is excluded from neither (the Dockerfile copies it and it
     changes the build), and `tools/**` is non-shipped for edits while most of it
-    still enters the image. The rule that holds is narrower -- dev/agent tooling
-    must be absent from both.
+    still enters the image. Dev/agent tooling must be absent from both.
     """
     patterns = _dockerignore_patterns()
     non_shipped = set(NON_SHIPPED_PATTERNS)
@@ -332,9 +333,8 @@ def test_evaluate_window_allows_dev_dependency_bump_once_released() -> None:
 def test_evaluate_window_allows_pre_release_churn_by_default() -> None:
     """Before a release, republishing the bumped version is inert and stays allowed.
 
-    Nobody can hold an unreleased version string, and Umbrel's update check is
-    string inequality, so this churn reaches nobody. Blocking it would cost a
-    release-window fix for nothing.
+    Nobody can hold an unreleased version string, so this churn reaches nobody.
+    Blocking it would cost a release-window fix for nothing.
     """
     commits = [
         _commit(

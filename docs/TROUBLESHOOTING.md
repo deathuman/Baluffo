@@ -217,7 +217,7 @@ Use the retained event file when console logs are unavailable or too noisy. The 
 | Active tasks | Check `/ops/task-state?view=summary`; healthy terminal state has `count: 0` |
 | Child report | Inspect `jobs-fetch-report.json` or `source-discovery-report.json` under the active data root; a live child should show fresh progress or heartbeat evidence |
 | Lifecycle evidence | Inspect retained bridge lifecycle events before concluding the child is dead; stale report artifacts alone are not proof of liveness |
-| Umbrel smoke | On the raw-LAN app, also confirm `/ops/health.appVersion`, `/sync/status`, `jobs.html`, and the jobs data feed after the pipeline settles |
+| Deployed-host smoke | On the running container, also confirm `/ops/health.appVersion`, `/sync/status`, `jobs.html`, and the jobs data feed after the pipeline settles |
 
 If the child is still making progress but the parent failed with an absolute safety-cap error, treat it as parent wait accounting rather than a fetcher parsing failure. If the child lifecycle row is terminal and the matching report is missing or unfinished, the parent should fail or cancel promptly instead of waiting for the absolute cap.
 
@@ -261,7 +261,7 @@ type data\jobs-fetch-report.json | findstr /C:"error"
 | Safe demotion | Check sync or registry diagnostics for `registryAutoHeal.safeAutomation`; load-time safe demotion should not immediately undo discovery-auto-approved active rows |
 | Healthy state | A repaired terminal report has `taskProgress.active == false`, registry summary/source counts matching report finalization, and no active discovery task in `/ops/task-state?view=summary` |
 
-On Umbrel, a mismatch can appear after a completed discovery if auto-approval persistence or load-time registry normalization diverges from the terminal report. Do not manually edit registry files first; use the bridge routes to gather evidence so JSON/gzip/journal and registry authority stay consistent.
+On a deployed host, a mismatch can appear after a completed discovery if auto-approval persistence or load-time registry normalization diverges from the terminal report. Do not manually edit registry files first; use the bridge routes to gather evidence so JSON/gzip/journal and registry authority stay consistent.
 
 ### Discovery finds no candidates
 

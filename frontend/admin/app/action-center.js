@@ -403,7 +403,7 @@ export function createActionCenterController({
     }
   }
 
-  // ponytail: execCommand fallback for non-secure contexts (Umbrel LAN http),
+  // ponytail: execCommand fallback for non-secure contexts (plain-http LAN),
   // where navigator.clipboard is unavailable; drop when the UI is https-only.
   async function copyTextToClipboard(text) {
     const clipboardApi = typeof navigator === "undefined" ? null : navigator.clipboard;

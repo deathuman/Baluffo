@@ -17,7 +17,7 @@ Use this skill to resume provider/source-policy coverage work from evidence inst
    - Inspect current `_out/source-policy-soak-report.json`, `data/jobs-fetch-report.json`, and `data/source-discovery-report.json` when present before making claims.
 
 2. Classify the current blocker.
-   - For live Umbrel diagnostics, start with `/ops/task-failure-attempts` before changing discovery/provider behavior.
+   - For live deployment diagnostics, start with `/ops/task-failure-attempts` before changing discovery/provider behavior.
    - Separate expected fetch exclusions, discovery dedupe skips, queue-filtered rows, permanent DNS misses, and 404/410 generated-path negatives from actionable parser, provider, TLS, 403/5xx, timeout, or validation failures.
    - Use soak buckets such as `fetchedButNotValidated`, `validatedProviderMissingMigrationSourceIdentity`, `zeroKeptFetched`, `fetchError`, and `providerCoverageNextAction`.
    - Separate parser bugs, genuinely empty boards, auth/401 boards, migration-link gaps, and unsupported provider gaps.

@@ -16,7 +16,7 @@ Baluffo is a local-first game jobs aggregator with four main surfaces:
 1. Frontend: plain HTML/CSS/JS ES modules (`jobs.html`, `saved.html`, `admin.html`)
 2. Backend: Python for fetching, discovery, sync, and the local HTTP bridge
 3. Desktop: Windows packaging/runtime that launches the site and bridge locally
-4. Container: one same-origin UI/API service for Umbrel/private LAN deployments
+4. Container: one same-origin UI/API service for self-hosted LAN deployments
 
 This is not a React/Vite app and not a cloud backend.
 
@@ -43,7 +43,7 @@ Canonical docs are authoritative only for the surface they declare. Use routing 
 
 If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
-After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container/Umbrel-proven `main`, decide whether a desktop rollup release should be planned before more feature work. After a public shared desktop/Umbrel release, update stale `current-focus` memory, push the curated BaluffoMemory repo, and verify local release skills still point agents at the current release closeout checklist.
+After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container-proven `main`, decide whether a desktop rollup release should be planned before more feature work. After a public shared desktop/container release, update stale `current-focus` memory, push the curated BaluffoMemory repo, and verify local release skills still point agents at the current release closeout checklist.
 
 Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep Baluffo workflow skills there so they travel with this repository instead of installing them as user-global skills.
 
@@ -75,7 +75,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 |-------------|----------------|
 | Frontend syntax/wiring | `node --check frontend/jobs/app.js` |
 | Bridge changes | Start with the focused route/service tests, then `python -m pytest tests/admin/ -q`; run route inventory/guardrails when route ownership moves |
-| Container / Umbrel changes | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted frontend unit checks from [`testing.md`](testing.md) |
+| Container changes | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted frontend unit checks from [`testing.md`](testing.md) |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
 | Integer coercion | `python -m pytest tests/test_shared_utils_coercion.py -q` — covers nan/inf/Decimal/bool/str handling and holds the no-new-unsafe-helper ratchet |

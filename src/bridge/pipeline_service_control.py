@@ -201,7 +201,7 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         """Resolve and normalize the child's taskProgress before locking.
 
         ponytail: the fetch report is intentionally sparse during
-        executing_sources (0.2.114 Umbrel pressure fix — the report only gets
+        executing_sources (0.2.114 container pressure fix — the report only gets
         written at phase changes), so its taskProgress counts freeze at the
         phase-entry snapshot while the run grinds on. The live counts live in
         the sibling task-state file (jobs-fetch-tasks.json) — the same surface
@@ -262,7 +262,7 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         The pipeline wait loops already load the child report (discovery/fetch/sync)
         on every iteration, so this reuses that read to keep the pipeline status
         payload's active child carrying real counters / ratio / ETA without extra
-        I/O. For fetch, the report stays sparse during source execution (Umbrel
+        I/O. For fetch, the report stays sparse during source execution (container
         pressure fix), so the live task-state sibling is preferred — the same
         surface the admin ops live page reads. The update is in-memory only; the
         control-status file is written on the existing bounded heartbeat cadence.

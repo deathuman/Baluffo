@@ -386,61 +386,15 @@ class JobRuntimeStore:
     ) -> int:
         if delete_cap is not None and int(delete_cap) <= 0:
             return 0
-        current = self.current_generation()
-        keep_count = max(1, int(keep_generations or 1))
-        if keep_count <= 1:
-            if delete_cap is None:
-                rows = self.store.execute_read(
-                    """
-                    SELECT feed_generation
-                    FROM jobs
-                    WHERE feed_generation != ?
-                    GROUP BY feed_generation
-                    ORDER BY MIN(updated_at) ASC
-                    """,
-                    (current,),
-                )
-            else:
-                rows = self.store.execute_read(
-                    """
-                    SELECT feed_generation
-                    FROM jobs
-                    WHERE feed_generation != ?
-                    GROUP BY feed_generation
-                    ORDER BY MIN(updated_at) ASC
-                    LIMIT ?
-                    """,
-                    (current, int(delete_cap)),
-                )
-            generations = [_clean_text(row.get("feed_generation")) for row in rows]
-        else:
-            all_gens = self.store.execute_read(
-                """
-                SELECT feed_generation, MAX(updated_at) as latest_updated, MAX(rowid) as latest_rowid
-                FROM jobs
-                GROUP BY feed_generation
-                ORDER BY latest_updated DESC, latest_rowid DESC
-                """
+        generations = [
+            generation
+            for generation in self._deletable_generations(
+                current=self.current_generation(),
+                keep_count=max(1, int(keep_generations or 1)),
+                delete_cap=delete_cap,
             )
-            to_keep = {current}
-            for row in all_gens:
-                gen = _clean_text(row.get("feed_generation"))
-                if gen:
-                    to_keep.add(gen)
-                if len(to_keep) >= keep_count:
-                    break
-            candidates = [
-                _clean_text(row.get("feed_generation"))
-                for row in all_gens
-                if _clean_text(row.get("feed_generation")) not in to_keep
-            ]
-            candidates.reverse()
-            if delete_cap is not None:
-                generations = candidates[: int(delete_cap)]
-            else:
-                generations = candidates
-
-        generations = [generation for generation in generations if generation]
+            if generation
+        ]
         if not generations:
             return 0
 
@@ -451,6 +405,75 @@ class JobRuntimeStore:
 
         self.store.write(delete_old)
         return len(generations)
+
+    def _deletable_generations(
+        self, *, current: str, keep_count: int, delete_cap: int | None
+    ) -> list[str]:
+        """Generations the retention policy may delete, in deletion order."""
+        if keep_count <= 1:
+            return self._generations_before_current(current, delete_cap)
+        return self._generations_beyond_keep(current, keep_count, delete_cap)
+
+    def _generations_before_current(self, current: str, delete_cap: int | None) -> list[str]:
+        """Everything except the current generation, oldest ``feed_generation`` first."""
+        if delete_cap is None:
+            rows = self.store.execute_read(
+                """
+                SELECT feed_generation
+                FROM jobs
+                WHERE feed_generation != ?
+                GROUP BY feed_generation
+                ORDER BY MIN(updated_at) ASC
+                """,
+                (current,),
+            )
+        else:
+            rows = self.store.execute_read(
+                """
+                SELECT feed_generation
+                FROM jobs
+                WHERE feed_generation != ?
+                GROUP BY feed_generation
+                ORDER BY MIN(updated_at) ASC
+                LIMIT ?
+                """,
+                (current, int(delete_cap)),
+            )
+        return [_clean_text(row.get("feed_generation")) for row in rows]
+
+    def _generations_beyond_keep(
+        self, current: str, keep_count: int, delete_cap: int | None
+    ) -> list[str]:
+        """Everything outside the newest ``keep_count`` generations.
+
+        The current generation is always kept even when it is older than the
+        newest ones, and candidates are reversed so the least recently written go
+        first -- the same order the single-generation path deletes in.
+        """
+        all_gens = self.store.execute_read(
+            """
+            SELECT feed_generation, MAX(updated_at) as latest_updated, MAX(rowid) as latest_rowid
+            FROM jobs
+            GROUP BY feed_generation
+            ORDER BY latest_updated DESC, latest_rowid DESC
+            """
+        )
+        to_keep = {current}
+        for row in all_gens:
+            gen = _clean_text(row.get("feed_generation"))
+            if gen:
+                to_keep.add(gen)
+            if len(to_keep) >= keep_count:
+                break
+        candidates = [
+            _clean_text(row.get("feed_generation"))
+            for row in all_gens
+            if _clean_text(row.get("feed_generation")) not in to_keep
+        ]
+        candidates.reverse()
+        if delete_cap is None:
+            return candidates
+        return candidates[: int(delete_cap)]
 
     def _records_for_rows(
         self,

@@ -9,8 +9,8 @@ Used by `scripts/perf_admin_flows.py` to run a container against a realistic
 production-sized dataset without committing real payloads to git.
 
 ``--from-volume-path`` points at the *data* directory, not a repo root: pass
-``data`` for this checkout, or ``/home/umbrel/app_data/baluffo/data`` for a live
-Umbrel host. Individual artifacts are accepted as either the plain file or its
+``data`` for this checkout, or the host's mounted ``/data`` for a deployed
+container. Individual artifacts are accepted as either the plain file or its
 ``.gz`` sibling, because a container ``/data`` keeps them flat while this repo's
 ``data/`` stores some registry and feed artifacts gzip-on-disk.
 """
@@ -131,9 +131,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=True,
         help=(
             "Path to the Baluffo data directory containing the artifacts. "
-            "For a live Umbrel host that is "
-            "/home/umbrel/app_data/baluffo/data; for this repo checkout pass "
-            "`data` (not the repo root)."
+            "For a deployed container that is the mounted `/data`; for this "
+            "repo checkout pass `data` (not the repo root)."
         ),
     )
     parser.add_argument(

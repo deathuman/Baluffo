@@ -1,22 +1,22 @@
 ---
-name: baluffo-umbrel-performance-triage
-description: Diagnose Baluffo Umbrel Admin, Jobs, Sync, Discovery, and page-load slowness with Codex in-app Browser and Developer-mode evidence before proposing code changes. Use when the user reports slow Umbrel UI, high LCP or CLS, blank or false-empty Admin panels, excessive polling, source or log DOM pressure, or mismatch between backend profiling and browser-visible behavior.
+name: baluffo-container-performance-triage
+description: Diagnose Baluffo container-deployment Admin, Jobs, Sync, Discovery, and page-load slowness with in-app Browser and Developer-mode evidence before proposing code changes. Use when the user reports slow self-hosted container UI, high LCP or CLS, blank or false-empty Admin panels, excessive polling, source or log DOM pressure, or mismatch between backend profiling and browser-visible behavior.
 ---
 
-# Baluffo Umbrel Performance Triage
+# Baluffo Container Performance Triage
 
-Use this skill to keep Umbrel performance work Browser-evidence-first and bounded. Treat repo docs, source, tests, and `AGENTS.md` as canonical; use Basic Memory only for continuity and recent live gotchas.
+Use this skill to keep container performance work Browser-evidence-first and bounded. Treat repo docs, source, tests, and `AGENTS.md` as canonical; use Basic Memory only for continuity and recent live gotchas.
 
 ## Evidence Order
 
 1. Confirm live state without mutation.
-   - Default target is `http://192.168.50.61:8877/` unless the user gives another URL.
+   - Default target is `http://127.0.0.1:8877/` (the documented local container run) unless the user gives another URL.
    - Probe one compact endpoint batch: `/ops/health`, `/ops/task-state?view=summary`, `/tasks/run-jobs-pipeline-status`, `/data/jobs-unified-startup.json`, `/sync/status?view=summary`, and `/discovery/report?view=summary`.
    - Record app version, startup readiness, active task state, HTTP status, elapsed time, and obvious route outliers.
-   - If port `8877` is refused or timing out, classify reachability before changing Baluffo code.
+   - If the port is refused or timing out, classify reachability before changing Baluffo code: `python scripts/container_reachability_probe.py --host <host> --port <port>` records host, TCP, and compact-route evidence under `_out/container-reachability/`.
 
 2. Capture browser-perceived evidence.
-   - Prefer Codex in-app Browser with Developer mode/CDP access for traces, console, network, DOM/style inspection, screenshots, and interaction.
+   - Prefer the in-app Browser with Developer mode/CDP access for traces, console, network, DOM/style inspection, screenshots, and interaction.
    - Always create a fresh Browser-managed tab and navigate it explicitly for proof work; do not rely on the currently selected tab reported in the prompt.
    - Use the Browser plugin/in-app browser path; do not use Chrome DevTools MCP, external Playwright MCP, or standalone Playwright automation unless the user explicitly requests that fallback.
    - For broad Admin/Jobs performance work, capture six browser traces where available: Admin cold, Admin warm, Jobs cold, Jobs warm, Jobs to Admin, and Admin to Jobs.
@@ -29,11 +29,11 @@ Use this skill to keep Umbrel performance work Browser-evidence-first and bounde
    - Do not optimize sync, provider fetch, source policy, or backend internals unless browser-visible evidence shows the page is waiting on them.
    - For active Discovery/Fetch/Sync work, sample compact hot-state routes with fixed attempts only: `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, `/ops/task-live/fetch?view=summary`, and `/app/ready`.
    - Treat repeated `/registry/sources`, `/registry/conflicts`, `/admin/ops-tab-counts`, `/ops/dashboard-health`, full task-live, or fetch-log timeout spam during active work as evidence of an active-polling regression.
-   - Live Umbrel Browser proof only counts for a patch after `/ops/health.appVersion` equals the target version; older live installs are diagnostic evidence only.
+   - Live-browser proof only counts for a patch after `/ops/health.appVersion` equals the target version; an older running deployment is diagnostic evidence only.
 
 4. Produce one compact triage report.
    - Include current live facts, trace artifact paths, the top bottlenecks in priority order, the smallest fix direction, acceptance criteria, and what is deliberately out of scope.
-   - If Codex Browser/Developer mode, browser access, or Umbrel reachability is blocked, stop with a bounded blocker report instead of guessing.
+   - If Browser/Developer mode, browser access, or host reachability is blocked, stop with a bounded blocker report instead of guessing.
 
 ## Defaults And Acceptance
 

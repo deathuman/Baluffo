@@ -969,7 +969,7 @@ def run_release_group() -> list[GuardFailure]:
         if failure:
             failures.append(failure)
     # The container shipped-code version gate is a pre-push gate: it stops container
-    # code from shipping to the GHCR/Umbrel channel under a frozen version string at
+    # code from shipping to the GHCR container channel under a frozen version string at
     # publish time. Local commits are meant to land first (AGENTS: "the offending
     # commit always lands locally first -- that is by design"), so a local pre-commit
     # run skips it via --skip-container-version-gate; pre-push runs keep it enforced.

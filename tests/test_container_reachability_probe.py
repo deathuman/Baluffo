@@ -3,35 +3,35 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts import umbrel_reachability_probe as probe
+from scripts import container_reachability_probe as probe
 
 
 def _sample(
     *,
     neighbor: dict[str, object] | None = None,
     ping_ok: bool = True,
-    port80_ok: bool = True,
-    port8877_ok: bool = True,
+    port_ok: bool = True,
     http: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
-        "target": {"host": probe.DEFAULT_HOST, "umbrelPort": 80, "baluffoPort": 8877},
+        "target": {"host": probe.DEFAULT_HOST, "port": probe.DEFAULT_PORT},
         "neighbor": neighbor or {"mac": "98-F2-B3-E7-C9-5A", "state": "reachable"},
         "ping": {"ok": ping_ok},
-        "tcp": {"80": {"ok": port80_ok}, "8877": {"ok": port8877_ok}},
+        "tcp": {str(probe.DEFAULT_PORT): {"ok": port_ok}},
         "http": http
         if http is not None
         else {path: {"ok": True, "status": 200} for path in probe.normal_http_paths()},
     }
 
 
+def test_default_target_is_the_local_container_smoke_command() -> None:
+    """No stale LAN host is baked in; the default is the documented local run."""
+    assert probe.DEFAULT_HOST in {"127.0.0.1", "localhost"}
+    assert probe.DEFAULT_PORT == 8877
+
+
 def test_classifies_host_unreachable_when_arp_ping_and_ports_are_down() -> None:
-    sample = _sample(
-        neighbor={"mac": None, "state": "missing"},
-        ping_ok=False,
-        port80_ok=False,
-        port8877_ok=False,
-    )
+    sample = _sample(neighbor={"mac": None, "state": "missing"}, ping_ok=False, port_ok=False)
 
     assert probe.classify_sample(sample) == {
         "status": "unhealthy",
@@ -40,23 +40,13 @@ def test_classifies_host_unreachable_when_arp_ping_and_ports_are_down() -> None:
     }
 
 
-def test_classifies_umbrel_port_down_after_host_is_seen() -> None:
-    sample = _sample(port80_ok=False, port8877_ok=True)
+def test_classifies_container_port_down_after_host_is_seen() -> None:
+    sample = _sample(port_ok=False)
 
     assert probe.classify_sample(sample) == {
         "status": "unhealthy",
-        "domain": "umbrel_proxy",
-        "reason": "umbrel-port-down",
-    }
-
-
-def test_classifies_baluffo_port_down_after_umbrel_port_is_seen() -> None:
-    sample = _sample(port80_ok=True, port8877_ok=False)
-
-    assert probe.classify_sample(sample) == {
-        "status": "unhealthy",
-        "domain": "baluffo_app_proxy",
-        "reason": "baluffo-port-down",
+        "domain": "container_port",
+        "reason": "container-port-down",
     }
 
 

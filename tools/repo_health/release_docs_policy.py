@@ -27,7 +27,7 @@ CHANGELOG_MAX_RELEASED_SECTIONS = 5
 # "implementation detail leaked into release notes" smell; a human decides.
 _ADVISORY_INTERNAL_LEAK_PATTERNS = (
     (r"`[^`]*\.(?:py|mjs|cjs|js|ts|css|yml|yaml|json|gz)`", "code filename"),
-    (r"`(?:src|tools|tests|frontend|docs|scripts|deathuman-baluffo)/", "repo path"),
+    (r"`(?:src|tools|tests|frontend|docs|scripts)/", "repo path"),
     (r"static_source::", "loader id"),
     (r"\b__[a-z]+__\b", "dunder attribute"),
 )
@@ -1018,9 +1018,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     )
     assert "\n- " in top_release
     assert "same-origin Linux container" in top_release
-    assert "Umbrel raw-LAN installs" in top_release
     assert "GHCR multi-arch image publishing" in top_release
-    assert "private community app-store metadata" in top_release
     assert "wildcard browser CORS allow headers" in top_release
     assert "desktop localhost bridge compatibility" in top_release
     assert "## [Unreleased]" in changelog_text
