@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -83,16 +84,20 @@ def test_valid_allowlist_entries_become_ignore_args(tmp_path: Path, monkeypatch)
 def test_committed_security_inputs_close_python_security_caveats(repo_root: Path) -> None:
     requirements = (repo_root / "requirements.txt").read_text(encoding="utf-8")
     lock = (repo_root / "requirements-lock.txt").read_text(encoding="utf-8")
-    advisory_ids = security_audit.load_allowlist(
-        repo_root / "tools" / "security" / "pip-audit-allowlist.json",
-        today=date(2026, 5, 21),
-    )
+    allowlist_path = repo_root / "tools" / "security" / "pip-audit-allowlist.json"
+    advisory_ids = security_audit.load_allowlist(allowlist_path, today=date(2026, 10, 17))
+    entries = json.loads(allowlist_path.read_text(encoding="utf-8"))["allowlist"]
 
     assert "Scrapy==2.19.0" in requirements
     assert "Twisted==26.4.0" in requirements
     assert "scrapy==2.19.0" in lock
     assert "twisted==26.4.0" in lock
-    assert advisory_ids == []
+    # The only allowlisted advisory is the twisted IMAP ReDoS, which cannot be
+    # upgraded away: 26.4.0 is PyPI's latest and is the flagged version, and the
+    # vulnerable module (twisted.mail.imap4) is never imported. Pinning the exact
+    # id here means any *other* advisory has to be dealt with by an upgrade.
+    assert advisory_ids == ["CVE-2026-106454"]
+    assert [entry["package"] for entry in entries] == ["twisted"]
 
 
 def test_missing_pip_audit_fails_with_install_guidance(monkeypatch) -> None:

@@ -126,9 +126,12 @@ _PLAN_STATUS_DATE = re.compile(r"(20\d\d)-(\d\d)-(\d\d)")
 
 # "through ~2026-08-31" is an end date; "since 2026-05-30" is a start date and does
 # not expire. Only treat a date as a deadline when it is introduced as one.
+# The keyword must be a whole word, not one half of a hyphenated compound:
+# "end-to-end runbook added 2026-10-14" is a deployment note, and reading its
+# "end" as a deadline reported a lapsed deferral on a plan that deferred nothing.
 _PLAN_STATUS_DEADLINE = re.compile(
-    r"\b(?:through|until|by|before|ends?|expires?|closes?|deadline)\b[^.;]{0,40}?"
-    r"(20\d\d)-(\d\d)-(\d\d)",
+    r"(?<![\w-])(?:through|until|by|before|ends?|expires?|closes?|deadline)(?![\w-])"
+    r"[^.;]{0,40}?(20\d\d)-(\d\d)-(\d\d)",
     re.IGNORECASE,
 )
 

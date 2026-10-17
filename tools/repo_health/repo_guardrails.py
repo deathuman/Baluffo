@@ -206,6 +206,19 @@ def _local_markdown_target(raw: str) -> str | None:
     return target.split("#", 1)[0]
 
 
+# `_out/` holds gitignored evidence -- perf runs, closeouts, probe bodies. A link
+# to it cannot resolve in a fresh clone or in CI, where the directory never
+# exists. Reading that as a broken doc link failed the docs group on every clean
+# checkout: docs/plans/discovery-performance-follow-up-plan.md names three
+# `../../_out/perf-runs/...` artifacts that live only on the author's disk. The
+# evidence is checked where it is produced, not by the doc-link guard.
+def _points_at_gitignored_evidence(target: str, resolved: Path) -> bool:
+    if "_out" in Path(target).parts:
+        return True
+    evidence_root = ROOT / "_out"
+    return resolved == evidence_root or evidence_root in resolved.parents
+
+
 def check_markdown_links() -> list[str]:
     missing: list[str] = []
     for doc_path in _iter_doc_paths():
@@ -215,6 +228,8 @@ def check_markdown_links() -> list[str]:
             if target is None:
                 continue
             resolved = (doc_path.parent / target).resolve()
+            if _points_at_gitignored_evidence(target, resolved):
+                continue
             if not resolved.exists():
                 missing.append(f"{doc_path.relative_to(ROOT)} -> {target}")
     return missing
@@ -758,6 +773,7 @@ def run_workflow_group() -> list[GuardFailure]:
         for name in (
             "test_release_workflow_uses_canonical_test_entrypoints",
             "test_lint_workflow_uses_canonical_precommit_entrypoints",
+            "test_lint_workflow_runs_for_every_pull_request",
             "test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner",
             "test_release_workflow_installs_both_playwright_runtimes",
             "test_release_workflow_playwright_cache_guard_selects_both_consumers",

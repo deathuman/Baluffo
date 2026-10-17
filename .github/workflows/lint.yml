@@ -3,8 +3,10 @@ name: Lint
 on:
   push:
     branches: [main]
+  # Every pull request, not only those targeting main: a stacked PR's base is a
+  # feature branch, and a main-only filter left it running `validate` alone while
+  # the Pre-commit gate -- the one that actually lints -- was never scheduled.
   pull_request:
-    branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
