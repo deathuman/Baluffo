@@ -118,6 +118,21 @@ def test_package_json_exposes_js_security_audit_entrypoint(repo_root: Path) -> N
     )
 
 
+def test_lint_workflow_runs_for_every_pull_request(repo_root: Path) -> None:
+    """A stacked PR's base is a feature branch, so a main-only filter skips the gate.
+
+    Real case: a docs PR based on another PR's branch ran only `validate`, because
+    lint.yml limited `pull_request` to `main`. The gate that would have run the
+    pre-commit checks was never scheduled, and nothing in the checks said so.
+    """
+    workflow_text = (repo_root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+    assert "pull_request:" in workflow_text, "lint.yml should run on pull requests."
+    assert not re.search(r"pull_request:\s*\n\s+branches:", workflow_text), (
+        "lint.yml's pull_request trigger must not filter base branches: a stacked PR targets "
+        "a feature branch and would otherwise run only `validate`, never the Pre-commit gate."
+    )
+
+
 def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(
     repo_root: Path,
 ) -> None:

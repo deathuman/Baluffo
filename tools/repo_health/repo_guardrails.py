@@ -767,6 +767,7 @@ def run_workflow_group() -> list[GuardFailure]:
         for name in (
             "test_release_workflow_uses_canonical_test_entrypoints",
             "test_lint_workflow_uses_canonical_precommit_entrypoints",
+            "test_lint_workflow_runs_for_every_pull_request",
             "test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner",
             "test_release_workflow_installs_both_playwright_runtimes",
             "test_release_workflow_playwright_cache_guard_selects_both_consumers",
