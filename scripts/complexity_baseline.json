@@ -41,6 +41,7 @@
     "src/jobs/adapters/parsers/provider_html.py::parse_ashby_jobs_from_html": 14,
     "src/jobs/adapters/parsers/structured_listing.py::_parse_structured_listing_page": 16,
     "src/jobs/adapters/plugins/provider_api/dayforce.py::_run_dayforce_registry_source": 12,
+    "src/jobs/adapters/plugins/provider_api/dover_runner.py::_run_dover_sources": 16,
     "src/jobs/adapters/plugins/provider_api/greenhouse_runner.py::_run_greenhouse_boards": 13,
     "src/jobs/adapters/plugins/provider_api/json_feed.py::_run_json_feed_sources": 14,
     "src/jobs/adapters/plugins/provider_api/teamtailor_runner.py::_append_teamtailor_jobs": 12,
@@ -106,6 +107,7 @@
     "src/source_registry_auto_approval.py::apply_discovery_auto_approval": 14,
     "src/source_sync_config.py::config_status": 12,
     "src/source_sync_config.py::load_packaged_sync_config": 16,
-    "src/storage/evidence_archive.py::enforce_retention": 13
+    "src/storage/evidence_archive.py::enforce_retention": 13,
+    "src/storage/job_runtime.py::cleanup_old_generations": 11
   }
 }
