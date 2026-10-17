@@ -29,35 +29,6 @@ function isAllowedAttachment(file) {
   );
 }
 
-export async function hydrateAttachmentLists(jobs, deps) {
-  const {
-    currentUser,
-    listAttachmentsForJob,
-    renderAttachmentList,
-    renderAttachmentError
-  } = deps;
-  if (!currentUser || !Array.isArray(jobs)) return;
-
-  for (const job of jobs) {
-    const jobKey = String(job.jobKey || job.id || "");
-    if (!jobKey) continue;
-    try {
-      const rowsResult = await listAttachmentsForJob(currentUser.uid, jobKey);
-      if (!rowsResult?.ok) throw new Error(rowsResult?.error || "Could not load attachments.");
-      renderAttachmentList(jobKey, rowsResult.data || []);
-    } catch (err) {
-      // A failure must not render as "No attachments yet." - that reads as a
-      // legitimate empty list and hides a real problem from the user.
-      console.error("Could not list attachments:", err);
-      if (typeof renderAttachmentError === "function") {
-        renderAttachmentError(jobKey);
-      } else {
-        renderAttachmentList(jobKey, []);
-      }
-    }
-  }
-}
-
 export async function hydrateAttachmentList(jobKey, deps) {
   const {
     currentUser,
@@ -260,13 +231,6 @@ export function renderAttachmentList(jobKey, attachments, deps) {
     `;
   }).join("");
   bindAttachmentActionButtons();
-}
-
-export function renderAttachmentLoading(jobKey, deps) {
-  const { savedJobsListEl, cssEscape } = deps;
-  const container = savedJobsListEl?.querySelector(`.attachments-list[data-job-key="${cssEscape(jobKey)}"]`);
-  if (!container) return;
-  container.innerHTML = '<div class="muted">Loading attachments...</div>';
 }
 
 export function renderAttachmentError(jobKey, deps) {
