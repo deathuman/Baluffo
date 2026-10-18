@@ -4,14 +4,22 @@ AI boundary owns: jobs adapter package surface, default source loader assembly, 
 AI boundary implement in: this file for adapter package wiring; loader behavior stays in adapter leaf modules.
 AI boundary search before contracts: provider/static/social adapter packages, source loader registry, and adapter tests.
 AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs adapter registry tests.
+
+Subpackages and the extracted-adapter table resolve on attribute access (PEP 562).
+Importing this package used to pull every provider/static/social adapter (~0.3 s) for
+any caller that only wanted one leaf, and that eager edge also formed a
+`jobs.transport -> jobs.adapters -> jobs.transport` cycle the eager `src.jobs`
+package surface used to hide. Importing an adapter submodule now costs only that
+submodule.
 """
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
+from types import ModuleType
 from typing import Any
 
-from src.jobs.adapters import community, provider_api, social, static
 from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text
 from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
@@ -19,12 +27,73 @@ from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 from ..common import config as common_config
 from ..common import social as common_social
 
+_LAZY_SUBMODULES = ("community", "provider_api", "social", "static")
+
+
+def __getattr__(name: str) -> Any:
+    if name in _LAZY_SUBMODULES:
+        module: ModuleType = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
+    if name == "EXTRACTED_ADAPTERS":
+        table = _build_extracted_adapters()
+        globals()[name] = table
+        return table
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_LAZY_SUBMODULES) | {"EXTRACTED_ADAPTERS"})
+
+
+def _build_extracted_adapters() -> dict[str, Callable[..., Any]]:
+    from src.jobs.adapters import community, provider_api, social, static
+
+    return {
+        "google_sheets": community.run_google_sheets_source,
+        "remote_ok": community.run_remote_ok_source,
+        "remotive": community.run_remotive_source,
+        "gamesindustry": community.run_gamesindustry_source,
+        "gamejobs": community.run_gamejobs_source,
+        "workwithindies": community.run_workwithindies_source,
+        "8bitplay": community.run_8bitplay_source,
+        "gracklehq": community.run_gracklehq_source,
+        "epic_games_careers": community.run_epic_games_careers_source,
+        "wellfound": community.run_wellfound_source,
+        "social_reddit": social.run_social_reddit_source,
+        "social_x": social.run_social_x_source,
+        "social_mastodon": social.run_social_mastodon_source,
+        "greenhouse_boards": provider_api.run_greenhouse_boards_source,
+        "teamtailor_sources": provider_api.run_teamtailor_sources_source,
+        "lever_sources": provider_api.run_lever_sources_source,
+        "smartrecruiters_sources": provider_api.run_smartrecruiters_sources_source,
+        "workable_sources": provider_api.run_workable_sources_source,
+        "recruitee_sources": provider_api.run_recruitee_sources_source,
+        "pinpoint_sources": provider_api.run_pinpoint_sources_source,
+        "ashby_sources": provider_api.run_ashby_sources_source,
+        "dover_sources": provider_api.run_dover_sources_source,
+        "bamboohr_sources": provider_api.run_bamboohr_sources_source,
+        "dayforce_sources": provider_api.run_dayforce_sources_source,
+        "breezy_sources": provider_api.run_breezy_sources_source,
+        "jazzhr_sources": provider_api.run_jazzhr_sources_source,
+        "oracle_hcm_sources": provider_api.run_oracle_hcm_sources_source,
+        "workday_sources": provider_api.run_workday_sources_source,
+        "personio_sources": provider_api.run_personio_sources_source,
+        "scrapy_static_sources": static.run_scrapy_static_source,
+        "static_studio_pages": static.run_static_studio_pages_source,
+        "static_studio_pages_a_i": static.run_static_studio_pages_a_i_source,
+        "static_studio_pages_j_r": static.run_static_studio_pages_j_r_source,
+        "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
+    }
+
 
 def default_source_loaders(
     *,
     social_enabled: bool = False,
     social_config: dict[str, Any] | None = None,
 ) -> list[tuple[str, SourceLoader]]:
+    from src.jobs.adapters import community, provider_api, social, static
+
     social_cfg = (
         social_config
         if isinstance(social_config, dict)
@@ -133,41 +202,3 @@ def default_source_loaders(
             if name not in common_social.SOCIAL_SOURCE_NAMES
         ]
     return base_loaders + static.build_static_source_loaders()
-
-
-EXTRACTED_ADAPTERS = {
-    "google_sheets": community.run_google_sheets_source,
-    "remote_ok": community.run_remote_ok_source,
-    "remotive": community.run_remotive_source,
-    "gamesindustry": community.run_gamesindustry_source,
-    "gamejobs": community.run_gamejobs_source,
-    "workwithindies": community.run_workwithindies_source,
-    "8bitplay": community.run_8bitplay_source,
-    "gracklehq": community.run_gracklehq_source,
-    "epic_games_careers": community.run_epic_games_careers_source,
-    "wellfound": community.run_wellfound_source,
-    "social_reddit": social.run_social_reddit_source,
-    "social_x": social.run_social_x_source,
-    "social_mastodon": social.run_social_mastodon_source,
-    "greenhouse_boards": provider_api.run_greenhouse_boards_source,
-    "teamtailor_sources": provider_api.run_teamtailor_sources_source,
-    "lever_sources": provider_api.run_lever_sources_source,
-    "smartrecruiters_sources": provider_api.run_smartrecruiters_sources_source,
-    "workable_sources": provider_api.run_workable_sources_source,
-    "recruitee_sources": provider_api.run_recruitee_sources_source,
-    "pinpoint_sources": provider_api.run_pinpoint_sources_source,
-    "ashby_sources": provider_api.run_ashby_sources_source,
-    "dover_sources": provider_api.run_dover_sources_source,
-    "bamboohr_sources": provider_api.run_bamboohr_sources_source,
-    "dayforce_sources": provider_api.run_dayforce_sources_source,
-    "breezy_sources": provider_api.run_breezy_sources_source,
-    "jazzhr_sources": provider_api.run_jazzhr_sources_source,
-    "oracle_hcm_sources": provider_api.run_oracle_hcm_sources_source,
-    "workday_sources": provider_api.run_workday_sources_source,
-    "personio_sources": provider_api.run_personio_sources_source,
-    "scrapy_static_sources": static.run_scrapy_static_source,
-    "static_studio_pages": static.run_static_studio_pages_source,
-    "static_studio_pages_a_i": static.run_static_studio_pages_a_i_source,
-    "static_studio_pages_j_r": static.run_static_studio_pages_j_r_source,
-    "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
-}

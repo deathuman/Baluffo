@@ -15,13 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge import storage_health as storage_health_mod
-from src.jobs.availability_tombstones import (
-    TOMBSTONE_ARTIFACT_NAME,
-    capture_availability_tombstone,
-    read_availability_tombstones,
-    restore_availability_tombstone,
-    write_availability_tombstones,
-)
+
+# `src.jobs.availability_tombstones` imports `src.core.schemas`, which builds the whole
+# pydantic model layer at import time (~60 ms of the packaged bridge's startup). Every use
+# of it here is inside a function, so each function imports it on first call instead.
 from src.jobs.common import config as jobs_common_config
 from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.pipeline_io import (
@@ -175,6 +172,8 @@ def _jobs_feed_startup_path(jobs_fetch_report: Path) -> Path:
 
 
 def _jobs_feed_tombstone_path(jobs_fetch_report: Path) -> Path:
+    from src.jobs.availability_tombstones import TOMBSTONE_ARTIFACT_NAME
+
     return jobs_fetch_report.with_name(TOMBSTONE_ARTIFACT_NAME)
 
 
@@ -283,6 +282,11 @@ def _availability_updated_rows(
     entry: dict[str, Any],
     tombstones: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    from src.jobs.availability_tombstones import (
+        capture_availability_tombstone,
+        restore_availability_tombstone,
+    )
+
     status = str(entry.get("availabilityStatus") or "available")
     updated: list[dict[str, Any]] = []
     found = False
@@ -328,6 +332,10 @@ def reconcile_jobs_feed_availability(
     ctx: JobsFeedContext, *, availability_id: str, entry: dict[str, Any]
 ) -> JobsFeedReconciliationSnapshot | None:
     """Publish one availability transition through the current jobs-feed authority."""
+    from src.jobs.availability_tombstones import (
+        read_availability_tombstones,
+        write_availability_tombstones,
+    )
 
     safe_id = str(availability_id or "").strip()
     if not safe_id:

@@ -41,10 +41,6 @@ from src.shared.fetch_report_progress import (
     derive_fetch_task_progress,
     normalize_fetch_task_progress,
 )
-from src.source_discovery.candidate_review import (
-    build_candidate_review_payload,
-    enrich_candidates_for_review,
-)
 
 JsonObject = dict[str, Any]
 
@@ -392,6 +388,14 @@ def derive_discovery_queued_count(report: dict[str, Any], summary: dict[str, Any
 
 
 def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    # Candidate review belongs to discovery reports only. Importing it at module scope
+    # pulled the whole discovery/jobs adapter closure into the bridge startup path,
+    # where fetch-report normalization is all that is needed.
+    from src.source_discovery.candidate_review import (
+        build_candidate_review_payload,
+        enrich_candidates_for_review,
+    )
+
     src = _as_dict(payload)
     summary = _as_dict(src.get("summary"))
     runtime = _as_dict(src.get("runtime"))

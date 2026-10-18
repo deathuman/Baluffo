@@ -1,5 +1,7 @@
 import json
+import marshal
 import sys
+from importlib.util import cache_from_source
 from pathlib import Path
 from unittest import mock
 
@@ -573,3 +575,37 @@ def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:
             ).read_text(encoding="utf-8")
         )
         assert bundled_payload == {"repo": "example/Baluffo"}
+
+
+def test_bundle_precompiles_disk_loaded_sources_with_unchecked_hash() -> None:
+    """The packaged bridge imports the ship sources from disk on every launch.
+
+    Frozen runs set `sys.dont_write_bytecode`, so without shipped bytecode the bridge
+    recompiles its whole disk import closure each time. This pins the invalidation mode
+    that survives delivery: hash-based and unchecked, so the updater's fresh mtimes can
+    never invalidate the shipped bytecode.
+    """
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        version_dir = Path(tmp) / "app" / "versions" / "1.2.3"
+        package_dir = version_dir / "src" / "pkg"
+        package_dir.mkdir(parents=True)
+        (version_dir / "src" / "__init__.py").write_text("", encoding="utf-8")
+        module = package_dir / "mod.py"
+        module.write_text("VALUE = 1\n", encoding="utf-8")
+        stale_cache = package_dir / "__pycache__"
+        stale_cache.mkdir()
+        (stale_cache / "mod.cpython-313.pyc").write_bytes(b"stale")
+
+        compiled = build_ship_bundle.precompile_app_version_sources(version_dir)
+
+        assert compiled == 2
+        bytecode = Path(cache_from_source(str(module)))
+        assert bytecode.is_file()
+        assert bytecode.parent == stale_cache
+        payload = bytecode.read_bytes()
+        assert payload != b"stale"
+        flags = int.from_bytes(payload[4:8], "little")
+        assert flags & 0b01, "expected hash-based bytecode"
+        assert not flags & 0b10, "expected unchecked hash invalidation"
+        code = marshal.loads(payload[16:])
+        assert code.co_filename == "src/pkg/mod.py"

@@ -26,7 +26,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from src import source_sync_runtime
 from src.bridge import storage_health as storage_health_mod
 from src.bridge import sync_task_flow as _sync_task_flow
 from src.bridge.sync_state import (
@@ -421,11 +420,16 @@ class SyncService:
         with SYNC_STATE_LOCK:
             runtime_state = {**self._sync_state.get_sync_status()}
         rate_limit_payload = getattr(self._source_sync, "rate_limit_payload", None)
-        runtime_state["rateLimit"] = as_json_object(
-            rate_limit_payload()
-            if callable(rate_limit_payload)
-            else source_sync_runtime.rate_limit_payload(self._source_sync)
-        )
+        if callable(rate_limit_payload):
+            runtime_state["rateLimit"] = as_json_object(rate_limit_payload())
+        else:
+            # `source_sync_runtime` drags in cryptography's Fernet layer; this fallback
+            # branch is the only caller on the bridge side, so keep it off startup.
+            from src import source_sync_runtime
+
+            runtime_state["rateLimit"] = as_json_object(
+                source_sync_runtime.rate_limit_payload(self._source_sync)
+            )
         timing_history = load_sync_timing_history(self._sync_timing_history_path)
         return {
             "ok": True,

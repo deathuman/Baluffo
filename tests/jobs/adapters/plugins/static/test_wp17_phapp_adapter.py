@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+# The static adapter module registers the static plugin family on import. The adapter
+# package no longer imports every adapter at module scope, so importing it here keeps the
+# registry-selection tests independent of whatever else the session imported first.
+from src.jobs.adapters import static as _static_adapter  # noqa: F401
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.static import phapp
 

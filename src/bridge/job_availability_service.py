@@ -5,29 +5,94 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from src.bridge.task_launch_jobs_feed import (
-    JobsFeedContext,
-    JobsFeedReconciliationSnapshot,
-    jobs_feed_reconciliation_transaction,
-    reconcile_jobs_feed_availability,
-    rollback_jobs_feed_reconciliation,
-)
-from src.jobs.availability_validator import DirectLinkValidator
 from src.jobs.common.datetime_utils import parse_datetime
-from src.jobs.state_lifecycle import (
-    apply_direct_availability_evidence,
-    build_availability_history_payload,
-    lifecycle_state_fingerprint,
-    read_job_lifecycle_state,
-    write_job_lifecycle_state,
-)
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
 from src.shared.utils import now_iso
+
+if TYPE_CHECKING:
+    from src.bridge.task_launch_jobs_feed import (
+        JobsFeedContext,
+        JobsFeedReconciliationSnapshot,
+    )
+
+
+# The jobs-feed reconciliation and lifecycle-state helpers are thin wrappers that import
+# their owner on first call: together they pull the jobs adapter stack, which is a large
+# share of what the packaged bridge executes before it can answer a request. Keeping the
+# wrappers module-level (rather than importing inside each call site) is what lets callers
+# and tests keep patching these names on this module.
+
+
+def apply_direct_availability_evidence(
+    entry: dict[str, Any], evidence: dict[str, Any]
+) -> dict[str, Any]:
+    from src.jobs.state_lifecycle import apply_direct_availability_evidence as implementation
+
+    return implementation(entry, evidence)
+
+
+def build_availability_history_payload(
+    rows: dict[str, dict[str, Any]], *, finished_at: str, history_days: int | None = None
+) -> dict[str, Any]:
+    from src.jobs.state_lifecycle import build_availability_history_payload as implementation
+
+    if history_days is None:
+        return implementation(rows, finished_at=finished_at)
+    return implementation(rows, finished_at=finished_at, history_days=history_days)
+
+
+@contextmanager
+def jobs_feed_reconciliation_transaction(data_dir: Path) -> Iterator[Any]:
+    from src.bridge.task_launch_jobs_feed import (
+        jobs_feed_reconciliation_transaction as implementation,
+    )
+
+    with implementation(data_dir):
+        yield
+
+
+def lifecycle_state_fingerprint(state_path: Path) -> tuple[int, int] | None:
+    from src.jobs.state_lifecycle import lifecycle_state_fingerprint as implementation
+
+    return implementation(state_path)
+
+
+def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
+    from src.jobs.state_lifecycle import read_job_lifecycle_state as implementation
+
+    return implementation(state_path)
+
+
+def reconcile_jobs_feed_availability(
+    ctx: JobsFeedContext, *, availability_id: str, entry: dict[str, Any]
+) -> JobsFeedReconciliationSnapshot | None:
+    from src.bridge.task_launch_jobs_feed import (
+        reconcile_jobs_feed_availability as implementation,
+    )
+
+    return implementation(ctx, availability_id=availability_id, entry=entry)
+
+
+def rollback_jobs_feed_reconciliation(
+    ctx: JobsFeedContext, snapshot: JobsFeedReconciliationSnapshot
+) -> None:
+    from src.bridge.task_launch_jobs_feed import (
+        rollback_jobs_feed_reconciliation as implementation,
+    )
+
+    implementation(ctx, snapshot)
+
+
+def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
+    from src.jobs.state_lifecycle import write_job_lifecycle_state as implementation
+
+    implementation(state_path, rows)
 
 
 class JobAvailabilityService:
@@ -41,8 +106,9 @@ class JobAvailabilityService:
     ) -> None:
         self.data_dir = Path(data_dir)
         self.local_store_factory = local_store_factory
-        self.validator = validator or DirectLinkValidator()
+        self._validator = validator
         self.enforce_direct = bool(enforce_direct)
+
         self._lock = threading.RLock()
         # File-backed evidence application is serialized independently from
         # in-memory run bookkeeping so status/start remain responsive while a
@@ -68,6 +134,20 @@ class JobAvailabilityService:
         self._sweep_lock = threading.Lock()
         self._sweep_thread: threading.Thread | None = None
         self._sweep_wakeup = threading.Event()
+
+    @property
+    def validator(self) -> Any:
+        # ``DirectLinkValidator`` drags in the adapter transport stack; the bridge
+        # constructs this service during startup, before any check is requested.
+        if self._validator is None:
+            from src.jobs.availability_validator import DirectLinkValidator
+
+            self._validator = DirectLinkValidator()
+        return self._validator
+
+    @validator.setter
+    def validator(self, value: Any) -> None:
+        self._validator = value
 
     @property
     def lifecycle_path(self) -> Path:
@@ -509,6 +589,11 @@ class JobAvailabilityService:
     def _rewrite_feeds(
         self, availability_id: str, entry: dict[str, Any]
     ) -> tuple[JobsFeedContext, JobsFeedReconciliationSnapshot]:
+        from src.bridge.task_launch_jobs_feed import (
+            JobsFeedContext,
+            JobsFeedReconciliationSnapshot,
+        )
+
         def _save_json_atomic(path: Path, payload: Any) -> None:
             write_atomic_if_changed(
                 path, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

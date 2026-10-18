@@ -15,7 +15,7 @@ from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,14 +24,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import source_discovery as _discovery_mod
 from src import source_registry as source_registry_module
-from src import source_sync as source_sync_module
 from src.app_version import get_app_version as _get_app_version
 from src.baluffo_config import get_bridge_defaults, get_storage_defaults
 from src.baluffo_config import get_security_defaults as _get_security_defaults
 from src.bridge import SYNC_STATE_LOCK as _SYNC_STATE_LOCK
-from src.bridge import SyncService, report_normalizer
+from src.bridge import SyncService, admin_root_lazy_exports, report_normalizer
 from src.bridge import SyncState as _SyncState
 from src.bridge import admin_entrypoint_api as admin_entrypoint_api_mod
 from src.bridge import admin_entrypoint_runtime as admin_entrypoint_runtime_mod
@@ -41,15 +39,9 @@ from src.bridge import admin_task_runtime as admin_task_runtime_mod
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import config as bridge_config
 from src.bridge import diagnostic_events as _diagnostic_events
-from src.bridge import html_extractor as _html_extractor_mod
 from src.bridge import ops_api as _ops_api_mod
-from src.bridge import registry_conflict_adjudication as _registry_conflict_adjudication_mod
 from src.bridge import registry_sync_flow as _registry_sync_flow_mod
 from src.bridge import run_history_api as _run_history_api
-from src.bridge import source_check_api as _source_check_api_mod
-from src.bridge import source_check_fetch as _source_check_fetch_mod
-from src.bridge import source_check_http as _source_check_http_mod
-from src.bridge import source_checker as _source_checker_mod
 from src.bridge import sync_task_flow as _sync_task_flow_mod
 from src.bridge import task_launch_api as _task_launch_api_mod
 from src.bridge.admin_entrypoint_services import (
@@ -91,12 +83,6 @@ from src.bridge.source_helpers import (
 )
 from src.bridge.sync_state import SYNC_CONFIG_PATH_DEFAULT, SYNC_RUNTIME_PATH_DEFAULT
 from src.contracts import SCHEMA_VERSION as _SCHEMA_VERSION
-from src.jobs.adapters import default_source_loaders as _default_source_loaders
-from src.jobs.adapters.html_parsers import parse_jobpostings_from_html as _parse_html
-from src.jobs.common.registry_defaults import (
-    DEFAULT_STUDIO_SOURCE_REGISTRY as _DEFAULT_STUDIO_SOURCE_REGISTRY,
-)
-from src.jobs.transport import normalize_url as _normalize_job_url
 from src.shared.utils import now_iso as _now_iso
 from src.shared.utils import now_utc
 from src.ship.desktop_update_service import DesktopUpdateService
@@ -133,6 +119,9 @@ from src.source_registry import (
     unique_sources as _unique_sources,
 )
 
+if TYPE_CHECKING:
+    from src import source_sync as source_sync_module
+
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
 normalize_discovery_report_contract = report_normalizer.normalize_discovery_report_contract
 _safe_int = report_normalizer.safe_int
@@ -140,7 +129,6 @@ source_url_fingerprint = source_registry_module.source_url_fingerprint
 
 os = _os
 time = _time
-discovery = _discovery_mod
 bridge_runtime_state = _bridge_runtime_state
 diagnostic_events = _diagnostic_events
 get_app_version = _get_app_version
@@ -149,27 +137,17 @@ SCHEMA_VERSION = _SCHEMA_VERSION
 SYNC_STATE_LOCK = _SYNC_STATE_LOCK
 SyncState = _SyncState
 APPROVAL_STATE_PATH = _APPROVAL_STATE_PATH
-_html_extractor = _html_extractor_mod
 _ops_api = _ops_api_mod
 _registry_sync_flow = _registry_sync_flow_mod
-_registry_conflict_adjudication = _registry_conflict_adjudication_mod
-_source_check_api = _source_check_api_mod
-_source_check_fetch = _source_check_fetch_mod
-_source_check_http = _source_check_http_mod
-_source_checker = _source_checker_mod
 _sync_task_flow = _sync_task_flow_mod
 _task_launch_api = _task_launch_api_mod
 RegistryPaths = _RegistryPaths
 DiscoveryDeps = _DiscoveryDeps
 DiscoveryPaths = _DiscoveryPaths
-DEFAULT_STUDIO_SOURCE_REGISTRY = _DEFAULT_STUDIO_SOURCE_REGISTRY
-default_source_loaders = _default_source_loaders
 find_existing_source_by_url = _find_existing_source_by_url
 find_existing_static_source_by_studio_domain = _find_existing_static_source_by_studio_domain
 infer_studio_name_from_host = _infer_studio_name_from_host
 is_tombstoned = _is_tombstoned
-parse_jobpostings_from_html = _parse_html
-normalize_job_url = _normalize_job_url
 ensure_source_id = _ensure_source_id
 normalize_source_url = _normalize_source_url
 source_identity = _source_identity
@@ -178,6 +156,21 @@ REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
 _ADMIN_ROOT = sys.modules[__name__]
+
+
+# Deferred root attributes (see src.bridge.admin_root_lazy_exports): the discovery/jobs
+# closure loads on first access instead of at bridge startup. Resolved values are cached
+# in this module's globals so the attribute surface stays a plain module attribute.
+def __getattr__(name: str) -> Any:
+    if name not in admin_root_lazy_exports.LAZY_ROOT_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = admin_root_lazy_exports.resolve_lazy_root_export(name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(admin_root_lazy_exports.LAZY_ROOT_EXPORTS))
 
 
 def _bind_admin_root(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -337,6 +330,10 @@ def load_saved_sync_settings() -> dict[str, Any]:
 
 
 def refresh_sync_config() -> source_sync_module.SyncConfig:
+    # `source_sync` pulls its shard/crypto closure (~70 ms of disk modules), which only
+    # sync task starts need, so it stays off the bridge's startup import path.
+    from src import source_sync as source_sync_module
+
     sync_config = BRIDGE_SERVICES.refresh_sync_config(_get_sync_service().refresh_sync_config)
     return cast(source_sync_module.SyncConfig, sync_config)
 
@@ -399,16 +396,18 @@ trigger_source_check = _bind_admin_root(admin_registry_api_mod.trigger_source_ch
 
 
 def check_registry_conflicts(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return _registry_conflict_adjudication.run_registry_conflict_adjudication(
+    from src.bridge import registry_conflict_adjudication as adjudication
+
+    return adjudication.run_registry_conflict_adjudication(
         build_bridge_api(RUNTIME_CONFIG),
         payload if isinstance(payload, dict) else {},
     )
 
 
 def load_registry_conflict_adjudication() -> dict[str, Any]:
-    return _registry_conflict_adjudication.load_registry_conflict_adjudication(
-        build_bridge_api(RUNTIME_CONFIG)
-    )
+    from src.bridge import registry_conflict_adjudication as adjudication
+
+    return adjudication.load_registry_conflict_adjudication(build_bridge_api(RUNTIME_CONFIG))
 
 
 def run_background_script(

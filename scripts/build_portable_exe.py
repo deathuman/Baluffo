@@ -236,6 +236,15 @@ MAIN_RUNTIME_EXCLUDED_MODULES = (
     "hypothesis.strategies",
     "pydantic.v1._hypothesis_plugin",
     "hamcrest",
+    # PyInstaller's hook-setuptools adds a `pyi_rth_setuptools` runtime hook that imports
+    # `setuptools` (and `_distutils_hack`) before the entry script runs. Nothing in this
+    # bundle imports either one; the hook is the only importer in the graph, so it is a
+    # self-feeding import chain that costs ~110 ms of the packaged bridge child's 220 ms
+    # spawn window (frozen boot: 187 ms -> 77 ms measured on 2026-10-18). Leaving the
+    # modules out makes PyInstaller skip the hook entirely. Python 3.13 has no stdlib
+    # `distutils`, and no runtime dependency here imports it.
+    "setuptools",
+    "_distutils_hack",
 )
 UPDATER_HELPER_HIDDEN_IMPORTS = (
     "encodings.idna",

@@ -293,6 +293,20 @@ def test_portable_build_excludes_test_only_pyinstaller_dependency_trees() -> Non
     assert expected_exclusions.issubset(set(MAIN_RUNTIME_EXCLUDED_MODULES))
 
 
+def test_portable_build_excludes_setuptools_boot_hook() -> None:
+    """PyInstaller's setuptools runtime hook is the largest packaged-spawn cost.
+
+    `pyi_rth_setuptools` imports `setuptools` before the entry script runs, which is the
+    only importer of `setuptools` in this bundle. Excluding the modules removes the hook
+    and roughly halves the frozen bridge child's boot; nothing in the packaged runtime
+    imports setuptools or distutils.
+    """
+    excluded = set(MAIN_RUNTIME_EXCLUDED_MODULES)
+
+    assert {"setuptools", "_distutils_hack"} <= excluded
+    assert "tkinter" not in excluded
+
+
 def test_portable_build_keeps_scrapy_runtime_collection() -> None:
     assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(
         set(OPTIONAL_SCRAPY_RUNTIME_PACKAGES)

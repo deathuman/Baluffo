@@ -16,7 +16,6 @@ import traceback
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from importlib import resources
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -257,6 +256,8 @@ class BaluffoStore:
         )
 
     def _load_migrations(self) -> list[_Migration]:
+        from importlib import resources
+
         migration_root = resources.files(MIGRATIONS_PACKAGE)
         migrations: list[_Migration] = []
         for entry in sorted(migration_root.iterdir(), key=lambda item: item.name):

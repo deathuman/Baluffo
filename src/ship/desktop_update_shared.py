@@ -37,12 +37,24 @@ from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.update_manager_paths import ShipPaths
 from src.ship.update_manager_state import ensure_state as ensure_ship_update_state
 
-try:
-    import psutil as _psutil
-except ImportError:
-    psutil: Any = None
-else:
-    psutil = _psutil
+# psutil is resolved on first use: it costs ~6 ms of module exec on the packaged
+# bridge's startup path (plus its native `_psutil_windows` extension) and only the
+# pid-liveness probe below needs it. The binding stays a plain module attribute so
+# callers and tests can patch it; `_UNSET` marks "not resolved yet".
+_UNSET: Any = object()
+psutil: Any = _UNSET
+
+
+def _psutil_module() -> Any:
+    global psutil
+    if psutil is _UNSET:
+        try:
+            import psutil as module
+        except ImportError:
+            module = None
+        psutil = module
+    return psutil
+
 
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
@@ -385,6 +397,7 @@ def pid_is_running(pid: int) -> bool:
     pid = int(pid or 0)
     if pid <= 0:
         return False
+    psutil = _psutil_module()
     if psutil is not None:
         try:
             process = psutil.Process(pid)

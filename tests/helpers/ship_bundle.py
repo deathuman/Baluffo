@@ -14,6 +14,10 @@ def copy_minimal_app_version(version_dir: Path) -> None:
     ship_dir.mkdir(parents=True, exist_ok=True)
     (version_dir / "packaging").mkdir(parents=True, exist_ok=True)
     shutil.copytree(build_ship_bundle.ROOT / "src" / "storage", src_dir / "storage")
+    # `src.storage.baluffo_store` imports these sibling leaves, so the storage probe in
+    # `validate_app_version_python_imports` cannot run without them.
+    for rel in ("storage_metrics.py", "source_registry_identity.py"):
+        shutil.copy2(build_ship_bundle.ROOT / "src" / rel, src_dir / rel)
     for path, text in (
         (src_dir / "__init__.py", ""),
         (src_dir / "admin_bridge.py", "# test stub\n"),

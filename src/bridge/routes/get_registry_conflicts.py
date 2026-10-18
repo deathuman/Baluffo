@@ -12,7 +12,6 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
     load_registry_conflicts_payload,
@@ -108,6 +107,10 @@ def registry_conflicts_badge_from_exact_summary(
         registry_auto_heal=registry_auto_heal,
     )
     if _clean_text(conflicts_payload.get("summaryStatus")).lower() != "ready":
+        # Adjudication drags in discovery probing and the jobs adapter closure; the
+        # summary-cache fast path (and bridge startup) must not pay for it.
+        from src.bridge.registry_conflict_adjudication import overlay_adjudication
+
         full_payload = load_registry_conflicts_payload(
             load_state=api.load_state,
             load_json_object=api.load_json_object,
@@ -155,6 +158,8 @@ def handle_registry_conflict_routes(
     query: dict[str, list[str]],
 ) -> bool:
     if path == "/registry/conflicts":
+        from src.bridge.registry_conflict_adjudication import overlay_adjudication
+
         view = str((query.get("view") or [""])[0] or "").strip().lower()
         source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
         adjudication = api.load_registry_conflict_adjudication()
