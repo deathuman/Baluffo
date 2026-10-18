@@ -698,3 +698,19 @@ def test_run_http_server_propagates_keyboard_interrupt_from_accept_loop(monkeypa
     assert created_servers[0].closed is True
     assert ("info", "admin_bridge_shutdown_requested") in api.logs
     assert ("info", "admin_bridge_stopped") in api.logs
+
+
+def test_accepted_count_treats_an_infinite_metric_as_zero(monkeypatch) -> None:
+    """``int(float("inf"))`` raises OverflowError, which is not a ValueError.
+
+    The accept loop reads this on every iteration to drive the first-paint
+    budget, so an unrepresentable metric has to degrade to zero rather than
+    escape the loop.
+    """
+    monkeypatch.setattr(
+        httpd,
+        "snapshot_accept_metrics",
+        lambda: {"acceptedCount": float("inf")},
+    )
+
+    assert httpd._accepted_count() == 0

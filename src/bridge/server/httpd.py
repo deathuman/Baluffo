@@ -43,7 +43,7 @@ def _accepted_count() -> int:
     try:
         raw = snapshot_accept_metrics().get("acceptedCount")
         return int(raw) if isinstance(raw, (int, float, str)) else 0
-    except (TypeError, ValueError, OSError):
+    except (OverflowError, TypeError, ValueError, OSError):
         return 0
 
 
