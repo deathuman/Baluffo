@@ -94,8 +94,84 @@ Store rules:
 - Startup verifies schema version, WAL mode, foreign keys, and `quick_check`.
 - Backups use SQLite backup APIs, then validate the restored database with `quick_check`.
 - WAL checkpointing is required only at controlled points: after large terminal writes, explicit maintenance, backup preparation, and clean shutdown. Do not checkpoint on hot heartbeats.
+- Background maintenance (`baluffo-sqlite-wal-maintenance`,
+  `baluffo-sqlite-compaction-maintenance`) takes the store write lock for its whole
+  run, so it must never land on a startup write path.
 
-`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
+## Maintenance Scheduling Rules
+
+WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
+
+- `write()` schedules a checkpoint when the WAL exceeds
+  `wal_checkpoint_threshold_bytes` and a VACUUM when the freelist exceeds both
+  `vacuum_freelist_threshold_bytes` and the effective freelist ratio.
+- The effective ratio is size-aware: below `vacuum_large_database_bytes`
+  (512 MiB) it is `vacuum_freelist_ratio` (0.20), at or above it is the larger
+  `vacuum_large_database_ratio` (0.35). A VACUUM rewrites the whole file, so its
+  lock hold grows with the database while the space it reclaims does not; a
+  multi-gigabyte database must therefore be more free before a rebuild is worth
+  the lock. The applied ratio is reported in the maintenance record and both
+  configured ratios are in `health()["compaction"]`
+  (`freelistRatio`, `largeDatabaseFreelistRatio`).
+- **A running task holds the rebuild outright.** The bridge holds background
+  VACUUMs while any row in the task lifecycle ledger is active: `AdminTaskLifecycle`
+  applies the hold before a `start_run` write and re-derives it after every
+  transition (`start_run`, `finish_run`, `fail_run`, `cancel_run`, `orphan_run`),
+  and `admin_task_runtime.on_bridge_started` seeds it from the ledger before the
+  startup steps, so a task that was already running when the bridge started is
+  covered. That seed is the first startup step (`compaction_hold_seed`); its
+  `desktop_bridge_startup_step_finished` row carries `seededFromActiveTask`,
+  `held`, `activeTaskTypes`, and `activeRunIds`, so a launch-time held rebuild is
+  visible in the startup journal as well as in `/ops/storage-health`. While held,
+  a due rebuild records `compaction.status ==
+  "held-active-task"` and runs no VACUUM — it does not wait for the idle window
+  either, because the release re-schedules it. The hold exists because write
+  silence cannot tell a finished task from a slow source: a fetch that pauses
+  between two sources looks idle. Holding before the start write matters because
+  that write itself can cross the freelist threshold.
+- **A VACUUM only starts once the write path is quiet.** This is the second gate,
+  and it still applies after the last task finishes and the hold is released: the
+  release schedules the rebuild, and the rebuild then waits out the window. The
+  worker waits for `vacuum_idle_s` (30 s) without a write attempt, checking every
+  `vacuum_idle_poll_s` (5 s) and giving up after `vacuum_idle_max_wait_s`
+  (600 s). The required window is size-aware like the ratio: databases at or above
+  `vacuum_large_database_bytes` must be quiet for `vacuum_large_database_idle_s`
+  (120 s) instead, because a bursty fetch can leave a 30 s gap between sources
+  while it is still writing. Giving up records
+  `compaction.status == "skipped-busy"` with `idleForS`, the applied window
+  (`effectiveIdleGateS`, alongside the configured `idleGateS`), and the sizes that
+  asked for it, and runs no VACUUM; the next write schedules it again, so a busy
+  session keeps its writes unblocked and a quiet one still reclaims. Reads do not
+  reset the idle clock — a page that polls the bridge must not be able to postpone
+  compaction forever. WAL checkpointing is not gated: a checkpoint holds the write
+  lock only for its own duration.
+- A **deferred** store (`BaluffoStore(defer_maintenance=True)`, or
+  `set_storage_maintenance_deferred(True)`) still records the decision but starts
+  no maintenance thread. The record is
+  `walMaintenance.status == "deferred"` / `compaction.status == "deferred"` with
+  the sizes that triggered it, so the skipped work stays visible in
+  `/ops/storage-health`.
+- The bridge defers maintenance from `admin_bridge.main()` until
+  `on_bridge_serving` finishes the post-bind startup steps, then calls
+  `storage_health.resume_storage_maintenance()`. Each store runs its deferred work
+  at most once per process, on one background thread after
+  `DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S` (5 s), so the first page load is not
+  queued behind a VACUUM. Later writes schedule maintenance normally.
+- A store that is asked to resume with nothing over threshold records
+  `"not-needed"`.
+- `close()` still checkpoints passively, because shutdown is a controlled point.
+
+Why this exists: a 1.44 GB runtime database with a 1.16 GB freelist and a 392 MB
+WAL started a VACUUM and a TRUNCATE checkpoint the moment the desktop bridge
+opened the store. Every later startup write waited behind that lock (~14 s
+measured), which pushed desktop launches to the 25 s readiness deadline. Deferring
+the first rebuild until after the bridge serves moved that cost off the launch
+path; the idle gate and the size-aware ratio keep the released rebuild from
+landing on top of a running fetch or sync, which writes continuously and would
+otherwise queue behind tens of seconds of VACUUM on the same multi-gigabyte
+database.
+
+`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log.
 
 ## Migration Safety
 
@@ -114,6 +190,8 @@ Cutover and rollback state must be persisted, not just held in memory.
 Rollback triggers include failed migration, failed `quick_check` or integrity check, repeated busy timeout, or projection mismatch. On rollback, reads stay on or return to the JSON path, the store is marked unhealthy, and the SQLite file is retained for diagnosis. Runtime code must not auto-delete the database.
 
 Milestone 3 cutover is complete for `taskRuns`, `taskEvents`, and `syncRuns`: new stores seed those authority modes as `sqlite`, while projection mismatches or SQLite read/write failures persistently roll the affected surface back to `json`.
+
+Every lifecycle save mirrors the bounded `taskRuns` projection into SQLite in **one transaction** (`TaskRuntimeStore.upsert_task_runs`), not one commit per row. The projection is bounded by `task_row_limit` (240), so per-row commits cost a full WAL commit each — ~90 ms apiece on a mature runtime database, which made a single lifecycle transition take ~15 s and held the bridge's `startup_sync_schedule` startup step for that long. The batched upsert keeps the same rows and the same canceled-is-terminal guard (in the `ON CONFLICT` update predicate) with one commit; the parity comparison still runs against the JSON projection afterwards.
 
 Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sqlite`, terminal bridge-started fetch reports mirror source rows into `source_runs`, and source-run read/write/parity failures persistently roll the surface back to `json`.
 

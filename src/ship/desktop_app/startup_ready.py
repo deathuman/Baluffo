@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused startup readines
 from __future__ import annotations
 
 import json
+import socket
 import time
 from datetime import datetime
 from pathlib import Path
@@ -295,6 +296,71 @@ def _wait_for_bridge_activity_after(
     return False
 
 
+def bridge_port_accepts_connections(bridge_port: int, *, timeout_s: float = 0.4) -> bool:
+    """Return whether a TCP connection to the bridge port is accepted.
+
+    A bound listener keeps completing handshakes from the kernel backlog even
+    while its accept loop is stalled, so this separates "nothing is listening"
+    from "the listener is bound but not answering" without guessing.
+    """
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", int(bridge_port)), timeout=max(0.05, float(timeout_s))
+        ):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def latest_bridge_startup_phases(data_dir: Path, *, limit: int = 12) -> list[dict[str, object]]:
+    """Return the newest bridge startup phase events, oldest first."""
+    api = desktop_api()
+    phases: list[dict[str, object]] = []
+    for row in api.read_startup_metrics(data_dir, limit=400):
+        event = str(row.get("event") or "").strip()
+        if not event.startswith("desktop_bridge_"):
+            continue
+        details = _as_dict(row.get("fields")) or _as_dict(row.get("payload"))
+        phases.append({"event": event, "ts": str(row.get("ts") or ""), "fields": details})
+    return phases[-max(1, int(limit)) :]
+
+
+def startup_timeout_phases(exc: object) -> list[dict[str, object]]:
+    """Return the bridge phase rows attached to a classified startup timeout."""
+    payload = getattr(exc, "payload", None)
+    if not isinstance(payload, dict):
+        return []
+    phases = payload.get("startupPhases")
+    if not isinstance(phases, list):
+        return []
+    return [row for row in phases if isinstance(row, dict) and str(row.get("event") or "").strip()]
+
+
+def format_startup_timeout_diagnostics(
+    exc: object, *, open_url: str, phases: list[dict[str, object]]
+) -> str:
+    """Render the launch-diagnostics text shared by the gate and watchdog paths."""
+    lines = [
+        str(exc),
+        "",
+        f"Reason: {str(getattr(exc, 'reason', '') or 'unknown')}",
+        f"Recovery URL: {str(open_url)}",
+    ]
+    if not phases:
+        return "\n".join(lines) + "\n"
+    lines.extend(["", "Bridge startup phases since spawn:"])
+    for row in phases:
+        raw_fields = row.get("fields")
+        fields: dict[object, object] = raw_fields if isinstance(raw_fields, dict) else {}
+        detail = " ".join(
+            f"{key}={fields[key]}"
+            for key in ("step", "durationMs", "elapsedMs", "bootMs", "status", "reason", "error")
+            if key in fields
+        )
+        lines.append(f"- {str(row.get('event') or '')} {detail}".rstrip())
+    return "\n".join(lines) + "\n"
+
+
 def classify_desktop_startup_state(
     bridge_port: int,
     *,
@@ -307,6 +373,8 @@ def classify_desktop_startup_state(
             f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s
         )
     except (OSError, ValueError, json.JSONDecodeError):
+        if bridge_port_accepts_connections(bridge_port):
+            return "bridge_bound_not_accepting", {}
         return "bridge_unbound", {}
     if not isinstance(payload, dict):
         return "bridge_health_mismatch", {}
@@ -326,6 +394,7 @@ def wait_for_desktop_startup_ready(
     *,
     app_version: str,
     timeout_s: float = READY_TIMEOUT_S,
+    data_dir: Path | None = None,
 ) -> dict[str, object]:
     api = desktop_api()
     deadline = time.monotonic() + max(1.0, float(timeout_s))
@@ -344,7 +413,11 @@ def wait_for_desktop_startup_ready(
         time.sleep(0.25)
     message = {
         "bridge_unbound": "Baluffo bridge did not bind to the desktop health endpoint in time.",
+        "bridge_bound_not_accepting": "Baluffo bridge bound its port, but it did not answer the desktop health endpoint in time.",
         "bridge_health_mismatch": "Baluffo bridge responded, but it did not report the expected desktop health state.",
         "startup_pending": "Baluffo bridge is running, but desktop startup did not finish in time.",
     }.get(last_reason, "Baluffo bridge did not reach desktop startup readiness.")
+    phases = latest_bridge_startup_phases(data_dir) if data_dir is not None else []
+    if phases:
+        last_payload = {**last_payload, "startupPhases": phases}
     raise api.DesktopStartupReadyTimeout(last_reason, message, payload=last_payload)

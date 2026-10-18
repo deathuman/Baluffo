@@ -5,7 +5,7 @@
 > - **Canonical for:** startup measurement ownership, event flow, command surface, and runtime-vs-probe boundaries
 > - **Not canonical for:** general testing guidance or release sequencing
 > - **Then inspect:** `src/ship/startup_telemetry.py`, `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py`, `src/ship/desktop_app/{launcher,startup}.py`, `src/ship/desktop_app/browser.py`, `src/ship/startup_probe_policy.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-10-17
 
 This document is the single source of truth for Baluffo's packaged startup measurement architecture. Keep probe policy and startup-flow explanations here instead of repeating them in command docs or release notes.
 
@@ -29,7 +29,9 @@ Baluffo's startup measurement stack has three layers:
 1. **Runtime telemetry**
    - Lives in shipped code.
    - Owns startup event append/read helpers, URL readiness probes, and browser/page startup metric transport.
-   - Must stay small and dormant unless startup measurement is enabled.
+   - Always records launcher and child-runtime phases for desktop launches (see
+     [Desktop-lite startup tracing](#desktop-lite-startup-tracing)); browser/page
+     metrics stay probe-gated.
    - Primary code: `src/ship/startup_telemetry.py`, bridge startup-metric storage, browser-side startup metric hooks.
 
 2. **Desktop launcher runtime**
@@ -43,6 +45,134 @@ Baluffo's startup measurement stack has three layers:
    - Owns required event sets, strict managed-browser policy, probe failure categorization, and startup summary refinement.
    - Should not leak into normal desktop behavior beyond simple config flags passed into the launcher/runtime.
    - Primary code: `src/ship/startup_probe_policy.py`, `src/ship/startup_profile.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`.
+
+## Desktop-Lite Startup Tracing
+
+A field stall is only diagnosable if the child runtimes report where they are, so
+shipped desktop launches write `desktop_*` phase rows into
+`desktop-startup-metrics.jsonl` without any probe flag:
+
+- `startup_telemetry.desktop_startup_trace_enabled()` gates child-runtime tracing.
+  It is on for `BALUFFO_STARTUP_PROBE=1`, for
+  `BALUFFO_DESKTOP_STARTUP_TRACE=1`, and by default for a desktop launch
+  (`BALUFFO_DESKTOP_MODE=1` with `BALUFFO_DATA_DIR`).
+- `BALUFFO_DESKTOP_STARTUP_TRACE_DISABLED=1` turns it off again; the probe flag
+  still wins, so probe runs never lose evidence.
+- The journal rotates once at `STARTUP_METRIC_MAX_BYTES` (24 MiB) to
+  `desktop-startup-metrics.jsonl.1`, best effort, so always-on tracing cannot
+  grow the runtime data directory without a bound.
+- Browser/page events (`jobs_*`, `saved_*`, `admin_*`) remain probe-gated; the
+  launcher's handoff signals consume them when present.
+
+Bridge phase events emitted on the desktop-shipped path:
+
+| Event | Emitted by | Meaning |
+| --- | --- | --- |
+| `desktop_bridge_child_start` | `runtime_launcher.run_bridge_server` | Bridge child process entered the launcher shim. |
+| `desktop_bridge_entrypoint_start` | `runtime_launcher.run_bridge_server` | Layout resolve, repair, startup check, and quarantine finished; `bootMs` is the shim cost. |
+| `desktop_bridge_configured` | `admin_bridge.main` | Runtime paths configured; carries `databaseBytes`, `walBytes`, and `storageMaintenanceDeferred`. |
+| `desktop_bridge_sync_config_refreshed` | `admin_bridge.main` | Sync config load finished. |
+| `desktop_bridge_registry_ready` | `admin_bridge.main` | `ensure_active_registry()` finished. |
+| `desktop_bridge_api_built` | `admin_bridge.main` | Bridge API object built. |
+| `desktop_bridge_socket_bound` | `bridge/server/httpd.py` | Listener bound; the port answers connection attempts from here. |
+| `desktop_bridge_accept_loop_started` | `bridge/server/httpd.py` | Requests are served from here; `on_started` work runs on its own thread. |
+| `desktop_bridge_first_request_served` | `bridge/server/httpd.py` | First accepted connection after bind. |
+| `desktop_bridge_started_hooks_started` / `_finished` | `bridge/server/httpd.py` | Post-bind startup work bracket; `_finished` carries `elapsedMs`. |
+| `desktop_bridge_first_paint_barrier_opened` | `bridge/startup_work_budget.py` | The first-paint work budget was satisfied, so heavy startup work may begin. Carries `reason` (`request-quiet`, `budget-expired`, or `wait-timeout`), `waitedMs` since bind, `acceptedRequests`, and the configured `quietMs`/`budgetMs`. |
+| `desktop_bridge_startup_work_admitted` | `admin_entrypoint_runtime.finish_bridge_startup_hooks` | The post-bind startup chain was released by the budget; carries `admission` and the barrier's `reason`/`waitedMs`. A `reason` of `wait-timeout` means the budget, not the page, admitted it. |
+| `desktop_bridge_deferred_startup_work_started` / `_finished` | `bridge/startup_work_budget.py` | One queued background item; `label` names it (currently `availability_overdue_catchup`), `_finished` carries `durationMs`, `ok`, and `error`. |
+| `desktop_bridge_startup_step_started` / `_finished` | `admin_task_runtime.on_bridge_started` | One row per startup step, with `step` and (on finish) `durationMs`. A step that never returns leaves its `_started` row as the tail. The first step, `compaction_hold_seed`, also carries `seededFromActiveTask`, `held`, `holdChanged`, `activeTaskCount`, `activeTaskTypes`, and `activeRunIds` on its `_finished` row. |
+| `desktop_bridge_storage_maintenance_resumed` / `_resume_failed` | `admin_entrypoint_runtime.finish_bridge_startup_hooks` | SQLite maintenance released after the post-bind startup work; carries `stores` and `scheduled`, or `error` when the release failed. "Released" is not "rebuilt": a released VACUUM is still held while a task row is active (`held-active-task`, released by the last task's terminal transition) and then waits for a quiet write path, reporting `skipped-busy` until one arrives (see [`storage-contract.md`](storage-contract.md#maintenance-scheduling-rules)). The held state itself is reported as `storageMaintenanceDeferred` on `desktop_bridge_configured` and as `deferred` in `/ops/storage-health`. |
+
+`desktop_bridge_startup_step_*` steps are `compaction_hold_seed`,
+`runtime_evidence_journal_cleanup`, `registry_journal_compaction`,
+`stale_task_cleanup`, `startup_sync_schedule`, and `pipeline_schedule_polling`.
+The whole chain is expected in the low hundreds of milliseconds; a step that
+reports seconds is a stall, not normal work. `startup_sync_schedule` used to be
+the outlier at 12–14 s: the sync run's lifecycle transition mirrored the bounded
+`taskRuns` projection into SQLite one commit per row (~90 ms each on a mature
+runtime database). It now mirrors in a single transaction, so the same step
+measures ~0.2 s — see
+[`storage-contract.md`](storage-contract.md#migration-safety). Note that page
+first render never waits on this chain: the jobs page paints from the startup
+snapshot as soon as the site serves it, and the bridge steps run on their own
+thread behind the accept loop.
+
+`compaction_hold_seed` runs before every other step (and before the post-bind
+maintenance release) and re-derives the rebuild hold from the task lifecycle
+ledger. Its `_finished` row is the startup-journal answer to "was a rebuild held
+because a task was already running when this bridge started?":
+`seededFromActiveTask` is true when the ledger had an active row,
+`activeTaskTypes`/`activeRunIds` name it, and `held` is the resulting hold state.
+Without that row a launch-time held rebuild is only visible later as
+`compaction.status: "held-active-task"` in `/ops/storage-health`.
+
+## Window Gate And Serve-First Startup
+
+The desktop window no longer waits for the bridge's full startup chain.
+
+- The launcher waits `BRIDGE_GATE_TIMEOUT_S` (4 s) after spawning the bridge. A
+  bridge that reaches `startupReady` inside that budget behaves exactly as before
+  and emits `desktop_bridge_ready_before_window`.
+- If the gate expires, the launcher emits `desktop_bridge_gate_deferred` and opens
+  the window anyway, then emits `desktop_window_open_bridge_deferred`. The page
+  starts its own bridge bootstrap retries (`DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS`,
+  25 s) and shows bridge state instead of an empty page; readiness is completed in
+  the background by `publish_success_marker_when_ready_async`.
+- `config.startup_probe` or `BALUFFO_DESKTOP_STRICT_STARTUP=1` restores the old
+  block-until-ready behavior (`READY_TIMEOUT_S`) and on timeout writes
+  `desktop-bridge-startup-timeout.txt` plus raises
+  `DesktopStartupReadyTimeout`.
+- Readiness classification distinguishes `bridge_unbound` (nothing listening) from
+  `bridge_bound_not_accepting` (the port completes TCP handshakes but the health
+  endpoint does not answer), and a classified timeout carries the newest
+  `desktop_bridge_*` phase rows as `startupPhases` in the exception payload.
+- Both timeout paths render those phases through
+  `format_startup_timeout_diagnostics`: the strict launcher gate, and the
+  background success-marker worker that outlives a deferred window
+  (`desktop_bridge_startup_timeout`, also recorded in the startup journal).
+
+The bridge serves before its post-bind startup work: `on_started` runs on
+`baluffo-bridge-on-started` after the accept loop starts, so a slow journal,
+stale-task, or sync-scheduling step delays those side effects, not the page. It
+also no longer *competes* with the first page: see the work budget below.
+
+## First-Paint Work Budget
+
+Heavy startup work is admitted through `bridge/startup_work_budget.py` instead of
+starting the moment the API object exists. Before the budget, the overdue
+availability catch-up forked ten workers at API construction (pre-listen), and
+the post-bind hook chain began immediately, so those parses and store writes ran
+while the page issued its first request burst and the request threads queued
+behind them.
+
+The acceptance rule is deliberately simple: the accept loop already sees every
+arrival, so it feeds the cumulative `acceptedCount` to the budget, and the
+barrier opens once the count has stalled for `quietMs` (350 ms, above the accept
+loop's 0.25 s poll) — or once `budgetMs` (2 s) elapses, whichever comes first. The
+second rule is what keeps a launch with no page (headless, container smoke) from
+stalling. A connection with no request also counts as an arrival: the budget
+tracks clients, not parsed routes.
+
+Admission has two consequences:
+
+- Queue work runs after the barrier. `availability_overdue_catchup` is the
+  current occupant; it is serialized on `baluffo-startup-work`, so the heavy
+  lifecycle/registry parse happens once and never in parallel with itself.
+- The post-bind startup chain waits for the barrier before its first step, bounded
+  by the same budget. Its journal rows therefore start later than
+  `desktop_bridge_socket_bound` *by design*; `desktop_bridge_startup_work_admitted`
+  records which side of the barrier released it.
+
+The downloaded portable artifact's digest follows the same rule from the other
+direction: it is warmed in the background when the API is built, and a status
+poll waits for it for at most `ARTIFACT_VERIFY_BUDGET_MS` (200 ms) before
+answering from the last known status. An unverified artifact is never claimed,
+and the install gate still verifies fully before staging.
+
+`BALUFFO_STARTUP_WORK_BUDGET_MS` overrides the budget for diagnostics: `0`
+admits heavy work at bind (the pre-budget behavior, useful as a control run) and a
+large value holds it back longer.
 
 ## What Stays in the Shipped Package
 
@@ -75,7 +205,7 @@ The packaged startup measurement path is:
 5. Packaged smoke collects startup metrics from the runtime data and bridge endpoints.
 6. Startup profile analysis renders the stage timings and summary report.
 
-When `desktop_bridge_ready_before_window` is present, startup profile analysis splits the pre-window segment into `Site Ready -> Bridge Ready` and `Bridge Ready -> Window Created`. Older or incomplete traces without that event fall back to the legacy `Site Ready -> Window Created` stage.
+When `desktop_bridge_ready_before_window` is present, startup profile analysis splits the pre-window segment into `Site Ready -> Bridge Ready` and `Bridge Ready -> Window Created`. Older or incomplete traces without that event fall back to the legacy `Site Ready -> Window Created` stage. A deferred launch instead records `desktop_window_open_bridge_deferred`, which marks the window as opened before bridge readiness by design.
 
 Important event families:
 

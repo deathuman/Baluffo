@@ -1,10 +1,13 @@
 """Tests for small admin_bridge utility helpers."""
 
+import json
 from unittest import mock
 
 import pytest
 
 from src import admin_bridge
+from src.bridge import admin_task_runtime
+from src.bridge.server import runtime_state
 
 
 def test_parse_iso_handles_supported_and_invalid_inputs() -> None:
@@ -121,6 +124,9 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         "startup_sync",
         "pipeline_schedule",
     ]
+    compaction_hold = result.pop("compactionHold")
+    assert compaction_hold["hasActiveTask"] is False
+    assert compaction_hold["held"] is False
     assert result == {
         "runtimeEvidenceJournals": {
             "ok": True,
@@ -324,3 +330,275 @@ def test_wait_for_report_completion_can_fail_fast_when_stale_guard_enabled(
                 report_name="fetch report",
                 fail_on_stale=True,
             )
+
+
+def test_on_bridge_started_records_each_startup_step_metric(
+    admin_bridge_entrypoint_root,
+) -> None:
+    metrics: list[tuple[str, dict[str, object] | None]] = []
+    pipeline_schedule_service = mock.Mock(
+        start_background_polling=mock.Mock(return_value={"started": True})
+    )
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "append_startup_metric",
+            side_effect=lambda event, payload=None: metrics.append((event, payload)),
+        ),
+        mock.patch.object(
+            admin_bridge._TASK_LIFECYCLE,  # noqa: SLF001
+            "sync_compaction_hold",
+            return_value={
+                "hasActiveTask": True,
+                "held": True,
+                "changed": True,
+                "activeTaskCount": 1,
+                "activeTaskTypes": ["fetch"],
+                "activeRunIds": ["fetch_live"],
+                "error": "",
+            },
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
+            return_value={"checked": 0, "quarantined": [], "errors": []},
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.compact_registry_journals",
+            return_value={"checked": 0, "compacted": [], "errors": []},
+        ),
+        mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", return_value={}),
+        mock.patch.object(admin_bridge, "schedule_startup_sync_pull", return_value={}),
+        mock.patch.object(
+            admin_bridge.admin_entrypoint_services_mod,
+            "get_pipeline_schedule_service",
+            return_value=pipeline_schedule_service,
+        ),
+    ):
+        admin_bridge.on_bridge_started()
+
+    expected_steps = [
+        "compaction_hold_seed",
+        "runtime_evidence_journal_cleanup",
+        "registry_journal_compaction",
+        "stale_task_cleanup",
+        "startup_sync_schedule",
+        "pipeline_schedule_polling",
+    ]
+    started_steps = [
+        payload["step"]
+        for event, payload in metrics
+        if event == "desktop_bridge_startup_step_started" and payload
+    ]
+    finished = [
+        payload
+        for event, payload in metrics
+        if event == "desktop_bridge_startup_step_finished" and payload
+    ]
+    assert started_steps == expected_steps
+    assert [payload["step"] for payload in finished] == expected_steps
+    assert all(
+        isinstance(payload["durationMs"], int) and payload["durationMs"] >= 0
+        for payload in finished
+    )
+
+    # A rebuild held from a task that predates this bridge is visible here.
+    seeded = next(payload for payload in finished if payload["step"] == "compaction_hold_seed")
+    assert seeded["seededFromActiveTask"] is True
+    assert seeded["held"] is True
+    assert seeded["holdChanged"] is True
+    assert seeded["activeTaskCount"] == 1
+    assert seeded["activeTaskTypes"] == ["fetch"]
+    assert seeded["activeRunIds"] == ["fetch_live"]
+
+
+def test_on_bridge_started_seeds_the_compaction_hold_before_startup_steps(
+    admin_bridge_entrypoint_root,
+) -> None:
+    calls: list[str] = []
+    metrics: list[tuple[str, dict[str, object] | None]] = []
+
+    def hold() -> dict[str, object]:
+        calls.append("hold")
+        return {
+            "hasActiveTask": True,
+            "held": True,
+            "changed": True,
+            "activeTaskCount": 1,
+            "activeTaskTypes": ["fetch"],
+            "activeRunIds": ["fetch_live"],
+            "error": "",
+        }
+
+    def runtime_cleanup(_data_dir) -> dict[str, object]:
+        calls.append("runtime_cleanup")
+        return {"ok": True, "checked": 0, "quarantined": [], "errors": []}
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "append_startup_metric",
+            side_effect=lambda event, payload=None: metrics.append((event, payload)),
+        ),
+        mock.patch.object(
+            admin_bridge._TASK_LIFECYCLE,  # noqa: SLF001
+            "sync_compaction_hold",
+            side_effect=hold,
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
+            side_effect=runtime_cleanup,
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.compact_registry_journals",
+            return_value={"checked": 0, "compacted": [], "errors": []},
+        ),
+        mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", return_value={}),
+        mock.patch.object(admin_bridge, "schedule_startup_sync_pull", return_value={}),
+        mock.patch.object(
+            admin_bridge.admin_entrypoint_services_mod,
+            "get_pipeline_schedule_service",
+            return_value=mock.Mock(
+                start_background_polling=mock.Mock(return_value={"started": False})
+            ),
+        ),
+    ):
+        result = admin_bridge.on_bridge_started()
+
+    # A task can already be running when this bridge starts, so the hold is seeded
+    # from the ledger before any startup step can write.
+    assert calls[0] == "hold"
+    assert "runtime_cleanup" in calls
+    assert result["compactionHold"]["hasActiveTask"] is True
+    seeded = next(
+        payload
+        for event, payload in metrics
+        if event == "desktop_bridge_startup_step_finished"
+        and payload
+        and payload["step"] == "compaction_hold_seed"
+    )
+    assert seeded["seededFromActiveTask"] is True
+    assert seeded["held"] is True
+    assert seeded["activeTaskTypes"] == ["fetch"]
+
+
+def test_on_bridge_started_records_failed_step_before_reraising(
+    admin_bridge_entrypoint_root,
+) -> None:
+    metrics: list[tuple[str, dict[str, object] | None]] = []
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "append_startup_metric",
+            side_effect=lambda event, payload=None: metrics.append((event, payload)),
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
+            return_value={"checked": 0, "quarantined": [], "errors": []},
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.compact_registry_journals",
+            return_value={"checked": 0, "compacted": [], "errors": []},
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "cleanup_stale_startup_tasks",
+            side_effect=OSError("task ledger unavailable"),
+        ),
+    ):
+        with pytest.raises(OSError, match="task ledger unavailable"):
+            admin_bridge.on_bridge_started()
+
+    finished = [
+        payload
+        for event, payload in metrics
+        if event == "desktop_bridge_startup_step_finished" and payload
+    ]
+    assert [payload["step"] for payload in finished][-1] == "stale_task_cleanup"
+
+
+def test_finish_bridge_startup_hooks_releases_storage_maintenance_when_hooks_fail(
+    admin_bridge_entrypoint_root,
+) -> None:
+    released: list[dict[str, object]] = []
+    phases: list[tuple[str, dict[str, object] | None]] = []
+
+    def fail_startup_hooks() -> None:
+        raise RuntimeError("startup hooks exploded")
+
+    def release_maintenance(**kwargs) -> list[dict[str, object]]:
+        released.append(dict(kwargs))
+        return []
+
+    with mock.patch.object(
+        admin_bridge.admin_entrypoint_runtime_mod.storage_health,
+        "resume_storage_maintenance",
+        side_effect=release_maintenance,
+    ):
+        with pytest.raises(RuntimeError, match="startup hooks exploded"):
+            admin_bridge.admin_entrypoint_runtime_mod.finish_bridge_startup_hooks(
+                on_started=fail_startup_hooks,
+                append_startup_metric=lambda event, payload=None: phases.append((event, payload)),
+            )
+
+    assert released == [{"reason": "bridge-served"}]
+    # The chain is admitted through the first-paint budget first; a hooks failure
+    # must still release storage maintenance immediately after. The budget is not
+    # armed here (no listener bound), so admission is reported as such.
+    assert [event for event, _payload in phases] == [
+        "desktop_bridge_startup_work_admitted",
+        "desktop_bridge_storage_maintenance_resumed",
+    ]
+    assert (phases[0][1] or {})["admission"] == "not-armed"
+
+
+def test_compaction_hold_seed_finished_row_hits_the_startup_journal(tmp_path) -> None:
+    metrics_path = tmp_path / "desktop-startup-metrics.jsonl"
+    previous_path = runtime_state.STARTUP_METRICS_PATH
+    root = mock.Mock()
+    root.append_startup_metric = lambda event, payload=None: runtime_state.append_startup_metric(
+        event, payload, now_iso=lambda: "2026-10-17T09:00:00+00:00"
+    )
+    seed = {
+        "hasActiveTask": True,
+        "held": True,
+        "changed": True,
+        "activeTaskCount": 1,
+        "activeTaskTypes": ["fetch"],
+        "activeRunIds": ["fetch_live"],
+        "error": "",
+    }
+    try:
+        runtime_state.STARTUP_METRICS_PATH = metrics_path
+        admin_task_runtime._run_startup_step(  # noqa: SLF001
+            root,
+            "compaction_hold_seed",
+            lambda: dict(seed),
+            summarize=admin_task_runtime._compaction_hold_metric_fields,  # noqa: SLF001
+        )
+    finally:
+        runtime_state.STARTUP_METRICS_PATH = previous_path
+
+    rows = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["event"] for row in rows] == [
+        "desktop_bridge_startup_step_started",
+        "desktop_bridge_startup_step_finished",
+    ]
+    payload = rows[-1]["payload"]
+    assert payload == {
+        "step": "compaction_hold_seed",
+        "durationMs": payload["durationMs"],
+        "seededFromActiveTask": True,
+        "held": True,
+        "holdChanged": True,
+        "activeTaskCount": 1,
+        "activeTaskTypes": ["fetch"],
+        "activeRunIds": ["fetch_live"],
+        "error": "",
+    }
+    assert isinstance(payload["durationMs"], int)

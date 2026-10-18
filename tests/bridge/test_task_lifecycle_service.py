@@ -1,39 +1,31 @@
+"""Task-lifecycle transition semantics: start/finish/orphan/abort and reconciliation.
+
+The storage-projection half of these tests (shadow mirroring, SQLite authority
+reads, history-row mirroring) lives in ``test_task_lifecycle_storage.py`` so
+each module stays under the test line budget and owns one concern.
+"""
+
 from __future__ import annotations
 
 import json
-import threading
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
-from src.bridge.task_lifecycle import TaskLifecycleService
-from src.storage import BaluffoStore, TaskRuntimeStore
+import pytest
+
+from src.bridge.storage_health import (
+    set_storage_compaction_hold,
+    storage_compaction_hold_active,
+)
 from tests.helpers.json_files import load_json_object
-from tests.helpers.report_state import parse_iso
-
-_load_json_object = load_json_object
-_parse_iso = parse_iso
-
-
-def _save_json_atomic(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _service(tmp_path: Path) -> TaskLifecycleService:
-    return TaskLifecycleService(
-        path=tmp_path / "admin-task-lifecycle.json",
-        lock=threading.RLock(),
-        load_json_object=_load_json_object,
-        save_json_atomic=_save_json_atomic,
-        now_iso=lambda: "2026-05-06T19:00:00+00:00",
-        parse_iso=_parse_iso,
-    )
+from tests.helpers.task_lifecycle import (
+    admin_task_lifecycle,
+    lifecycle_file,
+    task_lifecycle_service,
+)
 
 
 def test_lifecycle_running_rows_never_emit_finished_at(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(
         run_id="fetch_1",
@@ -53,7 +45,7 @@ def test_lifecycle_running_rows_never_emit_finished_at(tmp_path: Path) -> None:
 
 
 def test_lifecycle_terminal_rows_emit_finished_at_and_route_status(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(
         run_id="discovery_1",
@@ -77,7 +69,7 @@ def test_lifecycle_terminal_rows_emit_finished_at_and_route_status(tmp_path: Pat
 
 
 def test_fetch_lifecycle_normalization_compacts_oversized_hot_payloads(tmp_path: Path) -> None:
-    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    lifecycle_path = lifecycle_file(tmp_path)
     lifecycle_path.write_text(
         json.dumps(
             {
@@ -121,7 +113,7 @@ def test_fetch_lifecycle_normalization_compacts_oversized_hot_payloads(tmp_path:
         ),
         encoding="utf-8",
     )
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.heartbeat_run(
         "fetch_oversized",
@@ -145,7 +137,7 @@ def test_fetch_lifecycle_normalization_compacts_oversized_hot_payloads(tmp_path:
 
 
 def test_lifecycle_parent_child_attachment_persists_owner(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(run_id="pipeline_1", task_type="pipeline")
     service.start_run(run_id="fetch_1", task_type="fetch", owner_kind="process", owner_pid=456)
@@ -163,7 +155,7 @@ def test_lifecycle_parent_child_attachment_persists_owner(tmp_path: Path) -> Non
 
 
 def test_lifecycle_parent_child_attachment_creates_pipeline_owned_row(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(run_id="pipeline_1", task_type="pipeline")
     service.attach_child(
@@ -181,7 +173,7 @@ def test_lifecycle_parent_child_attachment_creates_pipeline_owned_row(tmp_path: 
 
 
 def test_lifecycle_orphan_has_distinct_terminal_reason(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(run_id="discovery_1", task_type="discovery")
     service.orphan_run("discovery_1", "discovery")
@@ -193,7 +185,7 @@ def test_lifecycle_orphan_has_distinct_terminal_reason(tmp_path: Path) -> None:
 
 
 def test_lifecycle_request_abort_keeps_running_with_abort_progress(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
     service.start_run(run_id="fetch_1", task_type="fetch", stage="fetching")
 
     result = service.request_abort_run(
@@ -214,7 +206,7 @@ def test_lifecycle_request_abort_keeps_running_with_abort_progress(tmp_path: Pat
 
 
 def test_lifecycle_canceled_is_sticky_against_late_success(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
     service.start_run(run_id="fetch_1", task_type="fetch")
     service.cancel_run(
         "fetch_1",
@@ -237,7 +229,7 @@ def test_lifecycle_canceled_is_sticky_against_late_success(tmp_path: Path) -> No
 
 
 def test_lifecycle_reconciles_runid_legacy_history_and_task_state(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     rows = service.reconcile_from_legacy(
         history_rows=[
@@ -268,7 +260,7 @@ def test_lifecycle_reconciles_runid_legacy_history_and_task_state(tmp_path: Path
 def test_lifecycle_reconcile_orphans_unfinished_history_without_live_owner(
     tmp_path: Path,
 ) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.reconcile_from_legacy(
         history_rows=[
@@ -297,7 +289,7 @@ def test_lifecycle_reconcile_orphans_unfinished_history_without_live_owner(
 def test_lifecycle_reconcile_repairs_existing_ownerless_running_row(
     tmp_path: Path,
 ) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
     service.start_run(
         run_id="fetch_ownerless",
         task_type="fetch",
@@ -327,7 +319,7 @@ def test_lifecycle_reconcile_repairs_existing_ownerless_running_row(
 
 
 def test_lifecycle_reconcile_orphans_dead_task_state_owner(tmp_path: Path) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.reconcile_from_legacy(
         history_rows=[],
@@ -353,7 +345,7 @@ def test_lifecycle_reconcile_orphans_dead_task_state_owner(tmp_path: Path) -> No
 def test_lifecycle_fail_reason_distinguishes_quiet_timeout_and_safety_cap(
     tmp_path: Path,
 ) -> None:
-    service = _service(tmp_path)
+    service = task_lifecycle_service(lifecycle_file(tmp_path))
 
     service.start_run(run_id="fetch_quiet", task_type="fetch")
     service.fail_run(
@@ -375,273 +367,93 @@ def test_lifecycle_fail_reason_distinguishes_quiet_timeout_and_safety_cap(
     }
 
 
-def test_lifecycle_shadow_writes_task_runs_when_storage_mode_enabled(tmp_path: Path) -> None:
-    diagnostics: list[dict[str, Any]] = []
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        service = TaskLifecycleService(
-            path=tmp_path / "admin-task-lifecycle.json",
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
-        )
-
-        service.start_run(
-            run_id="sync_1",
-            task_type="sync",
-            started_at="2026-05-06T18:00:00+00:00",
-            stage="push",
-            summary={"action": "push"},
-        )
-        service.finish_run(
-            "sync_1",
-            "sync",
-            finished_at="2026-05-06T18:00:05+00:00",
-            summary={"action": "push", "shardCount": 2},
-        )
-
-        assert service.get_recent_runs() == runtime.recent_task_runs()
-        assert diagnostics[-1]["code"] == "task_runs_projection_match"
-        assert diagnostics[-1]["ok"] is True
-
-
-def test_lifecycle_shadow_mismatch_rolls_task_runs_back_to_json(tmp_path: Path) -> None:
-    diagnostics: list[dict[str, Any]] = []
-
-    class _MismatchedRuntime:
-        def __init__(self) -> None:
-            self.store: BaluffoStore | None = None
-            self.rows: list[dict[str, Any]] = []
-
-        def upsert_task_run(self, row: dict[str, Any]) -> dict[str, Any]:
-            self.rows.append(dict(row))
-            return dict(row)
-
-        def current_task_runs(self) -> list[dict[str, Any]]:
-            return []
-
-        def recent_task_runs(self) -> list[dict[str, Any]]:
-            return []
-
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
-        runtime = _MismatchedRuntime()
-        runtime.store = store
-        service = TaskLifecycleService(
-            path=tmp_path / "admin-task-lifecycle.json",
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
-        )
-
-        service.start_run(
-            run_id="fetch_1",
-            task_type="fetch",
-            started_at="2026-05-06T18:00:00+00:00",
-        )
-
-        assert store.get_authority_modes()["taskRuns"] == "json"
-        assert diagnostics[-1]["code"] == "task_runs_projection_mismatch"
-        assert diagnostics[-1]["ok"] is False
-
-
-def test_admin_lifecycle_reads_task_runs_from_sqlite_when_authoritative(
-    tmp_path: Path,
-) -> None:
-    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        lifecycle = AdminTaskLifecycle(
-            lifecycle_path=lambda: lifecycle_path,
-            max_rows=lambda: 240,
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-        )
+def test_lifecycle_compaction_hold_follows_transitions(tmp_path: Path) -> None:
+    lifecycle = admin_task_lifecycle(lifecycle_file(tmp_path))
+    try:
+        assert storage_compaction_hold_active() is False
 
         lifecycle.start_run(
-            run_id="sync_sqlite",
-            task_type="sync",
+            run_id="fetch_hold",
+            task_type="fetch",
             started_at="2026-05-06T18:00:00+00:00",
+            owner_kind="process",
+            owner_pid=4242,
         )
-        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
-        _save_json_atomic(lifecycle_path, {"schemaVersion": 1, "updatedAt": "", "rows": []})
+        assert storage_compaction_hold_active() is True
 
-        current = lifecycle.get_current_runs()
+        lifecycle.start_run(
+            run_id="sync_hold",
+            task_type="sync",
+            started_at="2026-05-06T18:00:01+00:00",
+            owner_kind="process",
+            owner_pid=4242,
+        )
+        lifecycle.finish_run(
+            "fetch_hold",
+            "fetch",
+            finished_at="2026-05-06T18:10:00+00:00",
+            terminal_reason="completed",
+        )
+        # The sync run is still writing, so the rebuild stays held.
+        assert storage_compaction_hold_active() is True
 
-        assert len(current) == 1
-        assert current[0]["runId"] == "sync_sqlite"
-        assert current[0]["taskType"] == "sync"
+        lifecycle.finish_run(
+            "sync_hold",
+            "sync",
+            finished_at="2026-05-06T18:20:00+00:00",
+            terminal_reason="completed",
+        )
+        assert storage_compaction_hold_active() is False
+
+        # A row that dies without reporting terminal still holds the rebuild,
+        # and reaping it is what releases the hold.
+        lifecycle.start_run(
+            run_id="discovery_orphan",
+            task_type="discovery",
+            started_at="2026-05-06T18:30:00+00:00",
+            owner_kind="process",
+            owner_pid=4242,
+        )
+        assert storage_compaction_hold_active() is True
+
+        lifecycle.orphan_run(
+            "discovery_orphan",
+            "discovery",
+            finished_at="2026-05-06T18:40:00+00:00",
+            terminal_reason="owner_inactive_without_terminal_report",
+        )
+        assert storage_compaction_hold_active() is False
+    finally:
+        set_storage_compaction_hold(False)
 
 
-def test_admin_lifecycle_sqlite_read_does_not_fall_back_to_stale_json(
-    tmp_path: Path,
+def test_start_run_holds_compaction_before_the_transition_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
-    diagnostics: list[dict[str, Any]] = []
-    _save_json_atomic(
-        lifecycle_path,
-        {
-            "schemaVersion": 1,
-            "updatedAt": "2026-05-06T19:00:00+00:00",
-            "rows": [
-                {
-                    "schemaVersion": 1,
-                    "runId": "fetch_json_only",
-                    "taskType": "fetch",
-                    "status": "running",
-                    "startedAt": "2026-05-06T18:00:00+00:00",
-                    "heartbeatAt": "2026-05-06T18:00:00+00:00",
-                    "progress": {},
-                    "summary": {},
-                }
-            ],
-        },
+    lifecycle_path = lifecycle_file(tmp_path)
+    hold_calls: list[bool] = []
+    rows_when_held: list[list[str]] = []
+
+    def record_hold(held: bool) -> list[dict[str, object]]:
+        hold_calls.append(held)
+        payload = load_json_object(lifecycle_path, {})
+        rows = payload.get("rows") if isinstance(payload, dict) else []
+        rows_when_held.append([str(row.get("runId")) for row in rows or []])
+        return []
+
+    monkeypatch.setattr("src.bridge.storage_health.set_storage_compaction_hold", record_hold)
+    lifecycle = admin_task_lifecycle(lifecycle_path)
+
+    lifecycle.start_run(
+        run_id="fetch_order",
+        task_type="fetch",
+        started_at="2026-05-06T18:00:00+00:00",
+        owner_kind="process",
+        owner_pid=4242,
     )
-    with BaluffoStore(tmp_path / "data") as store:
-        assert store.get_authority_modes()["taskRuns"] == "sqlite"
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        lifecycle = AdminTaskLifecycle(
-            lifecycle_path=lambda: lifecycle_path,
-            max_rows=lambda: 240,
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
-        )
 
-        current = lifecycle.get_current_runs()
-
-        assert current == []
-        assert store.get_authority_modes()["taskRuns"] == "sqlite"
-        assert not diagnostics
-
-
-def test_admin_lifecycle_reads_task_events_from_sqlite_when_authoritative(
-    tmp_path: Path,
-) -> None:
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskEvents", "sqlite", reason="test-cutover")
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        lifecycle = AdminTaskLifecycle(
-            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
-            max_rows=lambda: 240,
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-        )
-        runtime.append_task_event(
-            {
-                "timestamp": "2026-05-06T18:00:00+00:00",
-                "level": "info",
-                "event": "sync_push",
-                "taskType": "sync",
-                "runId": "sync_events",
-                "phaseKey": "sync_push",
-                "message": "Pushing sources.",
-            }
-        )
-
-        events = lifecycle.task_events(run_id="sync_events", task_type="sync")
-
-        assert len(events) == 1
-        assert events[0]["event"] == "sync_push"
-        assert events[0]["message"] == "Pushing sources."
-
-
-def test_mirror_history_row_running_entry_carries_owner_fields(tmp_path: Path) -> None:
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        lifecycle = AdminTaskLifecycle(
-            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
-            max_rows=lambda: 240,
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-        )
-
-        lifecycle.mirror_history_row(
-            {
-                "runId": "sync_mirrored",
-                "type": "sync",
-                "status": "running",
-                "startedAt": "2026-05-06T18:00:00+00:00",
-                "summary": {"stage": "pull"},
-            }
-        )
-
-        rows = lifecycle.rows()
-        mirrored = next((row for row in rows if row.get("runId") == "sync_mirrored"), None)
-        assert mirrored is not None
-        assert mirrored["status"] == "running"
-        # The mirror must never create an owner-less active row: such rows are
-        # unreapable zombies once their heartbeat goes cold.
-        assert mirrored["ownerKind"] == "bridge_thread"
-
-
-def test_mirror_history_row_without_finished_at_is_reaped_as_stale_after_restart(
-    tmp_path: Path,
-) -> None:
-    with BaluffoStore(tmp_path / "data") as store:
-        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
-        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
-        lifecycle = AdminTaskLifecycle(
-            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
-            max_rows=lambda: 240,
-            lock=threading.RLock(),
-            load_json_object=_load_json_object,
-            save_json_atomic=_save_json_atomic,
-            now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            parse_iso=_parse_iso,
-            task_runtime_store=lambda: runtime,
-        )
-        lifecycle.mirror_history_row(
-            {
-                "runId": "sync_mirrored",
-                "type": "sync",
-                "status": "running",
-                "startedAt": "2026-05-06T18:00:00+00:00",
-            }
-        )
-
-        # bridge_thread owner rows are always stale after a restart, so the
-        # startup reaper terminalizes them instead of leaving a zombie behind.
-        from src.bridge.lifecycle_cleanup import _row_is_stale_after_restart
-
-        row = next(
-            (
-                {**item, "ownerKind": item.get("ownerKind", ""), "ownerPid": 0}
-                for item in lifecycle.rows()
-                if item.get("runId") == "sync_mirrored"
-            ),
-            None,
-        )
-        assert row is not None
-        assert _row_is_stale_after_restart(
-            row,
-            lambda pid: False,
-            now_utc=datetime(2026, 5, 6, 19, 5, tzinfo=UTC),
-        )
+    # The hold must be in place before the start write, because that write can
+    # itself cross the freelist threshold and schedule a rebuild.
+    assert hold_calls[0] is True
+    assert rows_when_held[0] == []
+    assert rows_when_held[-1] == ["fetch_order"]

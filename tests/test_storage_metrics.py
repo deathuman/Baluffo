@@ -186,6 +186,38 @@ def test_source_sync_snapshot_metrics_are_visible(tmp_path: Path) -> None:
     assert metrics["sourceSyncSnapshots"]["shardHashes"] == {"shard-path": "sha"}
 
 
+def test_slow_store_write_metrics_name_the_waiter_and_the_holder(tmp_path: Path) -> None:
+    reset_storage_metrics(data_dir=tmp_path, remove_file=True)
+
+    storage_metrics_mod.record_slow_store_write(
+        operation="write",
+        wait_ms=12_500,
+        hold_ms=4,
+        thread_name="baluffo-bridge-on-started",
+        stack='  File "src/bridge/admin_task_runtime.py", line 298, in <lambda>\n',
+        data_dir=tmp_path,
+    )
+    storage_metrics_mod.record_slow_store_write(
+        operation="vacuum",
+        wait_ms=0,
+        hold_ms=13_200,
+        thread_name="baluffo-sqlite-post-serve-maintenance",
+        stack='  File "src/storage/baluffo_store.py", line 769, in vacuum\n',
+        data_dir=tmp_path,
+    )
+    reset_storage_metrics(data_dir=tmp_path, remove_file=False)
+
+    slow = snapshot_storage_metrics(tmp_path)["slowWrites"]
+
+    assert slow["count"] == 2
+    assert slow["maxWaitMs"] == 12_500
+    assert slow["maxHoldMs"] == 13_200
+    assert [row["operation"] for row in slow["operations"]] == ["write", "vacuum"]
+    assert slow["operations"][0]["lastThread"] == "baluffo-bridge-on-started"
+    assert slow["recent"][0]["lastFrame"].endswith("in <lambda>")
+    assert slow["recent"][1]["thread"] == "baluffo-sqlite-post-serve-maintenance"
+
+
 def test_save_json_atomic_records_storage_metrics_without_recursing(tmp_path: Path) -> None:
     reset_storage_metrics(data_dir=tmp_path, remove_file=True)
     path = tmp_path / "jobs-fetch-report.json"

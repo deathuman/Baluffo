@@ -10,15 +10,120 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from src.bridge import startup_work_budget, storage_health
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 _PROC_ROOT = Path("/proc")
+BRIDGE_LAUNCH_MONO = 0.0
+
+
+def begin_bridge_startup(*, append_startup_metric: Callable[..., Any] | None = None) -> None:
+    """Start the bridge startup clock and hold SQLite maintenance until serving.
+
+    Checkpoints and VACUUMs take the store write lock for their whole run, so a
+    single write during startup must not be allowed to schedule them. The
+    first-paint work budget is installed here too: from this point on, heavy
+    startup work is queued behind the page's first request burst.
+    """
+    global BRIDGE_LAUNCH_MONO
+    BRIDGE_LAUNCH_MONO = time.perf_counter()
+    storage_health.set_storage_maintenance_deferred(True)
+    startup_work_budget.configure_startup_work_budget(metric_sink=append_startup_metric)
+
+
+def append_startup_phase(
+    event: str, *, append_startup_metric: Callable[..., Any], **fields: Any
+) -> None:
+    """Record one bridge startup phase with its elapsed time since process start."""
+    payload = dict(fields)
+    if BRIDGE_LAUNCH_MONO > 0.0:
+        payload["elapsedMs"] = int(round((time.perf_counter() - BRIDGE_LAUNCH_MONO) * 1000))
+    try:
+        append_startup_metric(event, payload or None)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return
+
+
+def prepare_bridge_runtime(
+    config: Any,
+    *,
+    configure: Callable[[Any], None],
+    refresh_sync_config: Callable[[], Any],
+    ensure_active_registry: Callable[[], Any],
+    build_bridge_api: Callable[[Any], Any],
+    append_startup_metric: Callable[..., Any],
+) -> Any:
+    """Run the pre-listen bridge startup chain, recording a phase after each step."""
+    begin_bridge_startup(append_startup_metric=append_startup_metric)
+    configure(config)
+    db_sizes = storage_health.runtime_db_file_sizes(Path(config.data_dir).resolve())
+    append_startup_phase(
+        "desktop_bridge_configured",
+        append_startup_metric=append_startup_metric,
+        databaseBytes=int(db_sizes.get("databaseBytes") or 0),
+        walBytes=int(db_sizes.get("walBytes") or 0),
+        storageMaintenanceDeferred=bool(storage_health.storage_maintenance_deferred()),
+    )
+    refresh_sync_config()
+    append_startup_phase(
+        "desktop_bridge_sync_config_refreshed", append_startup_metric=append_startup_metric
+    )
+    ensure_active_registry()
+    append_startup_phase(
+        "desktop_bridge_registry_ready", append_startup_metric=append_startup_metric
+    )
+    api = build_bridge_api(config)
+    append_startup_phase("desktop_bridge_api_built", append_startup_metric=append_startup_metric)
+    return api
+
+
+def finish_bridge_startup_hooks(
+    *, on_started: Callable[[], Any], append_startup_metric: Callable[..., Any]
+) -> None:
+    """Run the post-bind startup work, then release deferred SQLite maintenance.
+
+    The chain is admitted through the first-paint budget first: the page's
+    request burst is answered before registry parsing, journal compaction and the
+    startup sync pull start competing with it. A launch with no page is admitted
+    when the budget expires, so this wait is bounded.
+    """
+    admission = startup_work_budget.wait_for_first_paint()
+    append_startup_phase(
+        "desktop_bridge_startup_work_admitted",
+        append_startup_metric=append_startup_metric,
+        admission=admission,
+        **{
+            key: value
+            for key, value in startup_work_budget.startup_work_budget_snapshot().items()
+            if key != "pendingLabels"
+        },
+    )
+    try:
+        on_started()
+    finally:
+        try:
+            released = storage_health.resume_storage_maintenance(reason="bridge-served")
+        except (OSError, RuntimeError, ValueError) as exc:
+            append_startup_phase(
+                "desktop_bridge_storage_maintenance_resume_failed",
+                append_startup_metric=append_startup_metric,
+                error=str(exc),
+            )
+        else:
+            append_startup_phase(
+                "desktop_bridge_storage_maintenance_resumed",
+                append_startup_metric=append_startup_metric,
+                stores=len(released),
+                scheduled=sum(1 for row in released if row.get("scheduled")),
+            )
 
 
 def log_enabled(level: str, *, root_mod: Any) -> bool:

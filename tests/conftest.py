@@ -68,6 +68,22 @@ def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
         os.environ.pop(key, None)
 
 
+@pytest.fixture(autouse=True)
+def _reset_storage_compaction_hold_each_test() -> Generator[None]:
+    """Start every test with background VACUUMs unheld.
+
+    The bridge holds compaction while any task row is active, and that hold is
+    process-wide state in ``src.bridge.storage_health``. A test that starts a
+    lifecycle run and never terminalizes it would otherwise hold the rebuild for
+    every later test in the same process, which looks like a compaction bug in a
+    completely different suite.
+    """
+    from src.bridge import storage_health
+
+    storage_health.set_storage_compaction_hold(False)
+    yield
+
+
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
     return REPO_ROOT

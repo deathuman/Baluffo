@@ -8,9 +8,21 @@ from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
 
 
+def _warm_desktop_update_artifact(service: Any) -> None:
+    """Hash the downloaded artifact in the background, never on a request thread."""
+    warm = getattr(service, "warm_downloaded_artifact", None)
+    if not callable(warm):
+        return
+    try:
+        warm()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return
+
+
 def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
     ops_api = root_mod._get_ops_api()
     desktop_update_service = root_mod._get_desktop_update_service()
+    _warm_desktop_update_artifact(desktop_update_service)
     return bridge_bootstrap.build_bridge_api(
         config=config,
         registry=root_mod._get_registry_service(),

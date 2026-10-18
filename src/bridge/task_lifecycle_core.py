@@ -250,8 +250,17 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
         if mode not in {"shadow", "sqlite"}:
             return
         try:
-            for row in rows:
-                runtime_store.upsert_task_run(row)
+            # The projection is bounded (task_row_limit) but every lifecycle save
+            # mirrors all of it. Per-row upserts cost one SQLite commit each, which
+            # is ~15 s on a mature runtime database and used to hold the bridge's
+            # `startup_sync_schedule` startup step for that long. One batched write
+            # keeps the same rows with a single commit.
+            upsert_many = getattr(runtime_store, "upsert_task_runs", None)
+            if callable(upsert_many):
+                upsert_many(rows)
+            else:
+                for row in rows:
+                    runtime_store.upsert_task_run(row)
             self._compare_storage_projection(runtime_store, rows)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             self._rollback_task_runs_to_json(

@@ -121,6 +121,7 @@ def publish_success_marker_when_ready_async(
                 config.bridge_port,
                 app_version=api.get_app_version(),
                 timeout_s=timeout_s,
+                data_dir=config.data_dir,
             )
             api.write_success_marker(
                 paths,
@@ -144,20 +145,20 @@ def publish_success_marker_when_ready_async(
                         error=str(exc),
                     )
         except api.DesktopStartupReadyTimeout as exc:
+            phases = api.startup_timeout_phases(exc)
             api._append_startup_trace(
                 config.data_dir,
                 "desktop_bridge_startup_timeout",
                 reason=str(exc.reason or ""),
                 bridgePort=int(config.bridge_port),
                 url=api.build_open_url(config),
+                startupPhases=phases,
             )
             api._write_launch_diagnostics(
                 config.data_dir,
                 "desktop-bridge-startup-timeout.txt",
-                (
-                    f"{str(exc)}\n\n"
-                    f"Reason: {str(exc.reason or 'unknown')}\n"
-                    f"Recovery URL: {api.build_open_url(config)}\n"
+                api.format_startup_timeout_diagnostics(
+                    exc, open_url=api.build_open_url(config), phases=phases
                 ),
             )
         except RuntimeError:

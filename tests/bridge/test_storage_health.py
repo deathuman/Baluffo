@@ -8,6 +8,12 @@ from src.bridge.storage_health import (
     get_storage_health_payload,
     get_storage_store,
     record_storage_diagnostic,
+    resume_storage_maintenance,
+    runtime_db_file_sizes,
+    set_storage_compaction_hold,
+    set_storage_maintenance_deferred,
+    storage_compaction_hold_active,
+    storage_maintenance_deferred,
 )
 from tests.helpers.bridge_api import (
     FakeDesktopLocalDataStore,
@@ -117,6 +123,79 @@ def test_get_storage_store_uses_storage_busy_env_config(tmp_path: Path, monkeypa
         assert store.busy_retry_base_ms == 12
         assert store.busy_retry_max_ms == 99
     finally:
+        close_storage_stores()
+
+
+def test_runtime_db_file_sizes_reports_disk_state_without_opening_store(tmp_path: Path) -> None:
+    (tmp_path / "baluffo-runtime.db").write_bytes(b"db")
+    (tmp_path / "baluffo-runtime.db-wal").write_bytes(b"wal!")
+
+    sizes = runtime_db_file_sizes(tmp_path)
+
+    assert sizes == {"databaseBytes": 2, "walBytes": 4, "shmBytes": 0}
+    assert not (tmp_path / "baluffo-runtime.db-shm").exists()
+
+
+def test_storage_maintenance_deferral_covers_stores_created_later(tmp_path: Path) -> None:
+    try:
+        set_storage_maintenance_deferred(True)
+        store = get_storage_store(tmp_path)
+        assert storage_maintenance_deferred() is True
+        assert store.maintenance_deferred is True
+
+        results = resume_storage_maintenance(reason="test-serve", grace_s=0.0)
+
+        assert storage_maintenance_deferred() is False
+        assert store.maintenance_deferred is False
+        assert [row["dataDir"] for row in results] == [str(tmp_path.resolve())]
+        assert results[0]["scheduled"] is True
+    finally:
+        set_storage_maintenance_deferred(False)
+        close_storage_stores()
+
+
+def test_storage_compaction_hold_covers_stores_created_later(tmp_path: Path) -> None:
+    try:
+        existing = get_storage_store(tmp_path)
+        assert existing.compaction_held is False
+        assert storage_compaction_hold_active() is False
+
+        assert set_storage_compaction_hold(True) == [
+            {"dataDir": str(tmp_path.resolve()), "scheduled": False}
+        ]
+        assert storage_compaction_hold_active() is True
+        assert existing.compaction_held is True
+
+        later = get_storage_store(tmp_path / "second")
+        assert later.compaction_held is True
+
+        released = set_storage_compaction_hold(False)
+        assert storage_compaction_hold_active() is False
+        assert existing.compaction_held is False
+        assert later.compaction_held is False
+        assert {row["dataDir"] for row in released} == {
+            str(tmp_path.resolve()),
+            str((tmp_path / "second").resolve()),
+        }
+        assert all(row["scheduled"] is False for row in released)
+    finally:
+        close_storage_stores()
+
+    # Closing the stores clears the process-wide hold, so the next test does not
+    # inherit a hold left behind by a lifecycle fake.
+    assert storage_compaction_hold_active() is False
+
+
+def test_storage_maintenance_deferral_applies_to_existing_store(tmp_path: Path) -> None:
+    try:
+        store = get_storage_store(tmp_path)
+        assert store.maintenance_deferred is False
+
+        set_storage_maintenance_deferred(True)
+
+        assert store.maintenance_deferred is True
+    finally:
+        set_storage_maintenance_deferred(False)
         close_storage_stores()
 
 

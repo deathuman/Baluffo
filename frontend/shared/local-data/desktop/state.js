@@ -6,7 +6,11 @@ export const UPDATE_STATUS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/update-st
 export const DESKTOP_SESSION_LIFECYCLE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/desktop-session-lifecycle`;
 export const SESSION_KEY = "baluffo_current_profile_id";
 export const DESKTOP_LIFECYCLE_HEARTBEAT_MS = 5000;
-export const DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS = 10_000;
+// The desktop window opens on a short bridge gate, so a bridge that is still
+// booting keeps answering later than it used to. The retry window covers the
+// launcher's full readiness budget (READY_TIMEOUT_S) instead of giving up while
+// the bridge is still starting.
+export const DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS = 25_000;
 export const DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS = 250;
 export const DESKTOP_NAVIGATION_BYPASS_WINDOW_MS = 2000;
 export const APPROVED_DESKTOP_PAGE_PATHS = new Set(["/", "/index.html", "/jobs.html", "/saved.html", "/admin.html"]);

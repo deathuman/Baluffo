@@ -3,6 +3,7 @@
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -351,5 +352,146 @@ def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_ex
         and call.kwargs["handoffRequestPresent"] is False
         and call.kwargs["updateInstallState"] == "idle"
         and call.kwargs["updateInstallStage"] == "idle"
+        for call in trace_mock.call_args_list
+    )
+
+
+def _gate_timeout_exc(desktop_app_module: Any) -> Exception:
+    exc = desktop_app_module.DesktopStartupReadyTimeout(
+        "bridge_bound_not_accepting",
+        "Baluffo bridge bound its port, but it did not answer the desktop health endpoint in time.",
+        payload={
+            "startupPhases": [
+                {
+                    "event": "desktop_bridge_startup_step_finished",
+                    "ts": "2026-10-17T14:08:00+00:00",
+                    "fields": {"step": "stale_task_cleanup", "durationMs": 14160},
+                }
+            ]
+        },
+    )
+    assert isinstance(exc, Exception)
+    return exc
+
+
+def test_launch_desktop_app_opens_window_when_bridge_gate_is_still_closing() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_runtime_config(data_dir=data_dir)
+    trace_mock = mock.Mock()
+    launch_browser_mock = mock.Mock(
+        return_value={
+            "mode": "app-window",
+            "browserName": "msedge",
+            "browserPath": "C:/Edge/msedge.exe",
+            "browserPid": 0,
+        }
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            side_effect=_gate_timeout_exc(desktop_app),
+        ),
+        mock.patch.object(desktop_app, "publish_success_marker_when_ready_async") as marker_mock,
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False),
+        mock.patch.object(desktop_app, "launch_browser_for_url", launch_browser_mock),
+        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    launch_browser_mock.assert_called_once()
+    marker_mock.assert_called_once()
+    diagnostics_mock.assert_not_called()
+    assert any(
+        call.args[1] == "desktop_bridge_gate_deferred"
+        and call.kwargs["reason"] == "bridge_bound_not_accepting"
+        and call.kwargs["startupPhaseCount"] == 1
+        for call in trace_mock.call_args_list
+    )
+    assert any(
+        call.args[1] == "desktop_window_open_bridge_deferred" for call in trace_mock.call_args_list
+    )
+    assert not any(
+        call.args[1] == "desktop_bridge_ready_before_window" for call in trace_mock.call_args_list
+    )
+
+
+def test_launch_desktop_app_strict_gate_still_fails_with_phase_diagnostics() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_runtime_config(data_dir=data_dir, startup_probe=True)
+    trace_mock = mock.Mock()
+    launch_browser_mock = mock.Mock()
+    site_process = mock.Mock(spec=subprocess.Popen)
+    site_process.pid = 101
+    site_process.poll.return_value = None
+    bridge_process = mock.Mock(spec=subprocess.Popen)
+    bridge_process.pid = 202
+    bridge_process.poll.return_value = None
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[site_process, bridge_process],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            side_effect=_gate_timeout_exc(desktop_app),
+        ),
+        mock.patch.object(desktop_app, "launch_browser_for_url", launch_browser_mock),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        with pytest.raises(desktop_app.DesktopStartupReadyTimeout):
+            desktop_app.launch_desktop_app(config)
+
+    launch_browser_mock.assert_not_called()
+    timeout_diagnostics = [
+        call.args
+        for call in diagnostics_mock.call_args_list
+        if call.args[1] == "desktop-bridge-startup-timeout.txt"
+    ]
+    assert len(timeout_diagnostics) == 1
+    contents = timeout_diagnostics[0][2]
+    assert "bridge_bound_not_accepting" in contents
+    assert (
+        "desktop_bridge_startup_step_finished step=stale_task_cleanup durationMs=14160" in contents
+    )
+    assert any(
+        call.args[1] == "desktop_bridge_startup_timeout"
+        and call.kwargs["reason"] == "bridge_bound_not_accepting"
         for call in trace_mock.call_args_list
     )

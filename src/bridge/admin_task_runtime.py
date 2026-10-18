@@ -86,6 +86,7 @@ class _TaskLaunchApiLike(Protocol):
 
 class _AdminTaskRuntimeRoot(Protocol):
     TASKS_CONFIG_PATH: Path
+    _TASK_LIFECYCLE: Any
     OPS_STATE_LOCK: Any
     SYNC_STATE_LOCK: Any
     _registry_sync_flow: _RegistrySyncFlowLike
@@ -190,10 +191,83 @@ def schedule_startup_sync_pull(*, root_mod: Any) -> JsonObject:
     return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().schedule_startup_sync_pull()
 
 
+def _append_startup_step_metric(root_mod: Any, event: str, **fields: Any) -> None:
+    append = getattr(root_mod, "append_startup_metric", None)
+    if not callable(append):
+        return
+    try:
+        append(event, fields or None)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return
+
+
+def _run_startup_step(
+    root_mod: Any,
+    step: str,
+    callback: Callable[[], Any],
+    *,
+    summarize: Callable[[Any], JsonObject] | None = None,
+) -> Any:
+    """Run one post-bind startup step and record both its start and its cost.
+
+    A step that never returns leaves its `_started` event as the last line in the
+    journal, which is what makes a stalled startup bisectable in the field.
+    `summarize` adds step-specific evidence to the `_finished` row without a
+    second journal event.
+    """
+    started = time.perf_counter()
+    _append_startup_step_metric(root_mod, "desktop_bridge_startup_step_started", step=step)
+    completed = False
+    result: Any = None
+    try:
+        result = callback()
+        completed = True
+        return result
+    finally:
+        fields: JsonObject = {
+            "step": step,
+            "durationMs": int(round((time.perf_counter() - started) * 1000)),
+        }
+        if completed and summarize is not None:
+            try:
+                fields.update(summarize(result))
+            except (AttributeError, TypeError, ValueError):
+                pass
+        _append_startup_step_metric(root_mod, "desktop_bridge_startup_step_finished", **fields)
+
+
+def _compaction_hold_metric_fields(seeded: Any) -> JsonObject:
+    """Startup-journal evidence for whether the rebuild hold came from a live task."""
+    summary = seeded if isinstance(seeded, dict) else {}
+    return {
+        "seededFromActiveTask": bool(summary.get("hasActiveTask")),
+        "held": bool(summary.get("held")),
+        "holdChanged": bool(summary.get("changed")),
+        "activeTaskCount": int(summary.get("activeTaskCount") or 0),
+        "activeTaskTypes": [str(item) for item in summary.get("activeTaskTypes") or []],
+        "activeRunIds": [str(item) for item in summary.get("activeRunIds") or []],
+        "error": str(summary.get("error") or ""),
+    }
+
+
 def on_bridge_started(*, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    runtime_journals = cleanup_runtime_evidence_journals(
-        Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
+    # A task can already be running when this bridge starts (desktop reconnect to
+    # a live fetch). Seed the rebuild hold from the ledger before the steps below
+    # and before the post-bind maintenance release, so a rebuild cannot land on
+    # that task's writes. The step row records whether the seed found an active
+    # task, which is the only way a held rebuild at launch is visible in the
+    # startup journal.
+    compaction_hold = _run_startup_step(
+        root_mod,
+        "compaction_hold_seed",
+        lambda: root_mod._TASK_LIFECYCLE.sync_compaction_hold(),
+        summarize=_compaction_hold_metric_fields,
+    )
+    runtime_journals = _run_startup_step(
+        root_mod,
+        "runtime_evidence_journal_cleanup",
+        lambda: cleanup_runtime_evidence_journals(Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()),
     )
     if runtime_journals.get("quarantined") or runtime_journals.get("errors"):
         root_mod.bridge_log(
@@ -203,7 +277,11 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
             quarantined=len(runtime_journals.get("quarantined") or []),
             errors=len(runtime_journals.get("errors") or []),
         )
-    registry_journals = compact_registry_journals(Path(root_mod.RUNTIME_CONFIG.data_dir).resolve())
+    registry_journals = _run_startup_step(
+        root_mod,
+        "registry_journal_compaction",
+        lambda: compact_registry_journals(Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()),
+    )
     if registry_journals.get("compacted") or registry_journals.get("errors"):
         root_mod.bridge_log(
             "info" if not registry_journals.get("errors") else "warn",
@@ -212,12 +290,21 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
             compacted=len(registry_journals.get("compacted") or []),
             errors=len(registry_journals.get("errors") or []),
         )
-    cleanup = root_mod.cleanup_stale_startup_tasks()
-    startup_sync = root_mod.schedule_startup_sync_pull()
-    pipeline_schedule = root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
-        root_mod=root_mod
-    ).start_background_polling()
+    cleanup = _run_startup_step(
+        root_mod, "stale_task_cleanup", lambda: root_mod.cleanup_stale_startup_tasks()
+    )
+    startup_sync = _run_startup_step(
+        root_mod, "startup_sync_schedule", lambda: root_mod.schedule_startup_sync_pull()
+    )
+    pipeline_schedule = _run_startup_step(
+        root_mod,
+        "pipeline_schedule_polling",
+        lambda: root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
+            root_mod=root_mod
+        ).start_background_polling(),
+    )
     return {
+        "compactionHold": compaction_hold,
         "runtimeEvidenceJournals": runtime_journals,
         "registryJournals": registry_journals,
         "cleanup": cleanup,

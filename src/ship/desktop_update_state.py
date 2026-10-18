@@ -12,6 +12,7 @@ import contextlib
 import os
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -524,19 +525,152 @@ def _manifest_to_status(
     return next_status
 
 
+# A downloaded portable artifact is hundreds of megabytes and the desktop page
+# polls update status on every load, so hashing the artifact on a request thread
+# put a multi-second read in front of the first page. The digest therefore runs
+# on its own thread and a request only ever *waits* for it, bounded by
+# `ARTIFACT_VERIFY_BUDGET_MS`; a poll that misses the budget answers from the
+# last known status instead of blocking, and the next poll sees the digest.
+# The key is the artifact's identity (path, size, mtime_ns): any write to it
+# changes the key and forces a fresh digest, so a partial download or a replaced
+# file is still verified from scratch.
+ARTIFACT_VERIFY_BUDGET_MS = 200
+_ARTIFACT_DIGEST_CACHE_LIMIT = 4
+_artifact_digest_cache: dict[tuple[str, int, int], str] = {}
+_artifact_digest_jobs: dict[tuple[str, int, int], _ArtifactDigestJob] = {}
+_artifact_digest_cache_lock = threading.Lock()
+_DIGEST_JOB_ERRORS = (OSError, RuntimeError, ValueError)
+
+
+class _ArtifactDigestJob:
+    """One in-flight digest read, shared by every caller for the same identity."""
+
+    __slots__ = ("digest", "event")
+
+    def __init__(self) -> None:
+        self.digest = ""
+        self.event = threading.Event()
+
+
+def _artifact_digest_key(path: Path) -> tuple[str, int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (str(path), int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _store_artifact_digest(key: tuple[str, int, int], digest: str) -> None:
+    with _artifact_digest_cache_lock:
+        if len(_artifact_digest_cache) >= _ARTIFACT_DIGEST_CACHE_LIMIT:
+            _artifact_digest_cache.clear()
+        _artifact_digest_cache[key] = digest
+
+
+def _start_artifact_digest_job(path: Path, key: tuple[str, int, int]) -> _ArtifactDigestJob:
+    """Start (or join) the background digest read for one artifact identity."""
+    with _artifact_digest_cache_lock:
+        existing = _artifact_digest_jobs.get(key)
+        if existing is not None:
+            return existing
+        job = _ArtifactDigestJob()
+        _artifact_digest_jobs[key] = job
+
+    def runner() -> None:
+        try:
+            digest = compute_sha256(path)
+        except _DIGEST_JOB_ERRORS:
+            digest = ""
+        if digest:
+            _store_artifact_digest(key, digest)
+        with _artifact_digest_cache_lock:
+            _artifact_digest_jobs.pop(key, None)
+        job.digest = digest
+        job.event.set()
+
+    threading.Thread(
+        target=runner,
+        name="baluffo-artifact-digest",
+        daemon=True,
+    ).start()
+    return job
+
+
+def warm_artifact_sha256(path: Path) -> bool:
+    """Start the digest read in the background. Cheap; never blocks on the hash."""
+    key = _artifact_digest_key(path)
+    if key is None:
+        return False
+    with _artifact_digest_cache_lock:
+        if key in _artifact_digest_cache:
+            return True
+    _start_artifact_digest_job(path, key)
+    return True
+
+
+def artifact_sha256_within_budget(
+    path: Path, *, budget_ms: int = ARTIFACT_VERIFY_BUDGET_MS
+) -> str | None:
+    """Digest if it is ready within `budget_ms`, else None with the read in flight."""
+    key = _artifact_digest_key(path)
+    if key is None:
+        return None
+    with _artifact_digest_cache_lock:
+        cached = _artifact_digest_cache.get(key)
+    if cached is not None:
+        return cached
+    job = _start_artifact_digest_job(path, key)
+    if not job.event.wait(timeout=max(0.0, float(budget_ms) / 1000.0)):
+        return None
+    return job.digest or None
+
+
+def cached_artifact_sha256(path: Path) -> str:
+    """Return the artifact digest, reusing it while the file itself is unchanged."""
+    key = _artifact_digest_key(path)
+    if key is None:
+        return compute_sha256(path)
+    with _artifact_digest_cache_lock:
+        cached = _artifact_digest_cache.get(key)
+    if cached is not None:
+        return cached
+    job = _start_artifact_digest_job(path, key)
+    job.event.wait()
+    if job.digest:
+        return job.digest
+    # The background read could not hash the file; surface the failure the same
+    # way the previous inline read did instead of reporting an empty digest.
+    return compute_sha256(path)
+
+
 def _reconcile_downloaded_artifact_status(
     *,
     paths: Any,
     manifest: dict[str, Any],
     status: dict[str, Any],
+    verify_budget_ms: int | None = None,
 ) -> dict[str, Any]:
+    """Reconcile the downloaded artifact against the manifest digest.
+
+    `verify_budget_ms=None` verifies fully (the install gate needs that answer).
+    A budget instead lets a status poll wait at most that long: when the digest
+    is not ready the status is returned unchanged rather than flipping to
+    "not downloaded", so an unverified artifact is never claimed either way.
+    """
     next_status = dict(status)
     install_state = str(next_status.get("installState") or "").strip().lower()
     artifact = _as_dict(manifest.get("portable_artifact"))
     artifact_path = paths.downloads_dir / _portable_artifact_name(manifest)
     expected_hash = str(artifact.get("sha256") or "").strip().lower()
     if artifact_path.is_file() and expected_hash:
-        if compute_sha256(artifact_path).lower() == expected_hash:
+        digest = (
+            cached_artifact_sha256(artifact_path)
+            if verify_budget_ms is None
+            else artifact_sha256_within_budget(artifact_path, budget_ms=verify_budget_ms)
+        )
+        if digest is None:
+            return next_status
+        if digest.lower() == expected_hash:
             size_bytes = int(artifact_path.stat().st_size)
             next_status["downloadState"] = "downloaded"
             if install_state not in constants_mod.INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT:

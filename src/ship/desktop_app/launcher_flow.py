@@ -21,6 +21,7 @@ from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
 from .config import (
     ACTIVE_WORK_RECOVERY_STOP_REASONS,
+    BRIDGE_GATE_TIMEOUT_S,
     JOBS_COLD_START_ENV,
     PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     READY_TIMEOUT_S,
@@ -28,6 +29,7 @@ from .config import (
     STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     STARTUP_PROBE_URL_READY_INTERVAL_S,
     STARTUP_PROFILE_MODE_ENV,
+    STRICT_STARTUP_GATE_ENV,
     DesktopRuntimeConfig,
 )
 
@@ -115,6 +117,16 @@ def _bridge_owner_idle_timeout_s(config: DesktopRuntimeConfig) -> float:
 def _parallel_bridge_startup_enabled(api: Any, config: DesktopRuntimeConfig) -> bool:
     value = str(api.os.environ.get(STARTUP_PARALLEL_BRIDGE_ENV) or "").strip().lower()
     return bool(config.startup_probe and value in {"1", "true", "yes", "on"})
+
+
+def _strict_startup_gate(api: Any, config: DesktopRuntimeConfig) -> bool:
+    """Keep the old block-until-ready gate for probes and explicit strict runs."""
+    value = str(api.os.environ.get(STRICT_STARTUP_GATE_ENV) or "").strip().lower()
+    return bool(config.startup_probe or value in {"1", "true", "yes", "on"})
+
+
+def _bridge_gate_timeout_s(*, strict: bool) -> float:
+    return READY_TIMEOUT_S if strict else BRIDGE_GATE_TIMEOUT_S
 
 
 def _start_desktop_bridge_process(
@@ -295,46 +307,74 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                         started_mono=started_mono,
                         mode="deferred",
                     )
+                strict_startup_gate = _strict_startup_gate(api, config)
+                gate_timeout_s = _bridge_gate_timeout_s(strict=strict_startup_gate)
                 api._append_startup_trace(
                     config.data_dir,
                     "desktop_bridge_startup_ready_wait_started",
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                     bridgePort=int(config.bridge_port),
+                    gateTimeoutMs=int(gate_timeout_s * 1000),
+                    strict=bool(strict_startup_gate),
                 )
+                bridge_gate_state = "ready"
                 try:
                     api.wait_for_desktop_startup_ready(
                         config.bridge_port,
                         app_version=api.get_app_version(),
-                        timeout_s=READY_TIMEOUT_S,
+                        timeout_s=gate_timeout_s,
+                        data_dir=config.data_dir,
                     )
                 except api.DesktopStartupReadyTimeout as exc:
+                    payload = exc.payload if isinstance(getattr(exc, "payload", None), dict) else {}
+                    raw_phases = payload.get("startupPhases")
+                    phases = (
+                        [row for row in raw_phases if isinstance(row, dict)]
+                        if isinstance(raw_phases, list)
+                        else []
+                    )
+                    if strict_startup_gate:
+                        bridge_gate_state = "timeout"
+                        api._append_startup_trace(
+                            config.data_dir,
+                            "desktop_bridge_startup_timeout",
+                            elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                            reason=str(exc.reason or ""),
+                            bridgePort=int(config.bridge_port),
+                            url=str(open_url),
+                            startupPhases=list(phases),
+                        )
+                        api._write_launch_diagnostics(
+                            config.data_dir,
+                            "desktop-bridge-startup-timeout.txt",
+                            api.format_startup_timeout_diagnostics(
+                                exc, open_url=str(open_url), phases=list(phases)
+                            ),
+                        )
+                        raise
+                    bridge_gate_state = "deferred"
                     api._append_startup_trace(
                         config.data_dir,
-                        "desktop_bridge_startup_timeout",
+                        "desktop_bridge_gate_deferred",
                         elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                         reason=str(exc.reason or ""),
                         bridgePort=int(config.bridge_port),
+                        gateTimeoutMs=int(gate_timeout_s * 1000),
                         url=str(open_url),
+                        startupPhaseCount=len(phases),
                     )
-                    api._write_launch_diagnostics(
-                        config.data_dir,
-                        "desktop-bridge-startup-timeout.txt",
-                        (
-                            f"{str(exc)}\n\n"
-                            f"Reason: {str(exc.reason or 'unknown')}\n"
-                            f"Recovery URL: {str(open_url)}\n"
-                        ),
-                    )
-                    raise
                 api._append_startup_trace(
                     config.data_dir,
                     "desktop_bridge_startup_ready_wait_finished",
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                     bridgePort=int(config.bridge_port),
+                    state=str(bridge_gate_state),
                 )
                 api._append_startup_trace(
                     config.data_dir,
-                    "desktop_bridge_ready_before_window",
+                    "desktop_bridge_ready_before_window"
+                    if bridge_gate_state == "ready"
+                    else "desktop_window_open_bridge_deferred",
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                     bridgePort=int(config.bridge_port),
                 )

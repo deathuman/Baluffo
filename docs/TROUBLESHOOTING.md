@@ -57,7 +57,7 @@ investigating further:
 | Check | How to read it |
 |-------|----------------|
 | Bridge still alive | Bridge PID in `%LOCALAPPDATA%\Baluffo\desktop-session.json` matches the running `Baluffo.exe`; a restart is logged as a new `desktop_bridge_spawned` startup-trace event |
-| Not a cold-start race | The launcher already waits for bridge startup readiness before opening the window, so a fresh launch cannot produce this |
+| Not a cold-start race | A fresh launch waits only `BRIDGE_GATE_TIMEOUT_S` (4 s) for bridge readiness, so `desktop_bridge_gate_deferred` in the startup metrics is expected on a slow launch and is not this failure by itself |
 | Not a site failure | `:8080` staying healthy while only `:8877` fails isolates it to the bridge listener |
 | Accept stalls | `GET /ops/performance-profile` returns `acceptMetrics`; a non-zero `stallCount` or a raised `maxAcceptWaitMs` confirms the acceptor was descheduled under load |
 | Connection churn | `Get-NetTCPConnection -LocalPort 8877 \| Group-Object State`; a large `TimeWait` count means requests were not reusing sockets |
@@ -305,6 +305,73 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 | Bridge ready | Wait for bridge to finish starting |
 | Port conflict | Check if another Baluffo instance is running |
 | Log files | Check `data/` for startup logs |
+
+### Desktop startup is slow, or the window opens before the bridge answers
+
+Since the short bridge gate, the window can legitimately open while the bridge is
+still booting. The page shows a `Bridge Starting` badge and retries its local-data
+bootstrap for 25 s, so a launch that settles a few seconds later is by design.
+Something is genuinely wrong when the page never settles, or when a probe/strict
+run times out.
+
+Read the shipped startup journal first (always written for desktop launches):
+
+- Windows packaged: `%APPDATA%\Baluffo\desktop-startup-metrics.jsonl`
+- Dev/custom data root: the configured `--data-dir`
+
+| Symptom in the journal | Meaning | Action |
+|------------------------|---------|--------|
+| No `desktop_bridge_child_start` row | The bridge child never reached the launcher shim | Check `desktop_bridge_spawn_started`/`desktop_bridge_process_started` and the bridge exit code |
+| Last row is `desktop_bridge_startup_step_started` with no matching `_finished` | That startup step is the stall; `step` names it | Inspect the named step (`compaction_hold_seed`, `stale_task_cleanup`, `startup_sync_schedule`, journal cleanup, or pipeline schedule polling) |
+| `desktop_bridge_socket_bound` without `desktop_bridge_accept_loop_started` | The listener bound but never entered its loop | Treat as a bridge bug; capture `desktop-bridge-startup-timeout.txt` |
+| `desktop_bridge_startup_step_finished` for `compaction_hold_seed` has `seededFromActiveTask: true` | A task was already running when the bridge started, so the rebuild was held from the first write | Expected on a reconnect to a live fetch; confirm the task finishes and `/ops/storage-health` later shows `heldByActiveTask: false` |
+| Long gap between `desktop_bridge_configured` and `desktop_bridge_registry_ready` | Storage or registry work is slow | Check `/ops/storage-health` for `walMaintenance`/`compaction` status (`deferred`, `ok`, `skipped-busy`, durations) and `databaseBytes`/`freelistBytes` |
+| `desktop_bridge_gate_deferred` then `desktop_window_open_bridge_deferred` | The window opened before readiness (expected on slow launches) | Confirm the page later logs `jobs_local_data_init_ready` / `admin_ready` |
+| `desktop_bridge_startup_work_admitted` then the first `desktop_bridge_startup_step_started` some hundreds of ms later | Heavy startup work waited for the first request burst to go quiet — that wait is the first-paint work budget working, not a stall | Read `admission`/`reason` on the row: `request-quiet` means the page admitted it, `budget-expired`/`wait-timeout` means the budget did because no page arrived |
+| `desktop_bridge_deferred_startup_work_finished` with `ok: false` | One queued startup item failed (`label` names it) and the queue continued | Investigate the label's own log event; the failure is by design non-fatal |
+| `/app/update-status` reports the previous `downloadState` for a poll or two after launch | The downloaded artifact's digest is still being read in the background, and the poll only waits `ARTIFACT_VERIFY_BUDGET_MS` (200 ms) for it | Expected; the next poll reports the verified state. Install still verifies fully before staging |
+| `desktop_bridge_startup_step_finished` for `startup_sync_schedule` takes seconds | The sync run's lifecycle transition is waiting on the store write lock, not doing its own work (the task projection is mirrored in one commit) | Check `/ops/storage-health` `busyRate`/`writeTransactions` and the `storage-metrics` journal for the commit that held the lock; expect the step around 0.2–0.4 s |
+
+Bridge startup is served before post-bind startup work: `on_started` steps run on
+their own thread after `desktop_bridge_accept_loop_started`, and only after the
+first-paint work budget admits them (`desktop_bridge_startup_work_admitted`, see
+[`startup-probe-architecture.md`](startup-probe-architecture.md#first-paint-work-budget)).
+`BALUFFO_STARTUP_WORK_BUDGET_MS=0` admits that work at bind for a control run. SQLite checkpoints and
+VACUUMs are held until `desktop_bridge_storage_maintenance_resumed`, so a large
+runtime database no longer blocks the readiness path. The same limits are visible
+at runtime in `GET /ops/storage-health` (`walMaintenance.status`,
+`compaction.status`, both with `deferred` and `postServeRun`).
+
+Two gates sit in front of a released VACUUM. First, a running task holds it
+outright: while any task lifecycle row is active the rebuild records
+`compaction.status: "held-active-task"` and `compaction.heldByActiveTask: true`,
+and finishing the last task releases it and re-schedules the rebuild. That is the
+normal state during a fetch, sync, or pipeline run — write silence cannot tell a
+finished task from a slow source, so the hold is what keeps a rebuild off a live
+task's writes. Second, once released, the rebuild waits for `compaction.idleGateS`
+(30 s default) of write silence —
+`largeDatabaseIdleS` (120 s) on a database at or above `largeDatabaseBytes` (512
+MiB) — gives up after `idleMaxWaitS`, and records
+`compaction.status: "skipped-busy"` with the window it actually applied
+(`effectiveIdleGateS`) and the idle time it saw (`idleForS`) instead of stalling
+writers. A pending `skipped-busy` on a live session is expected while fetch/sync
+tasks write — the next quiet write schedules the rebuild again. So is a large
+freelist on a database at or above 512 MiB: the ratio threshold it must clear is
+`compaction.largeDatabaseFreelistRatio` (0.35), not `freelistRatio`.
+
+Knobs:
+
+- `BALUFFO_DESKTOP_STRICT_STARTUP=1` (or a startup-probe launch) restores the old
+  block-until-ready behavior; on timeout it writes
+  `%APPDATA%\Baluffo\desktop-bridge-startup-timeout.txt` with the reason and the
+  newest bridge phase rows. The same file is written when a deferred launch's
+  background readiness wait (`desktop_bridge_startup_timeout`) never completes.
+- `BALUFFO_DESKTOP_STARTUP_TRACE_DISABLED=1` stops child-runtime phase rows;
+  `BALUFFO_DESKTOP_STARTUP_TRACE=1` forces them on for a non-desktop run.
+
+The startup journal rotates once at 24 MiB to
+`desktop-startup-metrics.jsonl.1`, so "the entries stop" is a rotation, not a
+silent crash.
 
 ### Closed desktop window leaves `Baluffo.exe` running
 

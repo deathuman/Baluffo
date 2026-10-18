@@ -29,6 +29,11 @@ DEFAULT_OPEN_PATH = str(DESKTOP_DEFAULTS["open_path"])
 DEFAULT_SITE_PORT = int(DESKTOP_DEFAULTS["site_port"])
 DEFAULT_BRIDGE_PORT = int(DESKTOP_DEFAULTS["bridge_port"])
 READY_TIMEOUT_S = 25.0
+# The window opens after this short bridge gate. A bridge that is still booting
+# keeps loading behind the already-open page instead of holding the window shut
+# for up to READY_TIMEOUT_S.
+BRIDGE_GATE_TIMEOUT_S = 4.0
+STRICT_STARTUP_GATE_ENV = "BALUFFO_DESKTOP_STRICT_STARTUP"
 STARTUP_PROBE_URL_READY_INTERVAL_S = 0.05
 HEARTBEAT_STARTUP_TIMEOUT_S = 90.0
 HEARTBEAT_IDLE_TIMEOUT_S = 600.0

@@ -56,6 +56,15 @@ class JobAvailabilityService:
         # FIFO; only canonical resolutions are cached.
         self._identity_cache: dict[str, dict[str, Any]] = {}
         self._identity_cache_limit = 256
+        # Parsed lifecycle rows, reused while the artifact is unchanged. The
+        # canonical state is routinely tens of megabytes of gzip JSON and the
+        # startup catch-up admits up to ten targets at once, so without this
+        # every worker parsed the whole file and the bridge's request threads
+        # waited behind them.
+        self._lifecycle_cache_lock = threading.Lock()
+        self._lifecycle_cache_path: Path | None = None
+        self._lifecycle_cache_stamp: tuple[int, int] | None = None
+        self._lifecycle_cache_rows: dict[str, dict[str, Any]] = {}
         self._sweep_lock = threading.Lock()
         self._sweep_thread: threading.Thread | None = None
         self._sweep_wakeup = threading.Event()
@@ -75,6 +84,29 @@ class JobAvailabilityService:
     @property
     def priority_manifest_path(self) -> Path:
         return self.data_dir / "jobs-availability-priority.json"
+
+    def _lifecycle_rows(self, state_path: Path) -> dict[str, dict[str, Any]]:
+        """Read lifecycle rows, reusing the last parse while the file is unchanged.
+
+        Returns a fresh mapping so a caller may replace entries in what it reads
+        (the evidence commit path does) without mutating the reused parse. The
+        file's ``(mtime_ns, size)`` fingerprint invalidates the reuse, which is
+        the same signal the identity cache already trusts.
+        """
+        stamp = lifecycle_state_fingerprint(state_path)
+        with self._lifecycle_cache_lock:
+            if (
+                stamp is not None
+                and state_path == self._lifecycle_cache_path
+                and stamp == self._lifecycle_cache_stamp
+            ):
+                return dict(self._lifecycle_cache_rows)
+        rows = read_job_lifecycle_state(state_path)
+        with self._lifecycle_cache_lock:
+            self._lifecycle_cache_path = state_path
+            self._lifecycle_cache_stamp = stamp
+            self._lifecycle_cache_rows = rows
+        return dict(rows)
 
     def _bounded(self, row: dict[str, Any]) -> dict[str, Any]:
         result_raw = row.get("result")
@@ -125,7 +157,7 @@ class JobAvailabilityService:
                 for row in payload.get("rows") or []
                 if isinstance(row, dict) and str(row.get("scope") or "") == "custom_saved"
             }
-            existing_custom = read_job_lifecycle_state(self.custom_lifecycle_path)
+            existing_custom = self._lifecycle_rows(self.custom_lifecycle_path)
             retained_custom = {
                 key: entry
                 for key, entry in existing_custom.items()
@@ -136,7 +168,7 @@ class JobAvailabilityService:
         return dict(payload or {})
 
     def start_overdue_catchup(self, *, limit: int = 10) -> dict[str, Any]:
-        lifecycle = read_job_lifecycle_state(self.lifecycle_path)
+        lifecycle = self._lifecycle_rows(self.lifecycle_path)
         candidates = sorted(
             (
                 entry
@@ -227,7 +259,7 @@ class JobAvailabilityService:
         }
 
     def project_published_transitions(self) -> int:
-        lifecycle = read_job_lifecycle_state(self.lifecycle_path)
+        lifecycle = self._lifecycle_rows(self.lifecycle_path)
         entries = [dict(entry) for entry in lifecycle.values() if isinstance(entry, dict)]
         store = self.local_store_factory()
         batch_projector = getattr(store, "project_availability_transitions", None)
@@ -375,7 +407,7 @@ class JobAvailabilityService:
                     state_path,
                     dict(cached.get("entry") or {}),
                 )
-        lifecycle = read_job_lifecycle_state(state_path)
+        lifecycle = self._lifecycle_rows(state_path)
         match = next(
             (
                 (key, entry)
@@ -417,7 +449,7 @@ class JobAvailabilityService:
             scope = "custom_saved"
             state_path = self.custom_lifecycle_path
             lifecycle_key = availability_id
-            private_lifecycle = read_job_lifecycle_state(state_path)
+            private_lifecycle = self._lifecycle_rows(state_path)
             entry = dict(private_lifecycle.get(lifecycle_key) or {})
             entry.update(
                 {
@@ -540,7 +572,7 @@ class JobAvailabilityService:
                 str(fallback_entry.get("availabilityId") or ""),
             ):
                 return fallback_entry, False
-            latest = read_job_lifecycle_state(state_path)
+            latest = self._lifecycle_rows(state_path)
             current_entry = dict(latest.get(lifecycle_key) or fallback_entry)
             if self._evidence_is_stale(current_entry, evidence):
                 return current_entry, False
@@ -630,7 +662,7 @@ class JobAvailabilityService:
             current_entry = dict(entry)
             cached_stamp = (self._identity_cache.get(availability_id) or {}).get("stamp")
             if cached_stamp is None or lifecycle_state_fingerprint(state_path) != cached_stamp:
-                latest = read_job_lifecycle_state(state_path)
+                latest = self._lifecycle_rows(state_path)
                 current_entry = dict(latest.get(lifecycle_key) or entry)
             with self._apply_lock:
                 next_entry, applied = self._apply_checked_evidence(

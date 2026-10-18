@@ -43,6 +43,7 @@ from src.ship.desktop_update_shared import (
     write_json_atomic,
 )
 from src.ship.desktop_update_state import (
+    ARTIFACT_VERIFY_BUDGET_MS,
     _cached_release_notes,
     _cached_release_notes_history,
     _failure_result,
@@ -65,6 +66,7 @@ from src.ship.desktop_update_state import (
     load_status,
     read_cached_manifest,
     save_status,
+    warm_artifact_sha256,
     write_handoff_diagnostics,
 )
 
@@ -160,6 +162,7 @@ class DesktopUpdateService:
         status: dict[str, Any] | None = None,
         cached_manifest: dict[str, Any] | None = None,
         manifest: dict[str, Any] | None = None,
+        verify_budget_ms: int | None = None,
     ) -> dict[str, Any]:
         current_version = self.current_version()
         existing = (
@@ -193,6 +196,7 @@ class DesktopUpdateService:
                 paths=self.paths,
                 manifest=manifest_payload,
                 status=next_status,
+                verify_budget_ms=verify_budget_ms,
             )
             if (
                 str(existing.get("downloadState") or "").strip().lower() == "downloading"
@@ -299,9 +303,35 @@ class DesktopUpdateService:
             )
         )
 
-    def get_status_payload(self) -> dict[str, Any]:
+    def get_status_payload(
+        self, *, verify_budget_ms: int | None = ARTIFACT_VERIFY_BUDGET_MS
+    ) -> dict[str, Any]:
+        """Status for the page poll: never waits more than the digest budget."""
         with self._lock:
-            return dict(self._reconcile_status_locked())
+            return dict(self._reconcile_status_locked(verify_budget_ms=verify_budget_ms))
+
+    def warm_downloaded_artifact(self) -> dict[str, Any]:
+        """Start the downloaded artifact's digest off the request path.
+
+        The page polls update status within a second of launch and a portable
+        artifact is hundreds of megabytes, so the digest is warmed here instead
+        of on the first poll; `get_status_payload` still bounds its wait in case
+        the read has not finished.
+        """
+        with self._lock:
+            _cached, manifest, _release_notes, _release_notes_history = (
+                self._load_cached_manifest_parts()
+            )
+            if not manifest:
+                return {"requested": False, "reason": "no_cached_manifest"}
+            artifact = _as_dict(manifest.get("portable_artifact"))
+            if not str(artifact.get("sha256") or "").strip():
+                return {"requested": False, "reason": "no_expected_digest"}
+            artifact_path = self.paths.downloads_dir / _portable_artifact_name(manifest)
+            if not artifact_path.is_file():
+                return {"requested": False, "reason": "artifact_missing"}
+            requested = warm_artifact_sha256(artifact_path)
+        return {"requested": bool(requested), "path": str(artifact_path)}
 
     def _resolve_latest_release(self) -> dict[str, Any]:
         repo = resolve_release_repo(

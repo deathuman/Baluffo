@@ -5,6 +5,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
+from src.bridge.storage_health import set_storage_compaction_hold
 from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage import BaluffoStore, TaskRuntimeStore
 from tests.helpers.json_files import load_json_object
@@ -343,3 +345,55 @@ def test_lifecycle_shadow_projection_receives_compact_rows(tmp_path: Path) -> No
         }
         assert projected["summary"] == {"queuedCandidateCount": 1}
         assert diagnostics[-1]["code"] == "task_runs_projection_match"
+
+
+def test_sync_compaction_hold_reports_an_active_seed(tmp_path: Path) -> None:
+    """The startup seed must say which live task it held the rebuild for."""
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    lifecycle = AdminTaskLifecycle(
+        lifecycle_path=lambda: lifecycle_path,
+        max_rows=lambda: 240,
+        lock=threading.RLock(),
+        load_json_object=_load_json_object,
+        save_json_atomic=_save_json_atomic,
+        now_iso=lambda: "2026-05-06T19:00:00+00:00",
+        parse_iso=_parse_iso,
+    )
+    try:
+        idle = lifecycle.sync_compaction_hold()
+        assert idle["hasActiveTask"] is False
+        assert idle["activeTaskCount"] == 0
+        assert idle["held"] is False
+        assert idle["changed"] is False
+
+        _save_json_atomic(
+            lifecycle_path,
+            {
+                "schemaVersion": 1,
+                "updatedAt": "",
+                "rows": [
+                    {
+                        "runId": "fetch_live",
+                        "taskType": "fetch",
+                        "status": "running",
+                        "startedAt": "2026-05-06T18:00:00+00:00",
+                        "ownerKind": "bridge_thread",
+                    }
+                ],
+            },
+        )
+        seeded = lifecycle.sync_compaction_hold()
+        assert seeded["hasActiveTask"] is True
+        assert seeded["activeTaskCount"] == 1
+        assert seeded["activeTaskTypes"] == ["fetch"]
+        assert seeded["activeRunIds"] == ["fetch_live"]
+        assert seeded["held"] is True
+        assert seeded["changed"] is True
+
+        _save_json_atomic(lifecycle_path, {"schemaVersion": 1, "updatedAt": "", "rows": []})
+        released = lifecycle.sync_compaction_hold()
+        assert released["hasActiveTask"] is False
+        assert released["held"] is False
+        assert released["changed"] is True
+    finally:
+        set_storage_compaction_hold(False)

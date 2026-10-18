@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from src.bridge import startup_work_budget
 from src.source_registry import normalize_source_url as normalize_source_url_impl
 from src.source_registry import source_identity as source_identity_impl
 from src.source_registry import source_url_fingerprint as source_url_fingerprint_impl
@@ -531,10 +532,13 @@ class BridgeApi:
         if self._field_is_default("get_job_availability_check_status"):
             self.get_job_availability_check_status = self.availability.status
         if bool(getattr(self.runtime_config, "desktop_mode", False)):
-            try:
-                self.availability.start_overdue_catchup()
-            except (OSError, RuntimeError, TypeError, ValueError):
-                pass
+            # Ten catch-up workers each parse the lifecycle artifact. Starting
+            # them at construction put that work in front of the page's first
+            # request burst, so it is queued behind the first-paint budget
+            # instead (see `startup_work_budget`).
+            startup_work_budget.submit_startup_work(
+                "availability_overdue_catchup", self.availability.start_overdue_catchup
+            )
         if self._field_is_default("compute_ops_health_ready") and not self._field_is_default(
             "compute_ops_health"
         ):

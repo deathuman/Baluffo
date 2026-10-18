@@ -214,6 +214,63 @@ def test_task_runtime_store_status_normalization_and_canceled_protection() -> No
             assert overwritten["terminalReason"] == "user_abort_requested"
 
 
+def test_task_runtime_store_batch_upsert_is_one_transaction_and_keeps_canceled_rows() -> None:
+    with workspace_tmpdir("task-runtime-store-batch") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00+00:00")
+            runtime.terminalize_task_run(
+                "sync_canceled",
+                "sync",
+                status="canceled",
+                terminal_reason="user_abort_requested",
+            )
+            transactions_before = int(store.health()["writeTransactions"])
+
+            runtime.upsert_task_runs(
+                [
+                    {
+                        "runId": f"fetch_{index}",
+                        "taskType": "fetch",
+                        "status": "running",
+                        "startedAt": "2026-05-12T09:00:00+00:00",
+                        "summary": {"index": index},
+                    }
+                    for index in range(40)
+                ]
+                # A stale projection row must not resurrect a canceled run.
+                + [
+                    {
+                        "runId": "sync_canceled",
+                        "taskType": "sync",
+                        "status": "running",
+                        "startedAt": "2026-05-12T09:00:00+00:00",
+                    }
+                ]
+            )
+
+            assert int(store.health()["writeTransactions"]) - transactions_before == 1
+            active_ids = {row["runId"] for row in runtime.current_task_runs()}
+            assert active_ids == {f"fetch_{index}" for index in range(40)}
+            canceled = next(
+                row for row in runtime.recent_task_runs() if row["runId"] == "sync_canceled"
+            )
+            assert canceled["lifecycleStatus"] == "canceled"
+            assert canceled["terminalReason"] == "user_abort_requested"
+
+
+def test_task_runtime_store_batch_upsert_validates_rows_and_skips_empty_input() -> None:
+    with workspace_tmpdir("task-runtime-store-batch-validation") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00+00:00")
+            transactions_before = int(store.health()["writeTransactions"])
+
+            runtime.upsert_task_runs([])
+            assert int(store.health()["writeTransactions"]) == transactions_before
+
+            with pytest.raises(ValueError):
+                runtime.upsert_task_runs([{"runId": "", "taskType": "fetch", "status": "running"}])
+
+
 def test_task_runtime_store_heartbeat_missing_and_terminal_rows() -> None:
     with workspace_tmpdir("task-runtime-store-heartbeat-edge") as data_dir:
         with BaluffoStore(data_dir) as store:

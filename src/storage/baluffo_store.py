@@ -12,12 +12,15 @@ import logging
 import sqlite3
 import threading
 import time
+import traceback
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any, TypeVar, cast
+
+from src.storage_metrics import record_slow_store_write
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +36,34 @@ DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
 DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES = 64 * 1024 * 1024
 DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES = 50 * 1024 * 1024
 DEFAULT_VACUUM_FREELIST_RATIO = 0.20
+# A VACUUM rewrites the whole database, so its cost and its write-lock hold time
+# scale with file size. Past this size the store asks for more free space before
+# rebuilding: a multi-gigabyte database that VACUUMs at 20% free pays a very long
+# lock to reclaim a merely moderate freelist.
+DEFAULT_VACUUM_LARGE_DATABASE_BYTES = 512 * 1024 * 1024
+DEFAULT_VACUUM_LARGE_DATABASE_RATIO = 0.35
+# The rebuilt database is only worth the lock while nobody is writing to it.
+# The worker waits for the write path to be quiet this long, for at most the
+# larger max-wait budget; a busy store records the skip instead of stalling
+# writers behind the rebuild.
+DEFAULT_VACUUM_IDLE_S = 30.0
+# A rebuild of a database past vacuum_large_database_bytes holds the lock for tens
+# of seconds, so it asks for proportionally stronger evidence that the write path
+# is done: a bursty fetch can leave a 30 s gap between sources mid-run.
+DEFAULT_VACUUM_LARGE_DATABASE_IDLE_S = 120.0
+DEFAULT_VACUUM_IDLE_MAX_WAIT_S = 600.0
+DEFAULT_VACUUM_IDLE_POLL_S = 5.0
+DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S = 5.0
+# One SQLite write transaction should take tens of milliseconds. A write that
+# waits longer than this to take the store write lock, or holds it longer, is
+# recorded with its thread and stack: that is the only evidence that attributes a
+# multi-second startup or route stall to the writer that caused it.
+DEFAULT_SLOW_WRITE_WARN_MS = 1000
+SLOW_WRITE_STACK_LIMIT = 12
+MAINTENANCE_STATUS_DEFERRED = "deferred"
+MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
+MAINTENANCE_STATUS_SKIPPED_BUSY = "skipped-busy"
+MAINTENANCE_STATUS_HELD_ACTIVE_TASK = "held-active-task"
 MIGRATIONS_PACKAGE = "src.storage.migrations"
 STORAGE_SCHEMA_VERSION = 1
 
@@ -89,6 +120,15 @@ class BaluffoStore:
         quick_check_max_database_bytes: int = DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES,
         vacuum_freelist_threshold_bytes: int = DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES,
         vacuum_freelist_ratio: float = DEFAULT_VACUUM_FREELIST_RATIO,
+        vacuum_large_database_bytes: int = DEFAULT_VACUUM_LARGE_DATABASE_BYTES,
+        vacuum_large_database_ratio: float = DEFAULT_VACUUM_LARGE_DATABASE_RATIO,
+        vacuum_idle_s: float = DEFAULT_VACUUM_IDLE_S,
+        vacuum_large_database_idle_s: float = DEFAULT_VACUUM_LARGE_DATABASE_IDLE_S,
+        vacuum_idle_max_wait_s: float = DEFAULT_VACUUM_IDLE_MAX_WAIT_S,
+        vacuum_idle_poll_s: float = DEFAULT_VACUUM_IDLE_POLL_S,
+        defer_maintenance: bool = False,
+        compaction_hold: bool = False,
+        slow_write_warn_ms: int = DEFAULT_SLOW_WRITE_WARN_MS,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.db_name = str(db_name or DEFAULT_DB_NAME)
@@ -104,6 +144,17 @@ class BaluffoStore:
         self.quick_check_max_database_bytes = max(1, int(quick_check_max_database_bytes))
         self.vacuum_freelist_threshold_bytes = max(1, int(vacuum_freelist_threshold_bytes))
         self.vacuum_freelist_ratio = max(0.01, min(1.0, float(vacuum_freelist_ratio)))
+        self.vacuum_large_database_bytes = max(1, int(vacuum_large_database_bytes))
+        self.vacuum_large_database_ratio = max(
+            self.vacuum_freelist_ratio, min(1.0, float(vacuum_large_database_ratio))
+        )
+        self.vacuum_idle_s = max(0.0, float(vacuum_idle_s))
+        self.vacuum_large_database_idle_s = max(
+            self.vacuum_idle_s, float(vacuum_large_database_idle_s)
+        )
+        self.vacuum_idle_max_wait_s = max(0.0, float(vacuum_idle_max_wait_s))
+        self.vacuum_idle_poll_s = max(0.05, float(vacuum_idle_poll_s))
+        self._last_write_monotonic = time.monotonic()
         self._last_write_error = ""
         self._busy_count = 0
         self._write_attempts = 0
@@ -127,6 +178,10 @@ class BaluffoStore:
         self._write_lock = threading.RLock()
         self._read_lock = threading.RLock()
         self._maintenance_lock = threading.RLock()
+        self._maintenance_deferred = bool(defer_maintenance)
+        self._compaction_hold = bool(compaction_hold)
+        self.slow_write_warn_ms = max(0, int(slow_write_warn_ms))
+        self._post_serve_maintenance_started = False
         self._reader: sqlite3.Connection | None = None
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -251,12 +306,20 @@ class BaluffoStore:
     def write(self, callback: Callable[[sqlite3.Connection], _T]) -> _T:
         last_busy_error: sqlite3.OperationalError | None = None
         for attempt in range(self.busy_retry_attempts):
+            # Every attempt, including a busy retry, counts as write activity: the
+            # idle gate must not start a rebuild while writers are still arriving.
+            self._last_write_monotonic = time.monotonic()
             self._write_attempts += 1
             try:
+                lock_started = time.perf_counter()
                 with self._write_lock:
+                    waited_s = time.perf_counter() - lock_started
+                    hold_started = time.perf_counter()
                     self._writer.execute("BEGIN IMMEDIATE")
                     result = callback(self._writer)
                     self._writer.commit()
+                    held_s = time.perf_counter() - hold_started
+                self._record_slow_write(operation="write", waited_s=waited_s, held_s=held_s)
                 self._last_write_error = ""
                 self._write_transactions += 1
                 self.schedule_wal_maintenance_if_needed(reason="write")
@@ -283,6 +346,34 @@ class BaluffoStore:
         message = f"SQLite write failed after busy retry attempts: {last_busy_error}"
         LOGGER.error(message)
         raise BaluffoStoreError(message)
+
+    def _record_slow_write(self, *, operation: str, waited_s: float, held_s: float) -> None:
+        """Journal a write-lock operation that will not go unnoticed in the field.
+
+        A waiter and a holder both write a row, so the stalled caller and the
+        writer that blocked it are attributable from the same journal.
+        """
+        if self.slow_write_warn_ms <= 0:
+            return
+        wait_ms = int(round(max(0.0, waited_s) * 1000))
+        hold_ms = int(round(max(0.0, held_s) * 1000))
+        if wait_ms < self.slow_write_warn_ms and hold_ms < self.slow_write_warn_ms:
+            return
+        try:
+            record_slow_store_write(
+                operation=operation,
+                wait_ms=wait_ms,
+                hold_ms=hold_ms,
+                thread_name=threading.current_thread().name,
+                stack="".join(
+                    traceback.format_list(traceback.extract_stack()[:-1][-SLOW_WRITE_STACK_LIMIT:])
+                ),
+                artifact=self.db_path.name,
+                data_dir=self.data_dir,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError):
+            # Diagnostics must never break a committed write.
+            return
 
     def _rollback_after_error(self) -> None:
         try:
@@ -474,10 +565,18 @@ class BaluffoStore:
         raise BaluffoStoreError(message)
 
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
+        lock_started = time.perf_counter()
         with self._write_lock:
-            return cast(
+            waited_s = time.perf_counter() - lock_started
+            hold_started = time.perf_counter()
+            row = cast(
                 sqlite3.Row, self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
             )
+            held_s = time.perf_counter() - hold_started
+        self._record_slow_write(
+            operation=f"checkpoint:{str(mode or '').lower()}", waited_s=waited_s, held_s=held_s
+        )
+        return row
 
     @staticmethod
     def _path_size(path: Path) -> int:
@@ -513,14 +612,134 @@ class BaluffoStore:
             return {
                 **self._last_checkpoint,
                 "running": running,
+                "deferred": self._maintenance_deferred,
+                "postServeRun": self._post_serve_maintenance_started,
                 "checkpointThresholdBytes": self.wal_checkpoint_threshold_bytes,
                 "truncateThresholdBytes": self.wal_truncate_threshold_bytes,
             }
+
+    @property
+    def maintenance_deferred(self) -> bool:
+        with self._maintenance_lock:
+            return self._maintenance_deferred
+
+    @property
+    def compaction_held(self) -> bool:
+        with self._maintenance_lock:
+            return self._compaction_hold
+
+    def set_compaction_hold(self, held: bool) -> bool:
+        """Hold the rebuild while bridge tasks are running, and release it after.
+
+        Write silence alone is a weak signal during a fetch or sync: the worker can
+        see a quiet gap between two sources and start a rebuild that the task then
+        has to write behind. The bridge holds compaction while any task row is
+        active and releases it when the last one goes terminal, which re-schedules
+        a due rebuild through the idle gate instead of waiting for one.
+
+        Returns True when the release scheduled a rebuild.
+        """
+        with self._maintenance_lock:
+            changed = self._compaction_hold != bool(held)
+            self._compaction_hold = bool(held)
+        if not changed or self._compaction_hold:
+            return False
+        return self.schedule_compaction_if_needed(reason="compaction-hold-released")
+
+    def set_maintenance_deferred(self, deferred: bool) -> None:
+        """Hold or release background SQLite maintenance.
+
+        A deferred store keeps serving reads and writes but never starts a
+        checkpoint or VACUUM. Both take the store write lock for their whole run
+        (a VACUUM on a bloated runtime database takes tens of seconds), so a
+        startup write that lands behind one stalls every later startup step.
+        """
+        with self._maintenance_lock:
+            self._maintenance_deferred = bool(deferred)
+
+    def _record_deferred_maintenance(self, kind: str, *, reason: str, **fields: int) -> None:
+        status = {
+            "status": MAINTENANCE_STATUS_DEFERRED,
+            "reason": str(reason or ""),
+            "durationMs": 0,
+            "error": "",
+            **{key: int(value) for key, value in fields.items()},
+        }
+        with self._maintenance_lock:
+            if kind == "wal":
+                self._last_checkpoint = {**status, "mode": ""}
+            else:
+                self._last_vacuum = {**status, "reclaimedBytes": 0}
+
+    def resume_maintenance_after_serving(
+        self,
+        *,
+        reason: str = "post-serve",
+        grace_s: float = DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S,
+    ) -> bool:
+        """Re-enable maintenance once the server is answering requests.
+
+        The released work runs on one background thread after a short grace so
+        the first page load is not queued behind a VACUUM. It runs at most once
+        per store instance; later writes schedule maintenance as before.
+        """
+        with self._maintenance_lock:
+            if self._post_serve_maintenance_started:
+                return False
+            self._post_serve_maintenance_started = True
+            self._maintenance_deferred = False
+            thread = threading.Thread(
+                target=self._run_post_serve_maintenance,
+                kwargs={
+                    "reason": str(reason or ""),
+                    "grace_s": max(0.0, float(grace_s)),
+                },
+                name="baluffo-sqlite-post-serve-maintenance",
+                daemon=True,
+            )
+            self._maintenance_thread = thread
+            thread.start()
+            return True
+
+    def _run_post_serve_maintenance(self, *, reason: str, grace_s: float) -> None:
+        if grace_s > 0.0:
+            time.sleep(grace_s)
+        try:
+            with self._maintenance_lock:
+                if self._last_checkpoint.get("status") == MAINTENANCE_STATUS_DEFERRED:
+                    self._last_checkpoint = {
+                        **self._last_checkpoint,
+                        "status": MAINTENANCE_STATUS_NOT_NEEDED,
+                        "reason": f"{reason}:released",
+                    }
+                if self._last_vacuum.get("status") == MAINTENANCE_STATUS_DEFERRED:
+                    self._last_vacuum = {
+                        **self._last_vacuum,
+                        "status": MAINTENANCE_STATUS_NOT_NEEDED,
+                        "reason": f"{reason}:released",
+                    }
+            sizes = self.file_sizes()
+            wal_bytes = int(sizes.get("walBytes") or 0)
+            if wal_bytes >= self.wal_checkpoint_threshold_bytes:
+                mode = "TRUNCATE" if wal_bytes >= self.wal_truncate_threshold_bytes else "PASSIVE"
+                self._run_wal_maintenance(reason=reason, mode=mode)
+                sizes = self.file_sizes()
+            if self._compaction_needed(sizes):
+                self._run_compaction_when_idle(reason=reason, sizes=sizes)
+        except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
+            LOGGER.warning("SQLite post-serve maintenance failed: %s", exc)
+        finally:
+            with self._maintenance_lock:
+                if self._maintenance_thread is threading.current_thread():
+                    self._maintenance_thread = None
 
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
         sizes = self.file_sizes()
         wal_bytes = int(sizes.get("walBytes") or 0)
         if wal_bytes < self.wal_checkpoint_threshold_bytes:
+            return False
+        if self.maintenance_deferred:
+            self._record_deferred_maintenance("wal", reason=reason, walBytes=wal_bytes)
             return False
         with self._maintenance_lock:
             if self._maintenance_thread is not None and self._maintenance_thread.is_alive():
@@ -595,10 +814,15 @@ class BaluffoStore:
         last_busy_error: sqlite3.OperationalError | None = None
         for attempt in range(self.busy_retry_attempts):
             try:
+                lock_started = time.perf_counter()
                 with self._write_lock:
+                    waited_s = time.perf_counter() - lock_started
+                    hold_started = time.perf_counter()
                     self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                     self._writer.execute("VACUUM")
                     self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    held_s = time.perf_counter() - hold_started
+                self._record_slow_write(operation="vacuum", waited_s=waited_s, held_s=held_s)
                 self._last_write_error = ""
                 after_bytes = self._path_size(self.db_path)
                 reclaimed = max(0, before_bytes - after_bytes)
@@ -645,17 +869,53 @@ class BaluffoStore:
         with self._maintenance_lock:
             return {
                 **self._last_vacuum,
+                "deferred": self._maintenance_deferred,
+                "postServeRun": self._post_serve_maintenance_started,
                 "freelistThresholdBytes": self.vacuum_freelist_threshold_bytes,
                 "freelistRatio": self.vacuum_freelist_ratio,
+                "largeDatabaseBytes": self.vacuum_large_database_bytes,
+                "largeDatabaseFreelistRatio": self.vacuum_large_database_ratio,
+                "largeDatabaseIdleS": self.vacuum_large_database_idle_s,
+                "idleGateS": self.vacuum_idle_s,
+                "idleMaxWaitS": self.vacuum_idle_max_wait_s,
+                "heldByActiveTask": self._compaction_hold,
+                "lastWriteAgoS": round(max(0.0, time.monotonic() - self._last_write_monotonic), 3),
             }
 
-    def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
-        sizes = self.file_sizes()
+    def effective_vacuum_freelist_ratio(self, database_bytes: int) -> float:
+        """The freelist ratio this database size must exceed before a rebuild."""
+        if int(database_bytes) >= self.vacuum_large_database_bytes:
+            return self.vacuum_large_database_ratio
+        return self.vacuum_freelist_ratio
+
+    def effective_vacuum_idle_s(self, database_bytes: int) -> float:
+        """The write-silence window this database size must earn before a rebuild."""
+        if int(database_bytes) >= self.vacuum_large_database_bytes:
+            return self.vacuum_large_database_idle_s
+        return self.vacuum_idle_s
+
+    def _compaction_needed(self, sizes: dict[str, int]) -> bool:
         freelist_bytes = int(sizes.get("freelistBytes") or 0)
         database_bytes = int(sizes.get("databaseBytes") or 0)
         if freelist_bytes < self.vacuum_freelist_threshold_bytes:
             return False
-        if database_bytes > 0 and (freelist_bytes / database_bytes) < self.vacuum_freelist_ratio:
+        if database_bytes <= 0:
+            return True
+        return (freelist_bytes / database_bytes) >= self.effective_vacuum_freelist_ratio(
+            database_bytes
+        )
+
+    def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
+        sizes = self.file_sizes()
+        if not self._compaction_needed(sizes):
+            return False
+        if self.maintenance_deferred:
+            self._record_deferred_maintenance(
+                "compaction",
+                reason=reason,
+                freelistBytes=int(sizes.get("freelistBytes") or 0),
+                databaseBytes=int(sizes.get("databaseBytes") or 0),
+            )
             return False
         with self._maintenance_lock:
             if self._maintenance_thread is not None and self._maintenance_thread.is_alive():
@@ -672,9 +932,101 @@ class BaluffoStore:
 
     def _run_compaction_maintenance(self, *, reason: str) -> None:
         try:
-            self.vacuum(reason=reason)
+            self._run_compaction_when_idle(reason=reason)
         except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
             LOGGER.warning("SQLite compaction maintenance failed: %s", exc)
+
+    def _seconds_since_write(self) -> float:
+        return max(0.0, time.monotonic() - self._last_write_monotonic)
+
+    def _run_compaction_when_idle(
+        self, *, reason: str, sizes: dict[str, int] | None = None
+    ) -> bool:
+        """Rebuild the database only once the write path has gone quiet.
+
+        VACUUM holds the store write lock for its whole run, so starting it while
+        writers are arriving queues them behind the whole rebuild. The worker waits
+        for the size-aware quiet window (`effective_vacuum_idle_s`) of write
+        silence, giving up after `vacuum_idle_max_wait_s` and recording
+        `skipped-busy` so the skipped work stays visible in `/ops/storage-health`.
+        A later write re-schedules it.
+        """
+        snapshot = dict(sizes) if sizes is not None else self.file_sizes()
+        idle_gate_s = self.effective_vacuum_idle_s(int(snapshot.get("databaseBytes") or 0))
+        waited_started = time.monotonic()
+        deadline = waited_started + self.vacuum_idle_max_wait_s
+        while True:
+            if self.compaction_held:
+                self._record_compaction_held(reason=reason, sizes=snapshot)
+                return False
+            idle_for_s = self._seconds_since_write()
+            if idle_for_s >= idle_gate_s:
+                self.vacuum(reason=reason)
+                return True
+            remaining_s = min(idle_gate_s - idle_for_s, deadline - time.monotonic())
+            if remaining_s <= 0.0:
+                self._record_compaction_skipped(
+                    reason=reason,
+                    sizes=snapshot,
+                    waited_s=time.monotonic() - waited_started,
+                    idle_for_s=idle_for_s,
+                    idle_gate_s=idle_gate_s,
+                )
+                return False
+            time.sleep(min(self.vacuum_idle_poll_s, remaining_s))
+
+    def _record_compaction_held(self, *, reason: str, sizes: dict[str, int]) -> None:
+        """Record a rebuild held back by an active bridge task.
+
+        No waiting happens here: the hold is released by the bridge when the last
+        task finishes, and that release re-schedules the rebuild.
+        """
+        database_bytes = int(sizes.get("databaseBytes") or 0)
+        status = {
+            "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+            "reason": str(reason or ""),
+            "durationMs": 0,
+            "reclaimedBytes": 0,
+            "error": "",
+            "effectiveFreelistRatio": self.effective_vacuum_freelist_ratio(database_bytes),
+            "freelistBytes": int(sizes.get("freelistBytes") or 0),
+            "databaseBytes": database_bytes,
+        }
+        with self._maintenance_lock:
+            self._last_vacuum = status
+        LOGGER.info("SQLite VACUUM held while a bridge task is active: %s", reason)
+
+    def _record_compaction_skipped(
+        self,
+        *,
+        reason: str,
+        sizes: dict[str, int],
+        waited_s: float,
+        idle_for_s: float,
+        idle_gate_s: float,
+    ) -> None:
+        database_bytes = int(sizes.get("databaseBytes") or 0)
+        status = {
+            "status": MAINTENANCE_STATUS_SKIPPED_BUSY,
+            "reason": str(reason or ""),
+            "durationMs": int(round(waited_s * 1000)),
+            "reclaimedBytes": 0,
+            "error": "",
+            "idleForS": round(idle_for_s, 3),
+            "effectiveIdleGateS": idle_gate_s,
+            "idleGateS": self.vacuum_idle_s,
+            "effectiveFreelistRatio": self.effective_vacuum_freelist_ratio(database_bytes),
+            "freelistBytes": int(sizes.get("freelistBytes") or 0),
+            "databaseBytes": database_bytes,
+        }
+        with self._maintenance_lock:
+            self._last_vacuum = status
+        LOGGER.info(
+            "SQLite VACUUM skipped while the store is busy (idle %.1fs of %.1fs): %s",
+            idle_for_s,
+            idle_gate_s,
+            reason,
+        )
 
     def backup_to(self, target_path: Path | str) -> Path:
         quick_check = self.quick_check()

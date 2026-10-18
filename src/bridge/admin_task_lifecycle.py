@@ -13,6 +13,18 @@ from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage.task_runtime import TaskRuntimeStore
 
 
+def _active_task_types(rows: list[dict[str, Any]]) -> list[str]:
+    task_types = {str(row.get("taskType") or row.get("type") or "").strip().lower() for row in rows}
+    return sorted(task_type for task_type in task_types if task_type)
+
+
+def _active_run_ids(rows: list[dict[str, Any]], *, limit: int = 10) -> list[str]:
+    run_ids = [
+        str(row.get("runId") or row.get("id") or row.get("run_id") or "").strip() for row in rows
+    ]
+    return [run_id for run_id in run_ids if run_id][:limit]
+
+
 class AdminTaskLifecycle:
     """Owns the task lifecycle service for the active runtime paths."""
 
@@ -149,26 +161,97 @@ class AdminTaskLifecycle:
             )
         return self._service
 
+    def _hold_compaction(self) -> None:
+        """Hold the rebuild now, without re-reading the ledger."""
+        if storage_health_mod.storage_compaction_hold_active():
+            return
+        storage_health_mod.set_storage_compaction_hold(True)
+
+    def _sync_compaction_hold(self) -> dict[str, Any]:
+        """Hold background VACUUMs while any task row is active.
+
+        A fetch or sync writes continuously, so write silence alone invites the
+        store to start a rebuild in a gap between two sources and make the task
+        wait behind it. The hold is released on the transition that leaves no
+        active row, which re-schedules a due rebuild.
+
+        Returns what the derivation saw so the startup path can record whether a
+        rebuild was held from a task that predates this bridge.
+        """
+        summary: dict[str, Any] = {
+            "hasActiveTask": False,
+            "activeTaskCount": 0,
+            "activeTaskTypes": [],
+            "activeRunIds": [],
+            "held": bool(storage_health_mod.storage_compaction_hold_active()),
+            "changed": False,
+            "error": "",
+        }
+        try:
+            # Read the ledger the transition just wrote, not the route projection:
+            # the hold only needs "is any row active", and the service read keeps
+            # this path independent of the storage authority mode.
+            rows = list(self._get_service().get_current_runs())
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_diagnostic(
+                surface="compactionHold",
+                code="compaction_hold_active_task_read_failed",
+                ok=False,
+                message=str(exc),
+            )
+            summary["error"] = str(exc)
+            return summary
+        active = bool(rows)
+        summary.update(
+            hasActiveTask=active,
+            activeTaskCount=len(rows),
+            activeTaskTypes=_active_task_types(rows),
+            activeRunIds=_active_run_ids(rows),
+        )
+        if active != storage_health_mod.storage_compaction_hold_active():
+            storage_health_mod.set_storage_compaction_hold(active)
+            summary["changed"] = True
+        summary["held"] = bool(storage_health_mod.storage_compaction_hold_active())
+        return summary
+
+    def sync_compaction_hold(self) -> dict[str, Any]:
+        """Re-derive the rebuild hold from the active rows in the ledger."""
+        return self._sync_compaction_hold()
+
     def start_run(self, **kwargs: Any) -> dict[str, Any]:
-        return self._get_service().start_run(**kwargs)
+        # Hold before the transition writes: the start write itself can cross the
+        # freelist threshold and schedule a rebuild, and a hold applied afterwards
+        # arrives too late to stop it.
+        self._hold_compaction()
+        result = self._get_service().start_run(**kwargs)
+        self._sync_compaction_hold()
+        return result
 
     def heartbeat_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any] | None:
         return self._get_service().heartbeat_run(run_id, task_type, **kwargs)
 
     def finish_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._get_service().finish_run(run_id, task_type, **kwargs)
+        result = self._get_service().finish_run(run_id, task_type, **kwargs)
+        self._sync_compaction_hold()
+        return result
 
     def fail_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._get_service().fail_run(run_id, task_type, **kwargs)
+        result = self._get_service().fail_run(run_id, task_type, **kwargs)
+        self._sync_compaction_hold()
+        return result
 
     def cancel_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._get_service().cancel_run(run_id, task_type, **kwargs)
+        result = self._get_service().cancel_run(run_id, task_type, **kwargs)
+        self._sync_compaction_hold()
+        return result
 
     def request_abort_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
         return self._get_service().request_abort_run(run_id, task_type, **kwargs)
 
     def orphan_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
-        return self._get_service().orphan_run(run_id, task_type, **kwargs)
+        result = self._get_service().orphan_run(run_id, task_type, **kwargs)
+        self._sync_compaction_hold()
+        return result
 
     def attach_child(self, **kwargs: Any) -> dict[str, Any] | None:
         return self._get_service().attach_child(**kwargs)

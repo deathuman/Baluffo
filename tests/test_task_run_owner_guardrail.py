@@ -130,8 +130,25 @@ def test_scanner_covers_the_real_start_run_call_surface() -> None:
                     surface.add((path.relative_to(ROOT).as_posix(), node.lineno))
 
     assert surface, "scanner found no start_run call sites; pattern drifted"
-    # The known forwarder shim must remain the only non-owner call in src/.
-    assert ("src/bridge/admin_task_lifecycle.py", 153) in surface
+    # The known forwarder shim must remain the only non-owner call in src/. It is
+    # located by structure rather than by line number: this tripwire guards the
+    # scanner pattern, and a pinned line broke on every unrelated edit above it.
+    facade_path = ROOT / "src" / "bridge" / "admin_task_lifecycle.py"
+    facade_tree = ast.parse(facade_path.read_text(encoding="utf-8"))
+    forwarder_lines = [
+        node.lineno
+        for klass in ast.walk(facade_tree)
+        if isinstance(klass, ast.ClassDef) and klass.name == "AdminTaskLifecycle"
+        for method in klass.body
+        if isinstance(method, ast.FunctionDef) and method.name == "start_run"
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in START_RUN_CALLEE_NAMES
+    ]
+
+    assert forwarder_lines, "the facade forwarder shim no longer calls start_run"
+    assert ("src/bridge/admin_task_lifecycle.py", forwarder_lines[0]) in surface
 
 
 def test_compat_group_includes_the_owner_fields_check() -> None:

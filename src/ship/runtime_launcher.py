@@ -960,6 +960,13 @@ def run_bridge_server(
     started_by: str = "",
     owner_idle_timeout_s: float = 0.0,
 ) -> None:
+    child_started_mono = time.perf_counter()
+    _append_runtime_startup_trace(
+        "desktop_bridge_child_start",
+        pid=os.getpid(),
+        port=int(port),
+        desktopMode=bool(desktop_mode),
+    )
     _append_runtime_startup_trace("desktop_bridge_layout_resolve_started")
     layout = resolve_runtime_layout(root, data_dir=data_dir)
     _append_runtime_startup_trace(
@@ -1045,6 +1052,12 @@ def run_bridge_server(
     if float(owner_idle_timeout_s or 0.0) > 0.0:
         argv.extend(["--owner-idle-timeout-s", str(float(owner_idle_timeout_s))])
     argv = [item for item in argv if str(item).strip()]
+    _append_runtime_startup_trace(
+        "desktop_bridge_entrypoint_start",
+        bootMs=int(round((time.perf_counter() - child_started_mono) * 1000)),
+        bridgeScript=str(bridge_script),
+        activeRoot=str(layout.active_root),
+    )
     with (
         _pushd(layout.active_root),
         _patched_syspath(layout.active_root),

@@ -349,7 +349,7 @@ def test_publish_success_marker_when_ready_async_writes_marker_after_startup_rea
     monkeypatch.setattr(
         desktop_app,
         "wait_for_desktop_startup_ready",
-        lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+        lambda bridge_port, *, app_version, timeout_s, data_dir=None: {"appVersion": APP_VERSION},
     )
     monkeypatch.setattr(desktop_app, "write_success_marker", write_marker)
     monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
@@ -390,7 +390,9 @@ def test_publish_success_marker_when_ready_async_writes_legacy_marker_for_old_ha
         monkeypatch.setattr(
             desktop_app,
             "wait_for_desktop_startup_ready",
-            lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+            lambda bridge_port, *, app_version, timeout_s, data_dir=None: {
+                "appVersion": APP_VERSION
+            },
         )
         monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
         monkeypatch.setattr(desktop_app, "os", SimpleNamespace(name="nt"))
@@ -430,7 +432,9 @@ def test_publish_success_marker_when_ready_async_skips_legacy_marker_without_han
         monkeypatch.setattr(
             desktop_app,
             "wait_for_desktop_startup_ready",
-            lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+            lambda bridge_port, *, app_version, timeout_s, data_dir=None: {
+                "appVersion": APP_VERSION
+            },
         )
         monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
         monkeypatch.setattr(desktop_app, "os", SimpleNamespace(name="nt"))
@@ -466,13 +470,25 @@ def test_publish_success_marker_when_ready_async_records_classified_timeout(
             def start(self) -> None:
                 self._target()
 
+        seen_data_dirs: list[Path | None] = []
+        stale_step = {
+            "event": "desktop_bridge_startup_step_started",
+            "ts": "2026-10-17T14:08:00+00:00",
+            "fields": {"step": "stale_task_cleanup"},
+        }
+
         def raise_timeout(
-            bridge_port: int, *, app_version: str, timeout_s: float
+            bridge_port: int,
+            *,
+            app_version: str,
+            timeout_s: float,
+            data_dir: Path | None = None,
         ) -> dict[str, object]:
+            seen_data_dirs.append(data_dir)
             raise desktop_app.DesktopStartupReadyTimeout(
                 "startup_pending",
                 "Baluffo bridge is running, but desktop startup did not finish in time.",
-                payload={"startupReady": False},
+                payload={"startupReady": False, "startupPhases": [stale_step]},
             )
 
         monkeypatch.setattr(desktop_app, "wait_for_desktop_startup_ready", raise_timeout)
@@ -482,14 +498,18 @@ def test_publish_success_marker_when_ready_async_records_classified_timeout(
         desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
 
         diagnostics_path = data_dir / "desktop-bridge-startup-timeout.txt"
+        assert seen_data_dirs == [data_dir]
         assert diagnostics_path.is_file()
         diagnostics_text = diagnostics_path.read_text(encoding="utf-8")
         assert "startup did not finish in time" in diagnostics_text
         assert desktop_app.build_open_url(config) in diagnostics_text
+        assert "Bridge startup phases since spawn:" in diagnostics_text
+        assert "- desktop_bridge_startup_step_started step=stale_task_cleanup" in (diagnostics_text)
         trace_mock.assert_any_call(
             data_dir,
             "desktop_bridge_startup_timeout",
             reason="startup_pending",
             bridgePort=8877,
             url=desktop_app.build_open_url(config),
+            startupPhases=[stale_step],
         )

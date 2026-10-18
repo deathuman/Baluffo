@@ -72,6 +72,64 @@ def _task_status(value: Any, *, finished_at: Any = "") -> str:
     return token
 
 
+# One transaction per transition instead of one per row: the bridge mirrors the
+# whole bounded task projection on every lifecycle save, and on a mature runtime
+# database each individual commit costs ~90 ms, so a 168-row projection cost ~15 s
+# of startup (it held the `startup_sync_schedule` step). `executemany` inside a
+# single `BaluffoStore.write()` keeps the same rows with one commit. The update
+# guard keeps the canceled-is-terminal rule that the single-row path applies in
+# Python, without a read per row.
+_TASK_RUN_UPSERT_SQL = """
+INSERT INTO task_runs(
+    run_id, task_type, status, owner_pid, started_at, updated_at,
+    finished_at, progress_json, summary_json, error, schema_version,
+    parent_run_id, parent_task_type, stage, heartbeat_at,
+    terminal_reason, owner_kind
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(run_id) DO UPDATE SET
+    task_type = excluded.task_type,
+    status = excluded.status,
+    owner_pid = excluded.owner_pid,
+    started_at = excluded.started_at,
+    updated_at = excluded.updated_at,
+    finished_at = excluded.finished_at,
+    progress_json = excluded.progress_json,
+    summary_json = excluded.summary_json,
+    error = excluded.error,
+    schema_version = excluded.schema_version,
+    parent_run_id = excluded.parent_run_id,
+    parent_task_type = excluded.parent_task_type,
+    stage = excluded.stage,
+    heartbeat_at = excluded.heartbeat_at,
+    terminal_reason = excluded.terminal_reason,
+    owner_kind = excluded.owner_kind
+WHERE NOT (task_runs.status = 'canceled' AND excluded.status <> 'canceled')
+"""
+
+
+def _task_run_upsert_params(record: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        record["run_id"],
+        record["task_type"],
+        record["status"],
+        int_or_default(record.get("owner_pid")),
+        _clean_text(record.get("started_at")),
+        _clean_text(record.get("updated_at")),
+        _clean_text(record.get("finished_at")),
+        _json_dumps(record.get("progress")),
+        _json_dumps(record.get("summary")),
+        _clean_text(record.get("error")),
+        int_or_default(record.get("schema_version")) or TASK_SCHEMA_VERSION,
+        _clean_text(record.get("parent_run_id")),
+        _clean_text(record.get("parent_task_type")),
+        _clean_text(record.get("stage")),
+        _clean_text(record.get("heartbeat_at")),
+        _clean_text(record.get("terminal_reason")),
+        _clean_text(record.get("owner_kind")),
+    )
+
+
 def _route_status(status: Any) -> str:
     token = _clean_text(status).lower()
     if token in ACTIVE_STATUSES:
@@ -636,54 +694,25 @@ class TaskRuntimeStore:
 
     def _write_task_record(self, record: Mapping[str, Any]) -> None:
         self.store.write(
-            lambda conn: conn.execute(
-                """
-                INSERT INTO task_runs(
-                    run_id, task_type, status, owner_pid, started_at, updated_at,
-                    finished_at, progress_json, summary_json, error, schema_version,
-                    parent_run_id, parent_task_type, stage, heartbeat_at,
-                    terminal_reason, owner_kind
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id) DO UPDATE SET
-                    task_type = excluded.task_type,
-                    status = excluded.status,
-                    owner_pid = excluded.owner_pid,
-                    started_at = excluded.started_at,
-                    updated_at = excluded.updated_at,
-                    finished_at = excluded.finished_at,
-                    progress_json = excluded.progress_json,
-                    summary_json = excluded.summary_json,
-                    error = excluded.error,
-                    schema_version = excluded.schema_version,
-                    parent_run_id = excluded.parent_run_id,
-                    parent_task_type = excluded.parent_task_type,
-                    stage = excluded.stage,
-                    heartbeat_at = excluded.heartbeat_at,
-                    terminal_reason = excluded.terminal_reason,
-                    owner_kind = excluded.owner_kind
-                """,
-                (
-                    record["run_id"],
-                    record["task_type"],
-                    record["status"],
-                    int_or_default(record.get("owner_pid")),
-                    _clean_text(record.get("started_at")),
-                    _clean_text(record.get("updated_at")),
-                    _clean_text(record.get("finished_at")),
-                    _json_dumps(record.get("progress")),
-                    _json_dumps(record.get("summary")),
-                    _clean_text(record.get("error")),
-                    int_or_default(record.get("schema_version")) or TASK_SCHEMA_VERSION,
-                    _clean_text(record.get("parent_run_id")),
-                    _clean_text(record.get("parent_task_type")),
-                    _clean_text(record.get("stage")),
-                    _clean_text(record.get("heartbeat_at")),
-                    _clean_text(record.get("terminal_reason")),
-                    _clean_text(record.get("owner_kind")),
-                ),
-            )
+            lambda conn: conn.execute(_TASK_RUN_UPSERT_SQL, _task_run_upsert_params(record))
         )
+
+    def upsert_task_runs(self, entries: list[Mapping[str, Any]]) -> None:
+        """Mirror many lifecycle rows in one commit.
+
+        Same rows and same canceled-is-terminal guard as repeated
+        `upsert_task_run()` calls, but one `BaluffoStore.write()` transaction.
+        Callers that need the route projection read it back separately.
+        """
+        params: list[tuple[Any, ...]] = []
+        for entry in entries:
+            record = _task_record_from_entry(entry, now_iso=self._now_iso)
+            if not record["run_id"] or not record["task_type"]:
+                raise ValueError("task run requires runId and taskType")
+            params.append(_task_run_upsert_params(record))
+        if not params:
+            return
+        self.store.write(lambda conn: conn.executemany(_TASK_RUN_UPSERT_SQL, params))
 
     def _sync_run(self, run_id: str) -> dict[str, Any] | None:
         rows = self.store.execute_read(

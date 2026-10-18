@@ -128,6 +128,46 @@ def record_json_write(
     )
 
 
+def record_slow_store_write(
+    *,
+    operation: str,
+    wait_ms: int,
+    hold_ms: int,
+    thread_name: str,
+    stack: str = "",
+    artifact: str = "sqlite",
+    data_dir: Path | str | None = None,
+) -> None:
+    """Record one SQLite write-lock operation that crossed the slow threshold.
+
+    `waitMs` is time spent waiting to acquire the store write lock and `holdMs`
+    is time holding it. A waiter names the operation that stalled; a holder's
+    stack names the caller that stalled every other writer, which is what makes
+    a multi-second startup step attributable from the journal alone.
+    """
+    _append_event(
+        {
+            "type": "sqliteSlowWrite",
+            "artifact": str(artifact or "sqlite"),
+            "path": "",
+            "target": "",
+            "storageKind": "sqlite",
+            "operation": str(operation or "write"),
+            "waitMs": max(0, int(wait_ms or 0)),
+            "holdMs": max(0, int(hold_ms or 0)),
+            "thread": str(thread_name or ""),
+            "stack": str(stack or "")[:4000],
+            "serializationDurationMs": 0,
+            "atomicReplaceDurationMs": max(0, int(hold_ms or 0)),
+            "compressedSizeBytes": 0,
+            "uncompressedSizeBytes": 0,
+            "writeCount": 1,
+            "replaced": False,
+        },
+        data_dir=data_dir,
+    )
+
+
 def record_jsonl_write(
     *,
     path: Path | str,
@@ -403,6 +443,42 @@ def _summarize_write_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _summarize_slow_store_writes(events: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [row for row in events if row.get("type") == "sqliteSlowWrite"]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("operation") or "write"), []).append(row)
+    operations: list[dict[str, Any]] = [
+        {
+            "operation": operation,
+            "count": len(group_rows),
+            "waitMs": _stats(row.get("waitMs") for row in group_rows),
+            "holdMs": _stats(row.get("holdMs") for row in group_rows),
+            "lastThread": str(group_rows[-1].get("thread") or ""),
+        }
+        for operation, group_rows in sorted(grouped.items())
+    ]
+    operations.sort(key=lambda row: int(row["waitMs"].get("max") or 0), reverse=True)
+    recent = [
+        {
+            "ts": str(row.get("ts") or ""),
+            "operation": str(row.get("operation") or ""),
+            "waitMs": max(0, int(row.get("waitMs") or 0)),
+            "holdMs": max(0, int(row.get("holdMs") or 0)),
+            "thread": str(row.get("thread") or ""),
+            "lastFrame": (str(row.get("stack") or "").strip().splitlines() or [""])[-1][:180],
+        }
+        for row in rows[-5:]
+    ]
+    return {
+        "count": len(rows),
+        "maxWaitMs": max((int(row.get("waitMs") or 0) for row in rows), default=0),
+        "maxHoldMs": max((int(row.get("holdMs") or 0) for row in rows), default=0),
+        "operations": operations,
+        "recent": recent,
+    }
+
+
 def _summarize_read_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [row for row in events if row.get("type") == "storageRead"]
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
@@ -532,6 +608,7 @@ def snapshot_storage_metrics(data_dir: Path | str | None = None) -> dict[str, An
         },
         "writes": _summarize_write_events(events),
         "reads": _summarize_read_events(events),
+        "slowWrites": _summarize_slow_store_writes(events),
         "registryJournals": registry_journal_telemetry(root),
         "sourceSyncSnapshots": _summarize_source_sync(events),
     }

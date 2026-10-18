@@ -26,6 +26,9 @@ from urllib.request import ProxyHandler, Request, build_opener
 from src.shared.json_io import read_jsonl_rows_tail
 
 _STARTUP_TRACE_LOCK = threading.Lock()
+STARTUP_TRACE_ENV = "BALUFFO_DESKTOP_STARTUP_TRACE"
+STARTUP_TRACE_DISABLED_ENV = "BALUFFO_DESKTOP_STARTUP_TRACE_DISABLED"
+STARTUP_TRACE_METRICS_NAME = "desktop-startup-metrics.jsonl"
 STARTUP_METRIC_SCHEMA_VERSION = 1
 STARTUP_METRIC_DEFAULT_EVENT = "unknown"
 STARTUP_METRIC_DEFAULT_CATEGORY = "unknown"
@@ -43,6 +46,8 @@ STARTUP_METRIC_CATEGORIES = {
     "probe",
     "unknown",
 }
+STARTUP_METRIC_MAX_BYTES = 24 * 1024 * 1024
+STARTUP_METRIC_ROTATED_SUFFIX = ".1"
 STARTUP_METRIC_CATEGORY_PREFIXES = (
     ("jobs_", "page"),
     ("saved_", "page"),
@@ -66,20 +71,39 @@ STARTUP_METRIC_CATEGORY_TOKENS = (
 )
 
 
+def _env_truthy(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def startup_probe_enabled(env: dict[str, str] | None = None) -> bool:
     env_map = env if env is not None else os.environ
-    return str(env_map.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_truthy(env_map.get("BALUFFO_STARTUP_PROBE"))
+
+
+def desktop_startup_trace_enabled(env: dict[str, str] | None = None) -> bool:
+    """Return whether child-runtime startup phases should reach the metrics journal.
+
+    Probe runs always trace. Shipped desktop runs trace too, because a field stall
+    that only records the launcher's view is undiagnosable: the bridge's own
+    startup chain was invisible in every real launch metrics file. Env overrides
+    keep the behavior steerable (force on, or off) without a rebuild.
+    """
+    env_map = env if env is not None else os.environ
+    if startup_probe_enabled(dict(env_map)):
+        return True
+    if _env_truthy(env_map.get(STARTUP_TRACE_ENV)):
+        return True
+    if _env_truthy(env_map.get(STARTUP_TRACE_DISABLED_ENV)):
+        return False
+    return _env_truthy(env_map.get("BALUFFO_DESKTOP_MODE")) and bool(
+        str(env_map.get("BALUFFO_DATA_DIR") or "").strip()
+    )
 
 
 def startup_trace_target(env: dict[str, str] | None = None) -> tuple[Path | None, bool]:
     env_map = env if env is not None else os.environ
     data_dir = str(env_map.get("BALUFFO_DATA_DIR") or "").strip()
-    if not startup_probe_enabled(dict(env_map)) or not data_dir:
+    if not desktop_startup_trace_enabled(dict(env_map)) or not data_dir:
         return None, False
     return Path(data_dir).expanduser().resolve(), True
 
@@ -141,6 +165,25 @@ def build_startup_metric_row(
     return row
 
 
+def _rotate_startup_metrics_if_needed(path: Path) -> None:
+    """Bound the metrics journal so always-on tracing cannot grow without limit.
+
+    One rotated generation is kept. Rotation is best effort: another runtime
+    process holds the same file open, and on Windows a share violation must not
+    turn a telemetry write into a startup failure.
+    """
+    try:
+        if path.stat().st_size < STARTUP_METRIC_MAX_BYTES:
+            return
+    except OSError:
+        return
+    rotated = path.with_name(f"{path.name}{STARTUP_METRIC_ROTATED_SUFFIX}")
+    try:
+        os.replace(path, rotated)
+    except OSError:
+        return
+
+
 def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
     row = build_startup_metric_row(
         event,
@@ -148,9 +191,10 @@ def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
         ts=datetime.now(UTC).isoformat(),
         value_container="fields",
     )
-    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
+    path = Path(data_dir) / STARTUP_TRACE_METRICS_NAME
     payload = json.dumps(row, ensure_ascii=False) + "\n"
     with _STARTUP_TRACE_LOCK:
+        _rotate_startup_metrics_if_needed(path)
         for attempt in range(5):
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,7 +215,7 @@ def append_runtime_startup_trace(event: str, **fields: object) -> None:
 
 
 def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, Any]]:
-    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
+    path = Path(data_dir) / STARTUP_TRACE_METRICS_NAME
     return read_jsonl_rows_tail(path, limit=limit)
 
 

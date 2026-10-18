@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import itertools
+import threading
+import time
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 from pathlib import Path
@@ -7,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from src.bridge import startup_work_budget
 from src.bridge.performance_profile import clear_performance_profile, snapshot_performance_profile
 from src.bridge.server import handler as server_handler
 from src.bridge.server import httpd
@@ -377,8 +382,18 @@ def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) ->
     assert ("info", "admin_bridge_owner_timeout_shutdown") in api.logs
 
 
+def _wait_until(predicate: Callable[[], object], *, timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return bool(predicate())
+
+
 def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
     created_servers: list[Any] = []
+    on_started_returned = threading.Event()
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -403,7 +418,10 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
             return True
 
     def fail_on_started() -> None:
-        raise OSError("startup maintenance unavailable")
+        try:
+            raise OSError("startup maintenance unavailable")
+        finally:
+            on_started_returned.set()
 
     monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
@@ -420,6 +438,13 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
     )
 
     assert created_servers[0].closed is True
+    assert on_started_returned.wait(timeout=5.0) is True
+    assert _wait_until(
+        lambda: any(
+            level == "warn" and event == "admin_bridge_on_started_failed"
+            for level, event, _ in api.logs
+        )
+    )
     assert any(
         level == "warn"
         and event == "admin_bridge_on_started_failed"
@@ -428,8 +453,13 @@ def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
     )
 
 
-def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -> None:
+# The unexpected failure is intentionally left in flight on the startup-hooks
+# thread (logged to the bridge journal, not swallowed), so the thread's default
+# excepthook prints it. That print is the contract, not a test failure.
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_run_http_server_keeps_serving_after_unexpected_on_started_failure(monkeypatch) -> None:
     created_servers: list[Any] = []
+    on_started_returned = threading.Event()
 
     class FakeServer:
         def __init__(self, _address, _handler_cls) -> None:
@@ -437,25 +467,31 @@ def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -
             created_servers.append(self)
 
         def handle_request(self) -> None:
-            raise AssertionError("server loop should not run")
+            pass
 
         def server_close(self) -> None:
             self.closed = True
 
     class FakeApi:
         def __init__(self) -> None:
-            self.logs: list[tuple[str, str]] = []
+            self.logs: list[tuple[str, str, dict[str, object]]] = []
 
-        def bridge_log(self, level: str, event: str, **_fields: object) -> None:
-            self.logs.append((level, event))
+        def bridge_log(self, level: str, event: str, **fields: object) -> None:
+            self.logs.append((level, event, fields))
+
+        def should_exit_for_owner_timeout(self) -> bool:
+            return True
 
     def fail_on_started() -> None:
-        raise TypeError("unexpected callback bug")
+        try:
+            raise TypeError("unexpected callback bug")
+        finally:
+            on_started_returned.set()
 
     monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
-    with pytest.raises(TypeError, match="unexpected callback bug"):
+    assert (
         httpd.run_http_server(
             api=api,
             host="127.0.0.1",
@@ -463,12 +499,169 @@ def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -
             handler_cls=BaseHTTPRequestHandler,
             on_started=fail_on_started,
         )
+        == 0
+    )
 
-    assert created_servers[0].closed is True
-    assert ("info", "admin_bridge_stopped") in api.logs
+    assert on_started_returned.wait(timeout=5.0) is True
+    assert _wait_until(
+        lambda: any(
+            level == "error" and event == "admin_bridge_on_started_unexpected_failed"
+            for level, event, _ in api.logs
+        )
+    )
+    assert any(
+        level == "error"
+        and event == "admin_bridge_on_started_unexpected_failed"
+        and fields["error"] == "unexpected callback bug"
+        for level, event, fields in api.logs
+    )
+    assert any(level == "info" and event == "admin_bridge_stopped" for level, event, _ in api.logs)
 
 
-def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) -> None:
+def test_run_http_server_starts_accepting_before_on_started_completes(monkeypatch) -> None:
+    created_servers: list[Any] = []
+    on_started_release = threading.Event()
+    request_served = threading.Event()
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.timeout = 0
+            self.closed = False
+            self.handled = 0
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            self.handled += 1
+            request_served.set()
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.logs: list[tuple[str, str, dict[str, object]]] = []
+            self.metrics: list[tuple[str, dict[str, object] | None]] = []
+
+        def bridge_log(self, level: str, event: str, **fields: object) -> None:
+            self.logs.append((level, event, fields))
+
+        def append_startup_metric(self, event: str, payload: dict[str, object] | None) -> None:
+            self.metrics.append((event, payload))
+
+        def should_exit_for_owner_timeout(self) -> bool:
+            return on_started_release.is_set()
+
+    def slow_on_started() -> None:
+        # Only returns once the accept loop has already handed off a request.
+        assert request_served.wait(timeout=5.0) is True
+        on_started_release.set()
+
+    # The accept loop reads the accepted count on every iteration (it drives the
+    # first-paint work budget), so the fake must keep counting rather than
+    # exhausting a finite range.
+    accepted_calls = itertools.count(1)
+    monkeypatch.setattr(
+        httpd,
+        "snapshot_accept_metrics",
+        lambda: {"acceptedCount": next(accepted_calls)},
+    )
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
+    api = FakeApi()
+
+    assert (
+        httpd.run_http_server(
+            api=api,
+            host="127.0.0.1",
+            port=0,
+            handler_cls=BaseHTTPRequestHandler,
+            on_started=slow_on_started,
+        )
+        == 0
+    )
+
+    assert created_servers[0].handled >= 1
+    assert request_served.is_set() is True
+    assert _wait_until(
+        lambda: any(event == "desktop_bridge_started_hooks_finished" for event, _ in api.metrics)
+    )
+    assert [event for event, _ in api.metrics][:2] == [
+        "desktop_bridge_socket_bound",
+        "desktop_bridge_accept_loop_started",
+    ]
+    assert any(event == "desktop_bridge_first_request_served" for event, _ in api.metrics)
+
+
+def test_run_http_server_opens_the_first_paint_barrier_after_the_burst(monkeypatch) -> None:
+    created_servers: list[Any] = []
+    stop = threading.Event()
+    accepted = {"count": 0}
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.timeout = 0
+            self.iterations = 0
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            self.iterations += 1
+            if self.iterations == 1:
+                accepted["count"] = 1  # the page's first request
+            if self.iterations >= 3:
+                stop.set()
+
+        def server_close(self) -> None:
+            return None
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.metrics: list[tuple[str, dict[str, object] | None]] = []
+
+        def bridge_log(self, level: str, event: str, **fields: object) -> None:
+            return None
+
+        def append_startup_metric(self, event: str, payload: dict[str, object] | None) -> None:
+            self.metrics.append((event, payload))
+
+        def should_exit_for_owner_timeout(self) -> bool:
+            return stop.is_set()
+
+    api = FakeApi()
+    startup_work_budget.configure_startup_work_budget(
+        budget_ms=5000,
+        quiet_ms=0,
+        metric_sink=api.append_startup_metric,
+    )
+    monkeypatch.setattr(
+        httpd,
+        "snapshot_accept_metrics",
+        lambda: {"acceptedCount": accepted["count"]},
+    )
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
+    try:
+        assert (
+            httpd.run_http_server(
+                api=api,
+                host="127.0.0.1",
+                port=0,
+                handler_cls=BaseHTTPRequestHandler,
+            )
+            == 0
+        )
+    finally:
+        startup_work_budget.reset_startup_work_budget()
+
+    barrier_rows = [
+        payload
+        for event, payload in api.metrics
+        if event == "desktop_bridge_first_paint_barrier_opened"
+    ]
+    assert created_servers[0].iterations >= 3
+    assert len(barrier_rows) == 1
+    assert (barrier_rows[0] or {})["reason"] == "request-quiet"
+    assert (barrier_rows[0] or {})["acceptedRequests"] == 1
+
+
+def test_run_http_server_propagates_keyboard_interrupt_from_accept_loop(monkeypatch) -> None:
     created_servers: list[Any] = []
 
     class FakeServer:
@@ -477,7 +670,7 @@ def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) 
             created_servers.append(self)
 
         def handle_request(self) -> None:
-            raise AssertionError("server loop should not run")
+            raise KeyboardInterrupt
 
         def server_close(self) -> None:
             self.closed = True
@@ -489,21 +682,19 @@ def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) 
         def bridge_log(self, level: str, event: str, **_fields: object) -> None:
             self.logs.append((level, event))
 
-    def interrupt_on_started() -> None:
-        raise KeyboardInterrupt
-
     monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeServer)
     api = FakeApi()
 
-    with pytest.raises(KeyboardInterrupt):
+    assert (
         httpd.run_http_server(
             api=api,
             host="127.0.0.1",
             port=0,
             handler_cls=BaseHTTPRequestHandler,
-            on_started=interrupt_on_started,
         )
+        == 0
+    )
 
     assert created_servers[0].closed is True
-    assert ("info", "admin_bridge_shutdown_requested") not in api.logs
+    assert ("info", "admin_bridge_shutdown_requested") in api.logs
     assert ("info", "admin_bridge_stopped") in api.logs

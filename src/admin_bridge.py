@@ -607,14 +607,23 @@ def parse_args(argv: list[str] | None = None) -> RuntimeConfig:
 
 def main() -> int:
     config = parse_args()
-    configure_runtime_paths(config)
-    refresh_sync_config()
-    ensure_active_registry()
+    api = admin_entrypoint_runtime_mod.prepare_bridge_runtime(
+        config,
+        configure=configure_runtime_paths,
+        refresh_sync_config=refresh_sync_config,
+        ensure_active_registry=ensure_active_registry,
+        build_bridge_api=build_bridge_api,
+        append_startup_metric=append_startup_metric,
+    )
     return bridge_bootstrap.run_bridge_server(
-        api=build_bridge_api(config),
+        api=api,
         host=config.host,
         port=config.port,
-        on_started=on_bridge_started,
+        on_started=partial(
+            admin_entrypoint_runtime_mod.finish_bridge_startup_hooks,
+            on_started=on_bridge_started,
+            append_startup_metric=append_startup_metric,
+        ),
     )
 
 

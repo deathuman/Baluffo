@@ -27,6 +27,8 @@ _STORE_LOCK = threading.RLock()
 _STORES_BY_DATA_DIR: dict[Path, BaluffoStore] = {}
 _DIAGNOSTICS_BY_DATA_DIR: dict[Path, list[dict[str, Any]]] = {}
 _MAX_DIAGNOSTICS = 40
+_MAINTENANCE_DEFERRED = False
+_COMPACTION_HOLD = False
 
 
 def _resolve_data_dir(data_dir: Path | str) -> Path:
@@ -72,14 +74,93 @@ def _runtime_db_file_sizes(data_dir: Path) -> dict[str, int]:
     }
 
 
+def runtime_db_file_sizes(data_dir: Path | str) -> dict[str, int]:
+    """Report runtime database file sizes from disk without opening the store."""
+    return _runtime_db_file_sizes(_resolve_data_dir(data_dir))
+
+
 def get_storage_store(data_dir: Path | str) -> BaluffoStore:
     resolved = _resolve_data_dir(data_dir)
     with _STORE_LOCK:
         store = _STORES_BY_DATA_DIR.get(resolved)
         if store is None:
-            store = BaluffoStore(resolved, **_storage_busy_config())
+            store = BaluffoStore(
+                resolved,
+                defer_maintenance=_MAINTENANCE_DEFERRED,
+                compaction_hold=_COMPACTION_HOLD,
+                **_storage_busy_config(),
+            )
             _STORES_BY_DATA_DIR[resolved] = store
         return store
+
+
+def storage_maintenance_deferred() -> bool:
+    return bool(_MAINTENANCE_DEFERRED)
+
+
+def set_storage_maintenance_deferred(deferred: bool) -> None:
+    """Hold or release background checkpoint/VACUUM work for every open store.
+
+    The bridge holds maintenance from process start until it is answering
+    requests, so the startup write path cannot queue behind a VACUUM that the
+    previous write scheduled.
+    """
+    global _MAINTENANCE_DEFERRED
+    _MAINTENANCE_DEFERRED = bool(deferred)
+    with _STORE_LOCK:
+        stores = list(_STORES_BY_DATA_DIR.values())
+    for store in stores:
+        store.set_maintenance_deferred(_MAINTENANCE_DEFERRED)
+
+
+def storage_compaction_hold_active() -> bool:
+    return bool(_COMPACTION_HOLD)
+
+
+def set_storage_compaction_hold(held: bool) -> list[dict[str, Any]]:
+    """Hold background VACUUMs while bridge tasks run, and release them after.
+
+    Write silence alone cannot tell a finished task from a slow source, so the
+    bridge holds rebuilds while any task row is active. Releasing re-schedules a
+    due rebuild on each store through its idle gate, so the work still happens as
+    soon as the last task finishes and the write path goes quiet.
+    """
+    global _COMPACTION_HOLD
+    _COMPACTION_HOLD = bool(held)
+    with _STORE_LOCK:
+        stores = list(_STORES_BY_DATA_DIR.items())
+    results: list[dict[str, Any]] = []
+    for data_dir, store in stores:
+        scheduled = store.set_compaction_hold(_COMPACTION_HOLD)
+        results.append({"dataDir": str(data_dir), "scheduled": bool(scheduled)})
+    return results
+
+
+def resume_storage_maintenance(
+    *,
+    reason: str = "post-serve",
+    grace_s: float | None = None,
+) -> list[dict[str, Any]]:
+    """Release maintenance and let each store run its deferred work once."""
+    set_storage_maintenance_deferred(False)
+    with _STORE_LOCK:
+        stores = list(_STORES_BY_DATA_DIR.items())
+    results: list[dict[str, Any]] = []
+    for data_dir, store in stores:
+        resumed = (
+            store.resume_maintenance_after_serving(reason=reason)
+            if grace_s is None
+            else store.resume_maintenance_after_serving(reason=reason, grace_s=grace_s)
+        )
+        results.append(
+            {
+                "dataDir": str(data_dir),
+                "scheduled": bool(resumed),
+                "freelistBytes": int(store.compaction_status().get("freelistBytes") or 0),
+                "walBytes": int(store.wal_maintenance_status().get("walBytes") or 0),
+            }
+        )
+    return results
 
 
 def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
@@ -125,9 +206,11 @@ def record_storage_diagnostic(
 
 
 def close_storage_stores() -> None:
+    global _COMPACTION_HOLD
     with _STORE_LOCK:
         stores = list(_STORES_BY_DATA_DIR.values())
         _STORES_BY_DATA_DIR.clear()
         _DIAGNOSTICS_BY_DATA_DIR.clear()
+        _COMPACTION_HOLD = False
     for store in stores:
         store.close()
