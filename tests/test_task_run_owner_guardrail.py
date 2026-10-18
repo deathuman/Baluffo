@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 
 from tools.repo_health import repo_guardrails
@@ -153,5 +152,4 @@ def test_scanner_covers_the_real_start_run_call_surface() -> None:
 
 def test_compat_group_includes_the_owner_fields_check() -> None:
     assert "compat" in repo_guardrails.GROUPS
-    source = inspect.getsource(repo_guardrails.run_compat_group)
-    assert "check_task_run_start_owner_fields" in source
+    assert "check_task_run_start_owner_fields" in dict(repo_guardrails.COMPAT_CHECKS)

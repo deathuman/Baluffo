@@ -112,6 +112,7 @@ corpus is not larger; do not re-merge or re-split them:
 | Source-text / import / retired-shape policy checks | `tools/repo_health/suite_contract_policy.py` (runs in `npm run lint:repo-guardrails`) |
 | City/location noise canonicalization | `tests/jobs/adapters/parsers/test_location.py` + `tests/fixtures/city_regression_corpus.json` |
 | Per-test-file line ceilings | `tools/repo_health/test_line_budget_baseline.json` |
+| New wall-clock assertions in tests, including values carried through payload fields, dicts, averages, and module-local helpers | `tools/repo_health/timing_assertion_policy.py` (+ empty `timing_assertion_baseline.json`), enforced with `# timing-ok:` markers |
 | Area line budgets | `tools/repo_health/loc_baseline.json` |
 
 ## Safety Rules

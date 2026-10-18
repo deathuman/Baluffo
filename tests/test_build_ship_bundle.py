@@ -1,6 +1,7 @@
 import json
 import marshal
 import sys
+from collections.abc import Iterator
 from importlib.util import cache_from_source
 from pathlib import Path
 from unittest import mock
@@ -12,12 +13,23 @@ from scripts.build_ship_bundle import build_bundle
 from src import source_sync
 from src.app_version import APP_VERSION
 from src.shared.json_io import read_json
-from tests.helpers.ship_bundle import copy_minimal_app_version
+from tests.helpers.ship_bundle import (
+    copy_minimal_app_version,
+    copy_ship_bundle,
+    shared_full_ship_bundle,
+)
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
 
 _LAUNCHER_EXT = ".sh" if sys.platform != "win32" else ".ps1"
+
+
+@pytest.fixture(scope="module")
+def full_ship_bundle() -> Iterator[Path]:
+    """One full-fidelity build for the module; each test copies it."""
+    with shared_full_ship_bundle() as bundle:
+        yield bundle
 
 
 def _build_with_temp_packaged_config(
@@ -40,25 +52,11 @@ def _build_with_temp_packaged_config(
         return build_bundle(temp_root / "dist" / "baluffo-ship", "1.2.3")
 
 
-def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
+def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only(
+    full_ship_bundle: Path,
+) -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
-        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps(
-                {
-                    "schemaVersion": 1,
-                    "appId": "123456",
-                    "installationId": "999999",
-                    "repo": "owner/repo",
-                    "branch": "main",
-                    "path": "baluffo/source-sync.json",
-                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
-                }
-            ),
-            encoding="utf-8",
-        )
-        output = _build_with_temp_packaged_config(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         version_root = output / "app" / "versions" / "1.2.3"
         assert (output / f"run-site{_LAUNCHER_EXT}").exists()
         assert (output / f"run-bridge{_LAUNCHER_EXT}").exists()
@@ -148,7 +146,8 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
                 "counts": {},
             },
             "sources": [],
-            "outputs": {"report": str(output / "data" / "jobs-fetch-report.json")},
+            # The report records the path it was built into, which the copy keeps.
+            "outputs": {"report": str(full_ship_bundle / "data" / "jobs-fetch-report.json")},
         }
         assert isinstance(seeded_report["sources"], list)
         assert not (output / "data" / "jobs-unified.json.gz").exists()
@@ -175,32 +174,13 @@ def test_parse_args_defaults_to_shared_app_version() -> None:
     assert args.bundle_version == APP_VERSION
 
 
-def test_bundle_does_not_generate_startup_preview_from_local_jobs_rows() -> None:
+def test_bundle_does_not_generate_startup_preview_from_local_jobs_rows(
+    full_ship_bundle: Path,
+) -> None:
+    # The shared build stages 300 local job rows, so these absences mean the build
+    # ignores rows rather than that no rows existed.
     with workspace_tmpdir("build-ship-bundle") as tmp:
-        rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
-        data_dir = Path(tmp) / "data"
-        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps(
-                {
-                    "schemaVersion": 1,
-                    "appId": "123456",
-                    "installationId": "999999",
-                    "repo": "owner/repo",
-                    "branch": "main",
-                    "path": "baluffo/source-sync.json",
-                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
-                }
-            ),
-            encoding="utf-8",
-        )
-        (data_dir / "jobs-unified-light.json").write_text(
-            json.dumps(rows, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        output = _build_with_temp_packaged_config(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         assert not (output / "data" / "jobs-unified-startup.json").exists()
         assert not (output / "data" / "jobs-unified-light.json").exists()
         assert not (output / "data" / "jobs-unified-light.json.gz").exists()

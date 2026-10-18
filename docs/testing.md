@@ -39,8 +39,13 @@ changes, post-assignment collisions between legacy and generated source-backed I
 candidate exclusion from observations/publication, quarantine v1/v2
 pruning/truncation/private serving, carried-seed initialization, exact Saved rebinding, terminal
 finalization failure projection, parent error propagation, and fetch-report field preservation. The
-quick lane includes a 5,000-row collision regression; the slow/release lane includes a 79,528-row
-live-scale partition regression with a bounded quarantine projection.
+quick lane includes a 5,000-row collision regression; the slow/release lane includes a 10,003-row
+partition regression with a bounded quarantine projection. That fixture started as the 79,525-row
+live identity count, but per-row cost is flat (~0.05 ms) once each distinct URL is validated once
+per run rather than once per pass, so the extra rows bought ~30 s of wall clock without changing the
+partition outcome. Its cost guard is a ratio rather than a deadline: the 10,003-row run is compared
+in CPU time against a 5,000-row probe, so 2x the rows must stay under 3x the CPU, and host speed
+cancels out of the comparison.
 
 Run the balanced developer Python lane:
 
@@ -303,11 +308,22 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 | `admin_bridge_entrypoint_root` | `tests/admin/conftest.py`, backed by `tests/admin/_helpers.py` |
 | `source_sync_test_root` | `tests/source_sync_helpers.py` |
 | `workspace_tmpdir(prefix)`, shared temp-root allocation/cleanup helpers | `tests/helpers/temp_paths.py` |
+| `ScriptedClock`, `install_time_module`, `EventLog`, `forbid` (structural timing); `cpu_seconds`, `assert_sublinear_growth` (growth ratios) | `tests/helpers/timing.py` |
 | Job payload fixture loaders | `tests/helpers/job_fixtures.py`, with reusable data under `tests/fixtures/` |
 | Desktop launcher config/session factories | `tests/desktop_app/_helpers.py` |
 | Source-discovery local config/runtime helpers | `tests/source_discovery/_helpers.py` |
 | Focused GameDevMap source-discovery helpers | `tests/source_discovery/gamedevmap_test_helpers.py` |
 | Frontend admin controller factories | `tests/frontend/unit/helpers/admin-controller-test-helpers.mjs` |
+
+**Timing assertions:**
+
+- Do not compare a measured elapsed time to a literal unless the deadline *is* the behaviour under test. `elapsed < N` measures the host: it passes on an idle machine and fails inside a full suite run without saying anything about the code.
+- Assert the structure instead. `ScriptedClock` (with `window()` for a measured window) makes durations exact; `install_time_module` scripts `time.perf_counter`/`time.monotonic` inside a module while leaving `time.sleep` real; `EventLog` records admission/completion order so an ordering invariant cannot move with host load; `forbid` fails the test if a path that must be short-circuited is reached at all.
+- Where a real bound is the property (an abandoned straggler thread, a client that must close), keep it with at least a 2x margin and say in the docstring why it is temporal, so the next reader does not have to re-derive whether it is a flake risk.
+- When the property is proportional cost rather than a deadline, use `assert_sublinear_growth(run, probe_size=..., size=..., tolerance=...)`: `run(n)` builds and runs its own workload of `n` items, the helper takes the smallest of `samples` CPU-time readings on each side (a scheduling pause inflates one reading; host speed cancels between the two) and fails when the larger population costs more than the size ratio times `tolerance`. Give the sizes a wide span -- 4x is a good default -- because linear work reads the ratio itself while work that compares items with items reads its square, so the tolerance sits between them. `cpu_seconds(call)` is the underlying primitive for a bare measurement. Do not hand-roll probe sizes, sample counts or limits: a probe under roughly 62 ms (four 15.6 ms `process_time` ticks on Windows) is refused outright rather than asserted on, and a pair of sizes that sit too close together fails on a quiet host.
+- **The gate:** `repo_guardrails.py --group timing` (part of `npm run lint:repo-guardrails`, so it runs at commit) flags any `assert` that compares a `time.perf_counter()`/`monotonic()`-derived value to a literal. A deliberate bound must carry `# timing-ok: <reason>` on the assert or on a comment line directly above it -- the reason is required. The checked-in baseline in `tools/repo_health/timing_assertion_baseline.json` is empty, so every existing bound is declared at the site and any unmarked one is new. Lower bounds (`elapsed >= 0`) are not flagged; a monotonic value only grows, so load cannot make them flake.
+- The gate follows the clock, not just the variable name: a value stored in a payload field (`payload["elapsed"] = ...`, `entry.update(elapsed=...)`, `result.elapsed = ...`), collected in a list (`samples.append(...)`), or reduced into a summary (`sum(samples) / len(samples)`, `statistics.mean(samples)`, `max(samples)`) is still flagged where it is compared. A dict key that never held a clock value is not.
+- It also crosses helpers defined in the same module: a function returning the duration it measured (or a payload whose `elapsed` key holds it) is summarised as clock-derived when its arguments are, so `elapsed = measure(t0)` asserted in another function, `assert measure(t0) < 1`, and `assert payload()["elapsed"] < 1` are all flagged, including one hop through another helper. A helper whose return does not depend on a clock argument stays clean. The flow stops at an import boundary and at non-literal keys, so a duration returned by a helper in another module still needs the marker or the structural rewrite.
 
 **Temp directory note (Windows sandbox):**
 

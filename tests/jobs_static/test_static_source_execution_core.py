@@ -13,6 +13,7 @@ from src.exceptions import AdapterValidationError
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.common.http import HttpStatusError
 from tests.helpers.concurrency import BlockingActiveCounter
+from tests.helpers.timing import ScriptedClock
 
 from ._helpers import (
     FIXTURES_DIR,
@@ -438,12 +439,14 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
     )
     monkeypatch.setenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S", "5")
     fetched_detail_urls: list[str] = []
-    clock = {"now": time.perf_counter()}
-
-    def fake_perf_counter() -> float:
-        return clock["now"]
-
-    monkeypatch.setattr(time, "perf_counter", fake_perf_counter)
+    # A hard budget is a duration, so the clock is scripted: each detail fetch
+    # burns exactly 2.2 s of it. The budget then stops the lane at two fetches
+    # (4.4 s) with 0.6 s left -- too little for a third -- on every host, instead
+    # of the test having to race the real clock to see the same arithmetic.
+    # The origin is non-zero because the lane reads a 0.0 start as "no deadline
+    # recorded" and would disable the budget instead of exercising it.
+    clock = ScriptedClock(start=1_000.0)
+    monkeypatch.setattr(time, "perf_counter", clock)
 
     try:
 
@@ -452,12 +455,11 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
                 return listing_html
             if url.startswith("https://example.net/job/"):
                 fetched_detail_urls.append(url)
-                clock["now"] += 2.2
+                clock.advance(2.2)
                 title = url.rsplit("/", 1)[-1].upper()
                 return f"<html><body><h1>{title} Engineer</h1></body></html>"
             raise RuntimeError(f"Unexpected URL: {url}")
 
-        started = time.perf_counter()
         rows = jf.run_static_studio_pages_source(
             fetch_text=fake_fetch,
             timeout_s=5,
@@ -465,7 +467,6 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
             backoff_s=0,
             static_detail_concurrency=1,
         )
-        elapsed = time.perf_counter() - started
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -474,7 +475,9 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
         "https://example.net/job/a",
         "https://example.net/job/b",
     ]
-    assert elapsed < 5.6
+    # Exactly two detail fetches fit the budget; a third, or a skipped budget
+    # check, would show up here as 6.6 s or 2.2 s.
+    assert clock.now - 1_000.0 == pytest.approx(4.4)
 
 
 def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:

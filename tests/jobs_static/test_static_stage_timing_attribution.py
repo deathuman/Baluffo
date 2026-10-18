@@ -14,6 +14,7 @@ changes.
 
 from __future__ import annotations
 
+import importlib
 import time
 from typing import Any
 
@@ -26,6 +27,7 @@ from src.jobs.adapters.static_runtime_support import (
     StaticSourceRuntimeConfig,
     build_static_entry_report,
 )
+from tests.helpers.timing import ScriptedClock, install_time_module
 
 
 def _make_ctx(
@@ -113,11 +115,28 @@ class _FakePlugin:
         return [{"title": f"row from {html}", "jobLink": f"{pages[0]}/job/1"}]
 
 
+def _script_runner_clock(monkeypatch: pytest.MonkeyPatch, *, window_ms: int) -> None:
+    """Pin the extraction window the runner measures at exactly ``window_ms``.
+
+    The runner times itself with ``time.perf_counter`` and subtracts the detail
+    time the lane *reports*. A test that sleeps in real time cannot pin that
+    subtraction: the sleep overshoots the booking under host load (observed 1 ms
+    in isolation, 220 ms inside the full suite), and the leftover lands in
+    ``candidate_extraction_ms``. A pinned window makes each test prove the
+    arithmetic instead of the scheduler's punctuality.
+    """
+    runner_module = importlib.import_module(static_listing.StaticFetchRunner.__module__)
+    install_time_module(
+        monkeypatch, runner_module, perf_counter=ScriptedClock().window(window_ms / 1000.0)
+    )
+
+
 def _patch_rendered_card_lane(
     monkeypatch: pytest.MonkeyPatch,
     *,
     detail_ms: int,
     job_count: int,
+    sleep_ms: int | None = None,
 ) -> None:
     """Replace the rendered-card lane so it books a known detail_fetch_ms cost.
 
@@ -125,14 +144,14 @@ def _patch_rendered_card_lane(
     detail fetch (booking detail_fetch_ms) and returns inside the extraction
     window that the runner times.
 
-    The simulated fetch burns wall clock proportional to `detail_ms`, because the
-    defect is precisely that detail-fetch wall time lands inside the extraction
-    timer. A counter-only stub would let the unfixed code pass by accident: the
+    ``detail_ms`` is what the lane *reports*; ``sleep_ms`` is the wall clock it
+    actually burns (defaults to ``detail_ms``). Tests that assert the attribution
+    arithmetic pair a small ``sleep_ms`` with ``_script_runner_clock`` so the
+    reported and measured quantities are independent handles on the code under
+    test. A counter-only stub would let the unfixed code pass by accident: the
     counters alone cannot detect the misattribution, only the clock can.
-
-    Callers pick `detail_ms` small enough to keep the suite fast while still
-    exceeding the extraction budget asserted alongside it.
     """
+    burner_ms = detail_ms if sleep_ms is None else sleep_ms
     runner_module = static_listing.StaticFetchRunner.__module__
 
     def fake_extract_listing_candidates(ctx: StaticSourceContext, **_kwargs: Any) -> tuple:
@@ -140,10 +159,9 @@ def _patch_rendered_card_lane(
         ctx.stats["candidate_links_found"] = (
             int(ctx.stats.get("candidate_links_found") or 0) + job_count
         )
-        time.sleep(detail_ms / 1000.0)
+        if burner_ms > 0:
+            time.sleep(burner_ms / 1000.0)
         return job_count, [], 0
-
-    import importlib
 
     module = importlib.import_module(runner_module)
     monkeypatch.setattr(module, "_extract_listing_candidates", fake_extract_listing_candidates)
@@ -154,7 +172,10 @@ def test_candidate_extraction_excludes_inline_detail_fetch_time(
 ) -> None:
     ctx = _make_ctx()
     runner = static_listing.StaticFetchRunner(ctx)
-    _patch_rendered_card_lane(monkeypatch, detail_ms=300, job_count=3)
+    # The runner measures a 300 ms window; the lane books all 300 ms of it as
+    # detail fetch and parses for free. A correct attribution leaves 0 ms.
+    _script_runner_clock(monkeypatch, window_ms=300)
+    _patch_rendered_card_lane(monkeypatch, detail_ms=300, job_count=3, sleep_ms=0)
 
     detail_links, listing_jobs_found, _provisional = runner._extract_listing_page(
         "https://example.com/careers",
@@ -166,26 +187,54 @@ def test_candidate_extraction_excludes_inline_detail_fetch_time(
     assert listing_jobs_found == 3
     # The inline detail fetch is booked to detail_fetch_ms ...
     assert int(ctx.stats.get("detail_fetch_ms") or 0) == 300
-    # ... and is NOT also counted as extraction. The lane's own work is
-    # sub-millisecond, so a correct attribution lands far below the 300ms the
-    # simulated detail fetch burned.
+    # ... and is NOT also counted as extraction: the whole window it consumed in
+    # the accounting is the detail booking, so nothing is left for extraction.
     extraction_ms = int(ctx.stats.get("candidate_extraction_ms") or 0)
-    assert extraction_ms < 150, (
+    assert extraction_ms == 0, (
         "inline detail fetch time leaked into candidate_extraction_ms; "
         f"got {extraction_ms}ms against a 300ms inline detail fetch"
     )
 
 
+def test_candidate_extraction_counts_lane_time_the_detail_did_not_consume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The subtraction must keep the lane's own work, not zero the bucket.
+
+    The exclusion tests assert 0, so a runner that stopped booking extraction at
+    all would satisfy them. This pins the other direction: of a 300 ms window,
+    100 ms is reported as detail work and 200 ms belongs to extraction.
+    """
+    ctx = _make_ctx()
+    runner = static_listing.StaticFetchRunner(ctx)
+    _script_runner_clock(monkeypatch, window_ms=300)
+    _patch_rendered_card_lane(monkeypatch, detail_ms=100, job_count=2, sleep_ms=0)
+
+    runner._extract_listing_page(
+        "https://example.com/careers",
+        30,
+        ["<html><body>listing</body></html>"],
+    )
+
+    assert int(ctx.stats.get("detail_fetch_ms") or 0) == 100
+    assert int(ctx.stats.get("candidate_extraction_ms") or 0) == 200
+
+
 def test_candidate_extraction_floors_at_zero_when_detail_exceeds_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A cache-served detail reports 0 fetchMs while the wall clock still moved."""
+    """Reported detail time can exceed the window it was measured in.
+
+    A cache-served detail can report a fetch cost the clock never showed (or a
+    coarse clock can under-read the window). The subtraction must floor at zero
+    rather than go negative and corrupt the stage totals; the scripted clock pins
+    the window to 1 ms against a 250 ms booking so the floor branch is always the
+    one taken.
+    """
     ctx = _make_ctx()
     runner = static_listing.StaticFetchRunner(ctx)
-    # The reported fetchMs exceeds the wall window (cache-served details report
-    # 0, and the subtraction can outrun a coarse clock). Extraction must floor
-    # at zero rather than go negative and corrupt the stage totals.
-    _patch_rendered_card_lane(monkeypatch, detail_ms=250, job_count=1)
+    _script_runner_clock(monkeypatch, window_ms=1)
+    _patch_rendered_card_lane(monkeypatch, detail_ms=250, job_count=1, sleep_ms=0)
 
     runner._extract_listing_page(
         "https://example.com/careers",
@@ -329,7 +378,11 @@ def test_extraction_and_detail_buckets_are_disjoint(
 ) -> None:
     ctx = _make_ctx()
     runner = static_listing.StaticFetchRunner(ctx)
-    _patch_rendered_card_lane(monkeypatch, detail_ms=300, job_count=2)
+    # Real wall clock still moves (300 ms of simulated detail work), while the
+    # runner's window is scripted to the same 300 ms: the two buckets must stay
+    # disjoint no matter what the host does.
+    _script_runner_clock(monkeypatch, window_ms=300)
+    _patch_rendered_card_lane(monkeypatch, detail_ms=300, job_count=2, sleep_ms=300)
 
     started = time.perf_counter()
     runner._extract_listing_page(
@@ -346,5 +399,5 @@ def test_extraction_and_detail_buckets_are_disjoint(
     # extraction bucket does not re-count any of it.
     assert detail_ms == 300
     assert wall_ms >= 300
-    assert extraction_ms < 150
+    assert extraction_ms == 0
     assert extraction_ms < detail_ms

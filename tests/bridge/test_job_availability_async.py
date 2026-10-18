@@ -39,6 +39,7 @@ def test_duplicate_start_reuses_run_while_target_preparation_is_blocked(
     write_job_lifecycle_state(data_dir / "jobs-lifecycle-state.json", {"job-1": entry})
     prep_entered = threading.Event()
     release_prep = threading.Event()
+    prep_calls: list[str] = []
 
     class Validator:
         def check(self, _url: str) -> dict:
@@ -57,6 +58,7 @@ def test_duplicate_start_reuses_run_while_target_preparation_is_blocked(
     )
 
     def blocked_prepare(availability_id: str):
+        prep_calls.append(availability_id)
         assert availability_id == "availability_blocked"
         prep_entered.set()
         assert release_prep.wait(2.0)
@@ -73,7 +75,12 @@ def test_duplicate_start_reuses_run_while_target_preparation_is_blocked(
     assert second["started"] is True
     assert second["reused"] is True
     assert second["runId"] == first["runId"]
-    assert elapsed < 0.25
+    # Structural part: the duplicate reused the in-flight preparation instead of
+    # running it again. The bound only has to separate "returned" from "waited on
+    # the 2 s blocker", so half the block is the discriminator — a healthy call is
+    # milliseconds and a starved host still passes.
+    assert prep_calls == ["availability_blocked"]
+    assert elapsed < 1.0  # timing-ok: half the 2 s blocker separates returned from waited
 
     release_prep.set()
     assert _wait_for_terminal_status(service, first["runId"])["status"] == "succeeded"
@@ -92,6 +99,7 @@ def test_start_and_status_stay_responsive_while_apply_is_blocked(
     write_job_lifecycle_state(data_dir / "jobs-lifecycle-state.json", {"job-1": entry})
     apply_entered = threading.Event()
     release_apply = threading.Event()
+    apply_calls: list[dict] = []
 
     class Validator:
         def check(self, _url: str) -> dict:
@@ -110,6 +118,7 @@ def test_start_and_status_stay_responsive_while_apply_is_blocked(
     )
 
     def blocked_apply(**kwargs):
+        apply_calls.append(dict(kwargs))
         apply_entered.set()
         assert release_apply.wait(2.0)
         return dict(kwargs["current_entry"]), False
@@ -126,7 +135,11 @@ def test_start_and_status_stay_responsive_while_apply_is_blocked(
     assert second["reused"] is True
     assert second["runId"] == first["runId"]
     assert status["status"] == "running"
-    assert elapsed < 0.25
+    # The duplicate must not re-enter the blocked apply; the elapsed bound is
+    # half the 2 s block, which still separates "returned" from "waited" on a
+    # loaded host.
+    assert len(apply_calls) == 1
+    assert elapsed < 1.0  # timing-ok: half the 2 s blocker separates returned from waited
 
     release_apply.set()
     assert _wait_for_terminal_status(service, first["runId"])["status"] == "succeeded"

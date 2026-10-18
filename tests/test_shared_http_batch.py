@@ -9,6 +9,7 @@ import pytest
 
 from src.shared import http_batch
 from tests.helpers.concurrency import BlockingActiveCounter
+from tests.helpers.timing import EventLog
 
 fetch_pages_batched = http_batch.fetch_pages_batched
 
@@ -337,7 +338,9 @@ def test_sync_path_deadline_does_not_wait_for_a_straggler_thread() -> None:
     )
     elapsed = time.perf_counter() - started
 
-    assert elapsed < 4.0, f"batch took {elapsed:.1f}s against its 2 s deadline"
+    assert elapsed < 4.0, (
+        f"batch took {elapsed:.1f}s against its 2 s deadline"
+    )  # timing-ok: 2 s deadline, 5 s straggler; 4 s separates return from wait
     assert [row["ok"] for row in results] == [False, False]
     assert all("total batch deadline exceeded" in str(row["error"]) for row in results)
 
@@ -387,9 +390,10 @@ def test_real_http_batch_host_ready_lets_fast_hosts_finish_before_slow_host() ->
     while the slow host is still running its serial work; under total-before-host they are starved
     and finish only as slow slots free. It fails if the ordering ever regresses.
     """
-    import time
-
-    slow_delay = 0.25
+    # Wide enough that a slow completion cannot fire before the event loop has
+    # admitted every ready fast task: the assertion below is about admission
+    # order, so the window must not be reachable by scheduling delay.
+    slow_delay = 0.5
     fast_cap = 2
     slow_host = "slow.example"
     fast_hosts = [f"fast-{i}.example" for i in range(3)]
@@ -401,16 +405,17 @@ def test_real_http_batch_host_ready_lets_fast_hosts_finish_before_slow_host() ->
     ]
     jobs = slow_jobs + fast_jobs
 
-    fast_done_at: dict[str, float] = {}
-    slow_done_at: dict[str, float] = {}
-    started = time.perf_counter()
+    # Completion ORDER, not elapsed milliseconds: admission and completion are
+    # recorded as they happen. Which comes first is decided by the two semaphores,
+    # so host load cannot move it.
+    events = EventLog()
 
     async def fake_async_fetch(_client, job: dict[str, object], url: str, _t: int) -> str:
         if slow_host in url:
             await __import__("asyncio").sleep(slow_delay)
-            slow_done_at[url] = time.perf_counter() - started
+            events.record("slow-done")
         else:
-            fast_done_at[url] = time.perf_counter() - started
+            events.record("fast-admitted")
         return f"<html>{url}</html>"
 
     results = fetch_pages_batched(
@@ -424,17 +429,16 @@ def test_real_http_batch_host_ready_lets_fast_hosts_finish_before_slow_host() ->
 
     assert len(results) == len(jobs)
     assert all(row.get("ok") for row in results)
-    assert len(fast_done_at) == len(fast_jobs)
-    assert len(slow_done_at) == len(slow_jobs)
+    assert events.count("fast-admitted") == len(fast_jobs)
+    assert events.count("slow-done") == len(slow_jobs)
 
-    # Host-ready: fast-host jobs complete promptly (well before slow serial throughput ends).
-    # 6 slow jobs at .25s with per_host_cap=2 => 3 waves => ~0.75s+ of slow serial work.
-    # Fast jobs finish in a single early wave, so their max completion must be far below that.
-    fast_max = max(fast_done_at.values())
-    slow_max = max(slow_done_at.values())
-    # A starved (total-before-host) ordering would push fast_max up to ~slow_max; host-ready
-    # must keep it below half the slow completion time. Generous margin to avoid flake.
-    assert fast_max < slow_max * 0.5, (
-        f"fast-host max completion {fast_max:.3f}s not early relative to slow max {slow_max:.3f}s "
-        f"— total-before-host starvation likely regressed"
+    # Host-ready takes the host semaphore before the total one, so every fast job
+    # is admitted while the slow host has completed nothing. Total-before-host
+    # makes fast jobs queue behind the slow host's total-lane waiters, so the first
+    # fast admission can only happen after a slow job finishes. The invariant is
+    # admission ORDER — no wall-clock comparison — so host load cannot move it.
+    slow_before_first_fast = events.seen_before("slow-done", "fast-admitted")
+    assert slow_before_first_fast == (), (
+        f"{len(slow_before_first_fast)} slow completion(s) preceded the first fast-host "
+        f"admission — total-before-host starvation likely regressed; log={events.names!r}"
     )

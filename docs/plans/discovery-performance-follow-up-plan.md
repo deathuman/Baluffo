@@ -147,7 +147,16 @@ Owner: `src/source_discovery/gamedevmap_active_dry_run.py`, `src/source_discover
 
 ## P6 — Baseline, lane study, packaged acceptance, and closeout
 
-**Status: HANDOFF PRODUCED (2026-10-14).** The dated closeout handoff [`_out/perf-runs/discovery/p6-closeout.md`](../../_out/perf-runs/discovery/p6-closeout.md) records the four human-run items (packaged directory/web-search gate, three-batch baseline, homepage 32/64 lane study, Browser proof) with exact commands, expected outputs, acceptance criteria, and the explicit open gaps this environment cannot produce. No production/browser/baseline result is fabricated here.
+**Status: HANDOFF PRODUCED; HUMAN-RUN ACCEPTANCE OPEN.** The dated closeout handoff [`_out/perf-runs/discovery/p6-closeout.md`](../../_out/perf-runs/discovery/p6-closeout.md) records the four human-run items and their acceptance criteria. **Revalidated 2026-10-16: none has qualifying evidence in this environment.** Its 2026-10-16 addendum holds the evidence and access requirements; do not infer a pass from an older smoke, earlier artifacts, a version string or an unrelated pipeline.
+
+| P6 item | Status (2026-10-16) | Evidence / next gate |
+|---|---|---|
+| Packaged fixture + normal smoke | **INCONCLUSIVE — NOT RUN** | The available package identifies as 0.3.016 against HEAD source 0.3.019, so it is not matching-build acceptance. Obtain a package tied to a matching revision, then run both gates with fixture output isolated from repo `data/`. |
+| Three-run production baseline | **INCONCLUSIVE — NOT RUN** | Target reported `appVersion` 0.3.018, `/ops/health` returned 504, and serving process identity is unavailable; no baseline runs were started. An authorized operator must provide a healthy matching deployment and capture three identical 3,000-homepage runs. |
+| Counterbalanced 32/64 lane study | **INCONCLUSIVE — BLOCKED** | No fresh baseline and no separate production authorization, so no experiment was started. Begin only after the baseline gate and explicit authorization, per the [homepage 32/64 plan](discovery-homepage-lane-investigation-plan.md). |
+| Operator-visible Browser proof | **INCONCLUSIVE — NOT RUN** | Browser access and matching-build provenance are unavailable here. Obtain an operator-visible session against the same shipped build; `appVersion` alone is insufficient. |
+
+No production configuration or concurrency changed. No run-to-run variation is treated as a speedup, and no performance speedup is claimed. The earlier smoke is not directory/web-search receipt-coverage evidence.
 
 - **Packaged-build gate handoff:** a directory/web-search-enabled isolated fixture plus the existing normal smoke. Never run real discovery stages into repo `data/` during tests. Record exact commands and expected green output; do not rerun the already-passed normal quick smoke as if it covered directory/web search.
 - **Baseline handoff:** pin a fresh three-batch baseline after P1–P5. Record `probeLifecycle`, page lifecycle, phase CPU/occupancy, successful pages, requests, retries, 200/429/5xx, DNS/TLS errors, response bytes, candidates, queue/defer identities; compare boards by case-insensitive host+tenant. Needs a live batch: record the runnable command and expected output shape; a human executes it against production data outside the sandbox.

@@ -503,3 +503,4 @@ transition_registry_to_retired  # unused function (src\source_registry_state.py)
 reset_startup_work_budget  # unused function (srcridge\startup_work_budget.py) — consumed by tests/bridge/test_server_handler_timing.py to reset the process-wide budget between cases, outside vulture's src-only scope
 is_open  # unused method (srcridge\startup_work_budget.py) — read by tests/bridge/test_startup_work_budget.py to observe barrier transitions, outside vulture's src-only scope
 open_first_paint  # unused function (srcridge\startup_work_budget.py) — test entry point for an explicit barrier open in tests/bridge/test_startup_work_budget.py, outside vulture's src-only scope
+is_public_job_url  # unused function (src\jobs\common\url.py:140) — src no longer calls the normalising wrapper (the identity preflight takes the already-normalised helper), while tests/test_url_normalization_equivalence.py and the URL-family corpus probe still drive it

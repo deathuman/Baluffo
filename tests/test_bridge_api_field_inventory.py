@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.helpers.guardrails import stub_other_compat_checks
 from tests.helpers.json_files import write_text_file
 from tools.repo_health import bridge_api_field_inventory as inventory
 from tools.repo_health import repo_guardrails
@@ -239,6 +240,7 @@ def test_inventory_classifies_dynamic_getattr_api_refs(
 
 def test_repo_guardrails_compat_group_runs_bridge_api_inventory(monkeypatch) -> None:
     monkeypatch.setattr(repo_guardrails, "_run_python_checks", lambda _group, _checks: [])
+    stub_other_compat_checks(monkeypatch, keep="check_bridge_api_field_inventory")
     monkeypatch.setattr(
         repo_guardrails, "check_bridge_api_field_inventory", lambda: ["field drift"]
     )

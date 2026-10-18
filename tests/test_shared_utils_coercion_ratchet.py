@@ -22,6 +22,7 @@ Three complementary rules, because each alone has a blind spot:
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +73,35 @@ _OVERFLOW_HANDLER_NAMES = frozenset(
 )
 
 
+@lru_cache(maxsize=1)
+def _parsed_modules() -> tuple[tuple[str, ast.Module], ...]:
+    """Every scanned module, parsed once for all three ratchets in this module.
+
+    The tree does not change during a test session, so re-parsing ``src``,
+    ``scripts`` and ``tools`` per assertion only measured the same bytes again.
+    """
+    modules: list[tuple[str, ast.Module]] = []
+    for base in ("src", "scripts", "tools"):
+        for path in sorted((ROOT / base).rglob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            modules.append((path.relative_to(ROOT).as_posix(), tree))
+    return tuple(modules)
+
+
+@lru_cache(maxsize=1)
+def _all_function_defs() -> tuple[tuple[str, ast.FunctionDef], ...]:
+    """``(path, node)`` for every function definition in the scanned corpus."""
+    return tuple(
+        (relative, node)
+        for relative, tree in _parsed_modules()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+    )
+
+
 def _helper_defs(require_known_name: bool = True) -> list[tuple[str, ast.FunctionDef]]:
     """Return ``(path, node)`` for every scanned function definition.
 
@@ -79,20 +109,10 @@ def _helper_defs(require_known_name: bool = True) -> list[tuple[str, ast.Functio
     name-gated ratchet). ``require_known_name=False`` returns every function, so
     a name-independent rule can run over the same corpus.
     """
-    found: list[tuple[str, ast.FunctionDef]] = []
-    for base in ("src", "scripts", "tools"):
-        for path in sorted((ROOT / base).rglob("*.py")):
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.FunctionDef):
-                    continue
-                if require_known_name and node.name not in _INT_HELPER_NAMES:
-                    continue
-                found.append((path.relative_to(ROOT).as_posix(), node))
-    return found
+    defs = _all_function_defs()
+    if not require_known_name:
+        return list(defs)
+    return [(relative, node) for relative, node in defs if node.name in _INT_HELPER_NAMES]
 
 
 def _calls_int(node: ast.FunctionDef) -> bool:
@@ -168,22 +188,13 @@ def test_guarded_coercion_helper_is_not_shadowed_by_an_unguarded_twin() -> None:
     }
 
     shadowed = []
-    for base in ("src", "scripts", "tools"):
-        for path in sorted((ROOT / base).rglob("*.py")):
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            rel = path.relative_to(ROOT).as_posix()
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.FunctionDef):
-                    continue
-                if node.name in _INT_HELPER_NAMES:
-                    continue  # already covered by the ratchet above
-                if not _calls_int(node) or _catches_overflow(node):
-                    continue
-                if body_digest(node) in guarded_digests:
-                    shadowed.append(f"{rel}:{node.name}")
+    for rel, node in _all_function_defs():
+        if node.name in _INT_HELPER_NAMES:
+            continue  # already covered by the ratchet above
+        if not _calls_int(node) or _catches_overflow(node):
+            continue
+        if body_digest(node) in guarded_digests:
+            shadowed.append(f"{rel}:{node.name}")
 
     assert not shadowed, (
         "these functions have a body byte-identical to a guarded coercion helper "
@@ -266,7 +277,8 @@ def _provably_not_float_names(node: ast.FunctionDef) -> set[str]:
     return safe
 
 
-def _undecidable_bare_name_int_sites() -> set[str]:
+@lru_cache(maxsize=1)
+def _undecidable_bare_name_int_sites() -> frozenset[str]:
     """Name-independent scan for ``int(<bare name>)`` guarded without OverflowError.
 
     ``int("inf")`` raises ``ValueError`` and is already caught, but ``int(x)``
@@ -307,7 +319,7 @@ def _undecidable_bare_name_int_sites() -> set[str]:
                         and call.args[0].id not in safe_names
                     ):
                         found.add(f"{path}:{node.name}")
-    return found
+    return frozenset(found)
 
 
 def test_no_new_undecidable_bare_name_int_coercion() -> None:

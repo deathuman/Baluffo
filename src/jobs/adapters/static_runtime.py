@@ -117,7 +117,12 @@ class StaticSourceContext:
     warnings: list[str]
     errors: list[str]
     details: list[dict[str, Any]]
-    source_started: float = field(default_factory=time.perf_counter)
+    # Late-bound, not a captured builtin: the origin must come from the same clock
+    # the deadline arithmetic reads (`time.perf_counter` in `remaining_budget_s`).
+    # Capturing the function at class-definition time made the start immune to a
+    # patched `time.perf_counter`, so a test could script the budget's reads while
+    # the origin stayed real and silently disabled the budget.
+    source_started: float = field(default_factory=lambda: time.perf_counter())
     source_deadline: float = 0.0
     # Adaptive pagination budget (2026-09-15): the floor is the min of every
     # synced per-page/domain budget (byte-equivalent to the legacy min-of

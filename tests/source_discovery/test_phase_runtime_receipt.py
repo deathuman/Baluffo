@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from src.source_discovery.phase_runtime_receipt import PhaseRuntimeReceipt
+from tests.helpers.timing import ScriptedClock
 
 from ._helpers import sd, workspace_tmpdir
 from .gamedevmap_test_helpers import (
@@ -50,24 +51,11 @@ _BATCH_PHASES = frozenset(
 )
 
 
-class _FakeClock:
-    """A hand-driven clock: `advance()` is the only thing that moves time."""
-
-    def __init__(self, *, start: float = 100.0) -> None:
-        self.now = start
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
-
-
 def _receipt(
     phase: str = "homepage_fetch",
-) -> tuple[PhaseRuntimeReceipt, _FakeClock, _FakeClock]:
-    wall = _FakeClock()
-    cpu = _FakeClock(start=50.0)
+) -> tuple[PhaseRuntimeReceipt, ScriptedClock, ScriptedClock]:
+    wall = ScriptedClock()
+    cpu = ScriptedClock(start=50.0)
     return PhaseRuntimeReceipt(phase=phase, clock=wall, cpu_clock=cpu), wall, cpu
 
 
@@ -153,11 +141,11 @@ def test_a_lane_that_never_entered_is_not_counted() -> None:
 
 def test_a_backwards_cpu_reading_contributes_nothing() -> None:
     """CPU is a counter; a reading that goes backwards is a reused counter, not negative work."""
-    wall = _FakeClock()
-    cpu = _FakeClock(start=10.0)
+    wall = ScriptedClock()
+    cpu = ScriptedClock(start=10.0)
     receipt = PhaseRuntimeReceipt(phase="probe", clock=wall, cpu_clock=cpu)
     wall.advance(1.0)
-    cpu.now = 9.0
+    cpu.set(9.0)
     receipt.finish()
     assert receipt.snapshot()["cpuMs"] == 0
 

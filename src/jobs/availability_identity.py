@@ -8,14 +8,17 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import partial
+from functools import cache, partial
 from pathlib import Path
 from typing import Any
 
-from src.jobs.common.url import fingerprint_url, is_public_job_url
+from src.jobs.common.url import (
+    fingerprint_normalized_url,
+    is_public_normalized_url,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.row_payload import row_payload
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, normalize_url
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
 
@@ -67,11 +70,32 @@ def _source_alias(row: Mapping[str, Any]) -> str:
     return f"source:{source.casefold()}:{source_job_id.casefold()}"
 
 
-def _url_alias(row: Mapping[str, Any]) -> str:
-    if not is_public_job_url(row.get("jobLink")):
+def _url_alias_uncached(job_link: Any) -> str:
+    # One normalisation per link, shared by both answers about it: `is_public_job_url`
+    # and `fingerprint_url` each normalise the raw URL before they do anything else.
+    normalized = normalize_url(job_link)
+    if not normalized or not is_public_normalized_url(normalized):
         return ""
-    value = fingerprint_url(row.get("jobLink"))
+    value = fingerprint_normalized_url(normalized)
     return f"url:{value}" if value else ""
+
+
+# A preflight asks for each row's URL alias about a dozen times across its passes,
+# and the URL caches underneath hold 4,096 entries -- a fraction of a live run's
+# ~80k distinct links -- so every pass re-parsed the same URLs as cache misses.
+# One alias per distinct link per run caps that work at the distinct-link count.
+# The cache is cleared when the run ends, so its peak is the run's own working set
+# and nothing survives into the next refresh.
+@cache
+def _url_alias_for_link(job_link: str) -> str:
+    return _url_alias_uncached(job_link)
+
+
+def _url_alias(row: Mapping[str, Any]) -> str:
+    job_link = row.get("jobLink")
+    if isinstance(job_link, str):
+        return _url_alias_for_link(job_link)
+    return _url_alias_uncached(job_link)
 
 
 def _availability_id(alias: str) -> str:
@@ -562,7 +586,24 @@ def prepare_availability_identities(
     detected_at: str,
 ) -> AvailabilityIdentityPreparation:
     """Repair ambiguous legacy identities using exact current URL/source evidence only."""
+    try:
+        return _prepare_availability_identities(
+            rows=rows,
+            observed_rows=observed_rows,
+            lifecycle_rows=lifecycle_rows,
+            detected_at=detected_at,
+        )
+    finally:
+        _url_alias_for_link.cache_clear()
 
+
+def _prepare_availability_identities(
+    *,
+    rows: Sequence[CanonicalJob],
+    observed_rows: Sequence[CanonicalJob],
+    lifecycle_rows: Mapping[str, Mapping[str, Any]],
+    detected_at: str,
+) -> AvailabilityIdentityPreparation:
     payload_rows = [row_payload(row) for row in rows]
     alias_ids = _lifecycle_alias_ids(lifecycle_rows)
     conflicting_source_aliases, contaminated_ids = _find_identity_conflicts(payload_rows, alias_ids)

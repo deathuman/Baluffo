@@ -305,6 +305,19 @@ def iter_root_binding_references(
     return sorted(references, key=lambda item: (item[0], item[1]))
 
 
+def import_target_tokens(targets: frozenset[str]) -> tuple[str, ...]:
+    """Literal substrings any import of one of ``targets`` must contain.
+
+    A matching ``ast.Import`` names the target outright; a matching
+    ``ast.ImportFrom`` names either the target or the parent plus the target's
+    final segment. Both forms write that final segment in the source, so a file
+    without it cannot contribute a row. This is what lets the facade inventories
+    parse the ~90 files that mention the facade instead of all 1,689 Python
+    files -- the shared scan they would otherwise repeat per tool.
+    """
+    return tuple(sorted({target.rsplit(".", 1)[-1] for target in targets}))
+
+
 def facade_import_references(
     path: Path, targets: frozenset[str], parent: str
 ) -> list[tuple[str, int]]:
@@ -313,9 +326,13 @@ def facade_import_references(
     Handles ``import a.b``, ``from a.b import x`` and ``from <parent> import
     name`` where the joined module is a target. A one-element ``targets`` makes
     this behave identically to equality testing, which is what the single-module
-    callers relied on.
+    callers relied on. A file whose text lacks every target tail cannot hold a
+    matching import, so it is skipped without being parsed.
     """
-    tree = parse_python(path)
+    text = path.read_text(encoding="utf-8")
+    if not any(token in text for token in import_target_tokens(targets)):
+        return []
+    tree = ast.parse(text, filename=str(path))
     imports: list[tuple[str, int]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

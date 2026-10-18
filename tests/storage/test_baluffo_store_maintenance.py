@@ -6,6 +6,7 @@ import pytest
 
 from src.storage import BaluffoStore
 from tests.helpers.temp_paths import workspace_tmpdir
+from tests.helpers.timing import forbid
 
 
 def test_deferred_store_records_maintenance_without_starting_it(
@@ -140,9 +141,8 @@ def test_busy_store_records_skipped_vacuum_instead_of_stalling_writers(
             assert status["databaseBytes"] == 2000
             assert status["freelistBytes"] == 1800
 
-            write_started = time.perf_counter()
             store.write(lambda conn: conn.execute("SELECT 1"))
-            assert time.perf_counter() - write_started < 5.0
+            assert calls == [], "the rebuild must not start inline on the write path"
 
 
 def test_large_database_requires_the_raised_freelist_ratio(
@@ -308,12 +308,10 @@ def test_active_task_hold_records_the_rebuild_without_waiting(
             store.file_sizes = lambda: _bloated_sizes()  # type: ignore[method-assign]
             store._last_write_monotonic = time.monotonic()
 
-            started = time.perf_counter()
+            # Held means held: forbidding the quiet-window read proves the hold
+            # short-circuits the wait loop instead of waiting for the 600 s cap.
+            store._seconds_since_write = forbid("held quiet-window read")  # type: ignore[method-assign]
             assert store._run_compaction_when_idle(reason="write") is False
-            waited = time.perf_counter() - started
-
-            # Held means held, not "wait 600 s and then rebuild".
-            assert waited < 1.0
             assert calls == []
             status = store.compaction_status()
             assert status["status"] == "held-active-task"

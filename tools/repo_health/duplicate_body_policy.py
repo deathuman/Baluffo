@@ -228,16 +228,23 @@ def check_baseline_file(repo_root: Path) -> list[str]:
     return errors
 
 
-def list_uncovered_patterns(repo_root: Path) -> list[str]:
+def list_uncovered_patterns(
+    repo_root: Path, patterns: list[DuplicatePattern] | None = None
+) -> list[str]:
     """Qualifying patterns that are not baselined, or that outgrew their cap.
 
     Coverage is a copy *cap*, not a bare digest match: a baselined body that
     gains another copy is reported again, so duplication cannot grow under an
     already-approved digest. Shrinking is allowed and needs no baseline edit.
+
+    ``patterns`` lets a caller that already scanned the tree (the guardrail group,
+    or a test sharing one fixture) avoid paying for a second full scan.
     """
     baselined = load_baseline(repo_root)
+    if patterns is None:
+        patterns = collect_duplicate_patterns(repo_root)
     messages: list[str] = []
-    for pattern in collect_duplicate_patterns(repo_root):
+    for pattern in patterns:
         allowed = baselined.get(pattern.digest)
         if allowed is not None and pattern.copy_count <= allowed:
             continue
@@ -253,21 +260,29 @@ def list_uncovered_patterns(repo_root: Path) -> list[str]:
     return messages
 
 
-def list_stale_baseline_entries(repo_root: Path) -> list[str]:
+def list_stale_baseline_entries(
+    repo_root: Path, patterns: list[DuplicatePattern] | None = None
+) -> list[str]:
     """Baselined digests that no longer describe a qualifying pattern."""
     baselined = load_baseline(repo_root)
-    current = {pattern.digest for pattern in collect_duplicate_patterns(repo_root)}
+    if patterns is None:
+        patterns = collect_duplicate_patterns(repo_root)
+    current = {pattern.digest for pattern in patterns}
     return [
         f"{digest} is baselined but no longer duplicated"
         for digest in sorted(set(baselined) - current)
     ]
 
 
-def check_duplicate_function_bodies(repo_root: Path) -> list[str]:
+def check_duplicate_function_bodies(
+    repo_root: Path, patterns: list[DuplicatePattern] | None = None
+) -> list[str]:
     """Fail on new duplicate bodies."""
-    return list_uncovered_patterns(repo_root)
+    return list_uncovered_patterns(repo_root, patterns)
 
 
-def check_duplicate_bodies_stale_baseline(repo_root: Path) -> list[str]:
+def check_duplicate_bodies_stale_baseline(
+    repo_root: Path, patterns: list[DuplicatePattern] | None = None
+) -> list[str]:
     """Fail when the baseline is unusable or lists a no-longer-duplicated pattern."""
-    return check_baseline_file(repo_root) or list_stale_baseline_entries(repo_root)
+    return check_baseline_file(repo_root) or list_stale_baseline_entries(repo_root, patterns)

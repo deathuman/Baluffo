@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.helpers.guardrails import stub_other_compat_checks
 from tests.helpers.json_files import write_text_file
 from tools.repo_health import repo_guardrails
 from tools.repo_health import update_manager_facade_inventory as inventory
@@ -152,22 +153,11 @@ def test_repo_guardrails_compat_group_runs_update_manager_facade_inventory(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(repo_guardrails, "_run_python_checks", lambda _group, _checks: [])
-    monkeypatch.setattr(repo_guardrails, "check_bridge_api_field_inventory", lambda: [])
-    monkeypatch.setattr(repo_guardrails, "check_desktop_update_facade_inventory", lambda: [])
-    monkeypatch.setattr(
-        repo_guardrails,
-        "check_desktop_update_root_dependency_inventory",
-        lambda: [],
-    )
+    stub_other_compat_checks(monkeypatch, keep="check_update_manager_facade_inventory")
     monkeypatch.setattr(
         repo_guardrails,
         "check_update_manager_facade_inventory",
         lambda: ["facade drift"],
-    )
-    monkeypatch.setattr(
-        repo_guardrails,
-        "check_update_manager_runtime_facade_inventory",
-        lambda: [],
     )
 
     assert "compat" in repo_guardrails.GROUPS

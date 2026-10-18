@@ -49,6 +49,7 @@ from desktop_updater_root_dependency_inventory import (
 from duplicate_body_policy import (
     check_duplicate_bodies_stale_baseline,
     check_duplicate_function_bodies,
+    collect_duplicate_patterns,
 )
 from loc_budget import check_loc_budget
 from release_artifacts_policy import (
@@ -66,6 +67,11 @@ from source_registry_duplicate_url_policy import (
     check_active_seed_twin_career_urls,
 )
 from task_run_owner_policy import check_task_run_start_owner_fields
+from timing_assertion_policy import (
+    check_timing_assertion_stale_baseline,
+    check_timing_assertions,
+    collect_findings,
+)
 from update_manager_facade_inventory import check_update_manager_facade_inventory
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
@@ -87,6 +93,7 @@ GROUPS = (
     "frontend",
     "repo-root",
     "test-shape",
+    "timing",
     "fixtures",
     "line-budget",
     "loc",
@@ -823,6 +830,31 @@ def run_workflow_group() -> list[GuardFailure]:
     return failures
 
 
+# In-process compat checks, in reporting order. Each entry keeps the import used
+# statically; the runner reads the current module attribute so a wiring test can
+# replace one check and stub the rest without running a dozen repository scans.
+COMPAT_CHECKS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
+    ("check_bridge_api_field_inventory", check_bridge_api_field_inventory),
+    ("check_task_run_start_owner_fields", check_task_run_start_owner_fields),
+    ("check_bridge_production_bridge_api_imports", check_bridge_production_bridge_api_imports),
+    ("check_bridge_server_bridge_api_imports", check_bridge_server_bridge_api_imports),
+    ("check_desktop_update_facade_inventory", check_desktop_update_facade_inventory),
+    (
+        "check_desktop_update_root_dependency_inventory",
+        check_desktop_update_root_dependency_inventory,
+    ),
+    (
+        "check_desktop_updater_root_dependency_inventory",
+        check_desktop_updater_root_dependency_inventory,
+    ),
+    ("check_update_manager_facade_inventory", check_update_manager_facade_inventory),
+    (
+        "check_update_manager_runtime_facade_inventory",
+        check_update_manager_runtime_facade_inventory,
+    ),
+)
+
+
 def run_compat_group() -> list[GuardFailure]:
     excluded = {
         "test_discovered_python_test_files_define_real_tests",
@@ -835,67 +867,11 @@ def run_compat_group() -> list[GuardFailure]:
         if name.startswith("test_") and name not in excluded
     ]
     failures = _run_python_checks("compat", checks)
-    bridge_api_failure = _failure_from_messages(
-        "compat", "check_bridge_api_field_inventory", check_bridge_api_field_inventory()
-    )
-    if bridge_api_failure:
-        failures.append(bridge_api_failure)
-    task_run_owner_failure = _failure_from_messages(
-        "compat",
-        "check_task_run_start_owner_fields",
-        check_task_run_start_owner_fields(),
-    )
-    if task_run_owner_failure:
-        failures.append(task_run_owner_failure)
-    bridge_production_failure = _failure_from_messages(
-        "compat",
-        "check_bridge_production_bridge_api_imports",
-        check_bridge_production_bridge_api_imports(),
-    )
-    if bridge_production_failure:
-        failures.append(bridge_production_failure)
-    bridge_server_failure = _failure_from_messages(
-        "compat",
-        "check_bridge_server_bridge_api_imports",
-        check_bridge_server_bridge_api_imports(),
-    )
-    if bridge_server_failure:
-        failures.append(bridge_server_failure)
-    desktop_update_failure = _failure_from_messages(
-        "compat",
-        "check_desktop_update_facade_inventory",
-        check_desktop_update_facade_inventory(),
-    )
-    if desktop_update_failure:
-        failures.append(desktop_update_failure)
-    desktop_update_root_failure = _failure_from_messages(
-        "compat",
-        "check_desktop_update_root_dependency_inventory",
-        check_desktop_update_root_dependency_inventory(),
-    )
-    if desktop_update_root_failure:
-        failures.append(desktop_update_root_failure)
-    desktop_updater_root_failure = _failure_from_messages(
-        "compat",
-        "check_desktop_updater_root_dependency_inventory",
-        check_desktop_updater_root_dependency_inventory(),
-    )
-    if desktop_updater_root_failure:
-        failures.append(desktop_updater_root_failure)
-    update_manager_failure = _failure_from_messages(
-        "compat",
-        "check_update_manager_facade_inventory",
-        check_update_manager_facade_inventory(),
-    )
-    if update_manager_failure:
-        failures.append(update_manager_failure)
-    update_manager_runtime_failure = _failure_from_messages(
-        "compat",
-        "check_update_manager_runtime_facade_inventory",
-        check_update_manager_runtime_facade_inventory(),
-    )
-    if update_manager_runtime_failure:
-        failures.append(update_manager_runtime_failure)
+    for name, default in COMPAT_CHECKS:
+        check = globals().get(name, default)
+        failure = _failure_from_messages("compat", name, check())
+        if failure:
+            failures.append(failure)
     return failures
 
 
@@ -949,6 +925,43 @@ def run_test_shape_group() -> list[GuardFailure]:
         ),
     ]
     return _run_python_checks("test-shape", checks)
+
+
+def run_timing_group() -> list[GuardFailure]:
+    """New wall-clock assertions in tests, ratcheted against an empty baseline.
+
+    A test that compares an elapsed reading to a literal measures the host, and
+    the reading is still a clock read after it was stored in a payload field,
+    averaged over samples, or returned by a module-local helper, so the detector
+    follows it there. The structural
+    replacements live in ``tests/helpers/timing.py``; a deliberate deadline
+    declares itself with ``# timing-ok: <reason>``. Every existing bound carries
+    that marker, so the baseline holds no debt and any unmarked comparison is a
+    new one.
+    """
+    failures: list[GuardFailure] = []
+    # One scan feeds both checks: parsing and analysing the suite twice was most of
+    # this group's runtime, not the assertions themselves.
+    findings = collect_findings(ROOT)
+    uncovered = check_timing_assertions(ROOT, findings)
+    stale = check_timing_assertion_stale_baseline(ROOT, findings)
+
+    if uncovered:
+        report = "\n".join(uncovered)
+        failures.append(
+            GuardFailure(
+                "timing",
+                "check_timing_assertions",
+                "wall-clock assertion added; assert the structure instead "
+                "(tests/helpers/timing.py: ScriptedClock/EventLog/forbid), or mark a "
+                f"deliberate deadline with `# timing-ok: <reason>`:\n\n{report}",
+            )
+        )
+
+    stale_failure = _failure_from_messages("timing", "check_timing_assertion_stale_baseline", stale)
+    if stale_failure:
+        failures.append(stale_failure)
+    return failures
 
 
 def run_fixtures_group() -> list[GuardFailure]:
@@ -1075,8 +1088,10 @@ def run_duplication_group() -> list[GuardFailure]:
     few changes.
     """
     failures: list[GuardFailure] = []
-    uncovered = check_duplicate_function_bodies(repo_root=ROOT)
-    stale = check_duplicate_bodies_stale_baseline(repo_root=ROOT)
+    # One pass over the tree feeds both checks; the second scan was pure repeat.
+    patterns = collect_duplicate_patterns(ROOT)
+    uncovered = check_duplicate_function_bodies(repo_root=ROOT, patterns=patterns)
+    stale = check_duplicate_bodies_stale_baseline(repo_root=ROOT, patterns=patterns)
 
     if uncovered:
         report = "\n\n".join(uncovered)
@@ -1141,6 +1156,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "frontend": run_frontend_group,
     "repo-root": run_repo_root_group,
     "test-shape": run_test_shape_group,
+    "timing": run_timing_group,
     "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
     "loc": run_loc_group,

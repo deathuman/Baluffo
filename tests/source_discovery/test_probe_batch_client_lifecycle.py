@@ -133,7 +133,7 @@ def test_the_shared_client_closes_only_after_its_last_fetch_has_left(
     )
     assert elapsed < _ABANDONED_FETCH_S, (
         f"the batch took {elapsed:.2f}s; a fetch that outlives its bound must not hold the batch open"
-    )
+    )  # timing-ok: 1.5 s bound against a fetch held for 7.5 s
     in_flight = len(clients) == 1 and not clients[0].closed
     assert in_flight, (
         "the batch returned with its client already closed while the fetch was still in it"
@@ -229,7 +229,9 @@ def test_the_batch_deadline_also_waits_for_outstanding_fetches(
     assert fetch_entered.is_set(), "the fetch must have started for this to be the case under test"
     assert len(results) == 1 and not results[0][1], "a deadline leaves a failure row per candidate"
     assert "total probe deadline exceeded" in str(results[0][3]), results
-    assert elapsed < 5, f"the batch hit its own deadline but took {elapsed:.1f}s to return"
+    assert elapsed < 5, (
+        f"the batch hit its own deadline but took {elapsed:.1f}s to return"
+    )  # timing-ok: the deadline exit must return well inside 5 s
     assert len(clients) == 1, "the freed client must be the refutable one"
     assert clients[0].closed is False, (
         "the deadline exit closed the client while a fetch was still inside it"

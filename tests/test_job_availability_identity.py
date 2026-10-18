@@ -1,15 +1,17 @@
 import json
-import time
 
 import pytest
 
+from src.jobs import availability_identity
 from src.jobs.availability_identity import (
     AvailabilityIdentityPreflightError,
+    AvailabilityIdentityPreparation,
     prepare_availability_identities,
     validate_published_availability_rows,
 )
 from src.jobs.models import CanonicalJob
 from src.jobs.state_lifecycle import apply_job_lifecycle_state
+from tests.helpers.timing import assert_sublinear_growth
 
 
 def test_lifecycle_identity_does_not_join_matching_secondary_dedup_keys() -> None:
@@ -117,6 +119,36 @@ def test_identical_canonical_urls_may_share_one_availability_identity() -> None:
     assert prepared.summary["monitorableRowCount"] == 2
 
 
+def test_url_validation_runs_once_per_distinct_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The preflight asks for each row's URL alias across several passes, and the URL
+    # caches underneath hold 4,096 entries -- far below a live refresh's link count,
+    # so without the per-run alias memo every pass re-validated every URL as a miss.
+    # Publicity and fingerprint then share the one normalisation their link needed.
+    calls: dict[str, int] = {"normalize": 0, "public": 0, "fingerprint": 0}
+
+    def counting(kind: str, original):
+        def record(value: str):
+            calls[kind] += 1
+            return original(value)
+
+        return record
+
+    for name, kind in (
+        ("normalize_url", "normalize"),
+        ("is_public_normalized_url", "public"),
+        ("fingerprint_normalized_url", "fingerprint"),
+    ):
+        monkeypatch.setattr(
+            availability_identity, name, counting(kind, getattr(availability_identity, name))
+        )
+    availability_identity._url_alias_for_link.cache_clear()
+
+    prepared = _run_identity_preflight(_identity_rows(150))
+
+    assert len(prepared.rows) == 150
+    assert calls == {"normalize": 150, "public": 150, "fingerprint": 150}
+
+
 def test_one_to_one_source_alias_keeps_identity_when_url_changes() -> None:
     row = CanonicalJob.from_mapping(
         {
@@ -205,10 +237,23 @@ def test_large_exact_identity_preflight_has_no_cross_url_collisions() -> None:
     assert prepared.summary["unresolvedIdentityConflictCount"] == 0
 
 
-@pytest.mark.slow
-def test_live_scale_identity_preflight_partitions_one_unresolvable_candidate() -> None:
-    unique_count = 79_525
-    rows = [
+# The live identity count this fixture was lifted from is 79,525 rows, but
+# `prepare_availability_identities` costs ~0.05 ms per row (mostly URL work, once per
+# distinct link), so the live count bought ~30 s of wall clock without changing the
+# partition outcome: the unresolvable group is 3 rows whatever the population, and
+# every conflict, rejection and identity-count assertion below is scale-independent.
+# 10k keeps the same shape as a live run for the cost-growth check at a tenth of the
+# population.
+_PARTITION_POPULATION_ROWS = 10_000
+# Per-row cost is flat across these sizes, so twice the rows should cost about twice the
+# CPU; the tolerance allows half again as much before the ratio reads as superlinear.
+_COST_GROWTH_PROBE_ROWS = 5_000
+_COST_GROWTH_TOLERANCE = 1.5
+
+
+def _identity_rows(population: int) -> list[CanonicalJob]:
+    """`population` rows whose only shared property is one distinct public URL each."""
+    return [
         CanonicalJob.from_mapping(
             {
                 "title": f"Role {index}",
@@ -218,9 +263,13 @@ def test_live_scale_identity_preflight_partitions_one_unresolvable_candidate() -
                 "jobLink": f"https://jobs.example/opening/{index}",
             }
         )
-        for index in range(unique_count)
+        for index in range(population)
     ]
-    rows.extend(
+
+
+def _unresolvable_conflict_group() -> list[CanonicalJob]:
+    """One reused source id over two public URLs plus one URL-less candidate."""
+    return [
         CanonicalJob.from_mapping(
             {
                 "title": f"Conflicted role {index}",
@@ -237,25 +286,41 @@ def test_live_scale_identity_preflight_partitions_one_unresolvable_candidate() -
                 "",
             )
         )
-    )
+    ]
 
-    started = time.perf_counter()
-    prepared = prepare_availability_identities(
+
+def _run_identity_preflight(rows: list[CanonicalJob]) -> AvailabilityIdentityPreparation:
+    return prepare_availability_identities(
         rows=rows,
         observed_rows=rows,
         lifecycle_rows={},
         detected_at="2026-07-17T12:00:00+00:00",
     )
-    elapsed = time.perf_counter() - started
 
-    assert len(rows) == 79_528
-    assert len(prepared.rows) == 79_527
-    assert len(prepared.observed_rows) == 79_527
+
+def _identity_preflight_workload(population: int) -> AvailabilityIdentityPreparation:
+    """A live-shaped run: ``population`` distinct links plus the unresolvable group."""
+    return _run_identity_preflight(_identity_rows(population) + _unresolvable_conflict_group())
+
+
+@pytest.mark.slow
+def test_large_population_identity_preflight_partitions_one_unresolvable_candidate() -> None:
+    # Twice the rows must not cost more than 1.5x twice the CPU: a pass that compared
+    # rows with rows (the shape that made the 79k live preflight expensive) reads ~4x.
+    prepared = assert_sublinear_growth(
+        _identity_preflight_workload,
+        probe_size=_COST_GROWTH_PROBE_ROWS,
+        size=_PARTITION_POPULATION_ROWS,
+        tolerance=_COST_GROWTH_TOLERANCE,
+    )
+
+    assert len(_identity_rows(_PARTITION_POPULATION_ROWS)) == _PARTITION_POPULATION_ROWS
+    assert len(prepared.rows) == _PARTITION_POPULATION_ROWS + 2
+    assert len(prepared.observed_rows) == _PARTITION_POPULATION_ROWS + 2
     assert prepared.summary["rejectedRowCount"] == 1
     assert prepared.summary["postFilterUnresolvedMissingIdentityCount"] == 0
     assert prepared.summary["postFilterUnresolvedIdentityConflictCount"] == 0
     assert len(json.dumps(prepared.quarantine_additions)) < 16_384
-    assert elapsed < 120
 
 
 def test_conflicting_url_less_candidate_is_quarantined_and_excluded() -> None:

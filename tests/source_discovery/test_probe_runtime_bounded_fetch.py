@@ -140,7 +140,7 @@ def test_probe_batch_is_bounded_when_the_fetcher_hangs() -> None:
         f"probe batch took {batch_elapsed:.1f}s to return; a hung fetcher must be "
         f"bounded to about timeout_s ({timeout_s}s) per call, not parked until the "
         f"fetcher happens to finish"
-    )
+    )  # timing-ok: 25 s bound against a 60 s uninterruptible hang
 
 
 def test_a_hung_fetcher_is_reported_as_a_per_candidate_failure() -> None:
@@ -185,7 +185,9 @@ def test_healthy_fetcher_is_unaffected_by_the_bound() -> None:
 
     assert len(results) == 5
     assert all(ok for _row, ok, _j, _e, _ms in results), "healthy probes must succeed"
-    assert batch_elapsed < 10, "healthy probes must not be delayed by the bound"
+    assert batch_elapsed < 10, (
+        "healthy probes must not be delayed by the bound"
+    )  # timing-ok: healthy probes must finish far inside 10 s
 
 
 # --- the default httpx path: a trickling server must not park the batch ----------------
@@ -286,7 +288,7 @@ def test_slow_drip_probe_is_bounded_on_the_default_httpx_path() -> None:
     assert batch_elapsed < _DRIP_BOUND_ASSERT_S, (
         f"the probe batch took {batch_elapsed:.1f}s against a {timeout_s}s timeout; a "
         f"trickling response must not hold the stage until the server stops trickling"
-    )
+    )  # timing-ok: 15 s bound against a 2 s timeout on a trickling server
     assert not any(ok for _row, ok, _j, _e, _ms in results), (
         "a response that never completes is a failed probe, never a success"
     )
@@ -340,7 +342,9 @@ def test_batch_deadline_reports_the_candidates_it_cut_short() -> None:
     results = asyncio.run(_inner())
 
     assert len(results) == len(candidates), "one result per candidate is the contract"
-    assert elapsed < probe_sleep_s, f"batch parked for {elapsed:.1f}s past its own deadline"
+    assert elapsed < probe_sleep_s, (
+        f"batch parked for {elapsed:.1f}s past its own deadline"
+    )  # timing-ok: must return before the 6 s probe sleep it abandons
     assert all(
         not ok and "total probe deadline exceeded" in str(error)
         for _row, ok, _j, error, _ms in results

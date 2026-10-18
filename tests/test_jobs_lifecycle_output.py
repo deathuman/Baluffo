@@ -1,7 +1,10 @@
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src import jobs_fetcher as jf
+from src.jobs import state_lifecycle_orchestration as lifecycle_orchestration
 from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
     lifecycle_archive_state_path,
@@ -101,12 +104,16 @@ def test_carried_initialization_later_rows_resolve_fresh_aliases() -> None:
     assert _resolve_lifecycle_key(later, next_rows, index) == fresh_key
 
 
-def test_carried_initialization_regression_bounded_time() -> None:
-    """O(N·K) per-row index rebuilds must not return: ~300 fresh rows over
-    8k lifecycle entries must stay far under a 15 s budget (the pre-fix
-    implementation took 90 s+ at this scale)."""
-    import time as _time
+def test_carried_initialization_rebuilds_the_alias_index_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """O(N·K) per-row index rebuilds must not return.
 
+    The pre-fix implementation rebuilt the alias index for every fresh row and took
+    90 s+ at this scale. Counting the builds is exact -- a per-row rebuild over these
+    8k entries reads 301, the fixed shape reads 1 -- and, unlike the 15 s ceiling this
+    replaces, it says nothing about the machine running it.
+    """
     next_rows: dict[str, dict[str, object]] = {
         key: dict(entry)
         for key, entry in (
@@ -119,16 +126,24 @@ def test_carried_initialization_regression_bounded_time() -> None:
         )
     }
     payload = [_job_row(index, availability_id=f"fresh-{index}") for index in range(300)]
-    started = _time.perf_counter()
+    builds = 0
+    original_index = lifecycle_orchestration._lifecycle_alias_index
+
+    def counting_index(rows: dict[str, dict[str, Any]]) -> dict[str, str]:
+        nonlocal builds
+        builds += 1
+        return original_index(rows)
+
+    monkeypatch.setattr(lifecycle_orchestration, "_lifecycle_alias_index", counting_index)
     initialized = _initialize_carried_lifecycle_rows(
         [dict(row) for row in payload],
         next_rows,
         seen_keys=set(),
         finished_at="2026-03-01T00:00:00+00:00",
     )
-    elapsed = _time.perf_counter() - started
+
     assert initialized == 300
-    assert elapsed < 15.0, f"carried initialization took {elapsed:.1f}s"
+    assert builds == 1
 
 
 def test_pipeline_lifecycle_state_retains_city_and_country_for_removed_rows() -> None:

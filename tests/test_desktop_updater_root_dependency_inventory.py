@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.helpers.guardrails import stub_other_compat_checks
 from tests.helpers.json_files import write_text_file
 from tools.repo_health import desktop_updater_root_dependency_inventory as inventory
 from tools.repo_health import repo_guardrails
@@ -358,13 +359,7 @@ def test_repo_guardrails_compat_group_runs_desktop_updater_root_dependency_inven
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(repo_guardrails, "_run_python_checks", lambda _group, _checks: [])
-    monkeypatch.setattr(repo_guardrails, "check_bridge_api_field_inventory", lambda: [])
-    monkeypatch.setattr(repo_guardrails, "check_desktop_update_facade_inventory", lambda: [])
-    monkeypatch.setattr(
-        repo_guardrails,
-        "check_desktop_update_root_dependency_inventory",
-        lambda: [],
-    )
+    stub_other_compat_checks(monkeypatch, keep="check_desktop_updater_root_dependency_inventory")
     monkeypatch.setattr(
         repo_guardrails,
         "check_desktop_updater_root_dependency_inventory",

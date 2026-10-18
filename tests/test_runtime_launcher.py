@@ -380,7 +380,7 @@ def test_wait_for_url_raises_timeout() -> None:
     start = time.monotonic()
     with pytest.raises(TimeoutError):
         rl.wait_for_url("http://127.0.0.1:9/nope", timeout_s=0.2, interval_s=0.05)
-    assert time.monotonic() - start < 2.0
+    assert time.monotonic() - start < 2.0  # timing-ok: 0.2 s timeout with a 10x ceiling
 
 
 def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.MonkeyPatch) -> None:

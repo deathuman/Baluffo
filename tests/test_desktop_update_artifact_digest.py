@@ -98,7 +98,9 @@ def test_budgeted_lookup_never_blocks_on_the_artifact_read(
     assert update_state.artifact_sha256_within_budget(artifact, budget_ms=20) is None
     elapsed = time.perf_counter() - began
 
-    assert elapsed < 1.0, "a status poll must not wait for the artifact read"
+    assert elapsed < 1.0, (
+        "a status poll must not wait for the artifact read"
+    )  # timing-ok: 1 s poll against a 10 s blocked hash read
     assert started.wait(timeout=5.0) is True
     release.set()
     assert update_state.artifact_sha256_within_budget(artifact, budget_ms=5000) == (

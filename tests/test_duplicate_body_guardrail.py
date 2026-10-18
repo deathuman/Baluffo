@@ -17,6 +17,12 @@ from tools.repo_health import duplicate_body_policy as policy
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(scope="module")
+def repository_patterns() -> list[policy.DuplicatePattern]:
+    """One scan of the repository, shared by every assertion that needs the whole tree."""
+    return policy.collect_duplicate_patterns(REPO_ROOT)
+
+
 def _write_module(root: Path, name: str, source: str) -> None:
     target = root / "src" / name
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -196,15 +202,15 @@ class TestRepositoryBaseline:
     def test_baseline_file_is_valid(self) -> None:
         assert policy.check_baseline_file(REPO_ROOT) == []
 
-    def test_no_uncovered_patterns_in_repository(self) -> None:
-        uncovered = policy.check_duplicate_function_bodies(REPO_ROOT)
+    def test_no_uncovered_patterns_in_repository(self, repository_patterns) -> None:
+        uncovered = policy.check_duplicate_function_bodies(REPO_ROOT, repository_patterns)
         assert not uncovered, (
             "new duplicate function bodies detected; reuse the existing "
             "implementation or add a deliberate baseline entry:\n\n" + "\n\n".join(uncovered)
         )
 
-    def test_no_stale_baseline_entries(self) -> None:
-        assert policy.check_duplicate_bodies_stale_baseline(REPO_ROOT) == []
+    def test_no_stale_baseline_entries(self, repository_patterns) -> None:
+        assert policy.check_duplicate_bodies_stale_baseline(REPO_ROOT, repository_patterns) == []
 
 
 class TestGuardrailWiring:

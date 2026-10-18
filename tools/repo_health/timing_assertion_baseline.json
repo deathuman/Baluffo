@@ -1,0 +1,4 @@
+{
+  "_comment": "Wall-clock assertions baselined when the gate landed. This is debt, not policy: a new bound must be structural or carry `# timing-ok: <reason>`. Regenerate with: python tools/repo_health/timing_assertion_policy.py --update",
+  "findings": []
+}

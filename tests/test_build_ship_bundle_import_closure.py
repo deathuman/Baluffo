@@ -1,13 +1,20 @@
-import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from scripts import build_ship_bundle
-from scripts.build_ship_bundle import build_bundle
+from tests.helpers.ship_bundle import copy_ship_bundle, shared_full_ship_bundle
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
+
+
+@pytest.fixture(scope="module")
+def full_ship_bundle() -> Iterator[Path]:
+    """One full-fidelity build for the module; each test copies it."""
+    with shared_full_ship_bundle() as bundle:
+        yield bundle
 
 
 def test_validate_private_key_pem_accepts_valid_rsa_pem_with_escaped_newlines() -> None:
@@ -22,42 +29,22 @@ def test_validate_private_key_pem_accepts_valid_rsa_pem_with_escaped_newlines() 
     )
 
 
-def _write_packaged_sync_config(tmp: str) -> None:
-    config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "appId": "123456",
-                "installationId": "999999",
-                "repo": "owner/repo",
-                "branch": "main",
-                "path": "baluffo/source-sync.json",
-                "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def _build_bundle(tmp: str) -> Path:
-    _write_packaged_sync_config(tmp)
-    return build_bundle(Path(tmp) / "dist" / "baluffo-ship", "1.2.3")
-
-
-def test_bundle_version_python_imports_resolve_from_packaged_root() -> None:
+def test_bundle_version_python_imports_resolve_from_packaged_root(
+    full_ship_bundle: Path,
+) -> None:
     with workspace_tmpdir("build-ship-bundle-imports") as tmp:
-        output = _build_bundle(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         version_root = output / "app" / "versions" / "1.2.3"
 
         build_ship_bundle.validate_app_version_python_imports(version_root)
         assert not list(tmp.glob("baluffo-runtime.db*"))
 
 
-def test_bundle_version_python_import_validation_fails_for_missing_leaf_module() -> None:
+def test_bundle_version_python_import_validation_fails_for_missing_leaf_module(
+    full_ship_bundle: Path,
+) -> None:
     with workspace_tmpdir("build-ship-bundle-imports") as tmp:
-        output = _build_bundle(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         version_root = output / "app" / "versions" / "1.2.3"
         (version_root / "src" / "source_registry_auto_approval.py").unlink()
 
@@ -69,9 +56,11 @@ def test_bundle_version_python_import_validation_fails_for_missing_leaf_module()
         assert "source_registry_auto_approval" in message
 
 
-def test_bundle_version_storage_validation_fails_for_missing_migration_resource() -> None:
+def test_bundle_version_storage_validation_fails_for_missing_migration_resource(
+    full_ship_bundle: Path,
+) -> None:
     with workspace_tmpdir("build-ship-bundle-imports") as tmp:
-        output = _build_bundle(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         version_root = output / "app" / "versions" / "1.2.3"
         (version_root / "src" / "storage" / "migrations" / "004_jobs_feed.sql").unlink()
 
@@ -83,9 +72,11 @@ def test_bundle_version_storage_validation_fails_for_missing_migration_resource(
         assert "migration sequence" in message or "004_jobs_feed" in message
 
 
-def test_bundle_contains_python_import_closure_modules() -> None:
+def test_bundle_contains_python_import_closure_modules(
+    full_ship_bundle: Path,
+) -> None:
     with workspace_tmpdir("build-ship-bundle-imports") as tmp:
-        output = _build_bundle(tmp)
+        output = copy_ship_bundle(full_ship_bundle, Path(tmp) / "dist" / "baluffo-ship")
         version_root = output / "app" / "versions" / "1.2.3"
         required_modules = (
             "src/source_registry_auto_approval.py",

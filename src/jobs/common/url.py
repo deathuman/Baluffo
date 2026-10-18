@@ -25,8 +25,8 @@ from src.jobs.text_utils import (
 )
 
 
-def _canonical_url_fingerprint_seed_uncached(url: str) -> str:
-    normalized = normalize_url(url)
+def _canonical_fingerprint_seed_from_normalized(normalized: str) -> str:
+    """The dedup seed of an already-normalised URL, without normalising it again."""
     if not normalized:
         return ""
     parsed = urlparse(normalized)
@@ -61,6 +61,10 @@ def _canonical_url_fingerprint_seed_uncached(url: str) -> str:
     return normalized
 
 
+def _canonical_url_fingerprint_seed_uncached(url: str) -> str:
+    return _canonical_fingerprint_seed_from_normalized(normalize_url(url))
+
+
 _canonical_url_fingerprint_seed_cached = lru_cache(maxsize=URL_NORMALIZATION_CACHE_SIZE)(
     _canonical_url_fingerprint_seed_uncached
 )
@@ -84,8 +88,20 @@ def fingerprint_url(url: Any) -> str:
     return hashlib.sha1(seed.encode("utf-8")).hexdigest() if seed else ""
 
 
-def _is_public_job_url_uncached(url: str) -> bool:
-    normalized = normalize_url(url)
+def fingerprint_normalized_url(normalized: str) -> str:
+    """``fingerprint_url`` for an already-normalised URL (no second normalisation).
+
+    ``fingerprint_url`` normalises before seeding; a caller that already holds the
+    normalised form -- such as the identity preflight, which needs publicity and the
+    fingerprint of the same link -- can hand it straight here instead of paying for a
+    second ``normalize_url`` lookup and its ``clean_text`` key.
+    """
+    seed = _canonical_fingerprint_seed_from_normalized(normalized)
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest() if seed else ""
+
+
+def _is_public_normalized_url(normalized: str) -> bool:
+    """Publicity of an already-normalised URL, without normalising it again."""
     if not normalized:
         return False
     try:
@@ -103,9 +119,22 @@ def _is_public_job_url_uncached(url: str) -> bool:
         return False
 
 
+def _is_public_job_url_uncached(url: str) -> bool:
+    return _is_public_normalized_url(normalize_url(url))
+
+
 _is_public_job_url_cached = lru_cache(maxsize=URL_NORMALIZATION_CACHE_SIZE)(
     _is_public_job_url_uncached
 )
+
+
+def is_public_normalized_url(normalized: str) -> bool:
+    """``is_public_job_url`` for an already-normalised URL (no second normalisation).
+
+    Paired with ``fingerprint_normalized_url`` for callers that hold the normalised form
+    and would otherwise normalise the same link twice for two answers about it.
+    """
+    return _is_public_normalized_url(normalized)
 
 
 def is_public_job_url(url: Any) -> bool:
