@@ -8,6 +8,7 @@ AI boundary implement in: this leaf for target selection; gate accounting lives 
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 from collections.abc import Mapping
 from typing import Any
@@ -82,13 +83,75 @@ def _blocks_trusted_distinct_non_primary_merge(
     return bool(current_primary and target_primary and current_primary != target_primary)
 
 
+class _ElevatoSideIndex:
+    """The two Elevato sides of the accumulated rows, kept in row order.
+
+    A pair is one static-Elevato row and one google-sheets row on an Elevato link, so the
+    candidates for such a row are the *opposite* side and nothing else. Walking every
+    accumulated row per Elevato-shaped row is what made dedup superlinear on live feeds: 40 such
+    rows among 40,247 cost 791,402 pair checks -- 57% of dedup's CPU -- for 0.1% of the rows.
+    Each row is classified once as it is appended, and re-classified when a merge rewrites it,
+    so carrying more non-Elevato rows adds no checks at all.
+    """
+
+    __slots__ = ("_scanned", "_sheet_idxs", "_static_idxs")
+
+    def __init__(self) -> None:
+        self._static_idxs: list[int] = []
+        self._sheet_idxs: list[int] = []
+        self._scanned = 0
+
+    def candidates(self, row: CanonicalJob) -> list[int]:
+        """The opposite-side indices, ascending: the only rows ``row`` can pair with."""
+        candidates: list[int] = []
+        if _is_google_sheets_elevato_row(row):
+            candidates.extend(self._static_idxs)
+        if _is_elevato_static_row(row):
+            candidates.extend(self._sheet_idxs)
+        if len(candidates) > 1:
+            return sorted(set(candidates))
+        return candidates
+
+    def sync(self, merged_rows: list[CanonicalJob]) -> None:
+        """Classify every row appended since the last call, exactly once."""
+        while self._scanned < len(merged_rows):
+            self._index_row(self._scanned, merged_rows[self._scanned])
+            self._scanned += 1
+
+    def refresh(self, idx: int, row: CanonicalJob) -> None:
+        """Re-classify a row a merge rewrote, so its side membership stays exact."""
+        for idxs, member in (
+            (self._static_idxs, _is_elevato_static_row(row)),
+            (self._sheet_idxs, _is_google_sheets_elevato_row(row)),
+        ):
+            if member:
+                self._add(idxs, idx)
+            elif idx in idxs:
+                idxs.remove(idx)
+
+    def _index_row(self, idx: int, row: CanonicalJob) -> None:
+        if _is_elevato_static_row(row):
+            self._add(self._static_idxs, idx)
+        if _is_google_sheets_elevato_row(row):
+            self._add(self._sheet_idxs, idx)
+
+    @staticmethod
+    def _add(idxs: list[int], idx: int) -> None:
+        position = bisect.bisect_left(idxs, idx)
+        if position == len(idxs) or idxs[position] != idx:
+            idxs.insert(position, idx)
+
+
 def _find_elevato_static_google_sheets_target(
-    current: CanonicalJob, merged_rows: list[CanonicalJob]
+    current: CanonicalJob,
+    merged_rows: list[CanonicalJob],
+    elevato_sides: _ElevatoSideIndex,
 ) -> int | None:
     if not (_is_elevato_static_row(current) or _is_google_sheets_elevato_row(current)):
         return None
-    for idx, target in enumerate(merged_rows):
-        if _is_elevato_static_google_sheets_pair(current, target):
+    elevato_sides.sync(merged_rows)
+    for idx in elevato_sides.candidates(current):
+        if _is_elevato_static_google_sheets_pair(current, merged_rows[idx]):
             return idx
     return None
 
@@ -132,6 +195,7 @@ def _find_merge_target(
     by_social: dict[str, int],
     by_sparse_identity: dict[str, int],
     by_smartrecruiters_title_location_alias: dict[str, int],
+    elevato_sides: _ElevatoSideIndex,
     google_sheets_generic_role_guard_samples: list[dict[str, str]],
     google_sheets_generic_role_guard_counts: dict[str, int],
 ) -> tuple[int | None, str]:
@@ -162,7 +226,9 @@ def _find_merge_target(
     )
     if sparse_blocked or sparse_target_idx is not None:
         return sparse_target_idx, sparse_reason
-    elevato_target_idx = _find_elevato_static_google_sheets_target(current, merged_rows)
+    elevato_target_idx = _find_elevato_static_google_sheets_target(
+        current, merged_rows, elevato_sides
+    )
     if elevato_target_idx is not None:
         return elevato_target_idx, "sparse_identity"
     alias_target_idx = _find_smartrecruiters_title_location_alias_target(

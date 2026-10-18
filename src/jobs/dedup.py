@@ -50,6 +50,7 @@ from src.jobs.dedup_identity import (
 from src.jobs.dedup_record_merge import _enrich_unknown_company_from_gracklehq_redirect
 from src.jobs.dedup_targeting import (
     _append_new_dedup_row,
+    _ElevatoSideIndex,
     _find_merge_target,
     _social_key,
 )
@@ -83,6 +84,7 @@ def deduplicate_jobs(
     by_sparse_identity: dict[str, int] = {}
     by_social: dict[str, int] = {}
     by_smartrecruiters_title_location_alias: dict[str, int] = {}
+    elevato_sides = _ElevatoSideIndex()
     source_bundles_by_idx: list[list[dict[str, Any]]] = []
     source_bundle_keys_by_idx: list[set[str]] = []
     source_bundle_counts_by_idx: list[int] = []
@@ -138,6 +140,7 @@ def deduplicate_jobs(
             by_social=by_social,
             by_sparse_identity=by_sparse_identity,
             by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
+            elevato_sides=elevato_sides,
             google_sheets_generic_role_guard_samples=(google_sheets_generic_role_guard_samples),
             google_sheets_generic_role_guard_counts=google_sheets_generic_role_guard_counts,
         )
@@ -210,6 +213,7 @@ def deduplicate_jobs(
             by_sparse_identity=by_sparse_identity,
             by_social=by_social,
             by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
+            elevato_sides=elevato_sides,
             source_bundles_by_idx=source_bundles_by_idx,
             source_bundle_keys_by_idx=source_bundle_keys_by_idx,
             source_bundle_counts_by_idx=source_bundle_counts_by_idx,

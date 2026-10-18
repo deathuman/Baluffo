@@ -26,6 +26,7 @@ from src.jobs.dedup_record_merge import _merge_records_with_source_bundle_state
 from src.jobs.dedup_state import _apply_location_state, _source_bundle_working_sample
 from src.jobs.dedup_targeting import (
     _dedup_key,
+    _ElevatoSideIndex,
     _index_row_keys,
     _index_smartrecruiters_title_location_alias_keys,
     _social_key,
@@ -171,6 +172,7 @@ def _merge_into_target(
     by_sparse_identity: dict[str, int],
     by_social: dict[str, int],
     by_smartrecruiters_title_location_alias: dict[str, int],
+    elevato_sides: _ElevatoSideIndex,
     source_bundles_by_idx: list[list[dict[str, Any]]],
     source_bundle_keys_by_idx: list[set[str]],
     source_bundle_counts_by_idx: list[int],
@@ -217,6 +219,9 @@ def _merge_into_target(
         row=merged_rows[target_idx],
         by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
+    # A merge can rewrite the target's source or link, so its Elevato side membership is only
+    # still right because it is re-derived here.
+    elevato_sides.refresh(target_idx, merged_rows[target_idx])
 
 
 def _attach_source_bundle_state(
