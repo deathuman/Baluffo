@@ -88,6 +88,7 @@
     "perf:baseline:record": "npm run check:python-version && python scripts/perf_baseline.py",
     "perf:compare": "npm run check:python-version && python scripts/perf_compare.py",
     "perf:page-load:audit": "node scripts/page_load_audit.mjs",
+    "review:ui": "node scripts/ui_review_harness.mjs",
     "perf:admin:seed": "python scripts/perf_admin_seed.py",
     "perf:admin:flows": "python scripts/perf_admin_flows.py",
     "perf:admin:flows:roomy": "python scripts/perf_admin_flows.py --profile pi4-roomy",
