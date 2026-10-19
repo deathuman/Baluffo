@@ -58,7 +58,9 @@ from tests.helpers.temp_paths import (
 from tests.helpers.xdist_assignment import (
     record_session_end,
     record_session_start,
+    record_test_outcome,
     record_test_start,
+    report_failing_workers,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -158,10 +160,22 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
     record_test_start(location)
 
 
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Keep the failing node ids, so a record can say which worker ran them."""
+
+    record_test_outcome(report)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Write this worker's assignment record; never fails the run if it cannot be written."""
 
     record_session_end(session)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """After a sharded session with failures, print each failing worker's replay command."""
+
+    report_failing_workers(config)
 
 
 _SESSION_LOCK_STALE_S = 6 * 60 * 60

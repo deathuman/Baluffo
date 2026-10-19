@@ -79,6 +79,11 @@ command over exactly those files in order; add `--worker gw2 --execute` to run i
 recorded as well, under `nested/` and with the spawning test named, but left out of the listing
 because a one-test child process is not a run anyone replays; `--all` shows them.
 
+When a sharded run fails, the session prints, after its summary, the failing tests grouped by the
+worker that ran them and that worker's replay command. A failure therefore hands you the command
+that reproduces it in one process, instead of a lane to re-run and hope the same files share a
+worker again.
+
 Run the Linux-compatible suite (skips `@pytest.mark.windows` tests):
 
 ```bash

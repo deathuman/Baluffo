@@ -6,9 +6,10 @@ installs and never restores -- reproducible only by running the lane again and h
 lands together. The urllib opener leak looked exactly like that: roughly one ``-n 4`` run in four,
 reporting itself in a file that imports nothing the corpus code touches.
 
-Each worker writes one JSON record at session end, named for its run and worker.
-:func:`replay_command` turns a record into a single-process pytest invocation over the same files in
-the same order, which is the condition a leak needs: one process, those files, that order.
+Each worker writes one JSON record at session end, named for its run and worker. The record also
+carries the failing node ids, so a sharded session that fails prints, after its summary, which
+worker ran each failure and the single-process command that replays that worker's files in order --
+the condition a leak needs: one process, those files, that order.
 
 Recording is always on. A flake happens in an ordinary run, so the record has to exist afterwards;
 the cost is one dict update per test and one small write per worker at session end. Records go under
@@ -22,7 +23,8 @@ A process is nested when it inherited ``PYTEST_CURRENT_TEST`` from the parent th
 inherited xdist's run id without being an xdist worker itself. Its record names the test that
 spawned it.
 
-Read a run with::
+:mod:`tests.helpers.xdist_assignment_report` reads what this module writes; the public names are
+re-exported here so the command stays ``python -m tests.helpers.xdist_assignment``::
 
     python -m tests.helpers.xdist_assignment            # newest run, one replay command per worker
     python -m tests.helpers.xdist_assignment --list     # recorded runs, newest first
@@ -32,53 +34,59 @@ Read a run with::
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import shlex
 import shutil
-import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-ASSIGNMENTS_DIR_ENV = "BALUFFO_XDIST_ASSIGNMENTS_DIR"
-DEFAULT_ROOT = Path(__file__).resolve().parents[2] / ".tmp" / "pytest" / "xdist-assignments"
-NESTED_DIR_NAME = "nested"
+from tests.helpers.xdist_assignment_report import (
+    NESTED_DIR_NAME,
+    RUN_DIR_ENV,
+    assignments_root,
+    failure_replay_report,
+    load_run,
+    load_runs,
+    main,
+    replay_command,
+)
 
 # A week of records is ~a few hundred small files; anything older is a previous investigation.
 MAX_RECORD_AGE_S = 7 * 24 * 60 * 60.0
 
-# Per-process accumulation, filled by ``pytest_runtest_logstart`` and written at session end. The
+# Per-process accumulation, filled by the logstart/logreport hooks and written at session end. The
 # list preserves execution order because that is what a replay has to reproduce.
 _files: list[str] = []
 _tests_per_file: dict[str, int] = {}
+_failures: list[str] = []
 _started_at = 0.0
 # What spawned this session, or ``None`` when a person started it.
 _nested_marker: str | None = None
-
-
-def assignments_root() -> Path:
-    """The records directory: the environment override, else the repo-local disposable root."""
-
-    override = os.environ.get(ASSIGNMENTS_DIR_ENV)
-    return Path(override) if override else DEFAULT_ROOT
+# Where this session's records go, chosen at session start by the process that owns it.
+_run_path: Path | None = None
 
 
 def run_dir(root: Path | None = None) -> Path:
-    """The directory for this process's run.
+    """The directory this session records into, as chosen at session start."""
+
+    if _run_path is not None:
+        return _run_path
+    return _fallback_run_dir(root or assignments_root())
+
+
+def _fallback_run_dir(base: Path) -> Path:
+    """A directory for a worker whose owner exported nothing -- the uid-based choice.
 
     ``PYTEST_XDIST_TESTRUNUID`` is exported to every xdist worker and is identical across them, so
-    they meet in one directory. The controller has no public copy of that id and does not write a
-    record, and a serial session is a single process, so both fall back to their own pid -- unique
-    enough for one run and never shared with another.
+    they still meet in one directory.
     """
 
-    base = root or assignments_root()
     uid = os.environ.get("PYTEST_XDIST_TESTRUNUID") or f"local-{os.getpid()}"
     if _nested_marker is not None:
         return base / NESTED_DIR_NAME / f"nested-{uid}"
@@ -101,6 +109,36 @@ def _nesting_marker(config: pytest.Config) -> str | None:
     if os.environ.get("PYTEST_XDIST_TESTRUNUID") and not getattr(config, "workerinput", None):
         return "spawned by an xdist worker"
     return None
+
+
+def _session_run_dir(config: pytest.Config) -> Path:
+    """Pick this session's record directory, and export it from the process that owns the session.
+
+    The owner -- a serial session or the xdist controller -- chooses the directory and puts it in
+    the environment, which xdist's workers inherit when they are spawned. That is what lets the
+    owner read the records back at the end and say which worker ran a failing test: ``xdist`` never
+    exports the run id it generates to the controller, so the controller has to be the one naming
+    the directory.
+
+    A nested session ignores an inherited directory: that one belongs to the session that spawned
+    it, and writing there would put a child's files in the parent's record. It names a fresh
+    directory instead, and exports it for its own workers.
+    """
+
+    base = assignments_root()
+    inherited = os.environ.get(RUN_DIR_ENV)
+    if getattr(config, "workerinput", None):
+        if inherited:
+            return Path(inherited)
+        return _fallback_run_dir(base)
+
+    directory = (
+        base / NESTED_DIR_NAME / f"nested-{uuid.uuid4().hex}"
+        if _nested_marker is not None
+        else base / f"run-{uuid.uuid4().hex}"
+    )
+    os.environ[RUN_DIR_ENV] = str(directory)
+    return directory
 
 
 def _is_xdist_controller(config: pytest.Config) -> bool:
@@ -144,17 +182,19 @@ def _prune_old_runs(root: Path) -> None:
 
 
 def record_session_start(config: pytest.Config) -> None:
-    """Reset this process's accumulation and, in the session owner, drop stale records."""
+    """Reset this process's accumulation; the session owner names the run and drops stale records."""
 
-    global _nested_marker, _started_at
+    global _nested_marker, _run_path, _started_at
 
     _files.clear()
     _tests_per_file.clear()
+    _failures.clear()
     _nested_marker = _nesting_marker(config)
     _started_at = time.time()
-    if _is_xdist_controller(config):
-        # Only the process that owns the session prunes, and an xdist controller is still that
-        # owner; a worker pruning would race the run it belongs to.
+    _run_path = _session_run_dir(config)
+    if not getattr(config, "workerinput", None) and _nested_marker is None:
+        # Only the process that owns the session prunes; a worker would race the run it belongs to,
+        # and a nested child only ever writes its own directory.
         _prune_old_runs(assignments_root())
 
 
@@ -166,6 +206,18 @@ def record_test_start(location: tuple[str, int | None, str]) -> None:
         _files.append(path)
         _tests_per_file[path] = 0
     _tests_per_file[path] += 1
+
+
+def record_test_outcome(report: pytest.TestReport) -> None:
+    """Remember a failing node id, once, in the order this process saw it.
+
+    The worker that ran the test is the only process whose record needs it, and it is also the only
+    one that can name it precisely: the controller sees the same report but not which worker ran it.
+    """
+
+    if not report.failed or report.nodeid in _failures:
+        return
+    _failures.append(report.nodeid)
 
 
 def record_session_end(session: pytest.Session) -> None:
@@ -184,6 +236,7 @@ def record_session_end(session: pytest.Session) -> None:
         "finished_at": round(time.time(), 3),
         "tests": sum(_tests_per_file.values()),
         "files": [{"path": path, "tests": _tests_per_file[path]} for path in _files],
+        "failures": list(_failures),
     }
     try:
         directory = run_dir()
@@ -194,6 +247,23 @@ def record_session_end(session: pytest.Session) -> None:
         staged.replace(target)
     except OSError:
         return
+
+
+def report_failing_workers(config: pytest.Config) -> None:
+    """Print the replay commands at the end of a sharded session that had failures.
+
+    Called from ``pytest_unconfigure`` so it lands after the session's own summary: the workers
+    have all written their records by then, which is what makes the failing worker knowable here.
+    Nothing is printed for a passing session, a serial one, or a worker process.
+    """
+
+    if _run_path is None or getattr(config, "workerinput", None):
+        return
+    if not getattr(config.option, "numprocesses", None):
+        return
+    lines = failure_replay_report(_run_path)
+    if lines:
+        print("\n".join(lines), flush=True)
 
 
 # The hooks below exist so a child pytest can load this module as a plugin
@@ -208,173 +278,32 @@ def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) 
     record_test_start(location)
 
 
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    record_test_outcome(report)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     record_session_end(session)
 
 
-def _worker_order(worker: Mapping[str, Any]) -> tuple[int, int, str]:
-    """gw2 before gw10: a plain string sort puts "gw10" first, which reads as the lead worker."""
-
-    name = str(worker.get("worker", ""))
-    digits = name.removeprefix("gw")
-    if digits.isdigit():
-        return (0, int(digits), "")
-    return (1, 0, name)
+def pytest_unconfigure(config: pytest.Config) -> None:
+    report_failing_workers(config)
 
 
-def load_run(directory: Path) -> dict[str, Any] | None:
-    """Read one run directory, newest worker record first. Unreadable records are skipped."""
-
-    workers: list[dict[str, Any]] = []
-    for path in sorted(directory.glob("worker-*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        # A half-written or foreign record is not evidence of an assignment, so it is dropped
-        # rather than guessed at: a wrong replay target wastes more time than a missing one.
-        if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
-            continue
-        workers.append(payload)
-    if not workers:
-        return None
-    workers.sort(key=_worker_order)
-    return {
-        "run": directory.name.removeprefix("run-").removeprefix("nested-"),
-        "dir": directory,
-        "workers": workers,
-    }
-
-
-def load_runs(root: Path | None = None, *, include_nested: bool = False) -> list[dict[str, Any]]:
-    """Every recorded run under ``root``, newest first.
-
-    Nested sessions are excluded unless asked for: one child pytest process is not a run anyone
-    wants to replay, and listing them made the real runs harder to find than the records help.
-    """
-
-    base = root or assignments_root()
-    try:
-        directories = [child for child in base.iterdir() if child.is_dir()]
-    except OSError:
-        return []
-    directories = [child for child in directories if child.name != NESTED_DIR_NAME]
-    if include_nested:
-        try:
-            directories += [child for child in (base / NESTED_DIR_NAME).iterdir() if child.is_dir()]
-        except OSError:
-            pass
-    directories.sort(key=lambda child: child.stat().st_mtime if child.exists() else 0.0)
-    runs = [load_run(directory) for directory in reversed(directories)]
-    return [run for run in runs if run is not None]
-
-
-def replay_command(worker: Mapping[str, Any], *, rootdir: str | None = None) -> str:
-    """The single-process pytest command that replays exactly the files one worker ran.
-
-    Order is preserved from the record: pytest runs explicitly named files in the order given, so
-    this reproduces both the file set and the sequence a leak would have seen.
-    """
-
-    # POSIX separators in the printed command: the record holds the platform's own (backslashes on
-    # Windows), and a copied command in a POSIX shell reads a backslash as an escape.
-    paths = [
-        Path(str(entry["path"])).as_posix()
-        for entry in worker.get("files", [])
-        if isinstance(entry, Mapping) and entry.get("path")
-    ]
-    directory = rootdir or str(worker.get("rootdir") or ".")
-    return " ".join(["python -m pytest", *paths, "-q", f"--rootdir={Path(directory).as_posix()}"])
-
-
-def _format_counts(value: Any) -> str:
-    return f"{int(value):,}" if isinstance(value, int) else "?"
-
-
-def _print_run(run: Mapping[str, Any], *, worker: str | None, execute: bool) -> int:
-    print(f"run {run['run']}  ({run['dir']})", flush=True)
-    spawned_by = sorted(
-        {str(worker.get("spawned_by")) for worker in run["workers"] if worker.get("nested")}
-    )
-    if spawned_by:
-        print("  nested child session, spawned by: " + ", ".join(spawned_by), flush=True)
-    selected = [
-        record for record in run["workers"] if worker is None or record.get("worker") == worker
-    ]
-    if not selected:
-        print(
-            f"  no worker record named {worker!r}; recorded: "
-            + ", ".join(str(record.get("worker")) for record in run["workers"])
-        )
-        return 1
-    status = 0
-    for record in selected:
-        print(
-            f"  {record.get('worker', '?')}: {_format_counts(record.get('tests'))} tests"
-            f" in {_format_counts(len(record.get('files', [])))} files",
-            # Flushed before a replay runs: otherwise the child's output arrives first and the
-            # command that produced it looks like it was printed afterwards.
-            flush=True,
-        )
-        command = replay_command(record)
-        print(f"    {command}", flush=True)
-        if execute:
-            # No shell: the command is a path list this module built, and a shell would let a
-            # checkout path containing a space split a file name in two. Run it from the
-            # session's own rootdir, because a relative path argument makes pytest collect only
-            # the directories it walked below that root -- an absolute one makes it walk the
-            # file's ancestors, which for a temp root means listing directories other processes
-            # create and delete mid-run.
-            rootdir = record.get("rootdir")
-            completed = subprocess.run(
-                shlex.split(command), cwd=str(rootdir) if rootdir else None, check=False
-            )
-            status = status or completed.returncode
-    return status
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="python -m tests.helpers.xdist_assignment",
-        description="Show which files each pytest worker ran, and how to replay one worker's set.",
-    )
-    parser.add_argument("--root", type=Path, default=None, help="records directory to read")
-    parser.add_argument("--list", action="store_true", dest="list_runs", help="list runs only")
-    parser.add_argument("--run", default=None, help="run id (see --list); default newest")
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        dest="include_nested",
-        help="include nested child sessions, which are hidden by default",
-    )
-    parser.add_argument("--worker", default=None, help="a worker id such as gw2")
-    parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="run the replay command instead of printing it",
-    )
-    args = parser.parse_args(argv)
-
-    runs = load_runs(args.root, include_nested=args.include_nested)
-    if not runs:
-        print(f"no recorded runs under {args.root or assignments_root()}")
-        return 1
-    if args.list_runs:
-        for run in runs:
-            workers = ", ".join(str(record.get("worker")) for record in run["workers"])
-            suffix = "  [nested]" if any(w.get("nested") for w in run["workers"]) else ""
-            print(f"{run['run']}  workers: {workers}{suffix}")
-        return 0
-
-    run = runs[0]
-    if args.run is not None:
-        matched = [candidate for candidate in runs if candidate["run"] == args.run]
-        if not matched:
-            print(f"no recorded run {args.run!r}; see --list, or --all for nested sessions")
-            return 1
-        run = matched[0]
-    return _print_run(run, worker=args.worker, execute=args.execute)
-
+__all__ = [
+    "assignments_root",
+    "failure_replay_report",
+    "load_run",
+    "load_runs",
+    "main",
+    "record_session_end",
+    "record_session_start",
+    "record_test_outcome",
+    "record_test_start",
+    "replay_command",
+    "report_failing_workers",
+    "run_dir",
+]
 
 if __name__ == "__main__":
     sys.exit(main())
