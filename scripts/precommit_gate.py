@@ -223,6 +223,11 @@ def run_repo_guardrails(
     # not exist yet.
     if pending_container_version_gate:
         command.append("--pending-container-version-gate")
+    # The window half of that gate runs in the all-files pass (pre-push and CI) and
+    # reads intent from shipped commits only, so a `Release-tag:` line on a docs,
+    # tests, or tools commit does not discharge it. A bump-first window closes on a
+    # shipped commit declaring `Release-tag: v<current>`, which is valid while that
+    # version is untagged -- see docs/RELEASE.md.
     completed = subprocess.run(command, cwd=ROOT, check=False)
     return completed.returncode
 
