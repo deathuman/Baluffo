@@ -195,7 +195,7 @@ Run the Python dependency vulnerability audit with:
 npm run security:python
 ```
 
-The audit scans the checked-in `requirements-lock.txt` with `pip-audit`, writes a JSON report to `.tmp/security/pip-audit.json`, and fails on any unallowlisted advisory. CI runs this lane after the pre-commit guardrails in the lint workflow.
+The audit resolves the checked-in `requirements-lock.txt` for the image's own target — CPython 3.13 on manylinux x86_64, as named in `Dockerfile` — and fails if a pin has no distribution that target can install, so the result describes the shipped image rather than the developer's machine. Those declared pins are then audited with `pip-audit` in `--no-deps --disable-pip` mode, which does no local install and no re-resolution, and writes a JSON report to `.tmp/security/pip-audit.json`; any unallowlisted advisory fails the lane. CI runs this lane after the pre-commit guardrails in the lint workflow.
 
 ## JavaScript dependency security audit
 

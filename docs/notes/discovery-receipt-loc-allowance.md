@@ -441,3 +441,27 @@ and a bump after it closes). The per-file budget for that file moves to 583, its
 measured size.
 
 `styles` and `probes` are unchanged. Exact measured values, no spare headroom.
+
+## Container-target dependency audit slice (2026-10-20)
+
+The dependency audit described the developer's machine rather than the image:
+`pip-audit -r requirements-lock.txt` built a venv with this host's OS and interpreter,
+pulled Windows-only PyInstaller transitives into the report, and re-resolved the lock on
+every run. It now resolves the lock against the container's own target (CPython 3.13,
+manylinux x86_64 — taken from the `Dockerfile` stage and pinned by a test) and then audits
+the declared pins with `--no-deps --disable-pip`, so nothing is installed or re-resolved
+locally. A pin the image cannot install fails the audit by name.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `scripts` | 25427 | 25576 | +149 |
+| `tests` | 253002 | 253072 | +70 |
+
+- `scripts` +149: the target constants and platform tags, the lock-pin reader, the
+  cross-platform resolution command and its verify step (which names any pin the image
+  cannot install), and the two audit flags.
+- `tests` +70: the resolution-command and Dockerfile-alignment tests, the
+  missing-distribution failure test, and the updated command/exit-code tests.
+
+`docs/testing.md` records the new audit shape. All other areas unchanged; exact measured
+values, no spare headroom.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -79,6 +80,64 @@ def test_valid_allowlist_entries_become_ignore_args(tmp_path: Path, monkeypatch)
         "--ignore-vuln",
         "PYSEC-2026-2",
     ]
+    # The audit must read the declared pins, not resolve the lock for this OS.
+    assert "--no-deps" in command
+    assert "--disable-pip" in command
+
+
+def test_resolution_command_targets_the_container_platform() -> None:
+    """The lock is resolved for the image's CPython/linux target, not this machine."""
+    command = security_audit.build_resolution_command()
+
+    assert command[1:3] == ["-m", "pip"]
+    assert command[command.index("--python-version") + 1] == security_audit.CONTAINER_PYTHON_VERSION
+    assert command[command.index("--implementation") + 1] == security_audit.CONTAINER_IMPLEMENTATION
+    assert command[command.index("--abi") + 1] == security_audit.CONTAINER_ABI
+    platforms = [command[index + 1] for index, part in enumerate(command) if part == "--platform"]
+    assert platforms == list(security_audit.CONTAINER_PLATFORMS)
+    assert "--only-binary=:all:" in command
+    assert "--dry-run" in command
+    assert str(security_audit.REQUIREMENTS_LOCK) in command
+
+
+def test_container_audit_target_matches_the_dockerfile(repo_root: Path) -> None:
+    """A base-image move has to fail here instead of auditing a stale target."""
+    dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
+    base = re.search(r"^FROM python:(\d+\.\d+)-slim", dockerfile, re.MULTILINE)
+    assert base, "expected a `FROM python:X.Y-slim` runtime stage in the Dockerfile"
+    version = base.group(1)
+    assert security_audit.CONTAINER_PYTHON_VERSION == version
+    assert security_audit.CONTAINER_IMPLEMENTATION == "cp"
+    assert security_audit.CONTAINER_ABI == f"cp{version.replace('.', '')}"
+
+
+def test_resolution_failure_names_the_pin_the_image_cannot_install(
+    tmp_path: Path, monkeypatch
+) -> None:
+    requirements = tmp_path / "requirements-lock.txt"
+    requirements.write_text("scrapy==2.19.0\npsutil==7.2.2\n", encoding="utf-8")
+    resolution_report = tmp_path / ".tmp" / "security" / "container-resolution.json"
+
+    def fake_run(command, cwd, check, **kwargs):
+        resolution_report.parent.mkdir(parents=True, exist_ok=True)
+        resolution_report.write_text(
+            json.dumps({"install": [{"metadata": {"name": "scrapy", "version": "2.19.0"}}]}),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(security_audit, "REQUIREMENTS_LOCK", requirements)
+    monkeypatch.setattr(security_audit, "RESOLUTION_REPORT_PATH", resolution_report)
+    monkeypatch.setattr(security_audit, "RESOLUTION_TARGET_DIR", tmp_path / ".tmp" / "target")
+    monkeypatch.setattr(security_audit.subprocess, "run", fake_run)
+
+    try:
+        security_audit.verify_container_resolution()
+    except security_audit.SecurityAuditConfigError as exc:
+        assert "psutil==7.2.2" in str(exc)
+        assert "manylinux x86_64" in str(exc)
+    else:
+        raise AssertionError("A pin the image cannot install must fail the audit.")
 
 
 def test_committed_security_inputs_close_python_security_caveats(repo_root: Path) -> None:
@@ -126,21 +185,32 @@ def test_precommit_config_registers_pip_audit_hook(repo_root: Path) -> None:
 def test_run_audit_propagates_pip_audit_exit_code(tmp_path: Path, monkeypatch) -> None:
     requirements = tmp_path / "requirements-lock.txt"
     report = tmp_path / ".tmp" / "security" / "pip-audit.json"
+    resolution_report = tmp_path / ".tmp" / "security" / "container-resolution.json"
     requirements.write_text("scrapy==2.15.0\n", encoding="utf-8")
-    captured: dict[str, object] = {}
+    captured: list[list[str]] = []
 
-    def fake_run(command: list[str], cwd: Path, check: bool) -> subprocess.CompletedProcess:
-        captured["command"] = command
-        captured["cwd"] = cwd
-        captured["check"] = check
+    def fake_run(command, cwd, check, **kwargs):
+        captured.append(command)
+        if command[1:3] == ["-m", "pip"]:
+            resolution_report.parent.mkdir(parents=True, exist_ok=True)
+            resolution_report.write_text(
+                json.dumps({"install": [{"metadata": {"name": "scrapy", "version": "2.15.0"}}]}),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0)
         return subprocess.CompletedProcess(command, 1)
 
     monkeypatch.setattr(security_audit, "ROOT", tmp_path)
     monkeypatch.setattr(security_audit, "REQUIREMENTS_LOCK", requirements)
     monkeypatch.setattr(security_audit, "REPORT_PATH", report)
+    monkeypatch.setattr(security_audit, "RESOLUTION_REPORT_PATH", resolution_report)
+    monkeypatch.setattr(
+        security_audit, "RESOLUTION_TARGET_DIR", tmp_path / ".tmp" / "security" / "container-target"
+    )
     monkeypatch.setattr(security_audit.subprocess, "run", fake_run)
 
     assert security_audit.run_audit(["PYSEC-2026-1"]) == 1
-    assert captured["cwd"] == tmp_path
-    assert captured["check"] is False
+    # Resolution first, so the audit cannot start from this machine's target.
+    assert captured[0][1:3] == ["-m", "pip"]
+    assert captured[1][1:3] == ["-m", "pip_audit"]
     assert report.parent.is_dir()
