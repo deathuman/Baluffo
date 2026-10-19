@@ -114,11 +114,15 @@ def test_child_clean(tmp_path: Path) -> None:
 def _run_child(selection: str) -> subprocess.CompletedProcess[str]:
     """Run one generated child test in its own pytest process with the guard loaded as a plugin.
 
-    The child file gets a private directory outside ``.tmp/pytest`` on purpose. pytest collects
-    the intermediate directories of a file argument, so a child under the shared pytest temp
-    root made its session list and stat every sibling there -- including directories other
-    xdist workers create and delete mid-run. That surfaced as a ``FileNotFoundError`` during
-    child collection in roughly one `-n 4` run in four.
+    The child gets a private directory outside ``.tmp/pytest``, and runs *from* it with that
+    directory as rootdir and the file named relatively. Both halves matter: pytest collects the
+    intermediate directories of a file argument, so a child under the shared pytest temp root made
+    its session list and stat every sibling there -- including directories other xdist workers
+    create and delete mid-run. An absolute argument had the same effect one level higher, because
+    the walk continued through the file's ancestors in the system temp root, where every other
+    ``mkdtemp`` in the suite appears and disappears. Either way the symptom was a
+    ``FileNotFoundError`` during child collection; a relative argument inside its own rootdir has
+    nothing above it left to walk.
     """
 
     child_root = Path(tempfile.mkdtemp(prefix="baluffo-compat-seam-child-"))
@@ -136,9 +140,11 @@ def _run_child(selection: str) -> subprocess.CompletedProcess[str]:
                 sys.executable,
                 "-m",
                 "pytest",
-                str(child),
+                child.name,
                 "-q",
                 "--color=no",
+                "--rootdir",
+                str(child_root),
                 "--basetemp",
                 str(child_root / "basetemp"),
                 "-p",
@@ -148,7 +154,7 @@ def _run_child(selection: str) -> subprocess.CompletedProcess[str]:
                 "-k",
                 selection,
             ],
-            cwd=_REPO_ROOT,
+            cwd=child_root,
             env=env,
             capture_output=True,
             text=True,

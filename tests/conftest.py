@@ -51,6 +51,16 @@ from tests.helpers.temp_paths import (
     remove_workspace_tmpdir,
 )
 
+# Records which files each worker ran, so a shared-worker interleaving can be replayed instead of
+# waited for again (see the helper for why that matters). Called from the hooks below rather than
+# registered as a plugin: ``pytest_plugins`` is only allowed in a top-level conftest, and this file
+# is not one -- the rootdir is the repository root.
+from tests.helpers.xdist_assignment import (
+    record_session_end,
+    record_session_start,
+    record_test_start,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CODEX_TMP_ROOT = TEST_TMP_ROOT
 CODEX_TMP_ROOT.mkdir(parents=True, exist_ok=True)
@@ -139,6 +149,19 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers", "windows: Test requires Windows-specific APIs; skipped on Linux."
     )
     _claim_single_pytest_session(config)
+    record_session_start(config)
+
+
+def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) -> None:
+    """Feed the worker-assignment record the file each test is about to run from."""
+
+    record_test_start(location)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Write this worker's assignment record; never fails the run if it cannot be written."""
+
+    record_session_end(session)
 
 
 _SESSION_LOCK_STALE_S = 6 * 60 * 60

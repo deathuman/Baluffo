@@ -69,6 +69,16 @@ starting mid-run would otherwise delete another worker's live `pytest-tmp-*` dir
 the child pytest in `tests/test_compat_seam_guard.py` runs from a private temp root, because
 pytest collects the intermediate directories of a file argument.
 
+Every session also records which files each worker ran, under
+`.tmp/pytest/xdist-assignments/run-<uid>/`: xdist never says which worker took which file, so
+without it a cross-file leak (a patch that outlives the file that installed it) can only be
+re-chased by re-running the lane and hoping the same pair lands together. `python -m
+tests.helpers.xdist_assignment` prints the newest run and, per worker, the single-process pytest
+command over exactly those files in order; add `--worker gw2 --execute` to run it, or set
+`BALUFFO_XDIST_ASSIGNMENTS_DIR` to move the records. Child pytest sessions a test spawns are
+recorded as well, under `nested/` and with the spawning test named, but left out of the listing
+because a one-test child process is not a run anyone replays; `--all` shows them.
+
 Run the Linux-compatible suite (skips `@pytest.mark.windows` tests):
 
 ```bash
