@@ -34,7 +34,10 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bridge_api_field_inventory import check_bridge_api_field_inventory
 from bridge_route_inventory import check_bridge_route_inventory
-from container_version_policy import check_container_shipped_code_version_gate
+from container_version_policy import (
+    check_container_shipped_code_version_gate,
+    check_pending_shipped_code_version_gate,
+)
 from dead_branch_policy import (
     check_dead_branch_stale_baseline,
     check_dead_branches,
@@ -110,11 +113,11 @@ GROUPS = (
 # groups, and the baseline holds exactly those.
 DUP_GATE_ENFORCING = True
 
-# The container shipped-code version gate is enforced at pre-push, not at local
-# commit (see run_release_group). Set by --skip-container-version-gate so a commit
-# hook can land code locally without forcing a release decision; pre-push leaves it
-# False and keeps the gate enforced.
-_SKIP_CONTAINER_VERSION_GATE = False
+# Which container shipped-code version check this run performs (see
+# run_release_group). Commit hooks pass --pending-container-version-gate so the
+# staged commit is judged against the released version before it exists; pre-push
+# and CI leave it False and check the whole post-bump window.
+_PENDING_CONTAINER_VERSION_GATE = False
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
@@ -981,19 +984,26 @@ def run_release_group() -> list[GuardFailure]:
         failure = _failure_from_messages("release", name, messages)
         if failure:
             failures.append(failure)
-    # The container shipped-code version gate is a pre-push gate: it stops container
-    # code from shipping to the GHCR container channel under a frozen version string at
-    # publish time. Local commits are meant to land first (AGENTS: "the offending
-    # commit always lands locally first -- that is by design"), so a local pre-commit
-    # run skips it via --skip-container-version-gate; pre-push runs keep it enforced.
-    if not _SKIP_CONTAINER_VERSION_GATE:
+    # The container shipped-code version gate stops container code from shipping to
+    # the GHCR channel under a frozen version string. The commit hook asks for the
+    # pending check: the window cannot see a commit that does not exist yet, so the
+    # old arrangement let the offending commit land and only failed afterwards.
+    # Pre-push and CI check the whole window, which also catches commits that were
+    # made with hooks disabled.
+    if _PENDING_CONTAINER_VERSION_GATE:
+        failure = _failure_from_messages(
+            "release",
+            "check_pending_shipped_code_version_gate",
+            check_pending_shipped_code_version_gate(),
+        )
+    else:
         failure = _failure_from_messages(
             "release",
             "check_container_shipped_code_version_gate",
             check_container_shipped_code_version_gate(),
         )
-        if failure:
-            failures.append(failure)
+    if failure:
+        failures.append(failure)
     return failures
 
 
@@ -1188,16 +1198,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Run one guardrail group. Repeat for multiple groups. Defaults to all groups.",
     )
     parser.add_argument(
-        "--skip-container-version-gate",
+        "--pending-container-version-gate",
         action="store_true",
-        help="Skip the container shipped-code version gate (a pre-push gate). Use from "
-        "the local pre-commit hook so a commit can land before a release version decision; "
-        "pre-push runs omit this and keep the gate enforced.",
+        help="Check only the staged commit against the released version instead of the "
+        "whole post-bump window. Use from the local pre-commit hook so the commit that "
+        "would republish a released tag is blocked before it exists; pre-push and CI "
+        "omit this and check the window.",
     )
     args = parser.parse_args(argv)
-    global _SKIP_CONTAINER_VERSION_GATE
-    if args.skip_container_version_gate:
-        _SKIP_CONTAINER_VERSION_GATE = True
+    global _PENDING_CONTAINER_VERSION_GATE
+    if args.pending_container_version_gate:
+        _PENDING_CONTAINER_VERSION_GATE = True
     groups = args.group or list(GROUPS)
     failures = run_groups(groups)
     if failures:

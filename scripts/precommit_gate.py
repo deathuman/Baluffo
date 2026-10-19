@@ -188,6 +188,11 @@ def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     return commands
 
 
+def has_staged_changes() -> bool:
+    """True when the index holds content, i.e. a commit is being created."""
+    return bool(_git_lines("diff", "--cached", "--name-only"))
+
+
 def should_run_repo_guardrails(files: list[str]) -> bool:
     watched_roots = ("src/", "frontend/", "tests/", "scripts/", ".github/", "docs/")
     watched_exact = {
@@ -206,17 +211,18 @@ def should_run_repo_guardrails(files: list[str]) -> bool:
 
 
 def run_repo_guardrails(
-    groups: tuple[str, ...] = (), *, skip_container_version_gate: bool = False
+    groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
 ) -> int:
     command = [PYTHON, "tools/repo_health/repo_guardrails.py"]
     for group in groups:
         command.extend(["--group", group])
-    # The container shipped-code version gate is a pre-push gate: it must not force
-    # a version/release decision at local commit time. The pre-commit hook passes this
-    # so code lands locally (AGENTS: "the offending commit always lands locally first");
-    # pre-push keeps it enforced by omitting the flag.
-    if skip_container_version_gate:
-        command.append("--skip-container-version-gate")
+    # The container shipped-code version gate judges the staged commit here. It used
+    # to be skipped entirely at commit time, so a shipped change could land on a
+    # released version and only be flagged afterwards: the commit is the last moment
+    # the decision can be stopped, and the window check cannot see a commit that does
+    # not exist yet.
+    if pending_container_version_gate:
+        command.append("--pending-container-version-gate")
     completed = subprocess.run(command, cwd=ROOT, check=False)
     return completed.returncode
 
@@ -256,11 +262,22 @@ def run_changed() -> int:
             _report_failing_stage("pre-commit --hook-stage pre-push", hook_command, return_code)
             return return_code
     if should_run_repo_guardrails(files):
-        # Local commit: skip the container shipped-code version gate (a pre-push gate).
-        # The gate stays enforced at pre-push via run_all().
-        return_code = run_repo_guardrails(skip_container_version_gate=True)
+        # Local commit: judge the staged change against the released version so the
+        # offending commit never lands. The full post-bump window stays a pre-push
+        # and CI check (run_all()), which also catches a run with hooks disabled.
+        return_code = run_repo_guardrails(pending_container_version_gate=True)
         if return_code != 0:
             _report_failing_stage("repo-guardrails", [], return_code)
+        return return_code
+    if has_staged_changes():
+        # The watched-root filter exists to keep the full guardrail run cheap. It
+        # does not cover every shipped path -- `Dockerfile`, `styles/`, and the
+        # runtime `data/` files are outside it -- so a commit touching only those
+        # would otherwise skip the container version gate entirely. The release
+        # group is the one check every commit needs.
+        return_code = run_repo_guardrails(groups=("release",), pending_container_version_gate=True)
+        if return_code != 0:
+            _report_failing_stage("repo-guardrails --group release", [], return_code)
         return return_code
     return 0
 

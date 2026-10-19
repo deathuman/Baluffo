@@ -354,6 +354,7 @@ def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
     monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
+    monkeypatch.setattr(precommit_gate, "has_staged_changes", lambda: False)
     assert precommit_gate.run_changed() == 0
 
     staged = [c for c in seen if "--hook-stage" in c]
@@ -386,13 +387,13 @@ def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
 
     def fake_guardrails(
-        groups: tuple[str, ...] = (), *, skip_container_version_gate: bool = False
+        groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
     ) -> int:
         nonlocal guardrails_called
         assert groups == ()
-        # The local commit path skips the pre-push container version gate so a
-        # commit can land before a release decision.
-        assert skip_container_version_gate is True
+        # The local commit path judges the staged change so a commit that would
+        # republish a released version is blocked before it exists.
+        assert pending_container_version_gate is True
         guardrails_called = True
         return 0
 

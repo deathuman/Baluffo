@@ -21,6 +21,12 @@ Scope: the window is the commits after the most recent commit that changed the
 version in ``src/app_version.py`` (the release anchor). Any shipped commit in
 that window triggers the gate unless the window carries a bump or an explicit
 intent declaration.
+
+A window cannot contain the commit that is being created, so the pre-commit hook
+asks the index directly instead: ``check_pending_shipped_code_version_gate``
+judges the staged paths and the staged version before that commit exists. The
+window check stays the pre-push and CI scope, where it also catches a commit made
+with hooks disabled.
 """
 
 from __future__ import annotations
@@ -339,3 +345,67 @@ def check_container_shipped_code_version_gate(repo_root: Path = ROOT) -> list[st
         ]
         commits = [commit for commit in commits if commit not in already_published]
     return evaluate_window(commits, current_version, current_released=current_released)
+
+
+def _index_file(repo_root: Path, rel_path: str) -> str:
+    """Return the staged (index) content of ``rel_path``; empty when unstaged."""
+    return _git(repo_root, "show", f":{rel_path}")
+
+
+def _index_version(repo_root: Path) -> str | None:
+    """Return the app version staged in the index, or None when the file is absent."""
+    match = _APP_VERSION_RE.search(_index_file(repo_root, "src/app_version.py"))
+    return match.group(1).strip() if match else None
+
+
+def _staged_changed_files(repo_root: Path) -> list[str]:
+    """Return the paths the next commit would add, modify, or delete."""
+    return [
+        line
+        for line in _git(
+            repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"
+        ).splitlines()
+        if line.strip()
+    ]
+
+
+def check_pending_shipped_code_version_gate(repo_root: Path = ROOT) -> list[str]:
+    """Fail when the *staged* commit would republish an already-released version.
+
+    ``check_container_shipped_code_version_gate`` can only see commits that
+    already exist, so at commit time it always passes for the commit it is about
+    to create. That is how a shipped change landed on a released version and was
+    only flagged after it was history: the pre-commit hook skipped the gate, and
+    even without the skip the window had nothing to look at yet.
+
+    This reads the index instead. The staged paths are exactly what the commit
+    would add, and the staged ``src/app_version.py`` is the version it would
+    carry, so a bump staged in the same commit opens a new window and passes,
+    while shipped code staged against a released version fails before the commit
+    exists.
+    """
+    if not (repo_root / ".git").exists():
+        return []
+    head_version = _version_at(repo_root, "HEAD") or ""
+    index_version = _index_version(repo_root) or head_version
+    if not index_version:
+        return []
+    if head_version and compare_baluffo_versions(index_version, head_version) > 0:
+        # The staged commit carries the bump, so it opens a new window rather than
+        # republishing the released one.
+        return []
+    if not _version_is_released(repo_root, index_version):
+        return []
+    staged = [path for path in _staged_changed_files(repo_root) if _is_shipped_path(path)]
+    if not staged:
+        return []
+    listing = "\n".join(f"- {path}" for path in staged)
+    return [
+        f"staged container code would land on `v{index_version}`, which is already "
+        f"released:\n{listing}\n"
+        f"`v{index_version}` is a published container tag, so this commit would republish "
+        "it with different code while the release assets and every install pinned to "
+        "that version still describe the old image. Bump the version in this commit "
+        "(`python scripts/bump_version.py <next>`), or keep the change on a branch and "
+        "release it by tagging."
+    ]

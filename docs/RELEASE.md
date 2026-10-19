@@ -536,6 +536,14 @@ are inside the published image already) and then fails on whatever shipped code 
 `Release-tag: v<next>` line no longer authorises overwriting a published `v<current>`; the version has to
 actually move. The remedy is in the failure message: bump, or branch and release by tagging.
 
+Enforcement starts at the commit, not after it. The local pre-commit hook used to skip this gate, and even
+skipping it would not have helped: the window only contains commits that already exist, so the commit being
+created was invisible to it. `scripts/precommit_gate.py` now runs
+`check_pending_shipped_code_version_gate`, which reads the **index** — the staged paths and the staged
+`src/app_version.py` — and fails when shipped paths are staged against a released version. A bump staged in
+the same commit passes, because it opens a new window. The window check stays a pre-push and CI gate, and is
+what catches a commit made with hooks disabled.
+
 Two deliberate limits:
 
 - **The git tag is the release marker, not a GHCR query.** That keeps the gate offline and deterministic in
