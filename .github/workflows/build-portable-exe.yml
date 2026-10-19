@@ -45,7 +45,7 @@ jobs:
           node-version: "25.8.0"
 
       - name: Install Python desktop dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements-lock.txt pytest
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-lock.txt pytest pytest-xdist
 
       - name: Install Node dependencies
         run: npm ci

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest.mock
 from pathlib import Path
 
@@ -109,38 +111,51 @@ def test_child_clean(tmp_path: Path) -> None:
 '''
 
 
-def _run_child(tmp_path: Path, selection: str) -> subprocess.CompletedProcess[str]:
-    """Run one generated child test in its own pytest process with the guard loaded as a plugin."""
+def _run_child(selection: str) -> subprocess.CompletedProcess[str]:
+    """Run one generated child test in its own pytest process with the guard loaded as a plugin.
 
-    child = tmp_path / "test_compat_seam_child.py"
-    child.write_text(_CHILD_MODULE, encoding="utf-8")
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(_REPO_ROOT)
-    # This child is a deliberate single file in the repo's own checkout; the conftest's session
-    # lock exists for competing sessions and must not lock it out.
-    env["PYTEST_XDIST_WORKER"] = "compat-seam-selfcheck"
-    env.pop("PYTEST_ADDOPTS", None)
-    return subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            str(child),
-            "-q",
-            "--color=no",
-            "-p",
-            "no:cacheprovider",
-            "-p",
-            "tests.helpers.compat_seams",
-            "-k",
-            selection,
-        ],
-        cwd=_REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    The child file gets a private directory outside ``.tmp/pytest`` on purpose. pytest collects
+    the intermediate directories of a file argument, so a child under the shared pytest temp
+    root made its session list and stat every sibling there -- including directories other
+    xdist workers create and delete mid-run. That surfaced as a ``FileNotFoundError`` during
+    child collection in roughly one `-n 4` run in four.
+    """
+
+    child_root = Path(tempfile.mkdtemp(prefix="baluffo-compat-seam-child-"))
+    try:
+        child = child_root / "test_compat_seam_child.py"
+        child.write_text(_CHILD_MODULE, encoding="utf-8")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(_REPO_ROOT)
+        # This child is a deliberate single file in the repo's own checkout; the conftest's
+        # session lock exists for competing sessions and must not lock it out.
+        env["PYTEST_XDIST_WORKER"] = "compat-seam-selfcheck"
+        env.pop("PYTEST_ADDOPTS", None)
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                str(child),
+                "-q",
+                "--color=no",
+                "--basetemp",
+                str(child_root / "basetemp"),
+                "-p",
+                "no:cacheprovider",
+                "-p",
+                "tests.helpers.compat_seams",
+                "-k",
+                selection,
+            ],
+            cwd=_REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    finally:
+        shutil.rmtree(child_root, ignore_errors=True)
 
 
 def test_guard_fixture_is_registered_for_this_session(request: pytest.FixtureRequest) -> None:
@@ -160,10 +175,10 @@ def test_detector_names_a_double_on_every_seam_it_lists() -> None:
     assert leaked_compat_seams() == [], "a seam kept the double after the patch was undone"
 
 
-def test_guard_fails_a_facade_mock_that_leaks_through_the_shim(tmp_path: Path) -> None:
+def test_guard_fails_a_facade_mock_that_leaks_through_the_shim() -> None:
     """The pattern that broke CI: a plain facade mock, kept by the shim, must fail the guard."""
 
-    proc = _run_child(tmp_path, "test_child_leaks")
+    proc = _run_child("test_child_leaks")
 
     output = proc.stdout + proc.stderr
     assert proc.returncode != 0, f"the leaking child passed:\n{output}"
@@ -173,10 +188,10 @@ def test_guard_fails_a_facade_mock_that_leaks_through_the_shim(tmp_path: Path) -
     ), f"the child failed without the guard naming the seam:\n{output}"
 
 
-def test_sanctioned_helper_child_run_is_not_flagged(tmp_path: Path) -> None:
+def test_sanctioned_helper_child_run_is_not_flagged() -> None:
     """The other direction: patched through the helper, the same run ends with no guard failure."""
 
-    proc = _run_child(tmp_path, "test_child_clean")
+    proc = _run_child("test_child_clean")
 
     output = proc.stdout + proc.stderr
     assert proc.returncode == 0, f"the sanctioned child failed:\n{output}"

@@ -63,7 +63,7 @@
     "test:frontend:linux": "PLAYWRIGHT_SYSTEM_CHROMIUM=1 playwright test --config=playwright.linux.config.js --workers=1 --reporter=line",
     "test:py": "npm run check:python-version && python -m pytest tests -q -m \"not slow and not packaging and not release\" --color=no --basetemp=.tmp/pytest/basetemp",
     "test:py:linux": "npm run check:python-version && python -m pytest tests -q -m \"not slow and not packaging and not release and not windows\" --color=no --basetemp=.tmp/pytest/basetemp",
-    "test:py:extended": "npm run check:python-version && python -m pytest tests -q --color=no --basetemp=.tmp/pytest/basetemp",
+    "test:py:extended": "npm run check:python-version && python -m pytest tests -q --color=no --basetemp=.tmp/pytest/basetemp -n 4 --dist=loadfile",
     "test:py:timing": "npm run check:python-version && python -m pytest tests -q --durations=25 --durations-min=0.2 --color=no --basetemp=.tmp/pytest/basetemp",
     "test:py:cov": "npm run check:python-version && python -m pytest tests -q -m \"not slow\" --cov=src --cov-report=term-missing --color=no",
     "perf:py:timing": "npm run test:py:timing",
