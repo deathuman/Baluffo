@@ -15,6 +15,14 @@
   // "Remove from ignoreBinaries" hint on every run. `ruff` is still needed:
   // it is invoked by the pre-commit config, not by any script knip parses.
   "ignoreBinaries": ["ruff"],
+  // The UI review harness runs these imports inside `page.evaluate`, where the
+  // specifier is a URL served from the site root rather than a filesystem path,
+  // so knip resolves `/frontend/...` from the filesystem root and reports both
+  // as unresolved. They exist and are real dependencies of the harness.
+  "ignoreUnresolved": [
+    "/frontend/admin/app/busy-state.js",
+    "/frontend/admin/app/fetcher.js"
+  ],
   "project": [
     "frontend/**/*.js",
     "frontend/shared/config/admin-config.js",
