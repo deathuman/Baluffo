@@ -62,7 +62,8 @@ npm run test:py:extended
 ```
 
 This lane shards with `pytest-xdist` (`-n 4 --dist=loadfile`, measured 9m15s serial to
-2m23s), so the release workflow installs `pytest-xdist` alongside `pytest`. Files stay whole
+2m23s), so every workflow that runs the Python suite installs `pytest-xdist` alongside
+`pytest` — including the AppImage lane, which runs the suite before it builds. Files stay whole
 on one worker, and two hygiene rules keep the sharded run honest: the stale-temp sweep at
 conftest import only removes directories older than 30 minutes (a worker or child pytest
 starting mid-run would otherwise delete another worker's live `pytest-tmp-*` directory), and

@@ -43,7 +43,11 @@ jobs:
           sudo apt-get install -y -qq chromium-browser curl libfuse2
 
       - name: Install Python dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements-lock.txt pytest
+        # pytest-xdist is not in the lockfile and this lane runs the suite (not only the
+        # AppImage build), so a test that shards a child session needs it here too. Keep the
+        # line equal to the other suite-running lanes: tests in test_xdist_assignment.py
+        # cannot collect under `-n` without it.
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-lock.txt pytest pytest-xdist
 
       - name: Install Node dependencies
         run: npm ci
