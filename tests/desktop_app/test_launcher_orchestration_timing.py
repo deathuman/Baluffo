@@ -10,6 +10,7 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from src.ship.desktop_app import launcher_flow
+from src.ship.desktop_app.config import STARTUP_PARALLEL_BRIDGE_ENV
 from tests.desktop_app._helpers import (
     desktop_runtime_config,
     isolate_desktop_startup_side_effects,
@@ -23,7 +24,12 @@ def _isolate_desktop_startup_side_effects(request, monkeypatch: pytest.MonkeyPat
     isolate_desktop_startup_side_effects(request, monkeypatch)
 
 
-def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
+@pytest.mark.parametrize("parallel_disabled", [False, True])
+def test_launch_desktop_app_orders_site_and_bridge_startup(
+    parallel_disabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if parallel_disabled:
+        monkeypatch.setenv(STARTUP_PARALLEL_BRIDGE_ENV, "0")
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
         data_dir=data_dir,
@@ -94,12 +100,17 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
         desktop_app.launch_desktop_app(config)
 
     cleanup_mock.assert_called_once()
-    assert call_log == ["spawn_site", "wait_for_url", "spawn_bridge"]
     assert site_env["BALUFFO_DESKTOP_BRIDGE_HOST"] == "127.0.0.1"
     assert site_env["BALUFFO_DESKTOP_BRIDGE_PORT"] == "8877"
     event_names = [call.args[1] for call in trace_mock.call_args_list]
-    assert "desktop_bridge_spawn_deferred_until_site_ready" in event_names
-    assert event_names.index("desktop_site_ready") < event_names.index("desktop_bridge_spawned")
+    if parallel_disabled:
+        assert call_log == ["spawn_site", "wait_for_url", "spawn_bridge"]
+        assert "desktop_bridge_spawn_deferred_until_site_ready" in event_names
+        assert event_names.index("desktop_site_ready") < event_names.index("desktop_bridge_spawned")
+        return
+    assert call_log == ["spawn_site", "spawn_bridge", "wait_for_url"]
+    assert "desktop_bridge_spawn_parallel_with_site" in event_names
+    assert event_names.index("desktop_bridge_spawned") < event_names.index("desktop_site_ready")
 
 
 def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> None:
@@ -413,6 +424,7 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
     start_child_process = mock.Mock(
         side_effect=[
             SimpleNamespace(pid=101),
+            SimpleNamespace(pid=201),
             SimpleNamespace(pid=301),
             SimpleNamespace(pid=302),
         ]
@@ -461,7 +473,9 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
         desktop_app.launch_desktop_app(original_config)
 
     assert resolve_ports_mock.call_count == 2
-    assert start_child_process.call_count == 3
+    # Each attempt spawns the site and (in parallel) its bridge; the failed
+    # attempt's pair is terminated before the retry.
+    assert start_child_process.call_count == 4
     assert wait_for_url.call_count == 2
     assert save_mock.call_args.args[0]["sitePort"] == 18080
     assert save_mock.call_args.args[0]["bridgePort"] == 18877
@@ -507,4 +521,4 @@ def test_launch_desktop_app_keeps_explicit_ports_fail_fast_after_bind_race() -> 
             desktop_app.launch_desktop_app(config)
 
     assert resolve_ports_mock.call_count == 1
-    start_child_process.assert_called_once()
+    assert start_child_process.call_count == 2

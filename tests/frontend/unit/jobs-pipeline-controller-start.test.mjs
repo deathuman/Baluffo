@@ -172,7 +172,12 @@ test("triggerJobsPipelineRun keeps failure path when verification finds no activ
       jobsPipelineUiState: uiState,
       callJobsBridge: async path => {
         if (path === "/tasks/run-jobs-pipeline") {
-          throw new Error("Bridge request timed out");
+          // A definite refusal (HTTP 400), not an unconfirmed timeout: the page
+          // may report this immediately.
+          throw Object.assign(
+            new Error("Bridge POST /tasks/run-jobs-pipeline failed: Request failed (400) (HTTP 400)"),
+            { code: "bridge_http_error", status: 400 }
+          );
         }
         if (path === "/tasks/run-jobs-pipeline-status") {
           return { active: false, stage: "idle" };
@@ -237,6 +242,157 @@ test("triggerJobsPipelineRun maps active sync block to background-task copy", as
     assert.deepEqual(toasts, [
       { message: "Another background task is still running.", kind: "error" }
     ]);
+  } finally {
+    restoreTimers();
+  }
+});
+
+function createStartFailureHarness({ startError, statusPayload = { active: false, stage: "idle" } } = {}) {
+  const button = createButtonMock();
+  const uiState = createJobsPipelineUiState();
+  const toasts = [];
+  const controller = createJobsPipelineController({
+    refs: { jobsPipelineRunBtn: button },
+    jobsPipelineUiState: uiState,
+    callJobsBridge: async path => {
+      if (path === "/tasks/run-jobs-pipeline") throw startError;
+      if (path === "/tasks/run-jobs-pipeline-status") {
+        return typeof statusPayload === "function" ? statusPayload() : statusPayload;
+      }
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
+      throw new Error(`Unexpected bridge path: ${path}`);
+    },
+    getAllJobs: () => [],
+    showToast: (message, kind) => {
+      toasts.push({ message, kind });
+    },
+    setRefreshJobsNeedsAttention: () => {},
+    isErrorStage: payload => Boolean(payload?.error),
+    pollDelayMs: 25,
+    idlePollDelayMs: 50
+  });
+  return { button, uiState, controller, toasts };
+}
+
+function bridgeTimeoutError() {
+  return Object.assign(new Error("Bridge request timed out"), { code: "bridge_timeout" });
+}
+
+test("triggerJobsPipelineRun keeps a timed-out start pending instead of reporting an error", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const { button, uiState, controller, toasts } = createStartFailureHarness({
+      startError: bridgeTimeoutError()
+    });
+
+    await controller.triggerJobsPipelineRun();
+
+    assert.equal(uiState.pendingStart, true);
+    assert.equal(uiState.startUnconfirmed, true);
+    assert.equal(uiState.active, false);
+    assert.equal(button.classList.contains("log-error"), false);
+    assert.equal(button.querySelector('[data-ui="jobs-pipeline-label"]').textContent, JOBS_UPDATE_COPY.updatingLabel);
+    assert.deepEqual(toasts, []);
+    assert.ok(uiState.pollingTimer, "the pending start must keep polling for the run");
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("an unconfirmed start attaches when the pipeline becomes visible", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    let active = false;
+    const { button, uiState, controller, toasts } = createStartFailureHarness({
+      startError: bridgeTimeoutError(),
+      statusPayload: () => (active
+        ? {
+          active: true,
+          runId: "pipeline_late_start",
+          stage: "starting",
+          startedAt: "2026-06-02T23:16:56.000Z",
+          progress: { label: "Starting pipeline..." }
+        }
+        : { active: false, stage: "idle" })
+    });
+
+    await controller.triggerJobsPipelineRun();
+    assert.equal(uiState.startUnconfirmed, true);
+
+    active = true;
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(uiState.active, true);
+    assert.equal(uiState.pendingStart, false);
+    assert.equal(uiState.startUnconfirmed, false);
+    assert.equal(uiState.runId, "pipeline_late_start");
+    assert.equal(button.classList.contains("log-error"), false);
+    assert.equal(toasts.some(toast => toast.kind === "error"), false);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("an unconfirmed start reports an error once the confirmation grace expires", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const { button, uiState, controller, toasts } = createStartFailureHarness({
+      startError: bridgeTimeoutError()
+    });
+
+    await controller.triggerJobsPipelineRun();
+    assert.equal(uiState.startUnconfirmed, true);
+
+    uiState.startUnconfirmedAt = Date.now() - 61000;
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(uiState.startUnconfirmed, false);
+    assert.equal(uiState.pendingStart, false);
+    assert.equal(uiState.active, false);
+    assert.equal(button.classList.contains("log-error"), true);
+    assert.deepEqual(toasts, [{ message: JOBS_UPDATE_COPY.startFailed, kind: "error" }]);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("an unreachable bridge still reports the start failure immediately", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const unreachable = () => Object.assign(
+      new Error("Network error: bridge unreachable"),
+      { code: "bridge_unreachable" }
+    );
+    const { button, uiState, controller, toasts } = createStartFailureHarness({
+      startError: unreachable(),
+      statusPayload: () => { throw unreachable(); }
+    });
+
+    await controller.triggerJobsPipelineRun();
+
+    assert.equal(uiState.startUnconfirmed, false);
+    assert.equal(uiState.pendingStart, false);
+    assert.equal(button.classList.contains("log-error"), true);
+    assert.deepEqual(toasts, [{ message: JOBS_UPDATE_COPY.startFailed, kind: "error" }]);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("a 5xx start reply stays pending rather than reporting a failure", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const { uiState, controller } = createStartFailureHarness({
+      startError: Object.assign(new Error("Bridge POST failed: Bridge error (HTTP 500)"), {
+        code: "bridge_http_error",
+        status: 500
+      })
+    });
+
+    await controller.triggerJobsPipelineRun();
+
+    assert.equal(uiState.startUnconfirmed, true);
+    assert.equal(uiState.pendingStart, true);
   } finally {
     restoreTimers();
   }

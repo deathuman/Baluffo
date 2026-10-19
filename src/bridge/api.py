@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from src.bridge import startup_work_budget
+from src.bridge.job_availability_service import refresh_priority_manifest_in_background
 from src.source_registry import normalize_source_url as normalize_source_url_impl
 from src.source_registry import source_identity as source_identity_impl
 from src.source_registry import source_url_fingerprint as source_url_fingerprint_impl
@@ -568,13 +569,13 @@ class BridgeApi:
                 def _start_pipeline_with_availability_priority(
                     payload: JsonObject | None = None,
                 ) -> JsonObject:
-                    try:
-                        assert self.availability is not None
-                        self.availability.prepare_priority_manifest()
-                    except (OSError, RuntimeError, TypeError, ValueError):
-                        pass
                     assert self.pipeline is not None
-                    return self.pipeline.start_task(payload)
+                    result = self.pipeline.start_task(payload)
+                    # Off the request thread: the rebuild queues on the jobs-feed
+                    # reconciliation lock and must not hold the launch response.
+                    if bool(result.get("started")) and self.availability is not None:
+                        refresh_priority_manifest_in_background(self.availability)
+                    return result
 
                 self.start_jobs_pipeline_task = _start_pipeline_with_availability_priority
         if self.discovery is not None:

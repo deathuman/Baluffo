@@ -15,12 +15,22 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from src.bridge.performance_profile import record_operation_duration
+
 from .pipeline_service_types import (
     PipelineAbortRequested,
     PipelineServiceState,
 )
 
 _PIPELINE_OPERATIONAL_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
+# The Jobs page aborts its launch request at 18 s, so a launch this slow is a
+# user-visible problem even when it eventually succeeds. The normal path is a
+# status write and a worker start (tens of milliseconds).
+JOBS_PIPELINE_LAUNCH_SLOW_MS = 5000
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int(round((time.perf_counter() - started_at) * 1000))
 
 
 class _PipelineServiceStageMixin(PipelineServiceState):
@@ -438,26 +448,96 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             raise
 
     def start_task(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Start the pipeline and record how long the launch itself took.
+
+        The journal gets a matched started/finished pair, so a launch that never
+        returns leaves its started row as the last evidence, and
+        `/ops/performance-profile` aggregates the same duration under
+        `jobs_pipeline_launch`. The finished row also carries the per-phase
+        durations and names the slowest one, so a slow launch says which step
+        cost the time instead of only reporting a total. A start refused because
+        a run or sync is already active is recorded too: it is the answer to the
+        same request.
+        """
+        started_at = time.perf_counter()
+        self._bridge_log(
+            "info",
+            "jobs_pipeline_launch_started",
+            jobsPageLoadedCount=int((payload or {}).get("jobsPageLoadedCount") or 0),
+        )
+        phase_durations: dict[str, int] = {}
+        result: dict[str, Any] = {}
+        completed = False
+        try:
+            result = self._start_task(payload, phase_durations)
+            completed = True
+            return result
+        finally:
+            duration_ms = _elapsed_ms(started_at)
+            started = bool(result.get("started"))
+            slow = duration_ms >= JOBS_PIPELINE_LAUNCH_SLOW_MS
+            slowest_phase = ""
+            slowest_phase_ms = 0
+            for phase, phase_ms in phase_durations.items():
+                if phase_ms > slowest_phase_ms:
+                    slowest_phase = phase
+                    slowest_phase_ms = phase_ms
+            # A refused launch (already running / sync active) is an answer, not
+            # an error: the journal row carries started=false and the reason.
+            record_operation_duration("jobs_pipeline_launch", duration_ms, error=not completed)
+            self._bridge_log(
+                "error" if not completed else ("warn" if slow else "info"),
+                "jobs_pipeline_launch_finished",
+                durationMs=duration_ms,
+                started=started,
+                completed=completed,
+                slow=slow,
+                slowestPhase=slowest_phase,
+                slowestPhaseMs=slowest_phase_ms,
+                phaseDurationsMs=dict(phase_durations),
+                runId=str(result.get("runId") or ""),
+                stage=str(result.get("stage") or ""),
+                error=str(result.get("error") or "") if not started else "",
+            )
+
+    def _refused_start_result(self) -> dict[str, Any] | None:
+        if bool(self._status.get("active")) and str(self._status.get("runId") or ""):
+            return {
+                "started": False,
+                "error": "Jobs pipeline already running",
+                "runId": str(self._status.get("runId") or ""),
+                "stage": str(self._status.get("stage") or "running"),
+            }
+        if self._sync_task_running():
+            return {
+                "started": False,
+                "error": "Another sync task is already running",
+                "runId": "",
+                "stage": "blocked",
+            }
+        return None
+
+    def _start_task(
+        self,
+        payload: dict[str, Any] | None = None,
+        phase_durations: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        durations = phase_durations if phase_durations is not None else {}
+        lock_started = time.perf_counter()
         with self._lock:
-            if bool(self._status.get("active")) and str(self._status.get("runId") or ""):
-                return {
-                    "started": False,
-                    "error": "Jobs pipeline already running",
-                    "runId": str(self._status.get("runId") or ""),
-                    "stage": str(self._status.get("stage") or "running"),
-                }
-            if self._sync_task_running():
-                return {
-                    "started": False,
-                    "error": "Another sync task is already running",
-                    "runId": "",
-                    "stage": "blocked",
-                }
+            durations["lockAcquireMs"] = _elapsed_ms(lock_started)
+            admission_started = time.perf_counter()
+            refused = self._refused_start_result()
+            durations["admissionMs"] = _elapsed_ms(admission_started)
+            if refused is not None:
+                return refused
 
             run_id = f"pipeline_{uuid.uuid4().hex[:10]}"
             started_at = self._now_iso()
             jobs_page_loaded_count = int((payload or {}).get("jobsPageLoadedCount") or 0)
+            baseline_started = time.perf_counter()
             baseline_output_count = self._current_fetch_output_count()
+            durations["baselineCountMs"] = _elapsed_ms(baseline_started)
             self._status.update(
                 {
                     "active": True,
@@ -491,8 +571,11 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             if self._runtime.abort_requests is not None:
                 self._runtime.abort_requests.pop(run_id, None)
             status_snapshot = dict(self._status)
+        status_write_started = time.perf_counter()
         self._write_control_status(status_snapshot)
+        durations["statusWriteMs"] = _elapsed_ms(status_write_started)
         if callable(self._start_lifecycle_run):
+            lifecycle_started = time.perf_counter()
             self._start_lifecycle_run(
                 run_id=run_id,
                 task_type="pipeline",
@@ -506,6 +589,8 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     "stage": "starting",
                 },
             )
+            durations["lifecycleStartMs"] = _elapsed_ms(lifecycle_started)
+        worker_started = time.perf_counter()
         worker = threading.Thread(
             target=self._run_worker,
             args=(run_id,),
@@ -515,6 +600,7 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         self._runtime.active_run_id = run_id
         self._runtime.active_thread = worker
         worker.start()
+        durations["workerStartMs"] = _elapsed_ms(worker_started)
         self._bridge_log(
             "info",
             "jobs_pipeline_started",

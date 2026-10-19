@@ -95,6 +95,35 @@ def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]])
     implementation(state_path, rows)
 
 
+def refresh_priority_manifest_in_background(
+    service: Any, *, on_error: Callable[[BaseException], None] | None = None
+) -> threading.Thread:
+    """Rebuild the availability priority manifest off the caller's thread.
+
+    The rebuild serializes on the cross-process jobs-feed reconciliation lock, so
+    running it inline on the pipeline-start request made the launch wait behind a
+    feed publication. The Jobs page aborts that request at 18 s and used to report
+    a failed start for a pipeline that was still starting. The manifest is
+    advisory: readers rebuild it on demand when an identity is missing, so it
+    does not need to gate the launch response.
+    """
+
+    def runner() -> None:
+        try:
+            service.prepare_priority_manifest()
+        except Exception as exc:  # Background work must never escape to stderr.
+            if on_error is not None:
+                on_error(exc)
+
+    thread = threading.Thread(
+        target=runner,
+        name="jobs-availability-priority-manifest",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 class JobAvailabilityService:
     def __init__(
         self,

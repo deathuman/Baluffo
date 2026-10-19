@@ -115,8 +115,15 @@ def _bridge_owner_idle_timeout_s(config: DesktopRuntimeConfig) -> float:
 
 
 def _parallel_bridge_startup_enabled(api: Any, config: DesktopRuntimeConfig) -> bool:
+    """Start the bridge beside the site unless the run opts out.
+
+    The bridge does not depend on the site: both bind ports that were checked
+    before either spawns, and the window still waits for whichever finishes
+    last. Deferring the bridge to site-ready only serialised its whole startup
+    behind the site's, which the launch traces showed as two multiplied costs.
+    """
     value = str(api.os.environ.get(STARTUP_PARALLEL_BRIDGE_ENV) or "").strip().lower()
-    return bool(config.startup_probe and value in {"1", "true", "yes", "on"})
+    return value not in {"0", "false", "no", "off"}
 
 
 def _strict_startup_gate(api: Any, config: DesktopRuntimeConfig) -> bool:

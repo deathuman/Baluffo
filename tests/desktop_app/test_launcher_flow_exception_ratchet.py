@@ -42,7 +42,8 @@ def test_launch_desktop_app_does_not_retry_unexpected_runtime_launch_bug() -> No
             desktop_app.launch_desktop_app(config)
 
     should_retry_mock.assert_not_called()
-    start_child_process.assert_called_once()
+    # One attempt spawns the site and, in parallel, its bridge; no retry follows.
+    assert start_child_process.call_count == 2
 
 
 @pytest.mark.windows

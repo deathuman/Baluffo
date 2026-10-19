@@ -1,6 +1,8 @@
 """Tests for small admin_bridge utility helpers."""
 
 import json
+import threading
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -602,3 +604,75 @@ def test_compaction_hold_seed_finished_row_hits_the_startup_journal(tmp_path) ->
         "error": "",
     }
     assert isinstance(payload["durationMs"], int)
+
+
+def test_start_jobs_pipeline_task_does_not_wait_for_priority_manifest(monkeypatch) -> None:
+    events: list[str] = []
+    release = threading.Event()
+
+    class _Pipeline:
+        def start_task(self, payload=None) -> dict[str, object]:
+            events.append("pipeline_started")
+            return {"started": True, "runId": "pipeline_1"}
+
+    class _Availability:
+        def prepare_priority_manifest(self) -> dict[str, object]:
+            events.append("manifest_started")
+            release.wait(5)
+            events.append("manifest_finished")
+            return {}
+
+    root = SimpleNamespace(
+        _get_pipeline_service=lambda: _Pipeline(),
+        _get_job_availability_service=lambda: _Availability(),
+        bridge_log=lambda *_args, **_kwargs: events.append("manifest_warn"),
+    )
+    threads = []
+    real_refresh = admin_task_runtime.refresh_priority_manifest_in_background
+
+    def record_refresh(service, **kwargs):
+        thread = real_refresh(service, **kwargs)
+        threads.append(thread)
+        return thread
+
+    monkeypatch.setattr(
+        admin_task_runtime, "refresh_priority_manifest_in_background", record_refresh
+    )
+
+    result = admin_task_runtime.start_jobs_pipeline_task({}, root_mod=root)
+
+    assert result == {"started": True, "runId": "pipeline_1"}
+    assert events[0] == "pipeline_started"
+    assert "manifest_finished" not in events, "the launch response must not wait on the rebuild"
+    release.set()
+    assert threads, "a successful start must schedule the rebuild"
+    threads[0].join(5)
+    assert events[-1] == "manifest_finished"
+
+
+def test_start_jobs_pipeline_task_skips_manifest_refresh_when_start_is_refused(monkeypatch) -> None:
+    events: list[str] = []
+
+    class _Pipeline:
+        def start_task(self, payload=None) -> dict[str, object]:
+            return {"started": False, "error": "Jobs pipeline already running"}
+
+    class _Availability:
+        def prepare_priority_manifest(self) -> dict[str, object]:
+            events.append("manifest_started")
+            return {}
+
+    def fail_refresh(*_args, **_kwargs):
+        raise AssertionError("a refused start must not rebuild the manifest")
+
+    monkeypatch.setattr(admin_task_runtime, "refresh_priority_manifest_in_background", fail_refresh)
+    root = SimpleNamespace(
+        _get_pipeline_service=lambda: _Pipeline(),
+        _get_job_availability_service=lambda: _Availability(),
+        bridge_log=lambda *_args, **_kwargs: events.append("log"),
+    )
+
+    result = admin_task_runtime.start_jobs_pipeline_task({}, root_mod=root)
+
+    assert result["started"] is False
+    assert events == []

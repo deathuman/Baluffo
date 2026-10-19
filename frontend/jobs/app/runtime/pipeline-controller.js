@@ -15,6 +15,15 @@ const ABORT_TERMINAL_REASON = "user_abort_requested";
 const ABORT_REQUEST_TIMEOUT_MS = 20000;
 const ABORT_REQUEST_VERIFY_GRACE_MS = 5000;
 const PIPELINE_START_TIMEOUT_MS = 18000;
+// ponytail: a start request that times out (or gets a 5xx / "already running"
+// reply) is not proof the pipeline did not start. The bridge can still be inside
+// the launch — rebuilding the availability manifest behind the cross-process
+// jobs-feed lock, rewriting a multi-megabyte feed, or queueing behind a busy
+// accept thread — and the run then surfaces on the next status poll. Treating
+// that window as a failure showed "Error" and an error toast for a run that was
+// starting normally. An unconfirmed start now stays pending until this grace
+// expires; only a status stream that is still idle after it reports a failure.
+const PIPELINE_START_CONFIRM_GRACE_MS = 60000;
 const PIPELINE_ACTIVE_STATUS_GRACE_MS = 45000;
 const IDLE_TASK_STATE_RECHECK_MS = 5000;
 // ponytail: while pipeline is already known active, do not hammer /ops/task-state;
@@ -209,6 +218,43 @@ function rememberActivePipelinePayload(jobsPipelineUiState, payload) {
   if (!jobsPipelineUiState || !payload?.active) return;
   jobsPipelineUiState.lastActivePipelinePayload = { ...payload, active: true };
   jobsPipelineUiState.lastActivePipelineSeenAt = Date.now();
+}
+
+function beginUnconfirmedPipelineStart(jobsPipelineUiState, message) {
+  if (!jobsPipelineUiState) return;
+  jobsPipelineUiState.startUnconfirmed = true;
+  jobsPipelineUiState.startUnconfirmedAt = Date.now();
+  jobsPipelineUiState.startUnconfirmedMessage = String(message || "");
+}
+
+function clearUnconfirmedPipelineStart(jobsPipelineUiState) {
+  if (!jobsPipelineUiState) return;
+  jobsPipelineUiState.startUnconfirmed = false;
+  jobsPipelineUiState.startUnconfirmedAt = 0;
+  jobsPipelineUiState.startUnconfirmedMessage = "";
+}
+
+function unconfirmedPipelineStartExpired(jobsPipelineUiState) {
+  if (!jobsPipelineUiState?.startUnconfirmed) return false;
+  const startedAt = Number(jobsPipelineUiState.startUnconfirmedAt || 0);
+  return Boolean(startedAt) && Date.now() - startedAt >= PIPELINE_START_CONFIRM_GRACE_MS;
+}
+
+// A definite refusal is a real answer from the bridge: an unreachable bridge
+// never saw the request, and a 4xx means it answered without starting this run.
+// Everything else — a timeout, a 5xx from the launch route, a truncated response,
+// or a reply that the pipeline is already running — leaves the outcome open, and
+// a status poll can still settle it. An "another task is already running" reply
+// is definite: the blocker is visible as that task, not as a pipeline start.
+function startFailureLeavesOutcomeOpen(err, message) {
+  const code = String(err?.code || "");
+  if (code === "bridge_unreachable") return false;
+  if (/another\b.*\btask\b.*\balready running\b/i.test(String(message || ""))) return false;
+  if (code === "bridge_http_error") {
+    const status = Number(err?.status || 0);
+    return !(status >= 400 && status < 500 && status !== 409);
+  }
+  return true;
 }
 
 function getRecentActivePipelinePayload(jobsPipelineUiState) {
@@ -547,6 +593,7 @@ export function createJobsPipelineController({
     resetPipelineStatusPollFailures(jobsPipelineUiState);
     jobsPipelineUiState.active = true;
     jobsPipelineUiState.pendingStart = false;
+    clearUnconfirmedPipelineStart(jobsPipelineUiState);
     jobsPipelineUiState.runId = runId;
     jobsPipelineUiState.startedAt = startedAt;
     rememberActivePipelinePayload(jobsPipelineUiState, activePayload);
@@ -626,6 +673,7 @@ export function createJobsPipelineController({
     const hasError = !userAbortCompletion && Boolean(isErrorStage(payload));
     jobsPipelineUiState.active = false;
     jobsPipelineUiState.pendingStart = false;
+    clearUnconfirmedPipelineStart(jobsPipelineUiState);
     jobsPipelineUiState.runId = "";
     jobsPipelineUiState.startedAt = "";
     clearRememberedActivePipeline(jobsPipelineUiState);
@@ -655,6 +703,29 @@ export function createJobsPipelineController({
     if (updatesFound && typeof refreshJobsAfterPipelineCompletion === "function") {
       refreshJobsAfterPipelineCompletion(payload).catch(() => {});
     }
+  }
+
+  // The confirmation grace elapsed with the pipeline still absent: now the
+  // start is a real failure and the page says so once, instead of guessing at
+  // error time and having to walk the message back.
+  function failUnconfirmedPipelineStart() {
+    const message = String(jobsPipelineUiState.startUnconfirmedMessage || "").trim()
+      || JOBS_UPDATE_COPY.startFailed;
+    clearUnconfirmedPipelineStart(jobsPipelineUiState);
+    jobsPipelineUiState.active = false;
+    jobsPipelineUiState.pendingStart = false;
+    jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
+    jobsPipelineUiState.runId = "";
+    jobsPipelineUiState.startedAt = "";
+    updateJobsPipelineUi({
+      running: false,
+      disabled: true,
+      buttonLabel: "Error",
+      pipelinePayload: null,
+      isError: true
+    });
+    showToast(pipelineStartFailureToast(message), "error");
+    scheduleJobsPipelineStatusPoll(idlePollDelayMs);
   }
 
   async function pollJobsPipelineStatus() {
@@ -711,6 +782,10 @@ export function createJobsPipelineController({
 
       if (jobsPipelineUiState.pendingStart) {
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
+        if (unconfirmedPipelineStartExpired(jobsPipelineUiState)) {
+          failUnconfirmedPipelineStart();
+          return;
+        }
         updateJobsPipelineUi({
           running: true,
           disabled: true,
@@ -853,6 +928,7 @@ export function createJobsPipelineController({
       pipelinePayload: null
     });
     try {
+      clearUnconfirmedPipelineStart(jobsPipelineUiState);
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.pendingStart = true;
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
@@ -881,6 +957,22 @@ export function createJobsPipelineController({
     } catch (err) {
       const message = String(err?.message || JOBS_UPDATE_COPY.startFailed);
       if (await verifyActivePipelineAfterStartFailure(message)) return;
+      if (startFailureLeavesOutcomeOpen(err, message)) {
+        jobsPipelineUiState.active = false;
+        jobsPipelineUiState.pendingStart = true;
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
+        jobsPipelineUiState.runId = "";
+        jobsPipelineUiState.startedAt = new Date().toISOString();
+        beginUnconfirmedPipelineStart(jobsPipelineUiState, message);
+        updateJobsPipelineUi({
+          running: true,
+          disabled: true,
+          buttonLabel: JOBS_UPDATE_COPY.updatingLabel,
+          pipelinePayload: null
+        });
+        scheduleJobsPipelineStatusPoll(pollDelayMs);
+        return;
+      }
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
