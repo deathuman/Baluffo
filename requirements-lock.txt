@@ -2,7 +2,7 @@
 #    uv pip compile requirements.txt -o requirements-lock.txt --python-platform x86_64-unknown-linux-gnu
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.5
     # via scrapy
 aiosignal==1.4.0
     # via aiohttp
@@ -217,7 +217,7 @@ w3lib==2.4.1
     # via
     #   parsel
     #   scrapy
-yarl==1.24.5
+yarl==1.25.1
     # via aiohttp
 zipp==4.1.0
     # via importlib-metadata
