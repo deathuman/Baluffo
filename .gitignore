@@ -97,6 +97,14 @@ data/discovery-report-history/
 nul
 /_tmp_*.log
 
+# Editor swap/backup and patch artifacts. Nothing tracked matches these, so there is no rule to
+# un-ignore; they are here because a crashed editor or a failed `patch` leaves one behind and it
+# then reads as an untracked change in `git status` (a `*~RF*.TMP` copy of a test file was
+# reported as a real working-tree change during a dependency-exposure review).
+*~*.TMP
+*.orig
+*.rej
+
 # Temp test directories
 tmp-manual-check/
 tmp-pytest-bridge/
