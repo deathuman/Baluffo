@@ -20,6 +20,21 @@ function errorMessage(error) {
   return String(error);
 }
 
+// A startup auto-check can lose the race with the bridge: the desktop window is
+// served before (or moments after) the bridge starts accepting connections, so
+// the very first POST may be refused even though it would succeed a second later.
+// Before this retry existed the attempt latched the "already checked" flag, so
+// the panel kept the previous run's cached "Up to date" until a manual check.
+const AUTO_CHECK_RETRY_DELAYS_MS = [750, 2000, 4000, 8000];
+
+// Only a check the bridge never saw is worth repeating. A bridge that answered
+// with an error already produced a result the panel can show.
+const RETRYABLE_CHECK_ERROR_CODES = new Set(["bridge_unreachable", "bridge_timeout"]);
+
+function isRetryableCheckError(error) {
+  return RETRYABLE_CHECK_ERROR_CODES.has(String(error?.code || ""));
+}
+
 export function createJobsDesktopUpdateController({
   refs,
   baseUrl,
@@ -40,6 +55,10 @@ export function createJobsDesktopUpdateController({
     bound: false,
     mounted: false,
     autoCheckStarted: false,
+    autoCheckInProgress: false,
+    lastCheckTransportFailed: false,
+    pendingCheckId: 0,
+    statusRequestId: 0,
     hasFreshStatus: false,
     panelOpen: false,
     pendingAction: "",
@@ -48,6 +67,22 @@ export function createJobsDesktopUpdateController({
     dismissedTargetVersion: "",
     installStartPending: false,
   };
+
+  function beginStatusRequest() {
+    state.statusRequestId += 1;
+    return state.statusRequestId;
+  }
+
+  function isLatestStatusRequest(requestId) {
+    return requestId === state.statusRequestId;
+  }
+
+  function waitForRetry(delayMs) {
+    return new Promise(resolve => {
+      const timer = setTimeoutFn(resolve, Math.max(0, Number(delayMs) || 0));
+      timer?.unref?.();
+    });
+  }
 
   function stopPolling() {
     if (!state.pollTimer) return;
@@ -86,6 +121,23 @@ export function createJobsDesktopUpdateController({
     stopPolling();
   }
 
+  // While a check is running, the cached "Up to date" of the previous launch is
+  // not the truth about this one. Show the check itself (or a retry in progress)
+  // instead of a label that invites a manual click to discover an update.
+  function statusForRender() {
+    const inFlight = Boolean(state.pendingCheckId || state.autoCheckInProgress);
+    const quietStates = new Set(["unknown", "up_to_date", "error"]);
+    if (
+      inFlight
+      && quietStates.has(state.status.availability)
+      && state.status.downloadState === "idle"
+      && state.status.installState === "idle"
+    ) {
+      return { ...state.status, availability: "checking" };
+    }
+    return state.status;
+  }
+
   function render() {
     const desktopMode = Boolean(isDesktopRuntimeMode?.());
     const staleCheckedError = (
@@ -103,15 +155,19 @@ export function createJobsDesktopUpdateController({
       && state.status.downloadState === "idle"
       && state.status.installState === "idle"
     );
+    const runningCheckVisible = desktopMode
+      && Boolean(state.pendingCheckId || state.autoCheckInProgress)
+      && state.status.downloadState === "idle"
+      && state.status.installState === "idle";
     const shouldExposeStatus = shouldExposeJobsDesktopUpdateStatus(state.status, {
       hasFreshStatus: state.hasFreshStatus
-    }) || staleManualCheckStatus;
+    }) || staleManualCheckStatus || runningCheckVisible;
     toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode || !shouldExposeStatus);
     if (!desktopMode || !shouldExposeStatus) {
       toggleHidden(refs.desktopUpdatePanel, true);
       return;
     }
-    const view = deriveDesktopUpdateView(state.status, { panelOpen: state.panelOpen });
+    const view = deriveDesktopUpdateView(statusForRender(), { panelOpen: state.panelOpen });
     if (refs.desktopUpdateToggleBtn) {
       refs.desktopUpdateToggleBtn.classList?.remove?.("hidden");
       refs.desktopUpdateToggleBtn.dataset.updateState = view.stateToken;
@@ -212,9 +268,16 @@ export function createJobsDesktopUpdateController({
     autoOpenImportant = false,
     isFresh = true
   } = {}) {
+    // A read issued while a check is running would only echo the cached status
+    // the check is about to replace, and applying it would hide the result.
+    if (state.pendingCheckId) return null;
+    const requestId = beginStatusRequest();
     observeDesktopBootstrap();
     try {
       const payload = await fetchJson(baseUrl, "/app/update-status");
+      // A check started after this read owns the panel now; an older status
+      // response landing late must not put the cached "Up to date" back.
+      if (!isLatestStatusRequest(requestId)) return payload;
       applyStatus(payload, { openPanel, autoOpenImportant, isFresh });
       return payload;
     } catch (error) {
@@ -231,11 +294,15 @@ export function createJobsDesktopUpdateController({
     openPanel = true,
     autoOpenImportant = false
   } = {}) {
+    const requestId = beginStatusRequest();
+    state.pendingCheckId = requestId;
     observeDesktopBootstrap();
     applyStatus({ ...state.status, availability: "checking", lastError: "" }, { openPanel });
     try {
       const payload = await postJson(baseUrl, "/app/check-for-update", { force: Boolean(force) });
       const nextStatus = payload?.status || payload || {};
+      state.lastCheckTransportFailed = false;
+      if (!isLatestStatusRequest(requestId)) return nextStatus;
       applyStatus(nextStatus, { openPanel, autoOpenImportant, isFresh: true });
       if (!silent && String(nextStatus?.availability || "") === "up_to_date") {
         showToast?.("Baluffo is already up to date.", "success");
@@ -247,11 +314,17 @@ export function createJobsDesktopUpdateController({
         availability: "error",
         lastError: errorMessage(error),
       };
+      state.lastCheckTransportFailed = isRetryableCheckError(error);
+      if (!isLatestStatusRequest(requestId)) return failedStatus;
       applyStatus(failedStatus, { openPanel, isFresh: true });
       if (!silent) {
         showToast?.(`Could not check for updates: ${errorMessage(error)}`, "error");
       }
       return failedStatus;
+    } finally {
+      if (state.pendingCheckId === requestId) {
+        state.pendingCheckId = 0;
+      }
     }
   }
 
@@ -412,11 +485,15 @@ export function createJobsDesktopUpdateController({
     if (!state.panelOpen) {
       state.panelOpen = true;
       render();
+      if (state.pendingCheckId) return;
       if (!state.status.lastCheckedAt && state.status.availability === "unknown") {
         await checkForUpdates({ force: false, silent: true, openPanel: true, autoOpenImportant: true });
         return;
       }
-      if (!shouldPollDesktopUpdateStatus(state.status)) {
+      // A failed check keeps the panel's "Check again" as the recovery path. A
+      // status read here would answer from the cached pre-check state and make
+      // the failure look like "Up to date", costing the user a second click.
+      if (state.status.availability !== "error" && !shouldPollDesktopUpdateStatus(state.status)) {
         await refreshStatus({ silent: true, openPanel: true });
       }
       return;
@@ -442,10 +519,29 @@ export function createJobsDesktopUpdateController({
     await refreshStatus({ silent: true, autoOpenImportant: true, isFresh: false });
   }
 
-  async function startAutoCheck() {
+  async function startAutoCheck({ retryDelaysMs = AUTO_CHECK_RETRY_DELAYS_MS } = {}) {
     if (!isDesktopRuntimeMode?.() || state.autoCheckStarted) return;
     state.autoCheckStarted = true;
-    await checkForUpdates({ force: true, silent: true, openPanel: false, autoOpenImportant: true });
+    state.autoCheckInProgress = true;
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        state.lastCheckTransportFailed = false;
+        const status = await checkForUpdates({
+          force: true,
+          silent: true,
+          openPanel: false,
+          autoOpenImportant: true
+        });
+        // Only a check that never reached the bridge is retried: a check the
+        // bridge answered with an error is a real result the user can act on.
+        if (!state.lastCheckTransportFailed || !Array.isArray(retryDelaysMs)) return status;
+        if (attempt >= retryDelaysMs.length) return status;
+        await waitForRetry(retryDelaysMs[attempt]);
+      }
+    } finally {
+      state.autoCheckInProgress = false;
+      render();
+    }
   }
 
   return {
@@ -454,6 +550,7 @@ export function createJobsDesktopUpdateController({
     refreshStatus,
     checkForUpdates,
     startAutoCheck,
+    handleToggleClick,
     handlePrimaryAction,
     handleSecondaryAction,
     handleReleaseNotesClick,

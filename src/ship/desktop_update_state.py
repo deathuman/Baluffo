@@ -649,6 +649,7 @@ def _reconcile_downloaded_artifact_status(
     manifest: dict[str, Any],
     status: dict[str, Any],
     verify_budget_ms: int | None = None,
+    current_version: str = "",
 ) -> dict[str, Any]:
     """Reconcile the downloaded artifact against the manifest digest.
 
@@ -656,9 +657,29 @@ def _reconcile_downloaded_artifact_status(
     A budget instead lets a status poll wait at most that long: when the digest
     is not ready the status is returned unchanged rather than flipping to
     "not downloaded", so an unverified artifact is never claimed either way.
+
+    An artifact that belongs to the version already running is never a pending
+    download. The install leaves the ZIP behind for recovery, so without this
+    check the next launch reconciles that leftover into `downloaded`/`ready`
+    next to `up_to_date` and the panel offers to install the version it runs.
     """
     next_status = dict(status)
     install_state = str(next_status.get("installState") or "").strip().lower()
+    manifest_version = str(manifest.get("version") or "").strip()
+    if (
+        current_version
+        and manifest_version
+        and compare_versions(manifest_version, current_version) <= 0
+    ):
+        if str(next_status.get("downloadState") or "").strip().lower() == "downloaded":
+            next_status["downloadState"] = "idle"
+            next_status["downloadedBytes"] = 0
+            next_status["totalBytes"] = 0
+            next_status["downloadPercent"] = 0
+            next_status["downloadedZipPath"] = ""
+        if str(next_status.get("installState") or "").strip().lower() == "ready":
+            next_status["installState"] = "idle"
+        return next_status
     artifact = _as_dict(manifest.get("portable_artifact"))
     artifact_path = paths.downloads_dir / _portable_artifact_name(manifest)
     expected_hash = str(artifact.get("sha256") or "").strip().lower()

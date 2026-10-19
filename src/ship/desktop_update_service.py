@@ -197,6 +197,7 @@ class DesktopUpdateService:
                 manifest=manifest_payload,
                 status=next_status,
                 verify_budget_ms=verify_budget_ms,
+                current_version=current_version,
             )
             if (
                 str(existing.get("downloadState") or "").strip().lower() == "downloading"

@@ -166,6 +166,117 @@ def test_status_reconciliation_keeps_the_last_status_while_the_digest_reads(
     assert verified["downloadedZipPath"] == str(artifact)
 
 
+def test_status_reconciliation_ignores_a_leftover_artifact_for_the_running_version() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        paths = DesktopUpdatePaths.from_data_dir(Path(tmp) / "data")
+        paths.downloads_dir.mkdir(parents=True, exist_ok=True)
+        payload = b"portable artifact bytes"
+        artifact = paths.downloads_dir / "baluffo-portable-0.3.022.zip"
+        artifact.write_bytes(payload)
+        manifest = {
+            "version": "0.3.022",
+            "portable_artifact": {
+                "url": "https://example.com/releases/baluffo-portable-0.3.022.zip",
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            },
+        }
+        prior = update_state.default_status_payload(current_version="0.3.022")
+        prior.update(
+            {
+                "downloadState": "downloaded",
+                "installState": "ready",
+                "downloadedBytes": len(payload),
+                "totalBytes": len(payload),
+                "downloadPercent": 100,
+                "downloadedZipPath": str(artifact),
+            }
+        )
+
+        status = update_state._reconcile_downloaded_artifact_status(
+            paths=paths,
+            manifest=manifest,
+            status=prior,
+            current_version="0.3.022",
+        )
+
+    assert status["downloadState"] == "idle"
+    assert status["installState"] == "idle"
+    assert status["downloadedBytes"] == 0
+    assert status["totalBytes"] == 0
+    assert status["downloadPercent"] == 0
+    assert status["downloadedZipPath"] == ""
+
+
+def test_status_reconciliation_still_reports_a_newer_running_version_artifact() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        paths = DesktopUpdatePaths.from_data_dir(Path(tmp) / "data")
+        paths.downloads_dir.mkdir(parents=True, exist_ok=True)
+        payload = b"portable artifact bytes"
+        artifact = paths.downloads_dir / "baluffo-portable-0.3.022.zip"
+        artifact.write_bytes(payload)
+        manifest = {
+            "version": "0.3.022",
+            "portable_artifact": {
+                "url": "https://example.com/releases/baluffo-portable-0.3.022.zip",
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            },
+        }
+
+        status = update_state._reconcile_downloaded_artifact_status(
+            paths=paths,
+            manifest=manifest,
+            status=update_state.default_status_payload(current_version="0.3.021"),
+            current_version="0.3.021",
+        )
+
+    assert status["downloadState"] == "downloaded"
+    assert status["installState"] == "ready"
+    assert status["downloadedZipPath"] == str(artifact)
+
+
+def test_status_payload_does_not_offer_the_running_version_as_a_pending_install() -> None:
+    with workspace_tmpdir("desktop-update-current") as tmp:
+        payload = b"portable artifact bytes"
+        service = DesktopUpdateService(
+            data_dir=Path(tmp) / "data",
+            current_version_getter=lambda: "0.3.022",
+        )
+        paths = service.paths
+        paths.downloads_dir.mkdir(parents=True, exist_ok=True)
+        artifact = paths.downloads_dir / "baluffo-portable-0.3.022.zip"
+        artifact.write_bytes(payload)
+        write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "0.3.022",
+                    "portable_artifact": {
+                        "url": "https://example.com/releases/baluffo-portable-0.3.022.zip",
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                    },
+                }
+            },
+        )
+        update_state.save_status(
+            paths,
+            {
+                "downloadState": "downloaded",
+                "installState": "ready",
+                "downloadedZipPath": str(artifact),
+                "downloadedBytes": len(payload),
+                "totalBytes": len(payload),
+                "downloadPercent": 100,
+            },
+        )
+
+        status = service.get_status_payload(verify_budget_ms=5000)
+
+    assert status["availability"] == "up_to_date"
+    assert status["downloadState"] == "idle"
+    assert status["installState"] == "idle"
+    assert status["downloadedZipPath"] == ""
+
+
 def test_status_payload_warms_the_artifact_digest_before_the_first_poll(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

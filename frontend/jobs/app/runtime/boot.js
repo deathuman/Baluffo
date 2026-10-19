@@ -9,6 +9,12 @@ import { initJobsFeed } from "../feed.js";
 import { scheduleNonCriticalStartup } from "../startup.js";
 import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
 
+// The stale panel is the first thing a returning user sees, so the auto-check
+// runs as soon as the page has painted instead of waiting on the feed: a check
+// no longer depends on a jobs render finishing first, and the controller
+// retries the bridge-not-ready case itself.
+const DESKTOP_UPDATE_AUTO_CHECK_DELAY_MS = 250;
+
 export function createJobsBoot(deps) {
   function cacheDom() {
     Object.assign(deps.dom, cacheJobsDom(deps.documentObject));
@@ -52,7 +58,7 @@ export function createJobsBoot(deps) {
         deps.runtimeState.desktopUpdateController?.startAutoCheck().catch(err => {
           deps.logJobsError("Failed to auto-check desktop updates", err);
         });
-      }, 2500);
+      }, DESKTOP_UPDATE_AUTO_CHECK_DELAY_MS);
     });
   }
 
@@ -142,6 +148,9 @@ export function createJobsBoot(deps) {
       showReleaseNotesDialog: options => openReleaseNotesDialog(options),
       openExternalUrl: url => deps.openJobLinkInDefaultBrowser(url)
     });
+    // Schedule from boot, not from the first-interactive callback: an empty or
+    // slow feed must not be able to hold the update offer back.
+    scheduleDesktopUpdateAutoCheck();
     startAdminBridgeButtonWatch();
     (async () => {
       try {

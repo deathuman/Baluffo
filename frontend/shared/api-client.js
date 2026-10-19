@@ -68,16 +68,23 @@ export async function fetchBridge(baseUrl, path, options = {}) {
       clearTimeout(timeoutId);
       if (!response.ok && !allowedStatuses.has(response.status)) {
         const msg = getBridgeErrorMessage(response.status);
-        throw new Error(`Bridge ${method} ${path} failed: ${msg} (HTTP ${response.status})`);
+        const error = new Error(`Bridge ${method} ${path} failed: ${msg} (HTTP ${response.status})`);
+        error.code = "bridge_http_error";
+        error.status = response.status;
+        throw error;
       }
       return response;
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === "AbortError") {
-        throw new Error("Bridge request timed out", { cause: err });
+        const error = new Error("Bridge request timed out", { cause: err });
+        error.code = "bridge_timeout";
+        throw error;
       }
       if (err instanceof TypeError && err.message && err.message.includes("fetch")) {
-        throw new Error("Network error: bridge unreachable", { cause: err });
+        const error = new Error("Network error: bridge unreachable", { cause: err });
+        error.code = "bridge_unreachable";
+        throw error;
       }
       throw err;
     }

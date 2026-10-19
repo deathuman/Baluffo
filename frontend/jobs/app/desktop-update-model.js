@@ -211,10 +211,15 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
         : normalized.downloadState === "downloading"
           ? "downloading"
           : normalized.availability;
+  // A check in flight is shown on the toggle ("Checking...") without opening the
+  // panel: the launch auto-check must not pop the panel open on every start.
+  const autoVisible = normalized.availability === "checking"
+    ? false
+    : shouldPollDesktopUpdateStatus(normalized);
   const view = {
     stateToken: stateToken || "unknown",
     buttonLabel: "Check updates",
-    panelVisible: Boolean(panelOpen || shouldPollDesktopUpdateStatus(normalized)),
+    panelVisible: Boolean(panelOpen || autoVisible),
     title: "Desktop updates",
     body: "Check GitHub Releases for a newer Baluffo portable build.",
     meta: buildMetaLine(normalized),
