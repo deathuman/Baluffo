@@ -271,6 +271,11 @@ the exact measured totals for the tracked working tree at the F-1 commit.
 All other areas unchanged. Exact measured values, no spare headroom, written by
 `loc_budget.py --update`.
 
+> **Superseded 2026-10-19.** Skipping the gate at commit time left the commit that needs it as
+> the one place it never ran, and the window check cannot see a commit that does not exist yet.
+> The flag is now `--pending-container-version-gate`, and `precommit_gate.py` passes it so the
+> staged commit is checked against the released version (see `docs/RELEASE.md`).
+
 ## Coverage-audit F-2 slice allowance (2026-10-14)
 
 F-2 adds the delivery-evidence guard before a pending provider may retire an active static
@@ -374,3 +379,43 @@ The per-file line budget for `tests/test_dover_provider.py` was raised from the 
 to 437 in `tools/repo_health/test_line_budget_baseline.json`. All other areas unchanged;
 exact measured values, no spare headroom. The new files were staged before re-baselining so
 the LOC ratchet counts them (the plan's explicit warning about untracked files).
+
+## Jobs launch and startup gate slice (2026-10-19)
+
+One slice: the Jobs page stopped reporting a failed update while the run was still
+starting, the packaged start gate became observable, and both paths stopped parsing an
+artifact they only needed a count from. Measured against the baseline committed at
+`a04cfe10`.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `frontend` | 49475 | 49570 | +95 |
+| `scripts` | 24872 | 25422 | +550 |
+| `src` | 186421 | 187186 | +765 |
+| `tests` | 250758 | 252872 | +2114 |
+| `tools` | 35382 | 36146 | +764 |
+| `<root>` | 1902 | 1903 | +1 |
+
+- `frontend` +95: the unconfirmed-start state fields in `runtime/state.js`, and the
+  classification, grace expiry, and pending-start copy in `runtime/pipeline-controller.js`.
+- `scripts` +550: `precommit_gate.py` passes the staged-commit gate, and the release commit
+  carried the manual `ui_review_harness.mjs` that was already staged beside it.
+- `src` +765: the launch telemetry wrapper and phase timers in `pipeline_service_stages.py`;
+  the background manifest rebuild (`job_availability_service.py`, `api.py`,
+  `admin_task_runtime.py`); the gate journaling across `runtime_launcher.py`,
+  `startup_telemetry.py`, `startup_profile.py`, and `packaged_smoke/*`; the bounded
+  feed-presence read and gate evaluation in `jobs_first_run_state.py`; the output-count
+  fast path (`fetch_report_identity.py`, `fetch_report_summary.py`,
+  `task_launch_api_bootstrap.py`); and the default parallel bridge spawn in
+  `desktop_app/launcher_flow.py`.
+- `tests` +2114: the new regression files — startup gate check (+590), jobs row quarantine
+  (+387), fetch output count (+210), fetch report success metadata (+263), feed presence
+  (+101), bootstrap sidecar (+160), commit-time gate (+167) — plus additions to the
+  runtime-launcher, startup-profile, launch-stage, launcher timing, admin thin-wrapper,
+  frontend start-state, and precommit-gate suites.
+- `tools` +764: the two measurement tools, `fetch_report_read_audit.py` (+264) and
+  `launch_baseline_read.py` (+419), with their README section.
+- `<root>` +1: the vulture whitelist entry for the output-count cache reset that tests and
+  the measurement tools call.
+
+`styles` and `probes` are unchanged. Exact measured values, no spare headroom.
