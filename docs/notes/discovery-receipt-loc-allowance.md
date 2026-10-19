@@ -424,4 +424,20 @@ message in `container_version_policy.py` to name the shipped-commit requirement,
 and docs-only-intent tests in `test_container_version_policy.py`. The per-file line budget
 for that file was raised from 453 to 482, its exact measured size.
 
+The end-to-end coverage follow-up adds `tests` +60 (`252901` → `252961`): two
+temporary-git-history tests in `test_container_version_policy.py` that build a bump-first
+window (bump commit, then a shipped commit, then a docs commit carrying
+`Release-tag:`), assert the rendered failure both names the shipped-commit requirement
+and lists the shipped commit while excluding the bump anchor, and then tag that exact
+history to show ancestry clears it before a post-tag commit reopens it as a
+released-version failure. The per-file budget for that file moves to 542, its exact
+measured size.
+
+Sharing that remedy with the released branch costs `tools` +11 (`36150` → `36161`: the
+`_WINDOW_REMEDY_RULE` constant and the two message tails that now use it) and `tests` +41
+(`252961` → `253002`: one test asserting the shared sentence appears in both failures, and
+one real-history test showing a bump committed before the shipped code reopens the window
+and a bump after it closes). The per-file budget for that file moves to 583, its exact
+measured size.
+
 `styles` and `probes` are unchanged. Exact measured values, no spare headroom.

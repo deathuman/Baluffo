@@ -318,6 +318,8 @@ How to satisfy the gate:
 
 Intent is read from **shipped commits only**. A `Release-tag:` line on a `docs/`, `tests/`, or `tools/` commit does not discharge the window, because that is exactly the message-only authorization the gate exists to refuse. When the bump lands first and the shipped work follows it, close the window by putting the line on a commit that itself touches a shipped path — while the version is untagged, `Release-tag: v<current>` is valid intent and republishing that tag is inert. Nothing needs to be rewritten: the window is discharged by any shipped commit in it, not only the last one. Once the version is tagged the line stops counting; from then on the version has to move.
 
+The same placement rule applies to the bump that replaces intent once the version is tagged, and so does the ordering: a bump only closes a window it **comes after**. Bumping first moves the anchor to the new bump, the shipped commits land in that fresh window, and the gate fails again against the new version — so commit the bump together with the shipped code, or after it.
+
 The window the gate evaluates is the commits after the last commit that changed `src/app_version.py`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
 
 #### Amending a version bump into an existing commit is a catch-22
@@ -536,7 +538,9 @@ This is now **enforced**. `check_container_shipped_code_version_gate` computes w
 carries a git release tag and, when it does, drops the shipped commits that are ancestors of that tag (they
 are inside the published image already) and then fails on whatever shipped code remains — intent included. A
 `Release-tag: v<next>` line no longer authorises overwriting a published `v<current>`; the version has to
-actually move. The remedy is in the failure message: bump, or branch and release by tagging.
+actually move. The remedy is in the failure message: bump in a commit that itself touches a shipped path —
+together with the shipped code or after it — or branch and release by tagging. Bumping *before* the shipped
+commits does not close the window: it only opens a new one that those commits then fail.
 
 Enforcement starts at the commit, not after it. The local pre-commit hook used to skip this gate, and even
 skipping it would not have helped: the window only contains commits that already exist, so the commit being

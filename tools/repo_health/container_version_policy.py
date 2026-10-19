@@ -125,6 +125,17 @@ IMAGE_EXCLUDED_BUT_SHIPPED = (
     "data/source-registry-tombstones.json.gz",
 )
 
+# Shared tail of both window failures. One string, so the released branch cannot
+# drift back into advising a bare bump that an operator then commits *before* the
+# shipped code -- which reopens the window instead of closing it, because the
+# anchor moves to that bump.
+_WINDOW_REMEDY_RULE = (
+    "in a commit in this window that itself touches a shipped path, so the published "
+    "tag keeps describing the code it was built from. A docs, tests, or tools commit "
+    "does not count -- the gate reads the window from shipped commits only, so the "
+    "remedy has to be part of one."
+)
+
 _APP_VERSION_RE = re.compile(r'APP_VERSION\s*=\s*"([^"]+)"')
 _RELEASE_TAG_LINE_RE = re.compile(
     r"^release-tag\s*:\s*v?(\d+\.\d+\.\d+)\s*$", re.IGNORECASE | re.MULTILINE
@@ -268,8 +279,11 @@ def evaluate_window(
             "the frozen release assets under one version string, and a consumer pinned to "
             "that version has no signal that the content changed. Declaring a newer "
             "`Release-tag:` does not authorise that -- the version has to actually move.\n"
-            "Bump the version (`python scripts/bump_version.py <next>`) in this change, or "
-            "keep the shipped code on a branch and release it by tagging."
+            f"Bump the version (`python scripts/bump_version.py <next>`) {_WINDOW_REMEDY_RULE} "
+            "A bump that lands before the shipped commits does not close the window either: "
+            "it only opens a new one that those commits then fail, so the bump belongs in "
+            "the commit carrying them or in one after it.\n"
+            "Or keep the shipped code on a branch and release it by tagging."
         ]
     if any(_has_valid_release_tag_intent(commit, current_version) for commit in shipped):
         return []
@@ -278,13 +292,10 @@ def evaluate_window(
         f"bump ({current_version}) without a version bump or explicit release-tag intent:\n"
         f"{listing}\n"
         "Bump the version (`python scripts/bump_version.py <next>`) or add a "
-        f"`Release-tag: v{current_version}` line naming this or a newer version to a "
-        "commit in this window that itself touches a shipped path, so the published tag "
-        "keeps describing the code it was built from. Intent on a docs, tests, or tools "
-        "commit does not count -- the gate reads intent from shipped commits only, so the "
-        "line has to sit on a commit that changes shipped code. While this version is "
-        "untagged, naming it is valid intent and republishing its tag is inert; once it is "
-        "tagged only a version bump will clear the window."
+        f"`Release-tag: v{current_version}` line naming this or a newer version "
+        f"{_WINDOW_REMEDY_RULE} While this version is untagged, naming it is valid intent "
+        "and republishing its tag is inert; once it is tagged only a version bump will "
+        "clear the window."
     ]
 
 

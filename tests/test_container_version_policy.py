@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from tools.repo_health.container_version_policy import (
+    _WINDOW_REMEDY_RULE,
     NON_SHIPPED_PATTERNS,
     ROOT,
     VERSION_FILES,
@@ -59,6 +60,10 @@ def _commit_bump(repo: Path) -> None:
     _commit_all(repo, "release(v0.2.140): initial")
     _write_version_files(repo, "0.2.141")
     _commit_all(repo, "release(v0.2.141): bump container version")
+
+
+def _head_sha(repo: Path) -> str:
+    return _run(repo, "rev-parse", "HEAD").stdout.strip()
 
 
 def test_is_shipped_path_classifies_docs_vs_code() -> None:
@@ -337,6 +342,46 @@ def test_evaluate_window_rejects_newer_intent_once_released() -> None:
     assert "Bump the version" in failures[0]
 
 
+def test_both_window_failures_teach_the_same_remedy_placement() -> None:
+    """Released or not, the remedy has to sit on the code it covers.
+
+    The released branch used to say only "bump", so an operator who bumped first
+    and shipped second met the same gate twice with no hint that the bump has to
+    cover the shipped commits. One shared sentence is what stops the two paths
+    teaching different lessons.
+    """
+    commits = [_commit("a1b2c3d4", "feat: adapter", "feat: adapter", ("src/jobs/x.py",))]
+    untagged = evaluate_window(commits, "0.2.141")[0]
+    released = evaluate_window(commits, "0.2.141", current_released=True)[0]
+    assert _WINDOW_REMEDY_RULE in untagged
+    assert _WINDOW_REMEDY_RULE in released
+    assert "docs, tests, or tools commit does not count" in released
+
+
+def test_bump_before_the_shipped_commit_does_not_close_the_window(tmp_path: Path) -> None:
+    """The released message's ordering claim, reproduced on real history.
+
+    A bare "bump the version" invites bumping first and shipping second. That
+    moves the anchor to the new bump, so the shipped commit lands in a fresh
+    window and fails again -- the bump only closes a window it comes after.
+    """
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    _run(repo, "tag", "v0.2.141")
+    _write_version_files(repo, "0.2.142")
+    _commit_all(repo, "release(v0.2.142): bump first")
+    (repo / "src" / "feature.py").write_text("x = 1\n", encoding="utf-8")
+    _commit_all(repo, "feat: ship after the bump")
+
+    failures = check_container_shipped_code_version_gate(repo)
+    assert len(failures) == 1
+    assert "v0.2.142" in failures[0]
+
+    _write_version_files(repo, "0.2.143")
+    _commit_all(repo, "release(v0.2.143): bump after the shipped code")
+    assert check_container_shipped_code_version_gate(repo) == []
+
+
 def test_evaluate_window_allows_dev_dependency_bump_once_released() -> None:
     """A Dependabot dev-dep bump must not need a version bump or release intent.
 
@@ -430,6 +475,62 @@ def test_gate_passes_when_bump_commit_is_the_window_head(tmp_path: Path) -> None
     repo = _init_git_repo(tmp_path)
     _commit_bump(repo)
     assert check_container_shipped_code_version_gate(repo) == []
+
+
+def test_bump_first_window_message_names_the_shipped_commit_requirement(tmp_path: Path) -> None:
+    """The remedy wording must survive a real history, not just a WindowCommit list.
+
+    Bump first, then ship, then record the release in a docs commit carrying the
+    intent line. That last commit is where an operator naturally writes
+    ``Release-tag:``, and the gate must still fail and say so: the anchor is the
+    bump commit (so it is not listed as offending code), and the intent sits on
+    a path the gate ignores.
+    """
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    bump_sha = _head_sha(repo)
+
+    (repo / "src" / "feature.py").write_text("x = 1\n", encoding="utf-8")
+    _commit_all(repo, "feat: adapter for a new board")
+    shipped_sha = _head_sha(repo)
+
+    (repo / "docs").mkdir(exist_ok=True)
+    (repo / "docs" / "RELEASE.md").write_text("# notes\n", encoding="utf-8")
+    _commit_all(repo, "docs: record the release\n\nRelease-tag: v0.2.141")
+
+    failures = check_container_shipped_code_version_gate(repo)
+    assert len(failures) == 1
+    failure = failures[0]
+    assert "commit in this window that itself touches a shipped path" in failure
+    assert "docs, tests, or tools commit does not count" in failure
+    assert "Release-tag: v0.2.141" in failure
+    assert f"- {shipped_sha[:8]} feat: adapter for a new board" in failure
+    assert bump_sha[:8] not in failure, "the bump is the anchor, not offending code"
+
+
+def test_bump_first_window_is_cleared_by_the_tag_that_contains_it(tmp_path: Path) -> None:
+    """Ancestry decides, end to end: the same history flips red/green/red.
+
+    Untagged, a bump-first window is a failure. Tagging that exact history makes
+    every commit an ancestor of the tag -- inside the published image -- so it
+    clears. A shipped commit after the tag reopens the window as a released-
+    version failure, which intent cannot discharge.
+    """
+    repo = _init_git_repo(tmp_path)
+    _commit_bump(repo)
+    (repo / "src" / "feature.py").write_text("x = 1\n", encoding="utf-8")
+    _commit_all(repo, "feat: adapter for a new board")
+    assert check_container_shipped_code_version_gate(repo), "untagged window must fail"
+
+    _run(repo, "tag", "v0.2.141")
+    assert check_container_shipped_code_version_gate(repo) == []
+
+    (repo / "src" / "feature.py").write_text("x = 2\n", encoding="utf-8")
+    _commit_all(repo, "fix: adapter edge case\n\nRelease-tag: v0.2.142")
+    failures = check_container_shipped_code_version_gate(repo)
+    assert len(failures) == 1
+    assert "v0.2.141" in failures[0]
+    assert "Bump the version" in failures[0]
 
 
 def test_gate_passes_with_release_tag_intent(tmp_path: Path) -> None:
