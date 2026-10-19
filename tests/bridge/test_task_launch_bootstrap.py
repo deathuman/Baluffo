@@ -33,6 +33,7 @@ def _task_launch_api(
     job_runtime_store: Any | None = None,
     diagnostics: list[dict[str, Any]] | None = None,
     pid_is_running: Any | None = None,
+    bridge_calls: list[tuple[str, str, dict[str, Any]]] | None = None,
 ) -> TaskLaunchApi:
     return TaskLaunchApi(
         runtime=TaskLaunchRuntime(root=data_dir, data_dir=data_dir),
@@ -47,7 +48,11 @@ def _task_launch_api(
         ),
         deps=TaskLaunchDeps(
             now_iso=lambda: "2026-05-17T12:00:00+00:00",
-            bridge_log=lambda *_args, **_kwargs: None,
+            bridge_log=(
+                (lambda level, event, **fields: bridge_calls.append((level, event, fields)))
+                if bridge_calls is not None
+                else (lambda *_args, **_kwargs: None)
+            ),
             load_json_object=lambda _path, default: dict(default or {}),
             save_json_atomic=_save_json_atomic,
             task_state_lock=None,

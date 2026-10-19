@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.bridge.task_abort_evidence import (
     ABORT_TERMINAL_REASON,
     repair_fetch_canceled_evidence,
@@ -290,6 +291,28 @@ class TaskLaunchApiBootstrapMixin(TaskLaunchApiState):
         payload["outputs"] = outputs
         return payload
 
+    def _publish_bootstrap_report_summary(self, report: dict[str, Any]) -> None:
+        """Publish the compact report sidecar beside the promoted bootstrap report.
+
+        The desktop success gate reads ``jobs-fetch-report-summary.json`` when its
+        ``runId`` and ``finishedAt`` match the report, instead of parsing the full
+        report. A fresh install starts from a bootstrap promotion, so without this
+        write that first launch pays the full report parse. It is called on
+        promotion and on failure (after the report write) so a leftover success
+        sidecar can never describe a failure report and settle the gate.
+        """
+        try:
+            write_fetch_report_summary_artifact(self._paths.jobs_fetch_report, report)
+        except OSError as exc:
+            # A derived cache must never fail a promotion whose feed and report are
+            # already written; the gate falls back to the full report instead.
+            self._deps.bridge_log(
+                "warning",
+                "bootstrap_report_summary_write_failed",
+                runId=str(report.get("runId") or ""),
+                error=str(exc),
+            )
+
     def _bootstrap_failure_report(
         self,
         report_shell: dict[str, Any],
@@ -345,6 +368,7 @@ class TaskLaunchApiBootstrapMixin(TaskLaunchApiState):
         )
         normalized = normalize_fetch_report_contract(report)
         save_json_atomic(self._paths.jobs_fetch_report, normalized)
+        self._publish_bootstrap_report_summary(normalized)
         try:
             fail_lifecycle_run(
                 run_id,
@@ -515,6 +539,7 @@ class TaskLaunchApiBootstrapMixin(TaskLaunchApiState):
             )
             normalized = normalize_fetch_report_contract(promoted)
             save_json_atomic(self._paths.jobs_fetch_report, normalized)
+            self._publish_bootstrap_report_summary(normalized)
             return normalized
         except (RuntimeError, OSError, ValueError, TypeError):
             self._restore_bootstrap_transaction_targets(snapshot)

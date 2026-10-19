@@ -23,6 +23,7 @@ FETCH_REPORT_SUMMARY_FILE_NAME = "jobs-fetch-report-summary.json"
 DEFAULT_LIVE_SOURCE_LIMIT = 25
 
 _SUMMARY_KEYS = (
+    "status",
     "outputCount",
     "keptCount",
     "fetchedCount",

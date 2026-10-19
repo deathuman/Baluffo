@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src.bridge.fetch_report_summary import FETCH_REPORT_SUMMARY_FILE_NAME
+from src.bridge.job_availability_service import refresh_priority_manifest_in_background
+from src.shared.fetch_report_identity import fetch_report_identity
 from src.source_registry_io import (
     cleanup_runtime_evidence_journals,
     compact_registry_journals,
@@ -106,7 +110,6 @@ class _AdminTaskRuntimeRoot(Protocol):
     load_json_object: Callable[..., JsonObject]
     normalize_fetch_report_contract: Callable[[JsonObject], JsonObject]
     normalize_discovery_report_contract: Callable[[JsonObject], JsonObject]
-    summarize_fetch_report: Callable[[JsonObject], JsonObject]
     summarize_discovery_report: Callable[[JsonObject], JsonObject]
     JOBS_FETCH_REPORT_PATH: Any
     JOBS_FETCH_TASKS_PATH: Any
@@ -421,13 +424,115 @@ def run_sync_task_worker(
     )
 
 
+_FETCH_OUTPUT_COUNT_CACHE_LIMIT = 8
+_FETCH_OUTPUT_COUNT_CACHE_LOCK = threading.Lock()
+# ``path -> ((report stat, sidecar stat), outputCount)``. Keyed by path rather
+# than by root object so a re-rooted data dir gets its own entry.
+_FETCH_OUTPUT_COUNT_CACHE: dict[str, tuple[tuple[Any, ...], int]] = {}
+# Mirrors the fetch-report route's terminal statuses; a sidecar reporting one of
+# these (or a finishedAt) describes a run that will not grow its output count.
+_FETCH_REPORT_TERMINAL_STATUSES = frozenset(
+    {"ok", "completed", "complete", "error", "failed", "aborted", "cancelled", "canceled"}
+)
+
+
+def _stat_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _output_count_from_summary(payload: Any) -> int | None:
+    """``None`` means "this payload does not carry a count", not "the count is 0"."""
+    summary = payload.get("summary") if isinstance(payload, dict) else None
+    if not isinstance(summary, dict):
+        return None
+    if "outputCount" not in summary and "uniqueOutputCount" not in summary:
+        return None
+    try:
+        return int(summary.get("outputCount") or summary.get("uniqueOutputCount") or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _summary_sidecar_is_usable(payload: dict[str, Any]) -> bool:
+    """Reject the live mid-run sidecar; only a finished run may supply the count."""
+    progress = payload.get("taskProgress")
+    if isinstance(progress, dict) and progress.get("active"):
+        return False
+    status = str(payload.get("status") or "").strip().lower()
+    if status in _FETCH_REPORT_TERMINAL_STATUSES:
+        return True
+    return bool(str(payload.get("finishedAt") or "").strip())
+
+
+def _sidecar_describes_report(payload: dict[str, Any], report_path: Path) -> bool:
+    """True when the sidecar's run identity matches the report's.
+
+    This replaces an mtime-ordering check: file timestamps advance in coarse
+    ticks, so a small report and the sidecar written right after it can share a
+    timestamp (or a rewritten identical report can keep an older one), and the
+    count then fell back to a full report parse although the sidecar was current.
+    """
+    finished_at = str(payload.get("finishedAt") or "").strip()
+    if not finished_at:
+        return False
+    identity = fetch_report_identity(report_path)
+    if identity is None:
+        return False
+    run_id = str(payload.get("runId") or "").strip()
+    return identity == (run_id, finished_at)
+
+
+def clear_fetch_output_count_cache() -> None:
+    """Drop memoized counts; tests and measurement tools call this between arms."""
+    with _FETCH_OUTPUT_COUNT_CACHE_LOCK:
+        _FETCH_OUTPUT_COUNT_CACHE.clear()
+
+
 def current_fetch_output_count(*, root_mod: Any) -> int:
+    """Output count of the last fetch report, without normalizing the report.
+
+    The count is ``summary.outputCount`` (falling back to ``uniqueOutputCount``)
+    and report normalization never changes it, so the multi-megabyte normalize
+    pass this used to run contributed nothing but cost. Two cheaper sources are
+    tried in order: the finished-run summary sidecar beside the report, then the
+    report itself. The sidecar supplies the count only when its ``runId`` and
+    ``finishedAt`` match the report's bounded run identity, so a stale, live, or
+    other-run sidecar cannot be read as this report's count. The result is
+    memoized on the two files' stat identity, because this runs on the pipeline
+    launch path and on every terminal status write.
+    """
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    report = root_mod.normalize_fetch_report_contract(
-        load_runtime_evidence(root_mod.JOBS_FETCH_REPORT_PATH, {})
-    )
-    summary = root_mod.summarize_fetch_report(report)
-    return int(summary.get("outputCount") or 0)
+    report_path = Path(root_mod.JOBS_FETCH_REPORT_PATH)
+    report_signature = _stat_signature(report_path)
+    if report_signature is None:
+        return 0
+    sidecar_path = report_path.with_name(FETCH_REPORT_SUMMARY_FILE_NAME)
+    sidecar_signature = _stat_signature(sidecar_path)
+    cache_key = str(report_path)
+    cache_signature = (report_signature, sidecar_signature)
+    with _FETCH_OUTPUT_COUNT_CACHE_LOCK:
+        cached = _FETCH_OUTPUT_COUNT_CACHE.get(cache_key)
+    if cached is not None and cached[0] == cache_signature:
+        return cached[1]
+
+    count: int | None = None
+    if sidecar_signature is not None:
+        sidecar = load_runtime_evidence(sidecar_path, {})
+        if _summary_sidecar_is_usable(sidecar) and _sidecar_describes_report(sidecar, report_path):
+            count = _output_count_from_summary(sidecar)
+    if count is None:
+        count = _output_count_from_summary(load_runtime_evidence(report_path, {}))
+    value = int(count or 0)
+
+    with _FETCH_OUTPUT_COUNT_CACHE_LOCK:
+        _FETCH_OUTPUT_COUNT_CACHE[cache_key] = (cache_signature, value)
+        while len(_FETCH_OUTPUT_COUNT_CACHE) > _FETCH_OUTPUT_COUNT_CACHE_LIMIT:
+            _FETCH_OUTPUT_COUNT_CACHE.pop(next(iter(_FETCH_OUTPUT_COUNT_CACHE)))
+    return value
 
 
 def get_jobs_pipeline_status_payload(*, root_mod: Any) -> JsonObject:
@@ -526,10 +631,23 @@ def start_jobs_bootstrap_task(payload: JsonObject | None = None, *, root_mod: An
 
 def start_jobs_pipeline_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
-    try:
-        root_mod._get_job_availability_service().prepare_priority_manifest()
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-        root_mod.bridge_log(
-            "warn", "availability_priority_manifest_failed", error=type(exc).__name__
-        )
-    return cast(JsonObject, root_mod._get_pipeline_service().start_task(payload))
+    result = cast(JsonObject, root_mod._get_pipeline_service().start_task(payload))
+    # The availability manifest rebuild queues on the cross-process jobs-feed
+    # lock, so it must not hold the launch response: a feed publication can make
+    # that wait longer than the Jobs page's request timeout, which then reported
+    # a failed start for a pipeline that had in fact started.
+    if bool(result.get("started")):
+        try:
+            availability = root_mod._get_job_availability_service()
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+            availability = None
+        if availability is not None:
+            refresh_priority_manifest_in_background(
+                availability,
+                on_error=lambda exc: root_mod.bridge_log(
+                    "warn",
+                    "availability_priority_manifest_failed",
+                    error=type(exc).__name__,
+                ),
+            )
+    return result
