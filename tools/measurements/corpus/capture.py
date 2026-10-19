@@ -508,17 +508,34 @@ class _BuildOpenerPatch:
     def __init__(self, handler: Callable[..., Any]) -> None:
         self.handler = handler
         self.real: Callable[..., Any] | None = None
+        self._opener_at_enter: Any = None
+        self._owns_global_opener = False
 
     def __enter__(self) -> _BuildOpenerPatch:
         import urllib.request as urllib_request
 
         self.real = urllib_request.build_opener
         urllib_request.build_opener = self._build
+        # ``urlopen`` builds the process-global opener lazily, and it builds it *through this
+        # attribute*: ``global _opener; if _opener is None: _opener = build_opener()``. The opener
+        # that gets installed then is shadowed like any other the session hands out, and it never
+        # goes away -- it is the module's own state, not this context's. Both patched names could
+        # read as restored while every later ``urlopen`` in the process (a test in another file,
+        # the container gateway's own client) was answered from the corpus. So the session installs
+        # its own opener up front, and puts the previous one back on exit.
+        if hasattr(urllib_request, "_opener"):
+            self._owns_global_opener = True
+            self._opener_at_enter = urllib_request._opener
+            urllib_request._opener = self._build()
         return self
 
     def __exit__(self, *exc_info: Any) -> None:
         import urllib.request as urllib_request
 
+        if self._owns_global_opener:
+            urllib_request._opener = self._opener_at_enter
+            self._opener_at_enter = None
+            self._owns_global_opener = False
         if self.real is not None:
             urllib_request.build_opener = self.real
         self.real = None

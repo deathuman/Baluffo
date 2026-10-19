@@ -40,6 +40,10 @@ from tests.helpers.discovery_artifact_hygiene import (
     format_discovery_audit_change,
     snapshot_discovery_audit_artifacts,
 )
+
+# Registered the same way for the transport-seam guard: tests/test_global_seam_guard.py loads the
+# same fixture as a plugin to prove its failure path still bites (see the helper for why it exists).
+from tests.helpers.global_seam_guard import global_seam_guard as global_seam_guard
 from tests.helpers.temp_paths import (
     TEST_TMP_ROOT,
     cleanup_stale_workspace_tmpdirs,

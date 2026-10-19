@@ -292,17 +292,54 @@ def test_patches_are_installed_inside_and_restored_afterwards(tmp_path: Path) ->
     original_common_http_urlopen = common_http.urlopen
     original_build_opener = urllib.request.build_opener
     original_httpx_client = httpx.Client
+    # The global opener is private module state, so it is read the way a caller that cannot name
+    # it must: through ``getattr`` with a default, which is also what the type checker sees.
+    original_global_opener = getattr(urllib.request, "_opener", None)
 
     with CaptureRecorder(corpus, scope="unit"):
         assert urllib.request.urlopen is not original_module_urlopen
         assert common_http.urlopen is not original_common_http_urlopen
         assert urllib.request.build_opener is not original_build_opener
         assert httpx.Client is not original_httpx_client
+        # The opener's own state is not put back by restoring these two names; see
+        # test_a_session_does_not_leave_a_shadowed_global_opener.
+        assert getattr(urllib.request, "_opener", None) is not original_global_opener
 
     assert urllib.request.urlopen is original_module_urlopen
     assert common_http.urlopen is original_common_http_urlopen
     assert urllib.request.build_opener is original_build_opener
     assert httpx.Client is original_httpx_client
+    assert getattr(urllib.request, "_opener", None) is original_global_opener
+
+
+def test_a_session_does_not_leave_a_shadowed_global_opener(tmp_path: Path) -> None:
+    """``urlopen`` builds the process-global opener lazily, and it builds it *through*
+    ``build_opener``.
+
+    A build that happens while a session is live installs a shadowed ``open`` on the module's own
+    opener, and that object outlives the session: both patched names read as restored while every
+    later ``urlopen`` in the process is answered from the corpus. It surfaced as an intermittent
+    container-gateway ETag failure under ``-n 4``, where a corpus file and the gateway file share
+    one worker. A later ``urlopen`` must reach a socket.
+    """
+
+    corpus = CorpusStore(tmp_path / "corpus")
+    before = getattr(urllib.request, "_opener", None)
+    # A caller that imported ``urlopen`` by name -- as the gateway test does -- reaches the real
+    # function, whose first call is what builds the global opener.
+    name_imported_urlopen = urllib.request.urlopen
+
+    with local_http_server() as base:
+        with CaptureRecorder(corpus, scope="unit"):
+            with name_imported_urlopen(f"{base}/listing", timeout=5) as recorded:  # noqa: S310
+                assert recorded.read()
+        # The session hands the process its opener back before the next live call, which is the
+        # one that would otherwise be answered from the corpus.
+        assert getattr(urllib.request, "_opener", None) is before
+        with urllib.request.urlopen(f"{base}/listing", timeout=5) as live:  # noqa: S310
+            assert type(live.headers).__name__ == "HTTPMessage", (
+                "the process-global opener still replays: a later urlopen was answered by the corpus"
+            )
 
 
 def test_a_partial_surface_set_leaves_the_others_alone(tmp_path: Path) -> None:
