@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.ship.startup_profile import render_startup_summary, summarize_startup_metrics
 
 
@@ -98,3 +100,42 @@ def test_summarize_startup_metrics_falls_back_to_admin_ready() -> None:
     assert summary["firstUsableEvent"] == "admin_ready"
     assert summary["firstUsableMs"] == 1500
     assert summary["missingEvents"] == []
+
+
+def test_startup_profile_summary_counts_gate_wrapper_crashes() -> None:
+    rows: list[dict[str, Any]] = [
+        _row("desktop_launch_jobs_report_gate", 0),
+        {
+            "event": "jobs_row_artifact_quarantine_failed",
+            "fields": {"process": "site", "error": "boom"},
+        },
+        {
+            "event": "jobs_row_artifact_quarantine_failed",
+            "fields": {"process": "bridge", "error": "boom"},
+        },
+        {
+            "event": "jobs_row_artifact_quarantine_failed",
+            "fields": {"process": "site", "error": "boom again"},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+
+    assert summary["jobsReportGate"] == {
+        "quarantineFailureCount": 3,
+        "quarantineFailureProcesses": ["bridge", "site"],
+    }
+    rendered = render_startup_summary(summary)
+    assert "Gate wrapper crashes: 3 (bridge, site)" in rendered
+
+
+def test_startup_profile_summary_reports_zero_gate_wrapper_crashes() -> None:
+    rows: list[dict[str, Any]] = [_row("desktop_launch_jobs_report_gate_skipped", 0)]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+
+    assert summary["jobsReportGate"] == {
+        "quarantineFailureCount": 0,
+        "quarantineFailureProcesses": [],
+    }
+    assert "Gate wrapper crashes" not in render_startup_summary(summary)

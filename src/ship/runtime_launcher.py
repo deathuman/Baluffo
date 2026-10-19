@@ -38,19 +38,22 @@ from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate
 from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
     RUNTIME_FEED_ARTIFACTS,
+    evaluate_runtime_jobs_report,
     has_plausible_runtime_feed_artifacts_for_static_serving,
-    has_successful_runtime_jobs_report,
     jobs_cold_start_required,
     jobs_cold_start_required_for_static_serving,
+)
+from src.ship.startup_telemetry import (
+    JOBS_REPORT_GATE_EVENT,
+    JOBS_REPORT_GATE_SKIPPED_EVENT,
+    JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT,
+    startup_probe_enabled,
 )
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
 )
 from src.ship.startup_telemetry import (
     append_startup_trace as _append_startup_trace,
-)
-from src.ship.startup_telemetry import (
-    startup_probe_enabled,
 )
 from src.ship.startup_telemetry import (
     wait_for_url as wait_for_url,
@@ -419,13 +422,45 @@ def _restore_or_skip_missing_jobs_row_artifacts(data_path: Path) -> dict[str, An
     return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
 
 
-def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, Any]:
+def quarantine_stale_jobs_row_artifacts(
+    data_dir: str | Path, *, process: str = ""
+) -> dict[str, Any]:
     data_path = Path(data_dir)
     candidates = _row_artifact_candidates(data_path)
     if not candidates:
-        return _restore_or_skip_missing_jobs_row_artifacts(data_path)
-    if has_successful_runtime_jobs_report(data_path):
-        return {"quarantined": [], "failed": [], "skipped": "successful_runtime_report"}
+        result = _restore_or_skip_missing_jobs_row_artifacts(data_path)
+        # Journal the empty-handed case too. A process that finds nothing to read
+        # is still reporting: without this row the smoke cannot tell "no row
+        # artifacts existed" from "this half stopped journaling the gate" and
+        # would have to accept either.
+        _append_runtime_startup_trace(
+            JOBS_REPORT_GATE_SKIPPED_EVENT,
+            dataDir=str(data_path),
+            process=str(process or "").strip().lower(),
+            reason=str(result.get("skipped") or ""),
+            restored=int(len(result.get("restored") or [])),
+        )
+        return result
+    report_success, report_gate = evaluate_runtime_jobs_report(data_path)
+    # Journal the gate's read source on every startup that consults it, so a
+    # sidecar fallback (the multi-megabyte report parse) is visible from a
+    # packaged launch instead of only showing up as unexplained startup latency.
+    # ``process`` names the launch half that consulted the gate: the packaged
+    # smoke requires a row from both the site and bridge processes, because a
+    # process that stops journaling hides its own reader choice.
+    _append_runtime_startup_trace(
+        JOBS_REPORT_GATE_EVENT,
+        dataDir=str(data_path),
+        process=str(process or "").strip().lower(),
+        **report_gate,
+    )
+    if report_success:
+        return {
+            "quarantined": [],
+            "failed": [],
+            "skipped": "successful_runtime_report",
+            "reportGate": report_gate,
+        }
     if _runtime_feed_artifacts_include_updates_after_migration(data_path):
         return {
             "quarantined": [],
@@ -475,13 +510,16 @@ def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, Any]:
     )
 
 
-def safe_quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, Any]:
+def safe_quarantine_stale_jobs_row_artifacts(
+    data_dir: str | Path, *, process: str = ""
+) -> dict[str, Any]:
     try:
-        return quarantine_stale_jobs_row_artifacts(data_dir)
+        return quarantine_stale_jobs_row_artifacts(data_dir, process=process)
     except (RuntimeError, OSError, shutil.Error, TypeError, ValueError) as exc:
         _append_runtime_startup_trace(
-            "jobs_row_artifact_quarantine_failed",
+            JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT,
             dataDir=str(data_dir),
+            process=str(process or "").strip().lower(),
             error=str(exc),
         )
         return {
@@ -911,9 +949,9 @@ def run_site_server(
     static_data_dir = update_manager.ShipPaths.from_root(layout.root).data
     runtime_data_env = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
     runtime_data_dir = Path(runtime_data_env).expanduser().resolve() if runtime_data_env else None
-    safe_quarantine_stale_jobs_row_artifacts(static_data_dir)
+    safe_quarantine_stale_jobs_row_artifacts(static_data_dir, process="site")
     if runtime_data_dir is not None and runtime_data_dir != static_data_dir.resolve():
-        safe_quarantine_stale_jobs_row_artifacts(runtime_data_dir)
+        safe_quarantine_stale_jobs_row_artifacts(runtime_data_dir, process="site")
     jobs_cold_start = jobs_cold_start_required(runtime_data_dir or static_data_dir)
     print(
         json.dumps(
@@ -1011,7 +1049,7 @@ def run_bridge_server(
             active_root=updated_active_root,
             data_dir=layout.data_dir,
         )
-    safe_quarantine_stale_jobs_row_artifacts(layout.data_dir)
+    safe_quarantine_stale_jobs_row_artifacts(layout.data_dir, process="bridge")
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")

@@ -48,6 +48,12 @@ STARTUP_METRIC_CATEGORIES = {
 }
 STARTUP_METRIC_MAX_BYTES = 24 * 1024 * 1024
 STARTUP_METRIC_ROTATED_SUFFIX = ".1"
+# Journal events the desktop runtime writes for the jobs success gate. The
+# summary profile and the packaged smoke import these names instead of
+# restating the literals, so the writer and both readers cannot drift.
+JOBS_REPORT_GATE_EVENT = "desktop_launch_jobs_report_gate"
+JOBS_REPORT_GATE_SKIPPED_EVENT = "desktop_launch_jobs_report_gate_skipped"
+JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT = "jobs_row_artifact_quarantine_failed"
 STARTUP_METRIC_CATEGORY_PREFIXES = (
     ("jobs_", "page"),
     ("saved_", "page"),

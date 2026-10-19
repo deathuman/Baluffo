@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.coerce import as_dict as _as_dict
+from src.ship.startup_telemetry import JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT
 
 root: Any | None = None
 _EXPECTED_PACKAGED_SMOKE_OPERATIONAL_EXCEPTIONS = (
@@ -35,6 +36,7 @@ def _root() -> Any:
 
 def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
+    run_id = "packaged-smoke-seed-run"
     row = {
         "id": "packaged-smoke-seed-job",
         "title": "Packaged Smoke Seed Job",
@@ -46,6 +48,7 @@ def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
     }
     report = {
         "schemaVersion": 1,
+        "runId": run_id,
         "status": "ok",
         "startedAt": str(finished_at or ""),
         "finishedAt": str(finished_at or ""),
@@ -53,6 +56,28 @@ def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
     }
     (data_dir / "jobs-fetch-report.json").write_text(
         f"{json.dumps(report, separators=(',', ':'))}\n",
+        encoding="utf-8",
+    )
+    # The launch success gate trusts a finished-run sidecar whose runId and
+    # finishedAt match the report's bounded identity prefix. Seeding only the
+    # report would make this fixture itself look like a sidecar regression, so
+    # write the compact artifact the finalizer publishes, with the fields the
+    # gate reads (runId, finishedAt, summary.outputCount, taskProgress.active).
+    summary_artifact = {
+        "ok": True,
+        "summaryView": True,
+        "detailLevel": "summary",
+        "runId": run_id,
+        "status": "ok",
+        "startedAt": str(finished_at or ""),
+        "finishedAt": str(finished_at or ""),
+        "summary": {"status": "ok", "outputCount": 1},
+        "taskProgress": {"active": False},
+        "sourceCount": 0,
+        "sourcesTruncated": False,
+    }
+    (data_dir / "jobs-fetch-report-summary.json").write_text(
+        json.dumps(summary_artifact, separators=(",", ":")),
         encoding="utf-8",
     )
     feed = f"{json.dumps([row], separators=(',', ':'))}\n"
@@ -66,9 +91,156 @@ def _seed_jobs_pipeline_smoke_feed_if_needed(
     jobs_pipeline_script: Path,
     data_dir: Path,
     finished_at: str,
+) -> bool:
+    if node_smoke_script != jobs_pipeline_script.resolve():
+        return False
+    _seed_jobs_pipeline_smoke_feed(data_dir, finished_at=finished_at)
+    return True
+
+
+def _apply_jobs_report_gate_check(report: dict[str, Any], *, require_row: bool = False) -> bool:
+    """Fail the smoke on a full-report gate read, or when half the launch stopped
+    journaling which artifact settled the gate.
+
+    The launch journals ``desktop_launch_jobs_report_gate`` with the artifact that
+    settled the jobs success gate. ``reader: "summary-sidecar"`` is the bounded
+    fast path; ``reader: "full-report"`` parses the whole report and is a
+    regression that must block a release rather than only cost startup time.
+
+    ``require_row`` is set by the jobs-pipeline lane, whose seeded row artifacts
+    guarantee the gate runs: a missing journal row there means the row that makes
+    the gate observable was lost, which would otherwise let a sidecar regression
+    pass silently.
+
+    Every launch process journals either a reader row (it had artifacts and read
+    one) or a ``desktop_launch_jobs_report_gate_skipped`` row (nothing to read), so
+    the smoke requires both the site and the bridge to appear: a process missing
+    from both events has stopped reporting whether the gate ran, which would hide
+    a sidecar regression in that half of the launch. A launch that journaled
+    nothing at all never reached the gate, and the other startup checks own it.
+
+    A crashed quarantine takes priority: every ``jobs_row_artifact_quarantine_failed``
+    row is reported in one failure, each half with its own recorded error, rather
+    than as that half silently missing its gate row.
+    """
+    deps = _root()
+    scenarios = report.setdefault("scenarios", [])
+    if any(str(row.get("slug") or "") == "startup-jobs-report-gate" for row in scenarios):
+        return True
+    rows = list(report.get("startupMetrics") or [])
+    quarantine_failures: list[dict[str, str]] = []
+    for row in rows:
+        if str(row.get("event") or "").strip() != JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT:
+            continue
+        fields = deps.startup_metric_fields(row)
+        failure = {
+            "process": str(fields.get("process") or "").strip() or "unknown",
+            "dataDir": str(fields.get("dataDir") or "").strip(),
+            "error": str(fields.get("error") or "").strip() or "no error recorded",
+        }
+        if failure not in quarantine_failures:
+            quarantine_failures.append(failure)
+    if quarantine_failures:
+        message = "Jobs row artifact quarantine failed in " + "; ".join(
+            f"the {failure['process']} process "
+            f"(dataDir={failure['dataDir'] or 'unknown'}): {failure['error']}"
+            for failure in quarantine_failures
+        )
+        scenarios.append(
+            {
+                "name": "Jobs Row Artifact Quarantine",
+                "slug": "jobs-row-artifact-quarantine",
+                "status": "failed",
+                "durationMs": 0,
+                "error": message,
+                "failures": quarantine_failures,
+            }
+        )
+        _mark_jobs_report_gate_failure(
+            report,
+            step="jobs-row-artifact-quarantine",
+            message=message,
+            category=JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT,
+        )
+        return True
+    fields = deps.jobs_report_gate_full_report_read(rows)
+    if fields:
+        duration_ms = int(float(fields.get("durationMs") or 0))
+        message = (
+            "Startup jobs report gate read the full fetch report instead of its summary "
+            f"sidecar (reader=full-report, durationMs={duration_ms}, "
+            f"reportFinishedAt={str(fields.get('reportFinishedAt') or '') or 'none'})."
+        )
+        scenarios.append(
+            {
+                "name": "Startup Jobs Report Gate",
+                "slug": "startup-jobs-report-gate",
+                "status": "failed",
+                "durationMs": duration_ms,
+                "error": message,
+                "reader": str(fields.get("reader") or ""),
+                "reportRunId": str(fields.get("reportRunId") or ""),
+            }
+        )
+        _mark_jobs_report_gate_failure(
+            report,
+            message=message,
+            category="startup_jobs_report_gate_full_report",
+        )
+        return True
+    missing_processes = list(
+        deps.jobs_report_gate_missing_processes(rows, require_reader=require_row)
+    )
+    if not missing_processes:
+        return False
+    if require_row:
+        # The lane seeded row artifacts, so a skip row there means the fixture
+        # never exercised the reader it exists to measure.
+        message = (
+            "Startup jobs report gate journaled no reader row for "
+            f"{', '.join(missing_processes)} although the jobs-pipeline lane seeded row "
+            "artifacts, so the sidecar fast path is unobserved in that half of the launch."
+        )
+    else:
+        message = (
+            "Startup journal has no desktop_launch_jobs_report_gate row for "
+            f"{', '.join(missing_processes)}; that half of the launch stopped reporting "
+            "whether the gate ran (neither a reader row nor a gate-skipped row), so a "
+            "sidecar regression there would ship unobserved."
+        )
+    scenarios.append(
+        {
+            "name": "Startup Jobs Report Gate",
+            "slug": "startup-jobs-report-gate",
+            "status": "failed",
+            "durationMs": 0,
+            "error": message,
+            "reader": "",
+            "reportRunId": "",
+            "missingProcesses": missing_processes,
+        }
+    )
+    _mark_jobs_report_gate_failure(
+        report,
+        message=message,
+        category="startup_jobs_report_gate_missing",
+    )
+    return True
+
+
+def _mark_jobs_report_gate_failure(
+    report: dict[str, Any],
+    *,
+    message: str,
+    category: str,
+    step: str = "startup-jobs-report-gate",
 ) -> None:
-    if node_smoke_script == jobs_pipeline_script.resolve():
-        _seed_jobs_pipeline_smoke_feed(data_dir, finished_at=finished_at)
+    report["ok"] = False
+    report["failure"] = _root().build_failure_payload(
+        step,
+        message,
+        category=category,
+    )
 
 
 def _record_rehearsal_artifacts(
@@ -438,7 +610,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_data_dir.mkdir(parents=True, exist_ok=True)
     embedded_artifacts_dir.mkdir(parents=True, exist_ok=True)
-    _seed_jobs_pipeline_smoke_feed_if_needed(
+    seeded_jobs_feed = _seed_jobs_pipeline_smoke_feed_if_needed(
         node_smoke_script=node_smoke_script,
         jobs_pipeline_script=deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT,
         data_dir=runtime_data_dir,
@@ -633,6 +805,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             if bool(getattr(args, "fail_on_threshold", False)):
                 _apply_startup_threshold_gate(report, startup_profile=startup_profile)
 
+        gate_contract_failed = _apply_jobs_report_gate_check(report, require_row=seeded_jobs_feed)
+
         if bool(args.profile_only):
             report["artifacts"].update(
                 deps.capture_performance_profile_snapshot(
@@ -642,9 +816,11 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 )
             )
             record_only = bool(getattr(args, "profile_record_only", False))
+            # Record-only relaxes startup thresholds, not contract failures: a
+            # sidecar regression still fails the run.
             report["ok"] = (
                 True
-                if record_only
+                if record_only and not gate_contract_failed
                 else all(str(row.get("status")) == "passed" for row in report["scenarios"])
             )
             if not report["ok"] and not report["failure"]:

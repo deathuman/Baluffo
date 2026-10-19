@@ -11,8 +11,15 @@ from __future__ import annotations
 from typing import Any
 
 from src.ship.startup_probe_policy import startup_metric_fields
+from src.ship.startup_telemetry import JOBS_REPORT_GATE_EVENT, JOBS_REPORT_GATE_SKIPPED_EVENT
 
 root: Any | None = None
+
+JOBS_REPORT_GATE_FULL_REPORT = "full-report"
+# Both launcher halves consult the gate on a packaged start. The smoke requires a
+# row from each, otherwise one process can lose its gate journal and the remaining
+# row makes the launch look healthy.
+JOBS_REPORT_GATE_PROCESSES = ("site", "bridge")
 
 
 def _root() -> Any:
@@ -68,6 +75,60 @@ def startup_metric_event_present(
         if matches:
             return True
     return False
+
+
+def jobs_report_gate_full_report_read(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """First startup journal gate row that parsed the whole fetch report.
+
+    The desktop launch journals ``desktop_launch_jobs_report_gate`` every time the
+    jobs success gate runs (once per site/bridge process). ``reader`` is
+    ``summary-sidecar`` on the bounded fast path and ``full-report`` when the
+    sidecar was missing, unfinished, or described another run. A full-report read
+    is a startup regression rather than a threshold: the packaged smoke fails on
+    it so a sidecar break blocks a release instead of only showing up as latency.
+    """
+    for row in rows:
+        if str(row.get("event") or "").strip() != JOBS_REPORT_GATE_EVENT:
+            continue
+        fields = startup_metric_fields(row)
+        if str(fields.get("reader") or "").strip().lower() == JOBS_REPORT_GATE_FULL_REPORT:
+            return fields
+    return None
+
+
+def jobs_report_gate_missing_processes(
+    rows: list[dict[str, Any]], *, require_reader: bool = False
+) -> list[str]:
+    """Gate processes that never journaled a row in this launch.
+
+    The site and bridge processes each consult the jobs success gate, so a launch
+    where only one of them journals leaves the other half unobserved. A gate row
+    means it read an artifact; a ``desktop_launch_jobs_report_gate_skipped`` row
+    means it found nothing to read. Both prove the process reported; with
+    ``require_reader`` only the former counts, which is what the seeded lane needs
+    to know the fixture actually exercised the sidecar path. Rows written without
+    a ``process`` field cannot be attributed and therefore count as missing.
+    """
+    expected_events = (
+        {JOBS_REPORT_GATE_EVENT}
+        if require_reader
+        else {JOBS_REPORT_GATE_EVENT, JOBS_REPORT_GATE_SKIPPED_EVENT}
+    )
+    seen: set[str] = set()
+    journaled = False
+    for row in rows:
+        if str(row.get("event") or "").strip() not in expected_events:
+            continue
+        journaled = True
+        process = str(startup_metric_fields(row).get("process") or "").strip().lower()
+        if process:
+            seen.add(process)
+    if not journaled and not require_reader:
+        # No half journaled the gate at all: the launch never reached it, and the
+        # startup checks own that failure. Comparing halves is only meaningful
+        # once at least one process reported.
+        return []
+    return [process for process in JOBS_REPORT_GATE_PROCESSES if process not in seen]
 
 
 def find_startup_metric_fields(

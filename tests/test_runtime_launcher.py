@@ -715,15 +715,20 @@ def test_run_site_server_continues_when_jobs_quarantine_raises() -> None:
         root = Path(tmp) / "ship"
         _seed_ship_root(root, version="2.4.6")
         events: list[tuple[str, dict[str, object]]] = []
+        quarantine_calls: list[dict[str, object]] = []
 
         class _StopServer(Exception):
             pass
+
+        def _crash_quarantine(_data_dir: object, **kwargs: object) -> dict[str, object]:
+            quarantine_calls.append(dict(kwargs))
+            raise RuntimeError("quarantine crashed")
 
         with (
             mock.patch.object(
                 rl,
                 "quarantine_stale_jobs_row_artifacts",
-                side_effect=RuntimeError("quarantine crashed"),
+                side_effect=_crash_quarantine,
             ),
             mock.patch.object(
                 rl,
@@ -736,6 +741,7 @@ def test_run_site_server_continues_when_jobs_quarantine_raises() -> None:
                 rl.run_site_server(root, port=8123)
 
         assert any(event == "jobs_row_artifact_quarantine_failed" for event, _fields in events)
+        assert quarantine_calls and all(call["process"] == "site" for call in quarantine_calls)
 
 
 def test_run_site_server_skips_heal_when_active_version_is_healthy() -> None:
@@ -919,16 +925,21 @@ def test_run_bridge_server_continues_when_jobs_quarantine_raises() -> None:
         root = Path(tmp) / "ship"
         _seed_ship_root(root, version="3.1.4")
         events: list[tuple[str, dict[str, object]]] = []
+        quarantine_calls: list[dict[str, object]] = []
 
         def _capture_run_path(_script: str, run_name: str) -> None:
             raise RuntimeError("stop-after-argv")
+
+        def _crash_quarantine(_data_dir: object, **kwargs: object) -> dict[str, object]:
+            quarantine_calls.append(dict(kwargs))
+            raise RuntimeError("quarantine crashed")
 
         with pytest.raises(RuntimeError, match="stop-after-argv"):
             with (
                 mock.patch.object(
                     rl,
                     "quarantine_stale_jobs_row_artifacts",
-                    side_effect=RuntimeError("quarantine crashed"),
+                    side_effect=_crash_quarantine,
                 ),
                 mock.patch.object(
                     rl,
@@ -945,6 +956,7 @@ def test_run_bridge_server_continues_when_jobs_quarantine_raises() -> None:
                 )
 
         assert any(event == "jobs_row_artifact_quarantine_failed" for event, _fields in events)
+        assert quarantine_calls and all(call["process"] == "bridge" for call in quarantine_calls)
 
 
 def test_run_bridge_server_uses_current_version_repaired_by_startup_check() -> None:

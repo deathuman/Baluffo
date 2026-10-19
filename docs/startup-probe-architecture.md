@@ -84,6 +84,14 @@ Bridge phase events emitted on the desktop-shipped path:
 | `desktop_bridge_startup_step_started` / `_finished` | `admin_task_runtime.on_bridge_started` | One row per startup step, with `step` and (on finish) `durationMs`. A step that never returns leaves its `_started` row as the tail. The first step, `compaction_hold_seed`, also carries `seededFromActiveTask`, `held`, `holdChanged`, `activeTaskCount`, `activeTaskTypes`, and `activeRunIds` on its `_finished` row. |
 | `desktop_bridge_storage_maintenance_resumed` / `_resume_failed` | `admin_entrypoint_runtime.finish_bridge_startup_hooks` | SQLite maintenance released after the post-bind startup work; carries `stores` and `scheduled`, or `error` when the release failed. "Released" is not "rebuilt": a released VACUUM is still held while a task row is active (`held-active-task`, released by the last task's terminal transition) and then waits for a quiet write path, reporting `skipped-busy` until one arrives (see [`storage-contract.md`](storage-contract.md#maintenance-scheduling-rules)). The held state itself is reported as `storageMaintenanceDeferred` on `desktop_bridge_configured` and as `deferred` in `/ops/storage-health`. |
 
+Layout/site startup events outside the bridge child:
+
+| Event | Emitted by | Meaning |
+| --- | --- | --- |
+| `desktop_launch_jobs_report_gate` | `runtime_launcher.quarantine_stale_jobs_row_artifacts` | The jobs success gate ran because row artifacts existed. `reader` is `summary-sidecar` (sidecar plus an 8 kB run-identity prefix) or `full-report` (the fallback that parses the whole report); the row also carries `process` (`site` or `bridge`, the launch half that consulted the gate), `success`, `durationMs`, `reportRunId`, `reportFinishedAt`, and `reportMetadataOk`/`feedArtifactsOk`. Emitted once per startup that consults the gate, in both the site and bridge processes. Packaged smoke fails the run when any row reports `full-report` (record-only mode does not relax it), and also when only one process journals either this row or the skipped row below, or when the rows carry no `process`, so a half that stops reporting cannot hide a sidecar regression. The jobs-pipeline fixture seeds a matching sidecar so the fixture itself takes the fast path; that lane requires a reader row from both processes, since a skip there would mean the fixture never exercised the sidecar. |
+| `desktop_launch_jobs_report_gate_skipped` | `runtime_launcher.quarantine_stale_jobs_row_artifacts` | The process checked a data dir and found no jobs row artifacts to read. Carries `process`, `dataDir`, `reason` (`no_artifacts`, or `restored_false_quarantined_runtime_artifacts` when a false quarantine was undone), and `restored`. Emitted from the same call site as the gate row, so a start with nothing to read still journals one row per process and data dir; the smoke counts it as that half reporting, which is what separates "no artifacts to read" from a journal that stopped. |
+| `jobs_row_artifact_quarantine_failed` | `runtime_launcher.safe_quarantine_stale_jobs_row_artifacts` | The quarantine raised (caught `RuntimeError`/`OSError`/`shutil.Error`/`TypeError`/`ValueError`) and the launch continued without it. Carries `process`, `dataDir`, and `error`. Packaged smoke fails the run as scenario `jobs-row-artifact-quarantine` (step `jobs-row-artifact-quarantine`) listing every crashed half with its own recorded error, rather than reporting those halves as missing gate rows; `--profile-record-only` does not relax it. |
+
 `desktop_bridge_startup_step_*` steps are `compaction_hold_seed`,
 `runtime_evidence_journal_cleanup`, `registry_journal_compaction`,
 `stale_task_cleanup`, `startup_sync_schedule`, and `pipeline_schedule_polling`.
@@ -186,6 +194,55 @@ module-level callables, resolved through that module's `_deferred()` helper on
 first call, because a function-body import would move the patch point and leave
 the test exercising nothing.
 
+## Parallel Spawn And Feed Presence
+
+Two launch costs that multiplied rather than added are gone as of 2026-10-19.
+
+**Parallel spawn.** The site and bridge used to start serially: the bridge was
+spawned only after `desktop_site_ready`, so its whole cold start sat behind the
+site's. Both bind ports that `ensure_runtime_ports` checked before either spawns,
+so nothing in the bridge depends on the site; the window still waits for the
+slower of the two. The launcher now spawns the bridge immediately after the site
+and records `desktop_bridge_spawn_parallel_with_site` (mode `parallel`).
+`BALUFFO_STARTUP_PARALLEL_BRIDGE=0` restores the serial path, which also remains
+reachable through `desktop_bridge_spawn_deferred_until_site_ready`. The port-race
+retry terminates both children before respawning, so a retried launch still runs
+exactly one bridge.
+
+**Cheap feed presence.** `jobs_cold_start_required` only needs to know whether
+`jobs-unified-light.json.gz` and `jobs-unified.json.gz` contain at least one row,
+but it answered by decompressing and parsing both files in full. On the live
+41,916-row payload (43 MB uncompressed, 10.6 MB gzipped) one call cost
+1,587-1,766 ms (three samples, warm page cache), paid on every cold-start path
+that asks: the launcher's config build, the site child, and the bridge child. The
+check now reads a bounded 256 KB decompressed prefix under `gzip.open` and
+decides from the opening token (`[` / `{"jobs": [`), falling back to the full
+parse whenever the prefix cannot settle the answer. The same call now costs
+1.1-1.6 ms, and the result matches the full parse on the live files.
+
+Packaged `Baluffo.exe` launches on the same machine. The probe below runs with
+`--profile-only`, whose runtime data directory carries no feed artifacts, so it
+measures the spawn path and not the feed check; the live-data launch seeds the
+four live feed/report files into an otherwise empty data directory and measures
+both.
+
+| Event | Old path (recorded earlier) | Live-data launch (new) | Cold jobs probe (new) |
+| --- | --- | --- | --- |
+| Launch -> site spawned | serial, after the feed parse | 7 ms | 7-8 ms |
+| Launch -> site ready | ~3.0 s (site child parsed both feeds) | 565 ms | 551 ms |
+| Launch -> bridge spawn | after site ready | 10 ms | 10 ms |
+| Launch -> bridge ready | not recorded | 1,234 ms | 693-761 ms |
+| Launch -> window | 5,978 ms (last recorded real launch) | 1,235 ms | 1,234-1,334 ms |
+| Launch -> first usable UI | 6.1 s (page clock, same launch) | not measured (no browser) | 2,327 ms |
+
+The probe reports `Site Ready -> Bridge Spawn Started` 0 ms and
+`Site Ready -> Bridge Ready` 143 ms, and passes every threshold. The window now
+waits on the bridge's readiness gate, not on the site finishing first: in the
+live-data launch that gate ran 565 -> 1,234 ms (`desktop_bridge_ready_before_window`
+landed 1,234 ms), while the bridge itself had served its first request at 480 ms
+of its own clock. The readiness poll's interval, not the spawn order, is what is
+left in that gap.
+
 ## Window Gate And Serve-First Startup
 
 The desktop window no longer waits for the bridge's full startup chain.
@@ -282,7 +339,7 @@ The packaged startup measurement path is:
 3. The bridge stores those browser-origin metrics under the runtime data directory.
 4. Jobs startup profiles wait for `jobs_auth_ready`, `jobs_first_render`, and `jobs_first_interactive`; Admin startup profiles use `admin_ready`, `admin_first_interactive`, and `admin_ops_health_first_render` for the visible Operations Health path.
 5. Packaged smoke collects startup metrics from the runtime data and bridge endpoints.
-6. Startup profile analysis renders the stage timings and summary report.
+6. Startup profile analysis renders the stage timings and summary report. The summary also carries `jobsReportGate` (`quarantineFailureCount`, `quarantineFailureProcesses`) so a release report states whether the gate wrapper crashed and in which halves, even when the smoke failure payload is the only other place that error appears.
 
 When `desktop_bridge_ready_before_window` is present, startup profile analysis splits the pre-window segment into `Site Ready -> Bridge Ready` and `Bridge Ready -> Window Created`. Older or incomplete traces without that event fall back to the legacy `Site Ready -> Window Created` stage. A deferred launch instead records `desktop_window_open_bridge_deferred`, which marks the window as opened before bridge readiness by design.
 

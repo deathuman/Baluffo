@@ -17,6 +17,7 @@ from typing import Any
 
 from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _as_list
+from src.ship.startup_telemetry import JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT
 
 PROFILE_THRESHOLDS_MS = {
     "cold": {
@@ -271,6 +272,25 @@ def _stage_perf_regressions(stages: list[dict[str, Any]]) -> list[dict[str, Any]
     return regressions
 
 
+def _jobs_report_gate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Gate wrapper crash count and halves from the launch journal rows."""
+    crashed: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("event") or "").strip() != JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT:
+            continue
+        fields = row.get("fields")
+        if not isinstance(fields, dict):
+            fields = row.get("payload")
+        process = str((fields or {}).get("process") or "").strip().lower() or "unknown"
+        crashed[process] = crashed.get(process, 0) + 1
+    return {
+        "quarantineFailureCount": sum(crashed.values()),
+        "quarantineFailureProcesses": sorted(crashed),
+    }
+
+
 def summarize_startup_metrics(
     rows: list[dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold"
 ) -> dict[str, Any]:
@@ -278,6 +298,7 @@ def summarize_startup_metrics(
     mode = "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"
     thresholds = PROFILE_THRESHOLDS_MS[mode]
     events = event_index(rows)
+    gate_summary = _jobs_report_gate_summary(rows)
 
     if safe_page in {
         "desktop-probe",
@@ -391,6 +412,7 @@ def summarize_startup_metrics(
             else "failed",
             "missingEvents": sorted({event for event in probe_missing_events if event}),
             "perfRegressions": perf_regressions,
+            "jobsReportGate": gate_summary,
         }
 
     if safe_page == "admin":
@@ -528,6 +550,7 @@ def summarize_startup_metrics(
             else "failed",
             "missingEvents": sorted({event for event in admin_missing_events if event}),
             "perfRegressions": perf_regressions,
+            "jobsReportGate": gate_summary,
         }
 
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
@@ -695,6 +718,7 @@ def summarize_startup_metrics(
         "status": summary_status,
         "missingEvents": sorted({event for event in missing_events if event}),
         "perfRegressions": perf_regressions,
+        "jobsReportGate": gate_summary,
     }
 
 
@@ -714,6 +738,14 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         )
         lines.append(
             f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}"
+        )
+    gate = summary.get("jobsReportGate")
+    if isinstance(gate, dict) and int(gate.get("quarantineFailureCount") or 0) > 0:
+        halves = ", ".join(str(item) for item in _as_list(gate.get("quarantineFailureProcesses")))
+        lines.append(
+            "Gate wrapper crashes: "
+            f"{int(gate.get('quarantineFailureCount') or 0)}"
+            f"{f' ({halves})' if halves else ''}"
         )
     regressions = [row for row in _as_list(summary.get("perfRegressions")) if isinstance(row, dict)]
     if regressions:

@@ -70,12 +70,8 @@ from src.ship.startup_probe_policy import (
     startup_profile_required_events as _startup_profile_required_events,
 )
 from src.ship.startup_profile import render_startup_summary
-from src.ship.startup_profile import (
-    summarize_startup_metrics as _summarize_startup_metrics,
-)
-from src.ship.startup_profile import (
-    write_startup_summary as _write_startup_summary,
-)
+from src.ship.startup_profile import summarize_startup_metrics as _summarize_startup_metrics
+from src.ship.startup_profile import write_startup_summary as _write_startup_summary
 from src.ship.startup_telemetry import read_startup_metrics as _read_startup_metrics_file
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
@@ -184,6 +180,10 @@ fetch_startup_metrics = packaged_smoke_startup_metrics_mod.fetch_startup_metrics
 startup_metric_launch_mode = packaged_smoke_startup_metrics_mod.startup_metric_launch_mode
 startup_metric_event_present = packaged_smoke_startup_metrics_mod.startup_metric_event_present
 find_startup_metric_fields = packaged_smoke_startup_metrics_mod.find_startup_metric_fields
+_gate_metrics_mod = packaged_smoke_startup_metrics_mod
+jobs_report_gate_full_report_read = _gate_metrics_mod.jobs_report_gate_full_report_read
+jobs_report_gate_missing_processes = _gate_metrics_mod.jobs_report_gate_missing_processes
+JOBS_REPORT_GATE_EVENT = packaged_smoke_startup_metrics_mod.JOBS_REPORT_GATE_EVENT
 
 choose_free_port = packaged_smoke_build_env_mod.choose_free_port
 _default_portable_exe_stale = packaged_smoke_build_env_mod._default_portable_exe_stale

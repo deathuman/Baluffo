@@ -269,7 +269,26 @@ def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_se
                 return_value={
                     "health": {"ok": True},
                     "session": {"ok": True},
-                    "startupMetrics": [],
+                    # The jobs-pipeline lane seeds row artifacts, so a real launch
+                    # journals the gate row this smoke run requires.
+                    "startupMetrics": [
+                        {
+                            "event": "desktop_launch_jobs_report_gate",
+                            "fields": {
+                                "reader": "summary-sidecar",
+                                "process": "site",
+                                "durationMs": 3.0,
+                            },
+                        },
+                        {
+                            "event": "desktop_launch_jobs_report_gate",
+                            "fields": {
+                                "reader": "summary-sidecar",
+                                "process": "bridge",
+                                "durationMs": 3.0,
+                            },
+                        },
+                    ],
                 },
             ),
             mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}),
