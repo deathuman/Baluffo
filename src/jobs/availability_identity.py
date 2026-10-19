@@ -597,6 +597,54 @@ def prepare_availability_identities(
         _url_alias_for_link.cache_clear()
 
 
+def _apply_post_assignment_repairs(
+    all_prepared_rows: list[CanonicalJob],
+    all_prepared_observed: list[CanonicalJob],
+    *,
+    contaminated_ids: set[str],
+    post_contaminated_ids: set[str],
+    post_replacements: Mapping[str, str],
+    replacement_ids: dict[str, set[str]],
+    replacement_urls: dict[str, dict[str, set[str]]],
+    repaired_count: int,
+) -> tuple[list[CanonicalJob], list[CanonicalJob], int]:
+    """Apply the post-assignment plan to both segments and record what it superseded.
+
+    Every re-identified row is added to ``replacement_ids``/``replacement_urls`` -- and its
+    prior id to ``contaminated_ids`` -- so the summary and the quarantine additions describe
+    the same repair the rows carry. The loop is kept in its own function so the four guards
+    it needs do not push the preparation body over the repo's C901 complexity ceiling; it
+    mutates the passed-in collections exactly as the inlined version did, and it never
+    touches the rows when the plan found nothing to repair.
+    """
+    if not post_contaminated_ids:
+        return all_prepared_rows, all_prepared_observed, repaired_count
+    apply_post_repair = partial(
+        _apply_post_assignment_repair,
+        contaminated_ids=post_contaminated_ids,
+        replacements=post_replacements,
+    )
+    for canonical_row in all_prepared_rows:
+        payload = row_payload(canonical_row)
+        prior_id = clean_text(payload.get("availabilityId"))
+        if prior_id not in post_contaminated_ids:
+            continue
+        replacement_id = post_replacements.get(_row_identity_token(payload), "")
+        if not replacement_id:
+            continue
+        replacement_ids[prior_id].add(replacement_id)
+        url_alias = _url_alias(payload)
+        if url_alias:
+            replacement_urls[prior_id][replacement_id].add(url_alias.removeprefix("url:"))
+        repaired_count += 1
+    contaminated_ids.update(post_contaminated_ids)
+    return (
+        list(map(apply_post_repair, all_prepared_rows)),
+        list(map(apply_post_repair, all_prepared_observed)),
+        repaired_count,
+    )
+
+
 def _prepare_availability_identities(
     *,
     rows: Sequence[CanonicalJob],
@@ -625,28 +673,16 @@ def _prepare_availability_identities(
     post_contaminated_ids, post_replacements, post_rejected_tokens = _post_assignment_repair_plan(
         all_prepared_rows
     )
-    if post_contaminated_ids:
-        apply_post_repair = partial(
-            _apply_post_assignment_repair,
-            contaminated_ids=post_contaminated_ids,
-            replacements=post_replacements,
-        )
-        for canonical_row in all_prepared_rows:
-            payload = row_payload(canonical_row)
-            prior_id = clean_text(payload.get("availabilityId"))
-            if prior_id not in post_contaminated_ids:
-                continue
-            replacement_id = post_replacements.get(_row_identity_token(payload), "")
-            if not replacement_id:
-                continue
-            replacement_ids[prior_id].add(replacement_id)
-            url_alias = _url_alias(payload)
-            if url_alias:
-                replacement_urls[prior_id][replacement_id].add(url_alias.removeprefix("url:"))
-            repaired_count += 1
-        all_prepared_rows = list(map(apply_post_repair, all_prepared_rows))
-        all_prepared_observed = list(map(apply_post_repair, all_prepared_observed))
-        contaminated_ids.update(post_contaminated_ids)
+    all_prepared_rows, all_prepared_observed, repaired_count = _apply_post_assignment_repairs(
+        all_prepared_rows,
+        all_prepared_observed,
+        contaminated_ids=contaminated_ids,
+        post_contaminated_ids=post_contaminated_ids,
+        post_replacements=post_replacements,
+        replacement_ids=replacement_ids,
+        replacement_urls=replacement_urls,
+        repaired_count=repaired_count,
+    )
     prepared_rows, rejected_rows = _partition_prepared_rows(
         all_prepared_rows,
         conflicting_source_aliases=conflicting_source_aliases,

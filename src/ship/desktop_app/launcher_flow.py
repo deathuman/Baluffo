@@ -182,6 +182,44 @@ def _start_desktop_bridge_process(
     return process
 
 
+def _maybe_start_parallel_bridge(
+    *,
+    api: ModuleType,
+    config: DesktopRuntimeConfig,
+    child_env: dict[str, str],
+    desktop_job: int | None,
+    open_url: str,
+    owner_token: str,
+    desktop_session_id: str,
+    started_mono: float,
+):
+    """Start the bridge beside the site when the runtime asks for it, else defer to ready.
+
+    Returns ``None`` when parallel startup is off, which is the signal the launch body
+    reads to spawn the bridge after the site is ready. The branch -- including the trace
+    that names the parallel mode -- lives here so the launch orchestration stays inside
+    the repo's C901 complexity ceiling.
+    """
+    if not _parallel_bridge_startup_enabled(api, config):
+        return None
+    api._append_startup_trace(
+        config.data_dir,
+        "desktop_bridge_spawn_parallel_with_site",
+        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+        url=str(open_url),
+    )
+    return _start_desktop_bridge_process(
+        api=api,
+        config=config,
+        child_env=child_env,
+        desktop_job=desktop_job,
+        owner_token=owner_token,
+        desktop_session_id=desktop_session_id,
+        started_mono=started_mono,
+        mode="parallel",
+    )
+
+
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     api = desktop_api()
     launcher_token = uuid.uuid4().hex
@@ -260,23 +298,16 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 )
                 open_url = api.build_open_url(config)
 
-                if _parallel_bridge_startup_enabled(api, config):
-                    api._append_startup_trace(
-                        config.data_dir,
-                        "desktop_bridge_spawn_parallel_with_site",
-                        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
-                        url=str(open_url),
-                    )
-                    bridge_process = _start_desktop_bridge_process(
-                        api=api,
-                        config=config,
-                        child_env=child_env,
-                        desktop_job=desktop_job,
-                        owner_token=owner_token,
-                        desktop_session_id=desktop_session_id,
-                        started_mono=started_mono,
-                        mode="parallel",
-                    )
+                bridge_process = _maybe_start_parallel_bridge(
+                    api=api,
+                    config=config,
+                    child_env=child_env,
+                    desktop_job=desktop_job,
+                    open_url=open_url,
+                    owner_token=owner_token,
+                    desktop_session_id=desktop_session_id,
+                    started_mono=started_mono,
+                )
                 api.wait_for_url(
                     open_url,
                     timeout_s=READY_TIMEOUT_S,
