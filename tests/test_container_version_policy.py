@@ -219,6 +219,35 @@ def test_evaluate_window_fails_shipped_without_bump_or_intent() -> None:
     assert "Release-tag" in failures[0]
 
 
+def test_window_failure_names_the_shipped_commit_requirement() -> None:
+    """The remedy must say the intent line belongs on a shipped commit.
+
+    Told only to add a line to "a commit message in this window", an operator can
+    put it on the docs or tools commit that records the release, where the gate
+    never looks -- and then discover at push time that nothing was discharged.
+    """
+    commits = [_commit("a1b2c3d4", "feat: adapter", "feat: adapter", ("src/jobs/x.py",))]
+    failures = evaluate_window(commits, "0.2.141")
+    assert len(failures) == 1
+    assert "commit in this window that itself touches a shipped path" in failures[0]
+    assert "docs, tests, or tools commit does not count" in failures[0]
+    assert "Release-tag: v0.2.141" in failures[0]
+
+
+def test_intent_on_a_docs_commit_does_not_close_the_window() -> None:
+    """Intent is read from shipped commits only, so a docs commit discharges nothing."""
+    commits = [
+        _commit("a1b2c3d4", "feat: adapter", "feat: adapter", ("src/jobs/x.py",)),
+        _commit(
+            "b2c3d4e5",
+            "docs: record the release",
+            "docs: record the release\n\nRelease-tag: v0.2.142",
+            ("docs/RELEASE.md",),
+        ),
+    ]
+    assert evaluate_window(commits, "0.2.141")
+
+
 def test_evaluate_window_passes_with_release_tag_line() -> None:
     commits = [
         _commit(

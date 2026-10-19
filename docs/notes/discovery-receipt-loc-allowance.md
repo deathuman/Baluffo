@@ -418,4 +418,10 @@ artifact they only needed a count from. Measured against the baseline committed 
 - `<root>` +1: the vulture whitelist entry for the output-count cache reset that tests and
   the measurement tools call.
 
+The window-close follow-up sits on the same slice: `tools` +4 rewrote the window failure
+message in `container_version_policy.py` to name the shipped-commit requirement, `scripts`
++5 documented the same rule where the commit gate runs, and `tests` +29 added the wording
+and docs-only-intent tests in `test_container_version_policy.py`. The per-file line budget
+for that file was raised from 453 to 482, its exact measured size.
+
 `styles` and `probes` are unchanged. Exact measured values, no spare headroom.

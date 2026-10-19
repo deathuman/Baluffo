@@ -314,7 +314,7 @@ The `release` repo guardrail (`container_version_policy.py`) fails when containe
 How to satisfy the gate:
 
 - Bump the version in the same commit batch as the container-affecting code (`python scripts/bump_version.py <next>`), or
-- Declare release-tag intent in a commit message with a `Release-tag: vX.Y.Z` line (or a `release(vX.Y.Z):` / `chore(release):` subject) naming a version strictly newer than the current one.
+- Declare release-tag intent in a commit message with a `Release-tag: vX.Y.Z` line (or a `release(vX.Y.Z):` / `chore(release):` subject) naming a version strictly newer than the current one — or naming the current version itself while it is still untagged.
 
 Intent is read from **shipped commits only**. A `Release-tag:` line on a `docs/`, `tests/`, or `tools/` commit does not discharge the window, because that is exactly the message-only authorization the gate exists to refuse. When the bump lands first and the shipped work follows it, close the window by putting the line on a commit that itself touches a shipped path — while the version is untagged, `Release-tag: v<current>` is valid intent and republishing that tag is inert. Nothing needs to be rewritten: the window is discharged by any shipped commit in it, not only the last one. Once the version is tagged the line stops counting; from then on the version has to move.
 

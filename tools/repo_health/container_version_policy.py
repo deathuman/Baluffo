@@ -278,9 +278,13 @@ def evaluate_window(
         f"bump ({current_version}) without a version bump or explicit release-tag intent:\n"
         f"{listing}\n"
         "Bump the version (`python scripts/bump_version.py <next>`) or add a "
-        "`Release-tag: vX.Y.Z` line naming a version newer than the current one to a "
-        "commit message in this window, so the published tag keeps describing the code "
-        "it was built from."
+        f"`Release-tag: v{current_version}` line naming this or a newer version to a "
+        "commit in this window that itself touches a shipped path, so the published tag "
+        "keeps describing the code it was built from. Intent on a docs, tests, or tools "
+        "commit does not count -- the gate reads intent from shipped commits only, so the "
+        "line has to sit on a commit that changes shipped code. While this version is "
+        "untagged, naming it is valid intent and republishing its tag is inert; once it is "
+        "tagged only a version bump will clear the window."
     ]
 
 
