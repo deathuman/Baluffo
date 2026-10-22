@@ -49,6 +49,17 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ### Changed
 
+- **Restarting the app right after quitting keeps it on the same local ports.** Opening the app again
+  within about a minute of closing it could land it on a different address than the usual
+  `127.0.0.1:8080` and `:8877`, because the startup check counted the previous session's connections —
+  still winding down after the window closed — as a port already in use, and quietly moved to a random
+  one. The check now treats that brief window the way the app's own servers do, so the usual addresses
+  hold. A port another program is genuinely listening on is still reported as busy.
+- **Linux no longer offers a desktop update it cannot install.** The jobs page's update panel is
+  built for the Windows build, whose installer replaces the app and starts it again; the Linux
+  AppImage ships no such installer, so the button could only end in a failed install. Linux builds
+  now report updates as unavailable and hide the control — download the newest AppImage from the
+  release page instead.
 - **Source discovery stops asking a studio the same question four more times.** When a studio
   homepage had no jobs link, discovery guessed `/careers` and `/jobs`, and then — even after those
   answered, or answered that they do not exist — guessed four more spellings on the same site. On a
@@ -73,6 +84,18 @@ Four rules the guardrail enforces so this cannot quietly regress:
   than something to fix. The discovery report's own summary carries that rescued total, so the
   admin's report and run detail show it next to the failure count instead of making you open the
   adapter audit that recorded it.
+
+### Fixed
+
+- **On Linux, the app's background servers now stop with the app.** Quitting from a terminal,
+  logging out, or stopping the launcher by hand used to leave its local site and admin bridge
+  running: the bridge kept answering on its port and the site kept serving the last page until
+  their own timers expired, and a crash could leave them behind for good. Both now end when the
+  app ends, including when it is killed outright.
+- **A process that has already exited is no longer treated as running.** On Linux, a crashed
+  launcher that the system had not cleaned up yet counted as alive, so the next start could report
+  that Baluffo was already running and stop — with no window left to close. An exited process is
+  recognised as gone now.
 
 ## [0.3.024] - 2026-10-22
 

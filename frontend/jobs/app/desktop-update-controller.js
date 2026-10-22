@@ -177,9 +177,17 @@ export function createJobsDesktopUpdateController({
       && Boolean(state.pendingCheckId || state.autoCheckInProgress)
       && state.status.downloadState === "idle"
       && state.status.installState === "idle";
-    const shouldExposeStatus = shouldExposeJobsDesktopUpdateStatus(state.status, {
-      hasFreshStatus: state.hasFreshStatus
-    }) || staleManualCheckStatus || runningCheckVisible;
+    // A platform with no updater install path hides the control even after a
+    // manual check or an auto-check, which would otherwise force it back into
+    // view and offer a button that can only end in a failed install.
+    const platformSupported = state.status.blockedReason !== "platform_unsupported";
+    const shouldExposeStatus = platformSupported && (
+      shouldExposeJobsDesktopUpdateStatus(state.status, {
+        hasFreshStatus: state.hasFreshStatus
+      })
+      || staleManualCheckStatus
+      || runningCheckVisible
+    );
     toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode || !shouldExposeStatus);
     if (!desktopMode || !shouldExposeStatus) {
       // The panel can still be "open" here while this render refuses to expose

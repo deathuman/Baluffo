@@ -76,6 +76,9 @@ function blockedReasonMessage(blockedReason) {
   if (blockedReason === "current_version_too_old") {
     return "This release cannot be installed directly from your current version. Upgrade to a newer portable build first.";
   }
+  if (blockedReason === "platform_unsupported") {
+    return "This build has no updater installer for its platform. Download the newest release from the release page instead.";
+  }
   return "This update is available but cannot be installed automatically from the current build.";
 }
 

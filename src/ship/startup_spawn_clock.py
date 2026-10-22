@@ -34,6 +34,12 @@ LAUNCH_EVENTS: tuple[str, ...] = (
     "desktop_page_loaded",
 )
 
+# Event -> (clock label, whether the launcher observed the window itself).
+WINDOW_SHOWN_EVENTS: dict[str, tuple[str, bool]] = {
+    "desktop_shell_window_shown": ("launcher", True),
+    "desktop_shell_window_shown_inferred": ("launcher-inferred", False),
+}
+
 PAGE_INTERACTIVE_EVENTS: dict[str, tuple[str, ...]] = {
     "jobs": ("jobs_first_interactive", "jobs_first_render"),
     "admin": ("admin_first_interactive", "admin_ready"),
@@ -81,6 +87,23 @@ def _first_rows(rows: Sequence[Mapping[str, object]]) -> dict[str, Mapping[str, 
     return events
 
 
+def _window_shown_mark(
+    events: Mapping[str, Mapping[str, object]], spawn_epoch_ms: float
+) -> dict[str, Any] | None:
+    """The launcher's window mark, kept only as *inferred* when it had to guess.
+
+    A platform that cannot enumerate windows (the Linux launcher) records the
+    reveal timeout as ``desktop_shell_window_shown_inferred``. Reporting that as
+    an observed paint would be a lie; it is still the best available mark and is
+    labelled, so a reader can weigh it.
+    """
+    for event, (clock, observed) in WINDOW_SHOWN_EVENTS.items():
+        mark = _launcher_mark(events, event, spawn_epoch_ms)
+        if mark is not None:
+            return {**mark, "clock": clock, "observed": observed, "event": event}
+    return None
+
+
 def _page_event(events: Mapping[str, Mapping[str, object]], page: str) -> str:
     for candidate in PAGE_INTERACTIVE_EVENTS.get(page, PAGE_INTERACTIVE_EVENTS["jobs"]):
         if candidate in events:
@@ -123,8 +146,15 @@ def build_spawn_clock(
             if page_clock is not None and arrival is not None:
                 page_mark["arrivalMs"] = int(round(arrival - spawn_epoch_ms))
             marks[page_event] = page_mark
+    window_mark = _window_shown_mark(events, spawn_epoch_ms)
+    if window_mark is not None:
+        marks[str(window_mark["event"])] = {
+            "ms": window_mark["ms"],
+            "clock": window_mark["clock"],
+            "observed": window_mark["observed"],
+        }
     boot_ms = (marks.get("desktop_launch_start") or {}).get("ms")
-    window_shown_ms = (marks.get("desktop_shell_window_shown") or {}).get("ms")
+    window_shown_ms = (window_mark or {}).get("ms")
     first_interactive_ms = (page_mark or {}).get("ms")
     return {
         "page": page,
@@ -135,6 +165,8 @@ def build_spawn_clock(
         "bridgeReadyMs": (marks.get("desktop_bridge_ready") or {}).get("ms"),
         "windowCreatedMs": (marks.get("desktop_window_created") or {}).get("ms"),
         "windowShownMs": window_shown_ms,
+        "windowShownClock": (window_mark or {}).get("clock", ""),
+        "windowShownObserved": (window_mark or {}).get("observed"),
         "pageLoadedMs": (marks.get("desktop_page_loaded") or {}).get("ms"),
         "firstInteractiveMs": first_interactive_ms,
         "firstInteractiveClock": (page_mark or {}).get("clock", ""),

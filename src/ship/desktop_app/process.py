@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import signal
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -13,6 +14,26 @@ from typing import cast
 from ._compat import desktop_api
 
 _EXPECTED_TERMINATE_EXCEPTIONS = (OSError, subprocess.SubprocessError)
+
+
+def _install_termination_handlers() -> None:
+    """Turn SIGTERM/SIGINT into SystemExit so launch cleanup still runs.
+
+    The default disposition ends the process inside the kernel, skipping the
+    ``finally`` blocks that stop the site, bridge, and browser children and
+    release the instance lock, which is how a ``kill`` used to leave the app's
+    ports served by orphaned children.
+    """
+    if os.name == "nt":
+        return
+
+    def _raise_exit(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + int(signum))
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(OSError, RuntimeError, ValueError):
+            if signal.getsignal(signum) is signal.SIG_DFL:
+                signal.signal(signum, _raise_exit)
 
 
 def _entry_command() -> list[str]:
@@ -99,12 +120,15 @@ def start_child_process(
             close_fds=True,
         )
     else:
+        # POSIX has no kill-on-close job: the kernel must end the child when the
+        # launcher ends, or the site/bridge keep owning the app's ports.
         proc = api.subprocess.Popen(
             list(command),
             stdout=api.subprocess.DEVNULL,
             stderr=api.subprocess.DEVNULL,
             text=True,
             env=env,
+            preexec_fn=api._linux_pdeathsig_preexec(os.getpid()),
         )
     if job_handle and proc.pid:
         # Attach child to kill-on-close job for guaranteed cleanup on launcher exit.

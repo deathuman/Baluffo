@@ -520,6 +520,16 @@ def _enumerate_visible_desktop_windows() -> list[dict[str, object]]:
     return matches
 
 
+def _pid_has_exited(pid: int) -> bool:
+    """Windows liveness is decided by WaitForSingleObject, never by procfs."""
+    return False
+
+
+def _linux_pdeathsig_preexec(parent_pid: int) -> None:
+    """No-op: Windows ties child lifetime to the kill-on-close job object."""
+    return None
+
+
 def _find_baluffo_visible_window(
     *, browser_pid: int | None = None, allow_title_fallback: bool = True
 ) -> dict[str, object] | None:

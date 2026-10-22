@@ -194,6 +194,13 @@ def _port_is_available(host: str, port: int) -> bool:
             # SO_EXCLUSIVEADDRUSE prevents stale processes from re-binding the same port.
             with contextlib.suppress(OSError):
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        elif os.name != "nt":
+            # The app's own servers set SO_REUSEADDR, so a port still draining a
+            # previous session's closed connections (TIME_WAIT after the window
+            # closes) is bindable for them and must count as free here too. A
+            # process genuinely listening on the port still blocks the bind.
+            with contextlib.suppress(OSError):
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, int(port)))
             return True

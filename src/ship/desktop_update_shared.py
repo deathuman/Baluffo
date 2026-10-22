@@ -58,6 +58,32 @@ def _psutil_module() -> Any:
 
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
+# The update panel drives the packaged Windows installer: it replaces the app and
+# starts it again. Other builds ship no such helper, so offering the button there
+# can only end in a failed install.
+DESKTOP_UPDATE_PLATFORM_UNSUPPORTED = "platform_unsupported"
+
+
+def desktop_update_install_supported() -> bool:
+    """Whether this platform has an updater helper that can install a release."""
+    return os.name == "nt"
+
+
+def platform_unsupported_status(status: dict[str, Any]) -> dict[str, Any]:
+    """Status that says the build cannot install updates, without a download offer."""
+    unsupported = dict(status)
+    unsupported.update(
+        {
+            "availability": "blocked",
+            "updateAvailable": False,
+            "downloadState": "idle",
+            "installState": "blocked",
+            "blockedReason": DESKTOP_UPDATE_PLATFORM_UNSUPPORTED,
+            "lastError": "",
+        }
+    )
+    return unsupported
+
 
 def _as_bytes_dict(value: Any) -> dict[str, bytes]:
     return (

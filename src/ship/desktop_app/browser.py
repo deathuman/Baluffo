@@ -271,7 +271,12 @@ def launch_chromium_app(
             creationflags=int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
             close_fds=True,
         )
-    return subprocess.Popen(command, text=True)
+    # The browser is the app's window: it must not outlive the launcher either.
+    return subprocess.Popen(
+        command,
+        text=True,
+        preexec_fn=desktop_api()._linux_pdeathsig_preexec(os.getpid()),
+    )
 
 
 def wait_for_browser_process_ready(

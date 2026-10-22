@@ -46,12 +46,15 @@ python tools/measurements/desktop/spawn_startup.py --runs 2 --modes cold,warm
 python tools/measurements/desktop/spawn_startup.py --page admin --probe --json
 ```
 
-It needs a portable build (`npm run build:portable-exe`). Runtime data, logs and
-the report land under `--output-dir` (default `.tmp/spawn-startup`), so `data/` is
-never touched. `spawn-startup.json` is the machine-readable report and
-`spawn-startup.md` is the table the startup architecture doc quotes. The clock
-arithmetic lives in `src/ship/startup_spawn_clock.py` and is shared with the
-packaged probe, so this report and the release preflight's
+It needs a portable build (`npm run build:portable-exe`) or a Linux AppImage
+(`npm run build:linux`), which `--exe` accepts and starts through
+`--appimage-extract-and-run`. Runtime data, logs and the report land under
+`--output-dir` (default `.tmp/spawn-startup`), so `data/` is never touched.
+`spawn-startup.json` is the machine-readable report and `spawn-startup.md` is the
+table the startup architecture doc quotes. A Linux launch has no observed window
+mark, so its window figure is labelled `launcher-inferred` rather than reported
+as a paint. The clock arithmetic lives in `src/ship/startup_spawn_clock.py` and is
+shared with the packaged probe, so this report and the release preflight's
 `startup-profile-summary.json` place a row on the same clock.
 
 ### Fetch Report Read Audit

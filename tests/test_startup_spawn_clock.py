@@ -143,3 +143,40 @@ def test_partial_launch_is_not_complete() -> None:
 
     assert clock["complete"] is False
     assert clock["firstInteractiveMs"] is None
+
+
+def test_inferred_window_mark_is_reported_and_labelled() -> None:
+    """A launcher that cannot enumerate windows still gets a window figure.
+
+    The Linux launcher journals ``desktop_shell_window_shown_inferred`` when its
+    reveal timeout expires. Reporting it as an observed paint would overstate the
+    measurement, so the clock and an explicit ``observed`` flag travel with it.
+    """
+    rows = [
+        _launcher("desktop_launch_start", 0.100),
+        _launcher("desktop_shell_window_shown_inferred", 0.950),
+        _page("jobs_first_interactive", page_seconds=1.100, arrival_seconds=1.250),
+    ]
+
+    clock = build_spawn_clock(rows, spawn_epoch_ms=SPAWN_MS, page="jobs")
+
+    assert clock["windowShownMs"] == 950
+    assert clock["windowShownClock"] == "launcher-inferred"
+    assert clock["windowShownObserved"] is False
+    assert clock["marks"]["desktop_shell_window_shown_inferred"]["clock"] == "launcher-inferred"
+    assert clock["complete"] is True
+
+
+def test_observed_window_mark_wins_over_an_inferred_one() -> None:
+    rows = [
+        _launcher("desktop_launch_start", 0.100),
+        _launcher("desktop_shell_window_shown_inferred", 0.950),
+        _launcher("desktop_shell_window_shown", 0.700),
+        _page("jobs_first_interactive", page_seconds=1.100, arrival_seconds=1.250),
+    ]
+
+    clock = build_spawn_clock(rows, spawn_epoch_ms=SPAWN_MS, page="jobs")
+
+    assert clock["windowShownMs"] == 700
+    assert clock["windowShownClock"] == "launcher"
+    assert clock["windowShownObserved"] is True

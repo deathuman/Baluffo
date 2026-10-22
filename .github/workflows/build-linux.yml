@@ -40,7 +40,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq chromium-browser curl libfuse2
+          sudo apt-get install -y -qq chromium-browser curl libfuse2 xvfb
 
       - name: Install Python dependencies
         # pytest-xdist is not in the lockfile and this lane runs the suite (not only the
@@ -96,6 +96,37 @@ jobs:
 
       - name: Smoke test AppImage
         run: PLAYWRIGHT_SYSTEM_CHROMIUM=1 PACKAGED_SMOKE_SYSTEM_CHROMIUM=1 bash scripts/smoke_test_appimage.sh
+
+      # The Linux launcher cannot enumerate windows, so this lane reports the
+      # page's own click-to-interactive clock and an *inferred* window mark
+      # (the launcher's reveal timeout), never an observed paint. The report is
+      # advisory: it is uploaded for review but does not block a release, because
+      # no Linux baseline exists yet and a runner without a display or a browser
+      # would otherwise turn a measurement into a publishing failure.
+      - name: Install Playwright Chromium for the startup measurement
+        run: python -m playwright install --with-deps chromium
+
+      - name: Record AppImage startup figures
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          chrome="$(python -c "from playwright.sync_api import sync_playwright; pw = sync_playwright().start(); print(pw.chromium.executable_path); pw.stop()")"
+          xvfb-run -a env \
+            BALUFFO_DESKTOP_BROWSER_PATH="$chrome" \
+            BALUFFO_PACKAGED_SMOKE_RUNTIME=1 \
+            python tools/measurements/desktop/spawn_startup.py \
+              --exe "dist/Baluffo-${BALUFFO_VERSION}-x86_64.AppImage" \
+              --runs 1 --modes cold --probe \
+              --output-dir .tmp/spawn-startup-appimage
+
+      - name: Upload AppImage startup report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spawn-startup-appimage-${{ env.BALUFFO_VERSION }}
+          path: .tmp/spawn-startup-appimage/spawn-startup.*
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v7

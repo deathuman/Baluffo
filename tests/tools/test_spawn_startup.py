@@ -138,3 +138,32 @@ def test_missing_executable_is_a_usage_error(tmp_path: Path) -> None:
     exit_code = spawn_startup.main(["--exe", str(tmp_path / "absent.exe")])
 
     assert exit_code == 2
+
+
+def test_launch_command_wraps_an_appimage_so_the_runner_needs_no_fuse(tmp_path: Path) -> None:
+    appimage = tmp_path / "Baluffo-0.3.025-x86_64.AppImage"
+
+    assert spawn_startup._is_appimage(appimage) is True
+    assert spawn_startup._launch_command(appimage) == [
+        str(appimage),
+        "--appimage-extract-and-run",
+    ]
+
+
+def test_launch_command_runs_a_portable_exe_directly(tmp_path: Path) -> None:
+    exe = tmp_path / "Baluffo.exe"
+
+    assert spawn_startup._is_appimage(exe) is False
+    assert spawn_startup._launch_command(exe) == [str(exe)]
+
+
+def test_window_shown_seen_accepts_the_inferred_mark() -> None:
+    assert spawn_startup._window_shown_seen({"desktop_shell_window_shown"}) is True
+    assert spawn_startup._window_shown_seen({"desktop_shell_window_shown_inferred"}) is True
+    assert spawn_startup._window_shown_seen({"jobs_first_interactive"}) is False
+
+
+def test_expected_events_leave_the_window_mark_to_its_own_check() -> None:
+    """A Linux launch only ever reports the inferred mark, so it cannot be a gate."""
+    assert "desktop_shell_window_shown" not in spawn_startup._expected_events("jobs")
+    assert spawn_startup._expected_events("jobs") == ("jobs_first_interactive", "jobs_first_render")

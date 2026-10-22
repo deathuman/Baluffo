@@ -27,11 +27,22 @@ gets its own copy of the arguments the packaged smoke harness uses, so nothing i
 written to ``data/``. The EXE is killed with its whole process tree, and any
 process still listening on the two runtime ports is killed as a backstop.
 
+``--exe`` also takes a Linux AppImage, which is how the release lane measures the
+artifact it is about to publish. An AppImage is started through
+``--appimage-extract-and-run`` in its own process group, so the run never leaves
+the extracted launcher, its site, or its bridge behind.
+
+A launcher that cannot enumerate windows (Linux) records
+``desktop_shell_window_shown_inferred``; the report keeps that mark and labels it
+inferred instead of calling it an observed paint.
+
 Usage::
 
     python tools/measurements/desktop/spawn_startup.py
     python tools/measurements/desktop/spawn_startup.py --runs 3 --modes cold,warm
     python tools/measurements/desktop/spawn_startup.py --page admin --probe --json
+    python tools/measurements/desktop/spawn_startup.py \\
+        --exe dist/Baluffo-x.y.z-x86_64.AppImage --runs 1 --modes cold --probe
 """
 
 from __future__ import annotations
@@ -54,7 +65,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.ship.startup_spawn_clock import PAGE_INTERACTIVE_EVENTS, build_spawn_clock  # noqa: E402
+from src.ship.startup_spawn_clock import (  # noqa: E402
+    PAGE_INTERACTIVE_EVENTS,
+    WINDOW_SHOWN_EVENTS,
+    build_spawn_clock,
+)
 
 DEFAULT_EXE = REPO_ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / ".tmp" / "spawn-startup"
@@ -130,12 +145,16 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for run in report["runs"]:
+        window_clock = str(run.get("windowShownClock") or "").strip()
+        window_cell = cell(run, "windowShownMs", " ms")
+        if window_cell != "n/a" and window_clock and window_clock != "launcher":
+            window_cell = f"{window_cell} ({window_clock})"
         lines.append(
             "| {label} | {mode} | {boot} | {window} | {interactive} | {clock} |".format(
                 label=run.get("label", ""),
                 mode=run.get("mode", ""),
                 boot=cell(run, "bootMs", " ms"),
-                window=cell(run, "windowShownMs", " ms"),
+                window=window_cell,
                 interactive=cell(run, "firstInteractiveMs", " ms"),
                 clock=run.get("firstInteractiveClock") or "n/a",
             )
@@ -171,6 +190,61 @@ def _free_ports() -> tuple[int, int]:
     return site, bridge
 
 
+def _is_appimage(path: Path) -> bool:
+    return path.suffix.lower() in {".appimage", ".app"}
+
+
+def _launch_command(exe: Path) -> list[str]:
+    if _is_appimage(exe):
+        return [str(exe), "--appimage-extract-and-run"]
+    return [str(exe)]
+
+
+def _listening_pids_posix(port: int) -> set[int]:
+    """PIDs LISTENing on `port`, read from /proc without extra dependencies."""
+    inodes: set[int] = set()
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            text = Path(table).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 10 or str(parts[3]).upper() != "0A":
+                continue
+            local = str(parts[1])
+            if ":" not in local:
+                continue
+            try:
+                if int(local.rsplit(":", 1)[1], 16) == port:
+                    inodes.add(int(parts[9]))
+            except ValueError:
+                continue
+    if not inodes:
+        return set()
+    pids: set[int] = set()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            links = list((entry / "fd").iterdir())
+        except OSError:
+            continue
+        for link in links:
+            try:
+                target = str(link.readlink())
+            except OSError:
+                continue
+            if target.startswith("socket:[") and target.endswith("]"):
+                try:
+                    if int(target[len("socket:[") : -1]) in inodes:
+                        pids.add(int(entry.name))
+                        break
+                except ValueError:
+                    continue
+    return pids
+
+
 def _listening_pids_windows(port: int) -> set[int]:
     try:
         completed = subprocess.run(
@@ -199,20 +273,28 @@ def _listening_pids_windows(port: int) -> set[int]:
 
 
 def _kill_port_listeners(*ports: int) -> None:
-    """Backstop for a child that outlived its tree (Windows only)."""
-    if os.name != "nt":
-        return
+    """Backstop for a child that outlived its tree."""
     own = os.getpid()
     for port in ports:
-        for pid in _listening_pids_windows(int(port)):
+        if os.name == "nt":
+            listening = _listening_pids_windows(int(port))
+        else:
+            listening = _listening_pids_posix(int(port))
+        for pid in listening:
             if pid == own:
                 continue
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                continue
+            try:
+                os.kill(int(pid), 9)
+            except OSError:
+                pass
 
 
 def _terminate_tree(process: subprocess.Popen[Any] | None) -> None:
@@ -226,16 +308,30 @@ def _terminate_tree(process: subprocess.Popen[Any] | None) -> None:
             check=False,
         )
     else:
-        process.terminate()
+        # The measurement must not leak a process group into the next run.
+        try:
+            os.killpg(os.getpgid(process.pid), 15)
+        except OSError:
+            process.terminate()
     try:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        process.kill()
+        if os.name != "nt":
+            try:
+                os.killpg(os.getpgid(process.pid), 9)
+            except OSError:
+                process.kill()
+        else:
+            process.kill()
         process.wait(timeout=5)
 
 
 def _expected_events(page: str) -> tuple[str, ...]:
-    return ("desktop_shell_window_shown", *PAGE_INTERACTIVE_EVENTS[page])
+    return PAGE_INTERACTIVE_EVENTS[page]
+
+
+def _window_shown_seen(seen: set[str]) -> bool:
+    return bool(seen & set(WINDOW_SHOWN_EVENTS))
 
 
 def _run_once(
@@ -257,7 +353,7 @@ def _run_once(
     offset = journal.stat().st_size if journal.is_file() else 0
     site_port, bridge_port = _free_ports()
     command = [
-        str(exe),
+        *_launch_command(exe),
         "--site-port",
         str(site_port),
         "--bridge-port",
@@ -270,6 +366,10 @@ def _run_once(
     if probe:
         command.append("--startup-probe")
     env = {key: value for key, value in os.environ.items() if key not in _CHILD_ENV_DROP}
+    if _is_appimage(exe):
+        # Extract into the AppImage's own temp dir instead of requiring FUSE,
+        # which a CI runner does not have.
+        env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
     logs_dir.mkdir(parents=True, exist_ok=True)
     stdout_path = logs_dir / f"{label}.out.log"
     stderr_path = logs_dir / f"{label}.err.log"
@@ -283,6 +383,7 @@ def _run_once(
             stdout=stdout_handle,
             stderr=stderr_handle,
             env=env,
+            start_new_session=os.name != "nt",
         )
         try:
             deadline = time.monotonic() + max(5.0, float(timeout_s))
@@ -291,7 +392,7 @@ def _run_once(
                 new_rows, offset = read_new_rows(journal, offset)
                 rows.extend(new_rows)
                 seen = {str(row.get("event") or "") for row in rows}
-                if all(event in seen for event in wanted):
+                if all(event in seen for event in wanted) and _window_shown_seen(seen):
                     break
                 if process.poll() is not None:
                     # Drain what the children flushed before they exited.
@@ -331,7 +432,11 @@ def _report_paths(output_dir: Path) -> tuple[Path, Path]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--exe", default=str(DEFAULT_EXE), help="Portable Baluffo.exe path.")
+    parser.add_argument(
+        "--exe",
+        default=str(DEFAULT_EXE),
+        help="Portable Baluffo.exe or Linux AppImage path.",
+    )
     parser.add_argument("--page", choices=PAGE_CHOICES, default="jobs")
     parser.add_argument(
         "--modes",
@@ -357,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
     exe = Path(args.exe).resolve()
     if not exe.is_file():
         print(
-            f"spawn startup: no portable executable at {exe}; run npm run build:portable-exe",
+            f"spawn startup: no executable at {exe}; run npm run build:portable-exe "
+            "(or npm run build:portable-linux)",
             file=sys.stderr,
         )
         return 2

@@ -28,12 +28,14 @@ from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
     compute_sha256,
+    desktop_update_install_supported,
     desktop_update_public_key_candidate_paths,
     download_file,
     fetch_json,
     install_stage_label,
     iso_now,
     load_desktop_update_public_keys,
+    platform_unsupported_status,
     read_desktop_session_state,
     resolve_desktop_session_root,
     resolve_github_api_base,
@@ -230,6 +232,8 @@ class DesktopUpdateService:
             next_status.update(release_notes)
         if not next_status.get("releaseNotesHistory") and release_notes_history:
             next_status["releaseNotesHistory"] = release_notes_history
+        if not desktop_update_install_supported():
+            next_status = platform_unsupported_status(next_status)
         if next_status != existing:
             return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
@@ -383,6 +387,10 @@ class DesktopUpdateService:
         return dict(manifest)
 
     def check_for_update(self, *, force: bool = False) -> dict[str, Any]:
+        if not desktop_update_install_supported():
+            # No release lookup on a platform this build cannot install anyway.
+            with self._lock:
+                return dict(save_status(self.paths, self._reconcile_status_locked()))
         with self._lock:
             current_version = self.current_version()
             status = self._reconcile_status_locked()

@@ -8,10 +8,12 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Linux desktop te
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +25,69 @@ from .config import CHROMIUM_WINDOW_CLASS_PREFIXES
 # POSIX-only; Windows typeshed has no signal.SIGKILL, and this module is also
 # type-checked on Windows. Fall back to the conventional SIGKILL value 9.
 _SIGKILL = getattr(signal, "SIGKILL", 9)
+
+# prctl(2) option that asks the kernel to signal a child when its parent dies.
+_PR_SET_PDEATHSIG = 1
+# /proc/<pid>/stat states for a process that has finished but not been reaped.
+_EXITED_PROCESS_STATES = frozenset({"Z", "X", "x"})
+
+
+def _pid_has_exited(pid: int) -> bool:
+    """True when the kernel still lists `pid` but the process has finished.
+
+    ``os.kill(pid, 0)`` succeeds for a zombie, so a crashed launcher the system
+    has not reaped yet looked alive to the instance-lock check and the next
+    start reported "already running" with no window left to close.
+    """
+    token = int(pid or 0)
+    if token <= 0:
+        return True
+    try:
+        stat = Path(f"/proc/{token}/stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # No profile entry (or no procfs): let the caller's kill(0) decide.
+        return False
+    fields = stat[stat.rfind(")") + 2 :].split()
+    return bool(fields) and fields[0] in _EXITED_PROCESS_STATES
+
+
+def _pdeathsig_libc() -> Any:
+    import ctypes
+
+    # The dynamic loader handle is the most portable target (glibc, musl, and
+    # anything else whose prctl lives in the process's own libc mapping).
+    try:
+        return ctypes.CDLL(None, use_errno=True)
+    except OSError:
+        return None
+
+
+def _linux_pdeathsig_preexec(parent_pid: int) -> Callable[[], None] | None:
+    """Return a ``preexec_fn`` that ends the child when its parent ends.
+
+    The launcher's site and bridge servers own the app's ports; when the
+    launcher is stopped from a terminal or killed, they must not keep serving.
+    ``SIGTERM`` (not ``SIGKILL``) lets each child run its own shutdown path.
+    """
+    parent = int(parent_pid or 0)
+    if parent <= 0:
+        return None
+
+    def _arm() -> None:
+        libc = _pdeathsig_libc()
+        if libc is None or not hasattr(libc, "prctl"):
+            return
+        try:
+            libc.prctl(_PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
+        except (OSError, ValueError):
+            return
+        # The parent can die between fork() and prctl(); in that case the
+        # request is already too late and the child would outlive the app.
+        if os.getppid() != parent:
+            with contextlib.suppress(OSError):
+                os.kill(os.getpid(), signal.SIGTERM)
+
+    return _arm
 
 
 def _normalize_path_text(value: object) -> str:

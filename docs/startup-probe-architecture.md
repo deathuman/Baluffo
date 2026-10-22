@@ -1356,6 +1356,8 @@ The spawn clock measures it directly, and
 ```bash
 python tools/measurements/desktop/spawn_startup.py --runs 2 --modes cold,warm
 python tools/measurements/desktop/spawn_startup.py --page admin --probe --runs 2 --modes cold --json
+python tools/measurements/desktop/spawn_startup.py \
+    --exe dist/Baluffo-x.y.z-x86_64.AppImage --runs 1 --modes cold --probe
 ```
 
 It starts the portable EXE itself, takes the timestamp immediately before
@@ -1373,6 +1375,14 @@ window: this build's page reported interactive 40-60 ms before
 `desktop_shell_window_shown`, and in serve-first launches before
 `desktop_bridge_ready`. Neither mark is adjusted to agree with the other; read
 them together.
+
+The Linux AppImage lane runs the same tool against the artifact it is about to
+publish. An AppImage cannot report an observed paint: the launcher cannot
+enumerate windows, so it journals `desktop_shell_window_shown_inferred` when the
+reveal timeout expires. The report keeps that mark in `windowShownMs` and labels
+it (`windowShownClock: launcher-inferred`, `windowShownObserved: false`) rather
+than presenting it as a measured reveal, and the CI job is advisory because no
+Linux baseline exists yet.
 
 The packaged probe records the same block. `run_packaged_smoke` stamps its own
 spawn time immediately before `launch_packaged_exe` and attaches

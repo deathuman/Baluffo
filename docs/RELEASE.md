@@ -397,7 +397,13 @@ Linux AppImage smoke test:
 bash scripts/smoke_test_appimage.sh
 ```
 
-This launches the AppImage in headless mode, polls the bridge and site HTTP endpoints, verifies responses, and terminates cleanly.
+This launches the AppImage in headless mode, polls the bridge and site HTTP endpoints, verifies responses, then stops the app with `SIGTERM` and requires its teardown: the site and bridge must stop answering and no `__child_site__`/`__child_bridge__` process may survive. That gate exists because an app that leaves its servers behind keeps the next launch off the default ports, so a green smoke run would otherwise hide a broken quit.
+
+The same CI lane records the AppImage's click-to-interactive startup figures with
+`tools/measurements/desktop/spawn_startup.py` and uploads `spawn-startup.json`/`.md` as the
+`spawn-startup-appimage-<version>` artifact. The Linux launcher cannot observe a window paint, so the
+report labels its window mark `launcher-inferred`; the step is advisory (`continue-on-error`) until a
+Linux baseline exists, and should not be read as a release gate.
 
 AppImage execution notes:
 
