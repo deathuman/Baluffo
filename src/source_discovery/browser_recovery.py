@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from src.shared.utils import now_iso
@@ -18,6 +18,10 @@ from .probe_runtime import (
 )
 
 BrowserFetchResult = tuple[dict[str, Any], str, str, int]
+# Candidate rows queued because the HTTP page fetch itself failed. The other reason
+# a page reaches the browser pool is `js_shell`, which came from a page that answered,
+# so only this detail marks a fetch the browser can be said to have rescued.
+FAILED_FETCH_CANDIDATE_DETAIL = "browser_recovery_fetch_failed"
 BrowserRecoveryAnalysisCallback = Callable[
     [list[BrowserFetchResult], dict[str, Any], set[str]],
     "BrowserRecoveryAnalysis",
@@ -65,6 +69,7 @@ class BrowserRecoveryBatch:
     analysis: BrowserRecoveryAnalysis
     probe_candidates: list[dict[str, Any]]
     probe_results: list[ProbeResult]
+    rescued_urls: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -192,7 +197,7 @@ def browser_recovery_summary(
                     [
                         row
                         for row in rows
-                        if str(row.get("reasonDetail") or "") == "browser_recovery_fetch_failed"
+                        if str(row.get("reasonDetail") or "") == FAILED_FETCH_CANDIDATE_DETAIL
                     ]
                 ),
             }
@@ -333,6 +338,27 @@ async def fetch_browser_recovery_pages_async(
     return results
 
 
+def rescued_failed_fetch_urls(fetch_results: list[BrowserFetchResult]) -> list[str]:
+    """URLs whose failed HTTP fetch the browser then read successfully.
+
+    A `browser_recovery_fetch_failed` candidate exists only because the page fetch
+    failed; `js_shell` candidates came from pages that answered, so their success is
+    not a rescued failure and is excluded here.
+    """
+    urls: list[str] = []
+    seen: set[str] = set()
+    for row, html, error, _duration_ms in fetch_results:
+        if error or not str(html or "").strip():
+            continue
+        if str(row.get("reasonDetail") or "") != FAILED_FETCH_CANDIDATE_DETAIL:
+            continue
+        url = str(row.get("url") or "").strip()
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
 def run_browser_recovery_batch(
     *,
     selected: list[dict[str, Any]],
@@ -374,6 +400,11 @@ def run_browser_recovery_batch(
                 fetcher=fetcher,
             )
         )
+    rescued_urls = rescued_failed_fetch_urls(fetch_results)
+    if rescued_urls:
+        browser_recovery["resolvedFetchCount"] = int(
+            browser_recovery.get("resolvedFetchCount") or 0
+        ) + len(rescued_urls)
     return BrowserRecoveryBatch(
         selected=list(selected),
         processed=processed,
@@ -382,6 +413,7 @@ def run_browser_recovery_batch(
         analysis=analysis,
         probe_candidates=probe_candidates,
         probe_results=probe_results,
+        rescued_urls=rescued_urls,
     )
 
 

@@ -65,6 +65,12 @@ Four rules the guardrail enforces so this cannot quietly regress:
 - **The fetcher metrics panel shows how long a run actually took.** It reported the sum of every
   source's fetch time, capped at 24 hours, so a run that finished in eight hours read as a full
   day. The panel now shows wall-clock time and reports total source time separately.
+- **A page the browser had to re-read no longer counts as a lost studio.** When a site answered the
+  first page fetch with a block or a challenge, discovery retried it in the browser and often got
+  the page. The earlier failure stayed in the report with no sign that it had been rescued, so the
+  failure count read as studios discovery never saw. Those rows are now marked as resolved by the
+  browser and counted separately, and the admin's task-failure view treats them as expected rather
+  than something to fix.
 
 ## [0.3.024] - 2026-10-22
 

@@ -25,6 +25,7 @@ EXPECTED_DISCOVERY_STAGES = {
     "suppressed_static",
 }
 EXPECTED_DISCOVERY_NEGATIVE_BUCKETS = {
+    "browser_resolved",
     "gamedevmap_homepage_dns_miss",
     "gamedevmap_homepage_not_found",
     "gamedevmap_recovery_not_found",
@@ -289,6 +290,10 @@ def _website_fetch_bucket(raw_error: Any) -> str:
 
 
 def _discovery_bucket(row: dict[str, Any]) -> str:
+    if bool(row.get("resolvedByBrowser")):
+        # The HTTP fetch failed but the browser stage read the page afterwards, so
+        # nothing was lost and the bucket is not an actionable error.
+        return "browser_resolved"
     adapter = _discovery_adapter(row)
     stage = _discovery_stage(row)
     reason = _discovery_reason(row)

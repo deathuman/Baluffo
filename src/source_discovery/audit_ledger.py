@@ -78,6 +78,58 @@ def record_failures(
     artifact["failures"] = artifact["failureSamples"]
 
 
+# Failure rows keep one entry per failed fetch; this flag separates the ones whose page
+# the browser stage re-read afterwards, so a report can tell a failed fetch from a lost
+# studio without recomputing anything.
+RESOLVED_BY_BROWSER_KEY = "resolvedByBrowser"
+RESOLVED_BY_BROWSER_URLS_KEY = "resolvedByBrowserUrls"
+RESOLVED_BY_BROWSER_SUMMARY_KEY = "failuresResolvedByBrowser"
+
+
+def mark_failures_resolved_by_browser(
+    artifact: dict[str, Any],
+    resolved_urls: list[str],
+) -> int:
+    """Flag retained failure rows whose URL the browser later read, and count them.
+
+    The count comes from the URLs, not from the flagged rows: `failures` is a capped
+    sample (`failureSamples`), so a large run keeps only the first rows while the
+    count still describes every rescue. URLs are remembered on the artifact, so a
+    second browser batch over the same page does not count it twice.
+    """
+    urls = {str(url).strip() for url in resolved_urls if str(url or "").strip()}
+    if not urls:
+        return 0
+    known = {
+        str(url).strip()
+        for url in _as_list(artifact.get(RESOLVED_BY_BROWSER_URLS_KEY))
+        if str(url or "").strip()
+    }
+    fresh = sorted(urls - known)
+    if not fresh:
+        return 0
+    seen_lists: list[list[Any]] = []
+    # `record_failures` points `failures` at the same list as `failureSamples`; walk it
+    # once, in place, so both keys stay consistent.
+    for key in ("failures", "failureSamples"):
+        rows = artifact.get(key)
+        if not isinstance(rows, list) or any(rows is seen for seen in seen_lists):
+            continue
+        seen_lists.append(rows)
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or row.get(RESOLVED_BY_BROWSER_KEY):
+                continue
+            if str(row.get("url") or "").strip() in urls:
+                rows[index] = {**row, RESOLVED_BY_BROWSER_KEY: True}
+    artifact[RESOLVED_BY_BROWSER_URLS_KEY] = [*sorted(known), *fresh]
+    summary = _as_dict(artifact.get("summary"))
+    summary[RESOLVED_BY_BROWSER_SUMMARY_KEY] = _safe_int(
+        summary.get(RESOLVED_BY_BROWSER_SUMMARY_KEY)
+    ) + len(fresh)
+    artifact["summary"] = summary
+    return len(fresh)
+
+
 def failure_count(artifact: dict[str, Any]) -> int:
     counts = _as_dict(artifact.get("failureCounts"))
     if counts:

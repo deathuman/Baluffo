@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from src.source_discovery import gamedevmap
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
@@ -313,3 +314,23 @@ def test_gamedevmap_followup_cli_flags_parse() -> None:
 
     assert str(args.gamedevmap_dry_run_compare_artifact) == "previous.json"
     assert bool(args.gamedevmap_browser_recovery)
+
+
+def test_gamedevmap_resummarize_keeps_browser_resolved_failure_count() -> None:
+    artifact: dict[str, Any] = {
+        "summary": {"failuresResolvedByBrowser": 3},
+        "allCandidates": [],
+        "activeCandidates": [],
+        "zeroJobCandidates": [],
+        "rejectedForActivation": [],
+        "browserRecoveryCandidates": [],
+    }
+
+    dry_run._summarize_artifact(
+        artifact,
+        parsed_rows=[],
+        representative_rows=[],
+        completed_urls=set(),
+    )
+
+    assert artifact["summary"]["failuresResolvedByBrowser"] == 3

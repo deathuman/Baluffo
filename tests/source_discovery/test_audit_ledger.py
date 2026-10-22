@@ -108,3 +108,33 @@ def test_audit_ledger_stamp_artifact_size_updates_runtime_and_summary() -> None:
     assert artifact["runtime"]["artifactSizeBytes"] == size
     assert artifact["summary"]["artifactSizeBytes"] == size
     assert artifact["summary"]["activeCandidates"] == 2
+
+
+def test_audit_ledger_marks_failures_resolved_by_browser_and_counts_urls() -> None:
+    artifact: dict[str, Any] = {"summary": {}}
+    audit_ledger.record_failures(
+        artifact,
+        [
+            {"stage": "page_fetch", "url": "https://a.example/", "error": "403"},
+            {"stage": "page_fetch", "url": "https://b.example/", "error": "timeout"},
+            {"stage": "recovery_fetch", "url": "https://c.example/careers", "error": "404"},
+        ],
+        sample_limit=2,
+    )
+
+    marked = audit_ledger.mark_failures_resolved_by_browser(
+        artifact,
+        ["https://a.example/", "https://c.example/careers"],
+    )
+
+    assert marked == 2
+    assert artifact["summary"]["failuresResolvedByBrowser"] == 2
+    assert artifact["resolvedByBrowserUrls"] == [
+        "https://a.example/",
+        "https://c.example/careers",
+    ]
+    assert artifact["failureSamples"][0]["resolvedByBrowser"] is True
+    # The 404 row fell outside the sample cap; the rescue is still counted.
+    assert artifact["failureSamples"][1].get("resolvedByBrowser") is None
+    assert audit_ledger.mark_failures_resolved_by_browser(artifact, ["https://a.example/"]) == 0
+    assert artifact["summary"]["failuresResolvedByBrowser"] == 2

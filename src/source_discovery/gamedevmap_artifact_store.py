@@ -424,6 +424,12 @@ def _summarize_artifact(
         "browserRecoveredActiveCandidates": counts.browser_recovered_active_count,
         "lostRecoveredActiveCandidates": counts.lost_recovered_active_count,
     }
+    # The browser stage marks rescued failures and re-summarizes the same artifact; keep
+    # the count it recorded instead of rebuilding the summary without it.
+    if prior_summary.get("failuresResolvedByBrowser"):
+        artifact["summary"]["failuresResolvedByBrowser"] = _safe_int(
+            prior_summary.get("failuresResolvedByBrowser")
+        )
     # Only a run that reported receipts gets the sections, so every other artifact keeps the summary
     # shape it already had. A re-summarize that passes no receipts (browser recovery rewrites the
     # artifact after the probe wave has run) keeps the receipt already published on it rather than
@@ -502,6 +508,9 @@ def _merge_browser_recovery_artifact_updates(
     batch: browser_recovery_helpers.BrowserRecoveryBatch,
     combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
+    # A page whose HTTP fetch failed and whose browser re-read succeeded is a failed
+    # fetch, not a lost studio; flag it before the batch's probe results are merged.
+    audit_ledger.mark_failures_resolved_by_browser(artifact, batch.rescued_urls)
     artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
         artifact.get("allCandidates"),
         batch.analysis.all_candidates,

@@ -102,6 +102,9 @@ from .web_browser_recovery import (
     _load_web_search_browser_recovery_artifact as _load_web_search_browser_recovery_artifact,
 )
 from .web_browser_recovery import (
+    _merge_web_browser_recovery_batch as _merge_web_browser_recovery_batch,
+)
+from .web_browser_recovery import (
     _record_web_browser_recovery_fetch_failure as _record_web_browser_recovery_fetch_failure,
 )
 from .web_browser_recovery import (
@@ -324,8 +327,12 @@ def run_web_search_browser_recovery(
         browser_fetcher=browser_fetcher,
         concurrency=concurrency,
         analyze_fetches=_analyze_web_browser_recovery_batch,
-        merge_artifact_updates=lambda _batch, combined_probe_results: (
-            _apply_web_browser_recovery_probe_results(artifact, combined_probe_results)
+        merge_artifact_updates=lambda batch, combined_probe_results: (
+            _merge_web_browser_recovery_batch(
+                artifact,
+                batch,
+                combined_probe_results,
+            )
         ),
         recovered_rows=lambda: [
             *list(artifact.get("providerCandidates") or []),

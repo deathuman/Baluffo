@@ -498,3 +498,31 @@ def test_task_failure_attempts_route_classifies_directory_recovery_buckets(
     assert discovery["expectedNegativeCounts"] == {"gameprog_recovery_not_found": 55}
     assert discovery["actionableDiagnosticCount"] == 1
     assert high["gameprog_recovery_not_found"]["classification"] == "expected_negative"
+
+
+def test_task_failure_attempts_route_buckets_browser_resolved_failures(tmp_path: Path) -> None:
+    """A failed fetch the browser stage read afterwards is not an actionable error."""
+    _write_json(
+        tmp_path / "discovery-report.json",
+        {
+            "runId": "discovery_browser_resolved",
+            "taskProgress": {"active": False},
+            "failures": [
+                {
+                    "name": "Studio",
+                    "adapter": "web_search",
+                    "stage": "page_fetch",
+                    "error": "Client error '403 Forbidden' for url 'https://studio.example/'",
+                    "resolvedByBrowser": True,
+                }
+            ],
+        },
+    )
+
+    payload = _call_route(tmp_path)
+    discovery = payload["discovery"]
+
+    assert discovery["bucketCounts"] == [{"key": "browser_resolved", "count": 1}]
+    assert discovery["expectedNegativeCount"] == 1
+    assert discovery["expectedNegativeCounts"] == {"browser_resolved": 1}
+    assert discovery["actionableDiagnosticCount"] == 0
