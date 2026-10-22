@@ -235,6 +235,7 @@ def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
                 "browserRecoveryCandidates": 4,
                 "browserRecoveredActiveCandidates": 1,
                 "lostRecoveredActiveCandidates": 5,
+                "failuresResolvedByBrowser": 3,
                 "rejectedReasonDetailCounts": {"js_shell": 9},
             },
             "failureCounts": {"homepage_fetch": 6},
@@ -260,6 +261,7 @@ def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
             {"key": "homepage_fetch", "count": 6},
         ],
         "lostRecoveredActiveCandidates": 5,
+        "failuresResolvedByBrowser": 3,
         "outputPath": "artifact.json",
     }
 

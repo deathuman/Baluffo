@@ -305,6 +305,9 @@ export function createAdminDiscoveryWatchController({
       const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const failedCount = Number(summary.failedProbeCount || 0);
+      // A failed fetch the browser re-read is not a lost studio; keep the split on the
+      // completion line instead of making the operator open the report artifact.
+      const rescuedCount = Number(summary.failuresResolvedByBrowser || 0);
       updateDiscoveryProgressFromReport(report, { running: false });
       await Promise.resolve(syncSourceTablesAfterTaskCompletion?.({
         taskType: "discovery",
@@ -314,7 +317,7 @@ export function createAdminDiscoveryWatchController({
         ].join("|")
       })).catch(() => {});
       appendDiscoveryLog(
-        `Discovery completed: endpoints ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}.`,
+        `Discovery completed: endpoints ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}${rescuedCount > 0 ? ` (rescued by browser ${rescuedCount})` : ""}.`,
         failedCount > 0 ? "warn" : "success"
       );
       clearOptimisticDiscoveryRun();

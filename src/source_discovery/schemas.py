@@ -40,6 +40,7 @@ class DiscoveryReportSummarySchema(BaseModel):
     taEnvCandidateCount: int = 0
     nlCandidateCount: int = 0
     failedProbeCount: int = 0
+    failuresResolvedByBrowser: int = 0
     probeMissCount: int = 0
     foundEndpointCount: int = 0
     probedCandidateCount: int = 0

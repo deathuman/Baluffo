@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { renderRunDetailHtml } from "../../../frontend/admin/render/ops-run-detail.js";
+import { buildRunStatusTooltip } from "../../../frontend/admin/render/ops-shared.js";
 
 function makeView(overrides = {}) {
   return {
@@ -96,17 +97,37 @@ test("duration is shown once, never as both Duration and Elapsed", () => {
 test("summary counts render as labelled stats, not raw camelCase keys", () => {
   const html = renderRunDetailHtml(makeView(), {
     analysis: {
-      summaryCounts: { finalOutputCount: 175, failedProbeCount: 2, updatesFound: true }
+      summaryCounts: { finalOutputCount: 175, failedProbeCount: 2, failuresResolvedByBrowser: 3, updatesFound: true }
     }
   });
 
   assert.match(html, /Final output/);
   assert.match(html, /175/);
   assert.match(html, /Failed probes/);
+  assert.match(html, /Rescued by browser/);
+  assert.match(html, /3/);
   assert.match(html, /Updates found/);
   assert.match(html, /yes/);
   assert.doesNotMatch(html, /finalOutputCount/);
   assert.doesNotMatch(html, /failedProbeCount/);
+});
+
+test("a discovery run tooltip shows the rescued split beside the failure count", () => {
+  const tooltip = buildRunStatusTooltip({
+    type: "discovery",
+    status: "warning",
+    summary: { failedProbeCount: 4, failuresResolvedByBrowser: 2, probedCandidateCount: 40 },
+    durationMs: 0
+  });
+  const withoutRescues = buildRunStatusTooltip({
+    type: "discovery",
+    status: "warning",
+    summary: { failedProbeCount: 4 },
+    durationMs: 0
+  });
+
+  assert.match(tooltip, /Failed probes: 4 \(2 rescued by browser\)/);
+  assert.match(withoutRescues, /Failed probes: 4\b(?! \()/);
 });
 
 test("copy and abort controls carry the run key for the delegated handlers", () => {

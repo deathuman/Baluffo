@@ -25,6 +25,7 @@ const TASK_RUN_SUMMARY_COUNT_KEYS = [
   "okWithWarningSources",
   "queuedCandidateCount",
   "failedProbeCount",
+  "failuresResolvedByBrowser",
   "foundEndpointCount",
   "generatedCandidateCount",
   "survivedDedupeCandidateCount",

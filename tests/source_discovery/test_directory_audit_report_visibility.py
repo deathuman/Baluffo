@@ -119,6 +119,78 @@ def test_run_discovery_reuses_default_gameprog_directory_audit_artifact() -> Non
             assert summary["artifactSizeBytes"] > 0
 
 
+def test_run_discovery_report_totals_browser_rescues_from_audit_summaries() -> None:
+    from src.source_discovery import gamedevmap_active_dry_run
+
+    with workspace_tmpdir("directory-audit-report-browser-rescued") as root:
+        with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
+            audit_path = root / "gameprog-audit.json"
+            config = _stage_config(
+                "gameprog",
+                {
+                    "enabled": True,
+                    "activeAuditPath": str(audit_path),
+                    "activeAuditTtlMinutes": 60,
+                    "teamsUrl": "https://gameprog.it/teams.json",
+                    "maxStudios": 0,
+                },
+            )
+            with mock.patch.object(
+                gamedevmap_active_dry_run, "LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY", {}
+            ):
+                sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config=config,
+                    fetcher=lambda url, _timeout: "[]" if url.endswith("teams.json") else "",
+                )
+                # The browser stage writes its rescue count onto the adapter audit, not onto
+                # this run's failure rows, so the next report has to total the audit summaries.
+                artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+                artifact["summary"]["failuresResolvedByBrowser"] = 3
+                audit_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config=config,
+                    fetcher=lambda *_args: (_ for _ in ()).throw(
+                        AssertionError("fresh audit artifact should bypass Gameprog network work")
+                    ),
+                )
+
+            adapter_summary = report["directoryAuditSummaries"]["gameprog"]
+            assert adapter_summary["cacheHit"] is True
+            assert adapter_summary["failuresResolvedByBrowser"] == 3
+            assert report["summary"]["failuresResolvedByBrowser"] == 3
+
+
+def test_failures_resolved_by_browser_total_sums_audit_summaries() -> None:
+    from src.source_discovery.reporting_progress import failures_resolved_by_browser_total
+
+    assert (
+        failures_resolved_by_browser_total(
+            directory_audit_summaries={
+                "web_search": {"failuresResolvedByBrowser": 2},
+                "gameprog": {"failuresResolvedByBrowser": "4"},
+                "gamesmap": {},
+            },
+            gamedevmap_audit_summary={"failuresResolvedByBrowser": 1},
+        )
+        == 7
+    )
+    assert (
+        failures_resolved_by_browser_total(
+            directory_audit_summaries={}, gamedevmap_audit_summary=None
+        )
+        == 0
+    )
+
+
 def test_run_discovery_reports_gamesmap_directory_audit_cache_hit() -> None:
     with workspace_tmpdir("directory-audit-report-gamesmap") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):

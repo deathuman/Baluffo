@@ -70,7 +70,9 @@ Four rules the guardrail enforces so this cannot quietly regress:
   the page. The earlier failure stayed in the report with no sign that it had been rescued, so the
   failure count read as studios discovery never saw. Those rows are now marked as resolved by the
   browser and counted separately, and the admin's task-failure view treats them as expected rather
-  than something to fix.
+  than something to fix. The discovery report's own summary carries that rescued total, so the
+  admin's report and run detail show it next to the failure count instead of making you open the
+  adapter audit that recorded it.
 
 ## [0.3.024] - 2026-10-22
 

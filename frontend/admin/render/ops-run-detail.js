@@ -22,6 +22,7 @@ const SUMMARY_STAT_LABELS = new Map([
   ["okWithWarningSources", "Warnings"],
   ["queuedCandidateCount", "Queued candidates"],
   ["failedProbeCount", "Failed probes"],
+  ["failuresResolvedByBrowser", "Rescued by browser"],
   ["foundEndpointCount", "Endpoints found"],
   ["generatedCandidateCount", "Candidates generated"],
   ["survivedDedupeCandidateCount", "Survived dedupe"],

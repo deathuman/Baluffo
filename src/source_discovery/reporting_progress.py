@@ -6,7 +6,7 @@ from typing import Any
 
 from src.contracts import SCHEMA_VERSION
 from src.shared.json_shapes import as_json_object
-from src.shared.utils import now_iso
+from src.shared.utils import int_or_default, now_iso
 
 from .runtime_metrics import DISCOVERY_TIMING_STAGE_KEYS, build_discovery_runtime_payload
 
@@ -230,6 +230,26 @@ def build_stage_summary(
             "queued": counts["queued"],
         },
     }
+
+
+def failures_resolved_by_browser_total(
+    *,
+    directory_audit_summaries: dict[str, dict[str, Any]],
+    gamedevmap_audit_summary: dict[str, Any] | None = None,
+) -> int:
+    """Total rescues across the audit summaries a discovery report already publishes.
+
+    Each audit summary counts its own rescues in `failuresResolvedByBrowser` — a count
+    the failure-row sample cap cannot truncate. The report adds them up so the split
+    between a failed fetch and a studio discovery never saw is visible without opening
+    any adapter artifact.
+    """
+    totals = [
+        int_or_default(item.get("failuresResolvedByBrowser"))
+        for item in [*(directory_audit_summaries or {}).values(), gamedevmap_audit_summary]
+        if isinstance(item, dict)
+    ]
+    return sum(max(0, value) for value in totals)
 
 
 def build_discovery_task_progress(
