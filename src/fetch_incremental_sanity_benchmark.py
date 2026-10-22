@@ -13,7 +13,24 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
-from src.shared.json_shapes import as_json_list as _as_list
+
+def _ensure_repo_on_path() -> Path:
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    return root
+
+
+# Running this file as a script puts `src/` on sys.path, not the repo root, so
+# the package imports below are otherwise unimportable.
+_ensure_repo_on_path()
+
+
+def _as_list(value: Any) -> list[Any]:
+    from src.shared.json_shapes import as_json_list
+
+    return as_json_list(value)
+
 
 if TYPE_CHECKING:
     from src.jobs.interfaces import SourceLoader
@@ -73,13 +90,6 @@ FETCH_BENCHMARK_GROUPS = {
         "__static_first_2__",
     ],
 }
-
-
-def _ensure_repo_on_path() -> Path:
-    root = Path(__file__).resolve().parents[1]
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    return root
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
