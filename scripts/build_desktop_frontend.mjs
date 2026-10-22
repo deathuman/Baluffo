@@ -387,13 +387,14 @@ export async function bundlePage(versionRoot, page, budget = PAGE_BUDGETS[page.n
     });
   }
 
-  const html = rewritePage(
-    await readFile(pagePath, "utf8"),
-    assetRelPath,
-    staticChunks,
-    assetDir,
-    pagePath
-  );
+  // Normalise line endings before rewriting. The preload strip below matches
+  // with a leading `\s*`, which swallows the previous line's ending, and the
+  // block it re-inserts is joined with "\n" -- so a CRLF page (a Windows
+  // working copy under `core.autocrlf=true`, while the blob is LF) lost one
+  // byte per preload line on the second run and the idempotency test failed.
+  // Rewriting from LF input makes the output stable regardless of checkout.
+  const source = (await readFile(pagePath, "utf8")).replace(/\r\n/g, "\n");
+  const html = rewritePage(source, assetRelPath, staticChunks, assetDir, pagePath);
   await writeFile(pagePath, html);
 
   return {
