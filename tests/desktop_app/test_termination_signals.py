@@ -31,6 +31,14 @@ pytestmark = pytest.mark.skipif(
 _ROOT = Path(__file__).resolve().parents[2]
 
 
+def _child_env() -> dict[str, str]:
+    """Probe environment with the repo importable (a script's own dir is on sys.path)."""
+    env = dict(os.environ)
+    existing = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part]
+    env["PYTHONPATH"] = os.pathsep.join([str(_ROOT), *existing])
+    return env
+
+
 def _wait_for_process_state(pid: int, states: set[str], *, timeout_s: float = 5.0) -> str:
     deadline = time.monotonic() + timeout_s
     state = ""
@@ -106,6 +114,7 @@ def test_termination_handler_turns_a_real_sigterm_into_exit(tmp_path: Path) -> N
         cwd=str(_ROOT),
         stdout=subprocess.PIPE,
         text=True,
+        env=_child_env(),
     )
     try:
         assert process.stdout is not None

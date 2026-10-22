@@ -11,17 +11,26 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+import pytest
+
 from src.ship import desktop_update_service as service_mod
 from src.ship import desktop_update_shared as shared
 from tests.helpers.desktop_update_leaf_namespace import du
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-def test_install_support_follows_the_platform() -> None:
-    with mock.patch.object(shared.os, "name", "nt"):
-        assert shared.desktop_update_install_supported() is True
-    with mock.patch.object(shared.os, "name", "posix"):
-        assert shared.desktop_update_install_supported() is False
+def test_install_support_follows_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shared.os, "name", "nt")
+    monkeypatch.setattr(shared.sys, "frozen", True, raising=False)
+    assert shared.desktop_update_install_supported() is True
+
+    monkeypatch.setattr(shared.os, "name", "posix")
+    assert shared.desktop_update_install_supported() is False
+
+    # A checkout ships no helper either, but it must keep the update machinery
+    # usable (and testable) on the platform the suite happens to run on.
+    monkeypatch.setattr(shared.sys, "frozen", False, raising=False)
+    assert shared.desktop_update_install_supported() is True
 
 
 def test_platform_unsupported_status_withdraws_the_download_offer() -> None:

@@ -26,6 +26,15 @@ _ROOT = Path(__file__).resolve().parents[2]
 # Windows typeshed has no signal.SIGKILL; this module is skipped there anyway.
 _SIGKILL = getattr(signal, "SIGKILL", 9)
 
+
+def _child_env() -> dict[str, str]:
+    """Probe environment with the repo importable (a script's own dir is on sys.path)."""
+    env = dict(os.environ)
+    existing = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part]
+    env["PYTHONPATH"] = os.pathsep.join([str(_ROOT), *existing])
+    return env
+
+
 _PARENT_SCRIPT = """
 import sys
 import time
@@ -55,6 +64,7 @@ def test_child_dies_when_its_parent_is_killed(tmp_path: Path) -> None:
         cwd=str(_ROOT),
         stdout=subprocess.PIPE,
         text=True,
+        env=_child_env(),
     )
     child_pid = 0
     try:
@@ -103,7 +113,11 @@ def test_spawned_child_is_parented_to_the_spawning_process(tmp_path: Path) -> No
         encoding="utf-8",
     )
     parent = subprocess.Popen(
-        [sys.executable, str(script)], cwd=str(_ROOT), stdout=subprocess.PIPE, text=True
+        [sys.executable, str(script)],
+        cwd=str(_ROOT),
+        stdout=subprocess.PIPE,
+        text=True,
+        env=_child_env(),
     )
     try:
         assert parent.stdout is not None

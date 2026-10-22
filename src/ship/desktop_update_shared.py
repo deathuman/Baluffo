@@ -65,8 +65,16 @@ DESKTOP_UPDATE_PLATFORM_UNSUPPORTED = "platform_unsupported"
 
 
 def desktop_update_install_supported() -> bool:
-    """Whether this platform has an updater helper that can install a release."""
-    return os.name == "nt"
+    """Whether this build ships the updater helper that installs a release.
+
+    The helper is Windows-only. A source checkout is treated as supported on any
+    platform -- it ships nothing, and its update machinery has to stay usable and
+    testable wherever the suite runs -- so only a frozen build can report the
+    helper missing, which is exactly what the Linux AppImage is.
+    """
+    if os.name == "nt":
+        return True
+    return not bool(getattr(sys, "frozen", False))
 
 
 def platform_unsupported_status(status: dict[str, Any]) -> dict[str, Any]:
