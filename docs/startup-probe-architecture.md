@@ -5,7 +5,7 @@
 > - **Canonical for:** startup measurement ownership, event flow, command surface, and runtime-vs-probe boundaries
 > - **Not canonical for:** general testing guidance or release sequencing
 > - **Then inspect:** `src/ship/startup_telemetry.py`, `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py`, `src/ship/desktop_app/{launcher,startup}.py`, `src/ship/desktop_app/browser.py`, `src/ship/startup_probe_policy.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
-> - **Last updated:** 2026-10-21
+> - **Last updated:** 2026-10-22
 
 This document is the single source of truth for Baluffo's packaged startup measurement architecture. Keep probe policy and startup-flow explanations here instead of repeating them in command docs or release notes.
 
@@ -241,7 +241,10 @@ waits on the bridge's readiness gate, not on the site finishing first: in the
 live-data launch that gate ran 565 -> 1,234 ms (`desktop_bridge_ready_before_window`
 landed 1,234 ms), while the bridge itself had served its first request at 480 ms
 of its own clock. The readiness poll's interval, not the spawn order, is what is
-left in that gap.
+left in that gap. Those table rows are the 2026-10-19 measurement; the
+page-side work since then moved the cold-probe total to a 1,542 ms median --
+see [End-To-End Packaged Startup, Measured
+2026-10-22](#end-to-end-packaged-startup-measured-2026-10-22).
 
 ## Window Gate And Serve-First Startup
 
@@ -1320,6 +1323,148 @@ boot work is unchanged. At 4x CPU throttling the relative gap shrinks (477 ms vs
 unchanged (~50-60 ms): the shell paints before either script graph arrives, so
 this buys time to rows, not to the page frame.
 
+## End-To-End Packaged Startup, Measured 2026-10-22
+
+The reported symptom was a packaged launch that needed more than 20 s to show a
+window, and occasionally a force-close instead. The ceilings behind that outcome
+are `STARTUP_HANDOFF_GRACE_TIMEOUT_S` (20 s, the `browser_handoff_failed` path)
+and `READY_TIMEOUT_S` (25 s, the strict bridge gate), so a launch near 20 s
+already sat inside the range where the watchdog gives up. This section records
+what the current tree produces on a built artifact; the rows in [Parallel Spawn
+And Feed Presence](#parallel-spawn-and-feed-presence) are the history that led
+here.
+
+Measured on portable `0.3.024`, built with `npm run build:portable-exe` from the
+committed tree, on the same machine throughout (Windows 10 19045, SSD), one
+launch per run with no other Baluffo instance running. Cold means a fresh
+runtime data directory; warm reuses the previous run's directory. Seven probe
+runs and ten spawn-clock launches follow (cold and warm, plain and
+`--startup-probe`, jobs and admin).
+
+### The probe clock and the spawn clock
+
+A probe's `Launch -> ...` stages begin at `desktop_launch_start`, the first row
+the launcher writes to `desktop-startup-metrics.jsonl`. That row exists only
+after the PyInstaller bootloader, the interpreter start and the launcher's import
+preamble, so the probe never charges that work to a stage -- and it is paid by
+every real launch. The number a user experiences is that boot plus the reported
+stage.
+
+The spawn clock measures it directly, and
+`tools/measurements/desktop/spawn_startup.py` runs that measurement:
+
+```bash
+python tools/measurements/desktop/spawn_startup.py --runs 2 --modes cold,warm
+python tools/measurements/desktop/spawn_startup.py --page admin --probe --runs 2 --modes cold --json
+```
+
+It starts the portable EXE itself, takes the timestamp immediately before
+`Popen`, tails `desktop-startup-metrics.jsonl` in an isolated runtime data
+directory, and kills the whole process tree once the page reports interactive.
+Launcher rows are placed at `ts - spawn`. Page rows are placed at their own page
+clock (`browserTsMs`, falling back to `payload.pageTsMs`), because their `ts` is
+the bridge arrival time; the tool reports that arrival beside the page value
+(`firstInteractiveArrivalMs`) instead of letting a queued metric POST hide inside
+the page's number.
+
+One ordering caveat follows from that choice. The page clock is a cross-process
+clock, and the launcher records the shell as shown only after it detects the
+window: this build's page reported interactive 40-60 ms before
+`desktop_shell_window_shown`, and in serve-first launches before
+`desktop_bridge_ready`. Neither mark is adjusted to agree with the other; read
+them together.
+
+The packaged probe records the same block. `run_packaged_smoke` stamps its own
+spawn time immediately before `launch_packaged_exe` and attaches
+`startupProfile.spawnClock` to both `report.json` and
+`startup-profile-summary.json`, and `render_startup_summary` prints it under
+`Spawn clock:`. The cold jobs lane in `npm run release:preflight` therefore
+carries click-to-window and click-to-interactive figures beside its stage
+thresholds. The clock arithmetic lives in `src/ship/startup_spawn_clock.py` and
+is shared with the standalone tool, so the two reports cannot disagree about
+which clock a row belongs to.
+
+### Probe results
+
+| page / mode | `Launch -> First Usable UI`, ms | median |
+| --- | --- | --- |
+| jobs, cold | 1,596 / 1,542 / 1,406 | 1,542 |
+| jobs, warm | 1,328 / 1,566 | 1,447 |
+| admin, cold | 1,319 / 1,333 | 1,326 |
+
+All seven runs passed every stage threshold. They classify as
+`desktop bridge startup delayed` because bridge readiness is the slowest stage,
+not because a budget was exceeded. The cold jobs stages:
+
+| stage | run 1 | run 2 | run 3 | threshold |
+| --- | --- | --- | --- | --- |
+| Launch -> Site Ready | 207 | 203 | 195 | 2,500 |
+| Site Ready -> Bridge Ready | 677 | 699 | 561 | 2,500 |
+| Bridge Ready -> Window Created | 568 | 542 | 534 | 800 |
+| Window Created -> Window Shown | 3 | 4 | 12 | 10,000 |
+| Window Shown -> Page Loaded | 60 | 58 | 60 | 5,000 |
+| Launch -> First Usable UI | 1,596 | 1,542 | 1,406 | 18,000 |
+
+The page is no longer where the time is. `Page Boot -> First Interactive` was
+81 / 36 / 44 ms across those runs, with `Local Data Ready -> First Render` at
+45 / 28 / 34 ms. In the spawn-clock runs below the page reported interactive
+40-80 ms *before* the launcher recorded the shell as shown, so there is no
+page-side wait left to remove after the window appears.
+
+### Spawn clock
+
+Two launches per scenario on portable `0.3.024`, with that tool:
+
+| launch | spawn -> boot | spawn -> window | spawn -> page interactive | spawn -> arrival |
+| --- | --- | --- | --- | --- |
+| jobs, cold, normal | 120-121 | 1,372-1,391 | 1,309-1,336 | 1,523-1,525 |
+| jobs, warm, normal | 123 | 1,417-1,431 | 1,342-1,354 | 1,470-1,555 |
+| jobs, cold, `--startup-probe` | 115-120 | 1,691-1,724 | 1,628-1,685 | 1,824-1,873 |
+| jobs, warm, `--startup-probe` | 114-128 | 1,671-1,701 | 1,614-1,671 | 1,736-1,886 |
+| admin, cold, normal | 114-117 | 1,381-1,409 | 1,281-1,329 | 1,397-1,525 |
+
+Across the ten launches: boot median 120 ms, window 1,424 ms, page interactive
+1,348 ms, and page-row arrival 1,540 ms. The arrival column trails the page clock
+by 130-210 ms in these runs -- that is the metric POST queue, and keeping the two
+separate is what stops it from being charged to the page. The `--startup-probe`
+rows here are slower to the window (~1.70 s against ~1.40 s), but the same build
+has measured 1.37-2.00 s for both modes across sessions, so that gap is inside
+the session-to-session spread rather than a measured cost of the probe.
+
+The rows in [Parallel Spawn And Feed Presence](#parallel-spawn-and-feed-presence)
+placed page events at their bridge arrival `ts`, which is why this table's
+interactive marks read 130-210 ms lower for the same launch shape. These are
+separate launches from the probe table, so the two do not subtract: the constant
+that should hold is boot, and it does (1,542 ms from `desktop_launch_start` plus
+~120 ms is ~1.66 s from `Popen`).
+
+### What the 20 s was, and what is left
+
+The old path paid a serial site start behind a full parse of both live feeds
+(~3 s), a bridge import that recompiled its disk closure on every clean install
+(~700 ms), and a browser that fetched the jobs page as 118 script files; a launch
+that ran long enough hit the 20 s handoff grace or the 25 s readiness gate and
+closed instead of showing a window. None of those costs are left: site ready is
+~200 ms on the probe's empty profile (565 ms in the earlier live-data launch),
+bridge ready 560-790 ms, window creation 530-570 ms, and page boot to
+interactive is under 100 ms.
+
+The two stages still worth watching are `Site Ready -> Bridge Ready` (the
+bridge's disk import plus the readiness poll) and `Bridge Ready -> Window
+Created` (the browser process start). Together they are ~1.1 s of the ~1.5 s
+probe total; the site and the page are nearly free.
+
+Read with the caveats: "cold" here is a fresh runtime directory, not a cold OS
+file cache, and every run followed many earlier launches. The first launch after
+the build -- the one Defender scans -- measured 1,596 ms, the highest jobs
+number, so a virus scan of the new image is not what dominates. n is 2 per spawn
+scenario and 2-3 per probe scenario on one machine: read the medians as the
+state of this tree, not as a distribution, and compare launches from one session
+rather than across sessions, where the same build has ranged from 1.37 s to
+2.00 s to the window under different desktop load. Probe reports live under `.tmp/startup-measure/` and the
+spawn tool writes `spawn-startup.json`, `spawn-startup.md` and per-run logs under
+`.tmp/spawn-startup/` (both scratch, not committed).
+
 ## Startup Metric Schema
 
 Startup diagnostics are retained as JSONL rows in `data/desktop-startup-metrics.jsonl` under the configured runtime data directory. The same rows are exposed by `GET /desktop-local-data/startup-metrics?limit=` and captured by packaged smoke as `startup-metrics.json`.
@@ -1344,6 +1489,11 @@ Current categories are `launch`, `browser`, `port_retry`, `bridge`, `site`, `win
   - `data/packaged-desktop-smoke-report.json`
 - Do not introduce `%LOCALAPPDATA%\Temp` dependencies for startup perf workflows.
 - Keep report shape and event names stable unless compatibility work is intentional and verified across runtime, smoke runner, and tests.
+- `startupProfile.spawnClock` is additive: `marks` names the clock each row used,
+  `firstInteractiveClock` says whether `firstInteractiveMs` came from the page
+  clock or the bridge arrival, `firstInteractiveArrivalMs` keeps the arrival when
+  both exist, and `complete` is false when a mark is missing. No stage threshold
+  reads the block.
 
 ## Drift Control Rules
 

@@ -11,7 +11,7 @@ This directory contains standalone analysis and measurement tools that are separ
 tools/
   mcp/               # Required Serena and Basic Memory setup plus deprecated local MCP fallback
   repo_health/       # Repository readiness and refactorability analysis
-  measurements/      # Pipeline and source performance measurement
+  measurements/      # Pipeline, source and desktop performance measurement
   reports/           # Generated outputs (not tracked in git)
 ```
 
@@ -26,6 +26,7 @@ Run with: `python tools/repo_health/bin/analyze_repo.py` or `python tools/repo_h
 
 ### `measurements/`
 Tools that run Baluffo or its pipeline and measure behavior:
+- **desktop/** - Packaged desktop startup, measured from process spawn
 - **pipeline/** - Pipeline-level measurements (e.g., job discovery gains)
 - **sources/** - Source performance monitoring and optimization
 

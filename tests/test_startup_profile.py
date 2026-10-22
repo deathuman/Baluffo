@@ -139,3 +139,58 @@ def test_startup_profile_summary_reports_zero_gate_wrapper_crashes() -> None:
         "quarantineFailureProcesses": [],
     }
     assert "Gate wrapper crashes" not in render_startup_summary(summary)
+
+
+def test_render_startup_summary_reports_the_spawn_clock_when_recorded() -> None:
+    summary = {
+        "page": "jobs",
+        "profileMode": "cold",
+        "classification": "desktop bridge startup delayed",
+        "stages": [],
+        "spawnClock": {
+            "bootMs": 120,
+            "windowShownMs": 1424,
+            "firstInteractiveMs": 1348,
+            "firstInteractiveClock": "page",
+            "firstInteractiveArrivalMs": 1540,
+        },
+    }
+
+    rendered = render_startup_summary(summary)
+
+    assert "Spawn clock:" in rendered
+    assert "- Spawn -> launcher start: 120ms" in rendered
+    assert "- Spawn -> window shown: 1424ms" in rendered
+    assert "- Spawn -> first interactive: 1348ms (page clock; bridge arrival 1540ms)" in rendered
+
+
+def test_render_startup_summary_shows_an_arrival_clock_without_a_page_clock() -> None:
+    summary = {
+        "page": "jobs",
+        "profileMode": "cold",
+        "classification": "desktop bridge startup delayed",
+        "stages": [],
+        "spawnClock": {
+            "bootMs": 120,
+            "windowShownMs": 1424,
+            "firstInteractiveMs": 1540,
+            "firstInteractiveClock": "arrival",
+            "firstInteractiveArrivalMs": None,
+        },
+    }
+
+    rendered = render_startup_summary(summary)
+
+    assert "- Spawn -> first interactive: 1540ms (arrival clock)" in rendered
+    assert "bridge arrival" not in rendered
+
+
+def test_render_startup_summary_omits_the_spawn_clock_when_absent() -> None:
+    summary = {
+        "page": "jobs",
+        "profileMode": "cold",
+        "classification": "desktop bridge startup delayed",
+        "stages": [],
+    }
+
+    assert "Spawn clock:" not in render_startup_summary(summary)

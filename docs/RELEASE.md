@@ -640,7 +640,7 @@ Optional additional cache-backed smoke validation:
 npm run probe:desktop:startup:cold
 ```
 
-Release preflight already includes `npm run probe:desktop:startup:jobs:cold` as the separate cold Jobs startup threshold gate. That probe is startup-profile coverage only; first-run bootstrap timeout/recovery correctness belongs to `npm run test:frontend:packaged:first-run`. For a warmer startup path, use `npm run probe:desktop:startup:warm`.
+Release preflight already includes `npm run probe:desktop:startup:jobs:cold` as the separate cold Jobs startup threshold gate. That probe is startup-profile coverage only; first-run bootstrap timeout/recovery correctness belongs to `npm run test:frontend:packaged:first-run`. Its `startup-profile-summary.json` also carries a `spawnClock` block (spawn -> launcher start, window shown, first interactive), so every preflight report records the click-to-window figure beside the stage table. For a warmer startup path, use `npm run probe:desktop:startup:warm`.
 For the canonical startup measurement architecture and the preferred `perf:startup:*` command surface, see [`startup-probe-architecture.md`](startup-probe-architecture.md).
 
 4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.

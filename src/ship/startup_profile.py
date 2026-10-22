@@ -932,6 +932,29 @@ def _page_span_stages(events: dict[str, int], safe_page: str) -> list[dict[str, 
     return rows
 
 
+def _render_spawn_clock(spawn_clock: dict[str, Any]) -> list[str]:
+    """Console lines for the spawn-relative marks, when the run carries them."""
+    lines: list[str] = []
+    for label, key in (
+        ("Spawn -> launcher start", "bootMs"),
+        ("Spawn -> window shown", "windowShownMs"),
+    ):
+        value = spawn_clock.get(key)
+        if isinstance(value, int):
+            lines.append(f"- {label}: {value}ms")
+    interactive = spawn_clock.get("firstInteractiveMs")
+    if isinstance(interactive, int):
+        clock = str(spawn_clock.get("firstInteractiveClock") or "").strip()
+        arrival = spawn_clock.get("firstInteractiveArrivalMs")
+        detail = ""
+        if clock == "page" and isinstance(arrival, int):
+            detail = f" (page clock; bridge arrival {arrival}ms)"
+        elif clock:
+            detail = f" ({clock} clock)"
+        lines.append(f"- Spawn -> first interactive: {interactive}ms{detail}")
+    return lines
+
+
 def render_startup_summary(summary: dict[str, Any]) -> str:
     bottleneck = summary.get("bottleneck")
     attribution = ""
@@ -956,6 +979,12 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         lines.append(
             f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}"
         )
+    spawn_clock = summary.get("spawnClock")
+    if isinstance(spawn_clock, dict):
+        spawn_lines = _render_spawn_clock(spawn_clock)
+        if spawn_lines:
+            lines.append("Spawn clock:")
+            lines.extend(spawn_lines)
     page_spans = [
         row
         for row in _as_list(summary.get("pageStages"))

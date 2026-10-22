@@ -203,6 +203,13 @@ RULE_LISTS: tuple[RuleList, ...] = (
         enforcement=("tests/tools/test_cpu_attribution.py",),
     ),
     RuleList(
+        key="spawn_startup_clock_rules",
+        source="tests/tools/test_spawn_startup.py",
+        anchor="carry the weight",
+        items=ITEM_BULLETS,
+        enforcement=("tests/tools/test_spawn_startup.py",),
+    ),
+    RuleList(
         key="thread_cpu_driver_rules",
         source="tests/tools/test_thread_cpu.py",
         anchor="matter most",
