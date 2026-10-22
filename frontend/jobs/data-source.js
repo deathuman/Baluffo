@@ -182,15 +182,108 @@ export async function fetchUnifiedJobs(options = {}) {
   };
 }
 
+function candidateClockMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+// A slow candidate row cannot say on its own whether the listener answered late or
+// the answer sat in the renderer, so attach the browser's own resource timing and
+// the page visibility it was measured under. Diagnostics only.
+function candidateResourceTiming(url) {
+  try {
+    if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") {
+      return null;
+    }
+    const needle = String(url || "");
+    const entries = performance.getEntriesByType("resource") || [];
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (!entry || !String(entry.name || "").includes(needle)) continue;
+      return {
+        startTimeMs: Math.round(Number(entry.startTime) || 0),
+        responseStartMs: Math.round(Number(entry.responseStart) || 0),
+        responseEndMs: Math.round(Number(entry.responseEnd) || 0),
+        durationMs: Math.round(Number(entry.duration) || 0),
+        connectMs: Math.round(
+          Math.max(0, Number(entry.connectEnd || 0) - Number(entry.connectStart || 0))
+        ),
+        transferSize: Math.round(Number(entry.transferSize) || 0)
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function candidateVisibility() {
+  try {
+    return typeof document !== "undefined" ? String(document.visibilityState || "") : "";
+  } catch {
+    return "";
+  }
+}
+
+// `jobs.html` hoists the first-render requests ahead of the module graph
+// (`frontend/jobs/early-data.js`), so the answer can already be in the renderer
+// by the time the feed asks for it. Take that in-flight response when it is
+// still here and fetch on the caller's own clock otherwise; a hoist that failed
+// resolves to null so the request is simply re-issued.
+function takeHoistedResponse(url) {
+  try {
+    const hoisted = globalThis.__baluffoJobsEarlyData;
+    return typeof hoisted?.take === "function" ? hoisted.take(String(url || "")) : null;
+  } catch {
+    return null;
+  }
+}
+
+function reportCandidate(onCandidate, url, startedAt, status, ok, hoisted) {
+  if (typeof onCandidate !== "function") return;
+  const resource = candidateResourceTiming(url);
+  try {
+    onCandidate({
+      url: String(url || ""),
+      status: Math.max(0, Number(status) || 0),
+      ok: Boolean(ok),
+      ms: Math.max(0, Math.round(candidateClockMs() - startedAt)),
+      hoisted: Boolean(hoisted),
+      visibility: candidateVisibility(),
+      resourceStartMs: resource?.startTimeMs ?? null,
+      resourceResponseStartMs: resource?.responseStartMs ?? null,
+      resourceResponseEndMs: resource?.responseEndMs ?? null,
+      resourceConnectMs: resource?.connectMs ?? null
+    });
+  } catch {
+    // Instrumentation must never change the fetch result.
+  }
+}
+
 export async function fetchJsonFromCandidates(urls, options = {}) {
   const fetcher = options.fetcher || fetchWithTimeout;
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 12000;
+  const onCandidate = typeof options.onCandidate === "function" ? options.onCandidate : null;
   for (const url of urls || []) {
+    const startedAt = candidateClockMs();
+    const hoisted = takeHoistedResponse(url);
+    let fromHoist = false;
     try {
-      const response = await fetcher(withCacheBuster(url), timeoutMs, { cache: "no-store" });
+      // The report probe gates the first render, and Chromium's network scheduler can
+      // hold a page-start request back for most of a second when it reads as low
+      // priority; the site answered in single-digit milliseconds in those runs.
+      const hoistedResponse = await hoisted;
+      fromHoist = Boolean(hoistedResponse);
+      const response = hoistedResponse || await fetcher(withCacheBuster(url), timeoutMs, {
+        cache: "no-store",
+        priority: "high"
+      });
+      reportCandidate(onCandidate, url, startedAt, response?.status, Boolean(response?.ok), fromHoist);
       if (!response.ok) continue;
       return await response.json();
     } catch {
+      reportCandidate(onCandidate, url, startedAt, 0, false, fromHoist);
       // Try next source.
     }
   }

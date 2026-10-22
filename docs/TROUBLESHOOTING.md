@@ -88,7 +88,7 @@ changing anything else.
 |----------------|----------|
 | Busy state active | Wait for current operation (fetch/discovery) to complete |
 | JavaScript error | Check browser console for errors |
-| data-ui attribute missing | Verify element has `data-ui` attribute per [`selectors.js`](../frontend/shared/ui/selectors.js) |
+| data-ui attribute missing | Verify element has `data-ui` attribute per the token tables in [`selectors.js`](../frontend/shared/ui/selectors.js) |
 
 ### Codex in-app browser cannot visually inspect the app
 

@@ -436,12 +436,24 @@ def test_container_handler_serves_generated_frontend_assets_with_immutable_cache
     bundle = b"console.log('container admin');\n"
     (asset_dir / "admin.abc123.js").write_bytes(bundle)
     (asset_dir / "admin.abc123.js.gz").write_bytes(gzip.compress(bundle))
+    # Split pages load their post-paint code from `assets/chunks/`, one directory
+    # deeper than the entry asset; the route resolves both the same way.
+    chunk_dir = asset_dir / "chunks"
+    chunk_dir.mkdir()
+    chunk = b"export const ops = 1;\n"
+    (chunk_dir / "admin-abc.js").write_bytes(chunk)
+    (chunk_dir / "admin-abc.js.gz").write_bytes(gzip.compress(chunk))
 
     with _served(_make_container_handler(root, data_dir)) as base_url:
         html_response, html_body = _read_url(base_url, "/admin.html")
         asset_response, asset_body = _read_url(
             base_url,
             "/container-assets/assets/admin.abc123.js",
+            headers={"Accept-Encoding": "gzip, deflate"},
+        )
+        chunk_response, chunk_body = _read_url(
+            base_url,
+            "/container-assets/assets/chunks/admin-abc.js",
             headers={"Accept-Encoding": "gzip, deflate"},
         )
 
@@ -451,6 +463,9 @@ def test_container_handler_serves_generated_frontend_assets_with_immutable_cache
     assert asset_response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
     assert asset_response.headers["Content-Encoding"] == "gzip"
     assert gzip.decompress(asset_body) == bundle
+    assert chunk_response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert chunk_response.headers["Content-Type"].startswith("application/javascript")
+    assert gzip.decompress(chunk_body) == chunk
 
 
 def test_container_handler_omits_cors_headers_for_api_and_options(tmp_path: Path) -> None:

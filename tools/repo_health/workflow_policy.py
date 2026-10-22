@@ -19,6 +19,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:unit",
         "npm run test:py:extended",
         "npm run test:frontend:packaged",
+        "npm run test:frontend:packaged:update-panel-gate",
         "npm run test:frontend:packaged:admin-startup",
         "npm run test:frontend:packaged:admin-active-run",
         "npm run test:frontend:packaged:fetch-evidence",

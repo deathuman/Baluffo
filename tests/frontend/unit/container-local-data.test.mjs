@@ -95,7 +95,7 @@ test("container navigation skips desktop runtime query params", async () => {
   const { locationState } = setupContainerGlobals();
   try {
     const { navigateDesktopPage } = await importFresh(
-      "../../../frontend/shared/local-data/desktop-client.js",
+      "../../../frontend/shared/local-data/desktop/navigation.js",
       { relativeTo: import.meta.url }
     );
 
@@ -151,7 +151,7 @@ test("container app client hydrates the version label from same-origin app ready
       }
       throw new Error(`unexpected fetch: ${normalizedUrl}`);
     };
-    await importFresh("../../../frontend/shared/local-data/app-client.js", {
+    await importFresh("../../../frontend/shared/local-data/app-client.container.js", {
       relativeTo: import.meta.url
     });
     for (let index = 0; index < 30 && !window.__baluffoLocalDataLoaded; index += 1) {
@@ -181,7 +181,7 @@ test("container app client hydrates the version label from same-origin app ready
 test("container app client uses bridge local data without desktop lifecycle", async () => {
   const { beaconCalls, eventListeners, fetchCalls, intervalHandlers } = setupContainerGlobals();
   try {
-    await importFresh("../../../frontend/shared/local-data/app-client.js", {
+    await importFresh("../../../frontend/shared/local-data/app-client.container.js", {
       relativeTo: import.meta.url
     });
     for (let index = 0; index < 20 && !window.__baluffoLocalDataLoaded; index += 1) {

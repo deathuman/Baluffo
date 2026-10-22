@@ -135,6 +135,30 @@ test("admin startup metrics batch early boot events after first interactive", as
   assert.equal(batches[0][1].payload.elapsedMs, 30);
 });
 
+test("admin startup metrics stamp the page clock on every row", async () => {
+  const calls = [];
+  let nowMs = 1000;
+  const metrics = createAdminStartupMetrics({
+    emitStartupMetric: (event, payload) => calls.push({ event, payload }),
+    now: () => nowMs
+  });
+
+  nowMs = 1010;
+  metrics.emit("admin_ops_health_first_render_start");
+  nowMs = 1030;
+  metrics.markFirstInteractive("ready");
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(calls.length, 2);
+  for (const [index, clock] of [[0, 1010], [1, 1030]]) {
+    assert.equal(
+      calls[index].payload.pageTsMs,
+      Math.round(Number(performance.timeOrigin) + clock),
+      calls[index].event
+    );
+  }
+});
+
 test("startup probe metric transport retries queued posts after an early bridge failure", async () => {
   setupStartupProbeGlobals();
   const requests = [];

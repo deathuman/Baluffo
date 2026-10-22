@@ -15,7 +15,11 @@ import {
   SESSION_KEY,
   desktopState
 } from "./state.js";
-import { normalizeDesktopSession, stopDesktopLifecycle } from "./lifecycle.js";
+import { normalizeDesktopSession } from "./lifecycle.js";
+
+// Set by the composition that owns a desktop session; a hosted page leaves it as
+// the no-op. See `createDesktopLocalDataApi`.
+let desktopSessionLostHandler = () => {};
 
 export function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
@@ -142,7 +146,9 @@ async function fetchCurrentUser() {
   const payload = await fetchDesktopSessionPayload();
   desktopState.desktopSession = normalizeDesktopSession(payload.desktopSession);
   if (!desktopState.desktopSession) {
-    stopDesktopLifecycle();
+    // No session means nothing to keep alive. The desktop composition hands in
+    // its lifecycle shutdown here; a hosted page has none to stop.
+    desktopSessionLostHandler();
   }
   return payload.user || null;
 }
@@ -211,9 +217,12 @@ function fileToDataUrl(file) {
   });
 }
 
-export function createDesktopLocalDataApi() {
+export function createDesktopLocalDataApi({ onDesktopSessionLost = null } = {}) {
   if (desktopState.desktopApi) {
     return desktopState.desktopApi;
+  }
+  if (typeof onDesktopSessionLost === "function") {
+    desktopSessionLostHandler = onDesktopSessionLost;
   }
   desktopState.desktopApi = createLocalDataRuntime({
     APPLICATION_STATUSES,

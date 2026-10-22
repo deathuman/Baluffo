@@ -8,7 +8,7 @@
  */
 
 import { stringValue } from "../../shared/format-utils.js";
-import { ui } from "../../shared/ui/selectors.js";
+import { ui } from "../../shared/ui/tokens/ui.js";
 import {
   ACTION_TOKEN,
   CHECK_TOKEN,

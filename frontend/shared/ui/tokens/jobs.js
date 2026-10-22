@@ -1,0 +1,55 @@
+/**
+ * @fileoverview Handles the jobs page resolves.
+ * Split out of `frontend/shared/ui/selectors.js` so a page bundles only the
+ * table it resolves instead of every page's.
+ */
+
+export const JOBS_TOKENS = Object.freeze({
+  list: "jobs-list",
+  resultsSummary: "results-summary",
+  jobsPipelineRunBtn: "jobs-pipeline-run-btn",
+  desktopUpdateToggleBtn: "desktop-update-toggle-btn",
+  desktopUpdatePanel: "desktop-update-panel",
+  desktopUpdateTitle: "desktop-update-title",
+  desktopUpdateBody: "desktop-update-body",
+  desktopUpdateMeta: "desktop-update-meta",
+  desktopUpdateProgress: "desktop-update-progress",
+  desktopUpdatePrimaryBtn: "desktop-update-primary-btn",
+  desktopUpdateSecondaryBtn: "desktop-update-secondary-btn",
+  desktopUpdateReleaseNotes: "desktop-update-release-notes",
+  jobsLastUpdated: "jobs-last-updated",
+  workTypeFilter: "work-type-filter",
+  lifecycleStatusFilter: "lifecycle-status-filter",
+  countryPickerBtn: "country-picker-btn",
+  countryPickerPanel: "country-picker-panel",
+  countryPickerSearch: "country-picker-search",
+  countryPickerOptions: "country-picker-options",
+  countryPickerClearBtn: "country-picker-clear-btn",
+  countryFilter: "country-filter",
+  cityFilter: "city-filter",
+  sectorFilter: "sector-filter",
+  professionFilter: "profession-filter",
+  professionSearchFilter: "profession-search-filter",
+  searchFilter: "search-filter",
+  sortFilter: "sort-filter",
+  sourceStatus: "source-status",
+  fetchProgress: "fetch-progress",
+  pagination: "pagination",
+  guestNotice: "guest-signin-notice",
+  guestNoticeGuestCopy: "guest-signin-notice-guest",
+  guestNoticeProfileCopy: "guest-signin-notice-profile",
+  activeFiltersSummary: "active-filters-summary",
+  quickActions: "quick-actions",
+  customizeQuickFiltersBtn: "customize-quick-filters-btn",
+  quickFiltersPanel: "quick-filters-panel",
+  quickFiltersOptions: "quick-filters-options",
+  quickFiltersResetBtn: "quick-filters-reset-btn",
+  dataSourcesList: "data-sources-list",
+  dataSourcesCaption: "data-sources-caption",
+  savedViewsBar: "saved-views-bar",
+  savedViewsDropdown: "saved-views-dropdown",
+  savedViewsDeleteBtn: "saved-views-delete-btn",
+  // Dynamic item tokens
+  jobRow: "job-row",
+  saveJobBtn: "save-job-btn"
+});

@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 
 from scripts.build_ship_bundle import build_bundle
-from tests.helpers.ship_bundle import copy_minimal_app_version
+from tests.helpers.ship_bundle import copy_minimal_app_version, skipped_desktop_frontend_bundle
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
@@ -19,6 +19,7 @@ def test_bundle_includes_registry_seeds_and_excludes_local_runtime_registries() 
         ),
         mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         mock.patch("scripts.build_ship_bundle._resolve_packaged_sync_config", return_value=None),
+        skipped_desktop_frontend_bundle(),
     ):
         output = build_bundle(Path(tmp) / "dist" / "baluffo-ship", "1.2.3")
 

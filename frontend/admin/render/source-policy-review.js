@@ -1,5 +1,6 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
+import { ADMIN_TOKENS } from "../../shared/ui/tokens/admin.js";
+import { ui } from "../../shared/ui/tokens/ui.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 import { stringValue } from "../../shared/format-utils.js";
 
@@ -15,9 +16,9 @@ const SOURCE_POLICY_REVIEW_FILTERS = Object.freeze([
 ]);
 
 const FILTER_KEYS = new Set(SOURCE_POLICY_REVIEW_FILTERS.map(filter => filter.key));
-const ACTION_TOKEN = UI_TOKENS.admin.sourcePolicyActionBtn;
-const FILTER_TOKEN = UI_TOKENS.admin.sourcePolicyFilterBtn;
-const MIGRATION_LINK_ACTION_TOKEN = UI_TOKENS.admin.sourcePolicyMigrationLinkActionBtn;
+const ACTION_TOKEN = ADMIN_TOKENS.sourcePolicyActionBtn;
+const FILTER_TOKEN = ADMIN_TOKENS.sourcePolicyFilterBtn;
+const MIGRATION_LINK_ACTION_TOKEN = ADMIN_TOKENS.sourcePolicyMigrationLinkActionBtn;
 const ADMIN_MIGRATION_LINK_ACTOR = "admin_provider_link_backfill";
 
 function normalizeFilterKey(value) {

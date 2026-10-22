@@ -49,9 +49,12 @@
       const onLight = theme === THEMES.LIGHT;
       const current = onLight ? "light" : "dark";
       const next = onLight ? "dark" : "light";
+      // Both glyphs are hand-drawn into the same 24x24 box. The sun's ink sits
+      // within half a unit of centre, but the moon's reaches y=23.75 and centres
+      // 1.24 units low, so its group lifts it back onto the box centre.
       btn.innerHTML = onLight
         ? '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V4.5a.75.75 0 0 1 .75-.75Zm0 14.25a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 18Zm8.25-6a.75.75 0 0 1-.75.75H18a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM6 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 6 12Zm11.303-5.303a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.06-1.06l1.06-1.061a.75.75 0 0 1 1.06 0ZM8.818 15.182a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.06-1.06l1.06-1.061a.75.75 0 0 1 1.06 0Zm8.485 2.121a.75.75 0 0 1-1.06 0l-1.061-1.06a.75.75 0 1 1 1.06-1.06l1.061 1.06a.75.75 0 0 1 0 1.06ZM8.818 8.818a.75.75 0 0 1-1.06 0L6.697 7.757a.75.75 0 0 1 1.06-1.06l1.061 1.06a.75.75 0 0 1 0 1.06ZM12 8.25a3.75 3.75 0 1 1 0 7.5a3.75 3.75 0 0 1 0-7.5Z"/></svg>'
-        : '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M14.53 3.53a.75.75 0 0 1 .84-.15a9 9 0 1 0 5.24 11.1a.75.75 0 0 1 1.32-.2c.19.24.23.56.11.84A10.5 10.5 0 1 1 13.9 2.96c.25-.04.51.05.63.24Z"/></svg>';
+        : '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><g transform="translate(0.34 -1.24)"><path fill="currentColor" d="M14.53 3.53a.75.75 0 0 1 .84-.15a9 9 0 1 0 5.24 11.1a.75.75 0 0 1 1.32-.2c.19.24.23.56.11.84A10.5 10.5 0 1 1 13.9 2.96c.25-.04.51.05.63.24Z"/></g></svg>';
       btn.setAttribute("aria-label", `Current theme: ${current}. Switch to ${next} theme`);
       btn.setAttribute("aria-pressed", onLight ? "true" : "false");
       btn.removeAttribute("title");

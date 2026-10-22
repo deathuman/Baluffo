@@ -1,5 +1,18 @@
 /* Jobs page polish */
 
+/* Form controls do not inherit the page font: the UA stylesheet gives them the
+   platform control font, so every button/select/input here resolved Arial at its
+   own size and the shell's first layout instantiated a second typeface for them
+   (20.8 -> 15.2 ms native, 141.0 -> 118.9 ms at 4x; see
+   docs/startup-probe-architecture.md). `select` reaches the dropdown options --
+   they inherit from it, so an explicit `option` rule changes nothing. */
+.jobs-page button,
+.jobs-page select,
+.jobs-page input,
+.jobs-page textarea {
+  font-family: inherit;
+}
+
 .jobs-page .jobs-container {
   width: min(1260px, 100%);
   padding: 1.3rem 1.4rem 1.6rem;
@@ -767,6 +780,9 @@
 .jobs-page .job-availability-check-btn svg {
   width: 1rem;
   height: 1rem;
+  /* Block, not inline: a baseline-aligned box sits ~0.7px high in the button,
+     which is enough to offset the icon's own centring. */
+  display: block;
 }
 
 .jobs-page .job-original-link-btn {
@@ -794,6 +810,34 @@
   align-items: center;
   justify-content: center;
   margin: 0;
+}
+
+/* All three save marks are drawn, not typed: Segoe UI has no U+2713, so the
+   tick used to pull Segoe UI Symbol in, a typed "+" sat 1.5px below the round
+   button's centre, and a typed "…" rode the same axis. */
+.jobs-page .col-save .job-inline-save-btn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: block;
+}
+
+/* The pending ring spins while the save request is in flight. The svg box is
+   square, so a 50% transform origin is the ring's own centre. */
+.jobs-page .col-save .job-inline-save-btn.pending svg {
+  animation: jobInlineSaveSpin 0.9s linear infinite;
+}
+
+@keyframes jobInlineSaveSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still a ring, just not a spinning one. */
+  .jobs-page .col-save .job-inline-save-btn.pending svg {
+    animation: none;
+  }
 }
 
 .jobs-page .col-save .job-inline-save-btn {

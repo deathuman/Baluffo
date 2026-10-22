@@ -190,8 +190,10 @@ export function renderSavedJobBlockHtml(job, options = {}) {
         >
           <span class="details-toggle-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
-              <path d="M7 3h7l4 4v14H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-              <path d="M14 3v5h5M9.5 12h5M9.5 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <g transform="translate(-1 0)">
+                <path d="M7 3h7l4 4v14H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M14 3v5h5M9.5 12h5M9.5 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </g>
             </svg>
           </span>
           <span class="details-toggle-text">${detailsSummary}Notes, Files & History</span>
@@ -359,10 +361,15 @@ export function renderRemoveSavedIcon() {
 }
 
 export function renderWebIcon() {
+  // The arrow and frame share a 24x24 viewBox whose ink runs from (5,3) to
+  // (21,19), so at 15px the mark read as half a pixel up and to the right of
+  // the link's optical centre. The group seats the ink on the centre.
   return `
     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">
-      <path fill="currentColor" d="M14 3h7v7h-2V6.41l-8.29 8.3-1.42-1.42 8.3-8.29H14V3z"/>
-      <path fill="currentColor" d="M5 5h6v2H7v10h10v-4h2v6H5V5z"/>
+      <g transform="translate(-1 1)">
+        <path fill="currentColor" d="M14 3h7v7h-2V6.41l-8.29 8.3-1.42-1.42 8.3-8.29H14V3z"/>
+        <path fill="currentColor" d="M5 5h6v2H7v10h10v-4h2v6H5V5z"/>
+      </g>
     </svg>
   `;
 }

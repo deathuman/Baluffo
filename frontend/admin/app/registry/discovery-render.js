@@ -12,7 +12,7 @@
  */
 
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
-import { renderDiscoveryCandidateReviewHtml } from "../../render.js";
+import { renderDiscoveryCandidateReviewHtml } from "../../render/sources.js";
 
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
 const ACTIVE_REGISTRY_LOAD_TIMEOUT_MS = 10000;

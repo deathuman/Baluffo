@@ -7,10 +7,10 @@
  * @module registry-conflicts-constants
  */
 
-import { UI_TOKENS } from "../../shared/ui/selectors.js";
+import { ADMIN_TOKENS } from "../../shared/ui/tokens/admin.js";
 
-const ACTION_TOKEN = UI_TOKENS.admin.registryConflictActionBtn;
-const CHECK_TOKEN = UI_TOKENS.admin.registryConflictCheckBtn;
+const ACTION_TOKEN = ADMIN_TOKENS.registryConflictActionBtn;
+const CHECK_TOKEN = ADMIN_TOKENS.registryConflictCheckBtn;
 const TRIAGE_FILTER_SELECTOR = ".admin-registry-conflict-filter-btn";
 const REVIEW_FILTER_SELECTOR = ".admin-registry-conflict-review-filter-btn";
 const TRIAGE_FILTER_SELECT_SELECTOR = ".admin-registry-conflict-filter-select";

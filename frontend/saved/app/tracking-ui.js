@@ -1,4 +1,5 @@
 import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
+import { renderCheckIcon } from "../../shared/ui-helpers.js";
 import { resolveNowMs } from "../../shared/format-utils.js";
 import {
   OUTCOME_STATUSES,
@@ -274,7 +275,7 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
         aria-label="${escapeHtml(ariaLabel)}"
       >
         <span class="phase-step-node" aria-hidden="true">
-          ${isComplete && !isActive ? '<span class="phase-step-check">✓</span>' : ""}
+          ${isComplete && !isActive ? `<span class="phase-step-check">${renderCheckIcon()}</span>` : ""}
         </span>
         <span class="phase-step-text">${escapeHtml(label)}</span>
         ${appliedDate ? `<span class="phase-step-applied-date">${escapeHtml(appliedDate)}</span>` : ""}

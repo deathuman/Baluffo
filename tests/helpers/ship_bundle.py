@@ -100,10 +100,31 @@ def build_full_ship_bundle(root: Path) -> Path:
             "scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH",
             _PACKAGED_SYNC_CONFIG_TEMPLATE_PATH,
         ),
+        skipped_desktop_frontend_bundle(),
     ):
         return build_ship_bundle.build_bundle(
             Path(root) / "dist" / "baluffo-ship", SHIP_BUNDLE_VERSION
         )
+
+
+def _skipped_desktop_frontend_bundle(version_dir: Path) -> dict[str, object]:
+    """Stand-in for the esbuild step in lanes without an npm toolchain.
+
+    The real rewrite shells out to node + esbuild. It is covered where those exist:
+    `tests/frontend/unit/desktop-frontend-bundle.test.mjs` (npm ci lane) and the
+    portable build workflow. The page stays unbundled here, which still serves.
+    """
+    return {"pages": [], "skipped": True, "versionDir": str(version_dir)}
+
+
+@contextlib.contextmanager
+def skipped_desktop_frontend_bundle() -> Iterator[None]:
+    """Keep pytest packaging builds independent of node while proving the call site."""
+    with mock.patch(
+        "scripts.build_ship_bundle.bundle_desktop_pages",
+        side_effect=_skipped_desktop_frontend_bundle,
+    ):
+        yield
 
 
 @contextlib.contextmanager

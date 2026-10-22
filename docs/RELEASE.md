@@ -421,6 +421,7 @@ Before any release:
    - `npm run test:frontend:unit`
    - `npm run security:js`
    - `npm run test:frontend:packaged`
+   - `npm run test:frontend:packaged:update-panel-gate`
    - `npm run test:frontend:packaged:admin-startup`
    - `npm run test:frontend:packaged:fetch-evidence`
    - `npm run test:frontend:packaged:sync-rehearsal`
@@ -583,10 +584,11 @@ dependency is ever added, both files must leave `NON_SHIPPED_PATTERNS` and the `
 1. Build the ship bundle for the target version.
 2. Confirm launcher scripts exist in the bundle root.
 3. Confirm `app\versions\<app_version>\packaging\github-app-sync-config.template.json` exists.
-4. Confirm `data\` contains seeded defaults, including `data\defaults\source-registry-*.seed.json`, not repo-local runtime registry artifacts such as `source-registry-active.json`, `source-registry-pending.json`, or `source-approval-state.json`.
-5. Validate the manifest against `docs/update-manifest.schema.json`.
-6. Apply the update on staging with `.\apply-update.ps1`.
-7. Confirm:
+4. Confirm each version page loads one build-time bundle -- `admin.html` → `frontend/admin/admin.<hash>.js`, `jobs.html` → `frontend/jobs/jobs.<hash>.js`, `saved.html` → `frontend/saved/saved.<hash>.js` -- and that `app\version-hashes.json` lists each asset and its rewritten page.
+5. Confirm `data\` contains seeded defaults, including `data\defaults\source-registry-*.seed.json`, not repo-local runtime registry artifacts such as `source-registry-active.json`, `source-registry-pending.json`, or `source-approval-state.json`.
+6. Validate the manifest against `docs/update-manifest.schema.json`.
+7. Apply the update on staging with `.\apply-update.ps1`.
+8. Confirm:
    - `app\update-state.json` ends in `ready`
    - `app\current.txt` points to the target version
    - persisted user/runtime data remains intact
@@ -699,7 +701,8 @@ Runtime contract:
 
 - The container exposes one HTTP service on port `8080` inside the container.
 - UI, static assets, runtime data, and bridge API routes are served same-origin.
-- Official container images build generated frontend bundles with `npm run build:container-frontend`; hashed bundle assets are immutable/gzip-capable, while desktop/local HTML continues using checked-in unbundled modules when the generated container asset directory is absent.
+- Official container images build generated frontend bundles with `npm run build:container-frontend`; hashed bundle assets are immutable/gzip-capable.
+- Desktop ship builds bundle every page with `scripts/build_desktop_frontend.mjs` into that page's module folder (`app\versions\<version>\frontend\jobs\jobs.<hash>.js`, `...\frontend\admin\admin.<hash>.js`, `...\frontend\saved\saved.<hash>.js`) and rewrite that version's `admin.html`, `jobs.html` and `saved.html` to load one asset each, before the version folder is hashed. Admin's and Jobs' entries are shells only: esbuild splitting puts Admin's Ops surface in `frontend\admin\chunks\admin-<hash>.js` (imported after the bootstrap settles) and Jobs' pipeline controller plus desktop update panel in `frontend\jobs\chunks\jobs-<hash>.js` (imported once the feed has rows), and the chunks each entry imports statically are preloaded from that page. The unbundled modules stay on disk; serving a checkout directly (`python scripts/serve_static_site.py`) still uses checked-in unbundled modules.
 - Static `/data` serving is allowlisted to public runtime reports, registry/discovery exports, contracts, and defaults; user profile and attachment data stays behind bridge routes.
 - `frontend-runtime-config.js` is generated dynamically with `bridge.sameOrigin: true`, `runtime.mode: "container"`, and `runtime.localDataMode: "bridge"`.
 - `/data` is the only persistent runtime volume and owns profiles, saved jobs, attachments, reports, logs, source registries, and `baluffo-runtime.db`.

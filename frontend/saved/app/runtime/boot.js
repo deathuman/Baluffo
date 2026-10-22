@@ -1,7 +1,8 @@
 import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boot.js";
 import { fetchJson } from "../../../shared/api-client.js";
 import { createAdminBridgeButtonWatcherForPage } from "../../../shared/admin-bridge-button.js";
-import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { awaitBridgeBootstrap } from "../../../shared/local-data/bridge-client.js";
+import { navigateDesktopPage } from "../../../shared/local-data/desktop/navigation.js";
 import { availabilityCheckVerdict, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
@@ -274,7 +275,7 @@ export function createSavedBoot(deps) {
       fetchJson,
       applyState: applySavedAdminBridgeState,
       isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
-      awaitDesktopBootstrap,
+      awaitDesktopBootstrap: awaitBridgeBootstrap,
     });
     deps.viewState.adminBridgeWatcher?.startAdminBridgeButtonWatch();
     bindSavedJobsListDelegation({

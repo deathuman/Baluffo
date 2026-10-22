@@ -120,7 +120,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Desktop runtime | `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py` | `src/ship/desktop_app/{launcher,startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Desktop updater helper executable | `src/ship/desktop_updater_{ui,release,install}.py` | `src/ship/desktop_updater.py` only for helper CLI/root patch-surface compatibility work |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
-| UI selectors | `frontend/shared/ui/selectors.js` | - |
+| UI selectors | `frontend/shared/ui/tokens/{global,jobs,saved,admin}.js` (aggregated by `selectors.js`) | - |
 
 ---
 

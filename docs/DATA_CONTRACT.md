@@ -562,13 +562,15 @@ Stable method groups:
 To decouple UI logic from presentation/styling, Baluffo uses `data-ui` attributes as the "canonical handles" for all interactive elements.
 
 ### The Strategy
-1. **Registry**: All `data-ui` tokens MUST be registered in `frontend/shared/ui/selectors.js`.
+1. **Registry**: All `data-ui` tokens MUST be registered in `frontend/shared/ui/tokens/` -- one
+   table per surface (`global`, `jobs`, `saved`, `admin`), because each page bundles only the
+   tables it resolves. `frontend/shared/ui/selectors.js` is the aggregate entry point.
 2. **HTML Implementation**: Elements in `.html` templates should include the attribute: `data-ui="token-name"`.
-3. **JS selection**: Use the `ui(token)` helper from `selectors.js` to query elements: `document.querySelector(ui(G_TOKENS.myToken))`.
+3. **JS selection**: Use the `ui(token)` helper from `frontend/shared/ui/tokens/ui.js` (re-exported by `selectors.js`) to query elements: `document.querySelector(ui(GLOBAL_TOKENS.myToken))`.
 
 ### Guidelines for AI Agents
 - **NEVER** use class names or IDs for querying if a `data-ui` attribute is available.
-- If you add a new interactive element, add a corresponding token to `selectors.js` and apply it via `data-ui`.
+- If you add a new interactive element, add a corresponding token to the matching table under `frontend/shared/ui/tokens/` and apply it via `data-ui`.
 
 ---
 

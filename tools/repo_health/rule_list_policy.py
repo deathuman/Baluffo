@@ -143,6 +143,13 @@ RULE_LISTS: tuple[RuleList, ...] = (
         ),
     ),
     RuleList(
+        key="startup_probe_client_stall_rules",
+        source="docs/startup-probe-architecture.md",
+        anchor="billing a client-side stall to the site",
+        items=ITEM_BULLETS,
+        enforcement=("tests/test_startup_probe_readiness.py",),
+    ),
+    RuleList(
         key="measurement_zero_signal_rules",
         source="docs/measurement-methods.md",
         anchor="rules follow",

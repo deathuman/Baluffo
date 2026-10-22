@@ -25,6 +25,7 @@ from scripts.build_frontend_runtime_config import (
     render_frontend_runtime_config_js,
     write_frontend_runtime_config,
 )
+from scripts.desktop_frontend_bundle import bundle_desktop_pages
 from scripts.ship_bundle_manifest import APP_RUNTIME_SCRIPTS
 from src.app_version import APP_VERSION
 from src.baluffo_config import get_sync_defaults
@@ -706,6 +707,12 @@ def build_bundle(output_dir: Path, version: str) -> Path:
 
     _copy_app_version(version_dir)
     validate_app_version_python_imports(version_dir)
+    # The packaged site answers one request per module, so the jobs page's ~115-file
+    # graph is the largest avoidable cost before first render, and admin/saved pay the
+    # same per-module cost. Runs before `refresh_runtime_bootstrap` mirrors the pages
+    # and before the version folder is hashed; the unbundled modules stay on disk for
+    # development and repairs.
+    bundle_desktop_pages(version_dir)
     _seed_version_contract_data(version_dir / "data")
     if not (version_dir / "src" / "admin_bridge.py").exists():
         raise RuntimeError(

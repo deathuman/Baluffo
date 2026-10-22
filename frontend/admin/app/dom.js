@@ -1,4 +1,5 @@
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
+import { ADMIN_TOKENS } from "../../shared/ui/tokens/admin.js";
+import { ui } from "../../shared/ui/tokens/ui.js";
 
 const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminSourceStatusEl: { token: "sourceStatus" },
@@ -99,7 +100,7 @@ function resolveAdminRef(doc, tokens, definition) {
 }
 
 export function cacheAdminDom(doc = document) {
-  const t = UI_TOKENS.admin;
+  const t = ADMIN_TOKENS;
   const refs = {};
   const cache = new Map();
 

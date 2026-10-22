@@ -15,6 +15,8 @@ def test_build_browser_launch_command_includes_lean_flags_without_risky_process_
 
     for flag in desktop_app.LEAN_CHROMIUM_APP_FLAGS:
         assert flag in command
+    for flag in desktop_app.FOREGROUND_RENDERER_FLAGS:
+        assert flag in command
     assert "--no-sandbox" not in command
     assert "--disable-background-mode" not in command
     assert "--single-process" not in command
@@ -51,6 +53,10 @@ def test_build_browser_launch_command_can_disable_lean_flags_from_env() -> None:
     assert "--no-first-run" in command
     for flag in desktop_app.LEAN_CHROMIUM_APP_FLAGS:
         assert flag not in command
+    # The escape hatch only isolates the lean flags; renderer priority is not a
+    # memory/startup trimming knob and must survive the diagnostic override.
+    for flag in desktop_app.FOREGROUND_RENDERER_FLAGS:
+        assert flag in command
 
 
 def test_launch_chromium_app_reads_lean_flag_escape_hatch_from_process_env(tmp_path: Path) -> None:

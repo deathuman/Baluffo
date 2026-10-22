@@ -285,6 +285,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged Jobs startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
 | Packaged Admin startup perf probe (cold/warm) | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
+| Update-panel divergence gate fault-injection lane | `npm run test:frontend:packaged:update-panel-gate` |
 | Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
 | Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
 | Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
@@ -417,6 +418,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Portable EXE builds are content-addressed under `_out/portable-build-cache`; the builder prunes this cache to the five newest entries by default. Use `--cache-retain <n>` or `BALUFFO_PORTABLE_BUILD_CACHE_RETAIN=<n>` when a release/debug run needs a different retention window, and use `python scripts/build_portable_exe.py --force`, `npm run build:portable-exe -- --force`, or `npm run build -- --force` only when you intentionally want to bypass the cache.
 - Portable builds must stay self-contained but browser-minimal: `_internal/playwright/driver/package/.local-browsers/` may contain only the `chromium_headless_shell-*` directory required by packaged Playwright `browsers.json`.
 - `npm run test:frontend:packaged*`
+- `npm run test:frontend:packaged:update-panel-gate`
 - `npm run test:frontend:packaged:sync-rehearsal`
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
@@ -497,6 +499,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 - When a packaged smoke lane fails in GitHub Actions, download the run artifacts and inspect the scenario report JSON before relying on truncated console logs.
 - Failure summaries must be safe for non-UTF-8 Windows consoles. If Playwright output contains Unicode and the Python smoke wrapper raises `UnicodeEncodeError`, fix the diagnostic printer first because it may be hiding the real packaged runtime failure.
+
+## Update Panel Divergence Gate Contract
+
+- `npm run test:frontend:packaged` fails the Jobs update scenario when the page records `jobs_desktop_update_panel_state_diverged` (the panel open in controller state while it renders hidden, which turns the next toggle click into a close), and when the click-recorder install record is missing, because a zero divergence count without that record is an absence of data rather than a pass.
+- `npm run test:frontend:packaged:update-panel-gate` is the anti-rot lane for that gate. It boots the packaged Jobs page, confirms the gate passes on the real page, injects one divergence metric over the same browser to bridge startup-metric route the controller's diagnostics use, and then **requires the gate to reject it** with the event name, reason, and DOM/state payload in the message.
+- A green run of `update-panel-gate` is the evidence the release gate still trips; if the gate is narrowed, short-circuited, or the metric event is renamed, that lane fails instead of the release lane passing silently. Never "fix" this lane by removing the injected metric or relaxing the rejection assertion.
 
 ## Admin Startup Packaged Smoke Contract
 
@@ -613,7 +621,8 @@ Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
 - Container deployment changes: `python -m pytest tests/bridge/test_container_runtime.py -q`, targeted frontend unit checks for container mode, and a Docker smoke build/run when Docker is available
-- Container frontend asset changes: `npm run build:container-frontend -- --out-dir .tmp/container-frontend-check`, then verify generated HTML references `/container-assets/assets/*.js`; desktop/local HTML must still work without `.container-frontend`
+- Container frontend asset changes: `npm run build:container-frontend -- --out-dir .tmp/container-frontend-check`, then verify generated HTML references `/container-assets/assets/*.js` and that the jobs page inlines `early-data.js` ahead of its module script rather than requesting it; desktop/local HTML must still work without `.container-frontend`. The admin page is split: its HTML carries one `modulepreload` for the static chunk and the ops chunk sits unpreloaded under `/container-assets/assets/chunks/`, so a container run must answer both paths (the static route serves nested chunk paths with the same immutable caching). `tests/frontend/unit/container-frontend-bundle.test.mjs` drives the real bundler for the inline hoist, the desktop-only update stub, the hosted composition (no IndexedDB adapter and no close-signal handlers in any page, the bridge client still present), the admin lazy chunk and its preload, the jobs page staying one asset within budget, and the build's refusal to ship a jobs page that lost the hoist tag or a page that reached another runtime's composition; `tests/frontend/unit/desktop-frontend-bundle.test.mjs` asserts the mirror image for the packaged pages (desktop composition, no browser client, close signals intact)
+- Desktop ship frontend bundle changes: `node scripts/build_desktop_frontend.mjs --root <dir holding admin.html, jobs.html and saved.html>`, then verify each page loads one asset next to its modules (`frontend/jobs/jobs.<hash>.js`, `frontend/admin/admin.<hash>.js`, `frontend/saved/saved.<hash>.js`), that admin's lazy chunk (`frontend/admin/chunks/admin-<hash>.js`) and jobs' two lazy chunks (the pipeline controller and the desktop update surface, under `frontend/jobs/chunks/`) exist, are not statically imported by their entries, and are the only chunks without a `modulepreload` link, that a ship build records all three bundled pages in `app/version-hashes.json`, and that the build's own guard still passes: each shell (entry plus preloaded chunks) under its `PAGE_BUDGETS` byte budget, and every declared lazy surface inside a lazy chunk rather than the shell (`tests/frontend/unit/desktop-frontend-bundle.test.mjs` asserts both failure modes against the real bundler; also `tests/frontend/unit/admin-ops-lazy-surface.test.mjs`, `tests/frontend/unit/jobs-lazy-surfaces.test.mjs`, `tests/test_desktop_frontend_bundle.py`, `tests/test_build_ship_bundle_frontend_bundle.py`)
 - Linux packaging or AppImage changes: `npm run build:linux` then `bash scripts/smoke_test_appimage.sh`
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
@@ -625,6 +634,7 @@ Use the narrowest check that matches the risky path:
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged desktop Admin active-run hydration, schedule controls during active work, KPI placeholders, or abort request-budget changes: `npm run test:frontend:packaged:admin-active-run`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
+- Packaged Jobs update-panel visibility, toggle click path, or desktop startup-metric gating changes: `npm run test:frontend:packaged` followed by `npm run test:frontend:packaged:update-panel-gate`
 - Packaged Jobs startup threshold changes: `npm run probe:desktop:startup:jobs:cold`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution_*.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test

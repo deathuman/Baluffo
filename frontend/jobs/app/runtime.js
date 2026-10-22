@@ -36,7 +36,6 @@ import {
   writeQuickFilterPreferences,
   rememberJobsUrl
 } from "../state-sync/index.js";
-import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
 import { openFirstRunJobsNotice } from "./first-run-notice.js";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js";
@@ -209,7 +208,9 @@ const jobsRuntime = composeJobsRuntime({
   jobsLastUrlKey: JOBS_LAST_URL_KEY,
   applyJobsAdminBridgeStateFromModule,
   getJobKeyForJob,
-  normalizeLifecycleStatus
+  normalizeLifecycleStatus,
+  startDesktopUpdateSurface: () => jobsBoot?.startDesktopUpdateSurface?.(),
+  startBootFollowUp: () => jobsBoot?.startBootFollowUp?.()
 });
 
 jobsPageFlow = createJobsPageFlow({
@@ -278,7 +279,6 @@ jobsBoot = createJobsBoot({
   applyJobsAdminBridgeState: jobsRuntime.applyJobsAdminBridgeState,
   logJobsError: jobsRuntime.logJobsError,
   openJobLinkInDefaultBrowser: (...args) => openJobLinkInDefaultBrowser(...args),
-  requestConfirmationDialog,
   showFirstRunBootstrapNotice: options => openFirstRunJobsNotice({
     ...options,
     documentTarget: documentObject,

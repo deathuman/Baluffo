@@ -1,4 +1,4 @@
-import { createElapsedMsTracker } from "../../../shared/perf-marks.js";
+import { createElapsedMsTracker, pageClockMs } from "../../../shared/perf-marks.js";
 
 export function createAdminStartupMetrics({
   emitStartupMetric,
@@ -10,10 +10,17 @@ export function createAdminStartupMetrics({
   const startedAtMs = Number(now()) || 0;
   const pendingMetrics = [];
   const withElapsedMs = createElapsedMsTracker(now, startedAtMs);
+  function stamped(payload) {
+    // The page clock travels with every row so the startup profile can order admin
+    // page events by when they happened instead of when a queued POST reached the
+    // bridge. Without it the admin stages (and their bottleneck attribution) ride on
+    // arrival time, which a busy metric queue can skew by hundreds of milliseconds.
+    return withElapsedMs({ ...payload, pageTsMs: pageClockMs(now) });
+  }
   function enqueue(event, payload = {}) {
     const cleanEvent = String(event || "").trim();
     if (!cleanEvent) return;
-    pendingMetrics.push({ event: cleanEvent, payload: withElapsedMs(payload) });
+    pendingMetrics.push({ event: cleanEvent, payload: stamped(payload) });
     if (pendingMetrics.length > 200) pendingMetrics.splice(0, pendingMetrics.length - 200);
     if (firstInteractiveSent) scheduleFlush();
   }

@@ -1,7 +1,8 @@
 import { AdminConfig } from "./config/admin-config.js";
 import { fetchJson } from "./api-client.js";
 import { resolveRuntimeMode } from "./local-data/runtime-context.js";
-import { UI_TOKENS, ui } from "./ui/selectors.js";
+import { GLOBAL_TOKENS } from "./ui/tokens/global.js";
+import { ui } from "./ui/tokens/ui.js";
 
 const VERSION_RETRY_ATTEMPTS = 12;
 const VERSION_RETRY_DELAY_MS = 500;
@@ -73,7 +74,7 @@ export async function hydrateAppVersionLabels(doc = document, options = {}) {
     return "";
   }
 
-  const versionEls = Array.from(doc.querySelectorAll(ui(UI_TOKENS.global.appVersion)));
+  const versionEls = Array.from(doc.querySelectorAll(ui(GLOBAL_TOKENS.appVersion)));
   if (!versionEls.length) {
     return "";
   }

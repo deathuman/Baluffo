@@ -1,8 +1,53 @@
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 from src.shared.json_shapes import as_json_object, json_object_rows
+
+
+def process_cpu_seconds() -> float | None:
+    """Process CPU seconds, or None when the platform cannot report them."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    try:
+        times = psutil.Process().cpu_times()
+    except Exception:
+        return None
+    return max(0.0, float(times.user) + float(times.system))
+
+
+class PipelinePhaseClock:
+    """Wall and CPU time per child phase, published into the report runtime payload.
+
+    The report carries per-source stage timings but nothing about the phases around
+    them, so the gap between wall clock and summed source time (setup, source
+    execution, merge, finalize, writes) had no owner. Each phase costs one
+    perf_counter plus one optional psutil call.
+    """
+
+    def __init__(self, started_mono: float, started_cpu: float | None) -> None:
+        self._at = started_mono
+        self._cpu = started_cpu
+        self.rows: list[dict[str, object]] = []
+
+    def close(self, phase: str) -> None:
+        now = time.perf_counter()
+        cpu = process_cpu_seconds()
+        row: dict[str, object] = {
+            "phase": str(phase),
+            "durationMs": max(0, int((now - self._at) * 1000)),
+        }
+        if self._cpu is not None and cpu is not None:
+            row["cpuSeconds"] = round(max(0.0, cpu - self._cpu), 3)
+        self.rows.append(row)
+        self._at = now
+        self._cpu = cpu
+
+    def publish(self, runtime_payload: dict[str, Any]) -> None:
+        runtime_payload["phaseTimings"] = [dict(row) for row in self.rows]
 
 
 def _first_dict(value: Any) -> dict[str, Any]:

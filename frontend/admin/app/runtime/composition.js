@@ -15,7 +15,7 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js";
+} from "../../render/overview.js";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js";
 import { createAdminDiscoveryController } from "../discovery.js";
@@ -23,7 +23,8 @@ import {
   createAdminFetcherController
 } from "../fetcher.js";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js";
+import { formatBytes } from "../ops/format.js";
+import { createLazyAdminOpsController } from "../ops/lazy.js";
 import { createAdminRegistryController } from "../registry.js";
 import { createAdminSyncController } from "../sync.js";
 import { createAdminOverviewController } from "./overview.js";
@@ -102,34 +103,43 @@ export function composeAdminControllers({
     renderUsersEmptyHtml
   });
 
-  opsController = createAdminOpsController({
-    state,
-    refs,
-    getBridge,
-    postBridge,
-    deriveAdminRunsModel: (payload, nowMs = Date.now()) => deriveAdminRunsModelFromDomain(payload, nowMs),
-    getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, opsPollIdleIntervalMs, opsPollLiveIntervalMs),
-    loadSyncStatus: options => syncController.loadSyncStatus(options),
-    setBusyFlag,
-    showToast,
-    getErrorMessage,
-    adminDispatch,
-    adminActions: ADMIN_ACTIONS,
-    escapeHtml,
-    onBridgeStatusChange: () => {},
-    onBridgeStatusSettled: (...args) => onBridgeStatusSettled?.(...args),
-    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
-    onActivePipelineIdle: (...args) => runActivePipelineIdleRecovery(...args),
-    attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
-    loadLatestFetcherSummary: options => fetcherController?.loadLatestFetcherSummary?.(options),
-    loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
-    attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
-    loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
-    activeHydrationPolicy,
-    bridgeStatusPollIntervalMs,
-    idlePollIntervalMs: opsPollIdleIntervalMs,
-    markAdminStep,
-    measureAdminStep
+  // The Ops surface owns its own bundle chunk (see ../ops/lazy.js). The facade
+  // is created here, synchronously, because the shell wires its methods into
+  // every other controller; the real Ops controller is built after the first
+  // idle slot, once the closures below resolve to live controllers.
+  opsController = createLazyAdminOpsController({
+    createController: async () => {
+      const { createAdminOpsController } = await import("../ops.js");
+      return createAdminOpsController({
+        state,
+        refs,
+        getBridge,
+        postBridge,
+        deriveAdminRunsModel: (payload, nowMs = Date.now()) => deriveAdminRunsModelFromDomain(payload, nowMs),
+        getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, opsPollIdleIntervalMs, opsPollLiveIntervalMs),
+        loadSyncStatus: options => syncController.loadSyncStatus(options),
+        setBusyFlag,
+        showToast,
+        getErrorMessage,
+        adminDispatch,
+        adminActions: ADMIN_ACTIONS,
+        escapeHtml,
+        onBridgeStatusChange: () => {},
+        onBridgeStatusSettled: (...args) => onBridgeStatusSettled?.(...args),
+        loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
+        onActivePipelineIdle: (...args) => runActivePipelineIdleRecovery(...args),
+        attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
+        loadLatestFetcherSummary: options => fetcherController?.loadLatestFetcherSummary?.(options),
+        loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
+        attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
+        loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
+        activeHydrationPolicy,
+        bridgeStatusPollIntervalMs,
+        idlePollIntervalMs: opsPollIdleIntervalMs,
+        markAdminStep,
+        measureAdminStep
+      });
+    }
   });
 
   syncController = createAdminSyncController({
@@ -553,6 +563,9 @@ export function composeAdminControllers({
     scheduleBootstrapSourceTablesLoad();
     scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh });
     markAdminStartupBootstrapSettled();
+    // The shell is up: only now fetch and parse the Ops surface. Starting it any
+    // earlier put a 273 KB chunk's parse back inside the boot it was split out of.
+    opsController.start?.();
     return {
       ...(payload || {}),
       // Consumed by the auth controller to decide the badge, and by the

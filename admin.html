@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="styles/components.css">
   <link rel="stylesheet" href="styles/admin.css">
 </head>
-<body>
+<body class="admin-page">
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" data-ui="theme-toggle-btn" type="button" aria-label="Switch theme">Theme</button>
   <span id="admin-bridge-status-badge" data-ui="admin-bridge-status-badge" class="admin-bridge-badge admin-bridge-floating checking hidden" data-tooltip="Local admin bridge status">Bridge Checking</span>
   <div class="jobs-container">
@@ -141,8 +141,10 @@
               data-tooltip="Clear output log"
               aria-label="Clear output log"
             >
+              <!-- The bin's ink stops at y=18 of the 24-unit box, so it read as
+                   sitting high; the group seats it on the box centre. -->
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
+                <g transform="translate(0 1.5)"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" /></g>
               </svg>
             </button>
             <button id="admin-retry-failed-btn" data-ui="admin-retry-failed-btn" class="btn clear-filters-btn">Retry Failed Sources</button>
@@ -163,7 +165,7 @@
         <div id="admin-fetcher-log" data-ui="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
-      <section id="admin-discovery-section" class="admin-fetcher-panel admin-discovery-panel">
+      <section id="admin-discovery-section" class="admin-fetcher-panel admin-discovery-panel admin-deferred">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Source Discovery <span id="admin-discovery-pending-badge" data-ui="admin-discovery-pending-badge" class="admin-discovery-pending-badge hidden"></span></h3>
         </div>
@@ -216,8 +218,9 @@
                 data-tooltip="Clear discovery log"
                 aria-label="Clear discovery log"
               >
+                <!-- Same bin as the fetcher log header; same centring group. -->
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
+                  <g transform="translate(0 1.5)"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" /></g>
                 </svg>
               </button>
             </summary>
@@ -287,7 +290,7 @@
         </div>
       </section>
 
-      <section id="admin-sync-section" class="admin-fetcher-panel admin-sync-panel">
+      <section id="admin-sync-section" class="admin-fetcher-panel admin-sync-panel admin-deferred">
         <div class="admin-fetcher-header">
           <div class="admin-sync-title-wrap">
             <h3 class="admin-fetcher-title">Source Sync</h3>

@@ -1,5 +1,5 @@
 import { bindAsyncClick, bindUi } from "../../../shared/ui/index.js";
-import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { navigateDesktopPage } from "../../../shared/local-data/desktop/navigation.js";
 import { createAdminSectionLoadCoordinator } from "./section-loader.js";
 
 function bindWindowResize(handler) {

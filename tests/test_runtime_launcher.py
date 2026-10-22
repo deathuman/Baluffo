@@ -324,6 +324,7 @@ def test_wait_for_url_treats_loopback_404_as_ready() -> None:
 
 def test_wait_for_url_uses_direct_http_connection_for_loopback() -> None:
     calls: list[tuple[str, int, float, str, str]] = []
+    read_timeouts: list[float] = []
 
     class _FakeResponse:
         status = 204
@@ -331,10 +332,20 @@ def test_wait_for_url_uses_direct_http_connection_for_loopback() -> None:
         def read(self) -> bytes:
             return b""
 
+    class _FakeSocket:
+        def settimeout(self, value: float) -> None:
+            read_timeouts.append(value)
+
     class _FakeConnection:
         def __init__(self, host: str, port: int, timeout: float):
             calls.append((host, port, timeout, "", ""))
             self._index = len(calls) - 1
+            self.sock = _FakeSocket()
+
+        def connect(self) -> None:
+            # The probe connects explicitly so the row can separate connect cost from
+            # the listener's answer; the fake records the same call order.
+            return
 
         def request(self, method: str, path: str) -> None:
             host, port, timeout, _, _ = calls[self._index]
@@ -349,7 +360,19 @@ def test_wait_for_url_uses_direct_http_connection_for_loopback() -> None:
     with mock.patch.object(telemetry.http.client, "HTTPConnection", _FakeConnection):
         rl.wait_for_url("http://127.0.0.1:8123/jobs.html?desktop=1", timeout_s=1.0, interval_s=0.05)
 
-    assert calls == [("127.0.0.1", 8123, 1.0, "GET", "/jobs.html?desktop=1")]
+    # Only the connect is bounded: a first-connect stall must be retried rather than
+    # billed to the site, while the answer itself still gets the full request budget.
+    assert calls == [
+        (
+            "127.0.0.1",
+            8123,
+            telemetry.LOOPBACK_PROBE_CONNECT_TIMEOUT_S,
+            "GET",
+            "/jobs.html?desktop=1",
+        )
+    ]
+    assert telemetry.LOOPBACK_PROBE_CONNECT_TIMEOUT_S < 1.0
+    assert read_timeouts == [1.0]
 
 
 def test_wait_for_url_uses_opener_for_non_loopback() -> None:
@@ -391,6 +414,7 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
         data_dir = Path(tmp) / "data"
         monkeypatch.setenv("BALUFFO_DATA_DIR", str(data_dir))
         monkeypatch.setenv("BALUFFO_STARTUP_PROBE", "1")
+        _write(data_dir / "jobs-fetch-report.json", '{"status":"ok"}\n')
         handler = rl.build_site_request_handler(
             root,
             runtime_data_dir=data_dir,
@@ -401,11 +425,9 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            rl.wait_for_url(
-                f"http://127.0.0.1:{server.server_address[1]}/jobs.html",
-                timeout_s=2.0,
-                interval_s=0.05,
-            )
+            base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            rl.wait_for_url(f"{base_url}/jobs.html", timeout_s=2.0, interval_s=0.05)
+            urlopen(f"{base_url}/data/jobs-fetch-report.json").read()
         finally:
             server.shutdown()
             server.server_close()
@@ -420,8 +442,22 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
         ]
         assert "desktop_url_probe_started" in events
         assert "desktop_url_probe_succeeded" in events
+        rows = [
+            json.loads(line)
+            for line in metrics_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         assert "desktop_site_request_start" in events
         assert "desktop_site_request_complete" in events
+        # The flush row is what separates a blocked socket write from a slow page.
+        assert "desktop_site_request_flushed" in events
+        # The page's own data fetch is traced too, so a slow page span can be attributed
+        # to the listener or to the page without a rebuild.
+        traced_paths = [row["fields"].get("path") for row in rows if row.get("fields")]
+        assert "data/jobs-fetch-report.json" in traced_paths
+        attempt = next(row for row in rows if row["event"] == "desktop_url_probe_attempt")
+        assert "connectMs" in attempt["fields"]
+        assert "firstByteMs" in attempt["fields"]
 
 
 def test_build_site_request_handler_serves_data_requests_from_runtime_data_dir() -> None:

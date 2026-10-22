@@ -75,8 +75,9 @@ def _parse_browser_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int |
         return None
     top_level_value = row.get("browserTsMs")
     payload = _as_dict(row.get("payload"))
+    page_value = payload.get("pageTsMs")
     payload_value = payload.get("browserCreatedAtMs")
-    for candidate in (top_level_value, payload_value):
+    for candidate in (top_level_value, page_value, payload_value):
         if isinstance(candidate, (int, float)):
             return max(0, int(candidate) - int(launch_ts_ms))
     return None
@@ -223,14 +224,12 @@ def _pre_window_stage_defs(
     ]
 
 
-def _classify_stages(
-    *,
-    stages: list[dict[str, Any]],
-    missing_events: list[str],
-    classification_map: dict[str, str],
-) -> str:
-    if missing_events:
-        return "metrics incomplete"
+def _top_stage(stages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The stage owning the bottleneck: the slowest slow stage, else the slowest stage.
+
+    The launch total is never a cause, and a deferred stage finished after the UI was
+    already usable, so neither can own the bottleneck.
+    """
     ranked = [
         stage
         for stage in stages
@@ -239,12 +238,28 @@ def _classify_stages(
         and str(stage.get("status") or "") != "deferred"
     ]
     if not ranked:
-        return "insufficient data"
+        return None
     slow_ranked = [stage for stage in ranked if stage.get("status") == "slow"]
     selected = slow_ranked if slow_ranked else ranked
     selected.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
-    top = str(selected[0]["key"] or "").strip()
-    return classification_map.get(top, "ok" if not slow_ranked else "startup bottleneck unclear")
+    return selected[0]
+
+
+def _classify_stages(
+    *,
+    stages: list[dict[str, Any]],
+    missing_events: list[str],
+    classification_map: dict[str, str],
+) -> str:
+    if missing_events:
+        return "metrics incomplete"
+    top = _top_stage(stages)
+    if top is None:
+        return "insufficient data"
+    # ``_top_stage`` falls back to passing stages only when nothing is slow, so a passing
+    # top means this table found nothing to blame rather than a cause it could name.
+    fallback = "startup bottleneck unclear" if top.get("status") == "slow" else "ok"
+    return classification_map.get(str(top["key"] or "").strip(), fallback)
 
 
 def _stage_perf_regressions(stages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -380,8 +395,10 @@ def summarize_startup_metrics(
                     "status": status,
                 }
             )
-        classification = _classify_stages(
+        classification, page_stages, bottleneck = _attributed_bottleneck(
             stages=probe_stages,
+            events=events,
+            page=safe_page,
             missing_events=probe_missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
@@ -404,9 +421,11 @@ def summarize_startup_metrics(
             "profileMode": mode,
             "events": events,
             "stages": probe_stages,
+            "pageStages": page_stages,
             "firstUsableEvent": ready_event if ready_event in events else "",
             "firstUsableMs": events.get(ready_event),
             "classification": classification,
+            "bottleneck": bottleneck,
             "status": "passed"
             if stage_statuses and all(status == "passed" for status in stage_statuses)
             else "failed",
@@ -516,8 +535,10 @@ def summarize_startup_metrics(
                 }
             )
 
-        classification = _classify_stages(
+        classification, page_stages, bottleneck = _attributed_bottleneck(
             stages=admin_stages,
+            events=events,
+            page=safe_page,
             missing_events=admin_missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
@@ -542,9 +563,11 @@ def summarize_startup_metrics(
             "profileMode": mode,
             "events": events,
             "stages": admin_stages,
+            "pageStages": page_stages,
             "firstUsableEvent": first_usable_event or "",
             "firstUsableMs": first_usable_ms,
             "classification": classification,
+            "bottleneck": bottleneck,
             "status": "passed"
             if stage_statuses and all(status == "passed" for status in stage_statuses)
             else "failed",
@@ -676,8 +699,10 @@ def summarize_startup_metrics(
             }
         )
 
-    classification = _classify_stages(
+    classification, page_stages, bottleneck = _attributed_bottleneck(
         stages=stages,
+        events=events,
+        page=safe_page,
         missing_events=missing_events,
         classification_map={
             "launch_to_site_ready": "bridge/site bootstrap delayed",
@@ -712,9 +737,11 @@ def summarize_startup_metrics(
         "profileMode": mode,
         "events": events,
         "stages": stages,
+        "pageStages": page_stages,
         "firstUsableEvent": first_usable_event or "",
         "firstUsableMs": first_usable_ms,
         "classification": classification,
+        "bottleneck": bottleneck,
         "status": summary_status,
         "missingEvents": sorted({event for event in missing_events if event}),
         "perfRegressions": perf_regressions,
@@ -722,10 +749,200 @@ def summarize_startup_metrics(
     }
 
 
+PAGE_SPAN_STAGE_DEFS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "page_boot_to_local_data_ready",
+        "Page Boot -> Local Data Ready",
+        "{page}_page_boot_start",
+        "{page}_local_data_init_ready",
+    ),
+    (
+        "local_data_ready_to_first_render",
+        "Local Data Ready -> First Render",
+        "{page}_local_data_init_ready",
+        "{page}_first_render",
+    ),
+    (
+        "report_probe",
+        "Fetch-Report Probe",
+        "{page}_report_probe_start",
+        "{page}_report_probe_done",
+    ),
+    (
+        "report_probe_to_first_run_gate",
+        "Fetch-Report Probe -> First-Run Gate",
+        "{page}_report_probe_done",
+        "{page}_first_run_gate_evaluated",
+    ),
+    (
+        "local_data_ready_to_auth_ready",
+        "Local Data Ready -> Auth Ready",
+        "{page}_local_data_init_ready",
+        "{page}_auth_ready",
+    ),
+    (
+        "page_boot_to_first_interactive",
+        "Page Boot -> First Interactive",
+        "{page}_page_boot_start",
+        "{page}_first_interactive",
+    ),
+)
+
+
+# Bottleneck labels for page-clock spans. A span key missing here is evidence only:
+# it is printed but never becomes the classification. The page total
+# (``page_boot_to_first_interactive``) is deliberately absent, for the same reason the
+# launch total is: it is not a cause, and it would name the whole page for any stage.
+PAGE_SPAN_CLASSIFICATIONS: dict[str, str] = {
+    "page_boot_to_local_data_ready": "page boot / local data init delayed",
+    "local_data_ready_to_first_render": "{page} render delayed",
+    "report_probe": "{page} report probe delayed",
+    "report_probe_to_first_run_gate": "first-run gate wait delayed",
+    "local_data_ready_to_auth_ready": "local auth bootstrap delayed",
+}
+
+
+UNNAMED_LAUNCH_CLASSIFICATIONS = frozenset({"ok", "metrics incomplete", "insufficient data"})
+
+
+def _page_bottleneck(
+    page_stages: list[dict[str, Any]],
+    *,
+    page: str,
+    launch_top: dict[str, Any] | None,
+    launch_classification: str,
+) -> dict[str, Any] | None:
+    """The page-clock span that explains the launch table's own bottleneck better, if any.
+
+    The launch stages place page events on the launcher clock and clamp a stage whose end
+    precedes its start to zero, so a long pre-render wait is filed under whichever
+    neighbouring stage happens to be longest. Three rules keep the refinement honest:
+
+    * the page span must **cover the blamed stage's whole interval** on the same clock, so
+      it genuinely contains that work rather than merely succeeding it;
+    * a span that *begins at the same event* as the blamed stage is that stage re-measured
+      (local data to first render starts where local data to auth starts), so it says
+      nothing new and never wins;
+    * the *tightest* remaining covering span wins, because the work is the narrowest span
+      that still brackets the blamed interval.
+
+    A page span only re-attributes a bottleneck the launch table already named: an ``ok``
+    profile, and a trace too incomplete to name anything, keep their verdict instead of
+    inventing a cause.
+    """
+    if launch_top is None or launch_classification in UNNAMED_LAUNCH_CLASSIFICATIONS:
+        return None
+    stage_start = launch_top.get("startMs")
+    stage_end = launch_top.get("endMs")
+    stage_ms = int(launch_top.get("durationMs") or 0)
+    if not isinstance(stage_start, int) or not isinstance(stage_end, int):
+        return None
+    covering = [
+        row
+        for row in page_stages
+        if isinstance(row.get("durationMs"), int)
+        and not row.get("negativeGap")
+        and isinstance(row.get("startMs"), int)
+        and isinstance(row.get("endMs"), int)
+        and int(row["startMs"]) <= stage_start
+        and int(row["endMs"]) >= stage_end
+        and int(row["durationMs"]) > stage_ms
+        and str(row.get("startEvent") or "") != str(launch_top.get("startEvent") or "")
+        and str(row.get("key") or "") in PAGE_SPAN_CLASSIFICATIONS
+    ]
+    if not covering:
+        return None
+    top = min(covering, key=lambda row: int(row["durationMs"]))
+    return {
+        "source": "page",
+        "key": str(top.get("key") or ""),
+        "label": PAGE_SPAN_CLASSIFICATIONS[str(top["key"])].format(page=page),
+        "startEvent": top.get("startEvent"),
+        "endEvent": top.get("endEvent"),
+        "durationMs": int(top["durationMs"]),
+        "covers": str(launch_top.get("key") or ""),
+    }
+
+
+def _attributed_bottleneck(
+    *,
+    stages: list[dict[str, Any]],
+    events: dict[str, int],
+    page: str,
+    missing_events: list[str],
+    classification_map: dict[str, str],
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """Classification, page spans, and the attribution every page summary carries.
+
+    One place so jobs, admin, and the probe pages cannot drift apart: each summary gets
+    the launch verdict, the page-clock spans behind it, and the ``bottleneck`` object
+    naming whichever of the two won.
+    """
+    launch_top = _top_stage(stages)
+    launch_classification = _classify_stages(
+        stages=stages, missing_events=missing_events, classification_map=classification_map
+    )
+    page_stages = _page_span_stages(events, page)
+    page_bottleneck = _page_bottleneck(
+        page_stages, page=page, launch_top=launch_top, launch_classification=launch_classification
+    )
+    if page_bottleneck:
+        return str(page_bottleneck["label"]), page_stages, page_bottleneck
+    return (
+        launch_classification,
+        page_stages,
+        {
+            "source": "launch",
+            "key": str((launch_top or {}).get("key") or ""),
+            "label": launch_classification,
+            "durationMs": (launch_top or {}).get("durationMs"),
+        },
+    )
+
+
+def _page_span_stages(events: dict[str, int], safe_page: str) -> list[dict[str, Any]]:
+    """Page-clock spans for the phases the launch stage table cannot see.
+
+    The launch stages run on the launcher timeline: a page event only lands at its
+    real moment when the row carries its own clock, and a stage whose end precedes
+    its start is clamped to zero. These spans read only page events, so they keep
+    ordering honest (``negativeGap``) and expose the fetch-report probe — the
+    pre-render wait the launch stages otherwise absorb into the launch total.
+    """
+    rows: list[dict[str, Any]] = []
+    for key, label, start_template, end_template in PAGE_SPAN_STAGE_DEFS:
+        start_event = start_template.format(page=safe_page)
+        end_event = end_template.format(page=safe_page)
+        start_ms = events.get(start_event)
+        end_ms = events.get(end_event)
+        duration_ms = None if start_ms is None or end_ms is None else int(end_ms) - int(start_ms)
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "startEvent": start_event,
+                "endEvent": end_event,
+                "startMs": start_ms,
+                "endMs": end_ms,
+                "durationMs": duration_ms,
+                "negativeGap": bool(duration_ms is not None and duration_ms < 0),
+                "status": "measured" if duration_ms is not None else "unavailable",
+            }
+        )
+    return rows
+
+
 def render_startup_summary(summary: dict[str, Any]) -> str:
+    bottleneck = summary.get("bottleneck")
+    attribution = ""
+    if isinstance(bottleneck, dict) and bottleneck.get("source") == "page":
+        attribution = (
+            f" [page span {bottleneck.get('key')} {bottleneck.get('durationMs')}ms"
+            f" covering {bottleneck.get('covers')}]"
+        )
     lines = [
         f"Startup Profile ({summary.get('profileMode', 'cold')}, page={summary.get('page', 'jobs')})",
-        f"Bottleneck: {summary.get('classification', 'unknown')}",
+        f"Bottleneck: {summary.get('classification', 'unknown')}{attribution}",
     ]
     for stage in _as_list(summary.get("stages")):
         if not isinstance(stage, dict):
@@ -739,6 +956,18 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         lines.append(
             f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}"
         )
+    page_spans = [
+        row
+        for row in _as_list(summary.get("pageStages"))
+        if isinstance(row, dict)
+        and isinstance(row.get("durationMs"), int)
+        and row.get("durationMs")
+    ]
+    if page_spans:
+        lines.append("Page-clock spans:")
+        for row in page_spans:
+            gap = " [end-before-start]" if row.get("negativeGap") else ""
+            lines.append(f"- {row.get('label')}: {int(row.get('durationMs') or 0)}ms{gap}")
     gate = summary.get("jobsReportGate")
     if isinstance(gate, dict) and int(gate.get("quarantineFailureCount") or 0) > 0:
         halves = ", ".join(str(item) for item in _as_list(gate.get("quarantineFailureProcesses")))

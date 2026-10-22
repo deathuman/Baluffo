@@ -9,14 +9,66 @@ function getFileExtension(name) {
 }
 
 /**
+ * Returns the inline SVG tick used by saved rows and completed phase steps.
+ * @returns {string}
+ */
+export function renderCheckIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
+    </svg>
+  `;
+}
+
+/**
+ * Returns the inline SVG plus used by the unsaved job-row save button.
+ * @returns {string}
+ */
+export function renderPlusIcon() {
+  // A typed "+" is a text glyph: the line box is centred in the round button,
+  // but the ink rides the font's math axis, which measured 1.5px below the
+  // 1.95rem circle's centre. This path's ink box is 5-19 on both axes, so the
+  // mark is centred by construction, and its 2.5-unit bars keep the weight the
+  // bold text glyph had.
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M10.75 5h2.5v5.75h5.75v2.5h-5.75v5.75h-2.5v-5.75H5v-2.5h5.75z" fill="currentColor"/>
+    </svg>
+  `;
+}
+
+/**
+ * Returns the inline SVG ring used by the job-row save button while a save
+ * request is in flight.
+ * @returns {string}
+ */
+export function renderPendingIcon() {
+  // A typed "…" was the last of the button's three states still drawn by the
+  // font, and it rode the same math axis the typed "+" did. The ring is a
+  // circle on the 24x24 centre, so it is concentric with the round button at
+  // every size; the 38.9/15.1 dash (72% of the 2π·8.6 circumference) leaves the
+  // quarter gap that reads as motion once CSS rotates it.
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="38.9 15.1"/>
+    </svg>
+  `;
+}
+
+/**
  * Returns the inline SVG used by the "check availability now" buttons.
  * @returns {string}
  */
 export function renderAvailabilityCheckIcon() {
+  // The art is drawn around (13.4, 14) rather than the 24x24 centre, so in a
+  // 1rem button it read as a sag to the lower right and its bottom stroke sat
+  // on the viewBox edge. The group shifts the mark back onto the centre.
   return `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <g transform="translate(-1.4 -2.25)">
+        <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
     </svg>
   `;
 }
