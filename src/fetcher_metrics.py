@@ -116,6 +116,20 @@ def summarize_run_history(rows: list[dict[str, Any]], window: int) -> dict[str, 
     }
 
 
+def wall_clock_duration_ms(report: dict[str, Any]) -> int:
+    """Elapsed run time from the report's own timestamps, or 0 when it never finished.
+
+    `runtime.timingSummary.totalDurationMs` is a sum of per-source durations, and the
+    report normalizer clamps it at 24 h. Using it as the run's duration made the panel
+    report a 7.97 h run as 24 h (the raw per-source sum was 81.07 h).
+    """
+    started = parse_iso(report.get("startedAt"))
+    finished = parse_iso(report.get("finishedAt"))
+    if started is None or finished is None:
+        return 0
+    return max(0, int((finished - started).total_seconds() * 1000))
+
+
 def build_metrics(
     report: dict[str, Any], history: list[dict[str, Any]], window: int
 ) -> dict[str, Any]:
@@ -129,6 +143,9 @@ def build_metrics(
     runtime = as_json_object(report.get("runtime"))
     timing_summary = as_json_object(runtime.get("timingSummary"))
     durations = [max(0, int(row.get("durationMs") or 0)) for row in sources]
+    stage_total_ms = max(0, int(timing_summary.get("totalDurationMs") or 0))
+    source_duration_ms = sum(durations)
+    wall_clock_ms = wall_clock_duration_ms(report)
     source_health = normalize_source_health_payload(report.get("sourceHealth"), sources)
     provider_coverage = normalize_provider_coverage_payload(report.get("providerCoverage"))
     provider_static_overlap = normalize_provider_static_overlap_payload(
@@ -149,7 +166,11 @@ def build_metrics(
         "latestRun": {
             "startedAt": str(report.get("startedAt") or ""),
             "finishedAt": str(report.get("finishedAt") or ""),
-            "durationMs": int(timing_summary.get("totalDurationMs") or sum(durations)),
+            # Elapsed, not the clamped per-source sum; the sum stays available as
+            # sourceDurationMs so "81 h of source time over 2,526 sources" is readable.
+            "durationMs": wall_clock_ms or stage_total_ms or source_duration_ms,
+            "wallClockDurationMs": wall_clock_ms,
+            "sourceDurationMs": source_duration_ms,
             "inputCount": input_count,
             "outputCount": output_count,
             "mergedCount": merged,

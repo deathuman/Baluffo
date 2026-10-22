@@ -151,7 +151,7 @@ def test_discover_gameprog_candidates_directory_scenarios(
     provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
         5, config=config, fetcher=fake_fetch
     )
-    assert len(failures) == expected_failures
+    assert sum(row.get("stage") == "website_fetch" for row in failures) == expected_failures
     if expect_provider:
         assert len(provider_rows) >= 1
         assert str(provider_rows[0].get("adapter") or "") == "greenhouse"
@@ -337,7 +337,7 @@ def test_discover_gamesmap_candidates_directory_scenarios(
     provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
         5, config=config, fetcher=fake_fetch
     )
-    assert len(failures) == 0
+    assert not [row for row in failures if row.get("stage") == "website_fetch"]
     assert len(provider_rows) == expected_provider_count
     assert len(static_rows) == expected_static_count
     if expected_provider_count:

@@ -77,7 +77,11 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["outputYieldRate"] == 0.8
     assert latest["sourceFailureRate"] == 0.3333
     assert latest["failedSources"] == 1
-    assert latest["durationMs"] == 50
+    # Elapsed wall clock from the report timestamps, not the stage total: the stage
+    # total is a per-source sum and the normalizer clamps it at 24 h.
+    assert latest["durationMs"] == 120_000
+    assert latest["wallClockDurationMs"] == 120_000
+    assert latest["sourceDurationMs"] == 50
     assert latest["medianSourceDurationMs"] == 25
     assert latest["p95SourceDurationMs"] == 40
     assert latest["stageTop"][0]["stage"] == "fetchAndParse"
@@ -92,6 +96,24 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["staticSuppressionPolicy"]["suppressedCount"] == 1
     assert metrics["history"]["windowRuns"] == 2
     assert metrics["history"]["medianDurationMs"] == 2000
+
+
+def test_build_metrics_reports_wall_clock_when_the_stage_sum_clamps_at_a_day() -> None:
+    report = {
+        "startedAt": "2026-10-22T00:12:49+00:00",
+        "finishedAt": "2026-10-22T08:11:02+00:00",
+        "runtime": {"timingSummary": {"totalDurationMs": 86_400_000}},
+        "summary": {"inputCount": 0, "mergedCount": 0, "outputCount": 0},
+        "sources": [
+            {"name": "slow", "status": "ok", "durationMs": 291_864_000, "keptCount": 0},
+        ],
+    }
+
+    latest = fm.build_metrics(report, [], window=5)["latestRun"]
+
+    assert latest["durationMs"] == 28_693_000
+    assert latest["wallClockDurationMs"] == 28_693_000
+    assert latest["sourceDurationMs"] == 291_864_000
 
 
 def test_sanitize_source_label_removes_control_chars_and_truncates() -> None:

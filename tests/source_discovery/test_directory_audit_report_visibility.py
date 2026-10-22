@@ -68,7 +68,11 @@ def test_run_discovery_reports_opt_in_gameprog_directory_audit_summary() -> None
             assert summary["complete"] is True
             assert summary["teamsRows"] == 1
             assert summary["websiteFetchJobs"] == 1
-            assert summary["failures"] == 0
+            # The recovery probes could not be read (the fake fetcher only knows the
+            # homepage), and each miss is now a published diagnostic row.
+            assert summary["recoveryFetchAttempts"] == 6
+            assert summary["recoveryFailures"] == 6
+            assert summary["failures"] == summary["recoveryFailures"]
             assert summary["artifactSizeBytes"] > 0
             assert summary["timingTotalsMs"]["teamsFetchMs"] >= 0
             assert report["candidates"] == []

@@ -343,13 +343,14 @@ Fallback Sheet Studio,speculative,https://fallback-sheet.example.com/
             fetcher=_fetch_from(payloads),
         )
 
-        assert artifact["summary"]["recoveryFetchAttempts"] == 6
+        # Both generated guesses answered, so the second wave has nothing left to ask.
+        assert artifact["summary"]["recoveryFetchAttempts"] == 2
         assert artifact["summary"]["recoveredStaticCandidates"] == 0
         assert artifact["summary"]["recoveryFailures"] == 0
         assert artifact["staticCandidates"] == []
 
 
-def test_sheet_directory_audit_opt_in_recovery_failure_is_diagnostic_only() -> None:
+def test_sheet_directory_audit_opt_in_recovery_failure_is_published_as_a_diagnostic() -> None:
     with workspace_tmpdir("sheet-directory-audit-recovery-failure") as root:
         audit_path = root / "sheet-audit.json"
         csv_text = """Studio,Roles open,Link
@@ -365,7 +366,12 @@ Down Sheet Studio,yes,https://down-sheet.example.com/
         )
 
         assert artifact["summary"]["recoveryFailures"] > 0
-        assert artifact["summary"]["failures"] == 0
+        # Every miss is a diagnostic row an operator can read, not a hidden counter.
+        assert artifact["summary"]["failures"] == artifact["summary"]["recoveryFailures"]
+        assert (
+            artifact["failureCounts"]["recovery_fetch"] == artifact["summary"]["recoveryFailures"]
+        )
+        assert {row["stage"] for row in artifact["failures"]} == {"recovery_fetch"}
         assert artifact["staticCandidates"] == []
 
 
