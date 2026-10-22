@@ -77,7 +77,10 @@ def fetch_directory_pages(
             and report_every
             and (completed == total or completed % report_every == 0)
         ):
-            emit_log(f"{progress_name}: fetched {completed}/{total} pages.")
+            # completed counts finished attempts, not reads: a wave where most probes
+            # 404'd still ends at N/N. Say processed so the line cannot be mistaken for
+            # a success count; the recovery lane logs its read/failed split separately.
+            emit_log(f"{progress_name}: processed {completed}/{total} pages.")
         if progress_callback is not None:
             progress_callback({"completed": completed, "total": total, "label": progress_name})
 

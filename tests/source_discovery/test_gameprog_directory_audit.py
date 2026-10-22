@@ -294,6 +294,49 @@ def test_gameprog_audit_records_website_fetch_failures_in_failure_channel() -> N
         assert artifact["failures"] == failures
 
 
+def test_gameprog_audit_publishes_recovery_failures_and_gates_the_second_wave() -> None:
+    with workspace_tmpdir("gameprog-audit-recovery-failures") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditRecoveryEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": False,
+                "maxStudios": 1,
+            }
+        }
+        requested: list[str] = []
+
+        def fetcher(url: str, _timeout: int) -> str:
+            requested.append(url)
+            if url == "https://gameprog.it/teams.json":
+                return json.dumps(
+                    [{"name": "Quiet Studio", "url": "https://quiet.example.com/", "place": "Rome"}]
+                )
+            if url == "https://quiet.example.com/":
+                return "<html><body>Quiet Studio</body></html>"
+            raise RuntimeError(f"Client error '404 Not Found' for url '{url}'")
+
+        _provider_rows, _static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=fetcher,
+        )
+
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        # Both guesses 404'd, so wave 2 asks nothing more and the two misses are visible.
+        assert artifact["summary"]["recoveryFetchAttempts"] == 2
+        assert artifact["summary"]["recoveryFailures"] == 2
+        assert artifact["failureCounts"]["recovery_fetch"] == 2
+        assert [row["stage"] for row in failures] == ["recovery_fetch", "recovery_fetch"]
+        assert {row["adapter"] for row in failures} == {"gameprog"}
+        assert all(row["recoveryUrlSource"] == "generated_common_path" for row in failures)
+        assert not any("/join-us" in url for url in requested)
+
+
 def test_gameprog_audit_recovers_static_candidate_before_weak_fallback() -> None:
     with workspace_tmpdir("gameprog-audit-recovery-static") as root:
         audit_path = root / "gameprog-audit.json"

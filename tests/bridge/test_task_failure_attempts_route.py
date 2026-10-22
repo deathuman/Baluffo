@@ -445,3 +445,56 @@ def test_task_failure_attempts_route_classifies_live_umbrel_discovery_pressure(
     assert high["gamedevmap_recovery_not_found"]["classification"] == "expected_negative"
     assert high["probe_dns_miss"]["classification"] == "expected_negative"
     assert "studio.example" not in json.dumps(payload)
+
+
+def test_task_failure_attempts_route_classifies_directory_recovery_buckets(
+    tmp_path: Path,
+) -> None:
+    """A directory recovery 404 is an answer: visible, counted, and not actionable."""
+    failures = [
+        {
+            "name": f"Studio {index}",
+            "adapter": "gameprog",
+            "stage": "recovery_fetch",
+            "dropStage": "page_fetch",
+            "dropReason": "page_fetch",
+            "recoveryUrlSource": "generated_common_path",
+            "recoveryUrlPath": "/careers",
+            "error": "Client error '404 Not Found' for url 'https://studio.example/careers'",
+        }
+        for index in range(55)
+    ]
+    failures.append(
+        {
+            "name": "Studio read timeout",
+            "adapter": "gamesmap",
+            "stage": "recovery_fetch",
+            "dropStage": "page_fetch",
+            "dropReason": "page_fetch",
+            "recoveryUrlSource": "generated_common_path",
+            "recoveryUrlPath": "/jobs",
+            "error": "ReadTimeout: timed out",
+        }
+    )
+    _write_json(
+        tmp_path / "discovery-report.json",
+        {
+            "runId": "discovery_directory_recovery",
+            "taskProgress": {"active": False},
+            "failures": failures,
+        },
+    )
+
+    payload = _call_route(tmp_path)
+    discovery = payload["discovery"]
+    high = {row["key"]: row for row in discovery["highPriorityBuckets"]}
+
+    assert discovery["failureRecordCount"] == 56
+    assert discovery["bucketCounts"] == [
+        {"key": "gameprog_recovery_not_found", "count": 55},
+        {"key": "gamesmap_recovery_fetch", "count": 1},
+    ]
+    assert discovery["expectedNegativeCount"] == 55
+    assert discovery["expectedNegativeCounts"] == {"gameprog_recovery_not_found": 55}
+    assert discovery["actionableDiagnosticCount"] == 1
+    assert high["gameprog_recovery_not_found"]["classification"] == "expected_negative"

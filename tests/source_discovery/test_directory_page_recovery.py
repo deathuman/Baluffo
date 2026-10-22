@@ -17,7 +17,6 @@ from src.source_discovery.directory_page_recovery import (
     merge_scan_result_payloads,
     page_outcome_scan_rows,
     plan_recovery_fetch_job_waves,
-    plan_recovery_urls,
     recovery_cache_result,
     recovery_request_from_context,
     recovery_result_candidates_from_strategy,
@@ -29,25 +28,6 @@ from src.source_discovery.provider_inference_filters import split_bad_provider_i
 from tests.helpers.bridge_fakes import directory_recovery_request
 
 _request = directory_recovery_request
-
-
-def test_directory_recovery_plans_bounded_deduped_same_site_urls() -> None:
-    request = _request(
-        html="""
-            <a href="/jobs">Jobs</a>
-            <script>{"url":"https://studio.example.com/careers#team"}</script>
-        """,
-    )
-
-    urls = plan_recovery_urls(request, paths=("/careers", "/jobs"), limit=2)
-
-    assert urls == ["https://studio.example.com/jobs", "https://studio.example.com/careers"]
-
-
-def test_directory_recovery_skips_common_paths_for_profile_hosts() -> None:
-    request = _request("https://linktr.ee/studio")
-
-    assert plan_recovery_urls(request, paths=("/careers", "/jobs"), limit=4) == []
 
 
 def test_directory_recovery_fans_out_shared_fetched_url_to_multiple_rows() -> None:

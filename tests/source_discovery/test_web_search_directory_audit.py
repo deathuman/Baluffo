@@ -594,7 +594,7 @@ def test_web_search_directory_audit_preserves_no_http_recovery_output(
             assert artifact["failureCounts"] == expected_failure_counts
 
 
-def test_web_search_directory_audit_opt_in_recovery_miss_and_failure_are_diagnostic_only() -> None:
+def test_web_search_audit_opt_in_recovery_miss_and_failure_are_published_diagnostics() -> None:
     with workspace_tmpdir("web-search-audit-http-recovery-miss-failure") as root:
         audit_path = root / "web-audit.json"
 
@@ -627,10 +627,10 @@ def test_web_search_directory_audit_opt_in_recovery_miss_and_failure_are_diagnos
             max_queries=1,
         )
 
-        assert artifact["summary"]["recoveryFetchAttempts"] == 12
+        assert artifact["summary"]["recoveryFetchAttempts"] == 4
         assert artifact["summary"]["recoveredStaticCandidates"] == 0
-        assert artifact["summary"]["recoveryFailures"] == 5
-        assert artifact["summary"]["failures"] == 0
+        assert artifact["summary"]["recoveryFailures"] == 1
+        assert artifact["summary"]["failures"] == artifact["summary"]["recoveryFailures"]
         assert artifact["providerCandidates"] == []
         assert artifact["staticCandidates"] == []
 

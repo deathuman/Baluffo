@@ -159,6 +159,7 @@ def _run_web_http_recovery(
             "summary": dict(updated.get("summary") or {}),
             "batchTiming": dict(updated.get("batchTiming") or {}),
             "pageFetchLifecycle": list(updated.get("pageFetchLifecycle") or []),
+            "failures": list(updated.get("failures") or []),
         },
     )
 
@@ -336,6 +337,9 @@ def _run_web_page_job_stage(
         recovery_summary = dict(recovery_payload.get("summary") or {})
         recovery_timing = dict(recovery_payload.get("batchTiming") or {})
         recovery_page_fetch_lifecycles = list(recovery_payload.get("pageFetchLifecycle") or [])
+        # Recovery misses are diagnostics for this lane, and the published failure list
+        # is the only place an operator can see why a probe produced nothing.
+        failure_rows.extend(recovery_payload.get("failures") or [])
 
     provider_rows = collapse_competing_candidates(provider_rows_input)
     static_rows = unique_sources(static_rows_input)

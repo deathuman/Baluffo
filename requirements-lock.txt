@@ -27,7 +27,7 @@ backports-zstd==1.7.0
     # via scrapy
 brotli==1.2.0
     # via scrapy
-certifi==2026.4.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
