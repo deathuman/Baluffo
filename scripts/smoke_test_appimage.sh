@@ -44,6 +44,15 @@ child_pids() {
     done
 }
 
+app_pids() {
+    local pid
+    for pid in $(session_pids); do
+        if ! tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q '__child_site__\|__child_bridge__'; then
+            echo "$pid"
+        fi
+    done
+}
+
 url_answers() {
     curl -sf "$1" > /dev/null 2>&1
 }
@@ -96,8 +105,16 @@ echo "[smoke] Bridge response: $(echo "$BRIDGE_RESPONSE" | head -c 200)"
 
 # The app owns its servers: stopping it must stop them, or the next launch has
 # to reclaim ports from processes nothing is left to close.
+#
+# The started pid is the AppImage runtime, which forks the payload so it can
+# delete the extracted tree afterwards; signalling only the runtime orphans the
+# launcher. Ask every app process in the session, leaving the site and bridge out
+# on purpose -- they must go away because the launcher stops them, not because
+# this script signalled them too.
 echo "[smoke] Stopping the app (SIGTERM)..."
-kill -TERM "$APP_PID" 2>/dev/null || true
+for pid in $(app_pids); do
+    kill -TERM "$pid" 2>/dev/null || true
+done
 DEADLINE=$(($(date +%s) + TEARDOWN_TIMEOUT))
 TEARDOWN_OK=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
@@ -122,6 +139,10 @@ if [ "$TEARDOWN_OK" -eq 0 ]; then
         echo "[smoke]   bridge port ${BRIDGE_PORT} still answers"
     fi
     echo "[smoke]   session processes: $(session_pids | tr '\n' ' ')"
+    echo "[smoke]   session process cmdlines:"
+    for pid in $(session_pids); do
+        echo "[smoke]     $pid: $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | head -c 160)"
+    done
     exit 1
 fi
 echo "[smoke] Teardown OK: site and bridge stopped with the app"
