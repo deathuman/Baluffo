@@ -127,7 +127,9 @@ def bump_changelog(text: str, version: str, date: str) -> str:
     preamble = "\n".join(lines[: unreleased_idx + 1])
     body = "\n".join(lines[unreleased_idx + 1 : next_idx]).strip()
     rest = "\n".join(lines[next_idx:])
-    return f"{preamble}\n\n## [{version}] - {date}\n{body}\n\n{rest}\n"
+    # The blank line after the heading matches every hand-written section: a
+    # version heading followed directly by `### Changed` breaks the file's shape.
+    return f"{preamble}\n\n## [{version}] - {date}\n\n{body}\n\n{rest}\n"
 
 
 def bump_current_txt(version: str) -> str:
@@ -176,8 +178,12 @@ def main(argv: list[str] | None = None) -> int:
     targets = [
         (app_version_path, bump_app_version(_read(app_version_path), version)),
         (changelog_path, bump_changelog(_read(changelog_path), version, args.date)),
-        (current_txt_path, bump_current_txt(version)),
     ]
+    if current_txt_path.is_file():
+        # A clean checkout has not been packaged, so it has no `current.txt` to
+        # move. Creating one would invent an artifact that
+        # `read_declared_versions` deliberately ignores when it is absent.
+        targets.append((current_txt_path, bump_current_txt(version)))
 
     changed = [(path, new_text) for path, new_text in targets if _read(path) != new_text]
     if not changed:

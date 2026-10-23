@@ -67,12 +67,37 @@ def test_bump_version_moves_every_artifact(
     assert 'APP_VERSION = "0.9.900"' in (tmp_path / "src" / "app_version.py").read_text(
         encoding="utf-8"
     )
-    assert "## [0.9.900] - 2026-01-02" in (tmp_path / "docs" / "CHANGELOG.md").read_text(
-        encoding="utf-8"
-    )
+    changelog = (tmp_path / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    # A version heading is followed by a blank line, like every hand-written
+    # section; the next release's notes are generated from this text.
+    assert "## [0.9.900] - 2026-01-02\n\n### Fixed" in changelog
     assert (tmp_path / "dist" / "baluffo-ship" / "app" / "current.txt").read_text(
         encoding="utf-8"
     ) == "0.9.900\n"
+
+
+def test_bump_version_works_on_a_checkout_that_was_never_packaged(
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `dist/` artifact yet: move the two files that exist, invent nothing."""
+    bump_version = _load_bump_version(repo_root)
+    _write_bump_fixture(tmp_path)
+    current_txt = tmp_path / "dist" / "baluffo-ship" / "app" / "current.txt"
+    current_txt.unlink()
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+
+    exit_code = bump_version.main(["0.9.900", "--date", "2026-01-02"])
+
+    assert exit_code == 0
+    assert 'APP_VERSION = "0.9.900"' in (tmp_path / "src" / "app_version.py").read_text(
+        encoding="utf-8"
+    )
+    assert "## [0.9.900] - 2026-01-02" in (tmp_path / "docs" / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
+    assert not current_txt.exists()
 
 
 def test_bump_version_stops_on_half_applied_previous_bump(
