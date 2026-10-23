@@ -40,6 +40,16 @@
   than something to fix. The discovery report's own summary carries that rescued total, so the
   admin's report and run detail show it next to the failure count instead of making you open the
   adapter audit that recorded it.
+- **Every page now loads as one script, and paints what you are looking at first.** The packaged
+  pages used to fetch each of their modules as a separate file, so a launch waited on roughly a
+  hundred small requests before the page could settle; they ship bundled now — about 118 fewer
+  requests on the jobs page and 169 fewer on the admin page. The admin page lays out its
+  below-the-fold panels after the shell has painted, its operations half and the jobs page's update
+  panel arrive in their own files once the page is up, and the hosted pages got the same split. Form
+  controls finally use the app's font instead of the browser's default, the icons the pages drew as
+  characters (the save tick, the fullwidth plus, the discovery disclosure marker) are drawn as paths
+  or borders, and each runtime loads only its own local-data client. Nothing moves or looks
+  different.
 
 ### Fixed
 
@@ -55,7 +65,7 @@
 
 ### Notes
 
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.024:
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.023:
   the same-origin Linux container,
   GHCR multi-arch image publishing,
   wildcard browser CORS allow headers,
