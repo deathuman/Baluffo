@@ -108,7 +108,12 @@ jobs:
             --artifact-kind appimage \
             --github-repo "${{ github.repository }}"
 
+      # Bounded: the launcher binds its ports before its accept loop runs, and a
+      # bare probe against a listening-but-silent socket waits forever. The smoke
+      # script times each probe out itself; this stops a wedged app from holding
+      # the lane open for hours.
       - name: Smoke test AppImage
+        timeout-minutes: 10
         run: PLAYWRIGHT_SYSTEM_CHROMIUM=1 PACKAGED_SMOKE_SYSTEM_CHROMIUM=1 bash scripts/smoke_test_appimage.sh
 
       # The Linux launcher cannot enumerate windows, so this lane reports the
@@ -149,6 +154,7 @@ jobs:
       # when it relaunches. Built after the smoke and startup runs so neither
       # picks it up by version sort.
       - name: Rehearse AppImage self-update
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           npm run build:linux -- --bundle-version "${BALUFFO_VERSION}-rehearsal-target"

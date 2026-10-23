@@ -6,6 +6,10 @@ BRIDGE_PORT="${BRIDGE_PORT:-8877}"
 SITE_PORT="${SITE_PORT:-8080}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-15}"
 PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-10}"
+# Every probe needs its own deadline. The launcher binds its ports before its
+# accept loop is running, so a socket that is listening but not answering makes
+# a bare `curl` wait forever -- the whole step then sits there instead of failing.
+CURL_TIMEOUT="${CURL_TIMEOUT:-5}"
 # Steady state after a stop: the launcher, its site and its bridge are gone.
 TEARDOWN_TIMEOUT="${TEARDOWN_TIMEOUT:-10}"
 
@@ -54,7 +58,15 @@ app_pids() {
 }
 
 url_answers() {
-    curl -sf "$1" > /dev/null 2>&1
+    curl -sf --max-time "$CURL_TIMEOUT" "$1" > /dev/null 2>&1
+}
+
+dump_session() {
+    echo "[smoke]   session processes: $(session_pids | tr '\n' ' ')"
+    echo "[smoke]   session process cmdlines:"
+    for pid in $(session_pids); do
+        echo "[smoke]     $pid: $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | head -c 160)"
+    done
 }
 
 cleanup() {
@@ -70,7 +82,7 @@ echo "[smoke] Waiting for bridge health..."
 DEADLINE=$(($(date +%s) + HEALTH_TIMEOUT))
 BRIDGE_OK=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if curl -sf "http://127.0.0.1:${BRIDGE_PORT}/ops/health" > /dev/null 2>&1; then
+    if curl -sf --max-time "$CURL_TIMEOUT" "http://127.0.0.1:${BRIDGE_PORT}/ops/health" > /dev/null 2>&1; then
         BRIDGE_OK=1
         break
     fi
@@ -79,6 +91,7 @@ done
 
 if [ "$BRIDGE_OK" -eq 0 ]; then
     echo "[smoke] FAIL: Bridge health check timed out"
+    dump_session
     exit 1
 fi
 echo "[smoke] Bridge health OK"
@@ -87,7 +100,7 @@ echo "[smoke] Waiting for site..."
 DEADLINE=$(($(date +%s) + HEALTH_TIMEOUT))
 SITE_OK=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if curl -sf "http://127.0.0.1:${SITE_PORT}/jobs.html" > /dev/null 2>&1; then
+    if curl -sf --max-time "$CURL_TIMEOUT" "http://127.0.0.1:${SITE_PORT}/jobs.html" > /dev/null 2>&1; then
         SITE_OK=1
         break
     fi
@@ -96,11 +109,12 @@ done
 
 if [ "$SITE_OK" -eq 0 ]; then
     echo "[smoke] FAIL: Site health check timed out"
+    dump_session
     exit 1
 fi
 echo "[smoke] Site health OK"
 
-BRIDGE_RESPONSE=$(curl -sf "http://127.0.0.1:${BRIDGE_PORT}/ops/health")
+BRIDGE_RESPONSE=$(curl -sf --max-time "$CURL_TIMEOUT" "http://127.0.0.1:${BRIDGE_PORT}/ops/health")
 echo "[smoke] Bridge response: $(echo "$BRIDGE_RESPONSE" | head -c 200)"
 
 # The app owns its servers: stopping it must stop them, or the next launch has
@@ -138,11 +152,7 @@ if [ "$TEARDOWN_OK" -eq 0 ]; then
     if url_answers "http://127.0.0.1:${BRIDGE_PORT}/ops/health"; then
         echo "[smoke]   bridge port ${BRIDGE_PORT} still answers"
     fi
-    echo "[smoke]   session processes: $(session_pids | tr '\n' ' ')"
-    echo "[smoke]   session process cmdlines:"
-    for pid in $(session_pids); do
-        echo "[smoke]     $pid: $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | head -c 160)"
-    done
+    dump_session
     exit 1
 fi
 echo "[smoke] Teardown OK: site and bridge stopped with the app"
