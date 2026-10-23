@@ -1,14 +1,14 @@
 # Optional Playwright Browser Download Plan
 
-> - **Status:** Parked — deferred until the next desktop portable release; recent release work is container/Umbrel-side and unaffected by this plan
+> - **Status:** Ready — the condition this plan deferred on has been met and nothing in it has landed, so it now waits on being scheduled rather than on a release
 > - **Class:** enhance-stable
-> - **Trigger:** the next desktop portable release. Container/Umbrel work does not reach this, because the portable ZIP is a desktop-only artifact.
-> - **Verified against:** 722c3be3
+> - **Trigger:** an operator decision to schedule the portable-packaging change. The previous trigger — "the next desktop portable release" — is spent: `0.3.015`, `0.3.017`, `0.3.021`, `0.3.022`, `0.3.023` and `0.3.025` each shipped a portable ZIP while the build kept embedding the browser cache.
+> - **Verified against:** ae14b937
 > - **Use this when:** moving Playwright browser binaries out of the portable ZIP, changing packaged browser fallback install behavior, or revisiting first-start browser-support UX
 > - **Canonical for:** proposed optional browser payload download behavior, packaging invariants, user-facing tradeoffs, and validation plan
 > - **Not canonical for:** current v0.2.01 portable ZIP contents, released updater behavior, or implemented browser fallback runtime state
 > - **Then inspect:** [`../RELEASE.md`](../RELEASE.md), [`../testing.md`](../testing.md), [`../TROUBLESHOOTING.md`](../TROUBLESHOOTING.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and [`../../scripts/build_portable_exe.py`](../../scripts/build_portable_exe.py)
-> - **Last updated:** 2026-10-02 (declaration block added; premise re-verified - the build still defines the chromium-headless-shell payload, so the work it proposes is still unlanded)
+> - **Last updated:** 2026-10-23 (trigger recorded as fired — six desktop portable releases have shipped since 2026-10-02; re-verified that `scripts/build_portable_exe.py` still requires and embeds the `chromium_headless_shell` cache, so the work proposed here is still unlanded)
 
 ## Summary
 
