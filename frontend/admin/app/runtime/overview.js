@@ -1,7 +1,8 @@
 import { bindAsyncClick } from "../../../shared/ui/index.js";
-import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
+import { ADMIN_TOKENS } from "../../../shared/ui/tokens/admin.js";
+import { ui } from "../../../shared/ui/tokens/ui.js";
 
-const ADMIN_WIPE_BUTTON_SELECTOR = ui(UI_TOKENS.admin.wipeBtn);
+const ADMIN_WIPE_BUTTON_SELECTOR = ui(ADMIN_TOKENS.wipeBtn);
 const DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS = 5000;
 const ADMIN_OVERVIEW_FULL_REFRESH_DELAY_MS = 150;
 

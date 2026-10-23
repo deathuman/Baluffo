@@ -9,6 +9,7 @@ from .reporting_progress import (
     build_discovery_task_progress,
     build_stage_summary,
     emit_log,
+    failures_resolved_by_browser_total,
     update_discovery_subtask_progress_report,
     write_discovery_progress_report,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "build_stage_summary",
     "enrich_candidates_for_review",
     "emit_log",
+    "failures_resolved_by_browser_total",
     "merge_candidate_streams",
     "stage_curated_seed_candidates",
     "update_candidate_review_metadata",

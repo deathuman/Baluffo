@@ -119,8 +119,44 @@ export function createJobsFeedController({
   }
 
   async function fetchJobsReport({ timeoutMs = 1500 } = {}) {
-    const report = await fetchJsonFromCandidates(jobsFetchReportUrls || [], { timeoutMs });
+    const urls = jobsFetchReportUrls || [];
+    const startedAt = now();
+    emitDesktopStartupMetric("jobs_report_probe_start", {
+      timeoutMs,
+      candidateCount: urls.length
+    });
+    // The report probe sits on the first-render path, so its cost needs its own
+    // span: without it the wait is absorbed into the page-boot total and looks
+    // like part of whichever stage happens to follow.
+    const report = await fetchJsonFromCandidates(urls, {
+      timeoutMs,
+      onCandidate: (candidate) => {
+        const { url, status, ok, ms } = candidate || {};
+        // ``ms`` alone cannot tell a slow listener from an answer that sat in the
+        // renderer; forward the browser's own view of that request with it.
+        emitDesktopStartupMetric("jobs_report_probe_candidate", {
+          url: String(url || "").slice(0, 180),
+          status: status,
+          ok,
+          ms,
+          // ``hoisted`` means the page started this request at parse time
+          // (frontend/jobs/early-data.js), so ``ms`` measures only the hand-off
+          // rather than the network wait it used to hide.
+          hoisted: Boolean(candidate?.hoisted),
+          visibility: String(candidate?.visibility || "").slice(0, 16),
+          resourceStartMs: candidate?.resourceStartMs ?? null,
+          resourceResponseStartMs: candidate?.resourceResponseStartMs ?? null,
+          resourceResponseEndMs: candidate?.resourceResponseEndMs ?? null,
+          resourceConnectMs: candidate?.resourceConnectMs ?? null
+        });
+      }
+    });
     runtimeState.jobsFetchReport = report && typeof report === "object" ? report : null;
+    emitDesktopStartupMetric("jobs_report_probe_done", {
+      ms: Math.max(0, Math.round(now() - startedAt)),
+      found: Boolean(runtimeState.jobsFetchReport),
+      candidateCount: urls.length
+    });
     return runtimeState.jobsFetchReport;
   }
 

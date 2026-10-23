@@ -45,6 +45,16 @@ LEAN_CHROMIUM_APP_FLAGS = (
     "--disable-sync",
     "--metrics-recording-only",
 )
+# The app window opens unfocused, and a window the shell reports as occluded makes
+# Chromium treat the renderer as backgrounded: its first page request then waits for
+# the throttled task queue (observed as a ~0.7 s gap between a 1-2 ms server response
+# and the fetch callback, with no long task recorded). Keep the app renderer
+# foreground-priority; none of these change what the page can do.
+FOREGROUND_RENDERER_FLAGS = (
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+)
 
 
 def _profile_dir_hash(profile_dir: Path) -> str:
@@ -178,6 +188,7 @@ def build_browser_launch_command(
     ]
     if not bool(api._truthy_env(env_map.get(DISABLE_LEAN_BROWSER_FLAGS_ENV))):
         command[1:1] = list(LEAN_CHROMIUM_APP_FLAGS)
+    command[1:1] = list(FOREGROUND_RENDERER_FLAGS)
     packaged_smoke_runtime = str(env_map.get("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
     if packaged_smoke_runtime:
         command.append("--no-sandbox")
@@ -260,7 +271,12 @@ def launch_chromium_app(
             creationflags=int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
             close_fds=True,
         )
-    return subprocess.Popen(command, text=True)
+    # The browser is the app's window: it must not outlive the launcher either.
+    return subprocess.Popen(
+        command,
+        text=True,
+        preexec_fn=desktop_api()._linux_pdeathsig_preexec(os.getpid()),
+    )
 
 
 def wait_for_browser_process_ready(

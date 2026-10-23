@@ -26,7 +26,7 @@ test("initJobsFeed marks startup initialized and interactive on successful first
 
 test("initJobsFeed renders explicit error path when startup throws before first load completes", async () => {
   const { calls, deps } = createBaseDeps({
-    initAuth: () => {
+    isDesktopRuntimeMode: () => {
       throw new Error("startup exploded");
     },
   });
@@ -165,77 +165,6 @@ test("refreshJobsFeed treats all-filtered missing-title rows as no data", async 
   assert.equal(completedCalls, 0);
   assert.match(sourceStatus.at(-1), /no displayable positions/);
   assert.match(failures.at(-1), /no displayable positions/);
-});
-
-test("initJobsFeed skips packaged feeds and auto-starts bootstrap on desktop cold start", async () => {
-  const { storage, localStorage } = createLocalStorage();
-  let reportCalls = 0;
-  let bootstrapStarts = 0;
-  let refreshOptions = null;
-  let startupPreviewCalled = false;
-  let pendingAutoRefreshCalled = false;
-  const eventOrder = [];
-  const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
-    windowObject: { localStorage },
-    bootstrapPollIntervalMs: 0,
-    bootstrapTimeoutMs: 1000,
-    fetchJobsReport: async () => {
-      reportCalls += 1;
-      if (reportCalls === 1) {
-        return { summary: { outputCount: 0 } };
-      }
-      return {
-        finishedAt: "2026-05-17T10:00:00+00:00",
-        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
-      };
-    },
-    startJobsBootstrap: async () => {
-      bootstrapStarts += 1;
-      eventOrder.push("bootstrap");
-      return { started: true, task: "jobs_bootstrap" };
-    },
-    refreshJobsNow: async options => {
-      refreshOptions = options;
-      eventOrder.push("refresh");
-      return true;
-    },
-    loadStartupPreviewJobs: async () => {
-      startupPreviewCalled = true;
-      return true;
-    },
-    applyPendingAutoRefreshSignal: async () => {
-      pendingAutoRefreshCalled = true;
-    }
-  });
-
-  await initJobsFeed(deps);
-
-  assert.equal(bootstrapStarts, 1);
-  assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
-  assert.equal(startupPreviewCalled, false);
-  assert.equal(pendingAutoRefreshCalled, false);
-  assert.deepEqual(eventOrder, ["bootstrap", "refresh"]);
-  assert.deepEqual(calls.allJobs[0], []);
-  assert.deepEqual(calls.rendered[0], { stage: "first_run_bootstrap", rowCount: 0 });
-  assert.equal(calls.interactive[0], "first_run_bootstrap");
-  assert.deepEqual(calls.startupStates.at(-1), {
-    state: "interactive",
-    detail: "first_run_bootstrap"
-  });
-  assert.notEqual(calls.startupStates.at(-1)?.state, "loading");
-  assert.equal(calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated")?.payload.action, "start");
-  assert.equal(calls.notices.length, 1);
-  assert.equal(calls.notices[0].title, "Preparing first-run jobs");
-  assert.match(calls.notices[0].body, /several minutes/);
-  assert.equal(calls.notices[0].primaryLabel, "Got it");
-  assert.equal(calls.notices[0].reason, "start");
-  assert.equal(
-    calls.sourceStatus.at(-1),
-    "Refreshing first-run sheet jobs. This can take several minutes..."
-  );
-  assert.deepEqual(calls.showError, []);
-  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
 });
 
 test("initJobsFeed keeps waiting past first-run timeout while task-live heartbeat is fresh", async () => {

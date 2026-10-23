@@ -148,6 +148,20 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             raise
 
 
+# A launch traces its page shell plus a bounded number of data fetches: the first
+# requests a page makes are the ones under investigation, and a refresh burst must
+# not bury the launch timeline in ordinary file reads.
+_DATA_REQUEST_TRACE_CAP = 40
+
+
+def _claim_data_request_trace(handler_cls: type[Any]) -> bool:
+    claimed = int(getattr(handler_cls, "_data_request_trace_count", 0) or 0)
+    if claimed >= _DATA_REQUEST_TRACE_CAP:
+        return False
+    handler_cls._data_request_trace_count = claimed + 1
+    return True
+
+
 def _row_artifact_candidates(data_dir: Path) -> list[Path]:
     candidates: list[Path] = []
     for name in ROW_BEARING_JOBS_ARTIFACTS:
@@ -699,7 +713,14 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+        # The page shell and the data it fetches are both traced: a page clock span that
+        # looks slow is either the listener not answering or the page not asking, and the
+        # server-side arrival time is the only way to tell which.
+        traced = trace_enabled and (
+            trace_path in {"jobs.html", "saved.html", "admin.html"}
+            or (trace_path.startswith("data/") and _claim_data_request_trace(self.__class__))
+        )
+        if traced:
             _append_startup_trace(
                 Path(self.__class__._runtime_data_dir),
                 "desktop_site_request_start",
@@ -708,12 +729,34 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         try:
             return super().do_GET()
         finally:
-            if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+            if traced:
+                duration_ms = int((time.perf_counter() - request_started) * 1000)
+                # ``do_GET`` returns before the handler flushes, so a response the page
+                # only received much later can be a socket write that blocked right
+                # here. The flush is traced separately instead of hiding in durationMs.
+                self._traced_flush_pending = (trace_path, duration_ms, time.perf_counter())
                 _append_startup_trace(
                     Path(self.__class__._runtime_data_dir),
                     "desktop_site_request_complete",
                     path=trace_path,
-                    durationMs=int((time.perf_counter() - request_started) * 1000),
+                    durationMs=duration_ms,
+                )
+
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        finally:
+            pending = getattr(self, "_traced_flush_pending", None)
+            runtime_data_dir = self.__class__._runtime_data_dir
+            if pending is not None and runtime_data_dir is not None:
+                self._traced_flush_pending = None
+                trace_path, duration_ms, written_at = pending
+                _append_startup_trace(
+                    Path(runtime_data_dir),
+                    "desktop_site_request_flushed",
+                    path=trace_path,
+                    durationMs=int(duration_ms),
+                    flushMs=int((time.perf_counter() - written_at) * 1000),
                 )
 
 
@@ -731,17 +774,19 @@ def _make_probe_aware_simple_http_request_handler(
         desktop_bridge_host,
         desktop_bridge_port,
     )
+    runtime_data_root: Path | None = None
+    if runtime_data_dir is not None:
+        runtime_data_root = Path(runtime_data_dir).expanduser().resolve()
+    static_data_root: Path | None = None
+    if static_data_dir is not None:
+        static_data_root = Path(static_data_dir).expanduser().resolve()
     return type(
         "ConfiguredProbeAwareSimpleHTTPRequestHandler",
         (ProbeAwareSimpleHTTPRequestHandler,),
         {
             "_directory": Path(directory),
-            "_runtime_data_dir": Path(runtime_data_dir).expanduser().resolve()
-            if runtime_data_dir
-            else None,
-            "_static_data_dir": Path(static_data_dir).expanduser().resolve()
-            if static_data_dir
-            else None,
+            "_runtime_data_dir": runtime_data_root,
+            "_static_data_dir": static_data_root,
             "_bridge_runtime_config": bridge_runtime_config,
             "_jobs_cold_start": bool(jobs_cold_start),
             "_startup_probe": bool(startup_probe),

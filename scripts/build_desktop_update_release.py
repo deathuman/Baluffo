@@ -19,6 +19,7 @@ from src.app_version import APP_VERSION
 from src.python_version_guard import ensure_required_python
 from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_MANIFEST_ASSET,
+    DESKTOP_UPDATE_MANIFEST_ASSET_LINUX,
     DESKTOP_UPDATE_SCHEMA_VERSION,
     DESKTOP_UPDATER_VERSION,
     sign_manifest,
@@ -100,14 +101,18 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     if not key_id:
         raise RuntimeError("Desktop update manifest key id is required.")
 
-    portable_zip_arg = str(args.portable_zip or "").strip()
+    # `portable_artifact` names the artifact this platform replaces: the Windows
+    # portable ZIP, or the Linux AppImage. The key stays the same so an older
+    # client can still read a manifest written for its channel.
+    artifact_arg = str(getattr(args, "artifact", "") or "").strip()
+    portable_zip_arg = artifact_arg or str(args.portable_zip or "").strip()
     portable_zip = (
         Path(portable_zip_arg).expanduser().resolve()
         if portable_zip_arg
         else (ROOT / "dist" / f"baluffo-portable-{version}.zip").resolve()
     )
     if not portable_zip.is_file():
-        raise RuntimeError(f"Portable ZIP not found: {portable_zip}")
+        raise RuntimeError(f"Desktop update artifact not found: {portable_zip}")
     ship_zip_arg = str(args.ship_zip or "").strip()
     ship_zip = Path(ship_zip_arg).expanduser().resolve() if ship_zip_arg else None
     if ship_zip is not None and not ship_zip.is_file():
@@ -150,12 +155,24 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build dist/baluffo-desktop-update-manifest.json for a GitHub release."
+        description="Build a signed desktop update manifest for a GitHub release."
     )
     parser.add_argument("--version", default=APP_VERSION)
+    parser.add_argument("--artifact", default="", help="Artifact this platform installs from.")
     parser.add_argument("--portable-zip", default="")
     parser.add_argument("--ship-zip", default="")
-    parser.add_argument("--output", default=str(ROOT / "dist" / DESKTOP_UPDATE_MANIFEST_ASSET))
+    parser.add_argument(
+        "--artifact-kind",
+        choices=("zip", "appimage"),
+        default="zip",
+        help="Asset family the manifest is written for (selects its default name).",
+    )
+    parser.add_argument(
+        "--manifest-name",
+        default="",
+        help="Manifest asset name; defaults to the Windows or Linux manifest.",
+    )
+    parser.add_argument("--output", default="")
     parser.add_argument("--release-tag", default="")
     parser.add_argument(
         "--github-repo", default=__import__("os").environ.get(DEFAULT_GITHUB_REPO_ENV, "")
@@ -177,11 +194,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def resolve_manifest_name(args: argparse.Namespace) -> str:
+    explicit = str(getattr(args, "manifest_name", "") or "").strip()
+    if explicit:
+        return explicit
+    if str(getattr(args, "artifact_kind", "") or "").strip().lower() == "appimage":
+        return DESKTOP_UPDATE_MANIFEST_ASSET_LINUX
+    return DESKTOP_UPDATE_MANIFEST_ASSET
+
+
+def resolve_output_path(args: argparse.Namespace) -> Path:
+    explicit = str(getattr(args, "output", "") or "").strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return (ROOT / "dist" / resolve_manifest_name(args)).resolve()
+
+
 def main(argv: list[str] | None = None) -> int:
     ensure_required_python()
     args = parse_args(argv)
     manifest = build_manifest(args)
-    output_path = Path(args.output).expanduser().resolve()
+    output_path = resolve_output_path(args)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

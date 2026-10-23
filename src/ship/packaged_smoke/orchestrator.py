@@ -12,10 +12,12 @@ import argparse
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
 from src.shared.coerce import as_dict as _as_dict
+from src.ship.startup_spawn_clock import build_spawn_clock
 from src.ship.startup_telemetry import JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT
 
 root: Any | None = None
@@ -500,6 +502,7 @@ def _capture_startup_failure_metrics(
     preferred_probe_browser_path: str,
     artifacts_dir: Path,
     error_message: str,
+    spawn_epoch_ms: float | None,
 ) -> None:
     deps = _root()
     partial_metrics = _load_failure_startup_metrics(
@@ -522,6 +525,12 @@ def _capture_startup_failure_metrics(
         preferred_browser_name=preferred_probe_browser_name,
         preferred_browser_path=preferred_probe_browser_path,
     )
+    _attach_spawn_clock(
+        startup_profile,
+        partial_metrics,
+        spawn_epoch_ms=spawn_epoch_ms,
+        page=startup_page,
+    )
     report["startupProfile"] = startup_profile
     report["probeBrowser"] = deps.startup_probe_browser_details(
         partial_metrics,
@@ -538,6 +547,27 @@ def _capture_startup_failure_metrics(
         if isinstance(row, dict)
     ):
         _append_startup_profile_scenario(report, startup_profile=startup_profile)
+
+
+def _attach_spawn_clock(
+    startup_profile: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    spawn_epoch_ms: float | None,
+    page: str,
+) -> None:
+    """Add the spawn-relative marks when the harness knows its spawn time."""
+    if spawn_epoch_ms is None:
+        return
+    spawn_clock = build_spawn_clock(
+        rows,
+        spawn_epoch_ms=spawn_epoch_ms,
+        page=page,
+    )
+    # A launch that crashed before journaling anything has no marks; an empty
+    # block would read as a measured zero rather than as missing evidence.
+    if spawn_clock.get("marks"):
+        startup_profile["spawnClock"] = spawn_clock
 
 
 def _load_failure_startup_metrics(
@@ -657,6 +687,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     process: subprocess.Popen[Any] | None = None
+    spawn_epoch_ms: float | None = None
     memory_sampler: Any | None = None
     stdout_handle = None
     stderr_handle = None
@@ -747,6 +778,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 raise RuntimeError(
                     f"{first_failed_embedded.get('name', 'Embedded probe')} failed: {first_failed_embedded.get('error', '')}".strip()
                 )
+        spawn_epoch_ms = time.time() * 1000.0
         process, stdout_handle, stderr_handle = deps.launch_packaged_exe(
             exe_path,
             site_port=site_port,
@@ -787,6 +819,12 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 report["startupMetrics"],
                 preferred_browser_name=preferred_probe_browser_name,
                 preferred_browser_path=preferred_probe_browser_path,
+            )
+            _attach_spawn_clock(
+                startup_profile,
+                report["startupMetrics"],
+                spawn_epoch_ms=spawn_epoch_ms,
+                page=startup_page,
             )
             report["startupProfile"] = startup_profile
             report["probeBrowser"] = deps.startup_probe_browser_details(
@@ -896,6 +934,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 preferred_probe_browser_path=preferred_probe_browser_path,
                 artifacts_dir=artifacts_dir,
                 error_message=str(exc),
+                spawn_epoch_ms=spawn_epoch_ms,
             )
         else:
             report["startupMetrics"] = _load_failure_startup_metrics(

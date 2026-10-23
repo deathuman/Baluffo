@@ -184,6 +184,7 @@ jobs:
           npm run test:py:extended
           python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }} --skip-zip
           npm run test:frontend:packaged
+          npm run test:frontend:packaged:update-panel-gate
           npm run test:frontend:packaged:admin-startup
           npm run test:frontend:packaged:admin-active-run
           npm run test:frontend:packaged:fetch-evidence

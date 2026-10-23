@@ -4,12 +4,56 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+
+def console_safe(value: Any) -> str:
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return str(value).encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
+def print_console(value: Any) -> None:
+    print(console_safe(value))
+
+
+def print_failure_summary(report: dict[str, Any]) -> None:
+    """Print a summary of the failure to stdout for CI visibility."""
+    failure = report.get("failure")
+    if not failure:
+        return
+    step = failure.get("step", "unknown")
+    message = failure.get("message", "No error message available")
+    category = failure.get("category", "")
+    print_console(f"\n[SMOKE FAILURE] Step: {step}")
+    print_console(f"[SMOKE FAILURE] Error: {message}")
+    if category:
+        print_console(f"[SMOKE FAILURE] Category: {category}")
+    artifacts = report.get("artifacts", {})
+    exe_stdout = artifacts.get("exeStdout")
+    exe_stderr = artifacts.get("exeStderr")
+    report_path = artifacts.get("reportPath")
+    if exe_stdout:
+        print_console(f"[SMOKE FAILURE] Exe stdout log: {exe_stdout}")
+    if exe_stderr:
+        print_console(f"[SMOKE FAILURE] Exe stderr log: {exe_stderr}")
+    if report_path:
+        print_console(f"[SMOKE FAILURE] Full report: {report_path}")
+    scenarios = report.get("scenarios", [])
+    if scenarios:
+        print_console("[SMOKE FAILURE] Scenarios summary:")
+        for scenario in scenarios:
+            name = scenario.get("name", "unknown")
+            status = scenario.get("status", "unknown")
+            status_char = "." if status == "passed" else "X"
+            print_console(f"  [{status_char}] {name}: {status}")
+            if status != "passed" and scenario.get("error"):
+                print_console(f"      Error: {scenario['error']}")
 
 
 def slugify_token(value: str) -> str:

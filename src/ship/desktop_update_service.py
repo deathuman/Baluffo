@@ -24,16 +24,21 @@ from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _as_list
 from src.shared.utils import parse_iso
 from src.ship import desktop_update_constants as constants_mod
-from src.ship import desktop_update_manifest as manifest_mod
+from src.ship.desktop_artifact_paths import (
+    DesktopArtifact,
+    desktop_artifact,
+)
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
     compute_sha256,
+    desktop_update_install_supported,
     desktop_update_public_key_candidate_paths,
     download_file,
     fetch_json,
     install_stage_label,
     iso_now,
     load_desktop_update_public_keys,
+    platform_unsupported_status,
     read_desktop_session_state,
     resolve_desktop_session_root,
     resolve_github_api_base,
@@ -230,6 +235,8 @@ class DesktopUpdateService:
             next_status.update(release_notes)
         if not next_status.get("releaseNotesHistory") and release_notes_history:
             next_status["releaseNotesHistory"] = release_notes_history
+        if not desktop_update_install_supported():
+            next_status = platform_unsupported_status(next_status)
         if next_status != existing:
             return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
@@ -358,18 +365,19 @@ class DesktopUpdateService:
 
     def _resolve_manifest_from_release(self, release: dict[str, Any]) -> dict[str, Any]:
         assets = _as_list(release.get("assets"))
+        asset_name = desktop_artifact().manifest_asset
         manifest_asset = next(
             (
                 asset
                 for asset in assets
-                if isinstance(asset, dict)
-                and str(asset.get("name") or "").strip()
-                == manifest_mod.DESKTOP_UPDATE_MANIFEST_ASSET
+                if isinstance(asset, dict) and str(asset.get("name") or "").strip() == asset_name
             ),
             None,
         )
         if manifest_asset is None:
-            raise RuntimeError("Stable GitHub release did not publish a desktop manifest asset.")
+            raise RuntimeError(
+                f"Stable GitHub release did not publish the desktop manifest asset {asset_name}."
+            )
         manifest_url = str(manifest_asset.get("browser_download_url") or "").strip()
         if not manifest_url:
             raise RuntimeError("Desktop manifest asset is missing its download URL.")
@@ -383,6 +391,10 @@ class DesktopUpdateService:
         return dict(manifest)
 
     def check_for_update(self, *, force: bool = False) -> dict[str, Any]:
+        if not desktop_update_install_supported():
+            # No release lookup on a platform this build cannot install anyway.
+            with self._lock:
+                return dict(save_status(self.paths, self._reconcile_status_locked()))
         with self._lock:
             current_version = self.current_version()
             status = self._reconcile_status_locked()
@@ -490,12 +502,13 @@ class DesktopUpdateService:
             return []
         removed: list[str] = []
         keep_resolved = keep_path.resolve() if keep_path is not None else None
-        for file in self.paths.downloads_dir.glob("*.zip"):
-            if keep_resolved is not None and file.resolve() == keep_resolved:
-                continue
-            with contextlib.suppress(OSError):
-                file.unlink()
-                removed.append(file.name)
+        for pattern in ("*.zip", "*.AppImage", "*.appimage"):
+            for file in self.paths.downloads_dir.glob(pattern):
+                if keep_resolved is not None and file.resolve() == keep_resolved:
+                    continue
+                with contextlib.suppress(OSError):
+                    file.unlink()
+                    removed.append(file.name)
         return removed
 
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
@@ -642,11 +655,13 @@ class DesktopUpdateService:
                 )
 
     def _ensure_install_preflight(self, zip_path: Path) -> None:
+        artifact = desktop_artifact()
         if not zip_path.is_file():
-            raise RuntimeError(f"Downloaded update ZIP not found: {zip_path}")
-        helper_path = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
-        if not helper_path.is_file():
-            raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
+            raise RuntimeError(f"Downloaded update artifact not found: {zip_path}")
+        if not artifact.is_appimage:
+            helper_path = self.paths.install_root / artifact.helper_name
+            if not helper_path.is_file():
+                raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
         self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
         self.paths.rollback_root.mkdir(parents=True, exist_ok=True)
         required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
@@ -655,11 +670,45 @@ class DesktopUpdateService:
             raise RuntimeError(
                 "Not enough free disk space in the desktop update data root for staging and rollback."
             )
+        if artifact.is_appimage:
+            self._ensure_appimage_preflight(artifact, required_free=required_free)
+            return
         install_root_usage = shutil.disk_usage(self.paths.install_root)
         if int(install_root_usage.free) < required_free:
             raise RuntimeError(
                 "Not enough free disk space in the Baluffo install root for runtime replacement."
             )
+
+    @staticmethod
+    def _ensure_appimage_preflight(artifact: DesktopArtifact, *, required_free: int) -> None:
+        """An AppImage update writes beside the AppImage, so that folder must accept it."""
+        target = artifact.replace_target
+        if target is None or not target.is_file():
+            raise RuntimeError("Baluffo could not find the AppImage it is running from.")
+        folder = target.parent
+        probe = folder / f".baluffo-update-probe-{uuid.uuid4().hex}"
+        try:
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise RuntimeError(
+                "The AppImage's folder is not writable, so Baluffo cannot replace it: "
+                f"{folder}. Move the AppImage somewhere you own and try again."
+            ) from exc
+        usage = shutil.disk_usage(folder)
+        if int(usage.free) < required_free:
+            raise RuntimeError(
+                "Not enough free disk space next to the AppImage for the new build and its rollback copy."
+            )
+
+    @staticmethod
+    def _appimage_rollback_path(artifact: DesktopArtifact, manifest: dict[str, Any]) -> Path:
+        target = artifact.replace_target
+        if target is None:
+            raise RuntimeError("Baluffo could not find the AppImage it is running from.")
+        version = str(manifest.get("version") or "").strip()
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        return target.with_name(f".{target.name}.{version}-{stamp}.rollback")
 
     def request_install(self) -> dict[str, Any]:
         with self._lock:
@@ -673,6 +722,7 @@ class DesktopUpdateService:
             _cached, manifest, _release_notes, _release_notes_history = (
                 self._load_cached_manifest_parts()
             )
+            artifact = desktop_artifact()
             if not manifest:
                 return self._install_failure_locked(
                     status=status,
@@ -698,12 +748,16 @@ class DesktopUpdateService:
                     error="The desktop launcher session is unavailable for updater handoff.",
                     error_code="install_session_unavailable",
                 )
-            helper_source = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
+            helper_source = self.paths.install_root / artifact.helper_name
+            helper_suffix = ".exe" if not artifact.is_appimage else ""
             temp_helper = (
-                Path(tempfile.gettempdir()).resolve() / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
+                Path(tempfile.gettempdir()).resolve()
+                / f"BaluffoUpdater-{uuid.uuid4().hex}{helper_suffix}"
             )
             try:
                 shutil.copy2(helper_source, temp_helper)
+                if artifact.is_appimage:
+                    temp_helper.chmod(0o755)
             except (OSError, shutil.Error) as exc:
                 return self._install_failure_locked(
                     status=status,
@@ -713,12 +767,20 @@ class DesktopUpdateService:
             try:
                 clear_success_marker(self.paths)
                 clear_handoff_diagnostics(self.paths)
-                rollback_path = self.paths.rollback_root / (
-                    f"{str(manifest.get('version') or '').strip()}-"
-                    f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+                rollback_path = (
+                    self._appimage_rollback_path(artifact, manifest)
+                    if artifact.is_appimage
+                    else self.paths.rollback_root
+                    / (
+                        f"{str(manifest.get('version') or '').strip()}-"
+                        f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+                    )
                 )
                 plan = {
                     "planVersion": 1,
+                    "artifactKind": artifact.kind,
+                    "targetArtifactPath": str(artifact.replace_target or ""),
+                    "relaunchArgs": list(artifact.relaunch_args),
                     "installRoot": str(self.paths.install_root),
                     "dataDir": str(self.paths.data_dir),
                     "tempHelperPath": str(temp_helper),

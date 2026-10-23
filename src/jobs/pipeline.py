@@ -29,6 +29,7 @@ from . import pipeline_cli as pipeline_cli_pkg
 from . import pipeline_execution_flow as pipeline_execution_flow_mod
 from . import pipeline_finalize as pipeline_finalize_pkg
 from . import pipeline_run_setup as pipeline_run_setup_mod
+from . import pipeline_timing as pipeline_timing_mod
 from .common import social as common_social
 
 DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
@@ -177,6 +178,9 @@ def run_pipeline(
     include_pending_provider_migration: bool = False,
 ) -> dict[str, Any]:
     run_started_mono = time.perf_counter()
+    phase_clock = pipeline_timing_mod.PipelinePhaseClock(
+        run_started_mono, pipeline_timing_mod.process_cpu_seconds()
+    )
     setup: pipeline_run_setup_mod.PipelineRunSetup | None = None
     output_dir_path = Path(output_dir)
     previous_studio_source_registry: list[dict[str, Any]] | None = None
@@ -223,13 +227,17 @@ def run_pipeline(
             default_source_loaders=default_source_loaders,
             build_redirect_resolver_fn=_pipeline_redirect_resolver_builder(),
         )
+        phase_clock.close("setup")
         setup.progress_phase["key"] = "executing_sources"
         setup.progress_phase["label"] = "Executing sources"
         pipeline_execution_flow_mod.execute_pipeline_sources(setup)
+        phase_clock.close("executing_sources")
         setup.progress_phase["key"] = "merging_results"
         setup.progress_phase["label"] = "Merging results"
         setup.write_progress_report(force=True)
         setup.stop_progress_reporter()
+        phase_clock.close("merging_results")
+        phase_clock.publish(setup.runtime_payload)
         # ponytail: both row segments are rehydrated INSIDE _hydrate_row_segments,
         # keeping them out of run_pipeline's frame entirely — no caller-side pin
         # means finalize's dead-ref trim actually frees the objects.

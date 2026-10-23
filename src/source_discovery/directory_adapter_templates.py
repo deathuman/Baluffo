@@ -380,7 +380,10 @@ def run_directory_website_scan(
     return {
         "providerCandidates": provider_candidates,
         "staticCandidates": static_candidates,
-        "failures": failures,
+        # Website-fetch failures plus the recovery misses the shared recovery lane
+        # merged in; dropping the second group is what made 504 failed probes
+        # invisible in the discovery report.
+        "failures": list(scan_payload.get("failures") or failures),
         "summary": {
             **summary,
             "websiteFetchJobs": len(website_fetch_jobs),

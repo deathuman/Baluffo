@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import src.source_discovery.directory_fetch as directory_fetch
@@ -466,3 +468,37 @@ def test_web_audit_web_search_uses_direct_provider_links_without_page_fetch(
     assert len(providers) == 1
     assert providers[0]["adapter"] == "smartrecruiters"
     assert providers[0]["company_id"] == "ExampleStudio"
+
+
+def test_merge_web_browser_recovery_batch_marks_rescued_failures() -> None:
+    from src.source_discovery.browser_recovery import (
+        BrowserRecoveryAnalysis,
+        BrowserRecoveryBatch,
+    )
+
+    artifact: dict[str, Any] = {
+        "summary": {"failures": 1},
+        "failures": [
+            {
+                "adapter": "web_search",
+                "stage": "page_fetch",
+                "url": "https://studio.example/",
+                "error": "Client error '403 Forbidden'",
+            }
+        ],
+    }
+    batch = BrowserRecoveryBatch(
+        selected=[],
+        processed=set(),
+        started=0.0,
+        fetch_results=[],
+        analysis=BrowserRecoveryAnalysis(all_candidates=[], rendered_probe_results=[]),
+        probe_candidates=[],
+        probe_results=[],
+        rescued_urls=["https://studio.example/"],
+    )
+
+    web_candidates._merge_web_browser_recovery_batch(artifact, batch, [])
+
+    assert artifact["failures"][0]["resolvedByBrowser"] is True
+    assert artifact["summary"]["failuresResolvedByBrowser"] == 1

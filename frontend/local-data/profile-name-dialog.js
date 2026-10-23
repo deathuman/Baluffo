@@ -48,6 +48,113 @@ function setModeToggleButtonClassName(button, createMode) {
   );
 }
 
+// The four prompts below differ only in their body and in what a dismissal
+// resolves to; the overlay, panel, heading, description, teardown and focus
+// handoff used to be copied into each one. This is that shared frame, and every
+// prompt keeps the `local-auth-dialog-*` handles it shipped with.
+function createDialogFrame(doc, { title, description }) {
+  const overlay = doc.createElement("div");
+  overlay.className = "popup-overlay local-auth-dialog-overlay";
+  overlay.dataset.localAuthDialog = "true";
+
+  const panel = doc.createElement("div");
+  panel.className = "popup local-auth-dialog";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
+
+  const heading = doc.createElement("h2");
+  heading.id = "local-auth-dialog-title";
+  heading.className = "local-auth-dialog-title";
+  heading.textContent = title;
+
+  const descriptionEl = doc.createElement("p");
+  descriptionEl.className = "local-auth-dialog-description";
+  descriptionEl.textContent = description;
+
+  return { overlay, panel, heading, descriptionEl };
+}
+
+function createDialogActions(doc) {
+  const actions = doc.createElement("div");
+  actions.className = "local-auth-dialog-actions";
+  return actions;
+}
+
+function createDialogButton(doc, { id, className, variant, text, type = "button" }) {
+  const button = doc.createElement("button");
+  button.id = id;
+  button.className = buildModalButtonClassName(variant, className);
+  button.type = type;
+  button.textContent = text;
+  return button;
+}
+
+function createDialogLabel(doc, { htmlFor, text }) {
+  const label = doc.createElement("label");
+  label.className = "local-auth-dialog-label";
+  label.setAttribute("for", htmlFor);
+  label.textContent = text;
+  return label;
+}
+
+function createDialogInput(doc, { required, placeholder, value = "" }) {
+  const input = doc.createElement("input");
+  input.id = "local-auth-name-input";
+  input.className = "local-auth-dialog-input";
+  input.name = "profileName";
+  input.type = "text";
+  input.maxLength = 120;
+  input.autocomplete = "off";
+  input.required = required;
+  input.value = value;
+  input.placeholder = placeholder;
+  return input;
+}
+
+function scheduleFocus(callback) {
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(callback);
+  } else {
+    setTimeout(callback, 0);
+  }
+}
+
+// Mounts a built frame: teardown, Escape/overlay dismissal, popup presentation
+// and the deferred focus handoff. `dismissResult` is what a dismissal resolves
+// to, which differs by prompt -- `null` for a text answer, `false` for a
+// confirmation. Returns the one-shot cleanup the body's own buttons call.
+function mountDialog({ doc, frame, body, onDone, dismissResult = null, keyHandler, focusTarget }) {
+  let onKeyDown;
+  const cleanup = createModalCleanup({
+    doc,
+    overlay: frame.overlay,
+    previousActiveElement: isFocusableElement(doc.activeElement) ? doc.activeElement : null,
+    getKeyHandler: () => onKeyDown,
+    onDone
+  });
+
+  onKeyDown = keyHandler
+    ? keyHandler(cleanup)
+    : escapeKeyDismissHandler(() => cleanup(dismissResult));
+
+  frame.overlay.addEventListener("click", event => {
+    if (event.target === frame.overlay) {
+      cleanup(dismissResult);
+    }
+  });
+  doc.addEventListener("keydown", onKeyDown, true);
+
+  frame.panel.append(frame.heading, frame.descriptionEl, ...body);
+  frame.overlay.appendChild(frame.panel);
+  doc.body.appendChild(frame.overlay);
+  presentPopup(frame.overlay, frame.panel, { windowTarget: doc.defaultView });
+  if (focusTarget) {
+    scheduleFocus(() => focusTarget(cleanup));
+  }
+  return cleanup;
+}
+
 export async function requestTextInputDialog({
   title = "Sign in",
   description = "",
@@ -67,65 +174,19 @@ export async function requestTextInputDialog({
     return typeof fallbackValue === "string" ? fallbackValue : null;
   }
   return new Promise(resolve => {
-    const overlay = doc.createElement("div");
-    overlay.className = "popup-overlay local-auth-dialog-overlay";
-    overlay.dataset.localAuthDialog = "true";
-
-    const panel = doc.createElement("div");
-    panel.className = "popup local-auth-dialog";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "true");
-    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
-
-    const heading = doc.createElement("h2");
-    heading.id = "local-auth-dialog-title";
-    heading.className = "local-auth-dialog-title";
-    heading.textContent = String(title || "Sign in");
-
-    const descriptionEl = doc.createElement("p");
-    descriptionEl.className = "local-auth-dialog-description";
-    descriptionEl.textContent = String(description || buildProfilePromptLabel(existingProfiles));
+    const frame = createDialogFrame(doc, {
+      title: String(title || "Sign in"),
+      description: String(description || buildProfilePromptLabel(existingProfiles))
+    });
 
     const form = doc.createElement("form");
     form.className = "local-auth-dialog-form";
-
-    const labelEl = doc.createElement("label");
-    labelEl.className = "local-auth-dialog-label";
-    labelEl.setAttribute("for", "local-auth-name-input");
-    labelEl.textContent = String(label || "Value");
-
-    const input = doc.createElement("input");
-    input.id = "local-auth-name-input";
-    input.className = "local-auth-dialog-input";
-    input.name = "profileName";
-    input.type = "text";
-    input.maxLength = 120;
-    input.autocomplete = "off";
-    input.required = Boolean(required);
-    input.value = String(defaultValue || "");
-    input.placeholder = String(placeholder || "");
-
-    const actions = doc.createElement("div");
-    actions.className = "local-auth-dialog-actions";
-
-    const cancelBtn = doc.createElement("button");
-    cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
-    cancelBtn.type = "button";
-    cancelBtn.textContent = "Cancel";
-
-    const submitBtn = doc.createElement("button");
-    submitBtn.id = "local-auth-submit-btn";
-    submitBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
-    submitBtn.type = "submit";
-    submitBtn.textContent = String(submitLabel || "Continue");
 
     const listId = "local-auth-profile-list";
     const profileNames = normalizeExistingProfiles(existingProfiles)
       .map(profile => String(profile?.name || "").trim())
       .filter(Boolean);
     if (profileNames.length) {
-      input.setAttribute("list", listId);
       const datalist = doc.createElement("datalist");
       datalist.id = listId;
       profileNames.forEach(name => {
@@ -136,46 +197,53 @@ export async function requestTextInputDialog({
       form.appendChild(datalist);
     }
 
-    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
+    const input = createDialogInput(doc, {
+      required: Boolean(required),
+      placeholder: String(placeholder || ""),
+      value: String(defaultValue || "")
+    });
+    if (profileNames.length) {
+      input.setAttribute("list", listId);
+    }
 
-    const cleanup = createModalCleanup({
-      doc,
-      overlay,
-      previousActiveElement,
-      getKeyHandler: () => onKeyDown,
-      onDone: resolve
+    const actions = createDialogActions(doc);
+    const cancelBtn = createDialogButton(doc, {
+      id: "local-auth-cancel-btn",
+      className: "local-auth-dialog-cancel",
+      variant: "popup-btn-secondary",
+      text: "Cancel"
+    });
+    const submitBtn = createDialogButton(doc, {
+      id: "local-auth-submit-btn",
+      className: "local-auth-dialog-submit",
+      variant: "popup-btn-primary",
+      text: String(submitLabel || "Continue"),
+      type: "submit"
     });
 
-    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
+    actions.append(cancelBtn, submitBtn);
+    form.append(
+      createDialogLabel(doc, { htmlFor: "local-auth-name-input", text: String(label || "Value") }),
+      input,
+      actions
+    );
 
-    cancelBtn.addEventListener("click", () => cleanup(null));
-    overlay.addEventListener("click", event => {
-      if (event.target === overlay) {
-        cleanup(null);
+    const cleanup = mountDialog({
+      doc,
+      frame,
+      body: [form],
+      onDone: resolve,
+      focusTarget: () => {
+        focusWithPreventScroll(input);
+        input.select();
       }
     });
+
+    cancelBtn.addEventListener("click", () => cleanup(null));
     form.addEventListener("submit", event => {
       event.preventDefault();
       cleanup(input.value);
     });
-    doc.addEventListener("keydown", onKeyDown, true);
-
-    actions.append(cancelBtn, submitBtn);
-    form.append(labelEl, input, actions);
-    panel.append(heading, descriptionEl, form);
-    overlay.appendChild(panel);
-    doc.body.appendChild(overlay);
-    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
-
-    const focusInput = () => {
-      focusWithPreventScroll(input);
-      input.select();
-    };
-    if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(focusInput);
-    } else {
-      setTimeout(focusInput, 0);
-    }
   });
 }
 
@@ -220,24 +288,10 @@ export async function requestProfileName({
   }
 
   return new Promise(resolve => {
-    const overlay = doc.createElement("div");
-    overlay.className = "popup-overlay local-auth-dialog-overlay";
-    overlay.dataset.localAuthDialog = "true";
-
-    const panel = doc.createElement("div");
-    panel.className = "popup local-auth-dialog";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "true");
-    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
-
-    const heading = doc.createElement("h2");
-    heading.id = "local-auth-dialog-title";
-    heading.className = "local-auth-dialog-title";
-    heading.textContent = String(title || "Sign in");
-
-    const descriptionEl = doc.createElement("p");
-    descriptionEl.className = "local-auth-dialog-description";
-    descriptionEl.textContent = String(description || buildProfilePromptLabel(profiles));
+    const frame = createDialogFrame(doc, {
+      title: String(title || "Sign in"),
+      description: String(description || buildProfilePromptLabel(profiles))
+    });
 
     const form = doc.createElement("form");
     form.className = "local-auth-dialog-form";
@@ -248,10 +302,10 @@ export async function requestProfileName({
     const stack = doc.createElement("div");
     stack.className = "local-auth-dialog-stack";
 
-    const existingLabel = doc.createElement("label");
-    existingLabel.className = "local-auth-dialog-label";
-    existingLabel.setAttribute("for", "local-auth-profile-select");
-    existingLabel.textContent = "Choose profile";
+    const existingLabel = createDialogLabel(doc, {
+      htmlFor: "local-auth-profile-select",
+      text: "Choose profile"
+    });
 
     const selectEl = doc.createElement("select");
     selectEl.id = "local-auth-profile-select";
@@ -265,42 +319,37 @@ export async function requestProfileName({
       selectEl.appendChild(option);
     });
 
-    const createLabel = doc.createElement("label");
-    createLabel.className = "local-auth-dialog-label";
-    createLabel.setAttribute("for", "local-auth-name-input");
-    createLabel.textContent = "New profile name";
+    const createLabel = createDialogLabel(doc, {
+      htmlFor: "local-auth-name-input",
+      text: "New profile name"
+    });
 
-    const inputEl = doc.createElement("input");
-    inputEl.id = "local-auth-name-input";
-    inputEl.className = "local-auth-dialog-input";
-    inputEl.name = "profileName";
-    inputEl.type = "text";
-    inputEl.maxLength = 120;
-    inputEl.autocomplete = "off";
-    inputEl.required = true;
-    inputEl.placeholder = "Enter new profile name";
+    const inputEl = createDialogInput(doc, { required: true, placeholder: "Enter new profile name" });
 
-    const actions = doc.createElement("div");
-    actions.className = "local-auth-dialog-actions";
+    const actions = createDialogActions(doc);
 
     const actionCluster = doc.createElement("div");
     actionCluster.className = "local-auth-dialog-action-cluster";
 
-    const createToggleBtn = doc.createElement("button");
-    createToggleBtn.id = "local-auth-create-btn";
-    createToggleBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-secondary");
-    createToggleBtn.type = "button";
-
-    const cancelBtn = doc.createElement("button");
-    cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
-    cancelBtn.type = "button";
-    cancelBtn.textContent = "Cancel";
-
-    const submitBtn = doc.createElement("button");
-    submitBtn.id = "local-auth-submit-btn";
-    submitBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
-    submitBtn.type = "submit";
+    const createToggleBtn = createDialogButton(doc, {
+      id: "local-auth-create-btn",
+      className: "local-auth-dialog-secondary",
+      variant: "popup-btn-secondary",
+      text: ""
+    });
+    const cancelBtn = createDialogButton(doc, {
+      id: "local-auth-cancel-btn",
+      className: "local-auth-dialog-cancel",
+      variant: "popup-btn-secondary",
+      text: "Cancel"
+    });
+    const submitBtn = createDialogButton(doc, {
+      id: "local-auth-submit-btn",
+      className: "local-auth-dialog-submit",
+      variant: "popup-btn-primary",
+      text: "",
+      type: "submit"
+    });
 
     const requestedDefault = String(defaultValue || "").trim();
     const matchedDefault = profiles.find(
@@ -319,16 +368,6 @@ export async function requestProfileName({
       selectEl.value = selectedProfileName;
     }
     inputEl.value = newProfileName;
-
-    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
-
-    const cleanup = createModalCleanup({
-      doc,
-      overlay,
-      previousActiveElement,
-      getKeyHandler: () => onKeyDown,
-      onDone: resolve
-    });
 
     function focusCurrentField() {
       const target = createMode ? inputEl : selectEl;
@@ -359,7 +398,11 @@ export async function requestProfileName({
       queueMicrotask(focusCurrentField);
     }
 
-    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
+    actionCluster.append(cancelBtn, submitBtn);
+    actions.append(createToggleBtn, actionCluster);
+    form.append(helperEl, stack, actions);
+
+    const cleanup = mountDialog({ doc, frame, body: [form], onDone: resolve });
 
     createToggleBtn.addEventListener("click", () => {
       if (createMode) {
@@ -376,24 +419,10 @@ export async function requestProfileName({
       renderMode();
     });
     cancelBtn.addEventListener("click", () => cleanup(null));
-    overlay.addEventListener("click", event => {
-      if (event.target === overlay) {
-        cleanup(null);
-      }
-    });
     form.addEventListener("submit", event => {
       event.preventDefault();
       cleanup(createMode ? inputEl.value : selectEl.value);
     });
-    doc.addEventListener("keydown", onKeyDown, true);
-
-    actionCluster.append(cancelBtn, submitBtn);
-    actions.append(createToggleBtn, actionCluster);
-    form.append(helperEl, stack, actions);
-    panel.append(heading, descriptionEl, form);
-    overlay.appendChild(panel);
-    doc.body.appendChild(overlay);
-    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
     renderMode();
   });
 }
@@ -423,78 +452,43 @@ export async function requestProfileLoadFailureAction({
     return null;
   }
   return new Promise(resolve => {
-    const overlay = doc.createElement("div");
-    overlay.className = "popup-overlay local-auth-dialog-overlay";
-    overlay.dataset.localAuthDialog = "true";
-
-    const panel = doc.createElement("div");
-    panel.className = "popup local-auth-dialog";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "true");
-    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
-
-    const heading = doc.createElement("h2");
-    heading.id = "local-auth-dialog-title";
-    heading.className = "local-auth-dialog-title";
-    heading.textContent = String(title || "Sign in");
-
-    const descriptionEl = doc.createElement("p");
-    descriptionEl.className = "local-auth-dialog-description";
-    descriptionEl.textContent = fallbackDescription;
-
-    const actions = doc.createElement("div");
-    actions.className = "local-auth-dialog-actions";
-
-    const cancelBtn = doc.createElement("button");
-    cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
-    cancelBtn.type = "button";
-    cancelBtn.textContent = "Cancel";
-
-    const retryBtn = doc.createElement("button");
-    retryBtn.id = "local-auth-retry-btn";
-    retryBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-secondary");
-    retryBtn.type = "button";
-    retryBtn.textContent = "Retry";
-
-    const createBtn = doc.createElement("button");
-    createBtn.id = "local-auth-create-fallback-btn";
-    createBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
-    createBtn.type = "button";
-    createBtn.textContent = "Create new profile";
-
-    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
-
-    const cleanup = createModalCleanup({
-      doc,
-      overlay,
-      previousActiveElement,
-      getKeyHandler: () => onKeyDown,
-      onDone: resolve
+    const frame = createDialogFrame(doc, {
+      title: String(title || "Sign in"),
+      description: fallbackDescription
     });
 
-    const onKeyDown = escapeKeyDismissHandler(() => cleanup(null));
+    const actions = createDialogActions(doc);
+    const cancelBtn = createDialogButton(doc, {
+      id: "local-auth-cancel-btn",
+      className: "local-auth-dialog-cancel",
+      variant: "popup-btn-secondary",
+      text: "Cancel"
+    });
+    const retryBtn = createDialogButton(doc, {
+      id: "local-auth-retry-btn",
+      className: "local-auth-dialog-secondary",
+      variant: "popup-btn-secondary",
+      text: "Retry"
+    });
+    const createBtn = createDialogButton(doc, {
+      id: "local-auth-create-fallback-btn",
+      className: "local-auth-dialog-submit",
+      variant: "popup-btn-primary",
+      text: "Create new profile"
+    });
+    actions.append(cancelBtn, retryBtn, createBtn);
+
+    const cleanup = mountDialog({
+      doc,
+      frame,
+      body: [actions],
+      onDone: resolve,
+      focusTarget: () => focusWithPreventScroll(retryBtn)
+    });
 
     cancelBtn.addEventListener("click", () => cleanup(null));
     retryBtn.addEventListener("click", () => cleanup("retry"));
     createBtn.addEventListener("click", () => cleanup("create"));
-    overlay.addEventListener("click", event => {
-      if (event.target === overlay) cleanup(null);
-    });
-    doc.addEventListener("keydown", onKeyDown, true);
-
-    actions.append(cancelBtn, retryBtn, createBtn);
-    panel.append(heading, descriptionEl, actions);
-    overlay.appendChild(panel);
-    doc.body.appendChild(overlay);
-    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
-
-    const focusRetry = () => focusWithPreventScroll(retryBtn);
-    if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(focusRetry);
-    } else {
-      setTimeout(focusRetry, 0);
-    }
   });
 }
 
@@ -512,80 +506,47 @@ export async function requestConfirmationDialog({
     return Boolean(fallbackConfirm(fallbackLabel));
   }
   return new Promise(resolve => {
-    const overlay = doc.createElement("div");
-    overlay.className = "popup-overlay local-auth-dialog-overlay";
-    overlay.dataset.localAuthDialog = "true";
-
-    const panel = doc.createElement("div");
-    panel.className = "popup local-auth-dialog";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "true");
-    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
-
-    const heading = doc.createElement("h2");
-    heading.id = "local-auth-dialog-title";
-    heading.className = "local-auth-dialog-title";
-    heading.textContent = String(title || "Confirm");
-
-    const descriptionEl = doc.createElement("p");
-    descriptionEl.className = "local-auth-dialog-description";
-    descriptionEl.textContent = String(description || "");
-
-    const actions = doc.createElement("div");
-    actions.className = "local-auth-dialog-actions";
-
-    const cancelBtn = doc.createElement("button");
-    cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
-    cancelBtn.type = "button";
-    cancelBtn.textContent = String(cancelLabel || "Cancel");
-
-    const confirmBtn = doc.createElement("button");
-    confirmBtn.id = "local-auth-confirm-btn";
-    confirmBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
-    confirmBtn.type = "button";
-    confirmBtn.textContent = String(confirmLabel || "Confirm");
-
-    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
-
-    const cleanup = createModalCleanup({
-      doc,
-      overlay,
-      previousActiveElement,
-      getKeyHandler: () => onKeyDown,
-      onDone: result => resolve(Boolean(result))
+    const frame = createDialogFrame(doc, {
+      title: String(title || "Confirm"),
+      description: String(description || "")
     });
 
-    function onKeyDown(event) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        cleanup(false);
-        return;
-      }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        cleanup(true);
-      }
-    }
+    const actions = createDialogActions(doc);
+    const cancelBtn = createDialogButton(doc, {
+      id: "local-auth-cancel-btn",
+      className: "local-auth-dialog-cancel",
+      variant: "popup-btn-secondary",
+      text: String(cancelLabel || "Cancel")
+    });
+    const confirmBtn = createDialogButton(doc, {
+      id: "local-auth-confirm-btn",
+      className: "local-auth-dialog-submit",
+      variant: "popup-btn-primary",
+      text: String(confirmLabel || "Confirm")
+    });
+    actions.append(cancelBtn, confirmBtn);
+
+    const cleanup = mountDialog({
+      doc,
+      frame,
+      body: [actions],
+      dismissResult: false,
+      onDone: result => resolve(Boolean(result)),
+      keyHandler: finish => event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(false);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          finish(true);
+        }
+      },
+      focusTarget: () => focusWithPreventScroll(confirmBtn)
+    });
 
     cancelBtn.addEventListener("click", () => cleanup(false));
     confirmBtn.addEventListener("click", () => cleanup(true));
-    overlay.addEventListener("click", event => {
-      if (event.target === overlay) cleanup(false);
-    });
-    doc.addEventListener("keydown", onKeyDown, true);
-
-    actions.append(cancelBtn, confirmBtn);
-    panel.append(heading, descriptionEl, actions);
-    overlay.appendChild(panel);
-    doc.body.appendChild(overlay);
-    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
-
-    const focusConfirm = () => focusWithPreventScroll(confirmBtn);
-    if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(focusConfirm);
-    } else {
-      setTimeout(focusConfirm, 0);
-    }
   });
 }

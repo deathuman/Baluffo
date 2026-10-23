@@ -13,6 +13,9 @@ from src.ship import desktop_update_state as update_state
 du: Any = SimpleNamespace(
     DESKTOP_UPDATE_CHANNEL=du_manifest.DESKTOP_UPDATE_CHANNEL,
     DESKTOP_UPDATE_HELPER_NAME=du_constants.DESKTOP_UPDATE_HELPER_NAME,
+    DESKTOP_UPDATE_HELPER_NAME_LINUX=du_constants.DESKTOP_UPDATE_HELPER_NAME_LINUX,
+    DESKTOP_UPDATE_MANIFEST_ASSET=du_manifest.DESKTOP_UPDATE_MANIFEST_ASSET,
+    DESKTOP_UPDATE_MANIFEST_ASSET_LINUX=du_manifest.DESKTOP_UPDATE_MANIFEST_ASSET_LINUX,
     DesktopUpdatePaths=du_shared.DesktopUpdatePaths,
     DesktopUpdateService=du_service.DesktopUpdateService,
     Ed25519PrivateKey=du_manifest.Ed25519SigningClass,

@@ -17,6 +17,7 @@ from tests.helpers.ship_bundle import (
     copy_minimal_app_version,
     copy_ship_bundle,
     shared_full_ship_bundle,
+    skipped_desktop_frontend_bundle,
 )
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -48,6 +49,7 @@ def _build_with_temp_packaged_config(
         mock.patch("scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_PATH", config_path),
         mock.patch("scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH", template_path),
         mock.patch.dict("os.environ", env or {}, clear=False),
+        skipped_desktop_frontend_bundle(),
     ):
         return build_bundle(temp_root / "dist" / "baluffo-ship", "1.2.3")
 

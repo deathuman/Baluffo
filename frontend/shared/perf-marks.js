@@ -57,6 +57,24 @@ function measureStep(startupMetrics, name, startMark, endMark, payload = {}) {
   });
 }
 
+/**
+ * Epoch milliseconds for a page-side startup metric, comparable with the launcher's
+ * `ts` rows. A page metric otherwise only carries the bridge's arrival time, which a
+ * queued metric POST can delay by hundreds of milliseconds -- the startup profile then
+ * orders and differences page events at the wrong point on the launch timeline.
+ * @param {Function} now - Page clock returning milliseconds since time origin.
+ * @returns {number} Epoch milliseconds, rounded.
+ */
+export function pageClockMs(now) {
+  const origin = typeof performance !== "undefined" ? Number(performance.timeOrigin) : 0;
+  const elapsed = Number(now());
+  const epoch =
+    Number.isFinite(origin) && origin > 0
+      ? origin + (Number.isFinite(elapsed) ? elapsed : 0)
+      : Date.now();
+  return Math.round(epoch);
+}
+
 export function createPerfMarks(startupMetrics) {
   return {
     markStep: (name, payload = {}) => markStep(startupMetrics, name, payload),

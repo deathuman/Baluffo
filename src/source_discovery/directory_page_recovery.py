@@ -35,9 +35,11 @@ from .page_outcomes import (
     PageOutcome,
     classify_recovery_page_with_strategy,
 )
-from .recovery_url_planner import common_recovery_urls, recovery_urls, same_party_jobish_urls
+from .recovery_url_planner import recovery_urls, same_party_jobish_urls
 
-RECOVERY_LOGIC_VERSION = 1
+# 2: the second wave runs only where the first wave left the question open, and
+# recovery failures travel with the scan result instead of being counted and dropped.
+RECOVERY_LOGIC_VERSION = 2
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
 SECONDARY_RECOVERY_PATHS = ("/join-us", "/work-with-us", "/company/careers", "/about/careers")
 DEFAULT_RECOVERY_URL_LIMIT = 6
@@ -346,24 +348,6 @@ def browser_recovery_candidate(
     )
 
 
-def plan_recovery_urls(
-    request: DirectoryRecoveryRequest,
-    *,
-    paths: tuple[str, ...],
-    limit: int = DEFAULT_RECOVERY_URL_LIMIT,
-    include_jobish_links: bool = True,
-    blocked_hosts: set[str] | None = None,
-) -> list[str]:
-    return recovery_urls(
-        request.page_url,
-        request.html,
-        paths=paths,
-        limit=limit,
-        blocked_hosts=blocked_hosts or set(PROFILE_HOSTS),
-        include_jobish_links=include_jobish_links,
-    )
-
-
 def _recovery_path(url: str) -> str:
     try:
         parsed = urlparse(str(url or ""))
@@ -382,40 +366,33 @@ def _recovery_url_entries(
     blocked_hosts: set[str] | None = None,
     html_url_candidate_fn: Any | None = None,
 ) -> list[tuple[str, str]]:
-    parsed = urlparse(str(page_url or ""))
-    page_host = parsed.netloc.lower().lstrip(".")
-    if blocked_hosts and any(
-        page_host == blocked_host or page_host.endswith(f".{blocked_host}")
-        for blocked_host in blocked_hosts
-    ):
-        return []
-    out: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    jobish_urls = (
-        same_party_jobish_urls(
-            page_url,
-            html,
-            html_url_candidate_fn=html_url_candidate_fn,
-        )
-        if include_jobish_links
-        else []
+    urls = recovery_urls(
+        page_url,
+        html,
+        paths=paths,
+        limit=limit,
+        blocked_hosts=blocked_hosts,
+        include_jobish_links=include_jobish_links,
+        html_url_candidate_fn=html_url_candidate_fn,
     )
-    candidates = [
-        *((url, HTML_JOBISH_RECOVERY_URL_SOURCE) for url in jobish_urls),
-        *(
-            (url, GENERATED_RECOVERY_URL_SOURCE)
-            for url in common_recovery_urls(page_url, paths, blocked_hosts=blocked_hosts)
-        ),
+    if not urls:
+        return []
+    linked = {
+        str(url or "").split("#", 1)[0].strip()
+        for url in (
+            same_party_jobish_urls(
+                page_url,
+                html,
+                html_url_candidate_fn=html_url_candidate_fn,
+            )
+            if include_jobish_links
+            else []
+        )
+    }
+    return [
+        (url, HTML_JOBISH_RECOVERY_URL_SOURCE if url in linked else GENERATED_RECOVERY_URL_SOURCE)
+        for url in urls
     ]
-    for raw_url, source in candidates:
-        normalized = str(raw_url or "").split("#", 1)[0].strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        out.append((normalized, source))
-        if len(out) >= limit:
-            break
-    return out
 
 
 def build_recovery_fetch_job(
@@ -825,26 +802,45 @@ def _dedupe_jobs(
     url_limit: int,
 ) -> tuple[list[dict[str, Any]], dict[str, list[DirectoryRecoveryRequest]]]:
     request_by_url: dict[str, list[DirectoryRecoveryRequest]] = defaultdict(list)
+    provenance_by_url: dict[str, tuple[str, str]] = {}
     for request in requests:
         if request.key not in remaining_keys:
             continue
-        for url in plan_recovery_urls(
-            request,
+        for url, source in _recovery_url_entries(
+            request.page_url,
+            request.html,
             paths=paths,
             limit=url_limit,
+            blocked_hosts=set(PROFILE_HOSTS),
             include_jobish_links=include_jobish_links,
         ):
             request_by_url[url].append(request)
-    jobs = [
-        {
-            "url": url,
-            "name": url,
-            "adapter": requests_for_url[0].adapter if requests_for_url else "",
-            "failureStage": "recovery_fetch",
-            "payload": {"url": url},
-        }
-        for url, requests_for_url in request_by_url.items()
-    ]
+            # One URL can be reached both as a page link and as a generated guess. The
+            # linked spelling is the stronger evidence, so it keeps the provenance.
+            if url not in provenance_by_url or source == HTML_JOBISH_RECOVERY_URL_SOURCE:
+                provenance_by_url[url] = (source, _recovery_path(url))
+    jobs: list[dict[str, Any]] = []
+    for url, requests_for_url in request_by_url.items():
+        source, path = provenance_by_url.get(url, ("", ""))
+        owner = requests_for_url[0] if requests_for_url else None
+        jobs.append(
+            build_recovery_fetch_job(
+                recovery_url=url,
+                payload={
+                    "url": url,
+                    # The homepage that asked the question, so the second-wave gate can
+                    # tell which host a wave-1 answer settles.
+                    "homepageUrl": str(owner.page_url or "") if owner else "",
+                    "recoveryUrlSource": source,
+                    "recoveryUrlPath": path,
+                },
+                name=url,
+                adapter=owner.adapter if owner else "",
+                failure_stage="recovery_fetch",
+                recovery_url_source=source,
+                recovery_url_path=path,
+            )
+        )
     return jobs, request_by_url
 
 
@@ -959,7 +955,7 @@ def _run_recovery_wave(
     url_limit: int,
     output: DirectoryRecoveryResult,
     page_fetch_context: PageFetchLifecycleContext | None = None,
-) -> None:
+) -> list[dict[str, Any]]:
     jobs, requests_by_url = _dedupe_jobs(
         requests,
         paths=paths,
@@ -969,7 +965,7 @@ def _run_recovery_wave(
     )
     output.summary["recoveryFetchAttempts"] += len(jobs)
     if not jobs:
-        return
+        return []
     phase = f"{progress_label} recovery wave {wave_index}"
     fetch_kwargs: dict[str, Any] = {
         "fetcher": fetcher,
@@ -998,6 +994,7 @@ def _run_recovery_wave(
             )
         else:
             _record_recovery_failure(output, result, fanout_requests)
+    return results
 
 
 def run_recovery_for_requests(
@@ -1083,6 +1080,14 @@ def apply_recovery_to_scan_result(
     updated = dict(scan_result)
     updated["providerCandidates"] = provider_rows
     updated["staticCandidates"] = static_rows
+    # Recovery misses are diagnostics, not adapter failures, but they are still the
+    # only record of why a probe produced nothing. The audit ledger aggregates them
+    # into failureCounts/failureErrorCounts and caps samples, so carrying them here
+    # costs a bounded number of rows and makes the 500-failure waves inspectable.
+    updated["failures"] = [
+        *list(scan_result.get("failures") or []),
+        *list(getattr(recovery, "failures", None) or []),
+    ]
 
     browser_rows = [
         *list(scan_result.get("browserRecoveryCandidates") or []),
@@ -1111,6 +1116,69 @@ def apply_recovery_to_scan_result(
     if page_fetch_lifecycle:
         updated["pageFetchLifecycle"] = page_fetch_lifecycle
     return updated
+
+
+def _log_recovery_wave_result(
+    progress_label: str,
+    wave_index: int,
+    results: list[dict[str, Any]],
+) -> None:
+    """Report reads and failures for a recovery wave, never finished attempts as reads.
+
+    The fetch lane's own progress line counts completed attempts, so a wave that read
+    97 of 601 pages still prints "fetched 601/601". This is the line an operator needs.
+    """
+    if not results:
+        return
+    from .reporting import emit_log
+
+    read = sum(1 for result in results if bool(result.get("ok")))
+    failed = len(results) - read
+    label = str(progress_label or "").strip() or "Directory"
+    emit_log(
+        f"{label} recovery wave {wave_index}: read {read}/{len(results)} pages, {failed} failed."
+    )
+
+
+def _settle_secondary_wave_requests(
+    requests: list[DirectoryRecoveryRequest],
+    wave_results: list[dict[str, Any]],
+    remaining_keys: set[str],
+    batch_timing: dict[str, int],
+) -> None:
+    """Retire the second-wave spelling guesses for hosts wave 1 already answered.
+
+    Wave 2 is four more spellings of the guess wave 1 already made, so it is kept only
+    where wave 1 left the question open: a host whose generated guess *answered* has had
+    its careers page read and held nothing, and a host whose every generated guess 404'd
+    has said those paths do not exist. A host that could not be read at all (DNS, timeout,
+    403, 5xx), or whose only job-ish pages are the ones its own homepage links, still
+    earns the other spellings.
+
+    This is the same gate the GameDevMap audit ships in
+    `active_audit_batch_runtime._recovery_wave2_jobs`; the shared directory lane used by
+    Gameprog, Gamesmap, sheet-directory and web-search was missing it, which is why the
+    measured recovery waves spent 65% of their requests re-asking a settled question.
+    """
+    answered = generated_answered_recovery_homepages(wave_results)
+    not_found = generated_common_path_not_found_homepages(wave_results)
+    settled = answered | not_found
+    if not settled:
+        return
+    skipped_answered = 0
+    skipped_not_found = 0
+    for request in requests:
+        if request.key not in remaining_keys:
+            continue
+        homepage = str(request.page_url or "").strip()
+        if homepage in answered:
+            remaining_keys.discard(request.key)
+            skipped_answered += 1
+        elif homepage in not_found:
+            remaining_keys.discard(request.key)
+            skipped_not_found += 1
+    batch_timing["recoverySkippedByGeneratedAnswered"] = skipped_answered
+    batch_timing["recoverySkippedByGeneratedNotFound"] = skipped_not_found
 
 
 def run_directory_page_recovery(
@@ -1143,7 +1211,7 @@ def run_directory_page_recovery(
         ((PRIMARY_RECOVERY_PATHS, True), (SECONDARY_RECOVERY_PATHS, False)),
         start=1,
     ):
-        _run_recovery_wave(
+        wave_results = _run_recovery_wave(
             timeout_s,
             requests,
             fetcher=fetcher,
@@ -1159,6 +1227,14 @@ def run_directory_page_recovery(
             output=output,
             page_fetch_context=page_fetch_context,
         )
+        _log_recovery_wave_result(progress_label, wave_index, wave_results)
+        if wave_index == 1 and remaining_keys:
+            _settle_secondary_wave_requests(
+                requests,
+                wave_results,
+                remaining_keys,
+                output.batch_timing,
+            )
         if not remaining_keys:
             break
     output.batch_timing["recoveryFetchMs"] = audit_ledger.duration_ms(fetch_started)

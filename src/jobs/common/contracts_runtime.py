@@ -241,6 +241,34 @@ def _normalize_setup_timing(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+_PHASE_TIMING_LIMIT = 12
+
+
+def _normalize_phase_timings(rows: Any) -> list[dict[str, Any]]:
+    """Bounded child-phase wall/CPU rows.
+
+    Mirrors ``setupTiming``: one entry per pipeline phase around the per-source
+    timings, so a report explains the wall clock the workers did not spend inside
+    a source. Values are clamped and the list is capped so a payload cannot grow
+    without bound.
+    """
+    result: list[dict[str, Any]] = []
+    for row in json_object_rows(rows):
+        phase = clean_text(row.get("phase"))
+        if not phase:
+            continue
+        entry: dict[str, Any] = {
+            "phase": phase[:48],
+            "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+        }
+        if row.get("cpuSeconds") is not None:
+            entry["cpuSeconds"] = round(max(0.0, _float_or_zero(row.get("cpuSeconds"))), 3)
+        result.append(entry)
+        if len(result) >= _PHASE_TIMING_LIMIT:
+            break
+    return result
+
+
 def normalize_runtime_payload(
     runtime: dict[str, Any], *, selected_source_count: int
 ) -> dict[str, Any]:
@@ -360,4 +388,7 @@ def normalize_runtime_payload(
     finalization_timing = normalize_finalization_timing(src.get("finalizationTiming"))
     if finalization_timing:
         payload["finalizationTiming"] = finalization_timing
+    phase_timings = _normalize_phase_timings(src.get("phaseTimings"))
+    if phase_timings:
+        payload["phaseTimings"] = phase_timings
     return payload

@@ -14,6 +14,7 @@ from typing import Any
 from src.source_registry import unique_sources
 from src.source_registry_io import load_json_object
 
+from . import audit_ledger as audit_ledger
 from . import browser_recovery as browser_recovery_helpers
 from . import candidate_collections as candidate_collections
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
@@ -213,6 +214,16 @@ def _validated_web_browser_recovery_rows(
 
 
 # mutation — modifies in-place state
+
+
+def _merge_web_browser_recovery_batch(
+    artifact: dict[str, Any],
+    batch: browser_recovery_helpers.BrowserRecoveryBatch,
+    combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
+) -> None:
+    """Flag rescued failures before recording the batch's validated candidates."""
+    audit_ledger.mark_failures_resolved_by_browser(artifact, batch.rescued_urls)
+    _apply_web_browser_recovery_probe_results(artifact, combined_probe_results)
 
 
 def _apply_web_browser_recovery_probe_results(

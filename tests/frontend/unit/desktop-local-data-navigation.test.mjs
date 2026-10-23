@@ -250,8 +250,12 @@ test("approved desktop page navigation bypasses the unload prompt without signal
       count: 1
     }
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+  const { initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  const { navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop/navigation.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();
@@ -286,8 +290,12 @@ test("approved desktop page navigation preserves desktop runtime query params", 
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1"
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+  const { initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  const { navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop/navigation.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();
@@ -318,8 +326,12 @@ test("approved desktop page navigation prefers active runtime config over stale 
     locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1"
   });
   window.sessionStorage.setItem("baluffo_runtime_bridge_base", "http://127.0.0.1:8877");
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+  const { initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  const { navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop/navigation.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();
@@ -345,8 +357,12 @@ test("approved desktop page navigation preserves target query params while appen
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/admin.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1"
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+  const { initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  const { navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop/navigation.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();
@@ -373,8 +389,12 @@ test("external navigation does not bypass the unload prompt", async () => {
       count: 1
     }
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+  const { initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  const { navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop/navigation.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();

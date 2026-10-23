@@ -41,6 +41,9 @@ from src.ship.packaged_smoke import orchestrator as packaged_smoke_orchestrator_
 from src.ship.packaged_smoke import rehearsal_browser as packaged_smoke_rehearsal_browser_mod
 from src.ship.packaged_smoke import rehearsal_sync as packaged_smoke_rehearsal_sync_mod
 from src.ship.packaged_smoke import rehearsal_update as packaged_smoke_rehearsal_update_mod
+from src.ship.packaged_smoke import (
+    rehearsal_update_appimage as _appimage_update_rehearsal_mod,
+)
 from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod
 from src.ship.packaged_smoke import runtime as packaged_smoke_runtime_mod
 from src.ship.packaged_smoke import startup_metrics as packaged_smoke_startup_metrics_mod
@@ -342,6 +345,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embedded-probes", action="store_true")
     parser.add_argument("--sync-rehearsal", action="store_true")
     parser.add_argument("--desktop-update-rehearsal", action="store_true")
+    _appimage_update_rehearsal_mod.add_cli_arguments(parser)
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
     parser.add_argument("--browser-job-rehearsal", action="store_true")
     parser.add_argument("--desktop-lifecycle-rehearsal", action="store_true")
@@ -360,52 +364,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _console_safe(value: Any) -> str:
-    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-    return str(value).encode(encoding, errors="replace").decode(encoding, errors="replace")
-
-
-def _print_console(value: Any) -> None:
-    print(_console_safe(value))
+_console_safe = packaged_smoke_common_mod.console_safe
+_print_console = packaged_smoke_common_mod.print_console
 
 
 def _print_failure_summary(report: dict[str, Any]) -> None:
-    """Print a summary of the failure to stdout for CI visibility."""
-    failure = report.get("failure")
-    if not failure:
-        return
-    step = failure.get("step", "unknown")
-    message = failure.get("message", "No error message available")
-    category = failure.get("category", "")
-    _print_console(f"\n[SMOKE FAILURE] Step: {step}")
-    _print_console(f"[SMOKE FAILURE] Error: {message}")
-    if category:
-        _print_console(f"[SMOKE FAILURE] Category: {category}")
-    artifacts = report.get("artifacts", {})
-    exe_stdout = artifacts.get("exeStdout")
-    exe_stderr = artifacts.get("exeStderr")
-    report_path = artifacts.get("reportPath")
-    if exe_stdout:
-        _print_console(f"[SMOKE FAILURE] Exe stdout log: {exe_stdout}")
-    if exe_stderr:
-        _print_console(f"[SMOKE FAILURE] Exe stderr log: {exe_stderr}")
-    if report_path:
-        _print_console(f"[SMOKE FAILURE] Full report: {report_path}")
-    scenarios = report.get("scenarios", [])
-    if scenarios:
-        _print_console("[SMOKE FAILURE] Scenarios summary:")
-        for scenario in scenarios:
-            name = scenario.get("name", "unknown")
-            status = scenario.get("status", "unknown")
-            status_char = "." if status == "passed" else "X"
-            _print_console(f"  [{status_char}] {name}: {status}")
-            if status != "passed" and scenario.get("error"):
-                _print_console(f"      Error: {scenario['error']}")
+    packaged_smoke_common_mod.print_failure_summary(report)
+
+
+def _run_appimage_update_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
+    return _appimage_update_rehearsal_mod.run_from_args(
+        args,
+        default_artifact_root=DEFAULT_ARTIFACT_ROOT / "update-appimage",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     ensure_required_python()
     args = parse_args(argv)
+    if bool(getattr(args, "desktop_update_rehearsal_appimage", False)):
+        return _appimage_update_rehearsal_mod.print_report(_run_appimage_update_rehearsal(args))
     report = run_packaged_smoke(args)
     if args.startup_probe or args.profile_only:
         summary = report.get("startupProfile")

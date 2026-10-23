@@ -240,6 +240,7 @@ def summarize_discovery_report(
     summary = as_json_object(normalized.get("summary"))
     queued = int(summary.get("queuedCandidateCount") or 0)
     failed = int(summary.get("failedProbeCount") or 0)
+    rescued = int(summary.get("failuresResolvedByBrowser") or 0)
     probed = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
     duration_ms = 0
     started = parse_iso(report.get("startedAt"))
@@ -255,6 +256,9 @@ def summarize_discovery_report(
         {
             "queuedCandidateCount": queued,
             "failedProbeCount": failed,
+            # The rescued split travels with the failure count so a run row shows both
+            # without reloading the report file.
+            "failuresResolvedByBrowser": rescued,
             "probedCandidateCount": probed,
             "durationMs": duration_ms,
         },

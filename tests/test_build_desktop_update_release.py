@@ -4,7 +4,13 @@ from unittest import mock
 
 import pytest
 
-from scripts.build_desktop_update_release import build_manifest, load_private_key_bytes, parse_args
+from scripts.build_desktop_update_release import (
+    build_manifest,
+    load_private_key_bytes,
+    parse_args,
+    resolve_manifest_name,
+    resolve_output_path,
+)
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -12,9 +18,48 @@ def test_parse_args_defaults_to_current_app_version() -> None:
     with mock.patch("sys.argv", ["build_desktop_update_release.py"]):
         args = parse_args()
     assert str(args.version).strip()
-    assert str(args.output).endswith("baluffo-desktop-update-manifest.json")
+    assert str(args.output) == ""
     assert str(args.portable_zip) == ""
     assert str(args.ship_zip) == ""
+    assert str(args.artifact) == ""
+    assert str(args.artifact_kind) == "zip"
+    assert resolve_manifest_name(args) == "baluffo-desktop-update-manifest.json"
+    assert resolve_output_path(args).name == "baluffo-desktop-update-manifest.json"
+
+
+def test_appimage_manifest_uses_the_linux_asset_and_the_appimage_artifact() -> None:
+    with workspace_tmpdir("desktop-update-release-appimage") as tmp:
+        appimage = Path(tmp) / "Baluffo-1.2.3-x86_64.AppImage"
+        appimage.write_text("appimage", encoding="utf-8")
+        args = parse_args(
+            [
+                "--version",
+                "1.2.3",
+                "--artifact",
+                str(appimage),
+                "--artifact-kind",
+                "appimage",
+                "--github-repo",
+                "owner/repo",
+                "--key-id",
+                "desktop-ed25519-2026-01",
+                "--private-key-b64",
+                base64.b64encode(b"x" * 32).decode("ascii"),
+            ]
+        )
+
+        with mock.patch(
+            "scripts.build_desktop_update_release.sign_manifest", return_value="signed-manifest"
+        ):
+            manifest = build_manifest(args)
+
+        assert resolve_manifest_name(args) == "baluffo-desktop-update-manifest-linux.json"
+        assert resolve_output_path(args).name == "baluffo-desktop-update-manifest-linux.json"
+        assert manifest["portable_artifact"]["url"] == (
+            "https://github.com/owner/repo/releases/download/v1.2.3/Baluffo-1.2.3-x86_64.AppImage"
+        )
+        assert int(manifest["portable_artifact"]["size_bytes"]) == int(appimage.stat().st_size)
+        assert "ship_recovery_artifact" not in manifest
 
 
 def test_build_manifest_derives_release_urls_and_signs_payload() -> None:

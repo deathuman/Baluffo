@@ -1,12 +1,10 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
-import { awaitDesktopBootstrap } from "../../shared/local-data/desktop-client.js";
+import { awaitBridgeBootstrap } from "../../shared/local-data/bridge-client.js";
 import { resolveBridgeLocalDataMode, resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import { showToast, setText } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { createPerfMarks } from "../../shared/perf-marks.js";
-import {
-  appendAdminLogRow
-} from "../render.js";
+import { appendAdminLogRow } from "../render/logs.js";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -146,8 +144,7 @@ async function waitForAdminBridgeReady() {
   if (!bridgeLocalDataMode && !resolveDesktopRuntimeMode()) {
     return true;
   }
-  const enableLifecycle = Boolean(window.__baluffoDesktopMode || resolveDesktopRuntimeMode());
-  return awaitDesktopBootstrap({ enableLifecycle });
+  return awaitBridgeBootstrap();
 }
 
 async function fetchJobsFetchReportJson(options = {}) {

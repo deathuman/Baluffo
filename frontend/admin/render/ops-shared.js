@@ -44,9 +44,14 @@ export function buildRunStatusTooltip(row) {
   const parts = [];
   if (type === "discovery") {
     const failed = Number(summary?.failedProbeCount || 0);
+    const rescued = Number(summary?.failuresResolvedByBrowser || 0);
     const probed = Number(summary?.probedCandidateCount || 0);
     const queued = Number(summary?.queuedCandidateCount || 0);
-    parts.push(`Failed probes: ${failed}`);
+    parts.push(
+      rescued > 0
+        ? `Failed probes: ${failed} (${rescued} rescued by browser)`
+        : `Failed probes: ${failed}`
+    );
     if (probed > 0) parts.push(`Probed: ${probed}`);
     if (queued >= 0) parts.push(`Review queue: ${queued}`);
   } else {

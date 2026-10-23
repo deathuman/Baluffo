@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from src.ship import desktop_app, windows_user_paths
+from src.ship import desktop_app, linux_user_paths, windows_user_paths
 from src.ship.desktop_app import config as config_mod
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -203,6 +203,51 @@ def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy
         assert (config.data_dir / "jobs-unified.json").read_text(encoding="utf-8") == "[{}]"
         assert (legacy_data / "jobs-unified.json").is_file()
         assert windows_user_paths.windows_user_data_migration_report_path(config.data_dir).is_file()
+
+
+def test_linux_data_root_prefers_xdg_then_home_then_the_running_user() -> None:
+    assert linux_user_paths.linux_data_home({"XDG_DATA_HOME": "/tmp/xdg"}) == Path("/tmp/xdg")
+    assert linux_user_paths.linux_data_home({"HOME": "/home/someone"}) == Path(
+        "/home/someone/.local/share"
+    )
+    assert linux_user_paths.default_linux_packaged_data_dir({"HOME": "/home/someone"}) == Path(
+        "/home/someone/.local/share/Baluffo"
+    )
+
+
+def test_create_runtime_config_uses_xdg_data_root_for_packaged_linux() -> None:
+    with workspace_tmpdir("desktop-config-linux-data-root") as tmp:
+        ship_root = Path(tmp) / "appimage-mount" / "ship"
+        (ship_root / "data").mkdir(parents=True)
+        xdg_data = Path(tmp) / "xdg"
+        args = argparse.Namespace(
+            root=str(ship_root),
+            site_port=0,
+            bridge_port=0,
+            bridge_host="127.0.0.1",
+            data_dir="",
+            open_path="admin.html",
+            title="",
+            port=0,
+            bind_host="127.0.0.1",
+            child_mode="",
+            desktop_runtime=False,
+            startup_probe=False,
+        )
+        with (
+            mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
+            mock.patch.object(config_mod, "_is_windows_packaged_runtime", return_value=False),
+            mock.patch.object(config_mod, "_is_linux_packaged_runtime", return_value=True),
+            mock.patch.dict(
+                config_mod.os.environ,
+                {"XDG_DATA_HOME": str(xdg_data), "BALUFFO_DATA_DIR": ""},
+                clear=False,
+            ),
+        ):
+            config = desktop_app.create_runtime_config(args)
+
+        assert config.data_dir == (xdg_data / "Baluffo").resolve()
+        assert config.ship_root == ship_root.resolve()
 
 
 @pytest.mark.windows
@@ -495,3 +540,66 @@ def test_resolve_browser_session_root_falls_back_to_runtime_temp_when_standard_l
 
     assert "BaluffoRuntime" in str(resolved)
     assert desktop_app.last_session_root_resolution()["strategy"] == "runtime-temp"
+
+
+def test_port_is_available_reports_a_live_listener_as_busy() -> None:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = int(listener.getsockname()[1])
+
+        assert config_mod._port_is_available("127.0.0.1", port) is False
+
+
+def test_port_is_available_reuses_the_app_servers_socket_semantics() -> None:
+    """A restart must be able to bind a port the app's own servers bind.
+
+    The previous session's connections sit in TIME_WAIT for about a minute after
+    the window closes; the app's servers set SO_REUSEADDR, so the probe must too,
+    or a quick restart silently moves to a random port.
+    """
+    socket_module = pytest.importorskip("socket")
+    options: list[tuple[int, int, int]] = []
+    original_setsockopt = socket_module.socket.setsockopt
+
+    def recording_setsockopt(self: Any, level: int, option: int, value: int) -> None:
+        options.append((int(level), int(option), int(value)))
+        original_setsockopt(self, level, option, value)
+
+    recording_socket = type(
+        "RecordingSocket", (socket_module.socket,), {"setsockopt": recording_setsockopt}
+    )
+    with mock.patch.object(socket_module, "socket", recording_socket):
+        available = config_mod._port_is_available("127.0.0.1", 0)
+
+    assert available is True
+    expected = (
+        [(socket_module.SOL_SOCKET, socket_module.SO_EXCLUSIVEADDRUSE, 1)]
+        if desktop_app.os.name == "nt" and hasattr(socket_module, "SO_EXCLUSIVEADDRUSE")
+        else [(socket_module.SOL_SOCKET, socket_module.SO_REUSEADDR, 1)]
+    )
+    assert all(option in options for option in expected)
+
+
+def test_resolve_runtime_ports_treats_a_draining_connection_as_free() -> None:
+    """TIME_WAIT (no listener) must not push a restart off the default ports."""
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    with mock.patch.object(
+        desktop_app, "_port_is_available", side_effect=lambda host, port: True
+    ) as availability:
+        resolved = desktop_app.resolve_runtime_ports(config)
+
+    assert resolved.site_port == 8080
+    assert resolved.bridge_port == ADMIN_BRIDGE_TEST_PORT
+    assert availability.call_count >= 2

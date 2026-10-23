@@ -8,7 +8,7 @@ import { escapeHtml, tooltipAttrs } from "../ui/index.js";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 import { formatJobLocationColumns } from "../location-display.js";
 import { formatDateForStatus as formatTooltipDate } from "../format-utils.js";
-import { renderAvailabilityCheckIcon } from "../ui-helpers.js";
+import { renderAvailabilityCheckIcon, renderCheckIcon, renderPendingIcon, renderPlusIcon } from "../ui-helpers.js";
 
 function getFreshnessTier(score) {
   if (!Number.isFinite(score)) return "";
@@ -210,7 +210,7 @@ function renderJobRowContent(job, {
           aria-label="${isSavePending ? saveLabel : (isSaved ? "Job saved" : "Save job")}"
           title="${isSavePending ? saveLabel : (isSaved ? "Saved" : "Save job")}"
         >
-          <span aria-hidden="true">${isSavePending ? "…" : (isSaved ? "✓" : "＋")}</span>
+          <span aria-hidden="true">${isSavePending ? renderPendingIcon() : (isSaved ? renderCheckIcon() : renderPlusIcon())}</span>
         </button>
       </div>
     </div>

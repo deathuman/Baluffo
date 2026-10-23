@@ -15,10 +15,14 @@ function repoPath(...parts) {
 function readImports(relPath) {
   const source = fs.readFileSync(repoPath(relPath), "utf8");
   const imports = [];
-  const importRegex = /from\s+["']([^"']+)["']/g;
+  // Both forms count: `import { x } from "./m.js"` and the side-effect
+  // `import "./m.js"` a page entry uses to compose its runtime with its body.
+  // A static dynamic `import("./m.js")` is deliberately not an import here --
+  // the boundary rules are about what a module drags onto the page's own graph.
+  const importRegex = /\bfrom\s+["']([^"']+)["']|(?:^|[^\w$.])import\s+["']([^"']+)["']/g;
   let match = importRegex.exec(source);
   while (match) {
-    imports.push(normalizeImportSpecifier(match[1]));
+    imports.push(normalizeImportSpecifier(match[1] || match[2]));
     match = importRegex.exec(source);
   }
   return imports;
@@ -48,14 +52,24 @@ function listJsFiles(dir) {
 }
 
 test("cleanup structure: page indexes boot direct from sibling app modules", () => {
+  // A page index no longer boots the app inline: it composes a runtime with the
+  // page body, which is what lets the container and desktop builds reuse the body
+  // with their own local-data client. The direct app import moved with the body,
+  // so the invariant is checked as a pair -- the index boots exactly that body,
+  // and the body boots exactly its sibling app module.
   const checks = [
-    path.join("frontend", "jobs", "index.js"),
-    path.join("frontend", "saved", "index.js"),
-    path.join("frontend", "admin", "index.js")
+    path.join("frontend", "jobs"),
+    path.join("frontend", "saved"),
+    path.join("frontend", "admin")
   ];
-  for (const rel of checks) {
+  for (const dir of checks) {
+    const rel = path.join(dir, "index.js");
+    const bodyRel = path.join(dir, "page-entry.js");
     const imports = readImports(rel);
-    assert.equal(imports.includes("./app.js"), true, `Expected direct app import in ${rel}`);
+    assert.equal(imports.includes("./page-entry.js"), true, `Expected ${rel} to boot ./page-entry.js`);
+    assert.equal(imports.includes("./app.js"), false, `${rel} must keep the boot body in page-entry.js`);
+    const bodyImports = readImports(bodyRel);
+    assert.equal(bodyImports.includes("./app.js"), true, `Expected direct app import in ${bodyRel}`);
   }
 });
 
@@ -137,7 +151,10 @@ test("cleanup structure: app modules import only canonical local layers", () => 
 });
 
 test("cleanup structure: app runtime modules import only canonical layers and local app helpers", () => {
-  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state|parsing-utils|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js|\.\/runtime\/[A-Za-z0-9-]+\.js)$/;
+  // A render leaf is as canonical as the `render.js` barrel next to it, and the
+  // Admin runtime must use leaves: importing the barrel from the shell drags the
+  // lazily loaded Ops renderers back onto the boot path.
+  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state|parsing-utils|state-sync\/index)\.js|\.\.\/render\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js|\.\/runtime\/[A-Za-z0-9-]+\.js)$/;
   const sharedPattern = /^(\.\.\/shared\/|(\.\.\/){2,3}|\/)/;
   const slices = ["jobs", "saved", "admin"];
 
@@ -157,7 +174,10 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
   const slices = ["jobs", "saved", "admin"];
   const allowedImportPattern = /^(\.\.\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js)$/;
   const allowedSharedRuntimeImportPattern = /^\.\.\/\.\.\/\.\.\/shared\/[A-Za-z0-9_/-]+\.js$/;
-  const allowedCompositionSliceImportPattern = /^\.\.\/\.\.\/(actions|domain|render|services)\.js$/;
+  // Composition may take a render/dataset leaf as well as the layer barrel: the
+  // Admin shell imports `render/overview.js` directly so the barrel's ops
+  // renderers stay out of its boot bundle.
+  const allowedCompositionSliceImportPattern = /^\.\.\/\.\.\/(actions|domain|render|services)(\/[A-Za-z0-9-]+)?\.js$/;
   // A runtime helper may reach one level into its own slice's subdirectory when
   // it wires a controller that slice/app/runtime.js must not inline (it has a
   // 320-line budget). Slice-internal only: jobs/, saved/, and admin/ stay
@@ -509,9 +529,8 @@ test("cleanup structure: desktop local-data client stays a thin root", () => {
     `frontend/shared/local-data/desktop-client.js is ${countLines(rel)} lines, above the 60-line thin-surface budget`
   );
   for (const specifier of [
-    "./desktop/api.js",
-    "./desktop/lifecycle.js",
-    "./desktop/navigation.js",
+    "./bridge-client.js",
+    "./desktop/lifecycle-session.js",
     "./desktop/state.js"
   ]) {
     assert.equal(
@@ -520,6 +539,10 @@ test("cleanup structure: desktop local-data client stays a thin root", () => {
       `Expected desktop-client.js to delegate through ${specifier}`
     );
   }
+  // The desktop composition is the only place the window session is wired in;
+  // the hosted composition reaches the same client without it.
+  assert.match(source, /startDesktopLifecycle/);
+  assert.match(source, /stopDesktopLifecycle/);
   assert.doesNotMatch(
     source,
     /\bcreateLocalDataRuntime\s*\(/,
@@ -535,6 +558,53 @@ test("cleanup structure: desktop local-data client stays a thin root", () => {
     /window\.addEventListener\(/,
     "desktop-client.js must not regain lifecycle event wiring"
   );
+});
+
+test("cleanup structure: the bridge client never reaches the browser or desktop session code", () => {
+  // This module is the hosted composition's whole local-data surface. If it ever
+  // imports the browser client or the session lifecycle, both runtimes pay for
+  // the other one again -- the build guards catch it only after someone builds.
+  const rel = path.join("frontend", "shared", "local-data", "bridge-client.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  for (const specifier of [
+    "./browser-client.js",
+    "./desktop-client.js",
+    "./desktop/lifecycle-session.js",
+    "../local-data/indexeddb-adapter.js"
+  ]) {
+    assert.equal(imports.includes(specifier), false, `${rel} must not import ${specifier}`);
+  }
+  // The desktop session is a callback, not an import.
+  assert.match(source, /startLifecycle/);
+  assert.doesNotMatch(source, /window\.addEventListener\(/);
+});
+
+test("cleanup structure: shipped compositions own one runtime each", () => {
+  const root = path.join("frontend", "shared", "local-data");
+  const container = readImports(path.join(root, "app-client.container.js"));
+  const desktop = readImports(path.join(root, "app-client.desktop.js"));
+
+  assert.equal(container.includes("./bridge-client.js"), true);
+  for (const forbidden of ["./browser-client.js", "./desktop-client.js", "./app-client.js"]) {
+    assert.equal(container.includes(forbidden), false, `the hosted composition must not import ${forbidden}`);
+  }
+  assert.equal(desktop.includes("./desktop-client.js"), true);
+  for (const forbidden of ["./browser-client.js", "./bridge-client.js", "./app-client.js"]) {
+    assert.equal(desktop.includes(forbidden), false, `the desktop composition must not import ${forbidden}`);
+  }
+
+  // The page bodies are runtime-agnostic so both builds can reuse them.
+  for (const slice of ["jobs", "admin", "saved"]) {
+    const body = path.join("frontend", slice, "page-entry.js");
+    const bodyImports = readImports(body);
+    assert.equal(
+      bodyImports.some(specifier => specifier.includes("local-data")),
+      false,
+      `${body} must not name a local-data runtime`
+    );
+  }
 });
 
 test("cleanup structure: jobs desktop update root stays a thin export surface", () => {

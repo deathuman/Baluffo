@@ -1,8 +1,10 @@
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
+import { GLOBAL_TOKENS } from "../../shared/ui/tokens/global.js";
+import { SAVED_TOKENS } from "../../shared/ui/tokens/saved.js";
+import { ui } from "../../shared/ui/tokens/ui.js";
 
 export function cacheSavedDom(doc = document) {
-  const t = UI_TOKENS.saved;
-  const g = UI_TOKENS.global;
+  const t = SAVED_TOKENS;
+  const g = GLOBAL_TOKENS;
 
   return {
     savedJobsListEl: doc.querySelector(ui(t.list)),

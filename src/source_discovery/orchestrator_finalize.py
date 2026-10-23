@@ -31,6 +31,7 @@ from .reporting import (
     build_m5_strategic_backlog,
     build_stage_summary,
     enrich_candidates_for_review,
+    failures_resolved_by_browser_total,
     update_candidate_review_metadata,
 )
 from .runtime_metrics import build_discovery_runtime_payload as _build_discovery_runtime_payload
@@ -289,6 +290,12 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     )
     summary["gamedevmapAudit"] = dict(state.gamedevmap_audit_summary)
     summary["directoryAudits"] = dict(state.directory_audit_summaries)
+    # Rescued failures live on the adapter audits, not in this run's failure rows, so the
+    # report totals them here: the failure count and the split read side by side.
+    summary["failuresResolvedByBrowser"] = failures_resolved_by_browser_total(
+        directory_audit_summaries=state.directory_audit_summaries,
+        gamedevmap_audit_summary=state.gamedevmap_audit_summary,
+    )
     if state.probe_failure_memory is not None:
         flush_stats = state.probe_failure_memory.flush()
         orchestrator.emit_log(

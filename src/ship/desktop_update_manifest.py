@@ -26,6 +26,10 @@ else:
 
 DESKTOP_UPDATE_SCHEMA_VERSION = 1
 DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
+# A build only installs the artifact its platform can replace -- a portable ZIP
+# directory on Windows, a single AppImage on Linux -- so each release carries one
+# signed manifest per platform instead of one manifest describing both.
+DESKTOP_UPDATE_MANIFEST_ASSET_LINUX = "baluffo-desktop-update-manifest-linux.json"
 DESKTOP_UPDATE_CHANNEL = "stable"
 DESKTOP_UPDATER_VERSION = "2.0.1"
 PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
@@ -84,6 +88,7 @@ def verify_manifest_signature(
 
 __all__ = [
     "DESKTOP_UPDATE_MANIFEST_ASSET",
+    "DESKTOP_UPDATE_MANIFEST_ASSET_LINUX",
     "DESKTOP_UPDATE_CHANNEL",
     "DESKTOP_UPDATE_SCHEMA_VERSION",
     "DESKTOP_UPDATER_VERSION",

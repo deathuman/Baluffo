@@ -71,6 +71,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     api = desktop_api()
+    api._install_termination_handlers()
     args = api.parse_args(argv)
     if args.child_mode == "__child_site__":
         from src.ship.runtime_launcher import run_site_server

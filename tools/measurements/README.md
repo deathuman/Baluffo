@@ -6,6 +6,9 @@ Tools that run Baluffo or its pipeline and measure outputs, timing, yield, quali
 
 ```
 measurements/
+  desktop/
+    spawn_startup.py                       # Measure click -> window -> interactive from Popen
+
   pipeline/
     fetch_report_read_audit.py              # Audit every hot fetch-report consumer's read cost
     job_discovery_increment_measurement.py  # Measure pipeline discovery gains
@@ -28,6 +31,31 @@ python tools/measurements/pipeline/latest_run_report.py
 ```
 
 Add `--json` when you want a machine-readable summary for automation.
+
+### Desktop Spawn Startup
+
+The packaged startup probe starts its clock at `desktop_launch_start`, so its
+total leaves out the PyInstaller boot and the launcher's import preamble. This
+tool starts the portable EXE itself and places every journal row against the
+spawn timestamp. Launcher rows use `ts`; page rows use their own page clock
+(`browserTsMs`), with the bridge-arrival value reported beside it so a queued
+metric POST stays visible instead of being charged to the page.
+
+```bash
+python tools/measurements/desktop/spawn_startup.py --runs 2 --modes cold,warm
+python tools/measurements/desktop/spawn_startup.py --page admin --probe --json
+```
+
+It needs a portable build (`npm run build:portable-exe`) or a Linux AppImage
+(`npm run build:linux`), which `--exe` accepts and starts through
+`--appimage-extract-and-run`. Runtime data, logs and the report land under
+`--output-dir` (default `.tmp/spawn-startup`), so `data/` is never touched.
+`spawn-startup.json` is the machine-readable report and `spawn-startup.md` is the
+table the startup architecture doc quotes. A Linux launch has no observed window
+mark, so its window figure is labelled `launcher-inferred` rather than reported
+as a paint. The clock arithmetic lives in `src/ship/startup_spawn_clock.py` and is
+shared with the packaged probe, so this report and the release preflight's
+`startup-profile-summary.json` place a row on the same clock.
 
 ### Fetch Report Read Audit
 

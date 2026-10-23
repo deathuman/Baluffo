@@ -11,11 +11,13 @@ from __future__ import annotations
 import traceback
 import uuid
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 from src.shared.utils import int_or_default as _as_int
+from src.ship.startup_telemetry import warm_loopback_connect as _warm_loopback_connect
 
 from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
@@ -189,6 +191,15 @@ def _start_desktop_bridge_process(
     return process
 
 
+def _trace_site_connect_warmed(api: ModuleType, data_dir: Path, started_mono: float) -> None:
+    """Trace the warmed loopback connect without a closure inside `launch_desktop_app`."""
+    api._append_startup_trace(
+        data_dir,
+        "desktop_site_connect_warmed",
+        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+    )
+
+
 def _maybe_start_parallel_bridge(
     *,
     api: ModuleType,
@@ -302,6 +313,14 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     "desktop_site_spawned",
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                     pid=int(site_process.pid) if site_process else 0,
+                )
+
+                _warm_loopback_connect(
+                    config.bridge_host or "127.0.0.1",
+                    config.site_port,
+                    on_ready=partial(
+                        _trace_site_connect_warmed, api, config.data_dir, started_mono
+                    ),
                 )
                 open_url = api.build_open_url(config)
 

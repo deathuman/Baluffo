@@ -1,26 +1,6 @@
+// The development entry: repo pages boot through the runtime dispatcher, which
+// serves both plain browser mode and `?desktop=1`. The shipped builds compose the
+// page body (`page-entry.js`) with their own runtime's client instead, so neither
+// packaged page carries the other runtime's code.
 import "../shared/local-data/app-client.js";
-import "./state.js";
-import "./parsing-utils.js";
-import { boot as bootJobsPage } from "./app.js";
-import { installGlobalTooltipController } from "../shared/ui/tooltip-controller.js";
-import { installExplainStateHandler } from "../shared/ui/explain-state.js";
-import { observeLongTasks } from "../../probes/long-task-observer.js";
-import { emitStartupProbeMetric, resolveStartupProbeEnabled } from "../../probes/startup-probe.js";
-
-emitStartupProbeMetric("jobs_page_boot_start");
-emitStartupProbeMetric("jobs_module_boot_start");
-if (resolveStartupProbeEnabled()) {
-  observeLongTasks({ page: "jobs", emitMetric: emitStartupProbeMetric });
-}
-installGlobalTooltipController();
-installExplainStateHandler();
-
-export function boot() {
-  bootJobsPage();
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot);
-} else {
-  boot();
-}
+import "./page-entry.js";

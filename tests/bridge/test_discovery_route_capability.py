@@ -35,7 +35,7 @@ def test_discovery_get_routes_accept_minimal_capability_object(tmp_path: Path) -
         {
             "runId": "discovery_minimal_1",
             "status": "completed",
-            "summary": {"candidateCount": 1},
+            "summary": {"candidateCount": 1, "failedProbeCount": 4, "failuresResolvedByBrowser": 2},
             "candidates": [{"id": "report-candidate"}],
             "failures": [],
         },
@@ -56,6 +56,8 @@ def test_discovery_get_routes_accept_minimal_capability_object(tmp_path: Path) -
     report_payload = json.loads(report_handler.bytes_sent[-1]["body"].decode("utf-8"))
     assert report_payload["summaryView"] is True
     assert report_payload["summary"]["candidateCount"] == 1
+    assert report_payload["summary"]["failedProbeCount"] == 4
+    assert report_payload["summary"]["failuresResolvedByBrowser"] == 2
 
     candidates_handler = FakeHandler()
     assert (

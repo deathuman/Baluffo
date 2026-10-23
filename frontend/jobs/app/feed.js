@@ -28,7 +28,8 @@ import {
 } from "./feed-bootstrap-marker.js";
 import {
   isActiveBootstrapReport,
-  isSuccessfulJobsFetchReport
+  isSuccessfulJobsFetchReport,
+  reportFinishedTimestamp
 } from "./feed-report-probe.js";
 import { createFirstRunBootstrapFlow } from "./feed-first-run-flow.js";
 
@@ -52,7 +53,6 @@ export async function initJobsFeed(deps) {
     hasJobsList,
     emitMetric,
     markJobsStep = () => {},
-    initAuth,
     isDesktopRuntimeMode,
     isContainerRuntimeMode = () => false,
     readCachedJobs,
@@ -92,40 +92,81 @@ export async function initJobsFeed(deps) {
   } = firstRunFlow;
 
 try {
-    initAuth();
-
+    // No auth handshake here: boot starts it behind the first rows, so the
+    // snapshot read below is the first thing this path waits on.
     const desktopMode = isDesktopRuntimeMode();
-    const localReport = desktopMode && typeof fetchJobsReport === "function"
-      ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
-      : null;
-    const launchColdStartPending = desktopMode
-      && Boolean(desktopJobsColdStart)
-      && !launchColdStartAlreadyHandled(windowObject);
-    const localReportSuccessful = isSuccessfulJobsFetchReport(localReport);
-    const bootstrapMarker = desktopMode ? bootstrapAutoStartMarker(windowObject) : { status: "none" };
-    const bootstrapMarkerRunning = bootstrapMarker.status === "running"
-      || bootstrapMarker.status === "legacy";
-    const activeBootstrapReport = isActiveBootstrapReport(localReport);
-    const firstRunRequired = Boolean(
-      desktopMode
-      && !localReportSuccessful
-      && (launchColdStartPending || bootstrapMarkerRunning || activeBootstrapReport)
-    );
-    const firstRunAction = firstRunRequired
-      ? bootstrapColdStartAction(localReport, windowObject, {
-        forceStart: true
-      })
-      : false;
-    emitMetric("jobs_first_run_gate_evaluated", {
-      desktopMode,
-      runtimeColdStart: Boolean(desktopJobsColdStart),
-      launchColdStartPending,
-      reportSuccessful: localReportSuccessful,
-      action: firstRunAction || "skip"
-    });
+    // The report probe is a gate, not feed data: it decides whether a first-run
+    // bootstrap is needed. Start it here and read it where its answer matters, so
+    // the first paint never waits on it -- a report that lands after rows are on
+    // screen is applied behind them (``applyFirstRunGateBehindRenderedRows``).
+    const reportProbe = desktopMode && typeof fetchJobsReport === "function"
+      ? fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+      : Promise.resolve(null);
 
-    if (firstRunRequired) {
-      renderFirstRunBootstrapState();
+    function evaluateFirstRunGate(localReport) {
+      const launchColdStartPending = desktopMode
+        && Boolean(desktopJobsColdStart)
+        && !launchColdStartAlreadyHandled(windowObject);
+      const localReportSuccessful = isSuccessfulJobsFetchReport(localReport);
+      const bootstrapMarker = desktopMode ? bootstrapAutoStartMarker(windowObject) : { status: "none" };
+      const bootstrapMarkerRunning = bootstrapMarker.status === "running"
+        || bootstrapMarker.status === "legacy";
+      const firstRunRequired = Boolean(
+        desktopMode
+        && !localReportSuccessful
+        && (launchColdStartPending || bootstrapMarkerRunning || isActiveBootstrapReport(localReport))
+      );
+      return {
+        launchColdStartPending,
+        localReportSuccessful,
+        firstRunRequired,
+        firstRunAction: firstRunRequired
+          ? bootstrapColdStartAction(localReport, windowObject, { forceStart: true })
+          : false
+      };
+    }
+
+    function emitGateEvaluated(gate, extra = {}) {
+      emitMetric("jobs_first_run_gate_evaluated", {
+        desktopMode,
+        runtimeColdStart: Boolean(desktopJobsColdStart),
+        launchColdStartPending: gate.launchColdStartPending,
+        reportSuccessful: gate.localReportSuccessful,
+        action: gate.firstRunAction || "skip",
+        ...extra
+      });
+    }
+
+    // The report landed after the snapshot painted: apply its verdict behind the
+    // rows already on screen. Swapping in the empty bootstrap state or its modal
+    // notice here is exactly the flash this path exists to avoid, so the bootstrap
+    // runs quietly and the status line explains it.
+    async function applyFirstRunGateBehindRenderedRows(localReport) {
+      const gate = evaluateFirstRunGate(localReport);
+      const rowsRendered = getAllJobs().length;
+      emitGateEvaluated(gate, { late: true, rowsRendered });
+      // The snapshot painted before this report existed, so its "Last updated"
+      // stamp had nothing to show: fill it in now instead of waiting for the
+      // delayed full-feed refresh.
+      const finishedAt = reportFinishedTimestamp(localReport);
+      if (finishedAt) updateLastUpdatedText(finishedAt);
+      if (!gate.firstRunRequired) return;
+      emitMetric("jobs_first_run_gate_applied_late", {
+        action: gate.firstRunAction || "skip",
+        rowsRendered
+      });
+      if (gate.launchColdStartPending) markLaunchColdStartHandled(windowObject);
+      if (gate.firstRunAction !== "start" && gate.firstRunAction !== "reattach") {
+        // A terminal failure cannot be repaired by clearing the screen, and the
+        // snapshot rows are still readable: report it without replacing them.
+        setSourceStatus(bootstrapRetryMessage(localReport));
+        return;
+      }
+      try {
+        await startBootstrapAndLoad();
+      } catch (err) {
+        showError(String(err?.message || "Unable to refresh first-run jobs."), retryBootstrap);
+      }
     }
 
     // ponytail: container boots on the bounded startup snapshot; normalizing a
@@ -163,15 +204,40 @@ try {
       return;
     }
 
-if (firstRunRequired) {
+    // Rows first, gate second: the snapshot decides what the page paints, and the
+    // report only decides what happens behind it.
+    const previewLoaded = await loadStartupPreviewJobs();
+    if (previewLoaded) {
+      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
+      setHasInitializedJobsFeed(true);
+      scheduleNonCriticalStartupWork();
+      await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
+      reportProbe
+        .then(localReport => applyFirstRunGateBehindRenderedRows(localReport))
+        .catch(() => {});
+      // ponytail: auto-hydrate the complete feed right after interactive so
+      // the full list never requires pressing Reload; snapshot keeps boot fast.
+      windowObject.setTimeout(() => {
+        refreshJobsNow({ manual: false }).catch(() => {});
+      }, JOBS_FULL_FEED_SYNC_DELAY_MS);
+      return;
+    }
+
+    // Nothing on screen yet, so the gate's answer is what decides what to show.
+    const localReport = await reportProbe;
+    const gate = evaluateFirstRunGate(localReport);
+    emitGateEvaluated(gate);
+
+    if (gate.firstRunRequired) {
+      renderFirstRunBootstrapState();
       setHasInitializedJobsFeed(true);
       markStartupRendered("first_run_bootstrap", 0);
       markJobsFirstInteractive("first_run_bootstrap");
       scheduleNonCriticalStartupWork();
-      if (firstRunAction === "start" || firstRunAction === "reattach") {
+      if (gate.firstRunAction === "start" || gate.firstRunAction === "reattach") {
         try {
-          if (launchColdStartPending) markLaunchColdStartHandled(windowObject);
-          showBootstrapNoticeOnce(firstRunAction);
+          if (gate.launchColdStartPending) markLaunchColdStartHandled(windowObject);
+          showBootstrapNoticeOnce(gate.firstRunAction);
           const ok = await startBootstrapAndLoad();
           if (!ok) {
             showError("Unable to load job listings right now.", retryBootstrap);
@@ -183,20 +249,6 @@ if (firstRunRequired) {
         }
       }
       showError(bootstrapRetryMessage(localReport), retryBootstrap);
-      return;
-    }
-
-    const previewLoaded = await loadStartupPreviewJobs();
-    if (previewLoaded) {
-      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
-      setHasInitializedJobsFeed(true);
-      scheduleNonCriticalStartupWork();
-      await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
-      // ponytail: auto-hydrate the complete feed right after interactive so
-      // the full list never requires pressing Reload; snapshot keeps boot fast.
-      windowObject.setTimeout(() => {
-        refreshJobsNow({ manual: false }).catch(() => {});
-      }, JOBS_FULL_FEED_SYNC_DELAY_MS);
       return;
     }
 

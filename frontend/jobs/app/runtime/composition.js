@@ -1,14 +1,15 @@
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../../shared/app-boot.js";
 import { createAuthReadyPoller } from "../../../shared/auth-ready-poll.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
-import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { navigateDesktopPage } from "../../../shared/local-data/desktop/navigation.js";
 import {
   availabilityCheckVerdict,
   availabilityCheckWasApplied,
   runJobAvailabilityCheck
 } from "../../../shared/job-availability-check.js";
 import { bindAsyncClick, bindHandlersMap, bindUi, escapeHtml, setText, showToast } from "../../../shared/ui/index.js";
-import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
+import { JOBS_TOKENS } from "../../../shared/ui/tokens/jobs.js";
+import { ui } from "../../../shared/ui/tokens/ui.js";
 import { normalizeToken } from "../../../shared/text-utils.js";
 import { debounce } from "../runtime-utils.js";
 import { createJobsBridgeRequest } from "./actions.js";
@@ -17,7 +18,7 @@ import { createJobsEventsController } from "./events.js";
 import { createJobsFeedController } from "./feed-controller.js";
 import { createJobsFiltersController } from "./filters-ui.js";
 import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./jobs-list-events.js";
-import { createJobsPipelineController } from "./pipeline-controller.js";
+import { createLazyJobsPipelineController } from "./lazy-pipeline.js";
 import { createJobsStartupPreviewController } from "./startup-preview.js";
 import { createJobsStartupMetrics } from "./effects.js";
 import { createJobsRuntimeState } from "./state.js";
@@ -56,6 +57,13 @@ export function composeJobsRuntime(deps) {
 
   function markStartupRendered(stage, rowCount) {
     startupMetrics.markRendered(stage, rowCount);
+    // Rows exist, so the deferred work can start without competing with them:
+    // the update panel (it gates its own status check), and the half of boot
+    // that only interaction needs -- filter chrome, event binding, auth.
+    if (Number(rowCount) > 0) {
+      deps.startDesktopUpdateSurface?.();
+      deps.startBootFollowUp?.();
+    }
   }
 
   function logJobsInfo(message, ...args) {
@@ -154,20 +162,28 @@ export function composeJobsRuntime(deps) {
     sanitizeUrl: deps.sanitizeUrl
   });
 
-  const pipelineController = createJobsPipelineController({
-    refs: jobsControllerRefs,
-    jobsPipelineUiState,
-    callJobsBridge,
-    getAllJobs: () => runtimeState.allJobs,
-    showToast,
-    refreshJobsAfterPipelineCompletion: () => feedController.refreshJobsNow({ manual: false }),
-    isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
-    pollDelayMs: deps.pipelineStatusPollMs,
-    idlePollDelayMs: deps.pipelineStatusIdlePollMs,
-    isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.()),
-    fetchJobsTaskLive: options => callJobsBridge("/ops/task-live/fetch?view=summary", {
-      timeoutMs: Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500
-    })
+  // The pipeline surface is the page's largest module and nothing before the
+  // first rows needs it, so it loads as its own chunk on the first status watch
+  // (or run click). The deps stay here because they close over controllers that
+  // are assigned further down.
+  const pipelineController = createLazyJobsPipelineController({
+    createController: () => import("./pipeline-controller.js").then(
+      ({ createJobsPipelineController }) => createJobsPipelineController({
+        refs: jobsControllerRefs,
+        jobsPipelineUiState,
+        callJobsBridge,
+        getAllJobs: () => runtimeState.allJobs,
+        showToast,
+        refreshJobsAfterPipelineCompletion: () => feedController.refreshJobsNow({ manual: false }),
+        isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
+        pollDelayMs: deps.pipelineStatusPollMs,
+        idlePollDelayMs: deps.pipelineStatusIdlePollMs,
+        isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.()),
+        fetchJobsTaskLive: options => callJobsBridge("/ops/task-live/fetch?view=summary", {
+          timeoutMs: Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500
+        })
+      })
+    )
   });
 
   const startupPreviewController = createJobsStartupPreviewController({
@@ -207,8 +223,8 @@ export function composeJobsRuntime(deps) {
     jobsAutoRefreshSignalKey: deps.jobsAutoRefreshSignalKey,
     jobsListDelegation: () => setupJobsListDelegationFromEvents({
       jobsList: dom.jobsList,
-      jobRowSelector: `${ui(UI_TOKENS.jobs.jobRow)}[data-job-link]`,
-      saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
+      jobRowSelector: `${ui(JOBS_TOKENS.jobRow)}[data-job-link]`,
+      saveJobBtnSelector: ui(JOBS_TOKENS.saveJobBtn),
       sanitizeUrl: deps.sanitizeUrl,
       getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
       onToggleSaveJob: job => authController.toggleSaveJob(job),

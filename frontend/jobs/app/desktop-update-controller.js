@@ -1,4 +1,5 @@
 import { setDisabled, setText, toggleHidden } from "./desktop-update-dom.js";
+import { createDesktopUpdateClickDiagnostics } from "./desktop-update-click-diagnostics.js";
 import { setTooltip } from "../../shared/ui/index.js";
 import {
   buildReleaseNotesTitle,
@@ -37,6 +38,8 @@ function isRetryableCheckError(error) {
 
 export function createJobsDesktopUpdateController({
   refs,
+  documentObject = null,
+  emitDiagnostic = null,
   baseUrl,
   fetchJson,
   postJson,
@@ -67,6 +70,21 @@ export function createJobsDesktopUpdateController({
     dismissedTargetVersion: "",
     installStartPending: false,
   };
+
+  const clickDiagnostics = createDesktopUpdateClickDiagnostics({
+    documentObject,
+    refs,
+    emit: (event, payload) => emitDiagnostic?.(event, payload),
+    readControllerState: () => ({
+      bound: state.bound,
+      mounted: state.mounted,
+      panelOpen: state.panelOpen,
+      pendingCheckId: state.pendingCheckId,
+      autoCheckInProgress: state.autoCheckInProgress,
+      availability: state.status.availability,
+      hasFreshStatus: state.hasFreshStatus
+    })
+  });
 
   function beginStatusRequest() {
     state.statusRequestId += 1;
@@ -159,14 +177,28 @@ export function createJobsDesktopUpdateController({
       && Boolean(state.pendingCheckId || state.autoCheckInProgress)
       && state.status.downloadState === "idle"
       && state.status.installState === "idle";
-    const shouldExposeStatus = shouldExposeJobsDesktopUpdateStatus(state.status, {
-      hasFreshStatus: state.hasFreshStatus
-    }) || staleManualCheckStatus || runningCheckVisible;
+    // A platform with no updater install path hides the control even after a
+    // manual check or an auto-check, which would otherwise force it back into
+    // view and offer a button that can only end in a failed install.
+    const platformSupported = state.status.blockedReason !== "platform_unsupported";
+    const shouldExposeStatus = platformSupported && (
+      shouldExposeJobsDesktopUpdateStatus(state.status, {
+        hasFreshStatus: state.hasFreshStatus
+      })
+      || staleManualCheckStatus
+      || runningCheckVisible
+    );
     toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode || !shouldExposeStatus);
     if (!desktopMode || !shouldExposeStatus) {
+      // The panel can still be "open" here while this render refuses to expose
+      // it, which is exactly the "my click did nothing" signature.
+      if (state.panelOpen) {
+        clickDiagnostics.reportPanelDiverged(desktopMode ? "status_not_exposed" : "not_desktop_mode");
+      }
       toggleHidden(refs.desktopUpdatePanel, true);
       return;
     }
+    clickDiagnostics.clearPanelDiverged();
     const view = deriveDesktopUpdateView(statusForRender(), { panelOpen: state.panelOpen });
     if (refs.desktopUpdateToggleBtn) {
       refs.desktopUpdateToggleBtn.classList?.remove?.("hidden");
@@ -244,8 +276,15 @@ export function createJobsDesktopUpdateController({
     if (openPanel) {
       state.panelOpen = true;
     } else if (autoOpenImportant && maybeOpenPanelForStatus(nextStatus)) {
-      const important = nextStatus.updateAvailable || shouldPollDesktopUpdateStatus(nextStatus);
-      if (important) {
+      // An available update still opens the panel, but a check in flight must
+      // not: the view deliberately shows a check on the toggle only. Letting
+      // `shouldPoll` open the panel here set `panelOpen` true while the panel
+      // rendered hidden, so the user's first click *closed* it. Click
+      // diagnostics caught it as `panel_state_diverged` ~140ms after boot with
+      // availability=checking and no click in the log.
+      const autoVisible = Boolean(nextStatus.updateAvailable)
+        || deriveDesktopUpdateView(nextStatus).panelVisible;
+      if (autoVisible) {
         state.panelOpen = true;
       }
     } else if (!targetVersion || targetVersion !== state.dismissedTargetVersion) {
@@ -481,10 +520,22 @@ export function createJobsDesktopUpdateController({
     openReleaseNotes();
   }
 
+  function isPanelVisible() {
+    const panel = refs.desktopUpdatePanel;
+    if (!panel?.classList?.contains) return false;
+    return !panel.classList.contains("hidden");
+  }
+
   async function handleToggleClick() {
-    if (!state.panelOpen) {
+    const clickRecord = clickDiagnostics.claimClick();
+    // The click acts on what the user can see, not on the stored flag: any path
+    // that leaves `panelOpen` true while the panel renders hidden would
+    // otherwise turn the first click into a close.
+    const panelOpen = state.panelOpen && isPanelVisible();
+    if (!panelOpen) {
       state.panelOpen = true;
       render();
+      clickDiagnostics.recordHandled(clickRecord, { action: "open", panelVisible: isPanelVisible() });
       if (state.pendingCheckId) return;
       if (!state.status.lastCheckedAt && state.status.availability === "unknown") {
         await checkForUpdates({ force: false, silent: true, openPanel: true, autoOpenImportant: true });
@@ -500,6 +551,7 @@ export function createJobsDesktopUpdateController({
     }
     state.panelOpen = false;
     render();
+    clickDiagnostics.recordHandled(clickRecord, { action: "close", panelVisible: isPanelVisible() });
   }
 
   function bind() {
@@ -512,6 +564,9 @@ export function createJobsDesktopUpdateController({
   }
 
   async function mount() {
+    // Installed before bind so a click that lands while the header is still
+    // settling is recorded as dropped with `bound: false` instead of vanishing.
+    clickDiagnostics.install();
     bind();
     state.mounted = true;
     render();

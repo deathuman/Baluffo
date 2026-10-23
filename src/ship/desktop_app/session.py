@@ -358,6 +358,10 @@ def is_process_alive(pid: int) -> bool:
             return bool(ok) and int(exit_code.value) == api._STILL_ACTIVE
         finally:
             api.ctypes.windll.kernel32.CloseHandle(handle)
+    # kill(pid, 0) also succeeds for a zombie, which is what a crashed launcher
+    # looks like until the system reaps it; the kernel state settles that.
+    if bool(api._pid_has_exited(int(pid))):
+        return False
     try:
         os.kill(int(pid), 0)
         return True

@@ -261,6 +261,14 @@
 
   <script src="frontend-runtime-config.js"></script>
   <script src="theme.js" defer></script>
+  <!-- Starts the first-render data requests before the module graph loads. A
+       classic script, so it runs at parse time, ahead of every module fetch;
+       container pages bundle this behaviour away. -->
+  <script
+    src="frontend/jobs/early-data.js"
+    data-startup-snapshot-url="data/jobs-unified-startup.json"
+    data-fetch-report-url="data/jobs-fetch-report.json"
+  ></script>
   <script type="module" src="frontend/jobs/index.js"></script>
 </body>
 </html>

@@ -158,6 +158,7 @@ def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
                 "failedCount",
                 "failedProbeCount",
                 "failureCount",
+                "failuresResolvedByBrowser",
                 "pendingCount",
                 "activeCount",
                 "rejectedCount",

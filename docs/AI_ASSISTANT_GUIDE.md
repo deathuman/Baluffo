@@ -60,7 +60,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Desktop local data uses browser `localStorage` directly | Desktop mode uses the bridge-backed file store under `data/local-user-data/` |
 | Container mode is the same as desktop mode | Container mode uses bridge-backed local data but disables desktop lifecycle, updater, host-browser open behavior, and `?desktop=1` navigation params |
 | Bridge changes only need backend tests | Verify both Python backend and frontend/runtime callers as needed |
-| UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
+| UI selectors can be guessed | Use the per-surface tables under `frontend/shared/ui/tokens/` (aggregated by `selectors.js`) |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
 | Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py` 1,133→12, 12/12) and lifecycle coordinator (`state_lifecycle.py` 1,121→38, 45/49+4 via `_sl.`) plus `registry_conflicts.py` were split into leaf modules (2026-05 through 2026-08-20); public entrypoints remain stable in the coordinator files |
 | A local `_as_int` / `_safe_int` / `_coerce_int` is safer than the shared helper | `src/shared/utils.py` owns integer coercion. Use `int_or_default(value, default)`; do not re-implement it. 21 local copies were deleted in favour of it, and every one of them was missing `except OverflowError`, so `float("inf")` escaped as an uncaught `OverflowError` (`int(float("inf"))` raises `OverflowError`, which is **not** a `ValueError`) |

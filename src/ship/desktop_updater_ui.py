@@ -40,6 +40,17 @@ def _normalize_helper_message(message: str) -> str:
     return str(message or "").strip() or "Preparing update"
 
 
+def _helper_window_available(*, env: dict[str, str] | None = None) -> bool:
+    """The progress window needs a desktop session, not a particular OS."""
+    if os.name == "nt":
+        return True
+    env_map = env if env is not None else dict(os.environ)
+    return bool(
+        str(env_map.get("DISPLAY") or "").strip()
+        or str(env_map.get("WAYLAND_DISPLAY") or "").strip()
+    )
+
+
 def _helper_window_theme_tokens() -> dict[str, str]:
     return dict(HELPER_WINDOW_TOKENS)
 
@@ -92,7 +103,7 @@ class HelperProgressWindow:
         self._closed.wait(timeout=2.0)
 
     def run(self, initial_message: str = "Preparing update") -> None:
-        if os.name != "nt":
+        if not _helper_window_available():
             self._closed.wait()
             return
         try:
@@ -288,6 +299,7 @@ def _launch_executable(
     *,
     clear_app_version_override: bool = False,
     data_dir: Path | str | None = None,
+    args: list[str] | tuple[str, ...] = (),
 ) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
@@ -302,7 +314,7 @@ def _launch_executable(
     if data_dir is not None and env is not None:
         env["BALUFFO_DATA_DIR"] = str(Path(data_dir).expanduser().resolve())
     subprocess.Popen(  # noqa: S603
-        [str(executable_path)],
+        [str(executable_path), *(str(item) for item in args)],
         cwd=str(executable_path.parent),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

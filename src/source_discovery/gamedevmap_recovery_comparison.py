@@ -174,6 +174,9 @@ def gamedevmap_audit_report_summary(
         "lostRecoveredActiveCandidates": audit_report_summary.safe_int(
             summary.get("lostRecoveredActiveCandidates")
         ),
+        "failuresResolvedByBrowser": audit_report_summary.safe_int(
+            summary.get("failuresResolvedByBrowser")
+        ),
         "outputPath": str(output_path or gamedevmap_active_dry_run_path()),
     }
 

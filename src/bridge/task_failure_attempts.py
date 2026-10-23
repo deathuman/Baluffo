@@ -25,6 +25,7 @@ EXPECTED_DISCOVERY_STAGES = {
     "suppressed_static",
 }
 EXPECTED_DISCOVERY_NEGATIVE_BUCKETS = {
+    "browser_resolved",
     "gamedevmap_homepage_dns_miss",
     "gamedevmap_homepage_not_found",
     "gamedevmap_recovery_not_found",
@@ -33,6 +34,11 @@ EXPECTED_DISCOVERY_NEGATIVE_BUCKETS = {
     "website_dns_miss",
     "website_not_found",
 }
+# Directory recovery lanes (Gameprog, Gamesmap, sheet-directory, web-search) bucket a
+# 404 on a probed careers spelling as `<adapter>_recovery_not_found`. A guessed path
+# that does not exist is an answer, not a defect, so it is an expected negative for
+# every adapter rather than a new entry in the fixed set above.
+EXPECTED_NEGATIVE_BUCKET_SUFFIXES = ("_recovery_not_found",)
 EXPECTED_FETCH_EXCLUSION_REASONS = {
     "cache_within_freshness_window",
 }
@@ -244,6 +250,12 @@ def _discovery_recovery_url_source(row: dict[str, Any]) -> str:
     return _clean_token(row.get("recoveryUrlSource"), "")
 
 
+def _is_expected_negative_bucket(bucket: str) -> bool:
+    return bucket in EXPECTED_DISCOVERY_NEGATIVE_BUCKETS or bucket.endswith(
+        EXPECTED_NEGATIVE_BUCKET_SUFFIXES
+    )
+
+
 def _gamedevmap_recovery_bucket(row: dict[str, Any], raw_error: Any) -> str:
     recovery_source = _discovery_recovery_url_source(row)
     if _is_http_not_found_or_gone(raw_error) and recovery_source in {
@@ -252,6 +264,13 @@ def _gamedevmap_recovery_bucket(row: dict[str, Any], raw_error: Any) -> str:
     }:
         return "gamedevmap_recovery_not_found"
     return "gamedevmap_recovery_fetch"
+
+
+def _directory_recovery_bucket(adapter: str, raw_error: Any) -> str:
+    prefix = str(adapter or "directory").strip().lower() or "directory"
+    if _is_http_not_found_or_gone(raw_error):
+        return f"{prefix}_recovery_not_found"
+    return f"{prefix}_recovery_fetch"
 
 
 def _gamedevmap_homepage_bucket(raw_error: Any) -> str:
@@ -271,6 +290,10 @@ def _website_fetch_bucket(raw_error: Any) -> str:
 
 
 def _discovery_bucket(row: dict[str, Any]) -> str:
+    if bool(row.get("resolvedByBrowser")):
+        # The HTTP fetch failed but the browser stage read the page afterwards, so
+        # nothing was lost and the bucket is not an actionable error.
+        return "browser_resolved"
     adapter = _discovery_adapter(row)
     stage = _discovery_stage(row)
     reason = _discovery_reason(row)
@@ -290,6 +313,11 @@ def _discovery_bucket(row: dict[str, Any]) -> str:
         or ("recovery" in error and "fetch" in error)
     ):
         return _gamedevmap_recovery_bucket(row, raw_error)
+    if "recovery_fetch" in stage or "recovery_fetch" in reason:
+        # Every directory adapter's recovery lane stamps failure rows with
+        # stage=recovery_fetch; bucket them per adapter so the reason survives
+        # instead of collapsing into a bare "recovery_fetch" counter.
+        return _directory_recovery_bucket(adapter, raw_error)
     if adapter == "gamedevmap" and ("homepage_fetch" in stage or "homepage_fetch" in reason):
         return _gamedevmap_homepage_bucket(raw_error)
     if "website_fetch" in stage or "website_fetch" in reason:
@@ -336,7 +364,7 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
         bucket_counts[bucket] += 1
         if bucket in EXPECTED_DISCOVERY_STAGES:
             expected_skip_counts[bucket] += 1
-        if bucket in EXPECTED_DISCOVERY_NEGATIVE_BUCKETS:
+        if _is_expected_negative_bucket(bucket):
             expected_negative_counts[bucket] += 1
         if len(examples[bucket]) < MAX_EXAMPLE_ROWS:
             examples[bucket].append(_discovery_example(row))
@@ -358,7 +386,7 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
                     "expected_skip"
                     if key in EXPECTED_DISCOVERY_STAGES
                     else "expected_negative"
-                    if key in EXPECTED_DISCOVERY_NEGATIVE_BUCKETS
+                    if _is_expected_negative_bucket(key)
                     else "actionable_diagnostic"
                 ),
                 "examples": examples.get(key, [])[:3],

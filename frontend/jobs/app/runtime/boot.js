@@ -1,10 +1,9 @@
-import { bindAsyncClick, showToast } from "../../../shared/ui/index.js";
-import { fetchJson, postJson } from "../../../shared/api-client.js";
-import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { showToast } from "../../../shared/ui/index.js";
+import { fetchJson } from "../../../shared/api-client.js";
+import { awaitBridgeBootstrap } from "../../../shared/local-data/bridge-client.js";
+import { navigateDesktopPage } from "../../../shared/local-data/desktop/navigation.js";
 import { createAdminBridgeButtonWatcherForPage } from "../../../shared/admin-bridge-button.js";
-import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
-import { createJobsDesktopUpdateController } from "../desktop-update.js";
 import { initJobsFeed } from "../feed.js";
 import { scheduleNonCriticalStartup } from "../startup.js";
 import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
@@ -14,6 +13,12 @@ import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPre
 // no longer depends on a jobs render finishing first, and the controller
 // retries the bridge-not-ready case itself.
 const DESKTOP_UPDATE_AUTO_CHECK_DELAY_MS = 250;
+
+// Filter chrome, event binding and auth are interaction work: none of it can
+// change what the first rows look like, so all of it waits for them. A page
+// whose feed never paints -- no snapshot, a bridge that never answers -- must
+// still get working controls and the update panel, so boot arms this fallback.
+const BOOT_FOLLOW_UP_FALLBACK_MS = 1500;
 
 export function createJobsBoot(deps) {
   function cacheDom() {
@@ -50,14 +55,40 @@ export function createJobsBoot(deps) {
     });
   }
 
+  // One chunk, one controller: `desktop-update-surface.js` carries the panel,
+  // its model, the release-notes dialog and the click diagnostics, none of which
+  // can matter before the first rows are on screen.
+  function loadDesktopUpdateSurface() {
+    const runtimeState = deps.runtimeState;
+    if (runtimeState.desktopUpdateSurfacePromise) return runtimeState.desktopUpdateSurfacePromise;
+    runtimeState.desktopUpdateSurfacePromise = import("../desktop-update-surface.js")
+      .then(({ createJobsDesktopUpdateSurface }) => createJobsDesktopUpdateSurface({
+        refs: deps.dom,
+        documentObject: deps.documentObject,
+        emitDiagnostic: deps.emitDesktopStartupMetric,
+        baseUrl: deps.adminBridgeBase,
+        isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
+        openExternalUrl: url => deps.openJobLinkInDefaultBrowser(url)
+      }))
+      .then(controller => {
+        runtimeState.desktopUpdateController = controller;
+        return controller.mount().then(() => controller);
+      })
+      .catch(err => {
+        deps.logJobsError("Failed to initialize desktop update UI", err);
+        return null;
+      });
+    return runtimeState.desktopUpdateSurfacePromise;
+  }
+
   function scheduleDesktopUpdateAutoCheck() {
     if (deps.runtimeState.desktopUpdateAutoCheckScheduled) return;
     deps.runtimeState.desktopUpdateAutoCheckScheduled = true;
     scheduleNonCriticalStartup(deps.windowObject, () => {
       deps.windowObject.setTimeout(() => {
-        deps.runtimeState.desktopUpdateController?.startAutoCheck().catch(err => {
-          deps.logJobsError("Failed to auto-check desktop updates", err);
-        });
+        loadDesktopUpdateSurface()
+          .then(controller => controller?.startAutoCheck?.())
+          .catch(err => deps.logJobsError("Failed to auto-check desktop updates", err));
       }, DESKTOP_UPDATE_AUTO_CHECK_DELAY_MS);
     });
   }
@@ -66,7 +97,6 @@ export function createJobsBoot(deps) {
     return (deps.initJobsFeed ?? initJobsFeed)({
       hasJobsList: Boolean(deps.dom.jobsList),
       emitMetric: deps.emitDesktopStartupMetric,
-      initAuth: () => deps.authController.initAuth(),
       isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
       isContainerRuntimeMode: deps.isContainerRuntimeMode,
       readCachedJobs: () => deps.feedController.readCachedJobs(),
@@ -84,7 +114,9 @@ export function createJobsBoot(deps) {
       markStartupRendered: deps.markStartupRendered,
       markJobsFirstInteractive: () => {
         deps.markJobsFirstInteractive();
-        scheduleDesktopUpdateAutoCheck();
+        // Rows are on screen, so the rest of boot can run without sitting in
+        // front of them. A new task, not a microtask: the first paint is next.
+        scheduleBootFollowUp();
       },
       isJobsCacheStale: deps.isJobsCacheStale,
       cacheTtlMs: deps.jobsCacheTtlMs,
@@ -125,7 +157,44 @@ export function createJobsBoot(deps) {
     });
   }
 
+  // Everything that is not needed to draw the first rows. Runs once, either on
+  // the first rows (`markJobsFirstInteractive`) or on the fallback armed by
+  // `bootJobsPage`, whichever comes first. `init()` on its own -- a retry, or a
+  // harness driving the feed directly -- leaves this alone.
+  function scheduleBootFollowUp() {
+    if (!deps.runtimeState.bootFollowUpArmed || deps.runtimeState.bootFollowUpRan) return;
+    deps.windowObject.setTimeout(runBootFollowUp, 0);
+  }
+
+  function runBootFollowUp() {
+    if (deps.runtimeState.bootFollowUpRan) return;
+    deps.runtimeState.bootFollowUpRan = true;
+    startAdminBridgeButtonWatch();
+    // Auth is a handshake with the local profile, not feed data: the snapshot
+    // paints as guest and re-renders with the profile's saved/seen state. Its
+    // failure must not cost the controls below.
+    try {
+      deps.authController.initAuth();
+    } catch (err) {
+      deps.logJobsError("Failed to start auth", err);
+    }
+    try {
+      deps.eventsController.bindCoreEvents();
+      deps.filtersController.initializeQuickFilters();
+      deps.eventsController.bindEvents();
+      deps.filtersController.applyStateToStaticFilters();
+    } catch (err) {
+      deps.handleJobsStartupFailure("Jobs page boot failed", err, { allowRetryReload: true });
+    }
+    void loadDesktopUpdateSurface();
+    scheduleDesktopUpdateAutoCheck();
+    scheduleNonCriticalStartup(deps.windowObject, () => { initSavedViews(); });
+  }
+
   function bootJobsPage() {
+    // The snapshot read comes first. `init()` reaches it without waiting on the
+    // filter DOM, the event bindings or the auth handshake, all of which now run
+    // in `runBootFollowUp` behind the first rows.
     cacheDom();
     deps.runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcherForPage({
       buttonEl: deps.dom.adminPageBtn,
@@ -133,47 +202,14 @@ export function createJobsBoot(deps) {
       fetchJson,
       applyState: deps.applyJobsAdminBridgeState,
       isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
-      awaitDesktopBootstrap,
+      awaitDesktopBootstrap: awaitBridgeBootstrap,
     });
-    deps.runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
-      refs: deps.dom,
-      baseUrl: deps.adminBridgeBase,
-      fetchJson,
-      postJson,
-      bindAsyncClick,
-      showToast,
-      requestConfirmationDialog: deps.requestConfirmationDialog,
-      isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
-      awaitDesktopBootstrap,
-      showReleaseNotesDialog: options => openReleaseNotesDialog(options),
-      openExternalUrl: url => deps.openJobLinkInDefaultBrowser(url)
-    });
-    // Schedule from boot, not from the first-interactive callback: an empty or
-    // slow feed must not be able to hold the update offer back.
-    scheduleDesktopUpdateAutoCheck();
-    startAdminBridgeButtonWatch();
-    (async () => {
-      try {
-        await deps.runtimeState.desktopUpdateController.mount();
-      } catch (err) {
-        deps.logJobsError("Failed to initialize desktop update UI", err);
-        return;
-      }
-    })();
     deps.eventsController.setupJobsListDelegation();
     deps.setJobsStartupState("loading", "booting");
-    deps.eventsController.bindCoreEvents();
-    try {
-      deps.filtersController.initializeQuickFilters();
-      deps.eventsController.bindEvents();
-      deps.readStateFromUrl();
-      deps.filtersController.applyStateToStaticFilters();
-    } catch (err) {
-      deps.handleJobsStartupFailure("Jobs page boot failed", err, { allowRetryReload: true });
-      return;
-    }
+    deps.readStateFromUrl();
+    deps.runtimeState.bootFollowUpArmed = true;
     init().catch(err => deps.handleJobsStartupFailure("Error initializing jobs", err));
-    scheduleNonCriticalStartup(deps.windowObject, () => { initSavedViews(); });
+    deps.windowObject.setTimeout(runBootFollowUp, BOOT_FOLLOW_UP_FALLBACK_MS);
   }
 
   function initSavedViews() {
@@ -242,6 +278,12 @@ export function createJobsBoot(deps) {
   return {
     bootJobsPage,
     init,
-    openAdminPageFromJobs
+    openAdminPageFromJobs,
+    // Called by the runtime's `markStartupRendered` the moment rows exist: that
+    // is the first moment this chunk cannot delay them.
+    startDesktopUpdateSurface: loadDesktopUpdateSurface,
+    // Same trigger for the deferred half of boot. A fresh task, so the render
+    // that produced the rows can paint before the bindings run.
+    startBootFollowUp: scheduleBootFollowUp
   };
 }

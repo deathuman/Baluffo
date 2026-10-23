@@ -2,8 +2,8 @@
  * Reconnect banner and post-composition event wiring for the Admin runtime.
  *
  * Keeps `app/runtime.js` inside its 320-line budget by owning the boot tail:
- * the bridge-reconnect presentation, the runtime event bindings, and the final
- * controller kick-off.
+ * the bridge-reconnect presentation, the runtime event bindings, the final
+ * controller kick-off, and the deferred-section reveal that follows it.
  *
  * The banner is display-only. It never changes when routes are attempted or
  * which degradation windows apply, so it cannot alter the startup or hydration
@@ -11,12 +11,13 @@
  */
 
 import { createBridgeReconnectBanner } from "../ops/bridge-reconnect-banner.js";
-import { getDesktopBootstrapStatus } from "../../../shared/local-data/desktop-client.js";
+import { getBridgeBootstrapStatus } from "../../../shared/local-data/bridge-client.js";
+import { revealDeferredSections } from "./deferred-sections.js";
 
 function wireReconnectBanner({ state, refs, getOpsController, awaitBridgeReady, logAdminError }) {
   const banner = createBridgeReconnectBanner({
     refs,
-    getBootstrapStatus: getDesktopBootstrapStatus,
+    getBootstrapStatus: getBridgeBootstrapStatus,
     onRetryNow: () => {
       void getOpsController()?.pollBridgeStatus?.({ forceChecking: true });
     }
@@ -75,5 +76,15 @@ export function wireAdminBoot({
   state.bridgeReconnectBanner?.sync();
   controllers.actionCenterController.startPolling();
   controllers.inspectorController.init();
+  revealDeferredSections({
+    onReveal: () => {
+      // Log appends scroll themselves to the tail, but a hidden subtree reports
+      // scrollHeight 0, so anything that landed before the reveal sits at the
+      // top. Re-seat the tail once the section is visible again.
+      if (refs.adminDiscoveryLogEl) {
+        refs.adminDiscoveryLogEl.scrollTop = refs.adminDiscoveryLogEl.scrollHeight;
+      }
+    }
+  });
   return opsController;
 }

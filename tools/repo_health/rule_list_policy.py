@@ -143,6 +143,13 @@ RULE_LISTS: tuple[RuleList, ...] = (
         ),
     ),
     RuleList(
+        key="startup_probe_client_stall_rules",
+        source="docs/startup-probe-architecture.md",
+        anchor="billing a client-side stall to the site",
+        items=ITEM_BULLETS,
+        enforcement=("tests/test_startup_probe_readiness.py",),
+    ),
+    RuleList(
         key="measurement_zero_signal_rules",
         source="docs/measurement-methods.md",
         anchor="rules follow",
@@ -194,6 +201,13 @@ RULE_LISTS: tuple[RuleList, ...] = (
         anchor="carry the most weight",
         items=ITEM_BULLETS,
         enforcement=("tests/tools/test_cpu_attribution.py",),
+    ),
+    RuleList(
+        key="spawn_startup_clock_rules",
+        source="tests/tools/test_spawn_startup.py",
+        anchor="carry the weight",
+        items=ITEM_BULLETS,
+        enforcement=("tests/tools/test_spawn_startup.py",),
     ),
     RuleList(
         key="thread_cpu_driver_rules",

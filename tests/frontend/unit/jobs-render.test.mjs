@@ -250,7 +250,11 @@ test("jobs render uses accepted default row hierarchy and save icon", () => {
   assert.match(html, /<div class="col-type job-cell" data-label="Type">/);
   assert.match(html, /<div class="col-save job-cell" data-label="Save" aria-label="Job actions">/);
   assert.match(html, /aria-label="Save job"/);
-  assert.match(html, />＋<\/span>/);
+  // The unsaved mark is drawn, not typed: an ASCII "+" avoids the U+FF0B
+  // fallback font, but its ink still sat 1.5px below the round button's centre.
+  assert.match(html, /<svg viewBox="0 0 24 24"[^>]*aria-hidden="true"[\s\S]*?d="M10\.75 5h2\.5v5\.75h5\.75v2\.5h-5\.75v5\.75h-2\.5v-5\.75H5v-2\.5h5\.75z"/);
+  assert.doesNotMatch(html, />\+<\/span>/);
+  assert.doesNotMatch(html, /＋/);
 
   const savedHtml = render({
     id: "8",
@@ -265,7 +269,7 @@ test("jobs render uses accepted default row hierarchy and save icon", () => {
     savedJobKeys: new Set(["job_key"])
   });
   assert.match(savedHtml, /aria-label="Job saved"/);
-  assert.match(savedHtml, />✓<\/span>/);
+  assert.match(savedHtml, /class="save-job-btn job-inline-save-btn saved"/);
 
   const pendingSaveHtml = render({
     id: "9",
@@ -283,7 +287,7 @@ test("jobs render uses accepted default row hierarchy and save icon", () => {
   assert.match(pendingSaveHtml, /disabled/);
   assert.match(pendingSaveHtml, /aria-busy="true"/);
   assert.match(pendingSaveHtml, /aria-label="Saving…"/);
-  assert.match(pendingSaveHtml, />…<\/span>/);
+  assert.match(pendingSaveHtml, /<circle [^>]*stroke-dasharray="38\.9 15\.1"/);
 
   const pendingRemoveHtml = render({
     id: "10",

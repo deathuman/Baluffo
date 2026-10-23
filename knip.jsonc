@@ -3,8 +3,15 @@
     "frontend/jobs/index.js",
     "frontend/saved/index.js",
     "frontend/admin/index.js",
+    // Composed into the shipped entries by the container and desktop builders
+    // (esbuild stdin), so nothing in the source tree imports them.
+    "frontend/shared/local-data/app-client.container.js",
+    "frontend/shared/local-data/app-client.desktop.js",
     "theme.js",
-    "frontend-runtime-config.js"
+    "frontend-runtime-config.js",
+    // Loaded by jobs.html as a classic script ahead of the module entry, so
+    // nothing imports it.
+    "frontend/jobs/early-data.js"
   ],
   // hydrateDesktopVersionLabels is a @deprecated compatibility shim consumed
   // only by a unit test through the cache-busting importFresh helper, whose

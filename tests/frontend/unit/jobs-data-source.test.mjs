@@ -177,6 +177,60 @@ test("jobs data-source local JSON and CSV fetches use no-store cache-busted requ
   assert.equal(calls[1].init.headers.Accept, "text/csv,*/*");
 });
 
+test("jobs data-source consumes a hoisted first-render response without refetching", async () => {
+  const calls = [];
+  const candidates = [];
+  const taken = [];
+  globalThis.__baluffoJobsEarlyData = {
+    take: url => {
+      taken.push(url);
+      return url === "data/jobs-fetch-report.json"
+        ? Promise.resolve({ ok: true, status: 200, json: async () => ({ finishedAt: "" }) })
+        : null;
+    }
+  };
+  try {
+    const payload = await fetchJsonFromCandidates(["data/jobs-fetch-report.json"], {
+      onCandidate: candidate => candidates.push(candidate),
+      fetcher: async url => {
+        calls.push(url);
+        return { ok: false, status: 0, json: async () => ({}) };
+      }
+    });
+
+    assert.deepEqual(payload, { finishedAt: "" });
+    assert.deepEqual(calls, []);
+    assert.deepEqual(taken, ["data/jobs-fetch-report.json"]);
+    assert.equal(candidates[0].hoisted, true);
+    assert.equal(candidates[0].status, 200);
+  } finally {
+    delete globalThis.__baluffoJobsEarlyData;
+  }
+});
+
+test("jobs data-source refetches when the hoisted response failed", async () => {
+  const calls = [];
+  const candidates = [];
+  globalThis.__baluffoJobsEarlyData = {
+    take: () => Promise.resolve(null)
+  };
+  try {
+    const payload = await fetchJsonFromCandidates(["data/jobs-fetch-report.json"], {
+      onCandidate: candidate => candidates.push(candidate),
+      fetcher: async url => {
+        calls.push(url);
+        return { ok: true, status: 200, json: async () => ({ finishedAt: "2026-01-01T00:00:00Z" }) };
+      }
+    });
+
+    assert.deepEqual(payload, { finishedAt: "2026-01-01T00:00:00Z" });
+    assert.equal(calls.length, 1);
+    assert.equal(candidates[0].hoisted, false);
+  } finally {
+    delete globalThis.__baluffoJobsEarlyData;
+  }
+});
+
 test("jobs data-source JSON candidate fetches preserve existing query before cache-busting", async () => {
   const calls = [];
   await fetchJsonFromCandidates(["data/jobs-fetch-report.json?source=local"], {

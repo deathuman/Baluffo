@@ -1,4 +1,5 @@
-import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
+import { SAVED_TOKENS } from "../../../shared/ui/tokens/saved.js";
+import { ui } from "../../../shared/ui/tokens/ui.js";
 
 export function bindSavedPageEvents({
   dom,
@@ -180,7 +181,7 @@ export function bindSavedJobsListDelegation({
 }) {
   const { savedJobsListEl } = dom;
   if (!savedJobsListEl) return;
-  const t = UI_TOKENS.saved;
+  const t = SAVED_TOKENS;
 
   savedJobsListEl.addEventListener("click", event => {
     const target = event.target;

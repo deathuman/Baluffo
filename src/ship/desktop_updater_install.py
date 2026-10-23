@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.shared.coerce import as_dict as _as_dict
+from src.ship.desktop_artifact_paths import ARTIFACT_KIND_APPIMAGE
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
 )
@@ -277,11 +278,19 @@ def _restore_data_backup_if_needed(ship_root: Path, data_dir: Path, status: dict
     )
 
 
+def remove_rollback_path(rollback_path: Path) -> None:
+    """Drop a rollback snapshot, whichever shape the platform keeps it in."""
+    with contextlib.suppress(OSError, shutil.Error):
+        if rollback_path.is_dir():
+            shutil.rmtree(rollback_path)
+        elif rollback_path.exists():
+            rollback_path.unlink()
+
+
 def _finalize_success(
     paths: DesktopUpdatePaths, plan: dict[str, Any], rollback_root: Path
 ) -> dict[str, Any]:
-    with contextlib.suppress(OSError):
-        shutil.rmtree(rollback_root)
+    remove_rollback_path(rollback_root)
     clear_success_marker(paths)
     return _as_dict(
         _save_install_stage_status(
@@ -353,6 +362,12 @@ def _recover_interrupted_install(
 
 def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
+    if str(plan.get("artifactKind") or "").strip().lower() == ARTIFACT_KIND_APPIMAGE:
+        # Imported here: the AppImage backend calls back into this module for its
+        # shared stages, so a module-level import would be a cycle.
+        from src.ship import desktop_updater_install_appimage as appimage_mod
+
+        return appimage_mod.run_appimage_install(plan, progress=progress)
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
     data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()

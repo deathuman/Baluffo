@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import { chromium, request as playwrightRequest } from "@playwright/test";
 import { dismissFirstRunNotice } from "./helpers/packaged-first-run-smoke-helpers.mjs";
 import {
+  assertNoDesktopUpdatePanelDivergence,
   buildGotoDesktop,
   buildWriteReport,
+  openDesktopUpdatePanel,
   runScenario,
   BASE_URL,
   BRIDGE_BASE
@@ -268,14 +270,11 @@ async function main() {
 
     await runScenario("Desktop update UI is visible on jobs page", async () => {
       await dismissFirstRunNotice(page);
-      const updateToggle = page.locator("#desktop-update-toggle-btn");
-      await updateToggle.waitFor({ state: "visible", timeout: 15_000 });
-      assert.equal(await updateToggle.isEnabled(), true, "desktop update toggle should be enabled");
-      await updateToggle.click();
-      const updatePanel = page.locator("#desktop-update-panel");
-      await updatePanel.waitFor({ state: "visible", timeout: 15_000 });
+      const opened = await openDesktopUpdatePanel(page);
       await page.waitForFunction(() => /Desktop updates|Baluffo is up to date|available|Could not check/i.test(String(document.querySelector("#desktop-update-title")?.textContent || "")), null, { timeout: 20_000 });
       assert.match(String(await page.locator("#desktop-update-title").textContent() || ""), /Desktop updates|Baluffo is up to date|available|Could not check/i);
+      await assertNoDesktopUpdatePanelDivergence(page);
+      return { toggleAttempts: opened.attempts, startedHidden: opened.startedHidden, updateState: opened.state.toggleState };
     }, scenarios);
 
     await runScenario("Jobs sign-in succeeds", async () => {

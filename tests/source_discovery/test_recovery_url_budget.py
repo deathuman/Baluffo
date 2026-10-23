@@ -57,9 +57,10 @@ Limit Sheet Studio,yes,https://limit.example.com/
 
         assert first_cache_hit is False
         assert second_cache_hit is False
-        assert first_artifact["summary"]["recoveryFetchAttempts"] == 2
+        # Every guess answered, so the budget bounds wave 1 alone.
+        assert first_artifact["summary"]["recoveryFetchAttempts"] == 1
         assert first_artifact["summary"]["recoveredStaticCandidates"] == 0
-        assert second_artifact["summary"]["recoveryFetchAttempts"] == 4
+        assert second_artifact["summary"]["recoveryFetchAttempts"] == 2
         assert second_artifact["summary"]["recoveredStaticCandidates"] == 0
 
 
@@ -108,7 +109,8 @@ def test_web_search_recovery_url_limit_changes_attempts_and_signature() -> None:
 
         assert first_cache_hit is False
         assert second_cache_hit is False
-        assert first_artifact["summary"]["recoveryFetchAttempts"] == 2
+        # Every guess answered, so the budget bounds wave 1 alone.
+        assert first_artifact["summary"]["recoveryFetchAttempts"] == 1
         assert first_artifact["summary"]["recoveredStaticCandidates"] == 0
-        assert second_artifact["summary"]["recoveryFetchAttempts"] == 4
+        assert second_artifact["summary"]["recoveryFetchAttempts"] == 2
         assert second_artifact["summary"]["recoveredStaticCandidates"] == 0
