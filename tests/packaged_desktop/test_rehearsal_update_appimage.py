@@ -38,6 +38,29 @@ def test_rehearsal_manifest_names_the_linux_asset_and_verifies() -> None:
     )
 
 
+def test_rehearsal_running_version_follows_the_baseline() -> None:
+    # Whatever the app is told it is running must be the version the health
+    # assertion waits for, or the update check answers "up to date" and the
+    # rehearsal dies before it downloads anything.
+    assert appimage_rehearsal._rehearsal_running_version("0.0.0-ci.0", "") == "0.0.0-ci.0"
+    assert appimage_rehearsal._rehearsal_running_version("", "") == "0.0.9"
+    assert appimage_rehearsal._rehearsal_running_version("0.0.9", "0.0.8") == "0.0.8"
+
+
+def test_rehearsal_diagnostics_tail_the_helper_record() -> None:
+    # The helper runs detached with its output on /dev/null, so a failed swap is
+    # only explainable through the JSONL it leaves in the data dir.
+    with workspace_tmpdir("appimage-rehearsal-diagnostics") as tmp:
+        log = Path(tmp) / "updater" / "desktop-updater-helper.diagnostics.jsonl"
+        log.parent.mkdir(parents=True)
+        log.write_text("\n".join(f'{{"stage": "s{index}"}}' for index in range(30)) + "\n")
+
+        collected = appimage_rehearsal._collect_rehearsal_diagnostics(Path(tmp), max_lines=3)
+
+    assert list(collected) == [str(log)]
+    assert collected[str(log)] == ['{"stage": "s27"}', '{"stage": "s28"}', '{"stage": "s29"}']
+
+
 def test_packaged_smoke_accepts_the_appimage_rehearsal_flags() -> None:
     args = smoke.parse_args(
         [

@@ -157,11 +157,19 @@ jobs:
         timeout-minutes: 30
         run: |
           set -euo pipefail
-          npm run build:linux -- --bundle-version "${BALUFFO_VERSION}-rehearsal-target"
+          # The app reports the version compiled into src/app_version.py, not the
+          # --bundle-version it was packaged with, so the manifest has to name
+          # *that*: the override is cleared on relaunch, and the helper only calls
+          # the new build ready when it reports the manifest's version. The bundle
+          # suffix still keeps the two artifacts distinguishable, and the baseline
+          # is lowered below the compiled version so the check sees an update.
+          target_version="$(python -c 'from src.app_version import APP_VERSION; print(APP_VERSION)')"
+          after_version="${BALUFFO_VERSION}-rehearsal-target"
+          npm run build:linux -- --bundle-version "$after_version"
           BALUFFO_UPDATE_APPIMAGE_BEFORE="dist/Baluffo-${BALUFFO_VERSION}-x86_64.AppImage" \
-          BALUFFO_UPDATE_APPIMAGE_AFTER="dist/Baluffo-${BALUFFO_VERSION}-rehearsal-target-x86_64.AppImage" \
-          BALUFFO_UPDATE_TARGET_VERSION="${BALUFFO_VERSION}" \
-          BALUFFO_UPDATE_BEFORE_VERSION="0.0.9" \
+          BALUFFO_UPDATE_APPIMAGE_AFTER="dist/Baluffo-${after_version}-x86_64.AppImage" \
+          BALUFFO_UPDATE_TARGET_VERSION="$target_version" \
+          BALUFFO_UPDATE_BEFORE_VERSION="0.0.0-ci.0" \
             npm run test:frontend:packaged:update-rehearsal:appimage
 
       - name: Upload AppImage artifact

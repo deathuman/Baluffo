@@ -346,6 +346,34 @@ def _archive_copy(source: Path, target: Path) -> Path:
     return target
 
 
+def _rehearsal_running_version(before_version: str, app_version_override: str) -> str:
+    """Version the app under test reports: an explicit override, else the baseline.
+
+    Both the health assertion and the override handed to the app come from here so
+    the rehearsal cannot lower the reported version in one place and expect the
+    old one in another -- a mismatch that reads as "up to date" instead of a
+    failed update.
+    """
+    return str(app_version_override or before_version or "0.0.9").strip()
+
+
+def _collect_rehearsal_diagnostics(data_dir: Path, *, max_lines: int = 25) -> dict[str, Any]:
+    """Tail the updater helper's diagnostics so a failed swap explains itself.
+
+    The helper writes a stage-by-stage JSONL under the data dir, and it is the
+    only record of why a relaunched AppImage never came back: the helper runs
+    detached and its own output goes to /dev/null.
+    """
+    collected: dict[str, Any] = {}
+    for path in sorted(Path(data_dir).rglob("*diagnostics*.jsonl")):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        collected[str(path)] = lines[-max_lines:]
+    return collected
+
+
 def _release_rehearsal_resources(
     process: subprocess.Popen[bytes] | None,
     server: http.server.HTTPServer,
@@ -378,7 +406,7 @@ def run_appimage_update_rehearsal(
     artifacts_dir: Path,
     target_version: str = "0.0.0-rehearsal",
     before_version: str = "",
-    app_version_override: str = "0.0.9",
+    app_version_override: str = "",
     runtime_timeout_s: float = 180.0,
 ) -> dict[str, Any]:
     """Run the AppImage N -> N+1 rehearsal and return a report.
@@ -388,6 +416,7 @@ def run_appimage_update_rehearsal(
     Windows rehearsal does. The helper clears that override when it relaunches,
     so the updated app must report the manifest's version on its own.
     """
+    running_version = _rehearsal_running_version(before_version, app_version_override)
     before_source = Path(before_appimage).expanduser().resolve()
     after_source = Path(after_appimage).expanduser().resolve()
     if not before_source.is_file():
@@ -435,7 +464,7 @@ def run_appimage_update_rehearsal(
                 {REHEARSAL_KEY_ID: public_key_b64}
             ),
             UPSTREAM_APPIMAGE_ENV: str(target_appimage),
-            "BALUFFO_APP_VERSION_OVERRIDE": str(app_version_override),
+            "BALUFFO_APP_VERSION_OVERRIDE": running_version,
             "BALUFFO_DESKTOP_UPDATER_NO_DIALOG": "1",
             "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S": str(max(30.0, runtime_timeout_s / 2)),
         }
@@ -477,7 +506,7 @@ def run_appimage_update_rehearsal(
         )
         before = _wait_for_health(
             session_root=session_root,
-            expected_version=str(before_version or app_version_override),
+            expected_version=running_version,
             timeout_s=runtime_timeout_s,
         )
         launcher_pid = int(before["session"].get("launcherPid") or 0)
@@ -526,12 +555,35 @@ def run_appimage_update_rehearsal(
             str(after["health"].get("appVersion") or "") == target_version,
             after["health"].get("appVersion"),
         )
-        status = _http_json(
-            f"http://127.0.0.1:{int(after['session']['bridgePort'])}/app/update-status",
-            timeout_s=5.0,
+        # The handoff is not finished when the new app answers: the helper still
+        # has to verify the relaunched build, and only then does it write the
+        # installed stage and drop the rollback snapshot. Reading status here
+        # caught it mid-verify, so a swap that had worked failed both checks.
+        #
+        # `installStage` is the built state; `installState` is normalized to idle
+        # once the running app is at the installed version, because there is then
+        # nothing left to do.
+        status = _wait_for_status(
+            f"http://127.0.0.1:{int(after['session']['bridgePort'])}",
+            lambda payload: str(payload.get("installStage") or "") in {"installed", "failed"},
+            timeout_s=max(60.0, runtime_timeout_s),
+            description="a final install stage",
         )
-        record("install state is installed", str(status.get("installState") or "") == "installed")
+        record(
+            "install stage is installed",
+            str(status.get("installStage") or "") == "installed",
+            status.get("lastError") or "",
+        )
         record("download state is cleared", str(status.get("downloadState") or "") == "idle")
+        record(
+            "the app reports no pending update",
+            str(status.get("installState") or "") == "idle"
+            and str(status.get("availability") or "") == "up_to_date",
+            {
+                "installState": status.get("installState"),
+                "availability": status.get("availability"),
+            },
+        )
         record(
             "the AppImage on disk is the new build",
             sha256_file(target_appimage) == sha256_file(after_copy),
@@ -546,6 +598,7 @@ def run_appimage_update_rehearsal(
     except (OSError, RuntimeError, TimeoutError, ValueError, KeyError) as exc:
         report["ok"] = False
         report["error"] = f"{type(exc).__name__}: {exc}"
+        report["diagnostics"] = _collect_rehearsal_diagnostics(data_dir)
     finally:
         _release_rehearsal_resources(process, server, thread, (stdout_handle, stderr_handle))
         report_path = run_root / "update-rehearsal-report.json"
