@@ -193,7 +193,12 @@ jobs:
       # updated it -- and had that workflow failed, it would have shipped with no
       # notes at all and nothing would have noticed. Extracting here rather than
       # reading the tracked release-notes.md means the notes can never be stale.
+      # Same condition as the publish step it feeds. A branch dispatch builds a
+      # CI version (0.0.0-ci.N) that no changelog names, so extracting notes for
+      # a release that will not be published failed the lane after a rehearsal
+      # that had passed.
       - name: Extract release notes
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
         run: |
           python scripts/extract_release_notes.py --version ${{ env.BALUFFO_VERSION }} --changelog docs/CHANGELOG.md --output release-notes.md
 
