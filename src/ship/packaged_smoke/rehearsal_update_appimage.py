@@ -346,6 +346,31 @@ def _archive_copy(source: Path, target: Path) -> Path:
     return target
 
 
+def _release_rehearsal_resources(
+    process: subprocess.Popen[bytes] | None,
+    server: http.server.HTTPServer,
+    thread: threading.Thread,
+    handles: tuple[Any, Any],
+) -> None:
+    """Stop the rehearsal's app and server, then close the logs; never raises."""
+    if process is not None and process.poll() is None:
+        with contextlib.suppress(OSError):
+            process.terminate()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=15)
+    with contextlib.suppress(OSError):
+        server.shutdown()
+    with contextlib.suppress(OSError):
+        server.server_close()
+    if thread.is_alive():
+        thread.join(timeout=5)
+    for handle in handles:
+        if handle is None:
+            continue
+        with contextlib.suppress(OSError):
+            handle.close()
+
+
 def run_appimage_update_rehearsal(
     *,
     before_appimage: Path,
@@ -522,22 +547,7 @@ def run_appimage_update_rehearsal(
         report["ok"] = False
         report["error"] = f"{type(exc).__name__}: {exc}"
     finally:
-        if process is not None and process.poll() is None:
-            with contextlib.suppress(OSError):
-                process.terminate()
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                process.wait(timeout=15)
-        with contextlib.suppress(OSError):
-            server.shutdown()
-        with contextlib.suppress(OSError):
-            server.server_close()
-        if thread.is_alive():
-            thread.join(timeout=5)
-        for handle in (stdout_handle, stderr_handle):
-            if handle is None:
-                continue
-            with contextlib.suppress(OSError):
-                handle.close()
+        _release_rehearsal_resources(process, server, thread, (stdout_handle, stderr_handle))
         report_path = run_root / "update-rehearsal-report.json"
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         report["reportPath"] = str(report_path)

@@ -955,6 +955,24 @@ def _render_spawn_clock(spawn_clock: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _render_page_clock_spans(summary: dict[str, Any]) -> list[str]:
+    """Printable page-clock spans, or nothing when the run recorded none."""
+    spans = [
+        row
+        for row in _as_list(summary.get("pageStages"))
+        if isinstance(row, dict)
+        and isinstance(row.get("durationMs"), int)
+        and row.get("durationMs")
+    ]
+    if not spans:
+        return []
+    lines = ["Page-clock spans:"]
+    for row in spans:
+        gap = " [end-before-start]" if row.get("negativeGap") else ""
+        lines.append(f"- {row.get('label')}: {int(row.get('durationMs') or 0)}ms{gap}")
+    return lines
+
+
 def render_startup_summary(summary: dict[str, Any]) -> str:
     bottleneck = summary.get("bottleneck")
     attribution = ""
@@ -985,18 +1003,7 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         if spawn_lines:
             lines.append("Spawn clock:")
             lines.extend(spawn_lines)
-    page_spans = [
-        row
-        for row in _as_list(summary.get("pageStages"))
-        if isinstance(row, dict)
-        and isinstance(row.get("durationMs"), int)
-        and row.get("durationMs")
-    ]
-    if page_spans:
-        lines.append("Page-clock spans:")
-        for row in page_spans:
-            gap = " [end-before-start]" if row.get("negativeGap") else ""
-            lines.append(f"- {row.get('label')}: {int(row.get('durationMs') or 0)}ms{gap}")
+    lines.extend(_render_page_clock_spans(summary))
     gate = summary.get("jobsReportGate")
     if isinstance(gate, dict) and int(gate.get("quarantineFailureCount") or 0) > 0:
         halves = ", ".join(str(item) for item in _as_list(gate.get("quarantineFailureProcesses")))

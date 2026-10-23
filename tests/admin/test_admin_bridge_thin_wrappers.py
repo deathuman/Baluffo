@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 
 from src import admin_bridge
-from src.bridge import admin_task_runtime
+from src.bridge import admin_task_runtime, startup_work_budget
 from src.bridge.server import runtime_state
 
 
@@ -523,6 +523,10 @@ def test_on_bridge_started_records_failed_step_before_reraising(
 def test_finish_bridge_startup_hooks_releases_storage_maintenance_when_hooks_fail(
     admin_bridge_entrypoint_root,
 ) -> None:
+    # The first-paint budget is a process singleton, and a test that bound a real
+    # listener in this worker leaves it started -- admission would then read back
+    # as "opened"/"budget-expired". This case is about a bridge that never bound.
+    startup_work_budget.reset_startup_work_budget()
     released: list[dict[str, object]] = []
     phases: list[tuple[str, dict[str, object] | None]] = []
 
