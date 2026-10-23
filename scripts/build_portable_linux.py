@@ -177,6 +177,63 @@ def run_pyinstaller(output_dir: Path, exe_name: str) -> Path:
     return built_dir
 
 
+def run_helper_pyinstaller(output_dir: Path) -> Path:
+    """Build the one-shot update helper that swaps the AppImage in place.
+
+    It is a separate binary for the same reason the Windows build ships
+    `BaluffoUpdater.exe`: the file it must replace is the one it is running from,
+    so it has to be copied out of the (read-only) AppImage before the swap.
+    """
+    from scripts.build_portable_exe import (
+        UPDATER_HELPER_COLLECT_DATA_PACKAGES,
+        UPDATER_HELPER_HIDDEN_IMPORTS,
+    )
+
+    helper_dist = output_dir / ".pyinstaller-helper-dist"
+    helper_work = output_dir / ".pyinstaller-helper-work"
+    helper_spec = output_dir / ".pyinstaller-helper-spec"
+    for path in (helper_dist, helper_work, helper_spec):
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--onefile",
+        "--name",
+        "baluffo-updater",
+        "--distpath",
+        str(helper_dist),
+        "--workpath",
+        str(helper_work),
+        "--specpath",
+        str(helper_spec),
+    ]
+    for module_name in UPDATER_HELPER_HIDDEN_IMPORTS:
+        command.extend(["--hidden-import", module_name])
+    for package_name in UPDATER_HELPER_COLLECT_DATA_PACKAGES:
+        command.extend(["--collect-data", package_name])
+    command.append(str(ROOT / "src" / "ship" / "desktop_updater.py"))
+
+    print(f"Running updater helper PyInstaller: {' '.join(command[:18])}...")
+    subprocess.run(command, cwd=output_dir, check=True)
+
+    helper_binary = helper_dist / "baluffo-updater"
+    if not helper_binary.is_file():
+        raise RuntimeError(f"Updater helper executable not found: {helper_binary}")
+    return helper_binary
+
+
+def copy_helper_into_payload(built_dir: Path, helper_binary: Path) -> Path:
+    target = built_dir / helper_binary.name
+    shutil.copy2(helper_binary, target)
+    target.chmod(0o755)
+    return target
+
+
 def build_appdir(output_dir: Path, built_dir: Path, exe_name: str) -> Path:
     appdir = output_dir / f"{exe_name}.AppDir"
     if appdir.exists():
@@ -252,6 +309,10 @@ def main() -> int:
 
     print(f"Running PyInstaller (target: {exe_name})...")
     built_dir = run_pyinstaller(output_dir, exe_name)
+
+    print("Building the updater helper...")
+    helper_binary = run_helper_pyinstaller(output_dir)
+    copy_helper_into_payload(built_dir, helper_binary)
 
     if args.skip_appimage:
         print(f"PyInstaller output ready: {built_dir}")

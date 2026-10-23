@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from src.ship import desktop_app, windows_user_paths
+from src.ship import desktop_app, linux_user_paths, windows_user_paths
 from src.ship.desktop_app import config as config_mod
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -203,6 +203,51 @@ def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy
         assert (config.data_dir / "jobs-unified.json").read_text(encoding="utf-8") == "[{}]"
         assert (legacy_data / "jobs-unified.json").is_file()
         assert windows_user_paths.windows_user_data_migration_report_path(config.data_dir).is_file()
+
+
+def test_linux_data_root_prefers_xdg_then_home_then_the_running_user() -> None:
+    assert linux_user_paths.linux_data_home({"XDG_DATA_HOME": "/tmp/xdg"}) == Path("/tmp/xdg")
+    assert linux_user_paths.linux_data_home({"HOME": "/home/someone"}) == Path(
+        "/home/someone/.local/share"
+    )
+    assert linux_user_paths.default_linux_packaged_data_dir({"HOME": "/home/someone"}) == Path(
+        "/home/someone/.local/share/Baluffo"
+    )
+
+
+def test_create_runtime_config_uses_xdg_data_root_for_packaged_linux() -> None:
+    with workspace_tmpdir("desktop-config-linux-data-root") as tmp:
+        ship_root = Path(tmp) / "appimage-mount" / "ship"
+        (ship_root / "data").mkdir(parents=True)
+        xdg_data = Path(tmp) / "xdg"
+        args = argparse.Namespace(
+            root=str(ship_root),
+            site_port=0,
+            bridge_port=0,
+            bridge_host="127.0.0.1",
+            data_dir="",
+            open_path="admin.html",
+            title="",
+            port=0,
+            bind_host="127.0.0.1",
+            child_mode="",
+            desktop_runtime=False,
+            startup_probe=False,
+        )
+        with (
+            mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
+            mock.patch.object(config_mod, "_is_windows_packaged_runtime", return_value=False),
+            mock.patch.object(config_mod, "_is_linux_packaged_runtime", return_value=True),
+            mock.patch.dict(
+                config_mod.os.environ,
+                {"XDG_DATA_HOME": str(xdg_data), "BALUFFO_DATA_DIR": ""},
+                clear=False,
+            ),
+        ):
+            config = desktop_app.create_runtime_config(args)
+
+        assert config.data_dir == (xdg_data / "Baluffo").resolve()
+        assert config.ship_root == ship_root.resolve()
 
 
 @pytest.mark.windows

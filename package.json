@@ -34,6 +34,7 @@
     "test:frontend:packaged": "npm run check:python-version && python src/packaged_desktop_smoke.py",
     "test:frontend:packaged:sync-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --runtime-timeout 60",
     "test:frontend:packaged:update-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal --runtime-timeout 60",
+    "test:frontend:packaged:update-rehearsal:appimage": "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal-appimage --runtime-timeout 180",
     "test:frontend:packaged:orphan-reclaim-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --orphan-reclaim-rehearsal --runtime-timeout 60",
     "test:frontend:packaged:browser-job-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --runtime-timeout 60",
     "test:frontend:packaged:desktop-lifecycle-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-lifecycle-rehearsal --runtime-timeout 60",

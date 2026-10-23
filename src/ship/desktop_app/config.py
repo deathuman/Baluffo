@@ -13,6 +13,7 @@ from pathlib import Path
 
 from src.baluffo_config import get_desktop_defaults
 from src.ship.jobs_first_run_state import jobs_cold_start_required
+from src.ship.linux_user_paths import default_linux_packaged_data_dir
 from src.ship.windows_user_paths import (
     default_windows_packaged_data_dir,
     migrate_legacy_windows_user_data,
@@ -136,6 +137,10 @@ def _is_windows_packaged_runtime() -> bool:
     return os.name == "nt" and bool(getattr(sys, "frozen", False))
 
 
+def _is_linux_packaged_runtime() -> bool:
+    return os.name != "nt" and bool(getattr(sys, "frozen", False))
+
+
 def _resolve_and_migrate_default_data_dir(ship_root: Path) -> Path:
     env_data_dir = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
     if env_data_dir:
@@ -144,6 +149,10 @@ def _resolve_and_migrate_default_data_dir(ship_root: Path) -> Path:
         data_dir = default_windows_packaged_data_dir(os.environ).resolve()
         migrate_legacy_windows_user_data(ship_root / "data", data_dir, env_map=os.environ)
         return data_dir
+    if _is_linux_packaged_runtime():
+        # The AppImage payload is a read-only mount: user data has to live in the
+        # XDG data directory or it is lost with every launch.
+        return default_linux_packaged_data_dir(os.environ).resolve()
     return ship_root / "data"
 
 

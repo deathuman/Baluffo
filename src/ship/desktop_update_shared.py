@@ -34,6 +34,7 @@ from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
+from src.ship.desktop_artifact_paths import desktop_artifact
 from src.ship.update_manager_paths import ShipPaths
 from src.ship.update_manager_state import ensure_state as ensure_ship_update_state
 
@@ -58,23 +59,21 @@ def _psutil_module() -> Any:
 
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
-# The update panel drives the packaged Windows installer: it replaces the app and
-# starts it again. Other builds ship no such helper, so offering the button there
-# can only end in a failed install.
+# The update panel downloads and runs a helper that replaces the running build.
+# A build that cannot name what it would replace -- a Linux package that was not
+# started as an AppImage, say -- has no install path, and offering the button
+# there can only end in a failed install.
 DESKTOP_UPDATE_PLATFORM_UNSUPPORTED = "platform_unsupported"
 
 
 def desktop_update_install_supported() -> bool:
-    """Whether this build ships the updater helper that installs a release.
+    """Whether this build can replace itself with a downloaded release.
 
-    The helper is Windows-only. A source checkout is treated as supported on any
-    platform -- it ships nothing, and its update machinery has to stay usable and
-    testable wherever the suite runs -- so only a frozen build can report the
-    helper missing, which is exactly what the Linux AppImage is.
+    A source checkout is treated as supported on any platform -- it ships
+    nothing, and its update machinery has to stay usable and testable wherever
+    the suite runs -- so only a frozen build can report no install path.
     """
-    if os.name == "nt":
-        return True
-    return not bool(getattr(sys, "frozen", False))
+    return bool(desktop_artifact().install_supported)
 
 
 def platform_unsupported_status(status: dict[str, Any]) -> dict[str, Any]:

@@ -55,11 +55,14 @@ Four rules the guardrail enforces so this cannot quietly regress:
   still winding down after the window closed — as a port already in use, and quietly moved to a random
   one. The check now treats that brief window the way the app's own servers do, so the usual addresses
   hold. A port another program is genuinely listening on is still reported as busy.
-- **Linux no longer offers a desktop update it cannot install.** The jobs page's update panel is
-  built for the Windows build, whose installer replaces the app and starts it again; the Linux
-  AppImage ships no such installer, so the button could only end in a failed install. Linux builds
-  now report updates as unavailable and hide the control — download the newest AppImage from the
-  release page instead.
+- **The Linux AppImage now updates itself, the way the Windows build already did.** The jobs page's
+  update panel used to hide on Linux, because only the Windows build shipped an installer. The
+  AppImage now carries its own updater: it downloads the next release, verifies it, replaces the
+  file you launched, and reopens it — keeping the old build aside until the new one reports it
+  started, and putting it back if it does not. The AppImage has to sit in a folder you can write to;
+  when it does not, the panel says so instead of failing halfway through. AppImages released before
+  this change still report updates as unavailable, so download the newest one from the release page
+  once.
 - **Source discovery stops asking a studio the same question four more times.** When a studio
   homepage had no jobs link, discovery guessed `/careers` and `/jobs`, and then — even after those
   answered, or answered that they do not exist — guessed four more spellings on the same site. On a

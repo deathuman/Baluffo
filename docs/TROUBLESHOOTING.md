@@ -429,6 +429,14 @@ New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-succes
 | `GLIBC not found` | Build on the oldest supported glibc distro (CI uses `ubuntu-latest` / Ubuntu 24.04) |
 | `Permission denied` | `chmod +x Baluffo-*.AppImage` |
 
+### Linux AppImage update is refused
+
+| Symptom | Action |
+|---------|--------|
+| Update panel says the AppImage's folder is not writable | The in-app update replaces the AppImage file itself, so it must live somewhere you own: move it out of `/opt` (or another root-owned directory) into your home directory and start it from there |
+| No update panel at all, and the build is old | AppImages released before the in-app updater existed report updates as unavailable; download the newest AppImage from the release page once, and it can update itself afterwards |
+| `Not enough free disk space next to the AppImage` | The updater stages the new build beside the current one and keeps a rollback copy, so it needs roughly three times the AppImage's size in that folder |
+
 ### Linux port already in use
 
 ```bash
@@ -455,7 +463,7 @@ Set `PLAYWRIGHT_SYSTEM_CHROMIUM=1` or use `npm run test:frontend:linux` which se
 
 | Data | Windows | Linux |
 |------|---------|-------|
-| Config/data root | `%APPDATA%\Baluffo\` (packaged) | `ship_root/data` by default (`BALUFFO_DATA_DIR` overrides; session/transient uses XDG data) |
+| Config/data root | `%APPDATA%\Baluffo\` (packaged) | `~/.local/share/Baluffo/` (packaged AppImage; `XDG_DATA_HOME` and `BALUFFO_DATA_DIR` override). A source checkout keeps `ship_root/data`. |
 | Session/transient | `%LOCALAPPDATA%\Baluffo\` | `~/.local/share/Baluffo/` (XDG data root) |
 | Sync key | DPAPI (machine-protected) | System keyring, fallback `~/.config/baluffo/sync.key` (0o600) |
 

@@ -549,6 +549,20 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - seeded local profile data, saved jobs, notes, and attachments remain intact across the update.
 - Use this lane for updater-helper, desktop session/handoff, release-manifest, Windows packaged data-root migration, and portable runtime mutation changes.
 
+## Packaged AppImage Update Rehearsal Contract
+
+- `npm run test:frontend:packaged:update-rehearsal:appimage` is the packaged `N -> N+1` updater gate for the Linux AppImage. `build-linux` runs it against the AppImage it is about to publish.
+- It must prove all of the following:
+  - the running AppImage reads `baluffo-desktop-update-manifest-linux.json` and offers the release it names,
+  - the download verifies against the manifest digest,
+  - the handoff copies `baluffo-updater` out of the read-only mount and closes the app,
+  - the helper replaces the launched AppImage file and relaunches it with the recorded launch mode,
+  - the relaunched app reports the target version on a ready bridge and records `installState: installed`,
+  - the previous build's snapshot is removed, seeded user data survives, and the file on disk hashes to the downloaded build.
+- The rehearsal signs its own manifest with a per-run Ed25519 key handed to the app through `BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON`, and serves the release over loopback; it never touches a real release.
+- Run it on a Linux host with the AppImage payload: the lane needs `--appimage-extract-and-run`-compatible execution, which is also why CI needs no FUSE.
+- Use this lane for AppImage packaging, updater-helper, Linux install-backend, and Linux release-manifest changes.
+
 ## Packaged Sync Rehearsal Contract
 
 - `npm run test:frontend:packaged:sync-rehearsal` is the packaged GitHub sync portability gate for the portable desktop runtime.

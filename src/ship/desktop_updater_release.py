@@ -8,6 +8,8 @@ from typing import Any
 
 from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _as_list
+from src.ship import desktop_update_manifest as _manifest_mod
+from src.ship.desktop_artifact_paths import ARTIFACT_KIND_APPIMAGE
 from src.ship.desktop_update_shared import (
     compute_sha256 as _compute_sha256,
 )
@@ -43,7 +45,8 @@ from src.ship.desktop_update_shared import (
 )
 from src.ship.desktop_update_state import read_cached_manifest as _read_cached_manifest
 
-DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
+DESKTOP_UPDATE_MANIFEST_ASSET = _manifest_mod.DESKTOP_UPDATE_MANIFEST_ASSET
+DESKTOP_UPDATE_MANIFEST_ASSET_LINUX = _manifest_mod.DESKTOP_UPDATE_MANIFEST_ASSET_LINUX
 
 # Preserve module-root helper names for updater facade compatibility.
 compute_sha256 = _compute_sha256
@@ -98,12 +101,16 @@ def _recover_manifest_for_install(
         )
     release = _find_release_for_target_version(repo, str(plan.get("targetVersion") or ""))
     assets = _as_list(release.get("assets"))
+    asset_name = (
+        DESKTOP_UPDATE_MANIFEST_ASSET_LINUX
+        if str(plan.get("artifactKind") or "").strip().lower() == ARTIFACT_KIND_APPIMAGE
+        else DESKTOP_UPDATE_MANIFEST_ASSET
+    )
     manifest_asset = next(
         (
             asset
             for asset in assets
-            if isinstance(asset, dict)
-            and str(asset.get("name") or "").strip() == DESKTOP_UPDATE_MANIFEST_ASSET
+            if isinstance(asset, dict) and str(asset.get("name") or "").strip() == asset_name
         ),
         None,
     )
@@ -177,6 +184,12 @@ def _classify_install_failure(exc: BaseException) -> str:
         return f"desktop_update_manifest_recovery_failed: {message}"
     if "zip failed re-verification" in lowered:
         return f"desktop_update_zip_reverification_failed: {message}"
+    if "appimage" in lowered and "not writable" in lowered:
+        return f"desktop_update_appimage_not_writable: {message}"
+    if "could not replace the appimage" in lowered or "could not snapshot" in lowered:
+        return f"desktop_update_appimage_replace_failed: {message}"
+    if "could not start the updated appimage" in lowered:
+        return f"desktop_update_appimage_relaunch_failed: {message}"
     if "startup readiness in time" in lowered:
         return f"desktop_update_relaunch_verification_failed: {message}"
     if ("zip" in lowered and "not found" in lowered) or "no such file or directory" in lowered:

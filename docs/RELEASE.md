@@ -236,16 +236,19 @@ Runtime notes:
 Portable desktop in-app update flow:
 
 - Baluffo performs one fresh, silent desktop update check on Jobs-page startup and when the user clicks `Check for updates`; non-forced internal checks may still reuse the manifest cache.
-- Update state lives under the resolved data root, `%APPDATA%\Baluffo\updater\` for Windows packaged installs.
+- Update state lives under the resolved data root: `%APPDATA%\Baluffo\updater\` for Windows packaged installs and `$XDG_DATA_HOME/Baluffo/updater/` (default `~/.local/share/Baluffo/updater/`) for a packaged Linux AppImage.
 - The jobs-page desktop UI must surface `Check for updates`, `Download`, `Install and restart`, install-progress, and failure/retry states.
 - Background download failures must remain visible in the Jobs-page updater panel, using the persisted updater `lastError` and a retry download action instead of reverting to the generic available-update CTA.
-- The updater downloads the portable ZIP from the selected GitHub release and never overwrites the resolved data root from the downloaded artifact.
-- Install handoff writes `install-plan.json`, copies `BaluffoUpdater.exe` to a temp path outside the install root, and closes the running app before the helper mutates the runtime.
+- The updater downloads the artifact its platform installs from the selected GitHub release -- the portable ZIP on Windows, the AppImage on Linux -- and never overwrites the resolved data root from the downloaded artifact.
+- Each platform is described by one signed manifest asset: `baluffo-desktop-update-manifest.json` (Windows, built and published by `build-portable-exe`) and `baluffo-desktop-update-manifest-linux.json` (Linux, built and published by `build-linux`). Both use the same schema and signing key; only `portable_artifact` differs, and a client only ever reads its own platform's asset. Publishing them separately keeps the two release workflows from having to agree on one file.
+- Install handoff writes `install-plan.json`, copies the updater helper to a temp path outside the install root, and closes the running app before the helper mutates the runtime. On Windows that helper is `BaluffoUpdater.exe`; on Linux it is the `baluffo-updater` binary shipped in the AppImage, copied out of the read-only mount before the swap.
+- The install plan carries `artifactKind`, `targetArtifactPath`, and `relaunchArgs` so the helper knows a Windows install replaces a directory tree while a Linux install replaces the running AppImage file and relaunches it with the same launch mode (`--appimage-extract-and-run` when that is how it was started).
+- A Linux AppImage update needs a writable folder: the helper stages the new build beside the current one, renames it into place, and keeps the previous file as a rollback until the new build reports readiness. The preflight refuses, with a clear message, an AppImage in a folder the user cannot write to.
 - Install handoff liveness checks must work without optional `psutil`; the Windows fallback uses process handles, not `os.kill(pid, 0)`.
 - Handoff failures before helper launch write `%APPDATA%\Baluffo\updater\handoff-diagnostics.json` on Windows packaged installs with non-secret verifier predicates.
-- The helper owns extraction, rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.
-- First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `%APPDATA%\Baluffo\updater\post-install-success.json` on Windows packaged installs. `ship\data\updater\post-install-success.json` is compatibility-only for old source helpers with legacy handoff artifacts.
-- The release workflow must publish the portable ZIP, ship recovery ZIP, desktop manifest, and release notes together for desktop in-app updates to work.
+- The helper owns extraction (Windows), file replacement (Linux), rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.
+- First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `updater/post-install-success.json` in the resolved data root. `ship\data\updater\post-install-success.json` is compatibility-only for old source helpers with legacy handoff artifacts.
+- The Windows workflow must publish the portable ZIP, ship recovery ZIP, Windows desktop manifest, and release notes together; the Linux workflow must publish the AppImage and the Linux desktop manifest. Either manifest without its artifact leaves that platform unable to update.
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
@@ -409,6 +412,9 @@ AppImage execution notes:
 
 - Direct execution requires FUSE: `sudo apt install libfuse2` on Ubuntu 24.04+. Use `--appimage-extract-and-run` as a FUSE-free workaround.
 - CI workflows use `--appimage-extract-and-run` to avoid FUSE dependencies on runner images.
+- The AppImage bundles the `baluffo-updater` helper at its root. In-app updates replace the AppImage file itself, so the AppImage must live in a folder the user can write to; the update preflight refuses a read-only location with a clear message instead of failing mid-install.
+- The Linux update manifest is signed and published by this workflow (`baluffo-desktop-update-manifest-linux.json`). It names the AppImage in `portable_artifact`; the client picks it by platform, so the Windows manifest is untouched.
+- `build-linux` also runs `npm run test:frontend:packaged:update-rehearsal:appimage`: a second build acts as the update target and the running AppImage updates itself against a locally served, locally signed release. See the packaged AppImage update rehearsal contract in [testing.md](testing.md).
 
 ## Verification Checklist
 
@@ -462,8 +468,8 @@ When one version is intended to be both the public desktop release and the conta
 3. Build local desktop artifacts for the same version: `npm run build:portable-exe -- --bundle-version <version>` and `npm run build:ship-bundle -- --bundle-version <version>`, then verify the portable ZIP and ship ZIP embed `app/current.txt == <version>` and `APP_VERSION = "<version>"`.
 4. Create an annotated `v<version>` tag only after local gates and artifact checks pass, push only that tag, and watch every tag-triggered workflow that can publish artifacts: `build-portable-exe`, `Build Container`, and `build-linux`. Pushing the tag now runs the same pre-push gate as `main` (`lint:precommit:ci` plus `lint:deadcode:js`), so a green local run is still the only thing standing between you and a published release — the tag push is not a bypass.
 5. Verify the GitHub release is published, not draft, not prerelease, and that release notes came from the matching `docs/CHANGELOG.md` version section.
-6. Verify release assets: portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when the Linux workflow publishes it.
-7. Download `baluffo-desktop-update-manifest.json` and confirm its version, channel, schema, key id, signature, minimum updater version, rollback flag, portable artifact URL, checksum, and size match the release asset.
+6. Verify release assets: portable ZIP, ship ZIP, desktop update manifest, Linux AppImage, and `baluffo-desktop-update-manifest-linux.json` when the Linux workflow publishes it.
+7. Download `baluffo-desktop-update-manifest.json` (and the Linux manifest) and confirm its version, channel, schema, key id, signature, minimum updater version, rollback flag, portable artifact URL, checksum, and size match the release asset.
 8. Reconfirm GHCR `ghcr.io/deathuman/baluffo:<version>` after tag-side workflows finish, recording the final index digest and `linux/amd64` plus `linux/arm64` platforms.
 9. If a host deployment is in scope, reconfirm it on the shipped version with `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary`.
 10. Record commit, tag, release URL, workflow run ids, asset names/sizes, manifest evidence, GHCR digest/platforms, deployment endpoint status, and residual risks in Basic Memory, then commit and push the curated BaluffoMemory repo.

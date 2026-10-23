@@ -24,6 +24,12 @@ env:
 jobs:
   linux-appimage:
     runs-on: ubuntu-24.04
+    env:
+      # The Linux channel signs its own manifest: it names the AppImage, so it is
+      # built after that artifact exists instead of coordinating with the
+      # Windows workflow over one shared file.
+      BALUFFO_DESKTOP_UPDATE_KEY_ID: ${{ secrets.BALUFFO_DESKTOP_UPDATE_KEY_ID }}
+      BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64: ${{ secrets.BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64 }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -94,6 +100,14 @@ jobs:
       - name: Build Linux AppImage
         run: npm run build:linux -- --bundle-version "${{ env.BALUFFO_VERSION }}"
 
+      - name: Build desktop update manifest (Linux)
+        run: |
+          python scripts/build_desktop_update_release.py \
+            --version "${{ env.BALUFFO_VERSION }}" \
+            --artifact "dist/Baluffo-${BALUFFO_VERSION}-x86_64.AppImage" \
+            --artifact-kind appimage \
+            --github-repo "${{ github.repository }}"
+
       - name: Smoke test AppImage
         run: PLAYWRIGHT_SYSTEM_CHROMIUM=1 PACKAGED_SMOKE_SYSTEM_CHROMIUM=1 bash scripts/smoke_test_appimage.sh
 
@@ -128,11 +142,34 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+      # A real N -> N+1 self-update. The second build differs only in its bundle
+      # version, which makes its bytes distinguishable from the release artifact;
+      # the running version is lowered through the app's version override, so the
+      # manifest names the real version and the helper must clear that override
+      # when it relaunches. Built after the smoke and startup runs so neither
+      # picks it up by version sort.
+      - name: Rehearse AppImage self-update
+        run: |
+          set -euo pipefail
+          npm run build:linux -- --bundle-version "${BALUFFO_VERSION}-rehearsal-target"
+          BALUFFO_UPDATE_APPIMAGE_BEFORE="dist/Baluffo-${BALUFFO_VERSION}-x86_64.AppImage" \
+          BALUFFO_UPDATE_APPIMAGE_AFTER="dist/Baluffo-${BALUFFO_VERSION}-rehearsal-target-x86_64.AppImage" \
+          BALUFFO_UPDATE_TARGET_VERSION="${BALUFFO_VERSION}" \
+          BALUFFO_UPDATE_BEFORE_VERSION="0.0.9" \
+            npm run test:frontend:packaged:update-rehearsal:appimage
+
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v7
         with:
           name: Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
           path: dist/Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
+          retention-days: 30
+
+      - name: Upload desktop update manifest artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: baluffo-desktop-update-manifest-linux-${{ env.BALUFFO_VERSION }}
+          path: dist/baluffo-desktop-update-manifest-linux.json
           retention-days: 30
 
       # Publish the notes from the changelog, not from the tag message. This
@@ -153,4 +190,6 @@ jobs:
           tag_name: ${{ env.BALUFFO_RELEASE_TAG }}
           name: Baluffo ${{ env.BALUFFO_RELEASE_TAG }}
           body_path: release-notes.md
-          files: dist/Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
+          files: |
+            dist/Baluffo-${{ env.BALUFFO_VERSION }}-x86_64.AppImage
+            dist/baluffo-desktop-update-manifest-linux.json
