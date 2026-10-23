@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Linux desktop te
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os
 import signal
 import sys
@@ -52,8 +53,6 @@ def _pid_has_exited(pid: int) -> bool:
 
 
 def _pdeathsig_libc() -> Any:
-    import ctypes
-
     # The dynamic loader handle is the most portable target (glibc, musl, and
     # anything else whose prctl lives in the process's own libc mapping).
     try:
@@ -72,11 +71,16 @@ def _linux_pdeathsig_preexec(parent_pid: int) -> Callable[[], None] | None:
     parent = int(parent_pid or 0)
     if parent <= 0:
         return None
+    # Resolve the library here, in the parent. `preexec_fn` runs after fork()
+    # while the launcher's side threads (the success-marker worker, the loopback
+    # warm-up) are alive, and a dlopen or an import in that child is the
+    # documented deadlock mode for a threaded process. The child then only makes
+    # the prctl call.
+    libc = _pdeathsig_libc()
+    if libc is None or not hasattr(libc, "prctl"):
+        return None
 
     def _arm() -> None:
-        libc = _pdeathsig_libc()
-        if libc is None or not hasattr(libc, "prctl"):
-            return
         try:
             libc.prctl(_PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
         except (OSError, ValueError):
