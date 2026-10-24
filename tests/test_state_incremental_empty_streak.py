@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from src.jobs import state_incremental as si
 from src.jobs.state_source_records import apply_excluded_source_state
+from src.jobs.state_source_state import update_source_state_rows
 
 
 def _entry(**overrides: object) -> dict:
@@ -119,8 +120,14 @@ def test_empty_static_board_past_the_empty_window_asks_before_it_downloads() -> 
     }
 
 
-def test_single_zero_kept_run_past_the_window_is_still_read_in_full() -> None:
-    """One empty run is not evidence; only the streak the window requires is."""
+def test_a_single_zero_kept_run_with_a_validator_asks_before_the_streak_is_confirmed() -> None:
+    """The tag its own empty read stored is the confirmation a second read used to buy.
+
+    This is the confirming read the probe replaces: past the empty window with one
+    zero-kept run and a validator in hand, the board used to fall through to a full
+    read, because a HEAD could not be trusted until the streak reached two.
+    """
+    name = "static_source::test"
     entry = _entry(
         lastKeptCount=0,
         consecutiveZeroKept=1,
@@ -128,12 +135,82 @@ def test_single_zero_kept_run_past_the_window_is_still_read_in_full() -> None:
         lastHttpEtag='"etag-1"',
         lastSuccessAt=(datetime.now(UTC) - timedelta(hours=20)).isoformat(),
     )
-    decision = si.get_incremental_cache_decision(
-        "static_source::test",
-        {"static_source::test": entry},
-        adapter="static",
+    decision = si.get_incremental_cache_decision(name, {name: entry}, adapter="static")
+    assert decision == {
+        "cacheDecision": "revalidate_only",
+        "cacheDecisionReason": "static_empty_revalidate_due",
+    }
+
+
+def test_a_single_zero_kept_run_without_a_validator_is_still_read_in_full() -> None:
+    """Nothing to ask with: the first check has to be the read that learns a tag."""
+    name = "static_source::test"
+    entry = _entry(
+        lastKeptCount=0,
+        consecutiveZeroKept=1,
+        zeroJobStreak=1,
+        lastSuccessAt=(datetime.now(UTC) - timedelta(hours=20)).isoformat(),
     )
+    decision = si.get_incremental_cache_decision(name, {name: entry}, adapter="static")
     assert decision == {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
+
+
+def test_a_304_at_streak_one_is_the_confirmation_and_earns_the_empty_window() -> None:
+    """The probe's answer is persisted as the confirmation, so no read follows it.
+
+    Without the empty-window branch a zero-kept board's 304 would fall to the listing
+    window and spend a HEAD every three hours, or fall through to ``run_now`` entirely.
+    """
+    name = "static_source::test"
+    now = datetime.now(UTC)
+    rows = {
+        name: _entry(
+            lastKeptCount=0,
+            consecutiveZeroKept=1,
+            zeroJobStreak=1,
+            lastHttpEtag='"etag-1"',
+            lastSuccessAt=(now - timedelta(hours=13)).isoformat(),
+        )
+    }
+    assert si.get_incremental_cache_decision(name, rows, adapter="static") == {
+        "cacheDecision": "revalidate_only",
+        "cacheDecisionReason": "static_empty_revalidate_due",
+    }
+
+    rows = update_source_state_rows(
+        source_state_rows=rows,
+        source_reports=[
+            {
+                "name": name,
+                "adapter": "static",
+                "status": "excluded",
+                "error": "not_modified_304",
+                "exclusionReason": "cache_not_modified_304",
+                "cacheDecision": "revalidate_only",
+                "cacheDecisionReason": "not_modified_304",
+                "httpStatus": 304,
+                "keptCount": 0,
+                "durationMs": 0,
+            }
+        ],
+        canonical_rows=[],
+        finished_at=now.isoformat(),
+        circuit_breaker_failures=3,
+        circuit_breaker_cooldown_minutes=720,
+    )
+    assert rows[name]["cacheDecisionReason"] == "not_modified_304"
+    assert rows[name]["consecutiveZeroKept"] == 1, "a probe is not a read; the streak stays put"
+    assert si.get_incremental_cache_decision(name, rows, adapter="static") == {
+        "cacheDecision": "skip_fresh",
+        "cacheDecisionReason": "static_empty_fresh",
+    }, "the 304 satisfies the empty window instead of being followed by the read"
+
+    # The window still expires into another HEAD, never into a read.
+    rows[name]["lastSuccessAt"] = (now - timedelta(hours=13)).isoformat()
+    assert si.get_incremental_cache_decision(name, rows, adapter="static") == {
+        "cacheDecision": "revalidate_only",
+        "cacheDecisionReason": "static_empty_revalidate_due",
+    }
 
 
 def test_empty_static_board_whose_last_run_failed_is_fetched_again() -> None:
@@ -200,10 +277,16 @@ def test_a_304_kept_board_waits_out_the_listing_window_before_probing_again() ->
     The validators still say the stored copy is current. The listing read has its own
     window, so the board sleeps through it and spends one HEAD when the window expires,
     rather than one HEAD on every run in between.
+
+    The zero streak is load-bearing: a 304 is not a zero read, so a board that had jobs
+    arrives here with no streak and keeps the listing window, where a genuinely empty
+    board's 304 satisfies the empty one.
     """
     entry = _entry(
         lastStatus="excluded",
         lastKeptCount=0,
+        consecutiveZeroKept=0,
+        zeroJobStreak=0,
         lastHttpEtag='"etag-1"',
         cacheDecisionReason="not_modified_304",
         lastSuccessAt=(datetime.now(UTC) - timedelta(minutes=40)).isoformat(),
@@ -241,6 +324,8 @@ def test_static_board_without_validators_after_a_304_runs_now() -> None:
     entry = _entry(
         lastStatus="excluded",
         lastKeptCount=0,
+        consecutiveZeroKept=0,
+        zeroJobStreak=0,
         cacheDecisionReason="not_modified_304",
         lastSuccessAt=(datetime.now(UTC) - timedelta(minutes=40)).isoformat(),
     )

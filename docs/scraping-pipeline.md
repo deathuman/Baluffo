@@ -136,20 +136,24 @@ fallback.
 A board that kept **nothing** takes the same question once its empty window (12 h) has expired —
 `cacheDecisionReason: static_empty_revalidate_due`. That cohort is roughly a third of summed fetch
 duration, and a board with no jobs can only reproduce that zero by downloading the same document
-again. Two conditions keep it honest: the zero-kept streak must already meet
-`DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS` (one empty run is not evidence, so that run still
-reads in full), and a board whose last run failed stays on `run_now`, because a 304 would clear the
-failure without ever fetching it.
+again. Two conditions keep it honest: a board whose last run failed stays on `run_now`, because a
+304 would clear the failure without ever fetching it, and a board with **no validator** must
+already have met `DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS` zero-kept runs (one empty run is
+not evidence, so that run still reads in full). A board whose own empty read stored a validator
+already has that evidence: its first due check is a HEAD, and a 304 is the confirmation a second
+full read would have bought, so it starts the empty window instead of being followed by that read.
 
 A 304 refreshes the success clock, so an unchanged board waits out a window instead of re-asking on
 the next run: `apply_excluded_source_state` matches the `cache_not_modified_304` spelling both flows
 write, not just the bare `not_modified_304` token, and the reason stored on the row
 (`not_modified_304`, then the skip's own `static_revalidated_fresh`) is what holds it. A board that
 still has jobs sleeps for the listing window (180 min) as `static_revalidated_fresh`, then spends
-one HEAD when that expires. A zero-kept board whose streak already qualifies sleeps for its empty
-window (12 h) as `static_empty_fresh` instead. Neither skip moves `nextEligibleCheckAt` — a skip is
-not a check — so the window, not the run cadence, decides when the probe happens. Plain freshness
-skips (`skip_fresh`, `cache_within_freshness_window`) still leave the success clock alone.
+one HEAD when that expires. A zero-kept board — one whose streak qualifies, or one whose probe
+answered 304 — sleeps for its empty window (12 h) as `static_empty_fresh` instead; the zero streak
+is what tells the two apart, because a 304 is not a zero read. Neither skip moves
+`nextEligibleCheckAt` — a skip is not a check — so the window, not the run cadence, decides when
+the probe happens. Plain freshness skips (`skip_fresh`, `cache_within_freshness_window`) still
+leave the success clock alone.
 
 **Multi-page boards ask per page.** A 304 on page 1 says nothing about the pages behind it, so a
 board with more than one configured listing page stores one validator per page in

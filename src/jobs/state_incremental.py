@@ -285,16 +285,22 @@ def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[st
     if (
         last_kept <= 0
         and last_status != "error"
-        and _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+        and (
+            _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+            or (_zero_kept_streak(entry) >= 1 and _has_stored_validators(entry))
+        )
         and age_seconds >= float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60)
     ):
         # Zero-kept boards are where most of the static fetch cost sits: a board
         # with no jobs can only reproduce that zero by downloading the same
         # document again. Once its empty window has expired it asks the same
-        # cheap question a kept board asks. A single zero-kept run is still not
-        # trusted -- it falls through to the full read, which is also what makes
-        # the streak grow until the window applies. Rendered-card boards keep the
-        # full read, but that is decided in the flow, which knows the host.
+        # cheap question a kept board asks. A single zero-kept run without a
+        # validator is still not trusted -- it falls through to the full read,
+        # which is also what makes the streak grow until the window applies. A
+        # stored validator is its own confirmation: a 304 says the document that
+        # read zero is the document served now, which is exactly the finding the
+        # second read used to buy. Rendered-card boards keep the full read, but
+        # that is decided in the flow, which knows the host.
         return {
             "cacheDecision": "revalidate_only",
             "cacheDecisionReason": "static_empty_revalidate_due",
@@ -313,6 +319,17 @@ def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[st
     if norm_text(
         entry.get("cacheDecisionReason")
     ) in _REVALIDATED_DECISION_REASONS and _has_stored_validators(entry):
+        if last_kept <= 0 and _zero_kept_streak(entry) >= 1:
+            # A zero-kept board's 304 is the confirmation its streak was waiting
+            # for, so it satisfies the empty window rather than the listing one:
+            # the board waits that window out instead of repeating the read the
+            # probe just replaced. Past the window the branch above has already
+            # returned the next probe. A board that kept jobs and got a 304 has no
+            # zero streak, and keeps the listing window below.
+            return {
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "static_empty_fresh",
+            }
         # The previous run answered 304, and its report kept nothing, so lastKeptCount
         # no longer says the board has jobs. The validators still do. The listing read
         # has its own window: the 304 refreshed the success clock, so the board waits

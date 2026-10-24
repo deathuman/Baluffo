@@ -1,8 +1,11 @@
 # Fetch pipeline — the zero-kept lane: what a 304 actually recovers
 
-**Date:** 2026-10-24 · **Lane:** fetch-pipeline revalidation · **Status:** measured, no code
-changed by this note. **~99 s net per empty episode** on the reference sample — one confirming
-read avoided — not the largest remaining headroom.
+**Date:** 2026-10-24 · **Lane:** fetch-pipeline revalidation · **Status:** measured and shipped.
+**~99 s net per empty episode** on the reference sample — one confirming read avoided — not the
+largest remaining headroom. The decision change is in
+[`_static_cache_decision`](../../src/jobs/state_incremental.py) and pinned by
+[`test_state_incremental_empty_streak.py`](../../tests/test_state_incremental_empty_streak.py);
+behaviour below.
 
 This measures the open item left by the conditional-GET work (0.3.026): a zero-kept board's first
 due check after it reads empty is a **full read**, because
@@ -86,6 +89,13 @@ Per board: median read 4.16 s, median probe 0.52 s, median saving 3.5 s.
 
 So the plan's *Zero-kept sources dominate cost* row is a statement about a population, not about
 recoverable work: worth doing for ~100 s an episode, but not where a run-level win lives.
+
+**Shipped after this measurement.** A zero-kept board that has a validator now takes its first
+due check as a HEAD, and a 304 satisfies the empty window: the row keeps its streak, sleeps 12 h
+as `static_empty_fresh`, and probes again at the next boundary. A board with no validator still
+reads in full, and a 200 falls through to the read exactly as before. Live check on three pool
+boards: two answered 304 (excluded, no body read, parked for the empty window) and one answered
+200 (full read, streak 1 → 2, parked by its deadline).
 
 ## Artifacts
 

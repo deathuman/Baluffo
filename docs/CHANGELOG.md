@@ -49,6 +49,13 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ### Changed
 
+- **An empty board is asked before it is downloaded, even on its first check.** A board with no
+  jobs used to be read in full one more time before the fetcher trusted that it still had nothing.
+  When the previous read stored the page's version tag, the board now asks "has this changed?" at
+  its first check instead: "not modified" is the same evidence a second full read gave, and it
+  starts the board's empty window. Boards that publish no tag keep the old behaviour, as do boards
+  whose last check failed.
+
 - **Boards split across several listing pages skip unchanged pages too.** A board with more than one
   listing page used to be re-read in full every time, because one page's "not modified" answer could
   not vouch for the pages behind it. Each page's version tag is now remembered separately and the
