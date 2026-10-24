@@ -97,8 +97,30 @@ reads in full, and a 200 falls through to the read exactly as before. Live check
 boards: two answered 304 (excluded, no body read, parked for the empty window) and one answered
 200 (full read, streak 1 → 2, parked by its deadline).
 
+**Run-level check, same day.** Two A/B pairs over the same 200-board sample and the same aged
+state (every clock 15 h back, so all boards are due), `ae6148a9` vs `5be089ef`, opposite run
+order:
+
+| pair | wall | source work | `notModifiedCount` |
+|---|---|---|---|
+| 1 | 406.7 → 294.4 s | 5 150.7 → 3 847.9 s | 14 → 36 |
+| 2 | 323.5 → 189.0 s | 3 663.0 → 2 308.0 s | 13 → 40 |
+
+The 35-board cohort the change moves from a read to a HEAD answered 304 on 22 boards in pair 1
+(678.9 s of reads → 51.1 s of HEADs) and 25 in pair 2 (374.6 s → 31.0 s); the rest answered 200
+and read as before, so the probe was additive there. Pair 1's read-speed control (boards read
+in both arms) is 1.00, which makes its ~628 s the change-attributable work; pair 2's window ran
+up to twice as fast overall, so its raw deltas overstate it. The totals move further than the
+cohort because per-board costs here run to 100+ s, so one slow board landing in one window
+moves the sum more than 35 HEADs do. Yield held: the cohort kept nothing in either arm, and
+the only output dip came from one LinkedIn board that answered `js_required` in both after runs
+while succeeding alone from the same seed through the same tree — a flaky redirect, worth
+~60-85 s of the measured delta.
+
 ## Artifacts
 
 Local and gitignored (`.tmp/run-level/`): `zero_pool.py` (pool and read costs), `zero_recover.py`
 (pool sizing), `zero_sweep.py` (live probes), `zero-pool.json`, `zero-sweep.json`, and
-`RESULTS.md` (the run-level A/B this sample comes from).
+`RESULTS.md` (the run-level A/B this sample comes from). The probe's own A/B lives in
+`.tmp/probe-run-level/`: `measure.py`, `RESULTS.md`, the two pairs' reports, and the `ae6148a9`
+worktree it ran the before arm from.
