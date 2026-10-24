@@ -93,7 +93,7 @@ for admitting which parts are load-bearing.
 | Cost is extremely long-tailed | top 10 sources = 16.6% of worker-time; 9 sources over the nominal 90 s budget = 16% | **Medium** — from a 2026-04-10 state slice, predates current instrumentation |
 | Zero-kept sources dominate cost | prior program: 989 sources / 48.1% of rows / **37.71%** of summed duration; this session: 33% / 29.7% on a single-run slice | **High** — two independent measurements agree |
 | Only 45% of boards can ever answer 304 | 20-board probe: 6 ETag, 4 Last-Modified, 1 both | **Medium** — small sample, live |
-| ~~Conditional GET unwired for static~~ **Resolved 2026-10-23** | No `revalidate_only` branch and 0 of 1,450 entries carried validators. Kept boards past 180 min and zero-kept past 12 h ask via HEAD; a 304 skips parse and fallback | **High** — live probe |
+| ~~Conditional GET unwired for static~~ **Resolved 2026-10-23; zero-kept lane measured 2026-10-24** | Kept boards past 180 min and zero-kept past 12 h ask via HEAD; a 304 skips parse and fallback. The zero-kept row above measures a population, not recoverable work: the lane already pays one HEAD per 12 h, and its last avoidable cost is the confirming read — **~99 s net per empty episode**, not the largest headroom ([snapshot](../snapshots/fetch-pipeline-zero-kept-revalidation-2026-10-24.md)) | **High** — live A/B |
 
 **S1 settles it and revises two rows:** the loop thread holds only **3.2%** of child CPU, the seat was **~50% used**, and the top cost is `re.sub` normalisation at **31.6%** — the event loop is real but is not the constraint.
 
@@ -155,9 +155,8 @@ Two consequences for this plan:
    `not_selected` without a sanctioned reason. This is small, and it converts an incidental
    property into an enforced one. Recorded here rather than silently assumed.
 
-**A useful side effect:** because production runs fetch essentially everything, replay's
-`force_refresh_all` (D5) is **representative of real runs rather than an approximation of
-them** — which is what makes the replay workload defensible.
+**A useful side effect:** production fetches essentially everything, so replay's
+`force_refresh_all` (D5) is representative rather than an approximation.
 
 ## CI is not a gap: it already exists
 
@@ -442,8 +441,6 @@ enablement.
 
 - **Replay is not production.** It cannot measure politeness, reachability, or delivery. Stated
   in every report it produces, so nobody mistakes a fast replay for a healthy fetch.
-- **Replay measures the full-fetch workload, not a scheduled run** (D5). Sound for A/B, wrong as
-  an absolute production number. Every report labels which it is.
 - **A replay confirmation is not yet a production win.** Replay can *refute* a wall-clock claim
   confidently — the work demonstrably did not shrink — but confirming one still needs a live
   paired run, because replay removes network time. Every S0 report must label its verdict kind.
@@ -464,8 +461,8 @@ enablement.
 
 Deliberately not in this plan, to keep it landable:
 
-- **Any actual speedup.** Conditional GET, long-tail remediation, process sharding. This plan
-  produces the evidence those decisions need.
+- **Any actual speedup.** Long-tail remediation, process sharding. This plan produces the
+  evidence those decisions need.
 - **Discovery subsystem.** It has its own harness (`discovery_sanity_benchmark.py`) and its own
   transport path (`source_discovery/probe.py` uses `async_fetch_text_with_retry`). Out of corpus
   scope per D6 and D9; probe permits:
