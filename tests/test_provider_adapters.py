@@ -38,8 +38,9 @@ class _FakeDeps:
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        capture_headers: dict[str, str] | None = None,
     ) -> str:
-        _ = retries, backoff_s
+        _ = retries, backoff_s, capture_headers
         return fetch_text(url, timeout_s)
 
     def set_source_diagnostics(

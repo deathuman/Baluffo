@@ -249,6 +249,25 @@ default, aggregated per source, added to the report as `httpCounters`); `BALUFFO
 opt-in profiler. Both are measured against their D1 ceilings by `determinism.py`, and the driver
 sets `BALUFFO_BROWSER_POOL=0` for both modes because Playwright is out of corpus scope.
 
+### Live provider revalidation smoke
+`tools/provider_revalidation_smoke.py` proves one registered provider feed earns a validator from
+its own full read, and then revalidates with it. It runs two phases against an isolated state file:
+a forced full read must leave `lastHttpEtag` / `lastHttpLastModified` in
+`jobs-source-state.json`, and a second run with that state aged into the provider's stable window
+must be decided `revalidate_only`, fetch no listing body, and be recorded as
+`cache_not_modified_304`.
+
+```bash
+python tools/provider_revalidation_smoke.py --adapter greenhouse --source atariinc
+python tools/provider_revalidation_smoke.py --adapter lever --list
+```
+
+Output goes under `_out/provider-revalidation-smoke/<adapter>-<board>/`; the tool refuses a path
+inside `data/` because that is live state. It drives the one provider loader, the shipped transport
+and the real state writer, but skips dedup, availability and output assembly. A feed that publishes
+no `ETag` / `Last-Modified` fails on that cause alone. Exit 0 means the tag was stored, the decision
+was revalidation, and the second run answered 304 without fetching the listing.
+
 ### `mcp/`
 Repo AI tooling guidance plus a deprecated local MCP fallback for editor-assisted workflows.
 Use `tools/mcp/INDEX.md` as the MCP tooling entrypoint.
@@ -283,5 +302,6 @@ is typically gitignored - do not commit generated files here.
 | Verify the eligible epochs really replay | `python tools/measurements/corpus/replay_check.py [--samples 2]` |
 | Adjudicate the shipped pool claim | `python tools/measurements/corpus/adjudicate.py --epoch <epoch-dir>` |
 | Price a candidate change before committing it | `tools/measurements/corpus/probes/row_dict/sitecustomize.py` via `ab.py run --arm-b-env` |
+| Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |
 | Monitor social sources | `tools/measurements/sources/social_sources_monitoring.py` |
 | Optimize social sources config | `tools/measurements/sources/social_sources_optimization.py` |

@@ -180,7 +180,7 @@ def test_parse_args_uses_updated_pipeline_concurrency_defaults() -> None:
         args = jf.parse_args()
     finally:
         sys.argv = prev_argv
-    assert int(args.max_workers or 0) == 12
+    assert int(args.max_workers or 0) == 16
     assert int(args.max_per_domain or 0) == 3
     assert int(args.timeout or 0) == 15
     assert float(args.backoff or 0) == 1.2

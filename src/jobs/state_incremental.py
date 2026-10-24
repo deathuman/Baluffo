@@ -48,16 +48,24 @@ _STATIC_DEAD_SOURCE_TOKENS = (
 #
 # ``not_modified_304`` is included deliberately even though it is a real HTTP exchange: a
 # 304 asserts the cached copy is current, which is a reason to leave the deadline alone
-# rather than to extend it.
+# rather than to extend it. ``static_revalidated_fresh`` is the window a 304 then earns;
+# it is the same kind of skip, and sliding the deadline on it would let the run cadence
+# decide when the probe happens instead of the listing window.
 NON_FETCH_SKIP_REASONS = frozenset(
     {
         "cache_within_freshness_window",
         "dynamic_redundant_provider",
         "not_modified_304",
         "skip_fresh",
+        "static_revalidated_fresh",
         "within_freshness_window",
     }
 )
+
+# Stored decision reasons that mean the last listing exchange was a 304 (or the skip it
+# earned). A board in this state has a current stored copy and a validator to ask with, so
+# its next move is a window skip or another HEAD -- never a full read.
+_REVALIDATED_DECISION_REASONS = frozenset({"not_modified_304", "static_revalidated_fresh"})
 
 
 def is_non_fetch_skip_reason(reason: Any) -> bool:
@@ -261,6 +269,48 @@ def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[st
         and _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
     ):
         return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
+    if (
+        last_kept <= 0
+        and last_status != "error"
+        and _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+        and age_seconds >= float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60)
+    ):
+        # Zero-kept boards are where most of the static fetch cost sits: a board
+        # with no jobs can only reproduce that zero by downloading the same
+        # document again. Once its empty window has expired it asks the same
+        # cheap question a kept board asks. A single zero-kept run is still not
+        # trusted -- it falls through to the full read, which is also what makes
+        # the streak grow until the window applies. Rendered-card boards keep the
+        # full read, but that is decided in the flow, which knows the host.
+        return {
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "static_empty_revalidate_due",
+        }
+    if (
+        last_kept > 0
+        and last_status != "error"
+        and age_seconds >= float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60)
+    ):
+        # A board that kept jobs and is past the listing window asks the cheap
+        # question first: the flow sends a HEAD (seeding ETag/Last-Modified on
+        # the first run), and a 304 completes the source without fetching or
+        # parsing. Boards whose last run failed stay on run_now -- a 304 would
+        # clear the failure without ever fetching them.
+        return {"cacheDecision": "revalidate_only", "cacheDecisionReason": "static_revalidate_due"}
+    if norm_text(entry.get("cacheDecisionReason")) in _REVALIDATED_DECISION_REASONS and (
+        clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified"))
+    ):
+        # The previous run answered 304, and its report kept nothing, so lastKeptCount
+        # no longer says the board has jobs. The validators still do. The listing read
+        # has its own window: the 304 refreshed the success clock, so the board waits
+        # that window out and then asks again, instead of spending a HEAD on every run
+        # in between. A 200 falls through to the full read as soon as it is due.
+        if age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60):
+            return {
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "static_revalidated_fresh",
+            }
+        return {"cacheDecision": "revalidate_only", "cacheDecisionReason": "static_revalidate_due"}
     return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
 
 

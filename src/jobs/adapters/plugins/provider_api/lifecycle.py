@@ -14,7 +14,7 @@ from typing import Any
 from src.exceptions import AdapterValidationError
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+from src.jobs.transport import apply_conditional_revalidate_result, conditional_revalidate_url
 
 
 def build_provider_entry_report(
@@ -143,11 +143,7 @@ def provider_revalidate_not_modified(
         etag=clean_text((state_entry or {}).get("lastHttpEtag")),
         last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
     )
-    entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-    if clean_text(revalidate.get("etag")):
-        entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-    if clean_text(revalidate.get("lastModified")):
-        entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+    apply_conditional_revalidate_result(entry_report, revalidate)
     if not bool(revalidate.get("notModified")):
         return False
     entry_report["status"] = "excluded"

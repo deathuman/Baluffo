@@ -874,10 +874,30 @@ def excluded_source_skip_reason(report: dict[str, Any]) -> str:
     )
 
 
+_NOT_MODIFIED_304_REASONS = frozenset({"not_modified_304", "cache_not_modified_304"})
+
+
+def is_not_modified_304_report(report: dict[str, Any]) -> bool:
+    """Whether this exclusion report is a 304 revalidation, in either spelling.
+
+    ``excluded_source_skip_reason`` prefers ``exclusionReason``, and both the static and
+    provider flows write ``cache_not_modified_304`` there while putting the bare
+    ``not_modified_304`` token on ``cacheDecisionReason``. Matching the bare token only
+    meant this never fired, so a 304 refreshed nothing.
+
+    Both fields are read rather than one, because either can arrive alone: a live state
+    row keeps only ``cacheDecisionReason``, whereas the report builder writes both.
+    """
+    return any(
+        norm_text(report.get(key)) in _NOT_MODIFIED_304_REASONS
+        for key in ("exclusionReason", "cacheDecisionReason")
+    )
+
+
 def apply_excluded_source_state(
     entry: dict[str, Any], *, report: dict[str, Any], finished_at: str
 ) -> None:
-    if excluded_source_skip_reason(report) == "not_modified_304":
+    if is_not_modified_304_report(report):
         entry["lastSuccessAt"] = finished_at
         entry["consecutiveFailures"] = 0
         for key in ("quarantinedUntilAt", "lastFailureAt", "lastError"):

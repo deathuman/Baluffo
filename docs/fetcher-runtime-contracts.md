@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-08-23
+> - **Last updated:** 2026-10-23
 
 ## CLI runtime options
 
@@ -35,6 +35,13 @@
 - `--social-lookback-minutes` (default `30`): recency window used by social source polling.
 - `--quiet`: suppress per-source progress logs.
 
+## Source scheduling
+
+- Loaders are **submitted** longest-expected-work first, using the previous run's `lastDurationMs` plus `lastDetailPagesVisited * 25` from source state. **Results are appended** in the canonical selection order, which is what dedup first-wins sees; scheduling must never change which duplicate payload survives a merge.
+- The schedule is why a known-slow board starts at t=0 rather than after every static source: the 2026-10-23 full run spent its final 4.4 min on `workday_sources` (277 s) and `gracklehq` (250 s) with only 2–3 of 12 lanes busy, because they had been queued behind all 2,508 static sources.
+- A result that arrives out of canonical order is buffered until its turn. The buffer is capped at `max(256, maxWorkers * 16)`; past the cap the lowest buffered index is appended early, which is the only path where append order can deviate.
+- Static sources carry a per-source time budget (`static_source_time_budget_s`, 90 s by default). The budget is checked before each rendered-card detail verification; exceeding it ends that lane and records `time_budget_exceeded` instead of letting one board run multiple times its allowance.
+
 ## Admin presets (`/tasks/run-fetcher`)
 
 - `default`: full run with explicit runtime defaults.
@@ -48,9 +55,10 @@ Quiet mode is never implicit in a preset: `--quiet` is passed only when the requ
 Bridge defaults:
 
 - Bridge-started fetch runs use the same runtime defaults as direct CLI fetches:
-  - `--max-workers 12`
+  - `--max-workers 16`
   - `--max-per-domain 3`
   - `--adapter-http-concurrency 48`
+- The 12 → 16 fetch-worker default came from a 2026-10-23 A/B on a fixed 200-source sample: the same boards at 12 workers took 222 s and 207 s wall, at 16 took 181 s and 183 s, with failed sources flat at 36–37. 24 workers regressed to 221 s because per-source work doubled (2129 s → 4748 s) as a handful of boards spiralled to 100 s+; 16 is also the ceiling the bridge payload already accepts, so no clamp changed.
 - Container bridge-started fetch runs use more conservative defaults to keep the raw-LAN UI responsive during active fetch work:
   - `--max-workers 4`
   - `--max-per-domain 2`

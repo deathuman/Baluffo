@@ -67,7 +67,7 @@
     "tests/test_perf_complete.py": 493,
     "tests/test_pipeline_runtime.py": 395,
     "tests/test_pipeline_stage_source_execution.py": 622,
-    "tests/test_provider_api_plugins.py": 541,
+    "tests/test_provider_api_plugins.py": 736,
     "tests/test_runtime_launcher.py": 1102,
     "tests/test_ship_update_manager.py": 438,
     "tests/test_shared_http_batch.py": 447,

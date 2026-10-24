@@ -93,7 +93,7 @@ for admitting which parts are load-bearing.
 | Cost is extremely long-tailed | top 10 sources = 16.6% of worker-time; 9 sources over the nominal 90 s budget = 16% | **Medium** — from a 2026-04-10 state slice, predates current instrumentation |
 | Zero-kept sources dominate cost | prior program: 989 sources / 48.1% of rows / **37.71%** of summed duration; this session: 33% / 29.7% on a single-run slice | **High** — two independent measurements agree |
 | Only 45% of boards can ever answer 304 | 20-board probe: 6 ETag, 4 Last-Modified, 1 both | **Medium** — small sample, live |
-| Conditional GET is unwired for static, not absent | headers set at `transport.py:130-132`; validators fed at `static_listing_flow.py:149-150`; persisted at `state_source_state.py:137-140`. `_static_cache_decision` (`state_incremental.py:239-264`) has **no `revalidate_only` branch**. 0 of 1,450 entries carry validators | **High** — read in code + state |
+| ~~Conditional GET unwired for static~~ **Resolved 2026-10-23** | No `revalidate_only` branch and 0 of 1,450 entries carried validators. Kept boards past 180 min and zero-kept past 12 h ask via HEAD; a 304 skips parse and fallback | **High** — live probe |
 
 **S1 settles it and revises two rows:** the loop thread holds only **3.2%** of child CPU, the seat was **~50% used**, and the top cost is `re.sub` normalisation at **31.6%** — the event loop is real but is not the constraint.
 

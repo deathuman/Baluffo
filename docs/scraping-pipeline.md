@@ -120,6 +120,65 @@ python src/jobs_fetcher.py --only-sources static_source::<id> --ignore-circuit-b
 
 Omitting `--output-dir` writes stub state into live `data/`. Always isolate.
 
+### A kept static board asks before it downloads
+
+A static board that kept jobs and has not been read for the listing window (180 min) takes the cheap
+question first: the flow sends a HEAD on the listing URL. The first such run has no validators yet,
+so that probe also seeds `lastHttpEtag` / `lastHttpLastModified`; later runs send `If-None-Match` /
+`If-Modified-Since`, and a 304 completes the source as `excluded` with
+`exclusionReason: cache_not_modified_304` — no listing fetch, parse, detail traversal or browser
+fallback.
+
+A board that kept **nothing** takes the same question once its empty window (12 h) has expired —
+`cacheDecisionReason: static_empty_revalidate_due`. That cohort is roughly a third of summed fetch
+duration, and a board with no jobs can only reproduce that zero by downloading the same document
+again. Two conditions keep it honest: the zero-kept streak must already meet
+`DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS` (one empty run is not evidence, so that run still
+reads in full), and a board whose last run failed stays on `run_now`, because a 304 would clear the
+failure without ever fetching it.
+
+A 304 refreshes the success clock, so an unchanged board waits out a window instead of re-asking on
+the next run: `apply_excluded_source_state` matches the `cache_not_modified_304` spelling both flows
+write, not just the bare `not_modified_304` token, and the reason stored on the row
+(`not_modified_304`, then the skip's own `static_revalidated_fresh`) is what holds it. A board that
+still has jobs sleeps for the listing window (180 min) as `static_revalidated_fresh`, then spends
+one HEAD when that expires. A zero-kept board whose streak already qualifies sleeps for its empty
+window (12 h) as `static_empty_fresh` instead. Neither skip moves `nextEligibleCheckAt` — a skip is
+not a check — so the window, not the run cadence, decides when the probe happens. Plain freshness
+skips (`skip_fresh`, `cache_within_freshness_window`) still leave the success clock alone.
+
+Two shapes deliberately keep the full read:
+
+- **Multi-page boards.** A 304 on page 1 says nothing about the pages behind it.
+- **`rendered_cards` hosts.** Their listing is a JS shell, so an unchanged document says nothing
+  about the rows the page renders; a 304 would silently freeze them.
+
+A board that publishes no validator simply probes, gets 200, and fetches as before. The same 200
+also drops a validator the board stopped publishing. `apply_conditional_revalidate_result`, shared
+by this flow and `provider_revalidate_not_modified`, copies the tags a probe response carries and,
+on a 2xx that is not a 304, marks any tag it omitted with `clearHttpEtag` (or
+`clearHttpLastModified`); `_copy_report_fields` then removes the stored value instead of retaining
+it. A 304 is exempt because servers often echo no headers on one, and an errored probe says nothing
+about the board's validators — so neither can retire a tag.
+
+Provider feeds earn their validator from the full read too. Some publish `ETag` / `Last-Modified`
+only on the GET that carries the rows, never on a conditional HEAD, so the tag that would enable
+revalidation was previously discarded with the response body: such a feed could never satisfy
+`provider_stable_revalidate` and re-read in full every stable window. `fetch_with_retries` now takes
+an optional `capture_headers` sink, and each provider runner passes one and hands the captured
+response to `apply_full_read_response_headers`, which records a 2xx's validators on the entry
+report through the same `apply_conditional_revalidate_result` path the probe uses. A capture that
+never happened — a custom fetcher seam or a test double — leaves the report untouched, so absence of
+capture does not retire a stored tag. In a paginated JSON feed only the first response may set one:
+a later page's tag describes that page, not the listing.
+
+`tests/test_provider_api_plugins.py` drives this end to end for Greenhouse: the full read stores the
+GET's tag, the next decision inside the stable window comes back `provider_stable_revalidate`, and a
+GET that stops publishing a tag marks it for removal. The same cycle can be run live against any
+registered feed with
+`python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>`; it writes only
+under `_out/` and exits non-zero when the tag is not stored or the second run fetches a body.
+
 ### CloakBrowser was evaluated and rejected — do not re-propose it
 
 **Decision (product decision, 2026-10-01): reject. Do not revisit without new evidence.**

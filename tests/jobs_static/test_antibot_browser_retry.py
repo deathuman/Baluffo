@@ -191,6 +191,7 @@ def test_breezy_anti_bot_retry_uses_playwright_for_flagged_403(
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        **_kwargs,
     ) -> str:
         _ = fetch_text, timeout_s, retries, backoff_s
         raise RuntimeError(f"HTTP 403 for {url}")
@@ -236,6 +237,7 @@ def test_breezy_anti_bot_retry_exhaustion_emits_queue_compatible_diagnostics(
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        **_kwargs,
     ) -> str:
         _ = fetch_text, timeout_s, retries, backoff_s
         raise RuntimeError(f"HTTP 403 for {url}")

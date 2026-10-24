@@ -49,7 +49,7 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+from src.jobs.transport import apply_full_read_response_headers, conditional_revalidate_url
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -106,17 +106,21 @@ def _resolve_dover_fetch(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    capture_headers: dict[str, str] | None = None,
 ) -> Any:
     """The injected payload fetcher, or one plain JSON request without one.
 
     The seam is additive, exactly as in ``json_feed``: a caller that injects a
     fetcher gets it for both requests and no network is touched, and a caller that
-    does not gets the shipped transport behaviour.
+    does not gets the shipped transport behaviour. ``capture_headers`` is the sink
+    the shipped fetcher reports its response's validators to.
     """
     if fetch_payload is not None:
         return fetch_payload(endpoint)
     return _dover_payload_from_text(
-        fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+        fetch_with_retries(
+            endpoint, fetch_text, timeout_s, retries, backoff_s, capture_headers=capture_headers
+        )
     )
 
 
@@ -238,9 +242,17 @@ def _fetch_dover_source_rows(
     # providerUrl the report and the revalidation identity carry.
     entry_report["providerUrl"] = jobs_url
     entry_report["clientId"] = client_id
+    captured: dict[str, str] = {}
     payload = _resolve_dover_fetch(
-        jobs_url, ctx.fetch_payload, ctx.fetch_text, ctx.timeout_s, ctx.retries, ctx.backoff_s
+        jobs_url,
+        ctx.fetch_payload,
+        ctx.fetch_text,
+        ctx.timeout_s,
+        ctx.retries,
+        ctx.backoff_s,
+        capture_headers=captured,
     )
+    apply_full_read_response_headers(entry_report, captured)
     entry_report["fetchMs"] = _elapsed_ms(fetch_started)
     parse_started = time.perf_counter()
     parsed = _provider_parsers.parse_dover_jobs_payload(payload, source, studio)

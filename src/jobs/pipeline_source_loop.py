@@ -223,6 +223,7 @@ def run_source_execution_stage(
             canonical_rows=canonical_rows,
             source_reports=source_reports,
             fetched_rows_writer=fetched_rows_writer,
+            source_state_rows=source_state_rows,
         )
         if pool is not None and bool(config.show_progress):
             metrics = pool.metrics.snapshot()
@@ -517,6 +518,41 @@ def _append_loader_result(
         _trim_fetch_allocator()
 
 
+_MAX_BUFFERED_APPEND_RESULTS_PER_WORKER = 16
+_MIN_BUFFERED_APPEND_RESULTS = 256
+
+
+def _expected_source_work_ms(source_name: str, source_state_rows: Any) -> int:
+    """Last observed cost of one source. Only used to order submission."""
+    if not isinstance(source_state_rows, dict):
+        return 0
+    entry = source_state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return 0
+    duration_ms = int(entry.get("lastDurationMs") or 0)
+    detail_pages = int(entry.get("lastDetailPagesVisited") or 0)
+    return max(0, duration_ms + detail_pages * 25)
+
+
+def _schedule_loader_indices(selected_loaders, source_state_rows) -> list[int]:
+    """Canonical indices ordered longest-expected-work first.
+
+    This is the submission order only. Appending stays on the canonical
+    (selection) order, so which duplicate payload wins cannot change; the
+    permutation just stops a long source from being picked up last. The
+    2026-10-23 full run spent its final 4.4 min on two provider loaders
+    (workday 277 s, gracklehq 250 s) that had been queued behind all 2,508
+    static sources, with the rest of the pool idle.
+    """
+    return sorted(
+        range(len(selected_loaders)),
+        key=lambda index: (
+            -_expected_source_work_ms(selected_loaders[index][0], source_state_rows),
+            index,
+        ),
+    )
+
+
 def _run_selected_loaders(
     *,
     selected_loaders,
@@ -525,15 +561,19 @@ def _run_selected_loaders(
     canonical_rows: list[CanonicalJob],
     source_reports: list[dict[str, Any]],
     fetched_rows_writer: Any | None = None,
+    source_state_rows: Any | None = None,
 ) -> None:
+    def append_result(result) -> None:
+        _append_loader_result(
+            result,
+            canonical_rows=canonical_rows,
+            source_reports=source_reports,
+            fetched_rows_writer=fetched_rows_writer,
+        )
+
     if max_workers <= 1 or len(selected_loaders) <= 1:
         for source_name, loader in selected_loaders:
-            _append_loader_result(
-                execute_loader_started(source_name, loader),
-                canonical_rows=canonical_rows,
-                source_reports=source_reports,
-                fetched_rows_writer=fetched_rows_writer,
-            )
+            append_result(execute_loader_started(source_name, loader))
         return
 
     # ponytail: bound the live future set. Submitting all 2k loaders at once pins
@@ -547,43 +587,60 @@ def _run_selected_loaders(
     # single long source (observed: one google_sheets task running ~452s) stalled
     # the whole stage while 1857 sources sat queued.
     window = max(8, max_workers * 4)
+    # Submission order is LPT (longest expected work first); append order stays
+    # canonical. Holding a result until its canonical turn costs one buffer entry
+    # per out-of-order source, so the buffer is capped: past the cap the lowest
+    # buffered index is appended early, which is the only case where dedup order
+    # can deviate from canonical (and it takes a multi-minute stall at a low
+    # index to reach it).
+    schedule = _schedule_loader_indices(selected_loaders, source_state_rows)
+    max_buffered = max(
+        _MIN_BUFFERED_APPEND_RESULTS,
+        max_workers * _MAX_BUFFERED_APPEND_RESULTS_PER_WORKER,
+    )
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        loader_iter = iter(selected_loaders)
+        schedule_iter = iter(schedule)
         pending: set[Future] = set()
         index_of: dict[Future, int] = {}
         buffered: dict[int, tuple[dict[str, Any], list[CanonicalJob]]] = {}
-        submitted = 0
         next_append = 0
         exhausted = False
         while not exhausted or pending:
             while not exhausted and len(pending) < window:
                 try:
-                    source_name, loader = next(loader_iter)
+                    canonical_index = next(schedule_iter)
                 except StopIteration:
                     exhausted = True
                     break
+                source_name, loader = selected_loaders[canonical_index]
                 future = executor.submit(execute_loader_started, source_name, loader)
                 pending.add(future)
-                index_of[future] = submitted
-                submitted += 1
+                index_of[future] = canonical_index
             if not pending:
                 break
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
-                buffered[index_of.pop(future)] = future.result()
+                canonical_index = index_of.pop(future)
+                result = future.result()
+                if canonical_index < next_append:
+                    append_result(result)
+                else:
+                    buffered[canonical_index] = result
             # Canonical row order must be a property of the run, not of which loader
-            # finished first: append in submission (selection) order -- the order the
-            # serial path below produces and a corpus replay must reproduce. Completion
-            # order made dedup first-wins picks, so surviving payloads varied between
-            # two runs over the same responses (measured: 5,541 vs 6,029 merges, 508
-            # rows). Cost: one window of results is held, so a slow low-index source
-            # keeps its successors' batches in memory (tens of MiB at this scale)
-            # until it resolves -- ordering only; no row is dropped or reordered.
+            # finished first: append in selection order -- the order the serial path
+            # produces and a corpus replay must reproduce. Completion order made dedup
+            # first-wins picks, so surviving payloads varied between two runs over the
+            # same responses (measured: 5,541 vs 6,029 merges, 508 rows). Scheduling
+            # reorders submission only, never this append index. Cost: one buffer entry
+            # per out-of-order result, so a slow low-index source keeps its successors'
+            # batches in memory (tens of MiB at this scale) until it resolves --
+            # ordering only; no row is dropped and nothing is reordered.
             while next_append in buffered:
-                _append_loader_result(
-                    buffered.pop(next_append),
-                    canonical_rows=canonical_rows,
-                    source_reports=source_reports,
-                    fetched_rows_writer=fetched_rows_writer,
-                )
+                append_result(buffered.pop(next_append))
                 next_append += 1
+            if len(buffered) > max_buffered:
+                lowest = min(buffered)
+                append_result(buffered.pop(lowest))
+                next_append = lowest + 1
+    for stale_index in sorted(buffered):
+        append_result(buffered.pop(stale_index))

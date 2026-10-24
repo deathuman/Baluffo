@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -12,7 +13,10 @@ from src.jobs.adapters.plugins.provider_api import greenhouse_runner, teamtailor
 from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
 from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
 from src.jobs.adapters.plugins.provider_api import oracle_hcm as oracle_hcm_runner
+from src.jobs.adapters.plugins.provider_api.lifecycle import provider_revalidate_not_modified
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
+from src.jobs.state_incremental import get_incremental_cache_decision
+from src.jobs.state_source_state import update_source_state_rows
 from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture
 from tests.helpers.mutation import call_and_return
@@ -22,6 +26,7 @@ class _FakeDeps:
     def __init__(self) -> None:
         self._registry: dict[str, list[dict[str, Any]]] = {}
         self._responses: dict[str, str] = {}
+        self._response_headers: dict[str, dict[str, str]] = {}
         self.SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
 
     def registry_entries(self, key: str) -> list[dict[str, Any]]:
@@ -36,6 +41,9 @@ class _FakeDeps:
     def set_text_response(self, url: str, payload: str) -> None:
         self._responses[url] = payload
 
+    def set_response_headers(self, url: str, headers: dict[str, str]) -> None:
+        self._response_headers[url] = dict(headers)
+
     def fetch_with_retries(
         self,
         url: str,
@@ -43,10 +51,13 @@ class _FakeDeps:
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        capture_headers: dict[str, str] | None = None,
     ) -> str:
         _ = fetch_text, timeout_s, retries, backoff_s
         if url not in self._responses:
             raise RuntimeError(f"missing fixture for url: {url}")
+        if capture_headers is not None:
+            capture_headers.update({"status": "200", **self._response_headers.get(url, {})})
         return self._responses[url]
 
     def set_source_diagnostics(
@@ -456,11 +467,14 @@ def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        capture_headers: dict[str, str] | None = None,
     ) -> str:
         fetches.enter()
         try:
             fetches.wait_released()
-            return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            return fake_deps.fetch_with_retries(
+                url, fetch_text, timeout_s, retries, backoff_s, capture_headers
+            )
         finally:
             fetches.exit()
 
@@ -517,11 +531,14 @@ def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        capture_headers: dict[str, str] | None = None,
     ) -> str:
         fetches.enter()
         try:
             fetches.wait_released()
-            return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            return fake_deps.fetch_with_retries(
+                url, fetch_text, timeout_s, retries, backoff_s, capture_headers
+            )
         finally:
             fetches.exit()
 
@@ -539,3 +556,181 @@ def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
     details = fake_deps.SOURCE_DIAGNOSTICS["lever_sources"]["details"]
     assert [detail["name"] for detail in details] == ["Studio A", "Studio B", "Studio C"]
     assert {detail["sourceFetchConcurrency"] for detail in details} == {3}
+
+
+def _provider_probe(result: dict[str, Any]) -> tuple[dict[str, object], bool, dict[str, Any]]:
+    sent: dict[str, Any] = {}
+    report: dict[str, object] = {"cacheDecision": "revalidate_only"}
+
+    def fake_revalidate(url: str, timeout_s: int, **kwargs: Any) -> dict[str, Any]:
+        sent["url"] = url
+        sent["timeout_s"] = timeout_s
+        sent.update(kwargs)
+        return result
+
+    handled = provider_revalidate_not_modified(
+        entry_report=report,
+        url="https://example.com/jobs",
+        timeout_s=5,
+        source_name="Probe Board",
+        source_state_rows={"Probe Board": {"lastHttpEtag": "etag-1"}},
+        revalidate_url=fake_revalidate,
+    )
+    return report, handled, sent
+
+
+def test_provider_probe_retires_a_tag_the_feed_stopped_publishing() -> None:
+    """A 200 without ETag/Last-Modified is a changed copy, not a reason to keep asking."""
+    report, handled, sent = _provider_probe(
+        {
+            "supported": True,
+            "notModified": False,
+            "statusCode": 200,
+            "etag": "",
+            "lastModified": "",
+        }
+    )
+
+    assert handled is False, "a changed feed must still run the full read"
+    assert sent["etag"] == "etag-1", "the probe asks with the stored tag"
+    assert report["httpStatus"] == 200
+    assert "httpEtag" not in report
+    assert report["clearHttpEtag"] is True
+    assert report["clearHttpLastModified"] is True
+
+
+def test_provider_probe_stores_a_new_tag_without_retiring_it() -> None:
+    report, handled, _ = _provider_probe(
+        {
+            "supported": True,
+            "notModified": False,
+            "statusCode": 200,
+            "etag": "etag-2",
+            "lastModified": "",
+        }
+    )
+
+    assert handled is False
+    assert report["httpEtag"] == "etag-2"
+    assert "clearHttpEtag" not in report
+    assert report["clearHttpLastModified"] is True
+
+
+@pytest.mark.parametrize(
+    ("result", "handled"),
+    [
+        (
+            {
+                "supported": True,
+                "notModified": True,
+                "statusCode": 304,
+                "etag": "",
+                "lastModified": "",
+            },
+            True,
+        ),
+        (
+            {
+                "supported": True,
+                "notModified": False,
+                "statusCode": 500,
+                "etag": "",
+                "lastModified": "",
+            },
+            False,
+        ),
+    ],
+)
+def test_provider_probe_does_not_retire_tags_on_a_304_or_an_error(
+    result: dict[str, Any], handled: bool
+) -> None:
+    """A 304 may echo no headers, and an error says nothing about the feed's validators."""
+    report, outcome, _ = _provider_probe(result)
+
+    assert outcome is handled
+    assert "clearHttpEtag" not in report
+    assert "clearHttpLastModified" not in report
+
+
+def _greenhouse_detail(fake_deps: _FakeDeps, *, etag: str = "", last_modified: str = "") -> dict:
+    url = GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a")
+    fake_deps.set_registry_entries(
+        "greenhouse", [{"slug": "studio-a", "studio": "Studio A", "name": "Studio A"}]
+    )
+    fake_deps.set_response(
+        url,
+        {
+            "jobs": [
+                {
+                    "id": 1,
+                    "text": "Gameplay Engineer",
+                    "title": "Gameplay Engineer",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://example/jobs/1",
+                }
+            ]
+        },
+    )
+    headers = {
+        name: value for name, value in (("etag", etag), ("last-modified", last_modified)) if value
+    }
+    if headers:
+        fake_deps.set_response_headers(url, headers)
+    provider_api.run_greenhouse_boards_source(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=1,
+        backoff_s=0.0,
+    )
+    detail: dict[str, Any] = fake_deps.SOURCE_DIAGNOSTICS["greenhouse_boards"]["details"][0]
+    return detail
+
+
+def _apply_provider_report(
+    detail: dict[str, object],
+    rows: dict[str, dict[str, object]] | None = None,
+    *,
+    finished_minutes_ago: int = 0,
+) -> dict[str, dict[str, object]]:
+    finished_at = datetime.now(UTC) - timedelta(minutes=finished_minutes_ago)
+    return update_source_state_rows(
+        source_state_rows=rows or {},
+        source_reports=[{**detail, "cacheDecision": "run_now", "cacheDecisionReason": "run_now"}],
+        canonical_rows=[],
+        finished_at=finished_at.isoformat(),
+        circuit_breaker_failures=3,
+        circuit_breaker_cooldown_minutes=720,
+    )
+
+
+def test_provider_full_read_stores_the_validator_its_get_published(
+    fake_deps: _FakeDeps,
+) -> None:
+    """A feed whose ETag only rides the GET can start revalidating off that response."""
+    detail = _greenhouse_detail(
+        fake_deps, etag='"v1"', last_modified="Wed, 21 Oct 2026 07:28:00 GMT"
+    )
+
+    assert detail["httpEtag"] == '"v1"'
+    assert detail["httpLastModified"] == "Wed, 21 Oct 2026 07:28:00 GMT"
+    assert "clearHttpEtag" not in detail
+
+    # Past the run freshness window but inside the provider's stable window: the
+    # stored GET validator is what turns the next run into a cheap HEAD.
+    rows = _apply_provider_report(detail, finished_minutes_ago=30)
+    assert rows["Studio A"]["lastHttpEtag"] == '"v1"'
+    decision = get_incremental_cache_decision("Studio A", rows, adapter="greenhouse")
+    assert decision["cacheDecision"] == "revalidate_only"
+    assert decision["cacheDecisionReason"] == "provider_stable_revalidate"
+
+
+def test_provider_full_read_retires_a_validator_the_get_stopped_publishing(
+    fake_deps: _FakeDeps,
+) -> None:
+    detail = _greenhouse_detail(fake_deps)
+
+    assert "httpEtag" not in detail
+    assert detail["clearHttpEtag"] is True
+
+    rows = _apply_provider_report(detail, {"Studio A": {"lastHttpEtag": '"retired"'}})
+    assert "lastHttpEtag" not in rows["Studio A"]

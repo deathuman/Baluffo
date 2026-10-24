@@ -43,6 +43,9 @@ class RequestConfig:
     headers: dict[str, str] = field(default_factory=dict)
     user_agent: str = ""
     proxy_url: str = ""
+    # Optional sink: a fetch that fills it reports the response's status and validators.
+    # The object is shared by reference, so a caller reads it after the call returns.
+    capture_response_headers: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)

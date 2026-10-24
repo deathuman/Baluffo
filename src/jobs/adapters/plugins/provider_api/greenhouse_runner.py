@@ -21,6 +21,7 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+from src.jobs.transport import apply_full_read_response_headers
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -89,7 +90,11 @@ def _run_greenhouse_boards(
             return board_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
-            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            captured: dict[str, str] = {}
+            text = fetch_with_retries(
+                url, fetch_text, timeout_s, retries, backoff_s, capture_headers=captured
+            )
+            apply_full_read_response_headers(entry_report, captured)
             entry_report["fetchMs"] = _elapsed_ms(fetch_started)
             parse_started = time.perf_counter()
             payload = json.loads(text)

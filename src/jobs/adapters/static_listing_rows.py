@@ -531,6 +531,15 @@ def _append_rendered_card_rows(
     has_job_like_title = False
     provisional_count = 0
     for raw_row in rendered_rows:
+        # Budget guard (2026-10-23): per-row verification is the only network
+        # work in this lane, and it had no checkpoint. Lanterns ran 588 s
+        # against a 90 s budget because the guard inside process_detail_link
+        # only fires on the *next* call — the loop kept starting another row.
+        # Stopping here is coverage-neutral: the overshoot already ended the
+        # source with whatever it had after the same budget.
+        if ctx.remaining_budget_s() <= 0:
+            ctx.stop_for_budget_exhaustion(target_url=page_url)
+            break
         count, job_like, provisional = _append_rendered_row(
             ctx,
             raw_row,

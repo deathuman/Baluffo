@@ -297,3 +297,48 @@ def test_detail_item_normalizer_preserves_rows_flow_evidence() -> None:
     assert item["listingJobsFound"] == 12
     assert item["stats"]["detail_fetch_failed"] == 1
     assert item["stats"]["detail_pages_visited"] == 1
+
+
+def test_rows_flow_stops_verifying_once_the_source_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A spent budget must stop the row loop, not just the next detail call.
+
+    Lanterns 2026-10-23: the source recorded `time budget exceeded (90s)` and
+    still spent 588 s in candidate extraction, because the only budget check sat
+    inside process_detail_link and fired on its *next* invocation. Each loop
+    iteration must re-check before starting another verification.
+    """
+    import time
+
+    ctx = _make_static_context()
+    ctx.source_deadline = time.perf_counter() - 1.0
+
+    def extract_rendered_card_jobs(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "title": f"Senior Game Designer {index}",
+                "jobLink": f"https://mundfish.com/careers/role-{index}",
+                "_locationHint": "Kyiv",
+            }
+            for index in range(3)
+        ]
+
+    def process_detail_link(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("verification ran after the budget was spent")
+
+    monkeypatch.setattr(static_listing, "extract_rendered_card_jobs", extract_rendered_card_jobs)
+    monkeypatch.setattr(static_listing, "process_detail_link", process_detail_link)
+
+    static_listing_rows._append_rendered_card_rows(
+        ctx,
+        "<html></html>",
+        "https://mundfish.com/en/careers",
+        30,
+        [],
+        set(),
+    )
+
+    assert ctx.stats["detail_pages_visited"] == 0
+    assert "time budget exceeded" in str(ctx.entry_report.get("error") or "")
+    assert any("time_budget_exceeded" in warning for warning in ctx.warnings)

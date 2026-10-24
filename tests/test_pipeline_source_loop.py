@@ -416,3 +416,110 @@ def test_run_selected_loaders_canonical_order_is_independent_of_completion_order
     # The two completion orders are indistinguishable in their output, which is the point:
     # the sidecar a replay reads back is byte-for-byte the same file either way.
     assert backwards == forwards
+
+
+def test_run_selected_loaders_submits_longest_expected_work_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submission order is LPT: a known-slow loader must not be picked up last.
+
+    The 2026-10-23 full run spent its final 4.4 min on workday (277 s) and
+    gracklehq (250 s) while 2,465 of 2,536 sources were already finished and the
+    pool sat at two busy lanes -- they had been queued behind every static
+    source. Selection order stays static-first for appends; only submission
+    reorders.
+    """
+    from concurrent.futures import Future
+
+    submitted: list[str] = []
+
+    class _RecordingExecutor:
+        def __init__(self, max_workers: int = 1):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> _RecordingExecutor:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def submit(self, fn: Any, source_name: str, loader: Any) -> Future:
+            submitted.append(source_name)
+            future: Future = Future()
+            future.set_result(fn(source_name, loader))
+            return future
+
+    monkeypatch.setattr(pipeline_source_loop, "ThreadPoolExecutor", _RecordingExecutor)
+
+    loaders = [("fast", 1), ("slowest", 2), ("middling", 3)]
+    state = {
+        "fast": {"lastDurationMs": 900},
+        "slowest": {"lastDurationMs": 588_000},
+        "middling": {"lastDurationMs": 40_000, "lastDetailPagesVisited": 10},
+    }
+
+    pipeline_source_loop._run_selected_loaders(
+        selected_loaders=loaders,
+        max_workers=2,
+        execute_loader_started=lambda name, _loader: ({"name": name}, []),
+        canonical_rows=[],
+        source_reports=[],
+        source_state_rows=state,
+    )
+
+    assert submitted == ["slowest", "middling", "fast"]
+
+
+def test_run_selected_loaders_appends_in_canonical_order_under_lpt_schedule() -> None:
+    """LPT submission must not move append order: dedup first-wins depends on it."""
+    import time
+
+    def execute(source_name: str, _loader: Any) -> tuple[dict[str, Any], list[Any]]:
+        time.sleep(0.15 if source_name == "first_slow" else 0.01)
+        return ({"name": source_name}, [source_name])
+
+    rows: list[Any] = []
+    reports: list[dict[str, Any]] = []
+    pipeline_source_loop._run_selected_loaders(
+        selected_loaders=[("first_slow", 1), ("second_fast", 2)],
+        max_workers=2,
+        execute_loader_started=execute,
+        canonical_rows=rows,
+        source_reports=reports,
+        source_state_rows={
+            "first_slow": {"lastDurationMs": 60_000},
+            "second_fast": {"lastDurationMs": 1_000},
+        },
+    )
+
+    # second_fast completes first, but first_slow is canonical index 0.
+    assert rows == ["first_slow", "second_fast"]
+    assert [report["name"] for report in reports] == ["first_slow", "second_fast"]
+
+
+def test_run_selected_loaders_bounded_buffer_never_drops_a_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past the buffer cap a result is appended early -- but never lost."""
+    import time
+
+    monkeypatch.setattr(pipeline_source_loop, "_MIN_BUFFERED_APPEND_RESULTS", 1)
+    monkeypatch.setattr(pipeline_source_loop, "_MAX_BUFFERED_APPEND_RESULTS_PER_WORKER", 0)
+
+    def execute(source_name: str, _loader: Any) -> tuple[dict[str, Any], list[Any]]:
+        time.sleep(0.3 if source_name == "slow" else 0.01)
+        return ({"name": source_name}, [])
+
+    rows: list[Any] = []
+    reports: list[dict[str, Any]] = []
+    pipeline_source_loop._run_selected_loaders(
+        selected_loaders=[("slow", 1), ("fast_a", 2), ("fast_b", 3), ("fast_c", 4)],
+        max_workers=2,
+        execute_loader_started=execute,
+        canonical_rows=rows,
+        source_reports=reports,
+        source_state_rows={"slow": {"lastDurationMs": 60_000}},
+    )
+
+    assert sorted(report["name"] for report in reports) == ["fast_a", "fast_b", "fast_c", "slow"]
+    assert len(reports) == 4

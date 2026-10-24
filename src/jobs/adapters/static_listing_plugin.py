@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
+from src.jobs.adapters.plugins.static._rendered_cards import can_handle_rendered_cards
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_listing_common import (
     _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS,
@@ -55,6 +56,16 @@ def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | N
         adapter_key="static",
         source_identity=plugin_identity,
     )
+
+
+def static_board_renders_cards(ctx: StaticSourceContext) -> bool:
+    """Whether the rendered-cards plugin is what reads this board.
+
+    Those listings are JS shells: an unchanged document says nothing about the rows the
+    page renders, so a 304 cannot vouch for the jobs and these boards keep the full read.
+    """
+    plugin_ctx = _static_plugin_context(ctx)
+    return plugin_ctx is not None and can_handle_rendered_cards(plugin_ctx)
 
 
 # network — calls plugin.run() with HTTP fetch

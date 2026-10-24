@@ -136,8 +136,14 @@ def _copy_report_fields(
         entry["lastListingCheckedAt"] = clean_text(report.get("listingCheckedAt")) or finished_at
     if clean_text(report.get("httpEtag")):
         entry["lastHttpEtag"] = clean_text(report.get("httpEtag"))
+    elif bool(report.get("clearHttpEtag")):
+        # A 200 probe that carried no ETag: the board stopped publishing the one
+        # on file, so persisting it would keep asking with a retired tag.
+        entry.pop("lastHttpEtag", None)
     if clean_text(report.get("httpLastModified")):
         entry["lastHttpLastModified"] = clean_text(report.get("httpLastModified"))
+    elif bool(report.get("clearHttpLastModified")):
+        entry.pop("lastHttpLastModified", None)
     if int(report.get("httpStatus") or 0) > 0:
         entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
 

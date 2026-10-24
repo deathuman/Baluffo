@@ -408,3 +408,226 @@ def _static_row(title: str, url: str) -> dict[str, object]:
         "sector": "Game",
         "postedAt": "",
     }
+
+
+def test_run_static_studio_pages_source_unchanged_304_skips_fetch_and_parse() -> None:
+    """A board that kept jobs and answers 304 is not fetched, parsed or rendered.
+
+    2026-10-23: static sources never sent validators, so every one of the 1,587
+    boards that keep nothing re-downloaded and re-parsed its listing each run.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    listing_url = "https://example.net/careers"
+    fetched: list[str] = []
+
+    def fake_fetch(url: str, _: int) -> str:
+        fetched.append(url)
+        return "<html><body></body></html>"
+
+    def fail_parse(**_kwargs: object) -> list[dict[str, object]]:
+        raise AssertionError("an unchanged listing must not be parsed")
+
+    source_state_rows = {
+        "Unchanged Studio": {
+            "lastStatus": "ok",
+            "lastKeptCount": 12,
+            "lastSuccessAt": (datetime.now(UTC) - timedelta(hours=20)).isoformat(),
+            "lastHttpEtag": '"etag-1"',
+        }
+    }
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    with (
+        mock.patch(
+            "src.jobs.adapters.static_listing_flow.conditional_revalidate_url",
+            return_value={
+                "supported": True,
+                "notModified": True,
+                "statusCode": 304,
+                "etag": '"etag-1"',
+                "lastModified": "",
+            },
+        ) as revalidate,
+        mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            side_effect=fail_parse,
+        ),
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Unchanged Studio", listing_url)],
+            source_state_rows=source_state_rows,
+            force_refresh_all=False,
+        )
+
+    assert rows == []
+    assert fetched == []
+    assert revalidate.call_args.kwargs["etag"] == '"etag-1"'
+    assert revalidate.call_args.kwargs["probe"] is True
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert detail.get("exclusionReason") == "cache_not_modified_304"
+
+
+def test_run_static_studio_pages_source_304_on_a_multi_page_board_still_fetches() -> None:
+    """Page 1 answering 304 says nothing about the pages behind it."""
+    from datetime import UTC, datetime, timedelta
+
+    first_url = "https://example.net/careers"
+    second_url = "https://example.net/careers/page/2"
+    fetched: list[str] = []
+
+    def fake_fetch(url: str, _: int) -> str:
+        fetched.append(url)
+        return "<html><body></body></html>"
+
+    source_state_rows = {
+        "Two Page Studio": {
+            "lastStatus": "ok",
+            "lastKeptCount": 4,
+            "lastSuccessAt": (datetime.now(UTC) - timedelta(hours=20)).isoformat(),
+            "lastHttpEtag": '"etag-1"',
+        }
+    }
+    source = _source("Two Page Studio", first_url)
+    source["pages"] = [first_url, second_url]
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    with (
+        mock.patch(
+            "src.jobs.adapters.static_listing_flow.conditional_revalidate_url",
+            return_value={
+                "supported": True,
+                "notModified": True,
+                "statusCode": 304,
+                "etag": '"etag-1"',
+                "lastModified": "",
+            },
+        ),
+        mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_static_row("QA Analyst", "https://example.net/careers/qa")],
+        ),
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[source],
+            source_state_rows=source_state_rows,
+            force_refresh_all=False,
+        )
+
+    assert [row["title"] for row in rows] == ["QA Analyst"]
+    assert first_url in fetched
+    assert second_url in fetched
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert detail.get("exclusionReason") != "cache_not_modified_304"
+
+
+def test_run_static_studio_pages_source_rendered_card_board_keeps_the_full_read() -> None:
+    """A JS shell answers 304 forever, so rendered-card boards must never take the shortcut."""
+    from datetime import UTC, datetime, timedelta
+
+    listing_url = "https://www.applovin.com/careers"
+    fetched: list[str] = []
+
+    def fake_fetch(url: str, _: int) -> str:
+        fetched.append(url)
+        return "<html><body><div id='root'></div></body></html>"
+
+    source_state_rows = {
+        "AppLovin": {
+            "lastStatus": "ok",
+            "lastKeptCount": 9,
+            "lastSuccessAt": (datetime.now(UTC) - timedelta(hours=20)).isoformat(),
+            "lastHttpEtag": '"shell-1"',
+        }
+    }
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    with mock.patch(
+        "src.jobs.adapters.static_listing_flow.conditional_revalidate_url",
+        return_value={
+            "supported": True,
+            "notModified": True,
+            "statusCode": 304,
+            "etag": '"shell-1"',
+            "lastModified": "",
+        },
+    ) as revalidate:
+        jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("AppLovin", listing_url)],
+            source_state_rows=source_state_rows,
+            force_refresh_all=False,
+        )
+
+    assert not revalidate.called
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert detail.get("exclusionReason") != "cache_not_modified_304"
+
+
+def test_run_static_studio_pages_source_zero_kept_board_takes_the_probe() -> None:
+    """A board that kept nothing asks the same question instead of re-reading itself."""
+    from datetime import UTC, datetime, timedelta
+
+    listing_url = "https://example.org/openings"
+    fetched: list[str] = []
+
+    def fake_fetch(url: str, _: int) -> str:
+        fetched.append(url)
+        return "<html><body></body></html>"
+
+    def fail_parse(**_kwargs: object) -> list[dict[str, object]]:
+        raise AssertionError("an unchanged empty listing must not be parsed")
+
+    source_state_rows = {
+        "Empty Studio": {
+            "lastStatus": "ok",
+            "lastKeptCount": 0,
+            "consecutiveZeroKept": 3,
+            "lastSuccessAt": (datetime.now(UTC) - timedelta(hours=20)).isoformat(),
+            "lastHttpEtag": '"etag-empty"',
+        }
+    }
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    with (
+        mock.patch(
+            "src.jobs.adapters.static_listing_flow.conditional_revalidate_url",
+            return_value={
+                "supported": True,
+                "notModified": True,
+                "statusCode": 304,
+                "etag": '"etag-empty"',
+                "lastModified": "",
+            },
+        ) as revalidate,
+        mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            side_effect=fail_parse,
+        ),
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Empty Studio", listing_url)],
+            source_state_rows=source_state_rows,
+            force_refresh_all=False,
+        )
+
+    assert rows == []
+    assert fetched == []
+    assert revalidate.call_args.kwargs["etag"] == '"etag-empty"'
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert detail.get("exclusionReason") == "cache_not_modified_304"

@@ -24,6 +24,7 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+from src.jobs.transport import apply_full_read_response_headers
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -214,9 +215,16 @@ def _run_teamtailor_sources(
 
         try:
             fetch_started = time.perf_counter()
+            captured: dict[str, str] = {}
             listing_html = fetch_with_retries(
-                listing_url, fetch_text, timeout_s, retries, backoff_s
+                listing_url,
+                fetch_text,
+                timeout_s,
+                retries,
+                backoff_s,
+                capture_headers=captured,
             )
+            apply_full_read_response_headers(entry_report, captured)
             entry_report["fetchMs"] = _elapsed_ms(fetch_started)
             parse_started = time.perf_counter()
             job_links = parse_teamtailor_listing_links(listing_html, base_url=base_url)

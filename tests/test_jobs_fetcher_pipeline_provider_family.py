@@ -30,7 +30,7 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
         ]
 
     def _fetch_with_retries(
-        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float, **_kwargs
     ) -> str:
         calls.append(url)
         return json.dumps({"jobs": [{"id": url}]})
@@ -128,7 +128,7 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
         ]
 
     def _fetch_with_retries(
-        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float, **_kwargs
     ) -> str:
         calls.append(url)
         return "[]"
@@ -211,7 +211,7 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
         ]
 
     def _fetch_with_retries(
-        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float, **_kwargs
     ) -> str:
         calls.append(url)
         return ""
@@ -290,7 +290,7 @@ def test_teamtailor_sources_fetch_detail_pages_with_bounded_concurrency() -> Non
         ]
 
     def _fetch_with_retries(
-        url: str, _fetch_text, _timeout_s: int, _retries: int, _backoff_s: float
+        url: str, _fetch_text, _timeout_s: int, _retries: int, _backoff_s: float, **_kwargs
     ) -> str:
         return f"<html>{url}</html>"
 
@@ -377,6 +377,7 @@ def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        **_kwargs,
     ) -> str:
         _ = fetch_text, timeout_s, retries, backoff_s
         fetches.enter()

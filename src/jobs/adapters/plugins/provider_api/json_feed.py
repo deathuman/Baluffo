@@ -25,7 +25,7 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+from src.jobs.transport import apply_full_read_response_headers, conditional_revalidate_url
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -42,7 +42,7 @@ ParsePayload = Callable[[dict[str, object], Any, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
 PayloadCount = Callable[[Any, list[RawJob]], int]
 ProviderParser = Callable[[Any, str, str], list[RawJob]]
-FetchPayload = Callable[[str], Any]
+FetchPayload = Callable[[str, dict[str, str] | None], Any]
 
 JSON_FEED_SOURCE_FETCH_CONCURRENCY = 6
 
@@ -111,13 +111,20 @@ def _fetch_json_feed_payload(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    *,
+    capture_headers: dict[str, str] | None = None,
 ) -> Any:
     """Fetch the listing, following offset pages when the feed caps a response.
 
     The first request is the bare endpoint so the conditional-revalidate path, which is keyed
-    on that exact URL, keeps working unchanged.
+    on that exact URL, keeps working unchanged. Only that first response may set the
+    validator: a later page's ETag describes the page, not the listing.
     """
-    payload = json.loads(fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s))
+    payload = json.loads(
+        fetch_with_retries(
+            endpoint, fetch_text, timeout_s, retries, backoff_s, capture_headers=capture_headers
+        )
+    )
     if not spec.page_offset_param or spec.max_pages <= 1:
         return payload
     total = _json_feed_total(payload, spec)
@@ -254,16 +261,22 @@ def _resolve_json_feed_fetch(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    capture_headers: dict[str, str] | None = None,
 ) -> Any:
     """The injected paginating fetcher, or a single plain request without one.
 
     A caller that supplies no fetcher gets the behaviour this had before pagination
     existed. Kept as the default so the seam is additive rather than a signature every
-    caller has to adopt.
+    caller has to adopt. ``capture_headers`` is the sink the first response reports its
+    validators to, whichever path fetches it.
     """
     if fetch_payload is not None:
-        return fetch_payload(endpoint)
-    return json.loads(fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s))
+        return fetch_payload(endpoint, capture_headers)
+    return json.loads(
+        fetch_with_retries(
+            endpoint, fetch_text, timeout_s, retries, backoff_s, capture_headers=capture_headers
+        )
+    )
 
 
 def _run_json_feed_sources(
@@ -329,9 +342,17 @@ def _run_json_feed_sources(
             return source_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
+            captured: dict[str, str] = {}
             payload = _resolve_json_feed_fetch(
-                endpoint, fetch_payload, fetch_text, timeout_s, retries, backoff_s
+                endpoint,
+                fetch_payload,
+                fetch_text,
+                timeout_s,
+                retries,
+                backoff_s,
+                capture_headers=captured,
             )
+            apply_full_read_response_headers(entry_report, captured)
             entry_report["fetchMs"] = _elapsed_ms(fetch_started)
             parse_started = time.perf_counter()
             parsed = parse_payload(source, payload, studio)
@@ -408,8 +429,14 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             ),
             build_url=lambda source: _build_json_feed_url(source, spec),
             payload_count=lambda payload, parsed: _json_feed_payload_count(payload, parsed, spec),
-            fetch_payload=lambda endpoint: _fetch_json_feed_payload(
-                endpoint, spec, fetch_text, timeout_s, retries, backoff_s
+            fetch_payload=lambda endpoint, capture: _fetch_json_feed_payload(
+                endpoint,
+                spec,
+                fetch_text,
+                timeout_s,
+                retries,
+                backoff_s,
+                capture_headers=capture,
             ),
             **kwargs,
         )

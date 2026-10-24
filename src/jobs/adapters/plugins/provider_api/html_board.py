@@ -20,6 +20,7 @@ from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+from src.jobs.transport import apply_full_read_response_headers
 
 from .lifecycle import (
     apply_provider_cache_decision,
@@ -88,13 +89,15 @@ def _fetch_board_html(
     retries: int,
     backoff_s: float,
     try_playwright: TryPlaywright | None,
+    entry_report: dict[str, object],
 ) -> tuple[str, bool, str]:
     try:
-        return (
-            fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s),
-            False,
-            "",
+        captured: dict[str, str] = {}
+        text = fetch_with_retries(
+            url, fetch_text, timeout_s, retries, backoff_s, capture_headers=captured
         )
+        apply_full_read_response_headers(entry_report, captured)
+        return (text, False, "")
     except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
         reraise_unexpected_provider_api_source_exception(exc)
         error_text = str(exc)
@@ -174,6 +177,7 @@ def _fetch_and_parse_board_source(
     retries: int,
     backoff_s: float,
     try_playwright: TryPlaywright | None,
+    entry_report: dict[str, object],
 ) -> tuple[list[RawJob], str, bool, str]:
     candidate_urls = _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
     parsed: list[RawJob] = []
@@ -189,6 +193,7 @@ def _fetch_and_parse_board_source(
             retries=retries,
             backoff_s=backoff_s,
             try_playwright=try_playwright,
+            entry_report=entry_report,
         )
         browser_retry_used = browser_retry_used or used_browser
         if browser_error:
@@ -313,6 +318,7 @@ def _run_html_board_sources(
                     retries=retries,
                     backoff_s=backoff_s,
                     try_playwright=try_playwright,
+                    entry_report=entry_report,
                 )
             )
             _record_html_board_parse_result(

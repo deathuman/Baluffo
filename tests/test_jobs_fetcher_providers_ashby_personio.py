@@ -58,7 +58,9 @@ def _patched_ashby_rows(
     with (
         mock.patch.object(json_feed_module, "registry_entries", lambda adapter: source_rows),
         mock.patch.object(
-            json_feed_module, "fetch_with_retries", lambda url, fetch_text, *_: fetch_text(url, 5)
+            json_feed_module,
+            "fetch_with_retries",
+            lambda url, fetch_text, *_, **__: fetch_text(url, 5),
         ),
         mock.patch.object(json_feed_module, "set_source_diagnostics", lambda name, **kwargs: None),
     ):

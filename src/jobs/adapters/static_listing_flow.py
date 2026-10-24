@@ -8,6 +8,7 @@ AI boundary implement in: this leaf for generic flow; state helpers come from
 
 from __future__ import annotations
 
+from src.jobs.adapters.static_listing_plugin import static_board_renders_cards
 from src.jobs.adapters.static_listing_state import (
     StaticListingStageState,
     _complete_source_without_generic_flow,
@@ -18,7 +19,7 @@ from src.jobs.adapters.static_runtime_support import (
 from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
 from src.jobs.state_source_state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+from src.jobs.transport import apply_conditional_revalidate_result, conditional_revalidate_url
 
 from .static_runtime import StaticSourceContext
 
@@ -142,19 +143,26 @@ def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
         ctx.entry_report["exclusionReason"] = f"cache_{ctx.entry_report['cacheDecisionReason']}"
         _complete_source_without_generic_flow(ctx)
         return True
-    if ctx.entry_report["cacheDecision"] == "revalidate_only" and ctx.pages:
+    if (
+        ctx.entry_report["cacheDecision"] == "revalidate_only"
+        and ctx.pages
+        and not static_board_renders_cards(ctx)
+    ):
+        # probe=True seeds ETag/Last-Modified from the first HEAD; later runs send
+        # them back and a 304 skips fetch, parse, extraction and fallbacks for an
+        # unchanged single-page board -- one that kept jobs past the listing
+        # window, or one that kept none past the empty window. Multi-page boards
+        # keep the full read: a 304 on page 1 says nothing about the pages behind
+        # it.
         revalidate = conditional_revalidate_url(
             clean_text(ctx.pages[0]),
             ctx.run_deps.timeout_s,
             etag=clean_text((ctx.state_entry or {}).get("lastHttpEtag")),
             last_modified=clean_text((ctx.state_entry or {}).get("lastHttpLastModified")),
+            probe=True,
         )
-        ctx.entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-        if clean_text(revalidate.get("etag")):
-            ctx.entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-        if clean_text(revalidate.get("lastModified")):
-            ctx.entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
-        if bool(revalidate.get("notModified")):
+        apply_conditional_revalidate_result(ctx.entry_report, revalidate)
+        if bool(revalidate.get("notModified")) and len(ctx.pages) == 1:
             ctx.entry_report["status"] = "excluded"
             ctx.entry_report["error"] = "not_modified_304"
             ctx.entry_report["exclusionReason"] = "cache_not_modified_304"

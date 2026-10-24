@@ -137,7 +137,7 @@ FETCHER_ARGS_CASES = [
                 "--adapter-http-concurrency",
             ),
             expected_values=(
-                ("--max-workers", "12"),
+                ("--max-workers", "16"),
                 ("--max-per-domain", "3"),
                 ("--adapter-http-concurrency", "48"),
             ),

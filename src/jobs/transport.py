@@ -19,9 +19,12 @@ from src.jobs.adapters import community
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
+from src.jobs.common.http import (
+    default_fetch_text_with_response_headers as common_fetch_text_with_response_headers,
+)
 from src.jobs.common.http import fetch_max_bytes as common_fetch_max_bytes
 from src.jobs.models import RequestConfig
-from src.jobs.text_utils import norm_text
+from src.jobs.text_utils import clean_text, norm_text
 from src.jobs.text_utils import normalize_url as normalize_url_impl
 
 from .common import config as common_config
@@ -114,10 +117,18 @@ def conditional_revalidate_url(
     *,
     etag: str = "",
     last_modified: str = "",
+    probe: bool = False,
 ) -> dict[str, Any]:
+    """Cheap HEAD check for "has this document changed?".
+
+    Without validators this is a no-op unless ``probe`` is set: the static
+    flow probes once to seed ``ETag``/``Last-Modified`` so later runs can ask
+    the conditional question, while provider callers keep the old no-request
+    behavior.
+    """
     clean_etag = str(etag or "").strip()
     clean_last_modified = str(last_modified or "").strip()
-    if not clean_etag and not clean_last_modified:
+    if not clean_etag and not clean_last_modified and not probe:
         return {
             "supported": False,
             "notModified": False,
@@ -163,6 +174,75 @@ def conditional_revalidate_url(
         "etag": "",
         "lastModified": "",
     }
+
+
+def _header_value(headers: Any, name: str) -> str:
+    value = headers.get(name) if hasattr(headers, "get") else None
+    if value is None and hasattr(headers, "get"):
+        value = headers.get(name.lower())
+    if isinstance(value, (list, tuple)):
+        return str(value[0]).strip() if value else ""
+    return str(value or "").strip()
+
+
+def _record_response_validators(sink: dict[str, str], status_code: int, headers: Any) -> None:
+    sink["status"] = str(int(status_code or 0))
+    etag = _header_value(headers, "ETag")
+    last_modified = _header_value(headers, "Last-Modified")
+    if etag:
+        sink["etag"] = etag
+    if last_modified:
+        sink["last-modified"] = last_modified
+
+
+def apply_full_read_response_headers(
+    entry_report: dict[str, Any], captured: dict[str, str]
+) -> None:
+    """Record the validators a full read's own response returned.
+
+    A provider feed may publish its ETag on the GET and not on the conditional HEAD,
+    so the response that produced the rows is also the one that earns revalidation.
+    A capture that never happened -- a custom seam or a test double -- leaves the
+    report untouched rather than retiring a tag on absent evidence.
+    """
+    status_code = int(clean_text(captured.get("status")) or 0)
+    if not 200 <= status_code < 300:
+        return
+    apply_conditional_revalidate_result(
+        entry_report,
+        {
+            "statusCode": status_code,
+            "notModified": False,
+            "etag": captured.get("etag", ""),
+            "lastModified": captured.get("last-modified", ""),
+        },
+    )
+
+
+def apply_conditional_revalidate_result(
+    entry_report: dict[str, Any], revalidate: dict[str, Any]
+) -> None:
+    """Record what a conditional probe said about a board's validators.
+
+    Copies the tags the response publishes. A 2xx that is not a 304 answered with
+    the board's current copy, so a validator it did not send is one the board no
+    longer publishes: the report marks it for removal from stored state. A 304 is
+    exempt -- many servers echo no headers on one -- and an errored probe says
+    nothing about the board's validators, so neither may retire a tag.
+    """
+    status_code = int(revalidate.get("statusCode") or 0)
+    etag = clean_text(revalidate.get("etag"))
+    last_modified = clean_text(revalidate.get("lastModified"))
+    entry_report["httpStatus"] = status_code
+    if etag:
+        entry_report["httpEtag"] = etag
+    if last_modified:
+        entry_report["httpLastModified"] = last_modified
+    if 200 <= status_code < 300 and not bool(revalidate.get("notModified")):
+        if not etag:
+            entry_report["clearHttpEtag"] = True
+        if not last_modified:
+            entry_report["clearHttpLastModified"] = True
 
 
 class PooledRedirectResolver:
@@ -362,7 +442,15 @@ def build_redirect_resolver(
 
 
 def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
-    headers = build_fetch_headers(url, request or default_request_config(timeout_s=timeout_s))
+    effective_request = request or default_request_config(timeout_s=timeout_s)
+    headers = build_fetch_headers(url, effective_request)
+    sink = effective_request.capture_response_headers
+    if sink is not None:
+        text, response_headers = common_fetch_text_with_response_headers(
+            url, timeout_s, headers=headers
+        )
+        _record_response_validators(sink, 200, response_headers)
+        return text
     return common_default_fetch_text(url, timeout_s, headers=headers)
 
 
@@ -380,6 +468,10 @@ async def async_fetch_text_httpx(
         headers = build_fetch_headers(url, request or default_request_config(timeout_s=timeout_s))
         response = await client.get(url, timeout=timeout, headers=headers)
         response.raise_for_status()
+        if request is not None and request.capture_response_headers is not None:
+            _record_response_validators(
+                request.capture_response_headers, int(response.status_code or 0), response.headers
+            )
         # ponytail: host-specific cap for heavy outlier listings (603 MiB observed).
         try:
             from src.jobs.common.http import fetch_max_bytes_for_url
