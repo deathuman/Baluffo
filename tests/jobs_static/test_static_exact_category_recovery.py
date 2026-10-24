@@ -479,10 +479,29 @@ def test_run_static_studio_pages_source_304_on_a_multi_page_board_still_fetches(
     first_url = "https://example.net/careers"
     second_url = "https://example.net/careers/page/2"
     fetched: list[str] = []
+    probed: list[str] = []
 
     def fake_fetch(url: str, _: int) -> str:
         fetched.append(url)
         return "<html><body></body></html>"
+
+    def fake_probe(url: str, _timeout: int, **_kwargs: object) -> dict[str, object]:
+        probed.append(url)
+        if url == first_url:
+            return {
+                "supported": True,
+                "notModified": True,
+                "statusCode": 304,
+                "etag": '"etag-1"',
+                "lastModified": "",
+            }
+        return {
+            "supported": True,
+            "notModified": False,
+            "statusCode": 200,
+            "etag": '"etag-2"',
+            "lastModified": "",
+        }
 
     source_state_rows = {
         "Two Page Studio": {
@@ -499,13 +518,7 @@ def test_run_static_studio_pages_source_304_on_a_multi_page_board_still_fetches(
     with (
         mock.patch(
             "src.jobs.adapters.static_listing_flow.conditional_revalidate_url",
-            return_value={
-                "supported": True,
-                "notModified": True,
-                "statusCode": 304,
-                "etag": '"etag-1"',
-                "lastModified": "",
-            },
+            side_effect=fake_probe,
         ),
         mock.patch(
             "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
@@ -523,6 +536,7 @@ def test_run_static_studio_pages_source_304_on_a_multi_page_board_still_fetches(
         )
 
     assert [row["title"] for row in rows] == ["QA Analyst"]
+    assert probed == [first_url, second_url], "page 2 must be asked, not assumed"
     assert first_url in fetched
     assert second_url in fetched
     detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]

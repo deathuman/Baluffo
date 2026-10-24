@@ -192,3 +192,204 @@ def test_the_tool_refuses_to_write_state_into_live_data() -> None:
 
     with pytest.raises(SystemExit, match="live data"):
         smoke._resolve_output_dir(str(_ROOT / "data" / "scratch"), "greenhouse", {})
+
+
+def _summary(**overrides: Any) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "run1": {"status": "ok", "httpStatus": 200, "httpEtag": '"v1"'},
+        "run2": {"urls": [], "httpStatus": 304, "exclusionReason": "cache_not_modified_304"},
+        "decision": {
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "provider_stable_revalidate",
+        },
+    }
+    summary.update(overrides)
+    return summary
+
+
+def test_classification_separates_an_ignored_probe_from_a_refused_one() -> None:
+    ignored = smoke.classify_outcome(_summary(), [{"statusCode": 200, "notModified": False}])
+    refused = smoke.classify_outcome(_summary(), [{"statusCode": 405, "notModified": False}])
+    honoured = smoke.classify_outcome(_summary(), [{"statusCode": 304, "notModified": True}])
+
+    assert ignored["outcome"] == smoke.OUTCOME_IGNORES
+    assert "200" in ignored["reason"]
+    assert refused["outcome"] == smoke.OUTCOME_PROBE_REFUSED, "405 is not evidence about the tag"
+    assert "405" in refused["reason"]
+    assert honoured == {"outcome": smoke.OUTCOME_HONOURS, "reason": ""}
+
+
+def test_classification_never_blames_a_feed_that_was_not_asked() -> None:
+    no_probe = smoke.classify_outcome(_summary(), [])
+    no_validator = smoke.classify_outcome(_summary(run1={"status": "ok", "httpStatus": 200}), [])
+    read_failed = smoke.classify_outcome(
+        _summary(run1={"status": "error", "httpStatus": 200, "error": "no jobs extracted"}), []
+    )
+    inconclusive = smoke.classify_outcome(_summary(decision={}), [])
+    empty_window = smoke.classify_outcome(
+        _summary(
+            run1={"status": "ok", "httpStatus": 200, "httpEtag": '"v1"', "kept": 0},
+            decision={
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            },
+        ),
+        [],
+    )
+
+    assert no_probe["outcome"] == smoke.OUTCOME_NO_PROBE
+    assert no_validator["outcome"] == smoke.OUTCOME_NO_VALIDATOR
+    assert read_failed["outcome"] == smoke.OUTCOME_READ_FAILED
+    assert "no jobs extracted" in read_failed["reason"], (
+        "a 200 that parsed nothing is not unreachable"
+    )
+    assert inconclusive["outcome"] == smoke.OUTCOME_INCONCLUSIVE
+    assert "empty-source window" in empty_window["reason"], (
+        "a zero-kept skip is not a lost validator"
+    )
+
+
+def test_the_probe_recorder_keeps_the_answer_a_report_would_overwrite() -> None:
+    from src.jobs.adapters.plugins.provider_api import greenhouse_runner
+
+    original = greenhouse_runner.provider_revalidate_not_modified
+    report: dict[str, Any] = {"name": NAME, "status": "ok", "cacheDecision": "revalidate_only"}
+    with smoke.record_provider_probes() as recorder:
+        handled = greenhouse_runner.provider_revalidate_not_modified(
+            entry_report=report,
+            url=URL,
+            timeout_s=1,
+            source_name=NAME,
+            source_state_rows={NAME: {"lastHttpEtag": '"v1"'}},
+            revalidate_url=lambda *_args, **_kwargs: {
+                "statusCode": 405,
+                "notModified": False,
+                "etag": "",
+                "lastModified": "",
+            },
+        )
+
+    assert handled is False
+    assert recorder.probes == [
+        {"source": NAME, "url": URL, "statusCode": 405, "notModified": False}
+    ]
+    assert greenhouse_runner.provider_revalidate_not_modified is original
+
+
+class _SweepLoader:
+    """One injected feed per run, behaving as its row asks and probing like a runner."""
+
+    def __call__(
+        self,
+        *,
+        fetch_text: Any,
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        source_state_rows: dict[str, dict[str, Any]],
+        force_refresh_all: bool,
+    ) -> list[dict[str, Any]]:
+        from src.jobs.adapters.plugins.provider_api import greenhouse_runner
+
+        row = greenhouse_runner.registry_entries("greenhouse")[0]
+        name = row["name"]
+        behaviour = row["behaviour"]
+        if force_refresh_all:
+            failed = behaviour == "error"
+            _publish(
+                _detail(
+                    name=name,
+                    status="error" if failed else "ok",
+                    error="boom" if failed else "",
+                    httpStatus=0 if failed else 200,
+                    httpEtag="" if failed or behaviour == "no-validator" else '"v1"',
+                )
+            )
+            return [] if failed else [{"title": "one"}]
+        if behaviour in {"honour", "ignore", "refuse"}:
+            code = {"honour": 304, "ignore": 200, "refuse": 405}[behaviour]
+            probe_report: dict[str, Any] = {
+                "name": name,
+                "status": "ok",
+                "cacheDecision": "revalidate_only",
+            }
+            greenhouse_runner.provider_revalidate_not_modified(
+                entry_report=probe_report,
+                url=URL,
+                timeout_s=timeout_s,
+                source_name=name,
+                source_state_rows=source_state_rows,
+                revalidate_url=lambda *_args, **_kwargs: {
+                    "statusCode": code,
+                    "notModified": code == 304,
+                    "etag": '"v1"' if code == 200 else "",
+                    "lastModified": "",
+                },
+            )
+            if code == 304:
+                _publish(
+                    _detail(
+                        name=name,
+                        status="excluded",
+                        fetchedCount=0,
+                        keptCount=0,
+                        httpStatus=304,
+                        exclusionReason="cache_not_modified_304",
+                        cacheDecision="revalidate_only",
+                        cacheDecisionReason="not_modified_304",
+                    )
+                )
+                return []
+        fetch_text(URL, timeout_s)
+        _publish(
+            _detail(
+                name=name,
+                fetchedCount=1,
+                keptCount=1,
+                httpStatus=200,
+                cacheDecision="revalidate_only",
+            )
+        )
+        return [{"title": "one"}]
+
+
+def test_a_sweep_classifies_every_feed_and_names_the_offenders(tmp_path: Path) -> None:
+    from src.jobs.adapters.plugins.provider_api import greenhouse_runner
+
+    original_registry = greenhouse_runner.registry_entries
+    rows = [
+        {"name": "Honest", "slug": "honest", "behaviour": "honour"},
+        {"name": "Ignorer", "slug": "ignorer", "behaviour": "ignore"},
+        {"name": "Refuser", "slug": "refuser", "behaviour": "refuse"},
+        {"name": "Silent", "slug": "silent", "behaviour": "no-probe"},
+        {"name": "Empty", "slug": "empty", "behaviour": "no-validator"},
+        {"name": "Broken", "slug": "broken", "behaviour": "error"},
+    ]
+    try:
+        sweep = smoke.sweep_adapter(
+            adapter="greenhouse",
+            rows=rows,
+            loader_name=LOADER,
+            loader=_SweepLoader(),
+            fetch_text=lambda url, timeout, request=None: "body",
+            output_root=tmp_path / "sweep",
+            age_minutes=30,
+        )
+    finally:
+        smoke.diagnostics.SOURCE_DIAGNOSTICS.pop(LOADER, None)
+
+    assert {result["source"]: result["outcome"] for result in sweep["feeds"]} == {
+        "Honest": smoke.OUTCOME_HONOURS,
+        "Ignorer": smoke.OUTCOME_IGNORES,
+        "Refuser": smoke.OUTCOME_PROBE_REFUSED,
+        "Silent": smoke.OUTCOME_NO_PROBE,
+        "Empty": smoke.OUTCOME_NO_VALIDATOR,
+        "Broken": smoke.OUTCOME_READ_FAILED,
+    }
+    assert sweep["offenders"] == ["Ignorer"]
+    assert sweep["ok"] is False
+    assert sweep["counts"][smoke.OUTCOME_HONOURS] == 1
+    assert (tmp_path / "sweep" / "ignorer" / "summary.json").exists()
+    assert greenhouse_runner.registry_entries is original_registry, (
+        "the sweep puts the registry back"
+    )

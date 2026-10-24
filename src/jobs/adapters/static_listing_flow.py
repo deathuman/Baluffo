@@ -8,6 +8,8 @@ AI boundary implement in: this leaf for generic flow; state helpers come from
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from src.jobs.adapters.static_listing_plugin import static_board_renders_cards
 from src.jobs.adapters.static_listing_state import (
     StaticListingStageState,
@@ -17,9 +19,16 @@ from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
 from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
+from src.jobs.common.datetime_utils import parse_datetime
+from src.jobs.page_gating import looks_like_asset_url
+from src.jobs.state_source_records import normalized_http_page_validators
 from src.jobs.state_source_state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import apply_conditional_revalidate_result, conditional_revalidate_url
+from src.jobs.transport import (
+    apply_conditional_revalidate_result,
+    apply_full_read_response_headers,
+    conditional_revalidate_url,
+)
 
 from .static_runtime import StaticSourceContext
 
@@ -127,6 +136,179 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
     ctx.details.append(ctx.entry_report)
 
 
+# A page that publishes no validator cannot answer 304, so asking it is pure latency.
+# A read that sees one tagless starts the clock; failing that, the first sweep does.
+# Either way the question is re-asked at most weekly, which is how a board that starts
+# publishing one is noticed without every tagless multi-page board paying a HEAD per
+# page on every run (a four-page board measured ~1.2 s per HEAD, so the ungated
+# version taxed exactly the runs it was meant to save).
+_PAGE_VALIDATOR_SEED_INTERVAL_S = 7 * 24 * 60 * 60
+
+
+def _listable_listing_pages(ctx: StaticSourceContext) -> list[str]:
+    """The configured listing pages a read would actually fetch."""
+    pages = [clean_text(page) for page in ctx.pages if clean_text(page)]
+    return [page for page in pages if not looks_like_asset_url(page)]
+
+
+def _page_validator_seed_due(ctx: StaticSourceContext) -> bool:
+    seeded_at = parse_datetime((ctx.state_entry or {}).get("lastHttpPageSeedAt"))
+    if not seeded_at:
+        return True
+    return (datetime.now(UTC) - seeded_at).total_seconds() >= _PAGE_VALIDATOR_SEED_INTERVAL_S
+
+
+def _probe_listing_pages(
+    ctx: StaticSourceContext,
+) -> tuple[bool, dict[str, dict[str, str]], dict[str, object] | None, bool]:
+    """Ask the configured listing pages whether they still hold the stored copy.
+
+    Returns ``(all_unchanged, validators, first_probe, seeded)``. ``all_unchanged`` is
+    true only when every page was asked and every page answered 304. ``validators`` is
+    what the board publishes now, merged over what state held: a 2xx without a tag
+    retires that page's entry, while an errored page says nothing and keeps the stored
+    one. The sweep stops at the first page that answers 200 while holding a validator,
+    because the read is certain from then on. ``first_probe`` is page 1's own answer,
+    which the singular pair mirrors -- never
+    another page's, or the pair would seed page 1 with a tag that describes a different
+    document. ``seeded`` reports that a page without a validator was asked, so the
+    handler can start the weekly clock.
+    """
+    stored = (ctx.state_entry or {}).get("lastHttpPageValidators")
+    merged: dict[str, dict[str, str]] = {
+        clean_text(url): dict(tags)
+        for url, tags in (stored.items() if isinstance(stored, dict) else [])
+        if clean_text(url) and isinstance(tags, dict)
+    }
+    listing_pages = _listable_listing_pages(ctx)
+    if listing_pages and listing_pages[0] not in merged:
+        # A single-page board keeps its pair in the singular fields; a board that
+        # only now gained a second page may have entered the paged path with it.
+        legacy_etag = clean_text((ctx.state_entry or {}).get("lastHttpEtag"))
+        legacy_last_modified = clean_text((ctx.state_entry or {}).get("lastHttpLastModified"))
+        if legacy_etag or legacy_last_modified:
+            merged[listing_pages[0]] = {
+                "etag": legacy_etag,
+                "lastModified": legacy_last_modified,
+            }
+    # A single-page board keeps the long-standing always-probe behaviour (one HEAD
+    # per window is also how it discovers a tag it never had); the seed gate only
+    # stops a multi-page sweep from repeating that latency on every page.
+    seed_due = len(listing_pages) == 1 or _page_validator_seed_due(ctx)
+    first_probe: dict[str, object] | None = None
+    probed_count = 0
+    unchanged_count = 0
+    seeded = False
+    for page_url in listing_pages:
+        tags = merged.get(page_url) or {}
+        has_validator = bool(clean_text(tags.get("etag")) or clean_text(tags.get("lastModified")))
+        if not has_validator and not seed_due:
+            continue
+        if not has_validator:
+            seeded = True
+        probe = conditional_revalidate_url(
+            page_url,
+            ctx.run_deps.timeout_s,
+            etag=clean_text(tags.get("etag")),
+            last_modified=clean_text(tags.get("lastModified")),
+            probe=True,
+        )
+        if page_url == listing_pages[0]:
+            first_probe = probe
+        if not bool(probe.get("supported")):
+            # No usable answer: the full read is the only evidence there is.
+            return False, merged, first_probe, seeded
+        probed_count += 1
+        status_code = int(probe.get("statusCode") or 0)
+        if status_code == 304:
+            unchanged_count += 1
+            continue
+        if not 200 <= status_code < 300:
+            continue
+        etag = clean_text(probe.get("etag"))
+        last_modified = clean_text(probe.get("lastModified"))
+        if etag or last_modified:
+            merged[page_url] = {"etag": etag, "lastModified": last_modified}
+        else:
+            merged.pop(page_url, None)
+        if has_validator:
+            # This page changed while holding a validator, so the full read is now
+            # certain and the pages behind it cannot change that. Their stored tags
+            # say nothing about them being stale (a 200 here is not their answer),
+            # so they are kept and the next sweep resumes at this page. A page with
+            # no validator is a seed, not a change -- seeding continues past it, or
+            # a multi-page board would need one window per page to become skippable.
+            break
+    all_unchanged = probed_count > 0 and probed_count == len(listing_pages) == unchanged_count
+    return all_unchanged, merged, first_probe, seeded
+
+
+def record_listing_read_validators(
+    ctx: StaticSourceContext, observed: dict[str, dict[str, str]]
+) -> None:
+    """Store the validators a full read's own listing responses carried.
+
+    A full read answers the same question a conditional probe asks -- which copy of
+    the page the board serves now -- so the tag it returns is worth keeping. Seeding
+    it here means a board can revalidate the first time its listing window expires,
+    instead of spending that window's one check learning a tag the read already saw.
+
+    ``observed`` maps each configured listing page that answered this run to the
+    capture sink its response filled (``status``/``etag``/``last-modified``). Pages
+    that did not answer -- a failed fetch, a browser fallback, a truncated run -- are
+    absent, and absence says nothing: their stored tag is kept. A page that answered
+    without a tag retires its entry, exactly like the 200 probe it matches.
+    """
+    if not observed:
+        return
+    listing_pages = _listable_listing_pages(ctx)
+    captured = {
+        page: observed[page] for page in listing_pages if isinstance(observed.get(page), dict)
+    }
+    if not captured:
+        return
+    first_capture = captured.get(listing_pages[0]) if listing_pages else None
+    if first_capture is not None:
+        # The response that produced the rows is also the one that earns
+        # revalidation; a tag it omitted is one the board stopped publishing.
+        apply_full_read_response_headers(ctx.entry_report, first_capture)
+    if len(listing_pages) <= 1:
+        ctx.entry_report["httpPageValidators"] = {}
+        return
+    # The probe that sent this run into the read may already have learned a page's
+    # new tag (the one that changed), so its map is the starting point when present;
+    # a plain run_now has none and starts from stored state.
+    merged = normalized_http_page_validators(
+        ctx.entry_report.get("httpPageValidators")
+        if isinstance(ctx.entry_report.get("httpPageValidators"), dict)
+        else (ctx.state_entry or {}).get("lastHttpPageValidators")
+    )
+    if listing_pages[0] not in captured and listing_pages[0] not in merged:
+        # The same legacy bridge the probe uses: a board that was single-page when
+        # its pair was stored keeps that pair as page 1's validator.
+        legacy_etag = clean_text((ctx.state_entry or {}).get("lastHttpEtag"))
+        legacy_last_modified = clean_text((ctx.state_entry or {}).get("lastHttpLastModified"))
+        if legacy_etag or legacy_last_modified:
+            merged[listing_pages[0]] = {
+                "etag": legacy_etag,
+                "lastModified": legacy_last_modified,
+            }
+    tagless_observed = False
+    for page, sink in captured.items():
+        etag = clean_text(sink.get("etag"))
+        last_modified = clean_text(sink.get("last-modified"))
+        if etag or last_modified:
+            merged[page] = {"etag": etag, "lastModified": last_modified}
+        else:
+            merged.pop(page, None)
+            tagless_observed = True
+    if tagless_observed:
+        # The read just proved the page publishes no validator, so the weekly
+        # discovery sweep has nothing to learn from a HEAD on the next window.
+        ctx.entry_report["httpPageSeedAt"] = datetime.now(UTC).isoformat()
+    ctx.entry_report["httpPageValidators"] = merged
+
+
 # mutation — artifact read/write + network (revalidation)
 def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
     ctx.emit_source_progress(
@@ -148,21 +330,24 @@ def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
         and ctx.pages
         and not static_board_renders_cards(ctx)
     ):
-        # probe=True seeds ETag/Last-Modified from the first HEAD; later runs send
-        # them back and a 304 skips fetch, parse, extraction and fallbacks for an
-        # unchanged single-page board -- one that kept jobs past the listing
-        # window, or one that kept none past the empty window. Multi-page boards
-        # keep the full read: a 304 on page 1 says nothing about the pages behind
-        # it.
-        revalidate = conditional_revalidate_url(
-            clean_text(ctx.pages[0]),
-            ctx.run_deps.timeout_s,
-            etag=clean_text((ctx.state_entry or {}).get("lastHttpEtag")),
-            last_modified=clean_text((ctx.state_entry or {}).get("lastHttpLastModified")),
-            probe=True,
-        )
-        apply_conditional_revalidate_result(ctx.entry_report, revalidate)
-        if bool(revalidate.get("notModified")) and len(ctx.pages) == 1:
+        # Validators come from the board's own read responses when it has them, and
+        # from the first HEAD when it does not; either way a 304 skips fetch, parse,
+        # extraction and fallbacks for an unchanged board -- one that kept jobs past
+        # its listing window, or one that kept none past the empty window. Every
+        # configured page is asked on its own validator,
+        # because page 1's 304 cannot vouch for the pages behind it; only all of them
+        # unchanged completes the source. The per-page map is the report's answer for
+        # what the board publishes now, and an empty one retires the field (a
+        # single-page board keeps that answer in the singular pair).
+        listing_pages = _listable_listing_pages(ctx)
+        not_modified, page_validators, first_probe, seeded = _probe_listing_pages(ctx)
+        paged = len(listing_pages) > 1
+        ctx.entry_report["httpPageValidators"] = page_validators if paged else {}
+        if seeded and paged:
+            ctx.entry_report["httpPageSeedAt"] = datetime.now(UTC).isoformat()
+        if first_probe is not None:
+            apply_conditional_revalidate_result(ctx.entry_report, first_probe)
+        if not_modified:
             ctx.entry_report["status"] = "excluded"
             ctx.entry_report["error"] = "not_modified_304"
             ctx.entry_report["exclusionReason"] = "cache_not_modified_304"

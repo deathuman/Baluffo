@@ -268,6 +268,19 @@ and the real state writer, but skips dedup, availability and output assembly. A 
 no `ETag` / `Last-Modified` fails on that cause alone. Exit 0 means the tag was stored, the decision
 was revalidation, and the second run answered 304 without fetching the listing.
 
+`--all` sweeps every feed the adapter registers instead of one. Each feed gets its own isolated
+state directory under `_out/provider-revalidation-smoke/<adapter>-sweep/`, and is classified by what
+its own conditional read proved: `honours` (304, no body), `ignores` (a validator is published but
+`If-None-Match` is answered with a body), `probe_refused` (the probe was rejected, e.g. HEAD 405),
+`no_probe` (the runner never sends `If-None-Match`), `no_validator`, `read_failed`, or
+`inconclusive` (the policy did not reach `revalidate_only`). Per-feed summaries and `sweep.json`
+are written beside the state. Exit 1 means some feed publishes a validator and then ignores it; a
+refused probe is reported, never failed, because a rejected HEAD says nothing about the tag.
+
+```bash
+python tools/provider_revalidation_smoke.py --adapter lever --all
+```
+
 ### `mcp/`
 Repo AI tooling guidance plus a deprecated local MCP fallback for editor-assisted workflows.
 Use `tools/mcp/INDEX.md` as the MCP tooling entrypoint.
@@ -303,5 +316,6 @@ is typically gitignored - do not commit generated files here.
 | Adjudicate the shipped pool claim | `python tools/measurements/corpus/adjudicate.py --epoch <epoch-dir>` |
 | Price a candidate change before committing it | `tools/measurements/corpus/probes/row_dict/sitecustomize.py` via `ab.py run --arm-b-env` |
 | Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |
+| Sweep an adapter for feeds that ignore If-None-Match | `python tools/provider_revalidation_smoke.py --adapter <adapter> --all` |
 | Monitor social sources | `tools/measurements/sources/social_sources_monitoring.py` |
 | Optimize social sources config | `tools/measurements/sources/social_sources_optimization.py` |

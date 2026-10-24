@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest import mock
+from urllib.parse import urlparse
 
 from src import jobs_fetcher as jf
 from src.jobs import state_incremental as si
@@ -37,29 +38,33 @@ EMPTY_LISTING = b"<html><body><h1>Careers</h1><p>Nothing open right now.</p></bo
 @contextmanager
 def _conditional_server(
     etag: str | None = ETAG,
+    page_etags: dict[str, str | None] | None = None,
 ) -> Iterator[tuple[str, list[tuple[str, str]]]]:
     """A loopback listing that answers 304 to the ETag it currently publishes.
 
     ``tests.helpers.local_http_server`` cannot serve this: its callable routes see no request
     headers, and the header is the whole question here. ``etag`` is the version the server is
     serving now, which is how a test makes the board change under a stored validator; ``None``
-    is a board that publishes no validator at all.
+    is a board that publishes no validator at all. ``page_etags`` overrides that version per
+    path, which is how a multi-page board is made to change on one page only.
     """
     requests: list[tuple[str, str]] = []
 
     class _Handler(http.server.BaseHTTPRequestHandler):
         def _respond(self, *, with_body: bool) -> None:
+            path = urlparse(self.path).path
+            current_etag = (page_etags or {}).get(path, etag)
             conditional = (self.headers.get("If-None-Match") or "").strip()
             requests.append((self.command, conditional))
-            if etag and conditional == etag:
+            if current_etag and conditional == current_etag:
                 self.send_response(304)
-                self.send_header("ETag", etag)
+                self.send_header("ETag", current_etag)
                 self.end_headers()
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            if etag:
-                self.send_header("ETag", etag)
+            if current_etag:
+                self.send_header("ETag", current_etag)
             self.send_header("Content-Length", str(len(EMPTY_LISTING)))
             self.end_headers()
             if with_body:
@@ -85,14 +90,15 @@ def _conditional_server(
         thread.join(timeout=5)
 
 
-def _source(name: str, listing_url: str) -> dict[str, object]:
+def _source(name: str, listing_url: str | list[str]) -> dict[str, object]:
+    pages = [listing_url] if isinstance(listing_url, str) else list(listing_url)
     return {
         "name": name,
         "studio": name,
         "company": name,
         "adapter": "static",
-        "pages": [listing_url],
-        "id": f"static:listing_url:{listing_url}",
+        "pages": pages,
+        "id": f"static:listing_url:{pages[0]}",
     }
 
 
@@ -131,7 +137,7 @@ def _stored_row(listing_url: str, *, kept: int, zero_kept_streak: int) -> dict[s
     }
 
 
-def _run(name: str, listing_url: str, rows: dict[str, Any]) -> dict[str, Any]:
+def _run(name: str, listing_url: str | list[str], rows: dict[str, Any]) -> dict[str, Any]:
     body_fetches: list[str] = []
 
     def fetch_text(url: str, timeout_s: int) -> str:
@@ -161,6 +167,9 @@ def _run(name: str, listing_url: str, rows: dict[str, Any]) -> dict[str, Any]:
         "httpStatus": int(detail.get("httpStatus") or 0),
         "httpEtag": detail.get("httpEtag") or "",
         "clearHttpEtag": bool(detail.get("clearHttpEtag")),
+        "httpPageValidators": detail.get("httpPageValidators"),
+        "pageValidators": detail.get("httpPageValidators"),
+        "httpPageSeedAt": detail.get("httpPageSeedAt"),
     }
 
 
@@ -363,3 +372,278 @@ def test_a_200_probe_without_a_validator_drops_the_stored_etag() -> None:
         ):
             _run(name, listing_url, rows)
         assert requests == [("HEAD", ""), ("GET", "")], "no stale validator is replayed"
+
+
+def _stored_paged_row(pages: list[str], *, kept: int = 6) -> dict[str, Any]:
+    """A multi-page board as a full read leaves it: page 1's pair, no page map yet."""
+    return _stored_row(pages[0], kept=kept, zero_kept_streak=0)
+
+
+def _page_map(pages: list[str], tags: list[tuple[str, str]]) -> dict[str, dict[str, str]]:
+    return {
+        page: {"etag": etag, "lastModified": last_modified}
+        for page, (etag, last_modified) in zip(pages, tags, strict=False)
+    }
+
+
+def test_a_multi_page_board_seeds_every_page_then_skips_only_when_all_are_unchanged() -> None:
+    """Each page is asked on its own tag; the board completes only when all answer 304."""
+    name = "Paged Revalidation Studio"
+    with _conditional_server(page_etags={"/one": ETAG, "/two": NEW_ETAG}) as (base, requests):
+        pages = [f"{base}/one", f"{base}/two"]
+        rows = {name: _stored_paged_row(pages)}
+        assert _decision(name, rows) == {
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "static_revalidate_due",
+        }
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            seeded = _run(name, pages, rows)
+
+        assert requests == [
+            ("HEAD", ETAG),
+            ("HEAD", ""),
+            ("GET", ""),
+            ("GET", ""),
+        ], "page 1 asks with the stored pair; page 2 must not be asked with page 1's tag"
+        assert seeded["status"] == "ok"
+        assert seeded["bodyFetches"] == pages
+        assert seeded["pageValidators"] == _page_map(pages, [(ETAG, ""), (NEW_ETAG, "")])
+
+        rows = _apply(rows, seeded)
+        assert rows[name]["lastHttpPageValidators"] == seeded["pageValidators"]
+
+        _move_clock_back(rows, name, minutes=si.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES + 10)
+        assert _decision(name, rows) == {
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "static_revalidate_due",
+        }
+
+        requests.clear()
+        skipped = _run(name, pages, rows)
+        assert requests == [("HEAD", ETAG), ("HEAD", NEW_ETAG)], "each page's own tag is sent"
+        assert skipped["exclusionReason"] == "cache_not_modified_304"
+        assert skipped["bodyFetches"] == [], "all pages unchanged means no page is downloaded"
+
+        rows = _apply(rows, skipped)
+        assert _decision(name, rows) == {
+            "cacheDecision": "skip_fresh",
+            "cacheDecisionReason": "static_revalidated_fresh",
+        }, "the per-page map earns the same window a single-page pair does"
+
+        requests.clear()
+        idle = _run(name, pages, rows)
+        assert requests == [], "the run after the skip must not ask the board again"
+        assert idle["exclusionReason"] == "cache_static_revalidated_fresh"
+
+
+def test_one_changed_page_makes_the_whole_board_read_and_keeps_the_other_page_tag() -> None:
+    """A 304 on page 1 cannot vouch for page 2, and a partial read is not a skip."""
+    name = "Partially Changed Paged Studio"
+    old_second = '"listing-v0"'
+    with _conditional_server(page_etags={"/one": ETAG, "/two": NEW_ETAG}) as (base, requests):
+        pages = [f"{base}/one", f"{base}/two"]
+        rows = {name: _stored_paged_row(pages)}
+        rows[name]["lastHttpPageValidators"] = _page_map(pages, [(ETAG, ""), (old_second, "")])
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            report = _run(name, pages, rows)
+
+        assert requests == [
+            ("HEAD", ETAG),
+            ("HEAD", old_second),
+            ("GET", ""),
+            ("GET", ""),
+        ], "the unchanged page 304s, the changed one 200s, and both are then downloaded"
+        assert report["bodyFetches"] == pages
+        assert report["status"] == "ok"
+        assert report["pageValidators"] == _page_map(pages, [(ETAG, ""), (NEW_ETAG, "")])
+
+        rows = _apply(rows, report)
+        assert rows[name]["lastHttpPageValidators"][pages[1]]["etag"] == NEW_ETAG
+        _move_clock_back(rows, name, minutes=si.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES + 10)
+        requests.clear()
+        probed = _run(name, pages, rows)
+        assert probed["exclusionReason"] == "cache_not_modified_304"
+        assert requests == [("HEAD", ETAG), ("HEAD", NEW_ETAG)], "the new tag is what is asked"
+
+
+def test_a_page_that_stops_publishing_a_validator_drops_only_its_entry() -> None:
+    """Retirement is per page: the tagless page is forgotten, the tagged one is kept."""
+    name = "Retired Page Validator Studio"
+    with _conditional_server(etag=None, page_etags={"/one": ETAG}) as (base, requests):
+        pages = [f"{base}/one", f"{base}/two"]
+        rows = {name: _stored_paged_row(pages)}
+        rows[name]["lastHttpPageValidators"] = _page_map(pages, [(ETAG, ""), ('"listing-v0"', "")])
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            report = _run(name, pages, rows)
+
+        assert requests == [("HEAD", ETAG), ("HEAD", '"listing-v0"'), ("GET", ""), ("GET", "")]
+        assert report["pageValidators"] == _page_map(pages, [(ETAG, "")]), (
+            "the page that answers 200 without a validator must not keep its old one"
+        )
+
+        rows = _apply(rows, report)
+        assert pages[1] not in rows[name]["lastHttpPageValidators"]
+
+        _move_clock_back(rows, name, minutes=si.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES + 10)
+        requests.clear()
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            _run(name, pages, rows)
+        assert requests[:2] == [("HEAD", ETAG), ("HEAD", "")], (
+            "no retired validator is replayed; the tagless page is asked plainly"
+        )
+
+
+def test_the_page_validator_map_survives_a_state_round_trip(tmp_path) -> None:
+    """The map is persisted, so it must clear the state whitelist unchanged."""
+    from src.jobs.state_source_records import read_source_state, write_source_state
+
+    state_path = tmp_path / "jobs-source-state.json"
+    write_source_state(
+        state_path,
+        {
+            "Paged Studio": {
+                "lastHttpPageValidators": {
+                    "https://example.test/one": {"etag": ETAG, "lastModified": ""},
+                    "https://example.test/two": {"lastModified": "Wed, 21 Oct 2015 07:28:00 GMT"},
+                    "https://example.test/three": {"etag": "", "lastModified": ""},
+                    "https://example.test/four": "not-a-map",
+                }
+            }
+        },
+    )
+
+    stored = read_source_state(state_path)["Paged Studio"]["lastHttpPageValidators"]
+    assert stored == {
+        "https://example.test/one": {"etag": ETAG, "lastModified": ""},
+        "https://example.test/two": {
+            "etag": "",
+            "lastModified": "Wed, 21 Oct 2015 07:28:00 GMT",
+        },
+    }, "a page with no validator left is dropped, not stored as an empty tag"
+
+
+def test_a_tagless_multi_page_board_is_swept_once_a_week_not_every_run() -> None:
+    """A page with no validator cannot answer 304, so asking it is pure latency.
+
+    Four HEADs against a Japanese host measured ~4.8 s, so re-asking tagless pages on
+    every window would tax exactly the runs the probe is meant to shorten. The sweep
+    is still repeated, because that is how a board that starts publishing a tag is
+    noticed -- just not on every run.
+    """
+    name = "Tagless Paged Studio"
+    with _conditional_server(etag=None) as (base, requests):
+        pages = [f"{base}/one", f"{base}/two"]
+        rows = {name: _stored_row(pages[0], kept=6, zero_kept_streak=0)}
+        rows[name].pop("lastHttpEtag")
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            first = _run(name, pages, rows)
+
+        assert requests == [("HEAD", ""), ("HEAD", ""), ("GET", ""), ("GET", "")], (
+            "the first due run seeds every page, because none has a validator yet"
+        )
+        rows = _apply(rows, first)
+        assert rows[name]["lastHttpPageSeedAt"], "the seed clock starts on the sweep"
+
+        _move_clock_back(rows, name, minutes=si.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES + 10)
+        requests.clear()
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            second = _run(name, pages, rows)
+
+        assert requests == [("GET", ""), ("GET", "")], (
+            "inside the seed window the board is read, not probed page by page"
+        )
+        assert second["bodyFetches"] == pages
+
+        rows = _apply(rows, second)
+        rows[name]["lastHttpPageSeedAt"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+        _move_clock_back(rows, name, minutes=si.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES + 10)
+        requests.clear()
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            _run(name, pages, rows)
+
+        assert requests[:2] == [("HEAD", ""), ("HEAD", "")], (
+            "after the week the sweep runs again, so a new validator is discovered"
+        )
+
+
+def test_a_skipped_first_page_never_borrows_another_page_validator() -> None:
+    """The singular pair mirrors page 1. A tag from page 2 would later seed page 1 wrong."""
+    name = "Second Page Tag Only Studio"
+    with _conditional_server(page_etags={"/one": ETAG, "/two": NEW_ETAG}) as (base, requests):
+        pages = [f"{base}/one", f"{base}/two"]
+        rows = {name: _stored_paged_row(pages)}
+        rows[name].pop("lastHttpEtag")
+        rows[name]["lastHttpPageSeedAt"] = datetime.now(UTC).isoformat()
+        rows[name]["lastHttpPageValidators"] = _page_map([pages[1]], [(NEW_ETAG, "")])
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            report = _run(name, pages, rows)
+
+        assert requests == [("HEAD", NEW_ETAG), ("GET", ""), ("GET", "")], (
+            "page 1 has no tag and the seed week has not elapsed, so only page 2 is asked"
+        )
+        assert report["exclusionReason"] != "cache_not_modified_304", (
+            "an unprobed page cannot vouch for the board"
+        )
+        assert report["httpEtag"] == "", "page 2's tag must not become the board's pair"
+
+
+def test_the_sweep_stops_at_the_first_page_it_knows_has_changed() -> None:
+    """Once a page disowns its validator the read is certain; the pages behind it are not asked."""
+    name = "Three Page Studio"
+    with _conditional_server(page_etags={"/one": ETAG, "/two": NEW_ETAG, "/three": ETAG}) as (
+        base,
+        requests,
+    ):
+        pages = [f"{base}/one", f"{base}/two", f"{base}/three"]
+        rows = {name: _stored_row(pages[0], kept=6, zero_kept_streak=0)}
+        rows[name]["lastHttpPageValidators"] = _page_map(
+            pages, [(ETAG, ""), ('"listing-v0"', ""), (ETAG, "")]
+        )
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(pages[0], name)],
+        ):
+            report = _run(name, pages, rows)
+
+        assert requests == [
+            ("HEAD", ETAG),
+            ("HEAD", '"listing-v0"'),
+            ("GET", ""),
+            ("GET", ""),
+            ("GET", ""),
+        ], "page 3 is never asked: page 2 already settled that the read happens"
+        assert report["pageValidators"][pages[0]]["etag"] == ETAG
+        assert report["pageValidators"][pages[1]]["etag"] == NEW_ETAG, "the change is stored"
+        assert report["pageValidators"][pages[2]]["etag"] == ETAG, (
+            "an unasked page keeps the tag it had: its own answer would have been the only evidence"
+        )

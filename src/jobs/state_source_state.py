@@ -30,6 +30,7 @@ from .state_source_records import (
     derive_source_health_fields,
     excluded_source_skip_reason,
     normalize_source_state_payload,
+    normalized_http_page_validators,
     read_previously_successful_sources,
     read_source_state,
     read_success_cache,
@@ -144,6 +145,17 @@ def _copy_report_fields(
         entry["lastHttpLastModified"] = clean_text(report.get("httpLastModified"))
     elif bool(report.get("clearHttpLastModified")):
         entry.pop("lastHttpLastModified", None)
+    if "httpPageValidators" in report:
+        # A multi-page probe reports every configured page's current validator,
+        # and its presence is the whole answer: a map that lost its last entry
+        # retires the field instead of leaving tags the board no longer serves.
+        page_validators = normalized_http_page_validators(report.get("httpPageValidators"))
+        if page_validators:
+            entry["lastHttpPageValidators"] = page_validators
+        else:
+            entry.pop("lastHttpPageValidators", None)
+    if clean_text(report.get("httpPageSeedAt")):
+        entry["lastHttpPageSeedAt"] = clean_text(report.get("httpPageSeedAt"))
     if int(report.get("httpStatus") or 0) > 0:
         entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
 

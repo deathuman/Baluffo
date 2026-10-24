@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import sys
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -38,7 +40,10 @@ from src.jobs.adapters.static_listing_common import (
     _effective_timeout_or_raise,
     _is_expected_static_listing_fetch_fallback,
 )
-from src.jobs.adapters.static_listing_flow import _finish_generic_source
+from src.jobs.adapters.static_listing_flow import (
+    _finish_generic_source,
+    record_listing_read_validators,
+)
 from src.jobs.adapters.static_listing_pagination import (
     STATIC_PAGINATION_MAX_FOLLOWED_PAGES,
     card_lane_render_skip_enabled,
@@ -59,6 +64,7 @@ from src.jobs.adapters.static_runtime_support import (
 from src.jobs.common.config import STATIC_ASSET_URL_FILTER_ENABLED
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
+from src.jobs.models import RequestConfig
 from src.jobs.page_gating import filter_listable_pages, looks_like_asset_url
 from src.jobs.text_utils import clean_text
 from src.scrapers.domain_profiles import domain_profile_for_url
@@ -80,6 +86,22 @@ def _rendered_visible_text_len(html: str) -> int:
     from src.jobs.adapters.html_parsers import strip_html_text
 
     return len(clean_text(strip_html_text(html or "")))
+
+
+def _accepts_request_keyword(fetch: Callable[..., Any]) -> bool:
+    """Whether this seam can carry a request config, and with it a header sink.
+
+    A test double or custom fetcher shaped as ``(url, timeout)`` cannot, so the
+    caller keeps its two-argument call and simply learns no validators -- the same
+    fail-open the retry helper uses for the capture sink it passes through.
+    """
+    try:
+        parameters = inspect.signature(fetch).parameters
+    except (TypeError, ValueError):
+        return False
+    return "request" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
 
 
 class StaticFetchRunner:
@@ -128,6 +150,18 @@ class StaticFetchRunner:
         # above must not assign this earlier or mypy flags a no-redef.
         self.seen_listing_pages: set[str] = set(self.cleaned_pages)
         self.pagination_discovered_count = 0
+        # A static board's own listing read is the same observation a probe makes:
+        # the response says which copy of the page is being served. Capturing it
+        # here seeds the validators on the first read, so the first expired window
+        # can answer 304 instead of spending itself learning a tag it just fetched.
+        # Only configured pages are watched -- pagination pages are discovered per
+        # run and detail pages are never asked conditionally.
+        self._configured_pages: frozenset[str] = frozenset(self.cleaned_pages)
+        self._listing_read_validators: dict[str, dict[str, str]] = {}
+        listing_async_fetch = ctx.run_deps.listing_async_fetch
+        self._listing_async_accepts_request = bool(
+            listing_async_fetch is not None and _accepts_request_keyword(listing_async_fetch)
+        )
 
     # pure helper
     def run(self) -> None:
@@ -135,7 +169,12 @@ class StaticFetchRunner:
         while not self.stop_source:
             if registry_batch_start < len(self.cleaned_pages):
                 batch_start = registry_batch_start
-                registry_batch_start += 1
+                # Stride by the batch, not by one: `_build_listing_batch` returns
+                # `listing_batch_size` pages from `batch_start`, so a +1 stride
+                # re-fetched every tail page once per step (a five-page board paid
+                # fifteen page reads instead of five). The discovered-pagination
+                # loop this replaced used the same stride the old `range` did.
+                registry_batch_start += self.listing_batch_size
                 target_url = clean_text(self.cleaned_pages[batch_start]) or self.source_name
                 listing_batch_jobs = self._build_listing_batch(batch_start)
             elif self.pending_listing_pages:
@@ -213,17 +252,28 @@ class StaticFetchRunner:
         return True
 
     # network — makes HTTP requests
-    def _fetch_listing_html_sync(self, url: str, *, effective_timeout_s: int) -> str:
+    def _fetch_listing_html_sync(
+        self,
+        url: str,
+        *,
+        effective_timeout_s: int,
+        capture_headers: dict[str, str] | None = None,
+    ) -> str:
         current_url = url
         for hop in range(_MAX_STATIC_REDIRECT_HOPS):
+            hop_capture: dict[str, str] | None = {} if capture_headers is not None else None
             try:
-                return fetch_with_retries(
+                text = fetch_with_retries(
                     current_url,
                     self.deps.fetch_text,
                     timeout_s=effective_timeout_s,
                     retries=self.deps.retries if hop == 0 else 0,
                     backoff_s=self.deps.backoff_s,
+                    capture_headers=hop_capture,
                 )
+                if capture_headers is not None and hop_capture:
+                    capture_headers.update(hop_capture)
+                return text
             except HttpStatusError as exc:
                 if int(exc.code) not in {301, 302, 303, 307, 308}:
                     raise
@@ -302,14 +352,19 @@ class StaticFetchRunner:
         html = ""
         browser_fallback_attempted = False
         browser_fallback_error = ""
+        capture: dict[str, str] | None = {} if url in self._configured_pages else None
         try:
-            html = self._fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
+            html = self._fetch_listing_html_sync(
+                url, effective_timeout_s=effective_timeout_s, capture_headers=capture
+            )
         except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
             if not _is_expected_static_listing_fetch_fallback(exc):
                 raise
             html, browser_fallback_attempted, browser_fallback_error = self._sync_browser_fallback(
                 url, str(exc)
             )
+        if capture is not None:
+            self._capture_listing_read_validators(url, capture)
         self._record_fetch_meta(
             url,
             fetch_started,
@@ -353,25 +408,42 @@ class StaticFetchRunner:
         html = ""
         browser_fallback_attempted = False
         browser_fallback_error = ""
+        capture: dict[str, str] | None = {} if url in self._configured_pages else None
         try:
             if self.deps.listing_async_fetch is None:
                 html = await asyncio.to_thread(
                     self._fetch_listing_html_sync,
                     url,
                     effective_timeout_s=effective_timeout_s,
+                    capture_headers=capture,
                 )
             else:
                 current_url = url
                 html = ""
                 s4_bounce_continue_used = False
                 for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
+                    hop_capture = {} if capture is not None else None
                     try:
-                        html = await self.deps.listing_async_fetch(
-                            client,
-                            batch_job,
-                            current_url,
-                            effective_timeout_s,
-                        )
+                        if self._listing_async_accepts_request:
+                            html = await self.deps.listing_async_fetch(
+                                client,
+                                batch_job,
+                                current_url,
+                                effective_timeout_s,
+                                request=RequestConfig(
+                                    timeout_s=effective_timeout_s,
+                                    capture_response_headers=hop_capture,
+                                ),
+                            )
+                        else:
+                            html = await self.deps.listing_async_fetch(
+                                client,
+                                batch_job,
+                                current_url,
+                                effective_timeout_s,
+                            )
+                        if capture is not None and hop_capture:
+                            capture.update(hop_capture)
                         break
                     except HttpStatusError as exc:
                         if int(exc.code) not in {301, 302, 303, 307, 308}:
@@ -400,6 +472,8 @@ class StaticFetchRunner:
             html, browser_fallback_attempted, browser_fallback_error = await asyncio.to_thread(
                 self._sync_browser_fallback, url, str(exc)
             )
+        if capture is not None:
+            self._capture_listing_read_validators(url, capture)
         self._record_fetch_meta(
             url,
             fetch_started,
@@ -408,6 +482,19 @@ class StaticFetchRunner:
             browser_fallback_error,
         )
         return html
+
+    # mutation — records what a listing GET's own response published
+    def _capture_listing_read_validators(self, page_url: str, captured: dict[str, str]) -> None:
+        key = clean_text(page_url)
+        if key not in self._configured_pages or not captured:
+            return
+        self._listing_read_validators[key] = dict(captured)
+
+    # mutation — reports what the read observed; the report fields reach state
+    def _apply_listing_read_validators(self) -> None:
+        if not self._listing_read_validators:
+            return
+        record_listing_read_validators(self.ctx, self._listing_read_validators)
 
     # mutation — modifies in-place state
     def _on_listing_batch_progress(self, completed: int, total: int) -> None:
@@ -454,6 +541,9 @@ class StaticFetchRunner:
             per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
             progress_callback=self._on_listing_batch_progress,
         )
+        # All fetches in the batch have completed, so every capture is settled:
+        # adopt them in report order, on the main thread, before results are read.
+        self._apply_listing_read_validators()
         self.stats["listing_batch_count"] = int(self.stats.get("listing_batch_count") or 0) + 1
         for result in listing_results:
             self.ctx.emit_heartbeat()

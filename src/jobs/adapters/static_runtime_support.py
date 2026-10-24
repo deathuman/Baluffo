@@ -266,16 +266,25 @@ class StaticHtmlFetcher:
             raise RuntimeError(f"Static redirect loop for {source_url}")
         return raw_target
 
-    def _fetch_hop_chain(self, request: StaticHtmlFetchRequest) -> tuple[str, set[str], bool]:
+    def _fetch_hop_chain(
+        self,
+        request: StaticHtmlFetchRequest,
+        capture_headers: dict[str, str] | None = None,
+    ) -> tuple[str, set[str], bool]:
         """Follow safe same-site redirects; returns (text, visited, was_cached).
 
         Raises RuntimeError("Static redirect loop ...") on a same-URL
         round-trip and RuntimeError("Static redirect chain exceeded ...")
         after the bounded hop count — the pre-S4 behavior, unchanged.
+
+        ``capture_headers`` receives the validators of the final response only:
+        a redirect hop's headers describe the redirect, not the page, so they are
+        captured per hop and adopted only when that hop answered with the body.
         """
         current_url = request.fetch_url
         visited = {request.normalized_url}
         for _hop in range(_MAX_STATIC_REDIRECT_HOPS):
+            hop_capture: dict[str, str] | None = {} if capture_headers is not None else None
             try:
                 text = fetch_with_retries(
                     current_url,
@@ -283,7 +292,10 @@ class StaticHtmlFetcher:
                     request.timeout_s,
                     request.retries,
                     self._backoff_s,
+                    capture_headers=hop_capture,
                 )
+                if capture_headers is not None and hop_capture:
+                    capture_headers.update(hop_capture)
                 return text, visited, False
             except HttpStatusError as exc:
                 if int(exc.code) not in self._REDIRECT_STATUS_CODES:
@@ -360,6 +372,7 @@ class StaticHtmlFetcher:
         *,
         remaining_budget_s: float | None = None,
         retries_override: int | None = None,
+        capture_headers: dict[str, str] | None = None,
     ) -> tuple[str, bool]:
         request = self.build_request(
             url,
@@ -373,7 +386,7 @@ class StaticHtmlFetcher:
         if cached is not None:
             return cached, True
         try:
-            text, visited, was_cached = self._fetch_hop_chain(request)
+            text, visited, was_cached = self._fetch_hop_chain(request, capture_headers)
         except RuntimeError as loop_error:
             # S4: a same-URL redirect round-trip is the geo/consent-cookie
             # shape (Astrum class) ONLY on allowlisted hosts behind the opt-in

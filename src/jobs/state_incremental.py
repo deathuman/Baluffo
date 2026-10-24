@@ -79,6 +79,19 @@ def is_non_fetch_skip_reason(reason: Any) -> bool:
     return bool(token) and any(marker in token for marker in NON_FETCH_SKIP_REASONS)
 
 
+def _has_stored_validators(entry: dict[str, Any]) -> bool:
+    """Whether the board has a tag to ask a conditional probe with.
+
+    A single-page board stores one ETag/Last-Modified pair; a multi-page board
+    stores one per configured page and keeps the first page's pair too. Either
+    is enough for the board to skip its window after a 304.
+    """
+    if clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified")):
+        return True
+    page_validators = entry.get("lastHttpPageValidators")
+    return bool(isinstance(page_validators, dict) and page_validators)
+
+
 def _zero_kept_streak(entry: dict[str, Any]) -> int:
     # Canonical-first via the shared policy leaf (Phase 3 of the counter
     # collapse); zeroKeptStreak is a defensive third spelling covered by the
@@ -297,9 +310,9 @@ def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[st
         # parsing. Boards whose last run failed stay on run_now -- a 304 would
         # clear the failure without ever fetching them.
         return {"cacheDecision": "revalidate_only", "cacheDecisionReason": "static_revalidate_due"}
-    if norm_text(entry.get("cacheDecisionReason")) in _REVALIDATED_DECISION_REASONS and (
-        clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified"))
-    ):
+    if norm_text(
+        entry.get("cacheDecisionReason")
+    ) in _REVALIDATED_DECISION_REASONS and _has_stored_validators(entry):
         # The previous run answered 304, and its report kept nothing, so lastKeptCount
         # no longer says the board has jobs. The validators still do. The listing read
         # has its own window: the 304 refreshed the success clock, so the board waits

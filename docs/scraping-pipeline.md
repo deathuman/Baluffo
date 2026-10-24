@@ -123,9 +123,13 @@ Omitting `--output-dir` writes stub state into live `data/`. Always isolate.
 ### A kept static board asks before it downloads
 
 A static board that kept jobs and has not been read for the listing window (180 min) takes the cheap
-question first: the flow sends a HEAD on the listing URL. The first such run has no validators yet,
-so that probe also seeds `lastHttpEtag` / `lastHttpLastModified`; later runs send `If-None-Match` /
-`If-Modified-Since`, and a 304 completes the source as `excluded` with
+question first: the flow sends a HEAD on the listing URL. The validator is usually already on the
+row, because the full read stores the `ETag` / `Last-Modified` its own listing response carried —
+so the board's first expired window can ask conditionally instead of spending that window on a
+blind HEAD that could only learn a tag the read had already fetched. The HEAD still seeds
+`lastHttpEtag` / `lastHttpLastModified` where a read learned nothing (a custom fetch seam, a
+browser-rendered read, a board that publishes no validator). Either way later runs send
+`If-None-Match` / `If-Modified-Since`, and a 304 completes the source as `excluded` with
 `exclusionReason: cache_not_modified_304` — no listing fetch, parse, detail traversal or browser
 fallback.
 
@@ -147,19 +151,50 @@ window (12 h) as `static_empty_fresh` instead. Neither skip moves `nextEligibleC
 not a check — so the window, not the run cadence, decides when the probe happens. Plain freshness
 skips (`skip_fresh`, `cache_within_freshness_window`) still leave the success clock alone.
 
-Two shapes deliberately keep the full read:
+**Multi-page boards ask per page.** A 304 on page 1 says nothing about the pages behind it, so a
+board with more than one configured listing page stores one validator per page in
+`lastHttpPageValidators` and probes each page on a due run with its own `ETag`/`Last-Modified`
+(page 1 falls back to the singular pair a single-page board keeps); the source completes without
+a read only when every page answers 304. A partial answer — one page 200s — falls through to the
+full read, and still stores the tags the probe observed, so the changed page's new validator is
+the one asked next time. The sweep stops at the first page that answers 200 **while holding a
+validator**: the read is certain from then on, so the pages behind it are not asked and keep their
+tags — a board whose page 2 always answers with a fresh ETag (measured on EA) pays for two HEADs,
+not six, before its read. Retirement is per page: a page that answers 200 without a tag loses its
+entry while the others keep theirs, and an errored page says nothing and keeps its stored tag.
 
-- **Multi-page boards.** A 304 on page 1 says nothing about the pages behind it.
+A page with **no** validator cannot answer 304, so asking it is pure latency: four HEADs against
+a Japanese host measured 4.8 s, which is exactly the cost a tagless board would pay on every
+window. Pages without a tag are therefore swept at most once a week (`lastHttpPageSeedAt`), which
+still discovers a board that starts publishing one; a multi-page read that sees a tagless page
+starts that clock itself, because a HEAD over the same page could only rediscover what the read
+just saw. A tagless board is read in full in between, as before. Static-asset URLs in a row's `pages` list
+are filtered out before probing — the same filter the read applies — so a bundle URL cannot hold a
+skip open forever. The map is bounded to 24 pages per source and survives the state whitelist; a
+board that drops back to one page stores an empty map.
+
+One shape deliberately keeps the full read:
+
 - **`rendered_cards` hosts.** Their listing is a JS shell, so an unchanged document says nothing
   about the rows the page renders; a 304 would silently freeze them.
 
-A board that publishes no validator simply probes, gets 200, and fetches as before. The same 200
-also drops a validator the board stopped publishing. `apply_conditional_revalidate_result`, shared
+A board that publishes no validator still fetches in full, as does a multi-page board whose pages
+have none to send. The same 200 also drops a validator the board stopped publishing. `apply_conditional_revalidate_result`, shared
 by this flow and `provider_revalidate_not_modified`, copies the tags a probe response carries and,
 on a 2xx that is not a 304, marks any tag it omitted with `clearHttpEtag` (or
 `clearHttpLastModified`); `_copy_report_fields` then removes the stored value instead of retaining
 it. A 304 is exempt because servers often echo no headers on one, and an errored probe says nothing
 about the board's validators — so neither can retire a tag.
+
+Static boards earn their validator from the read too. The cached fetch (`fetch_html_cached`) and
+the runner's listing fetches take an optional `capture_headers` sink, and the flow records a 2xx's
+tags through `apply_full_read_response_headers` for a single-page board's pair, and per page in
+`lastHttpPageValidators` for a multi-page board. The async listing seam carries the sink in a
+`RequestConfig`; a seam that does not declare one is called exactly as before and captures
+nothing. Only configured listing pages are watched — a discovered pagination page or a detail
+page is never asked conditionally. A read that observes a page without a tag retires that page's
+entry (and page 1's singular pair) exactly like the 200 probe, while a page that did not answer
+keeps the tag it had.
 
 Provider feeds earn their validator from the full read too. Some publish `ETag` / `Last-Modified`
 only on the GET that carries the rows, never on a conditional HEAD, so the tag that would enable
@@ -176,8 +211,10 @@ a later page's tag describes that page, not the listing.
 GET's tag, the next decision inside the stable window comes back `provider_stable_revalidate`, and a
 GET that stops publishing a tag marks it for removal. The same cycle can be run live against any
 registered feed with
-`python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>`; it writes only
-under `_out/` and exits non-zero when the tag is not stored or the second run fetches a body.
+`python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>`, or across every
+feed an adapter registers with `--all`, which classifies each feed and exits non-zero only for one
+that publishes a validator and then answers the conditional probe with a body. Both write only
+under `_out/`.
 
 ### CloakBrowser was evaluated and rejected — do not re-propose it
 

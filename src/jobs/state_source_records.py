@@ -90,6 +90,28 @@ def normalized_rendered_empty_confirmations(value: Any) -> list[str]:
     return [text for text in out if text][-_MAX_RENDERED_EMPTY_CONFIRMATIONS:]
 
 
+# Conditional GET for multi-page static boards keeps one validator per configured
+# listing page: page 1's 304 says nothing about the pages behind it. The map is
+# bounded so a registry row with an outsized pages list cannot bloat state.
+_MAX_HTTP_PAGE_VALIDATORS = 24
+
+
+def normalized_http_page_validators(value: Any) -> dict[str, dict[str, str]]:
+    """Keep only listing pages that still publish a validator."""
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for raw_url, raw_tags in list(value.items())[:_MAX_HTTP_PAGE_VALIDATORS]:
+        url = clean_text(raw_url)
+        if not url or not isinstance(raw_tags, dict):
+            continue
+        etag = clean_text(raw_tags.get("etag"))
+        last_modified = clean_text(raw_tags.get("lastModified"))
+        if etag or last_modified:
+            out[url] = {"etag": etag, "lastModified": last_modified}
+    return out
+
+
 def structured_source_host(source_row: dict[str, Any]) -> str:
     pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
     url = clean_text(source_row.get("listing_url")) or (clean_text(pages[0]) if pages else "")
@@ -411,6 +433,10 @@ def normalize_source_state_payload(
             "lastListingCheckedAt": clean_text(entry_src.get("lastListingCheckedAt")),
             "lastHttpEtag": clean_text(entry_src.get("lastHttpEtag")),
             "lastHttpLastModified": clean_text(entry_src.get("lastHttpLastModified")),
+            "lastHttpPageValidators": normalized_http_page_validators(
+                entry_src.get("lastHttpPageValidators")
+            ),
+            "lastHttpPageSeedAt": clean_text(entry_src.get("lastHttpPageSeedAt")),
             "lastHttpStatus": _clamped_int(entry_src.get("lastHttpStatus"), 0, 0),
             "nextEligibleCheckAt": clean_text(entry_src.get("nextEligibleCheckAt")),
             "cacheDecision": clean_text(entry_src.get("cacheDecision")),

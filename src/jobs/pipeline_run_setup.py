@@ -352,7 +352,11 @@ def prepare_pipeline_run(
         adapter_http_concurrency=adapter_http_concurrency,
     )
     static_listing_async_fetch = (
-        (lambda client, _job, url, timeout_s: async_fetch_text_httpx(client, url, timeout_s))
+        (
+            lambda client, _job, url, timeout_s, request=None: async_fetch_text_httpx(
+                client, url, timeout_s, request=request
+            )
+        )
         if fetch_client == "httpx_async"
         else None
     )

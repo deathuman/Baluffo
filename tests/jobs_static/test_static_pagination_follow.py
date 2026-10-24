@@ -51,6 +51,8 @@ def _make_runner(
     pages_by_url: dict[str, str],
     *,
     state_entry: dict[str, Any] | None = None,
+    pages: list[str] | None = None,
+    detail_concurrency: int = 1,
 ) -> tuple[StaticFetchRunner, StaticSourceContext, list[str]]:
     fetch_log: list[str] = []
 
@@ -59,7 +61,8 @@ def _make_runner(
         return pages_by_url.get(url, "")
 
     source_name = "Cygames Static Pagination"
-    source = {"name": source_name, "company": source_name, "pages": [_BASE]}
+    source_pages = list(pages or [_BASE])
+    source = {"name": source_name, "company": source_name, "pages": source_pages}
     run_deps = StaticRunDeps(
         fetch_text=fetch_text,
         timeout_s=5,
@@ -68,7 +71,7 @@ def _make_runner(
     )
     runtime_config = StaticSourceRuntimeConfig(
         static_profile="standard",
-        static_detail_concurrency=1,
+        static_detail_concurrency=detail_concurrency,
         static_source_time_budget_s=30,
         low_yield_detail_cap=10,
         very_low_yield_detail_cap=3,
@@ -89,11 +92,11 @@ def _make_runner(
         source=source,
         source_name=source_name,
         company=source_name,
-        pages=list(source["pages"]),
+        pages=list(source_pages),
         entry_report=build_static_entry_report(
             source=source,
             source_name=source_name,
-            pages=list(source["pages"]),
+            pages=list(source_pages),
             company=source_name,
         ),
         state_entry=state_entry or {},
@@ -213,6 +216,28 @@ def test_runner_pagination_cap_limits_followed_pages() -> None:
     followed = {url for url in fetch_log if "page=" in url}
     assert followed == {f"{_BASE}?page={n}" for n in (2, 3, 4, 5, 6, 7)}
     assert f"{_BASE}?page=8" not in fetch_log
+
+
+def test_a_multi_page_registry_window_fetches_each_page_once() -> None:
+    """The batch loop strides by the batch, so a tail page is never re-read.
+
+    The pagination follow rewrite (2026-09-15) replaced the old
+    ``range(0, n, batch_size)`` stride with a ``+1``, while the batch builder still
+    returned ``batch_size`` pages from the new start: a five-page board read
+    pages 1-5, then 2-5, then 3-5, then 4-5, then 5 -- fifteen page fetches for
+    five pages, on every run.
+    """
+    pages = [f"{_BASE}?page={n}" for n in range(1, 6)]
+    pages_by_url = dict.fromkeys(pages, "<html><body>Nothing open right now.</body></html>")
+    runner, _ctx, fetch_log = _make_runner(
+        pages_by_url,
+        pages=pages,
+        detail_concurrency=10,
+    )
+
+    runner.run()
+
+    assert sorted(fetch_log) == sorted(pages), "each configured page is read exactly once"
 
 
 def test_runner_pagination_self_loop_never_fetched() -> None:

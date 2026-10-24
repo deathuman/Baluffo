@@ -91,7 +91,9 @@ class StaticRunDeps:
     progress_callback: Callable[..., None] | None = None
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
     source_state_rows: dict[str, dict[str, Any]] | None = None
-    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None
+    # May accept an optional ``request`` keyword; callers pass one only when the
+    # seam declares it, so a four-argument test double keeps working unchanged.
+    listing_async_fetch: Callable[..., Awaitable[str]] | None = None
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None
     # The rendered-JSON lane's browser seam: returns the HTML plus the JSON the page's own app
     # fetched. Separate from `try_playwright` because it settles the page and intercepts

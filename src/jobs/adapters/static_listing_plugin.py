@@ -9,6 +9,7 @@ helpers are resolved through the coordinator at call time so tests can patch the
 
 from __future__ import annotations
 
+import inspect
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -85,14 +86,17 @@ def _invoke_static_plugin(
     `listing_fetch_ms`, and the remainder of the invocation is the plugin's parsing.
     """
     from src.jobs.adapters import static_listing as _sl
+    from src.jobs.adapters.static_listing_flow import record_listing_read_validators
 
     fetch_text = ctx.run_deps.fetch_text
     fetch_html_cached = ctx.html_fetcher.fetch_html_cached
     if network_bookings is not None:
         fetch_text = _booked_fetch_text(ctx, fetch_text, network_bookings)
         fetch_html_cached = _booked_fetch_html_cached(ctx, fetch_html_cached, network_bookings)
+    captured: dict[str, dict[str, str]] = {}
+    fetch_html_cached = _capturing_fetch_html_cached(ctx, fetch_html_cached, captured)
 
-    return list(
+    jobs = list(
         plugin.run(
             fetch_text=fetch_text,
             timeout_s=ctx.run_deps.timeout_s,
@@ -107,6 +111,8 @@ def _invoke_static_plugin(
             try_playwright=ctx.run_deps.try_playwright,
         )
     )
+    record_listing_read_validators(ctx, captured)
+    return jobs
 
 
 def _book_network_elapsed(bookings: dict[str, int], started: float) -> None:
@@ -145,6 +151,44 @@ def _booked_fetch_html_cached(
             ctx.stats["listing_fetch_ms"] = int(ctx.stats.get("listing_fetch_ms") or 0) + int(
                 (time.perf_counter() - started) * 1000
             )
+
+    return _wrapped
+
+
+def _accepts_capture_kwarg(fetch: Any) -> bool:
+    try:
+        parameters = inspect.signature(fetch).parameters
+    except (TypeError, ValueError):
+        return False
+    return "capture_headers" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
+
+
+def _capturing_fetch_html_cached(
+    ctx: StaticSourceContext, fetch_html_cached: Any, captured: dict[str, dict[str, str]]
+) -> Any:
+    """Record the validators a plugin's own listing GET response carried.
+
+    Plugins read their listing through the cached fetch, so the response that
+    produced the rows is the one that can seed revalidation -- the same rule the
+    generic runner applies to its own listing fetches. Only configured pages are
+    watched, and a cache hit saw no response this run, so it records nothing.
+    """
+    configured = {clean_text(page) for page in ctx.pages if clean_text(page)}
+    if not configured or not _accepts_capture_kwarg(fetch_html_cached):
+        return fetch_html_cached
+
+    def _wrapped(url: str, *args: Any, **kwargs: Any) -> Any:
+        key = clean_text(url)
+        if key not in configured:
+            return fetch_html_cached(url, *args, **kwargs)
+        sink: dict[str, str] = {}
+        result = fetch_html_cached(url, *args, capture_headers=sink, **kwargs)
+        was_cached = isinstance(result, tuple) and len(result) > 1 and bool(result[1])
+        if not was_cached and sink:
+            captured[key] = dict(sink)
+        return result
 
     return _wrapped
 
