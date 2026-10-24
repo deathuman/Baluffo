@@ -57,6 +57,9 @@ def _apply_report_to_entry(
 ) -> None:
     entry = dict(source_state_rows.get(source_name) or {})
     prior_state = snapshot_prior_source_state(entry)
+    # The row the state update reads: the aggregate plus, for a single-board source, the
+    # entry's own answer (status, exclusion, validators). See ``_state_report_view``.
+    report = _state_report_view(report)
     _copy_report_fields(entry, report, finished_at)
     _apply_browser_state(
         entry,
@@ -107,6 +110,52 @@ def _apply_report_to_entry(
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         circuit_breaker_zero_kept=circuit_breaker_zero_kept,
     )
+
+
+_ENTRY_VIEW_KEYS = (
+    "cacheDecision",
+    "cacheDecisionReason",
+    "exclusionReason",
+    "httpStatus",
+    "httpEtag",
+    "httpLastModified",
+    "httpPageValidators",
+    "httpPageSeedAt",
+    "clearHttpEtag",
+    "clearHttpLastModified",
+)
+
+
+def _state_report_view(report: dict[str, Any]) -> dict[str, Any]:
+    """The report row as the source-state update should read it.
+
+    A static loader's own row *aggregates* the board it fetched: the answer that decides
+    what happens next -- the exclusion and its reason, the validators, the HTTP status --
+    is recorded on the entry report, which the pipeline publishes in ``details`` under the
+    studio's name. Reading only the aggregate loses that answer for the loader name the
+    cache decision looks up: a read-earned ETag never earns its 304, and a 304 never keeps
+    the board asleep, because the row is a plain success that ran now.
+
+    Hoist only when the entry is unambiguous. A source with several entries has no single
+    answer to carry up, and guessing one would ask the board with another board's tag.
+    """
+    details = report.get("details")
+    if not (isinstance(details, list) and len(details) == 1 and isinstance(details[0], dict)):
+        return report
+    entry = details[0]
+    view = dict(report)
+    row_status = clean_text(report.get("status"))
+    entry_status = clean_text(entry.get("status"))
+    if entry_status and (not row_status or row_status == "ok"):
+        # ``ok`` on the row only says the fetch did not raise; the entry knows whether the
+        # board was read, skipped as unchanged, or failed.
+        view["status"] = entry_status
+    for key in _ENTRY_VIEW_KEYS:
+        if view.get(key) in (None, "", 0, [], {}):
+            value = entry.get(key)
+            if value not in (None, "", 0, [], {}):
+                view[key] = value
+    return view
 
 
 def _copy_report_fields(

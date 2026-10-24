@@ -925,6 +925,11 @@ def apply_excluded_source_state(
 ) -> None:
     if is_not_modified_304_report(report):
         entry["lastSuccessAt"] = finished_at
+        # The health derive reads ``lastSuccessfulFetchAt``/``lastSeenInFetchAt`` first,
+        # so a row that only refreshed their fallbacks kept the *previous* run's clocks --
+        # and the 304's own window never started. A 304 is a fresh, successful answer.
+        entry["lastSuccessfulFetchAt"] = finished_at
+        entry["lastSeenInFetchAt"] = finished_at
         entry["consecutiveFailures"] = 0
         for key in ("quarantinedUntilAt", "lastFailureAt", "lastError"):
             entry.pop(key, None)

@@ -531,3 +531,141 @@ def test_a_four_argument_async_seam_is_still_called_unchanged_and_learns_nothing
     assert calls == [(page, 5)]
     assert runner._listing_read_validators == {}
     assert "httpEtag" not in ctx.entry_report
+
+
+def _pipeline_report(source_name: str, entry: dict[str, Any]) -> dict[str, Any]:
+    """The shape the pipeline publishes: one loader row aggregating a named entry."""
+    return {
+        "name": source_name,
+        "adapter": "static",
+        "status": entry.get("status") or "ok",
+        "keptCount": int(entry.get("keptCount") or 0),
+        "details": [entry],
+    }
+
+
+def test_a_loader_row_keeps_the_tag_its_only_entry_carried() -> None:
+    """The decision looks up the loader name, so that row is where the tag must land.
+
+    A static board is reported as one loader row whose entry -- keyed by the studio's name
+    -- carries the listing response's headers. Persisting only the entry leaves the loader
+    row tagless, so the tag the read just earned could never earn its 304.
+    """
+    source_name = "static_source::static:listing_url:https://aggregate.example/careers"
+    entry: dict[str, Any] = {
+        "name": "Aggregate Studio (sheet)",
+        "adapter": "static",
+        "status": "ok",
+        "keptCount": 3,
+        "httpStatus": 200,
+        "httpEtag": ETAG,
+        "httpLastModified": LAST_MODIFIED,
+    }
+
+    rows = _apply({}, _pipeline_report(source_name, entry))
+
+    loader = rows[source_name]
+    assert loader["lastHttpEtag"] == ETAG
+    assert loader["lastHttpLastModified"] == LAST_MODIFIED
+    assert loader["lastHttpStatus"] == 200
+    assert rows["Aggregate Studio (sheet)"]["lastHttpEtag"] == ETAG, "the entry keeps its own"
+
+
+def test_a_row_that_already_carries_an_http_answer_is_not_replaced_by_its_entry() -> None:
+    """A probe's own answer is the newer one; the entry must not overwrite it."""
+    source_name = "static_source::static:listing_url:https://probed.example/careers"
+    report = _pipeline_report(
+        source_name,
+        {"name": "Probed Studio", "status": "ok", "httpStatus": 200, "httpEtag": '"entry-v1"'},
+    )
+    report.update(
+        {
+            "httpStatus": 200,
+            "httpEtag": STALE_ETAG,
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "static_revalidate_due",
+        }
+    )
+
+    rows = _apply({}, report)
+
+    assert rows[source_name]["lastHttpEtag"] == STALE_ETAG
+
+
+def test_a_304_reported_on_the_entry_keeps_the_loader_row_asleep() -> None:
+    """The exclusion lives on the entry; the loader row must still learn it was a 304.
+
+    A 304 is an exclusion entry under a loader row that itself only knows the fetch did
+    not raise. Persisting the aggregate alone records a successful run that kept nothing:
+    the deadline slides, the reason is lost, and the next run re-downloads a page the
+    board just said was unchanged.
+    """
+    name = "static_source::static:listing_url:https://sleepy.example/careers"
+    listing_url = "https://sleepy.example/careers"
+    rows: dict[str, Any] = {name: _stored_row(listing_url, kept=5)}
+    rows[name]["cacheDecisionReason"] = "static_revalidate_due"
+    # The aliases a real aged row carries: the health derive reads these first, so a 304
+    # that refreshes only their fallbacks would keep the previous run's clocks.
+    rows[name]["lastSuccessfulFetchAt"] = _long_ago()
+    rows[name]["lastSeenInFetchAt"] = _long_ago()
+    deadline_before = rows[name]["nextEligibleCheckAt"]
+    report: dict[str, Any] = {
+        "name": name,
+        "adapter": "static",
+        "status": "ok",
+        "keptCount": 0,
+        "details": [
+            {
+                "name": "Sleepy Studio (sheet)",
+                "adapter": "static",
+                "status": "excluded",
+                "error": "not_modified_304",
+                "exclusionReason": "cache_not_modified_304",
+                "cacheDecision": "revalidate_only",
+                "cacheDecisionReason": "not_modified_304",
+                "httpStatus": 304,
+                "httpLastModified": LAST_MODIFIED,
+            }
+        ],
+    }
+
+    rows = _apply(rows, report)
+
+    loader = rows[name]
+    assert loader["lastStatus"] == "excluded"
+    assert loader["cacheDecisionReason"] == "not_modified_304"
+    assert loader["lastHttpLastModified"] == LAST_MODIFIED
+    assert loader["lastSuccessAt"] != _long_ago(), "a 304 is a successful answer to the probe"
+    assert loader["lastSuccessfulFetchAt"] == loader["lastSuccessAt"]
+    assert loader["lastCheckedAt"] != _long_ago(), "the probe ran this run, so the clock moved"
+    assert loader["nextEligibleCheckAt"] == deadline_before, (
+        "a 304 fetched nothing new, so it must not slide the deadline"
+    )
+    assert _decision(name, rows) == {
+        "cacheDecision": "skip_fresh",
+        "cacheDecisionReason": "static_revalidated_fresh",
+    }, "the 304's own window is what keeps the board asleep"
+
+    _expire_listing_window(rows, name)
+    assert _decision(name, rows) == {
+        "cacheDecision": "revalidate_only",
+        "cacheDecisionReason": "static_revalidate_due",
+    }
+
+
+def test_a_multi_entry_report_does_not_borrow_one_entrys_tag() -> None:
+    """Several entries have no single answer; guessing would ask with another board's tag."""
+    source_name = "provider_sources"
+    report: dict[str, Any] = {
+        "name": source_name,
+        "adapter": "greenhouse",
+        "status": "ok",
+        "details": [
+            {"name": "Feed A", "status": "ok", "httpStatus": 200, "httpEtag": '"a"'},
+            {"name": "Feed B", "status": "ok", "httpStatus": 200, "httpEtag": '"b"'},
+        ],
+    }
+
+    rows = _apply({}, report)
+
+    assert "lastHttpEtag" not in rows[source_name]
