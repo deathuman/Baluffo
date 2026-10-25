@@ -21,6 +21,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 from unittest import mock
 from urllib.parse import urlparse
@@ -166,6 +167,7 @@ def _run(name: str, listing_url: str | list[str], rows: dict[str, Any]) -> dict[
         "exclusionReason": detail.get("exclusionReason") or "",
         "httpStatus": int(detail.get("httpStatus") or 0),
         "httpEtag": detail.get("httpEtag") or "",
+        "httpLastModified": detail.get("httpLastModified") or "",
         "clearHttpEtag": bool(detail.get("clearHttpEtag")),
         "httpPageValidators": detail.get("httpPageValidators"),
         "pageValidators": detail.get("httpPageValidators"),
@@ -646,4 +648,132 @@ def test_the_sweep_stops_at_the_first_page_it_knows_has_changed() -> None:
         assert report["pageValidators"][pages[1]]["etag"] == NEW_ETAG, "the change is stored"
         assert report["pageValidators"][pages[2]]["etag"] == ETAG, (
             "an unasked page keeps the tag it had: its own answer would have been the only evidence"
+        )
+
+
+# ------------------------------------------------------------------ a tagless board
+
+READ_CLOCK = datetime(2026, 6, 2, 9, 0, tzinfo=UTC)
+READ_CLOCK_HTTP = "Tue, 02 Jun 2026 09:00:00 GMT"
+
+
+@contextmanager
+def _tagless_server(*, modified_at: datetime) -> Iterator[tuple[str, list[tuple[str, str]]]]:
+    """A listing that publishes no validator but does honour ``If-Modified-Since``.
+
+    ``modified_at`` is the document's own version. A request asking with an earlier date is a
+    200; one asking at or after it is a 304. Nothing is sent back as an ETag or Last-Modified,
+    which is the whole point: the flow has no server tag to ask with, only the clock of its
+    own last read.
+    """
+    requests: list[tuple[str, str]] = []
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def _respond(self, *, with_body: bool) -> None:
+            asked = (self.headers.get("If-Modified-Since") or "").strip()
+            requests.append((self.command, asked))
+            if asked:
+                parsed = parsedate_to_datetime(asked)
+                if parsed is not None and parsed >= modified_at:
+                    self.send_response(304)
+                    self.end_headers()
+                    return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(EMPTY_LISTING)))
+            self.end_headers()
+            if with_body:
+                self.wfile.write(EMPTY_LISTING)
+
+        def do_GET(self) -> None:  # noqa: N802 - http.server's naming
+            self._respond(with_body=True)
+
+        def do_HEAD(self) -> None:  # noqa: N802 - http.server's naming
+            self._respond(with_body=False)
+
+        def log_message(self, *args: Any) -> None:
+            return None
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _tagless_stored_row(listing_url: str, *, streak: int) -> dict[str, Any]:
+    """A read that kept nothing and published no validator, long past its empty window."""
+
+    return {
+        "lastStatus": "ok",
+        "lastAdapter": "static",
+        "listingUrl": listing_url,
+        "lastKeptCount": 0,
+        "lastJobsFound": 0,
+        "consecutiveZeroKept": streak,
+        "lastSuccessAt": READ_CLOCK.isoformat(),
+        "lastCheckedAt": READ_CLOCK.isoformat(),
+        "nextEligibleCheckAt": (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
+    }
+
+
+def test_a_tagless_board_asks_with_its_read_clock_and_a_304_satisfies_the_empty_window() -> None:
+    """No validator to send is not the same as no question to ask."""
+    name = "Tagless Cycle Studio"
+    with _tagless_server(modified_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC)) as (base, requests):
+        listing_url = f"{base}/openings"
+        rows = {name: _tagless_stored_row(listing_url, streak=3)}
+        assert _decision(name, rows) == {
+            "cacheDecision": "revalidate_only",
+            "cacheDecisionReason": "static_empty_revalidate_due",
+        }
+
+        report = _run(name, listing_url, rows)
+
+        assert requests == [("HEAD", READ_CLOCK_HTTP)], (
+            "the probe carries the read clock, not an absent validator"
+        )
+        assert report["exclusionReason"] == "cache_not_modified_304"
+        assert report["bodyFetches"] == [], "a 304 must not download the listing"
+        assert report["httpStatus"] == 304
+        assert report["httpLastModified"] == "", (
+            "the date we asked with is ours; the server published nothing to store"
+        )
+
+        rows = _apply(rows, report)
+        assert not rows[name].get("lastHttpLastModified")
+        assert not rows[name].get("lastHttpEtag")
+        assert _decision(name, rows) == {
+            "cacheDecision": "skip_fresh",
+            "cacheDecisionReason": "static_empty_fresh",
+        }
+
+
+def test_a_tagless_board_that_ignores_the_clock_reads_exactly_as_before() -> None:
+    """The synthesised date is a request header, so a server that ignores it costs nothing."""
+    name = "Tagless Ignoring Studio"
+    with _tagless_server(modified_at=datetime(2027, 1, 1, tzinfo=UTC)) as (base, requests):
+        listing_url = f"{base}/openings"
+        rows = {name: _tagless_stored_row(listing_url, streak=3)}
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(listing_url, name)],
+        ):
+            report = _run(name, listing_url, rows)
+
+        assert requests == [("HEAD", READ_CLOCK_HTTP), ("GET", "")], (
+            "the conditional question is asked, then the page is read when it answers 200"
+        )
+        assert report["bodyFetches"] == [listing_url]
+        assert report["status"] == "ok"
+        assert report["keptCount"] == 1
+
+        rows = _apply(rows, report)
+        assert not rows[name].get("lastHttpLastModified"), (
+            "a page that publishes no tag still has none after the read"
         )

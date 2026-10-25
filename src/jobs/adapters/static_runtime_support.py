@@ -75,6 +75,15 @@ def classify_static_fetch_exception(
     classification = "error"
     if "HTTP 403" in msg:
         classification = "blocked_or_challenge"
+    elif "HTTP 999" in msg:
+        # LinkedIn's non-standard "request denied" is a block, not a broken page. It used to
+        # fall through to "error", which read as "the board has no jobs" and retired the
+        # board's evidence instead of retrying it: the Ironbelly sheet board oscillated
+        # between 143 rows and a js_required/needs_review verdict purely on this status.
+        if anti_bot_retry:
+            classification = "anti_bot_or_challenge"
+        else:
+            classification = "blocked_or_challenge"
     elif "HTTP 429" in msg or "Too Many Requests" in msg:
         if anti_bot_retry:
             classification = "anti_bot_or_challenge"

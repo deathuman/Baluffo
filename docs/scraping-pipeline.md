@@ -167,9 +167,15 @@ tags — a board whose page 2 always answers with a fresh ETag (measured on EA) 
 not six, before its read. Retirement is per page: a page that answers 200 without a tag loses its
 entry while the others keep theirs, and an errored page says nothing and keeps its stored tag.
 
-A page with **no** validator cannot answer 304, so asking it is pure latency: four HEADs against
-a Japanese host measured 4.8 s, which is exactly the cost a tagless board would pay on every
-window. Pages without a tag are therefore swept at most once a week (`lastHttpPageSeedAt`), which
+A page with no validator cannot answer `If-None-Match`, but it can answer `If-Modified-Since`: the
+sweep sends the clock of the read that is waiting to be replaced (`_read_clock_since`), so an
+unchanged page still answers 304 and is skipped. The date is **ours**, not the server's — a request
+header only, never stored as a validator, and a host that ignores it simply answers 200 and the page
+is read as before. On the measured population 145 of 1 312 tagless pages (11%) answered 304 this
+way; the rest answered 200, which is why this rides a HEAD the sweep was already going to spend and
+does **not** justify giving a tagless board a probe of its own: as a new request it costs more than
+the reads it avoids ([snapshot](snapshots/fetch-pipeline-revalidation-population-2026-10-25.md)).
+Pages without a tag are therefore still swept at most once a week (`lastHttpPageSeedAt`), which
 still discovers a board that starts publishing one; a multi-page read that sees a tagless page
 starts that clock itself, because a HEAD over the same page could only rediscover what the read
 just saw. A tagless board is read in full in between, as before. Static-asset URLs in a row's `pages` list

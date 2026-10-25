@@ -1,9 +1,32 @@
 import pytest
 
 from src.jobs.adapters.plugins.static import blizzard, kojima, littlechicken
-from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
+from src.jobs.adapters.static_runtime_support import (
+    classify_static_fetch_exception,
+    is_static_fetch_fallback_exception,
+)
+from src.jobs.common.http import HttpStatusError
 
 from ._helpers import jf
+
+
+def test_a_linkedin_999_is_a_block_rather_than_an_empty_board() -> None:
+    """A denied request says nothing about the board's jobs, so it must not read as one.
+
+    Ironbelly's sheet board swings between 143 rows and zero on this status alone; classifying
+    it as a plain error retired the board's evidence instead of retrying it.
+    """
+    url = "https://www.linkedin.com/company/ironbelly-studios/"
+    exc = HttpStatusError(999, url)
+
+    assert classify_static_fetch_exception(exc, target_url=url) == (
+        "blocked_or_challenge",
+        True,
+    ), "blocked is retryable and belongs in the browser queue"
+    assert classify_static_fetch_exception(exc, target_url=url, anti_bot_retry=True) == (
+        "anti_bot_or_challenge",
+        True,
+    )
 
 
 def test_static_fetch_fallback_predicate_keeps_unexpected_runtime_errors_visible() -> None:

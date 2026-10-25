@@ -9,6 +9,7 @@ AI boundary implement in: this leaf for generic flow; state helpers come from
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from email.utils import format_datetime
 
 from src.jobs.adapters.static_listing_plugin import static_board_renders_cards
 from src.jobs.adapters.static_listing_state import (
@@ -158,6 +159,24 @@ def _page_validator_seed_due(ctx: StaticSourceContext) -> bool:
     return (datetime.now(UTC) - seeded_at).total_seconds() >= _PAGE_VALIDATOR_SEED_INTERVAL_S
 
 
+def _read_clock_since(state_entry: dict[str, object] | None) -> str:
+    """The last successful read, as an HTTP date, for a page with no validator.
+
+    A board that publishes no ``ETag``/``Last-Modified`` can still be asked the conditional
+    question: "has this changed since the copy I read at this time?". The date is ours, not
+    the server's, so it is a request header only -- never a stored validator. The success
+    stamp is the run's finish, at most seconds after the fetch, which makes the question
+    very slightly conservative rather than wrong.
+    """
+
+    read_at = parse_datetime((state_entry or {}).get("lastSuccessAt"))
+    if read_at is None:
+        return ""
+    if read_at.tzinfo is None:
+        read_at = read_at.replace(tzinfo=UTC)
+    return format_datetime(read_at.astimezone(UTC), usegmt=True)
+
+
 def _probe_listing_pages(
     ctx: StaticSourceContext,
 ) -> tuple[bool, dict[str, dict[str, str]], dict[str, object] | None, bool]:
@@ -195,6 +214,7 @@ def _probe_listing_pages(
     # per window is also how it discovers a tag it never had); the seed gate only
     # stops a multi-page sweep from repeating that latency on every page.
     seed_due = len(listing_pages) == 1 or _page_validator_seed_due(ctx)
+    read_clock_since = _read_clock_since(ctx.state_entry)
     first_probe: dict[str, object] | None = None
     probed_count = 0
     unchanged_count = 0
@@ -211,6 +231,11 @@ def _probe_listing_pages(
             ctx.run_deps.timeout_s,
             etag=clean_text(tags.get("etag")),
             last_modified=clean_text(tags.get("lastModified")),
+            # A page that has never published a tag still gets a conditional question,
+            # asked with the clock of the read that is waiting to be replaced. Without
+            # it this HEAD is unconditional and can only ever answer 200: the probe costs
+            # a request and the read happens anyway.
+            since="" if has_validator else read_clock_since,
             probe=True,
         )
         if page_url == listing_pages[0]:

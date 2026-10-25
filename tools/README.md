@@ -44,6 +44,43 @@ python tools/measurements/pipeline/thread_cpu.py --container <name> --run-dir <r
 python tools/measurements/pipeline/cpu_attribution.py --run-dir <run-dir> --wall-clock-seconds <s>
 ```
 
+Revalidation is the one fetch saving a replay cannot show: a 304 removes a download, and
+replay has no wire. `revalidation_study.py` therefore drives **live** arms, but pins everything
+else -- one seeded registry/state, one data dir per arm, a named code tree per arm, and a paired
+verdict that refuses when the arms did not produce the same work. `live_run.py` is the arm
+driver it launches; it deliberately does **not** set `force_refresh_all`, because a forced run
+can never answer "did the policy skip this board?".
+
+```bash
+# freeze the population (all static boards, every clock moved past its window)
+python tools/measurements/pipeline/revalidation_study.py seed --study .tmp/study \
+    --state <data-dir>/jobs-source-state.json.gz \
+    --registry <data-dir>/source-registry-active.json --all-static --age-minutes 900
+
+# one arm per code tree (a worktree is a before arm); arms are immutable once run
+python tools/measurements/pipeline/revalidation_study.py arm --study .tmp/study --name a --code .
+python tools/measurements/pipeline/revalidation_study.py arm --study .tmp/study --name b \
+    --code ../before-tree --strip-validators
+
+# what the arm's state holds now, and what the tagless zero-kept boards answer
+python tools/measurements/pipeline/revalidation_study.py census --study .tmp/study --name a
+python tools/measurements/pipeline/revalidation_study.py probe --study .tmp/study --name a
+
+# paired deltas + verdict (inconclusive when the arms' kept/output counts diverge)
+python tools/measurements/pipeline/revalidation_study.py report --study .tmp/study --compare a:b
+```
+
+`census` prices a cohort from the run's own `durationMs`. Never use `lastDurationMs` for this:
+it reads 0 for a row whose last run was a skip, so a skipped cohort would be priced at zero.
+
+`probe` asks each page of the tagless cohort three questions, and the third is what makes the answer
+readable: `plain` is a HEAD with no condition (it can only ever be a request), `since` carries the
+board's own read clock as `If-Modified-Since`, and `old` carries a 2015 date. A 200 in `since` is
+only evidence about the header if `old` also answered 200 — otherwise the host is honouring
+`If-Modified-Since` and `since` was simply too recent. Compare `since` against `plain` to price the
+fallback inside a sweep that already probes, and against the cohort's read cost to decide whether
+the board should be probed at all.
+
 ### `measurements/corpus/`
 The hermetic fetch lane: record one real run's HTTP into a content-addressed corpus, then replay
 it as many times as you like with no network at all. This is what turns "is this change faster?"

@@ -117,6 +117,7 @@ def conditional_revalidate_url(
     *,
     etag: str = "",
     last_modified: str = "",
+    since: str = "",
     probe: bool = False,
 ) -> dict[str, Any]:
     """Cheap HEAD check for "has this document changed?".
@@ -125,10 +126,17 @@ def conditional_revalidate_url(
     flow probes once to seed ``ETag``/``Last-Modified`` so later runs can ask
     the conditional question, while provider callers keep the old no-request
     behavior.
+
+    ``since`` is the caller's own read clock, as an HTTP date -- the answer to "is
+    the copy I already have still current?" for a board that publishes no validator.
+    It is a question, never an answer: unlike ``last_modified`` it is not a tag the
+    server issued, so nothing may persist it as one. A server that ignores the header
+    simply answers 200 and the caller reads the page as it always did.
     """
     clean_etag = str(etag or "").strip()
     clean_last_modified = str(last_modified or "").strip()
-    if not clean_etag and not clean_last_modified and not probe:
+    clean_since = str(since or "").strip()
+    if not clean_etag and not clean_last_modified and not clean_since and not probe:
         return {
             "supported": False,
             "notModified": False,
@@ -139,8 +147,12 @@ def conditional_revalidate_url(
     headers = dict(DEFAULT_HTTP_HEADERS)
     if clean_etag:
         headers["If-None-Match"] = clean_etag
+    # A server-issued Last-Modified is authoritative; the caller's read clock is the
+    # fallback question for a page that has never published one.
     if clean_last_modified:
         headers["If-Modified-Since"] = clean_last_modified
+    elif clean_since:
+        headers["If-Modified-Since"] = clean_since
     if httpx is not None:
         try:
             with httpx.Client(
