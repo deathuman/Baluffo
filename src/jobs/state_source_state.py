@@ -121,8 +121,11 @@ _ENTRY_VIEW_KEYS = (
     "httpLastModified",
     "httpPageValidators",
     "httpPageSeedAt",
+    "httpProbeEchoAt",
     "clearHttpEtag",
     "clearHttpLastModified",
+    "clearHttpProbeEcho",
+    "clearHttpProbeIgnored",
 )
 
 
@@ -205,6 +208,21 @@ def _copy_report_fields(
             entry.pop("lastHttpPageValidators", None)
     if clean_text(report.get("httpPageSeedAt")):
         entry["lastHttpPageSeedAt"] = clean_text(report.get("httpPageSeedAt"))
+    echo_at = clean_text(report.get("httpProbeEchoAt"))
+    if echo_at:
+        # Retirement takes two consecutive asks. A single echo can be a CDN cache miss on
+        # the HEAD, and the cost of believing it is a week of full reads for a board that
+        # would have answered 304, while the gain is one HEAD per window. A candidate left
+        # by an earlier ask is what turns this echo into proof. The equality check keeps a
+        # report applied twice in one run from confirming itself.
+        prior_echo = clean_text(entry.get("lastHttpProbeEchoAt"))
+        if prior_echo and prior_echo != echo_at:
+            entry["lastHttpProbeIgnoredAt"] = echo_at
+        entry["lastHttpProbeEchoAt"] = echo_at
+    elif bool(report.get("clearHttpProbeEcho")):
+        entry.pop("lastHttpProbeEchoAt", None)
+    if bool(report.get("clearHttpProbeIgnored")):
+        entry.pop("lastHttpProbeIgnoredAt", None)
     if int(report.get("httpStatus") or 0) > 0:
         entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
 

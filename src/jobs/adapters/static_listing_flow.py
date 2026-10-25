@@ -28,7 +28,9 @@ from src.jobs.text_utils import clean_text
 from src.jobs.transport import (
     apply_conditional_revalidate_result,
     apply_full_read_response_headers,
+    conditional_probe_ignored,
     conditional_revalidate_url,
+    probe_retirement_active,
 )
 
 from .static_runtime import StaticSourceContext
@@ -192,6 +194,13 @@ def _probe_listing_pages(
     another page's, or the pair would seed page 1 with a tag that describes a different
     document. ``seeded`` reports that a page without a validator was asked, so the
     handler can start the weekly clock.
+
+    Every page's own answer is recorded here, because no other page can speak for it: a 200
+    echoing the tag it was sent is one observation of an ignored header (the state update
+    retires the sweep only after a second consecutive one), and any 304 clears the streak and
+    a retirement on file. Retirement is board-level rather than per page -- one page that
+    ignores the question already makes a 304 from every page impossible, so the HEADs on the
+    others could not have earned a skip either.
     """
     stored = (ctx.state_entry or {}).get("lastHttpPageValidators")
     merged: dict[str, dict[str, str]] = {
@@ -200,6 +209,11 @@ def _probe_listing_pages(
         if clean_text(url) and isinstance(tags, dict)
     }
     listing_pages = _listable_listing_pages(ctx)
+    if probe_retirement_active(ctx.state_entry):
+        # The board answered two consecutive conditional requests with 200 and the very tag
+        # it was sent, so no page of it can be trusted to answer 304. The read is going to
+        # happen anyway; asking first only adds a request in front of it.
+        return False, merged, None, False
     if listing_pages and listing_pages[0] not in merged:
         # A single-page board keeps its pair in the singular fields; a board that
         # only now gained a second page may have entered the paged path with it.
@@ -219,9 +233,14 @@ def _probe_listing_pages(
     probed_count = 0
     unchanged_count = 0
     seeded = False
+    ignored = False
+    changed_conditional = False
+    saw_not_modified = False
     for page_url in listing_pages:
         tags = merged.get(page_url) or {}
-        has_validator = bool(clean_text(tags.get("etag")) or clean_text(tags.get("lastModified")))
+        sent_etag = clean_text(tags.get("etag"))
+        sent_last_modified = clean_text(tags.get("lastModified"))
+        has_validator = bool(sent_etag or sent_last_modified)
         if not has_validator and not seed_due:
             continue
         if not has_validator:
@@ -247,9 +266,17 @@ def _probe_listing_pages(
         status_code = int(probe.get("statusCode") or 0)
         if status_code == 304:
             unchanged_count += 1
+            saw_not_modified = True
             continue
         if not 200 <= status_code < 300:
             continue
+        if has_validator and conditional_probe_ignored(
+            probe, etag=sent_etag, last_modified=sent_last_modified
+        ):
+            # A 200 carrying the validator it was asked about: the header did nothing.
+            ignored = True
+        elif has_validator:
+            changed_conditional = True
         etag = clean_text(probe.get("etag"))
         last_modified = clean_text(probe.get("lastModified"))
         if etag or last_modified:
@@ -264,6 +291,18 @@ def _probe_listing_pages(
             # no validator is a seed, not a change -- seeding continues past it, or
             # a multi-page board would need one window per page to become skippable.
             break
+    if ignored:
+        # One echo is an observation, not a verdict: a CDN can answer a HEAD from a cache
+        # miss. The state update promotes this to a retirement only when the previous ask
+        # echoed too, which is what a flip-flopping board cannot do.
+        ctx.entry_report["httpProbeEchoAt"] = datetime.now(UTC).isoformat()
+    elif saw_not_modified:
+        ctx.entry_report["clearHttpProbeIgnored"] = True
+        ctx.entry_report["clearHttpProbeEcho"] = True
+    elif changed_conditional:
+        # A changed copy in answer to a conditional ask breaks the streak: the board moved
+        # on, so an older echo no longer speaks for the tag the next ask will carry.
+        ctx.entry_report["clearHttpProbeEcho"] = True
     all_unchanged = probed_count > 0 and probed_count == len(listing_pages) == unchanged_count
     return all_unchanged, merged, first_probe, seeded
 

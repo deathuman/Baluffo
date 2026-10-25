@@ -12,10 +12,12 @@ import asyncio
 import threading
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.adapters import community
+from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
@@ -188,6 +190,65 @@ def conditional_revalidate_url(
     }
 
 
+# How long a board that ignored a conditional request is left alone before the question is
+# asked again. Retiring is what stops a feed that never answers 304 from paying a HEAD in
+# front of every read; the interval is what keeps it reversible, because a retired board can
+# no longer be asked whether it changed. A week of full reads costs a server that starts
+# honouring the header seven reads before it is noticed again, and every board that does
+# honour it is discovered on the first ask.
+PROBE_RETIRE_RECHECK_S = 7 * 24 * 60 * 60
+
+
+def _weak_etag(value: str) -> str:
+    """An ETag without its weakness marker, for If-None-Match's weak comparison."""
+    text = clean_text(value)
+    return text[2:].strip() if text.startswith("W/") else text
+
+
+def conditional_probe_ignored(
+    revalidate: dict[str, Any], *, etag: str = "", last_modified: str = ""
+) -> bool:
+    """Whether a response proves the server ignored the validator it was asked about.
+
+    A server that holds the document a tag identifies must answer 304. Answering 200 while
+    echoing that same tag is the unambiguous opposite: the conditional header did nothing.
+    A different tag is an honest change, and a tagless response is ambiguous (many servers
+    omit the header on a HEAD), so neither retires anything.
+
+    The date is only evidence when no tag was asked about. ``If-None-Match`` and
+    ``If-Modified-Since`` are usually sent together, and a reply that carries a *different*
+    ETag but the same ``Last-Modified`` is an ordinary edit inside one second -- the date
+    cannot see it, so a matching date must not overrule the tag's proof of a change.
+    """
+    status_code = int(revalidate.get("statusCode") or 0)
+    if not 200 <= status_code < 300 or bool(revalidate.get("notModified")):
+        return False
+    sent_etag = _weak_etag(etag)
+    if sent_etag:
+        return sent_etag == _weak_etag(str(revalidate.get("etag") or ""))
+    sent_last_modified = clean_text(last_modified)
+    return bool(sent_last_modified) and sent_last_modified == clean_text(
+        revalidate.get("lastModified")
+    )
+
+
+def probe_retirement_active(
+    state_entry: dict[str, Any] | None, *, now: datetime | None = None
+) -> bool:
+    """Whether a board's conditional probe is retired, so it is read without one.
+
+    The stamp is written only once a second consecutive ask has echoed its validator --
+    one echo can be a cache miss on the HEAD -- and cleared when a later ask is answered
+    304, so the state and the board's behaviour stay in step.
+    """
+    retired_at = parse_datetime((state_entry or {}).get("lastHttpProbeIgnoredAt"))
+    if retired_at is None:
+        return False
+    if retired_at.tzinfo is None:
+        retired_at = retired_at.replace(tzinfo=UTC)
+    return ((now or datetime.now(UTC)) - retired_at).total_seconds() < PROBE_RETIRE_RECHECK_S
+
+
 def _header_value(headers: Any, name: str) -> str:
     value = headers.get(name) if hasattr(headers, "get") else None
     if value is None and hasattr(headers, "get"):
@@ -232,7 +293,11 @@ def apply_full_read_response_headers(
 
 
 def apply_conditional_revalidate_result(
-    entry_report: dict[str, Any], revalidate: dict[str, Any]
+    entry_report: dict[str, Any],
+    revalidate: dict[str, Any],
+    *,
+    sent_etag: str = "",
+    sent_last_modified: str = "",
 ) -> None:
     """Record what a conditional probe said about a board's validators.
 
@@ -241,6 +306,14 @@ def apply_conditional_revalidate_result(
     longer publishes: the report marks it for removal from stored state. A 304 is
     exempt -- many servers echo no headers on one -- and an errored probe says
     nothing about the board's validators, so neither may retire a tag.
+
+    ``sent_etag`` / ``sent_last_modified`` are what the request conditioned on. A 200
+    that echoes one of them is recorded as one observation (``httpProbeEchoAt``), not
+    as a retirement: a CDN can answer a HEAD from a cache miss and echo the tag it holds,
+    so it takes a second ask to confirm the header is ignored (the state update promotes
+    it). A 304 proves the opposite and clears both the streak and any retirement on file.
+    Callers that did not ask a conditional question -- a full read recording its own
+    response -- leave both empty, and none of these branches can fire.
     """
     status_code = int(revalidate.get("statusCode") or 0)
     etag = clean_text(revalidate.get("etag"))
@@ -255,6 +328,15 @@ def apply_conditional_revalidate_result(
             entry_report["clearHttpEtag"] = True
         if not last_modified:
             entry_report["clearHttpLastModified"] = True
+    if status_code == 304:
+        entry_report["clearHttpProbeIgnored"] = True
+        entry_report["clearHttpProbeEcho"] = True
+    elif conditional_probe_ignored(revalidate, etag=sent_etag, last_modified=sent_last_modified):
+        entry_report["httpProbeEchoAt"] = datetime.now(UTC).isoformat()
+    elif clean_text(sent_etag) or clean_text(sent_last_modified):
+        # An ordinary changed answer. It breaks the streak: the confirmation has to come
+        # from consecutive asks, not from a stale echo the board has since moved past.
+        entry_report["clearHttpProbeEcho"] = True
 
 
 class PooledRedirectResolver:

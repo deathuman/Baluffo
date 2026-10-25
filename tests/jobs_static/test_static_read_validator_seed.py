@@ -32,7 +32,7 @@ from src.jobs.adapters.static_runtime_support import (
     build_static_entry_report,
 )
 from src.jobs.state_source_state import update_source_state_rows
-from src.jobs.transport import default_fetch_text
+from src.jobs.transport import PROBE_RETIRE_RECHECK_S, default_fetch_text
 
 ETAG = '"read-v1"'
 SECOND_ETAG = '"read-v2"'
@@ -49,8 +49,13 @@ def _listing_server(
     etags: dict[str, str | None] | None = None,
     fail_paths: set[str] | None = None,
     last_modified: str | None = None,
+    ignores_conditional: bool = False,
 ) -> Iterator[tuple[str, list[tuple[str, str, str]]]]:
-    """A loopback board that publishes validators and honours conditional requests."""
+    """A loopback board that publishes validators and (usually) honours them.
+
+    ``ignores_conditional`` is the server defect the probe retirement exists for: it
+    publishes the tag and then answers 200 in full even when asked about that very tag.
+    """
     requests: list[tuple[str, str, str]] = []
 
     class _Handler(http.server.BaseHTTPRequestHandler):
@@ -64,12 +69,12 @@ def _listing_server(
                 self.end_headers()
                 return
             since = (self.headers.get("If-Modified-Since") or "").strip()
-            if etag and conditional == etag:
+            if etag and conditional == etag and not ignores_conditional:
                 self.send_response(304)
                 self.send_header("ETag", etag)
                 self.end_headers()
                 return
-            if last_modified and not etag and since == last_modified:
+            if last_modified and not etag and since == last_modified and not ignores_conditional:
                 self.send_response(304)
                 self.send_header("Last-Modified", last_modified)
                 self.end_headers()
@@ -193,6 +198,9 @@ def _run(
         "clearHttpEtag": bool(detail.get("clearHttpEtag")),
         "httpPageValidators": detail.get("httpPageValidators"),
         "httpPageSeedAt": detail.get("httpPageSeedAt"),
+        "httpProbeEchoAt": detail.get("httpProbeEchoAt") or "",
+        "clearHttpProbeEcho": bool(detail.get("clearHttpProbeEcho")),
+        "clearHttpProbeIgnored": bool(detail.get("clearHttpProbeIgnored")),
     }
 
 
@@ -651,6 +659,88 @@ def test_a_304_reported_on_the_entry_keeps_the_loader_row_asleep() -> None:
         "cacheDecision": "revalidate_only",
         "cacheDecisionReason": "static_revalidate_due",
     }
+
+
+def test_a_board_that_ignores_its_validator_is_read_without_a_probe() -> None:
+    """Two consecutive 200s echoing the tag retire the HEAD; the next window reads directly."""
+    name = "Deaf Validator Studio"
+    with _listing_server(ignores_conditional=True) as (base, requests):
+        listing_url = f"{base}/careers"
+        rows = {name: _stored_row(listing_url, kept=12)}
+        rows[name]["lastHttpEtag"] = ETAG
+        _expire_listing_window(rows, name)
+
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(listing_url, name)],
+        ):
+            first = _run(name, listing_url, rows)
+
+        assert requests == [("HEAD", "/careers", ETAG), ("GET", "/careers", "")]
+        assert first["httpProbeEchoAt"], "the echoed tag is recorded"
+        rows = _apply(rows, first)
+        assert rows[name]["lastHttpProbeEchoAt"] == first["httpProbeEchoAt"]
+        assert "lastHttpProbeIgnoredAt" not in rows[name], (
+            "one echo can be a cache miss, so it is not yet a retirement"
+        )
+
+        _expire_listing_window(rows, name)
+        requests.clear()
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(listing_url, name)],
+        ):
+            second = _run(name, listing_url, rows)
+
+        assert requests == [("HEAD", "/careers", ETAG), ("GET", "/careers", "")], (
+            "an unconfirmed echo still asks, because the next ask is the confirmation"
+        )
+        assert second["httpProbeEchoAt"]
+        rows = _apply(rows, second)
+        assert rows[name]["lastHttpProbeIgnoredAt"] == second["httpProbeEchoAt"], (
+            "the second consecutive echo is the proof"
+        )
+
+        _expire_listing_window(rows, name)
+        requests.clear()
+        with mock.patch(
+            "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+            return_value=[_parsed_row(listing_url, name)],
+        ):
+            third = _run(name, listing_url, rows)
+
+        assert requests == [("GET", "/careers", "")], (
+            "a retired probe is skipped: the read happens without a HEAD in front of it"
+        )
+        assert third["bodyFetches"] == [listing_url]
+        assert third["status"] == "ok"
+
+
+def test_the_retirement_is_rechecked_after_a_week_and_cleared_by_a_304() -> None:
+    """The verdict is not permanent: a week later the board is asked once more."""
+    name = "Recovered Validator Studio"
+    with _listing_server() as (base, requests):
+        listing_url = f"{base}/careers"
+        rows = {name: _stored_row(listing_url, kept=12)}
+        rows[name]["lastHttpEtag"] = ETAG
+        rows[name]["lastHttpProbeIgnoredAt"] = (
+            datetime.now(UTC) - timedelta(seconds=PROBE_RETIRE_RECHECK_S + 60)
+        ).isoformat()
+        _expire_listing_window(rows, name)
+
+        report = _run(name, listing_url, rows)
+
+        assert requests == [("HEAD", "/careers", ETAG)], "one recheck, and it 304s"
+        assert report["exclusionReason"] == "cache_not_modified_304"
+        assert report["clearHttpProbeIgnored"] is True
+        assert report["clearHttpProbeEcho"] is True
+        rows = _apply(rows, report)
+        assert "lastHttpProbeIgnoredAt" not in rows[name], (
+            "a board that honours the question again must get its probe back"
+        )
+        assert "lastHttpProbeEchoAt" not in rows[name], (
+            "a 304 also resets the streak, so a later echo starts the count over"
+        )
 
 
 def test_a_multi_entry_report_does_not_borrow_one_entrys_tag() -> None:

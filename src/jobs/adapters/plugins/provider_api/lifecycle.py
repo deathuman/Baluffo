@@ -14,7 +14,11 @@ from typing import Any
 from src.exceptions import AdapterValidationError
 from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import apply_conditional_revalidate_result, conditional_revalidate_url
+from src.jobs.transport import (
+    apply_conditional_revalidate_result,
+    conditional_revalidate_url,
+    probe_retirement_active,
+)
 
 
 def build_provider_entry_report(
@@ -137,13 +141,24 @@ def provider_revalidate_not_modified(
     state_entry = (
         (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
     )
+    if probe_retirement_active(state_entry):
+        # This feed answered a past conditional request with 200 and the same tag it was
+        # sent, so a HEAD here only delays the read that has to happen anyway.
+        return False
+    sent_etag = clean_text((state_entry or {}).get("lastHttpEtag"))
+    sent_last_modified = clean_text((state_entry or {}).get("lastHttpLastModified"))
     revalidate = revalidate_url(
         url,
         timeout_s,
-        etag=clean_text((state_entry or {}).get("lastHttpEtag")),
-        last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+        etag=sent_etag,
+        last_modified=sent_last_modified,
     )
-    apply_conditional_revalidate_result(entry_report, revalidate)
+    apply_conditional_revalidate_result(
+        entry_report,
+        revalidate,
+        sent_etag=sent_etag,
+        sent_last_modified=sent_last_modified,
+    )
     if not bool(revalidate.get("notModified")):
         return False
     entry_report["status"] = "excluded"

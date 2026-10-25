@@ -217,6 +217,33 @@ never happened — a custom fetcher seam or a test double — leaves the report 
 capture does not retire a stored tag. In a paginated JSON feed only the first response may set one:
 a later page's tag describes that page, not the listing.
 
+**A validator is asked about only while the server honours the question.** A server that holds
+the document a tag identifies must answer 304; answering 200 while echoing that same tag is the
+unambiguous opposite — the conditional header did nothing. `conditional_probe_ignored` recognises
+exactly that shape, but one echo is only an observation: a CDN can answer a HEAD from a cache miss
+and still echo the tag it holds. It is recorded as `httpProbeEchoAt` / `lastHttpProbeEchoAt`, and
+only a **second consecutive ask** that echoes promotes it to the retirement stamp
+(`lastHttpProbeIgnoredAt`); a changed copy or a 304 in between resets the streak. On the measured
+population that is not academic: of 90 boards that echoed on the first ask, 14 answered 304 or a
+changed tag on the next one, so a single observation would have written off boards that do honour
+the header. A different tag is an honest
+change and a tagless answer is ambiguous (many servers omit the header on a HEAD), so neither
+retires anything. The date is evidence only when no tag was asked about:
+`If-None-Match` and `If-Modified-Since` usually travel together, and a *different* ETag with an
+unchanged `Last-Modified` is an ordinary edit inside one second, which the date cannot see — of 89
+live probes that looked like echoes, 14 had exactly that shape, so the tag decides whenever one was
+sent. Measured on the live population (941 boards holding a validator), asking each board twice with
+the tag its own HEAD publishes: 76 (8.1%) echoed on both asks and so retire, and a due cycle then
+skips 77 HEADs — the sweep stops at the first 200, so it is nearly always one page per board — about
+37 s of request time at a 0.49 s mean. While the stamp is under a week old
+(`probe_retirement_active`, `PROBE_RETIRE_RECHECK_S`), the static sweep starts no HEAD at all and
+`provider_revalidate_not_modified` returns without one: the board is read directly, instead of
+paying a request that can only answer 200. The verdict is board-level rather than per page because
+one page that ignores the question already makes a 304 from every page impossible. It is also
+reversible: a week later the question is asked once more, and a 304 clears the stamp
+(`clearHttpProbeIgnored`) and gives the probe back, so a server that starts honouring the header
+is never written off permanently.
+
 `tests/test_provider_api_plugins.py` drives this end to end for Greenhouse: the full read stores the
 GET's tag, the next decision inside the stable window comes back `provider_stable_revalidate`, and a
 GET that stops publishing a tag marks it for removal. The same cycle can be run live against any
