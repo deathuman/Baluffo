@@ -50,6 +50,32 @@ ask exists for. The loopback equivalents are pinned in
 and [`test_conditional_revalidation.py`](../../tests/test_conditional_revalidation.py): run 1 sends
 HEAD + GET and stores only the candidate, run 2 retires, run 3 sends GET only.
 
+## The 200-without-echo cohort, classified
+
+A page that answers 200 without echoing its validator has three possible meanings, and only one
+of them is a defect. All 84 distinct pages from the sweep (87 rows, three URLs registered twice)
+were walked with the tag they last published, then with whatever each answer published in turn;
+a page whose answers carried no tag got one GET, and pages that looked stable got two GETs and a
+body hash.
+
+| class | pages | what it is |
+|---|---:|---|
+| honours after seeding | 31 | the stored tag was stale; asking with the tag it just published answers 304 |
+| fresh tag every response | 22 | 20 change their bytes; 2 are byte-identical and only the tag moves |
+| no validator | 15 | neither HEAD nor GET publishes one, so the seed clock means no per-window HEAD |
+| alternating tags | 5 | two or three tags cycle between edges; a stored tag matches about half the time |
+| moving `Last-Modified` | 3 | 2 change their bytes; 1 is a stable copy with a moving date |
+| HEAD withholds the GET's tag | 4 | 3 answer a conditional **GET** with 304; 1 ignores it on both |
+| now echo | 3 | 200 with the tag they were sent; the two-ask rule retires them |
+| unreachable | 1 | HTTP 429 during the sweep |
+
+**29 of the 84 could never answer 304 from a HEAD** — 22 fresh-tag, 3 moving-date, 4 HEAD-blind —
+and their own probe latency prices the wasted HEADs at **19.9 s per due cycle**. The unstable
+retirement covers the 25 that publish a *third* value between the probe and the read (about
+17 s); the four HEAD-blind boards need a conditional read instead. The five alternating boards are
+deliberately left probing: their read answers with the tag that was asked about, so they still
+score 304 from that edge.
+
 ## Limits
 
 - The 941 are the boards holding a validator in that arm, not the whole population (~2,508 static

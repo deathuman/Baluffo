@@ -268,6 +268,47 @@ def _record_response_validators(sink: dict[str, str], status_code: int, headers:
         sink["last-modified"] = last_modified
 
 
+def note_probe_validator_stability(entry_report: dict[str, Any], captured: dict[str, str]) -> None:
+    """Whether the validator a conditional 200 published survived the read after it.
+
+    A board that recomputes its validator per request answers the conditional ask with
+    one tag and then publishes a different one in the full read seconds later, so no
+    stored tag can ever match it and the HEAD in front of every read can only answer 200.
+    That is recorded as one observation (``httpProbeUnstableAt``); the state update retires
+    the probe only after a second consecutive window, because a single publish between the
+    two requests looks exactly the same from here.
+
+    The pair must be a *third* value to count. Two busy frontends with different validators
+    answer a probe with the other node's tag and the read with the tag that was asked about
+    -- the board alternates rather than churns, and it does answer 304 often enough that
+    retiring it would cost more reads than the HEAD it saves.
+
+    Only a caller that asked a conditional question can record anything: a full read after
+    ``run_now`` has no probe to compare with, and says nothing either way.
+    """
+    if not bool(entry_report.get("httpProbeAsked")):
+        return
+    sent_etag = clean_text(entry_report.get("httpProbeSentEtag"))
+    sent_last_modified = clean_text(entry_report.get("httpProbeSentLastModified"))
+    probe_etag = clean_text(entry_report.get("httpProbeEtag"))
+    probe_last_modified = clean_text(entry_report.get("httpProbeLastModified"))
+    read_etag = clean_text(captured.get("etag"))
+    read_last_modified = clean_text(captured.get("last-modified"))
+    if probe_etag and read_etag:
+        unstable = probe_etag != read_etag and read_etag != sent_etag
+    elif probe_last_modified and read_last_modified and not probe_etag:
+        unstable = (
+            probe_last_modified != read_last_modified and read_last_modified != sent_last_modified
+        )
+    else:
+        # A read that publishes the tag the HEAD withheld, or none at all, is not churn.
+        unstable = False
+    if unstable:
+        entry_report["httpProbeUnstableAt"] = datetime.now(UTC).isoformat()
+    else:
+        entry_report["clearHttpProbeUnstable"] = True
+
+
 def apply_full_read_response_headers(
     entry_report: dict[str, Any], captured: dict[str, str]
 ) -> None:
@@ -277,10 +318,16 @@ def apply_full_read_response_headers(
     so the response that produced the rows is also the one that earns revalidation.
     A capture that never happened -- a custom seam or a test double -- leaves the
     report untouched rather than retiring a tag on absent evidence.
+
+    When a conditional probe ran earlier in this source's flow, the read is also the
+    second half of the question that decides whether the board's validator is stable:
+    this is the one place that sees both answers, for the static sweep and every
+    provider adapter alike.
     """
     status_code = int(clean_text(captured.get("status")) or 0)
     if not 200 <= status_code < 300:
         return
+    note_probe_validator_stability(entry_report, captured)
     apply_conditional_revalidate_result(
         entry_report,
         {
@@ -314,10 +361,15 @@ def apply_conditional_revalidate_result(
     it). A 304 proves the opposite and clears both the streak and any retirement on file.
     Callers that did not ask a conditional question -- a full read recording its own
     response -- leave both empty, and none of these branches can fire.
+
+    A conditional 200 also records the pair the read will be compared against: what was
+    asked about and what came back. A board that republishes a third value seconds later
+    cannot be revalidated, which is the second way a probe retires.
     """
     status_code = int(revalidate.get("statusCode") or 0)
     etag = clean_text(revalidate.get("etag"))
     last_modified = clean_text(revalidate.get("lastModified"))
+    asked_conditional = bool(clean_text(sent_etag) or clean_text(sent_last_modified))
     entry_report["httpStatus"] = status_code
     if etag:
         entry_report["httpEtag"] = etag
@@ -328,9 +380,16 @@ def apply_conditional_revalidate_result(
             entry_report["clearHttpEtag"] = True
         if not last_modified:
             entry_report["clearHttpLastModified"] = True
+        if asked_conditional:
+            entry_report["httpProbeAsked"] = True
+            entry_report["httpProbeSentEtag"] = clean_text(sent_etag)
+            entry_report["httpProbeSentLastModified"] = clean_text(sent_last_modified)
+            entry_report["httpProbeEtag"] = etag
+            entry_report["httpProbeLastModified"] = last_modified
     if status_code == 304:
         entry_report["clearHttpProbeIgnored"] = True
         entry_report["clearHttpProbeEcho"] = True
+        entry_report["clearHttpProbeUnstable"] = True
     elif conditional_probe_ignored(revalidate, etag=sent_etag, last_modified=sent_last_modified):
         entry_report["httpProbeEchoAt"] = datetime.now(UTC).isoformat()
     elif clean_text(sent_etag) or clean_text(sent_last_modified):

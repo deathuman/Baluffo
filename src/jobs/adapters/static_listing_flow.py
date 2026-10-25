@@ -198,9 +198,11 @@ def _probe_listing_pages(
     Every page's own answer is recorded here, because no other page can speak for it: a 200
     echoing the tag it was sent is one observation of an ignored header (the state update
     retires the sweep only after a second consecutive one), and any 304 clears the streak and
-    a retirement on file. Retirement is board-level rather than per page -- one page that
-    ignores the question already makes a 304 from every page impossible, so the HEADs on the
-    others could not have earned a skip either.
+    a retirement on file. Page 1's changed answer is also recorded as the first half of the
+    churn question the read completes: a board that publishes a third validator seconds later
+    cannot answer 304 at all, and the read's own capture is what proves it. Retirement is
+    board-level rather than per page -- one page that ignores the question already makes a 304
+    from every page impossible, so the HEADs on the others could not have earned a skip either.
     """
     stored = (ctx.state_entry or {}).get("lastHttpPageValidators")
     merged: dict[str, dict[str, str]] = {
@@ -279,6 +281,17 @@ def _probe_listing_pages(
             changed_conditional = True
         etag = clean_text(probe.get("etag"))
         last_modified = clean_text(probe.get("lastModified"))
+        if has_validator and page_url == listing_pages[0]:
+            # Page 1 is the one the read's own first response is compared against, so it
+            # is the only answer that can prove a validator unstable: what was asked
+            # about, what came back, and -- once the read runs -- what the board published
+            # seconds later. Nothing is compared for a 304, and nothing for another page,
+            # because its response is not the one the read publishes first.
+            ctx.entry_report["httpProbeAsked"] = True
+            ctx.entry_report["httpProbeSentEtag"] = sent_etag
+            ctx.entry_report["httpProbeSentLastModified"] = sent_last_modified
+            ctx.entry_report["httpProbeEtag"] = etag
+            ctx.entry_report["httpProbeLastModified"] = last_modified
         if etag or last_modified:
             merged[page_url] = {"etag": etag, "lastModified": last_modified}
         else:

@@ -122,10 +122,17 @@ _ENTRY_VIEW_KEYS = (
     "httpPageValidators",
     "httpPageSeedAt",
     "httpProbeEchoAt",
+    "httpProbeAsked",
+    "httpProbeSentEtag",
+    "httpProbeSentLastModified",
+    "httpProbeEtag",
+    "httpProbeLastModified",
+    "httpProbeUnstableAt",
     "clearHttpEtag",
     "clearHttpLastModified",
     "clearHttpProbeEcho",
     "clearHttpProbeIgnored",
+    "clearHttpProbeUnstable",
 )
 
 
@@ -221,8 +228,22 @@ def _copy_report_fields(
         entry["lastHttpProbeEchoAt"] = echo_at
     elif bool(report.get("clearHttpProbeEcho")):
         entry.pop("lastHttpProbeEchoAt", None)
+    unstable_at = clean_text(report.get("httpProbeUnstableAt"))
+    if unstable_at:
+        # The read that followed a conditional 200 published a third validator, so no
+        # stored tag can match this board and the HEAD in front of its next read can only
+        # answer 200. A board that publishes once between the two requests looks the same
+        # from here, so one window is an observation; a second consecutive one retires the
+        # probe, and a 304 or a stable pair clears the streak.
+        prior_unstable = clean_text(entry.get("lastHttpProbeUnstableAt"))
+        if prior_unstable and prior_unstable != unstable_at:
+            entry["lastHttpProbeIgnoredAt"] = unstable_at
+        entry["lastHttpProbeUnstableAt"] = unstable_at
+    elif bool(report.get("clearHttpProbeUnstable")):
+        entry.pop("lastHttpProbeUnstableAt", None)
     if bool(report.get("clearHttpProbeIgnored")):
         entry.pop("lastHttpProbeIgnoredAt", None)
+        entry.pop("lastHttpProbeUnstableAt", None)
     if int(report.get("httpStatus") or 0) > 0:
         entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
 

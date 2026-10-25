@@ -244,6 +244,22 @@ reversible: a week later the question is asked once more, and a 304 clears the s
 (`clearHttpProbeIgnored`) and gives the probe back, so a server that starts honouring the header
 is never written off permanently.
 
+**A validator that does not survive its own read is not a validator.** A board can answer the
+question and still never 304: some recompute the tag per request — a session nonce, a compressed
+copy's mtime — so the conditional HEAD's 200 carries one tag and the full read seconds later
+carries another. The probe records the pair it saw (`httpProbeSentEtag` / `httpProbeEtag`, with
+`httpProbeAsked` marking that a conditional question was asked at all), and
+`apply_full_read_response_headers` compares it with the read's own capture — the one function the
+static sweep and every provider adapter go through. Only a **third** value counts: two frontends
+with different tags answer with the tag that was asked about and then do 304 from their other edge,
+so retiring those would cost more reads than the HEAD it saves. As with an echo, one window is an
+observation (`httpProbeUnstableAt` / `lastHttpProbeUnstableAt`) and a second consecutive one sets
+the retirement stamp; a 304, a stable pair, or a read that publishes nothing clears the streak. On
+the measured cohort of 84 pages that had answered 200 without echoing, 25 recompute their validator
+per response — 22 a fresh tag every time, 3 a moving `Last-Modified` — which the retirement now
+skips at about 17 s of HEADs per due cycle. The class's other 4 withhold the tag from HEAD
+altogether (only their GET publishes one) and need a conditional read, not a retired probe.
+
 `tests/test_provider_api_plugins.py` drives this end to end for Greenhouse: the full read stores the
 GET's tag, the next decision inside the stable window comes back `provider_stable_revalidate`, and a
 GET that stops publishing a tag marks it for removal. The same cycle can be run live against any

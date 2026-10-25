@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import http.server
+import itertools
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -50,18 +51,24 @@ def _listing_server(
     fail_paths: set[str] | None = None,
     last_modified: str | None = None,
     ignores_conditional: bool = False,
+    churning_etags: bool = False,
 ) -> Iterator[tuple[str, list[tuple[str, str, str]]]]:
     """A loopback board that publishes validators and (usually) honours them.
 
     ``ignores_conditional`` is the server defect the probe retirement exists for: it
     publishes the tag and then answers 200 in full even when asked about that very tag.
+    ``churning_etags`` is the second defect: every response carries a tag that has never
+    been seen before, so no tag from an earlier request can ever match.
     """
     requests: list[tuple[str, str, str]] = []
+    churn = itertools.count(1)
 
     class _Handler(http.server.BaseHTTPRequestHandler):
         def _respond(self, *, with_body: bool) -> None:
             path = urlparse(self.path).path
             etag = (etags or {}).get(path, ETAG)
+            if churning_etags:
+                etag = f'"churn-{next(churn)}"'
             conditional = (self.headers.get("If-None-Match") or "").strip()
             requests.append((self.command, path, conditional))
             if fail_paths and path in fail_paths:
@@ -199,6 +206,8 @@ def _run(
         "httpPageValidators": detail.get("httpPageValidators"),
         "httpPageSeedAt": detail.get("httpPageSeedAt"),
         "httpProbeEchoAt": detail.get("httpProbeEchoAt") or "",
+        "httpProbeUnstableAt": detail.get("httpProbeUnstableAt") or "",
+        "httpProbeEtag": detail.get("httpProbeEtag") or "",
         "clearHttpProbeEcho": bool(detail.get("clearHttpProbeEcho")),
         "clearHttpProbeIgnored": bool(detail.get("clearHttpProbeIgnored")),
     }

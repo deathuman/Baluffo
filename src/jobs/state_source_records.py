@@ -439,6 +439,7 @@ def normalize_source_state_payload(
             "lastHttpPageSeedAt": clean_text(entry_src.get("lastHttpPageSeedAt")),
             "lastHttpProbeEchoAt": clean_text(entry_src.get("lastHttpProbeEchoAt")),
             "lastHttpProbeIgnoredAt": clean_text(entry_src.get("lastHttpProbeIgnoredAt")),
+            "lastHttpProbeUnstableAt": clean_text(entry_src.get("lastHttpProbeUnstableAt")),
             "lastHttpStatus": _clamped_int(entry_src.get("lastHttpStatus"), 0, 0),
             "nextEligibleCheckAt": clean_text(entry_src.get("nextEligibleCheckAt")),
             "cacheDecision": clean_text(entry_src.get("cacheDecision")),
