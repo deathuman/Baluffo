@@ -80,9 +80,8 @@ subsystems*. It does not exist for the *pipeline HTTP path*. Confirmed absent re
 
 ## The diagnosis being optimised against
 
-Measured, with confidence stated — because this session produced several confident wrong
-answers (host contention, sequential sources, "truncated" diagnostics) and the plan is stronger
-for admitting which parts are load-bearing.
+Measured, with confidence stated — earlier confident answers here were wrong, so every row
+names what carries it.
 
 | Finding | Evidence | Confidence |
 |---|---|---|
@@ -93,7 +92,7 @@ for admitting which parts are load-bearing.
 | Cost is extremely long-tailed | top 10 sources = 16.6% of worker-time; 9 sources over the nominal 90 s budget = 16% | **Medium** — from a 2026-04-10 state slice, predates current instrumentation |
 | Zero-kept sources dominate cost | prior program: 989 sources / 48.1% of rows / **37.71%** of summed duration; this session: 33% / 29.7% on a single-run slice | **High** — two independent measurements agree |
 | **36%** of boards carry a validator | 2 508-source run: **1 789 of 4 910** state rows; 959 tagless zero-kept rows have no clock | **High** — [snapshot](../snapshots/fetch-pipeline-revalidation-population-2026-10-25.md) |
-| ~~Conditional GET unwired for static~~ **Resolved 2026-10-23; zero-kept lane and tagless probe measured 2026-10-25** | Kept boards past 180 min and zero-kept past 12 h ask via HEAD; a 304 skips parse. The zero-kept confirming read (**~99 s** net) now ships ([2026-10-24](../snapshots/fetch-pipeline-zero-kept-revalidation-2026-10-24.md)); the read clock rides a sweep's HEAD, but a probe of its own is **closed** — **−838 s** per empty window, as 1 134 of 1 179 boards ignore `If-Modified-Since` ([2026-10-25](../snapshots/fetch-pipeline-revalidation-population-2026-10-25.md)) | **High** — live A/B and cohort |
+| ~~Conditional GET unwired for static~~ **Resolved 2026-10-23; zero-kept lane, tagless probe and both retirement rules measured 2026-10-25** | Kept and zero-kept boards ask via HEAD; a 304 skips parse. The zero-kept confirming read (**~99 s** net) ships ([2026-10-24](../snapshots/fetch-pipeline-zero-kept-revalidation-2026-10-24.md)). A read-clock probe is **closed** (**−838 s** per empty window) ([2026-10-25](../snapshots/fetch-pipeline-revalidation-population-2026-10-25.md)). Both rules retire the HEAD for a week: an echoed tag (**76** boards, **37 s** per cycle) and an unstable validator (**25**, **~17 s**) — except 4 HEAD-blind boards needing a conditional read ([2026-10-25](../snapshots/fetch-pipeline-probe-retirement-2026-10-25.md)) | **High** — live A/B and cohort |
 
 **S1 settles it and revises two rows:** the loop thread holds only **3.2%** of child CPU, the seat was **~50% used**, and the top cost is `re.sub` normalisation at **31.6%** — the event loop is real but is not the constraint.
 
