@@ -1,8 +1,11 @@
 # Fetch pipeline — what probe retirement is worth once one echo is not enough
 
-**Date:** 2026-10-25 · **Lane:** fetch-pipeline revalidation · **Status:** measured; rule shipped.
-**76 boards** of 941 that hold a validator prove they ignore `If-None-Match`, and a due cycle then
-skips **77 HEADs** — **37 s** of request time. Behaviour:
+**Date:** 2026-10-25, run level 2026-10-26 · **Lane:** fetch-pipeline revalidation · **Status:**
+measured; rule shipped.
+**76 boards** of 941 that hold a validator prove they ignore `If-None-Match`, so a due cycle skips
+**77 HEADs** — **37 s** of request time; at run level the unstable rule removes **17** of its own
+conditional HEADs and **18 s** of probe time per window, at the price of one flapping board's 304.
+Behaviour:
 [`scraping-pipeline.md`](../scraping-pipeline.md#a-kept-static-board-asks-before-it-downloads).
 
 Retirement used to write a board off on a single 200 that echoed the tag it was sent. A CDN can
@@ -72,9 +75,62 @@ body hash.
 **29 of the 84 could never answer 304 from a HEAD** — 22 fresh-tag, 3 moving-date, 4 HEAD-blind —
 and their own probe latency prices the wasted HEADs at **19.9 s per due cycle**. The unstable
 retirement covers the 25 that publish a *third* value between the probe and the read (about
-17 s); the four HEAD-blind boards need a conditional read instead. The five alternating boards are
-deliberately left probing: their read answers with the tag that was asked about, so they still
-score 304 from that edge.
+17 s of request time; **18 s per due window** measured at run level below); the four HEAD-blind
+boards need a conditional read instead. The five alternating boards are deliberately left probing:
+their read answers with the tag that was asked about, so they still score 304 from that edge.
+
+## What it does to a run
+
+The 17 s above is a sum of request latencies. A window is different: retirement is written by the
+read that follows a conditional 200, so the board still pays the HEAD that produces the
+observation and only the *next* window is cheaper. One prior observation (`lastHttpProbeUnstableAt`,
+6 h old, no stamp) was therefore seeded for the 25 boards classified as publishing a third value
+between probe and read (`fresh_tag_each` / `date_only` in `.tmp/echo-measure/classify-followup.json`),
+plus 35 untouched boards as drift controls. Each tree ran a warm window from that seed; the measured
+pair starts from the state the warm window left, so the only difference between the two measured
+inputs is the retirement the after tree wrote.
+
+| measured window | wall | source work | kept | `notModifiedCount` | conditional HEADs | probe time |
+|---|---:|---:|---:|---:|---:|---:|
+| pair 1 — before `92c2c125` | 92.2 s | 990.3 s | 1 049 | 9 | **43** | **56.9 s** |
+| pair 1 — after `d513dec5` | 93.8 s | 917.6 s | 1 051 | 8 | **26** | **31.2 s** |
+| pair 2 — before `92c2c125` | 100.8 s | 1 026.2 s | 1 219 | 8 | **43** | **59.3 s** |
+| pair 2 — after `d513dec5` | 95.1 s | 939.7 s | 1 051 | 7 | **26** | **29.3 s** |
+
+`before` is the commit immediately before the unstable rule (the two-ask echo rule is in it);
+`after` adds `c41ca750`. Same 60 boards, 12 workers, pairs in opposite order. **15 of the 25**
+unstable candidates confirmed a second consecutive third value in the warm window and retired; the
+other 10 published a stable pair or a 304 and kept their probe.
+
+- **Conditional HEADs: 43 → 26 in both pairs (−17).** That is the change, and it reproduces
+  exactly. `live_run` cannot see a HEAD — the scheduling decision (`revalidate_only /
+  static_revalidate_due`) is the same whether the probe is sent or skipped, and the read behind it
+  costs 10–100× the probe — so the windows were driven through a wrapper on the one call site the
+  static sweep probes from, which records every URL and its own latency.
+- **Probe time recovered: 23.6 s and 12.3 s, mean 18.0 s** — the order the per-request price
+  predicted. Retired boards' own HEAD latency in the before window: n=16, median 680 ms, mean
+  1 391 ms, max 11.1 s.
+- **`notModifiedCount` (the all-static count): −1 in both pairs, and it is the same board.**
+  `careers.bungie.com/jobs` was retired, then answered a conditional HEAD **304** in the measured
+  window, so the before arm skipped its read (977 ms / 356 ms) and the after arm read it in full
+  (1 433 ms / 2 490 ms). That is the cost the rule accepts and the docs already state: a board that
+  churns most of the time but occasionally revalidates loses that 304 until the weekly recheck. It
+  is a ~0.4–2.5 s read against the 12–24 s of HEADs the same window no longer pays, and no other
+  board's 304 status differs in either pair.
+- **Wall time does not resolve it.** +1.6 s and −5.7 s (mean −2.05 s, −2.1%); the drift control —
+  boards whose scheduling reason is identical in both arms — has a median duration ratio of 0.95
+  and 1.04, so the after window was ~5% slower in pair 1 and ~4% faster in pair 2. Eighteen
+  seconds over 12 workers is ~1.5 s on the critical path, under that floor. Requests and probe
+  time are the measurement; the wall delta is not.
+
+**Two of the 17 dropped HEADs are not the cohort.** `synapsegames.com/en/pages/jobs` stopped
+probing because it shares a display-name state row with the retired `kongregate.com` board —
+existing behaviour, surfaced here, not introduced. `superraregames.com/pages/careers` lost its
+validator in the warm window (a 200 with none clears the stored tag), so its full read in the after
+arm inflates that arm. Yield of the retired cohort itself is identical: those boards kept 0 in every
+window. Pair 1's output parity is 227 vs 228; pair 2's before arm kept 342 only because
+`linkedin.com/company/ironbelly-studios` kept 174 rows there — the same flaky redirect seen
+elsewhere — while the other three windows failed it.
 
 ## Limits
 
@@ -84,9 +140,15 @@ score 304 from that edge.
   resets a streak rather than confirming one, so 76 is a snapshot of the day rather than a constant.
 - Live hosts, one sweep; the 14 non-repeating boards are the measured justification for the second
   ask, not a rate that generalises to another population.
+- The run-level pair is one population, one day: **15 of 25** retired against the 25 of 25 that
+  classification predicted, because live boards flap. One measured window per arm; the measured
+  window's start is the warm window's output, not a fresh seed.
 
 ## Artifacts
 
 Local and gitignored: `.tmp/echo-measure/two_ask.py` (the sweep), `result-two-ask.json` (raw
-responses per board and ask). The population, cold and steady arms it selects from are
-[`fetch-pipeline-revalidation-population-2026-10-25.md`](fetch-pipeline-revalidation-population-2026-10-25.md).
+responses per board and ask). The run-level A/B lives in `.tmp/unstable-run-level/`: `setup.py`
+(seed), `cycle.py` (prepare + window), `probe_count.py` (the counted window), `analyse.py` and
+`attribution.py` (report), `arms/` (reports and probe lists), `states/`, `RESULTS.md`, and the
+`92c2c125` worktree the before arm ran from. The population, cold and steady arms it selects from
+are [`fetch-pipeline-revalidation-population-2026-10-25.md`](fetch-pipeline-revalidation-population-2026-10-25.md).
