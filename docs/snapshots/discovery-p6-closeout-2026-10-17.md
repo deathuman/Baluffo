@@ -5,10 +5,12 @@
 >   proof) had never had qualifying evidence. The target recovered from its 504 window, so all three were
 >   executed locally on one revision and independently checked.
 > - **Status:** **local evidence present, production acceptance open.** Six gates exit 0 (three builders,
->   three independent checkers). The 64-lane timing case is strong; **outcome parity is unproven** (boards
->   were lost in all six pairs). The one recorded "defect" — a jobs list rendering **4** rows per page
+>   three independent checkers). The 64-lane timing case is strong; **outcome parity is settled** — the
+>   six-pair board loss did not reproduce in two fresh counterbalanced pairs, where the direction flipped
+>   and every board diff sat inside same-lane churn ([2026-10-26 follow-up](discovery-64-lane-parity-2026-10-26.md)).
+>   The one recorded "defect" — a jobs list rendering **4** rows per page
 >   while the build configures **10** — is the adaptive recalculator's floor of 4, not a defect (R3).
->   Six residuals remain open below.
+>   Five residuals remain open below.
 > - **Verified against:** `37df08902414c2eb5e0e01c5c2e39b97af62814c` (`main`, 20 ahead of `origin/main`,
 >   source version `0.3.019`). Deployed revision `af935dfca32a8506669dfbc74abce9b0d1d4b967` is a label
 >   inferred from published OCI tags, not a read of the running container.
@@ -70,6 +72,16 @@ B. Against them the timing case stands and the outcome case does not:
 - Leg B pair 2's total failure count rose **329** against a **317** tolerance while its homepage-stage
   failures **fell by 3**.
 
+**Outcome parity revisited 2026-10-26 (R4).** Two fresh counterbalanced pairs over the same 3,000
+representative rows did not reproduce the one-way loss: 64 lanes lost **4** net boards in pair 1 and
+**gained 2** in pair 2 (pooled **219 → 217** over 6,000 row-audits), both inside the **9-board**
+same-lane churn floor, and **5 of the 10** differing boards were 429s that split 2 against 64 lanes and
+3 against 32 at the same per-host limit of 3. Across the six pairs above plus those two, the pooled
+rate is 7 losses in 8 pairs — a sign test cannot reach significance there, which is why the mechanism
+matters more than the count. The follow-up, its per-host table and the two failure-count excursions
+that remain unproven are recorded in
+[the parity snapshot](discovery-64-lane-parity-2026-10-26.md).
+
 ## Browser proof against the deployed build
 
 Gate: `/ops/health` **200 / healthy / 0.3.019** at `2026-10-17T03:12:16.948966+00:00`; `/ops/dashboard-health`
@@ -105,7 +117,7 @@ list is a UX decision rather than a fix.
 | R1 | Running container's digest never read; deployment identity is an inference from published labels + appVersion | one `docker inspect` on the Umbrel host (command in `p6-baseline-20261017/phase0-provenance.md`) |
 | R2 | Target 504 window `2026-10-16T23:56:54Z` → recovery `2026-10-17T03:12:16Z`; cause unknown | container logs for that window, or an operator statement |
 | R3 | ~~Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages~~ — **closed 2026-10-26**: `itemsPerPage: 10` is the pre-calculation default, and `recalculateItemsPerPage` floors at 4 (`max(4, min(25, floor(availableHeight / rowHeight)))`) at the revision the deployment labels identify (`af935dfc`); 40,008 / 4 = 10,002 is the expected result | nothing to fix; whether a floor of 4 suits a 40k-row list is a UX decision |
-| R4 | Outcome parity at 64 lanes unproven (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance) | two more pairs, or one production-sized 64-lane run with a per-host board diff |
+| R4 | ~~Outcome parity at 64 lanes unproven (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance)~~ — **closed 2026-10-26**: two fresh counterbalanced pairs over the same 3,000 rows put 64 lanes 4 boards behind in one and 2 ahead in the other (pooled 219 → 217, inside the 9-board same-lane floor), with 5 of the 10 differing boards traced to per-host 429s that split 2 against 64 and 3 against 32; failure-identity churn runs 14-22% even between same-lane arms, so the 99%-of-tolerance reading measured weather, and its two small excursions are recorded rather than rounded away | nothing further; the board question is answered |
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
 | R7 | Baseline leg-B `data/` overwrite of `sheet-directory-discovery-audit.json`; not byte-recoverable | none — recorded in `legB-isolation-defect.md` |

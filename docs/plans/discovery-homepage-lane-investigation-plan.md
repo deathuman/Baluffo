@@ -3,7 +3,7 @@
 > - **Class:** performance-tooling
 > - **Trigger:** The homepage fetch is volume-bound, and the existing 64-lane arm is faster but not yet separated from live-host and 429 variance. A decision needs a fresh baseline after the probe-permit release.
 > - **Verified against:** 9b8901f8 plus the 2026-10-12 discovery lane snapshots
-> - **Status:** Deferred until receipt coverage and lifecycle-safety gates P1–P2 pass (both accepted 2026-10-13–14), followed by a pinned three-batch baseline and a healthy matching deployment. The 2026-10-17 baseline and three lane pairs are recorded in [the P6 closeout](../snapshots/discovery-p6-closeout-2026-10-17.md), whose R4 keeps 64-lane outcome parity unproven.
+> - **Status:** Deferred on an operator decision, with **no measurement work outstanding**. The 2026-10-17 baseline and three lane pairs are in [the P6 closeout](../snapshots/discovery-p6-closeout-2026-10-17.md) (`increase-to-64-supported`), and R4's missing outcome parity was settled by two fresh counterbalanced pairs on 2026-10-26 — 64 lanes lost 4 net boards in one pair and gained 2 in the other, inside same-lane churn, with the differing boards attributed per host in [the parity snapshot](../snapshots/discovery-64-lane-parity-2026-10-26.md). What remains is step 5's separate config change raising `activeAuditHomepageFetchConcurrency` to 64 with its acceptance checks; it ships only if someone decides the ~1.2× run gain is worth the 429 exposure measured on both arms.
 
 ## Question
 
