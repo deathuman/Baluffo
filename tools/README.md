@@ -27,6 +27,7 @@ Run with: `python tools/repo_health/bin/analyze_repo.py` or `python tools/repo_h
 ### `measurements/`
 Tools that run Baluffo or its pipeline and measure behavior:
 - **desktop/** - Packaged desktop startup, measured from process spawn
+- **discovery/** - Discovery-lane measurements (e.g., audit lane-count outcome parity)
 - **pipeline/** - Pipeline-level measurements (e.g., job discovery gains)
 - **sources/** - Source performance monitoring and optimization
 
@@ -80,6 +81,36 @@ only evidence about the header if `old` also answered 200 — otherwise the host
 `If-Modified-Since` and `since` was simply too recent. Compare `since` against `plain` to price the
 fallback inside a sweep that already probes, and against the cohort's read cost to decide whether
 the board should be probed at all.
+
+### `measurements/discovery/`
+The GameDevMap active audit's homepage phase is volume-bound, so a wider
+`activeAuditHomepageFetchConcurrency` makes it faster. `lane_parity.py` asks the next question:
+whether the wider arm also changes *which boards* the audit validates. Live hosts make that
+unanswerable in one run, so the tool pins what it can and measures the rest -- every arm audits
+the same first N rows (proven by a population digest and the CSV's SHA-256, not by the
+arguments), only the lane count differs, each arm gets its own data dir, and a pair's order is
+counterbalanced. `arm` proves its lane count from the artifact's own `phaseRuntime` receipt and
+refuses to be compared if the receipt does not show it; `report` judges the pairs against the
+study's **same-lane churn** rather than a threshold carried over from an earlier study, and
+attributes every differing board to its host's record in the other arm (a 429 is lane-driven,
+a board missing from a host that read fine is not).
+
+```bash
+# the whole measurement: N counterbalanced pairs, low then high, high then low, then a verdict
+python tools/measurements/discovery/lane_parity.py study \
+    --study _out/perf-runs/discovery/lane-parity --pairs 2
+
+# or run arms separately (immutable once written; --force re-measures a whole study)
+python tools/measurements/discovery/lane_parity.py arm \
+    --study _out/perf-runs/discovery/lane-parity --name p1-64 --lanes 64
+python tools/measurements/discovery/lane_parity.py report \
+    --study _out/perf-runs/discovery/lane-parity --pairs p1:p1-32,p1-64 p2:p2-32,p2-64
+```
+
+Read failure counts from the artifact's whole-run `failureCounts`/`failureErrorCounts`, never
+its `failures` list: that sample is capped at 200 rows and understated one pair's homepage
+change by 7x. The study that closed P6's R4 is in
+`docs/snapshots/discovery-64-lane-parity-2026-10-26.md`.
 
 ### `measurements/corpus/`
 The hermetic fetch lane: record one real run's HTTP into a content-addressed corpus, then replay
@@ -352,6 +383,7 @@ is typically gitignored - do not commit generated files here.
 | Verify the eligible epochs really replay | `python tools/measurements/corpus/replay_check.py [--samples 2]` |
 | Adjudicate the shipped pool claim | `python tools/measurements/corpus/adjudicate.py --epoch <epoch-dir>` |
 | Price a candidate change before committing it | `tools/measurements/corpus/probes/row_dict/sitecustomize.py` via `ab.py run --arm-b-env` |
+| Test whether a wider audit lane count changes which boards are validated | `python tools/measurements/discovery/lane_parity.py study --study <dir>` |
 | Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |
 | Sweep an adapter for feeds that ignore If-None-Match | `python tools/provider_revalidation_smoke.py --adapter <adapter> --all` |
 | Monitor social sources | `tools/measurements/sources/social_sources_monitoring.py` |

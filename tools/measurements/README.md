@@ -9,6 +9,9 @@ measurements/
   desktop/
     spawn_startup.py                       # Measure click -> window -> interactive from Popen
 
+  discovery/
+    lane_parity.py                         # Judge audit lane-count outcome parity
+
   pipeline/
     fetch_report_read_audit.py              # Audit every hot fetch-report consumer's read cost
     job_discovery_increment_measurement.py  # Measure pipeline discovery gains
@@ -108,6 +111,27 @@ python tools/measurements/pipeline/static_residual_failures.py \
   --active-registry data/source-registry-active.json \
   --json
 ```
+
+### Discovery Lane Parity
+
+Run the GameDevMap active audit at two homepage lane counts and judge whether the wider arm
+validates the same boards. The study pins the population and counterbalances the order; the
+verdict's tolerance is the study's own same-lane churn, and every differing board is attributed
+to its host's record in the other arm:
+
+```bash
+# whole measurement: two counterbalanced pairs, then a verdict
+python tools/measurements/discovery/lane_parity.py study \
+  --study _out/perf-runs/discovery/lane-parity --pairs 2
+
+# arms are immutable once written; --force re-measures the whole study
+python tools/measurements/discovery/lane_parity.py arm --study _out/parity --name p1-32 --lanes 32
+python tools/measurements/discovery/lane_parity.py report --study _out/parity \
+  --pairs p1:p1-32,p1-64 --json
+```
+
+Nothing writes to `data/`: each arm sets its own `BALUFFO_DATA_DIR` and artifact path. Arm
+records land in `<study>/arms/<name>/arm.json` and the verdict in `<study>/report.json`.
 
 ### Pipeline Measurements
 

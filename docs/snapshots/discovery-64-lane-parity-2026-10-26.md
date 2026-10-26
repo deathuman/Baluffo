@@ -12,8 +12,10 @@
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
 >   10,500 rows, 8,370 eligible), 2026-10-26T13:28–13:50Z.
 > - **Then inspect:** `_out/perf-runs/discovery/lane-parity/` — four arm records, `report.json` and
->   the pre-registered `RULE.md`; the harness is `_out/perf-runs/discovery/lane_parity_study.py`
->   with `lane_parity_report.py` beside it.
+>   the pre-registered `RULE.md`. The tool that reproduces them is
+>   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py),
+>   promoted from the one-off harness after the study and re-run over these four records to confirm
+>   it writes the figures below.
 
 ## Design
 
@@ -104,16 +106,17 @@ page-level variance the P6 closeout traced on the post-fix tree, not throttling.
 ## Reproducing the numbers
 
 ```bash
-# one arm over the pinned first 3,000 rows (isolated data dir + artifact)
-python _out/perf-runs/discovery/lane_parity_study.py arm \
-    --study _out/perf-runs/discovery/lane-parity --name p1-64 --lanes 64 --batches 3
+# the whole measurement: two counterbalanced pairs over the pinned first 3,000 rows, then a verdict
+python tools/measurements/discovery/lane_parity.py study \
+    --study _out/perf-runs/discovery/lane-parity --pairs 2
 
-# the parity table, the per-host attribution and the floor
-python _out/perf-runs/discovery/lane_parity_report.py \
+# or judge arms already recorded (the parity table, per-host attribution and floor)
+python tools/measurements/discovery/lane_parity.py report \
     --study _out/perf-runs/discovery/lane-parity \
     --pairs p1:p1-32,p1-64 p2:p2-32,p2-64
 ```
 
 The arms, their logs and `report.json` stay under `_out/perf-runs/discovery/lane-parity/`
-(untracked). The harnesses live there on purpose: a `scripts/` edit counts as shipped container code
-and trips the version/release gate, and this is measurement, not product behaviour.
+(untracked evidence). The tool is tracked in `tools/` on purpose: `tools/**` is not shipped
+container code, so it cannot trip the version/release gate, and this is measurement rather than
+product behaviour.

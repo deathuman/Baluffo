@@ -465,3 +465,29 @@ locally. A pin the image cannot install fails the audit by name.
 
 `docs/testing.md` records the new audit shape. All other areas unchanged; exact measured
 values, no spare headroom.
+
+## Discovery lane-parity tool (2026-10-26)
+
+The 32/64-lane parity study that closed P6's R4 ran from an untracked harness under `_out/`. It is
+now a reusable tool, so `tools` and `tests` grow by exactly its size; `src` is untouched because the
+tool only reads artifacts the audit already writes.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `tools` | 38763 | 39550 | +787 |
+| `tests` | 263145 | 263592 | +447 |
+
+- `tools` +787: `tools/measurements/discovery/lane_parity.py` (new) — the `arm` driver and its
+  lane proof, the counterbalanced `study` runner, and the `report` that judges pairs on boards
+  keyed by host + tenant and on whole-run failure counts against same-lane churn, attributing each
+  differing board to its host's record in the other arm. `tools/README.md` and
+  `tools/measurements/README.md` route to it; Markdown is not counted here.
+- `tests` +447 across three files: `_lane_parity_fixtures.py` (102) writes an arm's artifact and
+  record so a study is described as boards and failures; `test_lane_parity.py` (101) pins the
+  record's population digest, the lane-proof refusals, arm immutability and the moved-study
+  artifact fallback; `test_lane_parity_report.py` (244) covers tenancy-keyed board identity, the
+  population pin, whole-run counts against the capped sample, host-failure attribution, the churn
+  floor and every verdict path including `inconclusive`, and the counterbalanced run order. Each
+  stays under the 400-line default, so no per-file exception.
+
+All other areas unchanged; exact measured values, no spare headroom.
