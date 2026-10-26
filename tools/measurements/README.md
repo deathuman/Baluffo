@@ -11,6 +11,7 @@ measurements/
 
   discovery/
     lane_parity.py                         # Judge audit lane-count outcome parity
+    request_trace.py                       # Per-request host trace and 429 windows
 
   pipeline/
     fetch_report_read_audit.py              # Audit every hot fetch-report consumer's read cost
@@ -139,6 +140,15 @@ when both sides carry one, and never by studio alone, so two tenants of one stud
 each other's result. A matched probe 429 also counts as the host failure it is. Read the result as
 *where the request failed*, not as proof of a lane effect: a multi-tenant host throttles at one
 lane count and can be clean at another.
+
+Every arm also writes `request-trace.jsonl` (phase, host, status, start/end per attempt; retries
+are their own rows). `trace` turns it into a per-phase comparison: request and 429 counts, hosts
+asked, **fully** (every request 429) and **partially** throttled hosts, and the 429 window as a
+share of the phase with its ten time bins. That separates a higher *rate* -- many hosts, bins
+spread through the phase -- from a throttle *episode* -- most 429s inside one short window. Host
+rows are capped to the six busiest repeatedly-asked hosts; `--json` carries every host. A phase
+whose hosts are each asked once (the homepage fetch) is read from its fully-throttled count, not
+from a host row. Use `--no-trace` on an arm to skip recording.
 
 ### Pipeline Measurements
 

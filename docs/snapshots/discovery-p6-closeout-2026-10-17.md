@@ -16,7 +16,8 @@
 >   source version `0.3.019`). Deployed revision `af935dfca32a8506669dfbc74abce9b0d1d4b967` is a label
 >   inferred from published OCI tags, not a read of the running container.
 > - **Then inspect:** the closeout entry point `_out/perf-runs/discovery/p6-closeout.md` §8, and the three
->   roots under `_out/perf-runs/discovery/`.
+>   roots under `_out/perf-runs/discovery/` — none of which is present in this checkout on 2026-10-26
+>   (see Where the evidence lives).
 
 ## What ran, and what checked it
 
@@ -122,7 +123,7 @@ list is a UX decision rather than a fix.
 | R1 | Running container's digest never read; deployment identity is an inference from published labels + appVersion | one `docker inspect` on the Umbrel host (command in `p6-baseline-20261017/phase0-provenance.md`) |
 | R2 | Target 504 window `2026-10-16T23:56:54Z` → recovery `2026-10-17T03:12:16Z`; cause unknown | container logs for that window, or an operator statement |
 | R3 | ~~Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages~~ — **closed 2026-10-26**: `itemsPerPage: 10` is the pre-calculation default, and `recalculateItemsPerPage` floors at 4 (`max(4, min(25, floor(availableHeight / rowHeight)))`) at the revision the deployment labels identify (`af935dfc`); 40,008 / 4 = 10,002 is the expected result | nothing to fix; whether a floor of 4 suits a 40k-row list is a UX decision |
-| R4 | **Outcome parity at 64 lanes unproven** (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance). Four later counterbalanced pairs changed boards on 23 occasions and every one is a 429 on the arm that lacked the board; a 64-lane arm also ran clean, so no lane-driven board cost is measured and the earlier ~2% "price" is withdrawn | a run shape where per-host 429s do not move 1-8 boards per arm — a per-arm endpoint-status trace, or a production-sized run against a populated registry |
+| R4 | **Outcome parity at 64 lanes unproven** (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance). Four later counterbalanced pairs changed boards on 23 occasions and every one is a 429 on the arm that lacked the board; a 64-lane arm also ran clean, so no lane-driven board cost is measured and the earlier ~2% "price" is withdrawn. The six losses themselves survive only as counts: their arms are absent from this checkout, so neither the boards nor their statuses can be read. A P6-shaped three-pair re-run on 2026-10-26 repeated the net board loss at 64 in 3/3 pairs (net −7) with 13/13 movers 429s, but 7 movers were in probe/recovery phases the lane knob does not change and the rule returned `parity-not-supported` | a traced run shape where per-host 429s do not move 1-8 boards per arm — `lane_parity trace` now reports the per-host request and 429 windows — or a production-sized run against a populated registry |
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
 | R7 | Baseline leg-B `data/` overwrite of `sheet-directory-discovery-audit.json`; not byte-recoverable | none — recorded in `legB-isolation-defect.md` |
@@ -136,6 +137,12 @@ list is a UX decision rather than a fix.
 - `_out/perf-runs/discovery/p6-baseline-20261017/baseline-summary.md`,
   `p6-lane-study-20261017/lane-study-summary.md`, `p6-browser-proof-20261017/summary.md` — the three
   pass-level summaries this note reconciles.
+- `_out/perf-runs/discovery/lane-parity-p6shape/` — the 2026-10-26 P6-shaped re-run of three
+  counterbalanced pairs (six arm records and `report.json`), the fresh evidence R4 now cites.
+- **Not present in this checkout on 2026-10-26.** `_out/perf-runs/discovery/` then held only the
+  2026-10-26 lane-parity runs; none of the three roots above resolves, so this note's numbers are the
+  surviving record rather than something this checkout can re-derive. R4's per-board question — whether
+  P6's six losses were also 429s — cannot be put to the arms until they are restored.
 
 ## Boundaries
 

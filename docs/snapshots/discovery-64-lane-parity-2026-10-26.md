@@ -6,15 +6,28 @@
 >   counterbalanced pairs, or one production-sized 64-lane run with a per-host board diff.
 > - **Status:** **no lane-driven board difference is measured.** Four counterbalanced pairs across two
 >   same-day studies differ on **23 boards**, and **all 23** carry a **429** on the arm that lacks them:
->   12 Workable boards (11 throttled on `apply.workable.com`, one on its own homepage), plus **9**
->   homepage and **3** probe 429s on other hosts. A 64-lane arm also ran **clean** — the recorded pair 2 kept all four Workable boards
->   while a 32-lane arm lost them — so the lane count is neither necessary nor sufficient for the loss.
->   Timing reproduces: the 64-lane homepage phase is **1.4-2.0×** faster; whole-run wall is **1.04-1.23×**.
+>   12 Workable boards (11 throttled on `apply.workable.com`, one on its own homepage), plus **8** other
+>   homepages and **3** probe 429s. A 64-lane arm also ran **clean** — the recorded pair 2 kept all four
+>   Workable boards while a 32-lane arm lost them — so the lane count is neither necessary nor sufficient
+>   for the loss. A P6-shaped three-pair re-run adds **13** changed boards, again **all 429**, but **7**
+>   of them sit in probe and recovery phases the lane knob does not touch; its pre-registered verdict is
+>   `parity-not-supported` and it isolates no lane cost.
+>   A request trace over two oppositely-ordered pairs shows the 429s are **spread through 93-100% of
+>   each phase**, not one throttle episode, and that the **same 32-lane arm's homepage 429 rate moves
+>   2.2% → 4.2% between runs** — a swing larger than the reverse pair's 0.3 pp lane gap. The lane gap
+>   is therefore not stable enough to price (§"Request trace").
+>   Timing reproduces across the three studies: the homepage phase is **1.39-1.96×** faster and whole-run
+>   wall **1.04-1.40×**.
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
 >   10,500 rows, 8,370 eligible), 2026-10-26T13:28–13:50Z.
 > - **Re-run:** the whole measurement again through `study --pairs 2` at `71bc5e11`,
 >   2026-10-26T16:38:49Z-16:56Z, evidence in `_out/perf-runs/discovery/lane-parity-fresh/`. Population
 >   digest `08d24f4435c54bfb` in all four arms — bit-identical to the four recorded here.
+> - **P6-shaped re-run:** three counterbalanced pairs via `study --pairs 3`,
+>   2026-10-26T19:27:18Z-19:54Z, evidence in
+>   `_out/perf-runs/discovery/lane-parity-p6shape/`; same population digest and CSV. It repeats the
+>   net board loss at 64 in **3/3** pairs (net **−7**) and every mover is a 429, but the strict rule
+>   returns `parity-not-supported`; see §"P6-shaped re-run".
 > - **Correction:** an earlier revision of this note read the Workable losses as zero-job or
 >   provider-inference outcomes. They are 429s. The artifact's probe-failure rows carry neither
 >   `studio` nor `url`, so the report's studio match found nothing and fell through to a *sibling*
@@ -22,8 +35,9 @@
 >   and counts it as the host failure it is; see §"The attribution defect".
 > - **Then inspect:** `_out/perf-runs/discovery/lane-parity/` — four arm records, `report.json` and
 >   the pre-registered `RULE.md`, with the re-run beside it in
->   `_out/perf-runs/discovery/lane-parity-fresh/`. Both `report.json` files were regenerated with the
->   corrected attribution. The tool that reproduces them is
+>   `_out/perf-runs/discovery/lane-parity-fresh/`, the P6-shaped re-run in `lane-parity-p6shape/`, and
+>   the two traced pairs with their `trace.txt` in `lane-trace-smoke/` and `lane-trace-reverse/`. Both
+>   `report.json` files were regenerated with the corrected attribution. The tool that reproduces them is
 >   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py).
 
 ## Design
@@ -135,6 +149,88 @@ Timing reproduces on the phase and not on the wall: the 64-lane homepage fetch c
 whole-run wall speedup is only **1.04×** and **1.08×** against **1.23×** and **1.15×**, because
 recovery and 429 retries own most of the remainder and they are the weather.
 
+## P6-shaped re-run: three pairs, every mover a 429
+
+P6's six pairs cannot be re-read (their arms are absent), so the next check is P6's leg-A *shape*:
+three counterbalanced pairs through the promoted tool (`study --pairs 3`) on the pinned 3,000 rows
+(digest `08d24f4435c54bfb`, identical CSV), 2026-10-26T19:27:18-19:54Z, in
+`_out/perf-runs/discovery/lane-parity-p6shape/`. Each arm proves its lane count from its own receipt
+(**32/32** or **64/64** configured/peak).
+
+| Pair | Order | Boards 32 → 64 | Net | Changed (lost / gained) | Wall s | Homepage fetch ms | Movers that are 429s |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 32, 64 | 115 → 113 | −2 | 4 (3 / 1) | 297.3 → 242.0 | 91,111 → 50,213 | 4 / 4 |
+| 2 | 64, 32 | 113 → 112 | −1 | 3 (2 / 1) | 330.2 → 235.8 | 72,170 → 51,950 | 3 / 3 |
+| 3 | 32, 64 | 113 → 109 | −4 | 6 (5 / 1) | 284.7 → 253.9 | 75,307 → 53,437 | 6 / 6 |
+
+The moved boards are **6 homepage**, **2 probe** and **5 recovery** 429s. The seven probe/recovery
+movers matter: probe runs at a fixed **40** lanes in every arm and recovery policy is identical, so
+those board losses cannot be caused by the homepage lane setting. Pair 3's net **−4** comes from
+recovery — five `apply.workable.com` tenants 429'd on the 64 side (1TK, Hardsuit Labs, both Square
+Enix tenants, Team17 as Everplay) against one homepage board 64 kept (Fun Waffle); pair 2's net
+**−1** is one homepage loss with its two probe moves cancelling; pair 1's net **−2** is homepage. The
+direction — 64 net behind in **3/3** pairs, **−7** pooled — therefore reproduces P6's signature
+without isolating a lane effect.
+
+The pre-registered rule returns **`parity-not-supported`**: p1's failure-identity difference
+**761 > 488**, its total-failure delta **200 > 51** and homepage delta **99 > 51**; p2's total delta
+**146 > 51**; p3's board symmetric difference **6 > 4** and total delta **58 > 51**. The board-only
+reading is throttle weather again; the failure measures are mostly the same 429s under another name.
+
+Limits: the arms run sequentially at different times, so this cannot separate "64 lanes raise the 429
+rate" from "these arms landed in throttle episodes"; P6's own six stay unreadable; and three pairs
+against a four-board floor is a small sample. It is not the production-sized run R4 asks for. The
+request trace below does separate rate from episode, and finds the unpaired lane gap unstable.
+
+## Request trace: a spread rate, not a throttle episode
+
+The parity report names the arm that lost a board but says nothing about whether its 429s were one
+host episode or a higher rate across the phase. Each arm now records `request-trace.jsonl` (phase,
+host, status, start/end per attempt), and `lane_parity trace` reports per phase: requests, 429s,
+hosts asked, **fully** (every request 429) versus **partially** throttled hosts, and the 429 window
+as a share of the phase with its ten time bins. Two traced pairs ran in opposite order on the same
+pinned population and CSV (`08d24f4435c54bfb`):
+
+| Pair (order) | Requests 32 / 64 | Homepage 429 32 / 64 | Fully throttled 32 / 64 | 429 window 32 / 64 |
+| --- | --- | --- | --- | --- |
+| forward (32, 64) | 11,445 / 11,147 | 65 / 3,000 (**2.2%**) / 163 / 3,000 (**5.4%**) | 65 / 163 | 93% of span, 5/10 bins / 97%, 3/10 |
+| reverse (64, 32) | 11,273 / 11,263 | 126 / 3,000 (**4.2%**) / 135 / 3,000 (**4.5%**) | 126 / 135 | 97%, 6/10 / 97%, 4/10 |
+
+The homepage phase asks each of its ~2,990 hosts once, so "fully throttled" is the 429 count; the
+429s are spread over 65 vs 163 distinct hosts in the forward pair and 126 vs 135 in the reverse.
+Across both pairs every phase's 429s occupy **93-100%** of the phase's span and **3-6 of ten bins**
+-- no phase is a single throttle episode. The other phases did not follow the lane count:
+
+| Phase | Forward 32 → 64 | Reverse 32 → 64 |
+| --- | --- | --- |
+| homepage | 2.2% → 5.4% | 4.2% → 4.5% |
+| recovery | 12.5% → 9.8% | 12.9% → 12.3% |
+| probe | 7.6% → 7.7% | 8.1% → 8.2% |
+
+`apply.workable.com` is 98.7-100% throttled in the probe phase of both arms in both pairs, the
+host-level throttle the earlier attribution found, and it moves in neither direction with lanes.
+The forward pair's 3.2 pp homepage gap does not reproduce: the **32-lane arm itself** moves from
+2.2% to 4.2% between the two runs, a 2.0 pp swing, while the reverse pair's 64 − 32 gap is 0.3 pp.
+Both arms run higher when they run second (32: 2.2% → 4.2%; 64: 4.5% → 5.4%), so order and time
+slice are candidates for part of the swing — each arm moves **0.9-2.0 pp** between its two runs
+against lane gaps of **3.2 pp** (forward) and **0.3 pp** (reverse). Two pairs cannot separate order
+from lane either; what they show is that the gap is not stable enough to price.
+Pooled the 32-lane arms are 191 / 6,000 (3.2%) and the 64-lane arms 298 / 6,000 (5.0%), but that
+pools two runs of each arm at different times; it does not price a lane. The board result is
+unchanged -- every mover is still a 429 -- and the trace shows why the board measure cannot resolve
+it: the 429 rate of the *same* arm moves more between runs than the lane gap it would have to explain.
+
+Evidence: `_out/perf-runs/discovery/lane-trace-smoke/` (20:08:50-20:17Z) and
+`lane-trace-reverse/` (20:24:59-20:33Z), 2026-10-26, each arm proving its lane count from its own
+receipt; reports are `trace.txt` beside each study. Re-run with:
+
+```bash
+python tools/measurements/discovery/lane_parity.py trace \
+    --study _out/perf-runs/discovery/lane-trace-smoke --pairs p1:p1-32,p1-64
+python tools/measurements/discovery/lane_parity.py trace \
+    --study _out/perf-runs/discovery/lane-trace-reverse --pairs p1:r1-32,r1-64
+```
+
 ## The attribution defect
 
 `rejectedForActivation` rows for probe failures are built from the candidate (`src/source_discovery/
@@ -183,10 +279,14 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   found is new; the comparison is arm-to-arm on the same population, not against the populated registry
   P6 measured. Board counts land at **106-113** against P6's **114-117**, which is the closest check
   available that the arms are the same measurement.
-- **Not re-run: P6's six pairs.** They stand as recorded, on a different tree and population. If their
-  six losses were also 429s, the 9-in-10 count disappears entirely; nothing here can settle that,
-  because the P6 artifacts do not carry the rejection detail this attribution needs. R4 stays open
-  rather than closed on the strength of this population.
+- **P6's six pairs cannot be checked here.** They stand as recorded, on a different tree and population,
+  and their arms are not in this checkout: on 2026-10-26 `_out/perf-runs/discovery/` held only the
+  2026-10-26 lane-parity runs, so `p6-lane-study-20261017/` does not resolve and no per-board identity
+  survives — the record keeps counts only (1-6 losses per pair, 6/6, p = 0.0312). If those losses were
+  also 429s the 9-in-10 count disappears entirely, and this population cannot settle it. The P6 shape
+  was re-run instead (above): it reproduces the direction with every mover a 429, but not P6's
+  identities. R4 stays open; the question still needs the arms restored before the corrected `report`
+  can be run over them, or a measurement that holds hosts constant while lanes change.
 
 ## Reproducing the numbers
 

@@ -45,6 +45,8 @@ Usage::
       --study _out/perf-runs/discovery/lane-parity --pairs p1:p1-32,p1-64 p2:p2-32,p2-64
   python tools/measurements/discovery/lane_parity.py study \\
       --study _out/perf-runs/discovery/lane-parity --pairs 2
+  python tools/measurements/discovery/lane_parity.py trace \\
+      --study _out/perf-runs/discovery/lane-parity --pairs p1:p1-32,p1-64
 
 `study` runs the counterbalanced sequence as separate processes and then reports, which is the
 whole measurement in one command. Arm records are immutable once written: re-running an arm
@@ -68,6 +70,14 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tools.measurements.discovery.request_trace import (  # noqa: E402
+    TRACE_FILE,
+    RequestTrace,
+    build_trace_report,
+    render_trace,
+    trace_requests,
+)
 
 ARTIFACT_NAME = "gamedevmap-active-source-dry-run.json"
 HOMEPAGE_STAGE = "homepage_fetch"
@@ -141,6 +151,7 @@ def _arm_record(
     csv_meta: dict[str, Any],
     wall_s: float,
     artifact_path: Path,
+    request_trace: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The arm's own receipt: enough to prove the lane knob and pair it, nothing sampled."""
     summary = _as_dict(artifact.get("summary"))
@@ -171,7 +182,7 @@ def _arm_record(
         for item in _as_list(_as_dict(artifact.get("timings")).get("batches"))
         if isinstance(item, dict)
     ]
-    return {
+    record = {
         "name": name,
         "lanes": lanes,
         "timeoutSeconds": int(args.timeout),
@@ -225,6 +236,9 @@ def _arm_record(
         "batches": batches,
         "artifact": str(artifact_path),
     }
+    if request_trace is not None:
+        record["requestTrace"] = request_trace
+    return record
 
 
 def run_arm(args: argparse.Namespace) -> dict[str, Any]:
@@ -252,19 +266,42 @@ def run_arm(args: argparse.Namespace) -> dict[str, Any]:
     csv_url = str(gamedevmap_cfg.get("csvUrl") or "")
     csv_meta = _csv_digest(csv_url, int(args.timeout))
 
+    trace = None if bool(getattr(args, "no_trace", False)) else RequestTrace(arm_dir / TRACE_FILE)
     started = time.time()
-    artifact = run_gamedevmap_active_source_dry_run(
-        timeout_s=int(args.timeout),
-        config=cfg,
-        output_path=artifact_path,
-        reset=True,
-        batch_size=int(args.batch_size),
-        max_batches=int(args.batches),
-    )
+    try:
+        if trace is None:
+            artifact = run_gamedevmap_active_source_dry_run(
+                timeout_s=int(args.timeout),
+                config=cfg,
+                output_path=artifact_path,
+                reset=True,
+                batch_size=int(args.batch_size),
+                max_batches=int(args.batches),
+            )
+        else:
+            with trace_requests(trace):
+                artifact = run_gamedevmap_active_source_dry_run(
+                    timeout_s=int(args.timeout),
+                    config=cfg,
+                    output_path=artifact_path,
+                    reset=True,
+                    batch_size=int(args.batch_size),
+                    max_batches=int(args.batches),
+                )
+    finally:
+        if trace is not None:
+            trace.write()
     wall_s = round(time.time() - started, 1)
 
     record = _arm_record(
-        args.name, int(args.lanes), args, artifact, csv_meta, wall_s, artifact_path
+        args.name,
+        int(args.lanes),
+        args,
+        artifact,
+        csv_meta,
+        wall_s,
+        artifact_path,
+        request_trace=trace.summary() if trace is not None else {"enabled": False},
     )
     _write_json(record_path, record)
     assert_lane_proof(record)
@@ -715,6 +752,7 @@ def cmd_arm(args: argparse.Namespace) -> int:
                     (row for row in record["phases"] if row["phase"] == HOMEPAGE_STAGE),
                     None,
                 ),
+                "requestTrace": record.get("requestTrace"),
             },
             indent=1,
         )
@@ -725,6 +763,12 @@ def cmd_arm(args: argparse.Namespace) -> int:
 def cmd_report(args: argparse.Namespace) -> int:
     report = build_report(Path(args.study).resolve(), list(args.pairs))
     print(json.dumps(report, indent=1, sort_keys=True) if args.json else _render_report(report))
+    return 0
+
+
+def cmd_trace(args: argparse.Namespace) -> int:
+    report = build_trace_report(Path(args.study).resolve(), list(args.pairs))
+    print(json.dumps(report, indent=1, sort_keys=True) if args.json else render_trace(report))
     return 0
 
 
@@ -763,6 +807,8 @@ def cmd_study(args: argparse.Namespace) -> int:
             ]
             if args.force:
                 command.append("--force")
+            if getattr(args, "no_trace", False):
+                command.append("--no-trace")
             print(f"=== {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} arm {names[lanes]}")
             log_path = study / f"arms-{names[lanes]}.log"
             completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
@@ -787,6 +833,11 @@ def main(argv: list[str] | None = None) -> int:
         target.add_argument("--batch-size", type=int, default=1000)
         target.add_argument("--timeout", type=int, default=6)
         target.add_argument("--force", action="store_true", help="Re-run an arm that exists.")
+        target.add_argument(
+            "--no-trace",
+            action="store_true",
+            help="Do not record the arm's per-request host trace.",
+        )
 
     arm = sub.add_parser("arm", help="Run one isolated arm and record it.")
     arm.add_argument("--study", required=True)
@@ -813,6 +864,17 @@ def main(argv: list[str] | None = None) -> int:
     study.add_argument("--high", type=int, default=64)
     add_run_flags(study)
     study.set_defaults(func=cmd_study)
+
+    trace = sub.add_parser("trace", help="Per-host request and 429 rates from traced arms.")
+    trace.add_argument("--study", required=True)
+    trace.add_argument(
+        "--pairs",
+        nargs="+",
+        required=True,
+        help="label:low_arm,high_arm entries; pass the lower-lane arm first.",
+    )
+    trace.add_argument("--json", action="store_true", help="Print the report, not the table.")
+    trace.set_defaults(func=cmd_trace)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

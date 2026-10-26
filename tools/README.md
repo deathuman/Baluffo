@@ -107,7 +107,23 @@ python tools/measurements/discovery/lane_parity.py arm \
     --study _out/perf-runs/discovery/lane-parity --name p1-64 --lanes 64
 python tools/measurements/discovery/lane_parity.py report \
     --study _out/perf-runs/discovery/lane-parity --pairs p1:p1-32,p1-64 p2:p2-32,p2-64
+
+# per-host request and 429 windows for a traced pair (tracing is on by default)
+python tools/measurements/discovery/lane_parity.py trace \
+    --study _out/perf-runs/discovery/lane-parity --pairs p1:p1-32,p1-64
 ```
+
+Every arm records a `request-trace.jsonl` beside its artifact -- phase, host, status and
+start/end for each request -- and `trace` prints both arms' request counts and 429 rates by
+phase. Each phase also reports how many hosts it asked, how many were **fully** throttled (every
+request 429) versus **partially**, and the window its 429s occupied as a share of the phase plus
+the ten time bins that held one. A rate difference is a count spread across many hosts and bins;
+an episode is a short window holding most of the 429s. Per-host rows are limited to hosts asked
+more than once (top six, full list in `--json`), because a one-request homepage host's 429 is
+already counted in the phase's fully-throttled total. The page phases come from each job's own
+`failureStage` and the probe phase from the retry-called fetcher, so a retry is its own row. The
+`episode`/`spread` label is a heuristic (429 window at most 25% or at least 50% of the phase's or
+host's request span) and is printed beside the raw window; `--no-trace` skips recording.
 
 Read failure counts from the artifact's whole-run `failureCounts`/`failureErrorCounts`, never
 its `failures` list: that sample is capped at 200 rows and understated one pair's homepage
