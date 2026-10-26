@@ -37,6 +37,12 @@ Read the failure counts from the artifact's whole-run `failureCounts` and
 `failureErrorCounts`, never from its `failures` sample: that list is capped at 200 rows, and
 in the first measured pair it understated a 32->64 homepage-failure change by 7x.
 
+`report --screen-429-free` re-reads the board comparison over only the boards whose hosts
+never answered 429 in either arm's request trace, because on live hosts a board that moved
+can otherwise always be blamed on throttling. The screen is a second read beside the raw
+one, not a replacement: it costs sample size instead of buying power, and a difference that
+survives it is not a 429.
+
 Usage::
 
   python tools/measurements/discovery/lane_parity.py arm \\
@@ -75,6 +81,7 @@ from tools.measurements.discovery.request_trace import (  # noqa: E402
     TRACE_FILE,
     RequestTrace,
     build_trace_report,
+    load_trace,
     render_trace,
     trace_requests,
 )
@@ -432,6 +439,64 @@ def _hosts_for(board: dict[str, Any]) -> set[str]:
     return hosts
 
 
+def _related_host(board_host: str, throttled_host: str) -> bool:
+    """Whether a board host belongs to a host that throttled.
+
+    `www.` is stripped and a subdomain links to its parent in either direction, so a 429 on
+    `www.studio.example` screens a board on `studio.example` and the reverse. The screen is
+    deliberately over-inclusive: dropping a clean board costs power, keeping a throttled one
+    costs the claim.
+    """
+    left = board_host.removeprefix("www.")
+    right = throttled_host.removeprefix("www.")
+    return left == right or left.endswith(f".{right}") or right.endswith(f".{left}")
+
+
+def _hosts_429(study: Path, arm_name: str) -> set[str]:
+    """Every host that answered 429 at least once in the arm's request trace."""
+    return {
+        str(row.get("host") or "").strip().lower()
+        for row in load_trace(study, arm_name)
+        if row.get("status") == 429
+    }
+
+
+def _screen_block(
+    study: Path,
+    low: dict[str, Any],
+    high: dict[str, Any],
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> dict[str, Any]:
+    """The board comparison restricted to hosts that never answered 429 in either arm."""
+    throttled = _hosts_429(study, str(low["name"])) | _hosts_429(study, str(high["name"]))
+    identities = set(left["boards"]) | set(right["boards"])
+
+    def _touches(identity: str) -> bool:
+        hosts: set[str] = set()
+        for side in (left["boards"], right["boards"]):
+            board = side.get(identity)
+            if board is not None:
+                hosts |= _hosts_for(board)
+        return any(_related_host(host, bad) for host in hosts for bad in throttled)
+
+    clean = {identity for identity in identities if not _touches(identity)}
+    clean_low = {identity for identity in left["boards"] if identity in clean}
+    clean_high = {identity for identity in right["boards"] if identity in clean}
+    return {
+        "mode": "429-free-hosts",
+        "throttledHosts": len(throttled),
+        "excluded": {
+            "low": len(left["boards"]) - len(clean_low),
+            "high": len(right["boards"]) - len(clean_high),
+        },
+        "boards": {"low": len(clean_low), "high": len(clean_high)},
+        "symmetricDifference": len(clean_low ^ clean_high),
+        "onlyLow": sorted(clean_low - clean_high),
+        "onlyHigh": sorted(clean_high - clean_low),
+    }
+
+
 def _same_candidate(board: dict[str, Any], other: dict[str, Any]) -> bool:
     """Whether `other` is this board's own candidate, not a sibling's.
 
@@ -489,7 +554,11 @@ def _attribute(board: dict[str, Any], other: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pair_report(
-    label: str, low: dict[str, Any], high: dict[str, Any], study: Path
+    label: str,
+    low: dict[str, Any],
+    high: dict[str, Any],
+    study: Path,
+    screen: bool = False,
 ) -> dict[str, Any]:
     left = _arm_outcomes(low, study)
     right = _arm_outcomes(high, study)
@@ -567,6 +636,7 @@ def _pair_report(
         },
         "csvSame": low["csv"]["sha256"] == high["csv"]["sha256"],
         "attribution": attribution,
+        "screen": _screen_block(study, low, high, left, right) if screen else None,
     }
 
 
@@ -637,7 +707,7 @@ def _violations(pair: dict[str, Any], floor: dict[str, int]) -> list[str]:
     ]
 
 
-def build_report(study: Path, specs: list[str]) -> dict[str, Any]:
+def build_report(study: Path, specs: list[str], screen: bool = False) -> dict[str, Any]:
     """Judge the counterbalanced pairs and write `study/report.json`."""
     pairs: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for spec in specs:
@@ -651,7 +721,7 @@ def build_report(study: Path, specs: list[str]) -> dict[str, Any]:
             )
         pairs.append((label, low, high))
 
-    reports = [_pair_report(label, low, high, study) for label, low, high in pairs]
+    reports = [_pair_report(label, low, high, study, screen=screen) for label, low, high in pairs]
     churn, floor = _same_lane_churn(pairs, study)
     # One arm per lane count leaves the noise floor unmeasured. Judging anyway would call
     # every difference a violation of a zero floor, so the report refuses to name a winner.
@@ -682,6 +752,18 @@ def build_report(study: Path, specs: list[str]) -> dict[str, Any]:
         },
         "verdict": verdict,
     }
+    if screen:
+        screens = [pair.get("screen") or {} for pair in reports]
+        empty = any(
+            row.get("boards", {}).get("low", 0) == 0 and row.get("boards", {}).get("high", 0) == 0
+            for row in screens
+        )
+        if empty:
+            report["screenVerdict"] = "429-free-population-empty"
+        elif any(int(row.get("symmetricDifference") or 0) for row in screens):
+            report["screenVerdict"] = "parity-not-supported-on-429-free-hosts"
+        else:
+            report["screenVerdict"] = "parity-supported-on-429-free-hosts"
     _write_json(study / "report.json", report)
     return report
 
@@ -725,6 +807,19 @@ def _render_report(report: dict[str, Any]) -> str:
                 or "no host failure"
             )
             lines.append(f"  {row['presentIn']}: {row['name']} {row['url']} -- {hits}")
+        screen = pair.get("screen")
+        if screen:
+            lanes = pair["lanes"]
+            lines.append(
+                f"  429-free screen: excluded {screen['excluded']['low']} / "
+                f"{screen['excluded']['high']} boards on {screen['throttledHosts']} "
+                f"throttled hosts; clean boards {screen['boards']['low']} vs "
+                f"{screen['boards']['high']}, symdiff {screen['symmetricDifference']}"
+            )
+            for identity in screen["onlyLow"]:
+                lines.append(f"    clean {lanes['low']} only: {identity}")
+            for identity in screen["onlyHigh"]:
+                lines.append(f"    clean {lanes['high']} only: {identity}")
     if report["violations"]:
         lines.append("violations:")
         lines.extend(f"  - {line}" for line in report["violations"])
@@ -735,6 +830,8 @@ def _render_report(report: dict[str, Any]) -> str:
         f"{totals['populationPinned']} | csv pinned: {totals['csvPinned']}"
     )
     lines.append(f"verdict: {report['verdict']}")
+    if report.get("screenVerdict"):
+        lines.append(f"429-free screen verdict: {report['screenVerdict']}")
     return "\n".join(lines)
 
 
@@ -761,7 +858,9 @@ def cmd_arm(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    report = build_report(Path(args.study).resolve(), list(args.pairs))
+    report = build_report(
+        Path(args.study).resolve(), list(args.pairs), screen=bool(args.screen_429_free)
+    )
     print(json.dumps(report, indent=1, sort_keys=True) if args.json else _render_report(report))
     return 0
 
@@ -819,7 +918,7 @@ def cmd_study(args: argparse.Namespace) -> int:
             for line in completed.stdout.strip().splitlines()[:4]:
                 print(f"  {line}")
         specs.append(f"p{index}:{names[args.low]},{names[args.high]}")
-    report = build_report(study, specs)
+    report = build_report(study, specs, screen=bool(getattr(args, "screen_429_free", False)))
     print(_render_report(report))
     return 0
 
@@ -855,6 +954,11 @@ def main(argv: list[str] | None = None) -> int:
         help="label:low_arm,high_arm entries; pass the lower-lane arm first.",
     )
     report.add_argument("--json", action="store_true", help="Print the report, not the table.")
+    report.add_argument(
+        "--screen-429-free",
+        action="store_true",
+        help="Also judge the pairs over only the boards whose hosts never answered 429.",
+    )
     report.set_defaults(func=cmd_report)
 
     study = sub.add_parser("study", help="Run N counterbalanced pairs, then report.")
@@ -863,6 +967,11 @@ def main(argv: list[str] | None = None) -> int:
     study.add_argument("--low", type=int, default=32)
     study.add_argument("--high", type=int, default=64)
     add_run_flags(study)
+    study.add_argument(
+        "--screen-429-free",
+        action="store_true",
+        help="Also judge the pairs over only the boards whose hosts never answered 429.",
+    )
     study.set_defaults(func=cmd_study)
 
     trace = sub.add_parser("trace", help="Per-host request and 429 rates from traced arms.")

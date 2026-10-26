@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from tools.measurements.discovery import lane_parity
+from tools.measurements.discovery import lane_parity, request_trace
 
 
 def board(
@@ -40,6 +40,18 @@ def boards(*names: str) -> list[dict[str, Any]]:
     return [board(name, f"https://{name.lower()}.example/jobs") for name in names]
 
 
+def trace_row(host: str, status: int, *, phase: str = "homepage_fetch") -> dict[str, Any]:
+    """One request-trace row, shaped like the writer's."""
+    return {
+        "phase": phase,
+        "host": host,
+        "url": f"https://{host}/",
+        "status": status,
+        "startMs": 0.0,
+        "endMs": 1.0,
+    }
+
+
 def write_arm(
     study: Path,
     name: str,
@@ -51,6 +63,7 @@ def write_arm(
     total_failures: int = 100,
     zero_job: list[dict[str, Any]] | None = None,
     rejections: list[dict[str, Any]] | None = None,
+    trace: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write one arm's artifact and record, shaped like a real study arm."""
     artifact_path = study / "arms" / name / "data" / lane_parity.ARTIFACT_NAME
@@ -87,28 +100,30 @@ def write_arm(
     )
     record_path = study / "arms" / name / "arm.json"
     record_path.parent.mkdir(parents=True, exist_ok=True)
-    record_path.write_text(
-        json.dumps(
+    record: dict[str, Any] = {
+        "name": name,
+        "lanes": lanes,
+        "wallS": 10.0,
+        "population": {"digest": "samestudy", "count": len(boards)},
+        "csv": {"sha256": "csvsame"},
+        "phases": [
             {
-                "name": name,
-                "lanes": lanes,
-                "wallS": 10.0,
-                "population": {"digest": "samestudy", "count": len(boards)},
-                "csv": {"sha256": "csvsame"},
-                "phases": [
-                    {
-                        "phase": lane_parity.HOMEPAGE_STAGE,
-                        "wallMs": 1_000,
-                        "configuredLanes": lanes,
-                        "peakInFlight": lanes,
-                    }
-                ],
-                "artifact": str(artifact_path),
+                "phase": lane_parity.HOMEPAGE_STAGE,
+                "wallMs": 1_000,
+                "configuredLanes": lanes,
+                "peakInFlight": lanes,
             }
+        ],
+        "artifact": str(artifact_path),
+    }
+    if trace is not None:
+        trace_path = record_path.parent / request_trace.TRACE_FILE
+        trace_path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in trace),
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
+        record["requestTrace"] = {"enabled": True, "file": request_trace.TRACE_FILE}
+    record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     return record_path
 
 

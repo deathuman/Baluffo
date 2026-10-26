@@ -150,6 +150,14 @@ rows are capped to the six busiest repeatedly-asked hosts; `--json` carries ever
 whose hosts are each asked once (the homepage fetch) is read from its fully-throttled count, not
 from a host row. Use `--no-trace` on an arm to skip recording.
 
+`report --screen-429-free` (the same flag on `study`) adds a second read beside the raw one: it
+drops every board that touches a host which answered 429 in either arm's trace and reports the
+surviving **clean** board counts, their symmetric difference, and a screen verdict. A board's host
+is matched after stripping `www.`, with a subdomain linked to its parent in either direction, so
+the screen over-excludes rather than under-excludes. A difference that survives the screen is not
+a 429; a screen with no clean boards on either side returns `429-free-population-empty` instead of
+claiming parity. The flag requires traced arms and does not change the raw verdict.
+
 ### Pipeline Measurements
 
 ```bash

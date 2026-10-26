@@ -125,10 +125,18 @@ already counted in the phase's fully-throttled total. The page phases come from 
 `episode`/`spread` label is a heuristic (429 window at most 25% or at least 50% of the phase's or
 host's request span) and is printed beside the raw window; `--no-trace` skips recording.
 
+`report --screen-429-free` (the same flag on `study`) adds a second read beside the raw one, over
+only the boards whose hosts never answered 429 in either arm's trace: it drops every board whose
+host matches a throttled one after `www.` is stripped and through parent/subdomain in either
+direction, so it over-excludes rather than under-excludes. A difference that survives the screen
+is not a 429; a pair with no clean boards on either side returns `429-free-population-empty`
+instead of claiming parity. The flag requires traced arms and does not change the raw verdict.
+
 Read failure counts from the artifact's whole-run `failureCounts`/`failureErrorCounts`, never
 its `failures` list: that sample is capped at 200 rows and understated one pair's homepage
-change by 7x. The two studies that answered P6's R4 — the recorded arms and the end-to-end re-run
-through `study` — are in `docs/snapshots/discovery-64-lane-parity-2026-10-26.md`.
+change by 7x. The studies that answered P6's R4 — the recorded arms, the end-to-end re-run
+through `study`, the traced pairs and the 429-free screen study — are in
+`docs/snapshots/discovery-64-lane-parity-2026-10-26.md`.
 
 ### `measurements/corpus/`
 The hermetic fetch lane: record one real run's HTTP into a content-addressed corpus, then replay

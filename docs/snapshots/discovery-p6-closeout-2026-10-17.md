@@ -5,10 +5,13 @@
 >   proof) had never had qualifying evidence. The target recovered from its 504 window, so all three were
 >   executed locally on one revision and independently checked.
 > - **Status:** **local evidence present, production acceptance open.** Six gates exit 0 (three builders,
->   three independent checkers). The 64-lane timing case is strong; **outcome parity stays open** — four
->   counterbalanced pairs across two studies changed boards on 23 occasions and every one is a host 429
->   on the arm that lacked the board, so no lane-driven board cost is measured and the earlier ~2%
->   "price" is withdrawn ([2026-10-26 follow-up](discovery-64-lane-parity-2026-10-26.md)).
+>   three independent checkers). The 64-lane timing case is strong; **outcome parity stays open only for
+>   the rate question** — four counterbalanced pairs across two studies changed boards on 23 occasions
+>   and every one is a host 429 on the arm that lacked the board, so no lane-driven board cost is
+>   measured and the earlier ~2% "price" is withdrawn; a pre-registered **429-free screen** over four
+>   traced pairs then leaves **0** board differences where no host answered 429 (**11 of 11** raw movers
+>   are 429s), so the board question closes on this population
+>   ([2026-10-26 follow-up](discovery-64-lane-parity-2026-10-26.md)).
 >   The one recorded "defect" — a jobs list rendering **4** rows per page
 >   while the build configures **10** — is the adaptive recalculator's floor of 4, not a defect (R3).
 >   Six residuals remain open below.
@@ -123,7 +126,7 @@ list is a UX decision rather than a fix.
 | R1 | Running container's digest never read; deployment identity is an inference from published labels + appVersion | one `docker inspect` on the Umbrel host (command in `p6-baseline-20261017/phase0-provenance.md`) |
 | R2 | Target 504 window `2026-10-16T23:56:54Z` → recovery `2026-10-17T03:12:16Z`; cause unknown | container logs for that window, or an operator statement |
 | R3 | ~~Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages~~ — **closed 2026-10-26**: `itemsPerPage: 10` is the pre-calculation default, and `recalculateItemsPerPage` floors at 4 (`max(4, min(25, floor(availableHeight / rowHeight)))`) at the revision the deployment labels identify (`af935dfc`); 40,008 / 4 = 10,002 is the expected result | nothing to fix; whether a floor of 4 suits a 40k-row list is a UX decision |
-| R4 | **Outcome parity at 64 lanes unproven** (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance). Four later counterbalanced pairs changed boards on 23 occasions and every one is a 429 on the arm that lacked the board; a 64-lane arm also ran clean, so no lane-driven board cost is measured and the earlier ~2% "price" is withdrawn. The six losses themselves survive only as counts: their arms are absent from this checkout, so neither the boards nor their statuses can be read. A P6-shaped three-pair re-run on 2026-10-26 repeated the net board loss at 64 in 3/3 pairs (net −7) with 13/13 movers 429s, but 7 movers were in probe/recovery phases the lane knob does not change and the rule returned `parity-not-supported` | a traced run shape where per-host 429s do not move 1-8 boards per arm — `lane_parity trace` now reports the per-host request and 429 windows — or a production-sized run against a populated registry |
+| R4 | **Outcome parity at 64 lanes: the board half is measured on 429-free hosts; the rate half is open** (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance). Four later counterbalanced pairs changed boards on 23 occasions and every one is a 429 on the arm that lacked the board; a 64-lane arm also ran clean, so no lane-driven board cost is measured and the earlier ~2% "price" is withdrawn. A P6-shaped three-pair re-run on 2026-10-26 repeated the net board loss at 64 in 3/3 pairs (net −7) with 13/13 movers 429s, but 7 movers were in probe/recovery phases the lane knob does not change and the rule returned `parity-not-supported`. A pre-registered 429-free screen then re-judged four traced counterbalanced pairs over only the boards whose hosts never answered 429: all 11 raw movers are 429s and the clean board sets are identical in every pair (107/107, 105/105, 106/106, 103/103), so no board moves where throttling is excluded. The six losses themselves survive only as counts: their arms are absent from this checkout | the **rate** question — whether 64 lanes raise a host's own 429 rate — which the screen cannot answer because it removes throttled hosts by construction, so it needs a run that holds hosts constant while lanes change; and P6's six loss identities, whose arms remain absent |
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
 | R7 | Baseline leg-B `data/` overwrite of `sheet-directory-discovery-audit.json`; not byte-recoverable | none — recorded in `legB-isolation-defect.md` |

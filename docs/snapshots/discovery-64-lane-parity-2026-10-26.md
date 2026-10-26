@@ -16,7 +16,13 @@
 >   each phase**, not one throttle episode, and that the **same 32-lane arm's homepage 429 rate moves
 >   2.2% → 4.2% between runs** — a swing larger than the reverse pair's 0.3 pp lane gap. The lane gap
 >   is therefore not stable enough to price (§"Request trace").
->   Timing reproduces across the three studies: the homepage phase is **1.39-1.96×** faster and whole-run
+>   A pre-registered **429-free screen** then re-judged four traced counterbalanced pairs over only the
+>   boards whose hosts never answered **429** in either arm: every raw mover (**11 of 11**) is a 429, and
+>   the clean board sets are **identical in all four pairs** (107/107, 105/105, 106/106, 103/103, symdiff
+>   **0**), so no board moves where throttling is excluded. What the screen cannot answer is whether 64
+>   lanes raise a host's own 429 rate, because it removes throttled hosts by construction (§"429-free
+>   screen").
+>   Timing reproduces across the four studies: the homepage phase is **1.39-1.96×** faster and whole-run
 >   wall **1.04-1.40×**.
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
 >   10,500 rows, 8,370 eligible), 2026-10-26T13:28–13:50Z.
@@ -28,6 +34,12 @@
 >   `_out/perf-runs/discovery/lane-parity-p6shape/`; same population digest and CSV. It repeats the
 >   net board loss at 64 in **3/3** pairs (net **−7**) and every mover is a 429, but the strict rule
 >   returns `parity-not-supported`; see §"P6-shaped re-run".
+> - **429-free screen:** `report --screen-429-free` re-judges the pairs over only the boards whose
+>   hosts never answered 429 in either arm. A fresh counterbalanced study
+>   (`_out/perf-runs/discovery/lane-parity-429free/`, 2026-10-26T22:10-22:30Z, same digest and CSV) and
+>   the two earlier traced pairs leave **0** clean board differences — all **11** raw movers are 429s —
+>   so the board question closes on this population where throttling is absent; whether 64 lanes raise
+>   a host's own 429 rate stays open. See §"429-free screen".
 > - **Correction:** an earlier revision of this note read the Workable losses as zero-job or
 >   provider-inference outcomes. They are 429s. The artifact's probe-failure rows carry neither
 >   `studio` nor `url`, so the report's studio match found nothing and fell through to a *sibling*
@@ -36,8 +48,9 @@
 > - **Then inspect:** `_out/perf-runs/discovery/lane-parity/` — four arm records, `report.json` and
 >   the pre-registered `RULE.md`, with the re-run beside it in
 >   `_out/perf-runs/discovery/lane-parity-fresh/`, the P6-shaped re-run in `lane-parity-p6shape/`, and
->   the two traced pairs with their `trace.txt` in `lane-trace-smoke/` and `lane-trace-reverse/`. Both
->   `report.json` files were regenerated with the corrected attribution. The tool that reproduces them is
+>   the two traced pairs with their `trace.txt` in `lane-trace-smoke/` and `lane-trace-reverse/`, and
+>   the 429-free screen study in `lane-parity-429free/`. Every `report.json` was regenerated with the
+>   corrected attribution and the screen read. The tool that reproduces them is
 >   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py).
 
 ## Design
@@ -231,6 +244,64 @@ python tools/measurements/discovery/lane_parity.py trace \
     --study _out/perf-runs/discovery/lane-trace-reverse --pairs p1:r1-32,r1-64
 ```
 
+## 429-free screen: no board moves where hosts do not throttle
+
+The raw comparison cannot separate a lane effect from host throttling at this population: a moved
+board can always be blamed on a 429, and the 429 on the lanes. The screen is the pre-registered third
+read, shipped as `report --screen-429-free` (the same flag on `study`): it collects every host that
+answered **429** in *either* arm's request trace, drops every board touching one — host match after
+stripping `www.`, a subdomain linked to its parent in either direction, so it over-excludes rather
+than under-excludes — and judges the survivors as a second read beside the raw one. A difference that
+survives is not a 429, and a screen with no clean boards returns `429-free-population-empty` rather
+than claiming parity. Four tests pin the exclusion, the difference that must not be excused,
+`www`/subdomain linkage, and the empty-population verdict.
+
+Four traced counterbalanced pairs now carry it: the two earlier traced pairs and a fresh study in
+`_out/perf-runs/discovery/lane-parity-429free/` (2026-10-26T22:10-22:30Z, four arms in the
+counterbalanced order `p1-32`, `p1-64`, `p2-64`, `p2-32`, each proving its own lanes from its own
+receipt; population digest `08d24f4435c54bfb` and CSV `896da851…` in all four arms, so it is the
+population above).
+
+| Pair (order) | Raw boards 32 → 64 | Movers | Movers that are 429s | Throttled hosts | Excluded 32 / 64 | Clean boards | Clean symdiff | Screen verdict |
+|---|---|---|---|---|---|---|---|---|
+| smoke (32, 64) | 110 → 108 | 4 | 4 / 4 | 262 | 3 / 1 | 107 vs 107 | **0** | supported |
+| reverse (64, 32) | 107 → 105 | 2 | 2 / 2 | 267 | 2 / 0 | 105 vs 105 | **0** | supported |
+| fresh p1 (32, 64) | 109 → 106 | 3 | 3 / 3 | 277 | 3 / 0 | 106 vs 106 | **0** | supported |
+| fresh p2 (64, 32) | 103 → 105 | 2 | 2 / 2 | 343 | 0 / 2 | 103 vs 103 | **0** | supported |
+
+Every raw mover across the four pairs — **11 of 11** — carries its 429 on the arm that lacked the
+board, and after the screen **no board difference remains in any pair**. The screen excluded exactly
+the movers: no clean board was dropped and no move survived. The fresh study's raw rule also returns
+`parity-supported` (no violations; same-lane churn **6** boards at 32 and **1** at 64) and its verdict
+is `parity-supported-on-429-free-hosts`; the two single-pair trace studies return `inconclusive` raw
+(floor undefined) and `parity-supported-on-429-free-hosts` screened. Timing reproduces: the fresh
+pairs gain **91,355 → 51,914 ms** (1.76×) and **77,474 → 46,115 ms** (1.68×) on the homepage phase at
+**1.22×** and **1.20×** whole-run wall.
+
+What this does **not** settle:
+
+- **Whether 64 lanes raise a host's own 429 rate.** The screen removes throttled hosts by construction,
+  so it cannot price them. The fresh trace reproduces the earlier order pattern: the arm that ran
+  **second** has the higher homepage 429 rate in both pairs (**2.2% → 5.3%** when 64 ran second;
+  **4.2% → 8.1%** when 32 ran second), so the 64 − 32 homepage gap changes sign between the pairs
+  (**+3.1 pp**, **−3.9 pp**) while the same 32-lane arm spans **2.2% → 8.1%** across runs. The probe
+  phase is flat (8.0% vs 8.0%; 7.5% vs 7.9%), `apply.workable.com` is 100% throttled in every arm's
+  probe, and the 429s again spread over **95-99%** of each fresh phase's span (**3-6 of ten bins**)
+  rather than forming one episode.
+- **Power.** The clean sets are **~100 boards per arm**; an effect below one board is invisible, and
+  the excluded hosts are, by construction, the ones that throttled.
+- **P6's six pairs** remain unreadable, and this is one population on one day. The board question is
+  settled only in the sense the screen can settle it: no difference survives where throttling is
+  absent.
+
+Re-run with:
+
+```bash
+python tools/measurements/discovery/lane_parity.py report \
+    --study _out/perf-runs/discovery/lane-parity-429free \
+    --pairs p1:p1-32,p1-64 p2:p2-32,p2-64 --screen-429-free
+```
+
 ## The attribution defect
 
 `rejectedForActivation` rows for probe failures are built from the candidate (`src/source_discovery/
@@ -266,7 +337,10 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   after the fix — so the sign test counts throttle luck and arm order, not the lane setting. A 64-lane
   arm has also run clean (recorded pair 2), which no consistent lane cost would allow. The honest
   statement is that **no lane-driven board cost has been measured**, and that the board measure
-  cannot separate a lane effect from host throttling at this population size.
+  cannot separate a lane effect from host throttling at this population size. The 429-free screen
+  (§"429-free screen") now does separate them: across four traced pairs **no board changes where no
+  host throttled**, so R4's board question is settled on this population, and what stays open is
+  whether the lane count raises a host's own 429 rate.
 - **The Workable core is host throttling, not a probe or inference difference.** The three boards are
   rejected with `429 Too Many Requests` from `apply.workable.com`; their pages read in both arms and
   their jobs are present whenever the probe is. The full-block arms are the two pair-1 64-lane arms,
@@ -285,8 +359,9 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   survives — the record keeps counts only (1-6 losses per pair, 6/6, p = 0.0312). If those losses were
   also 429s the 9-in-10 count disappears entirely, and this population cannot settle it. The P6 shape
   was re-run instead (above): it reproduces the direction with every mover a 429, but not P6's
-  identities. R4 stays open; the question still needs the arms restored before the corrected `report`
-  can be run over them, or a measurement that holds hosts constant while lanes change.
+  identities. R4 stays open only for the rate question; its board comparison no longer waits on these
+  arms, because the screen settles it where throttling is absent. The rate question still needs a
+  measurement that holds hosts constant while lanes change, or the arms restored.
 
 ## Reproducing the numbers
 
@@ -304,7 +379,9 @@ python tools/measurements/discovery/lane_parity.py report \
 A re-run needs a fresh `--study` directory: an arm record is immutable, and `--force` is reserved for
 re-measuring a whole study. The reproduction above used
 `--study _out/perf-runs/discovery/lane-parity-fresh`; the arms, their logs and `report.json` stay under
-their study directory, both of them untracked evidence. The tool is tracked in `tools/` on purpose:
+their study directory, both of them untracked evidence. Add `--screen-429-free` to either command to
+judge the pairs over only the boards whose hosts never answered 429 (its own re-run is in the screen
+section above). The tool is tracked in `tools/` on purpose:
 `tools/**` is not shipped
 container code, so it cannot trip the version/release gate, and this is measurement rather than
 product behaviour.

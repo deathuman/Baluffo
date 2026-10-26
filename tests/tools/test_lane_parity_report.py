@@ -26,6 +26,7 @@ from tests.tools._lane_parity_fixtures import (  # noqa: E402
     board,
     boards,
     counterbalanced,
+    trace_row,
     write_arm,
 )
 from tools.measurements.discovery import lane_parity  # noqa: E402
@@ -316,7 +317,7 @@ def test_study_runs_low_then_high_then_high_then_low(tmp_path: Path, monkeypatch
         order.append(f"{name}:{lanes}")
         return Namespace(returncode=0, stdout="", stderr="")
 
-    def fake_report(_study: Path, items: list[str]) -> dict[str, Any]:
+    def fake_report(_study: Path, items: list[str], **_kwargs: Any) -> dict[str, Any]:
         specs.append(items)
         return {}
 
@@ -338,3 +339,74 @@ def test_study_runs_low_then_high_then_high_then_low(tmp_path: Path, monkeypatch
 
     assert order == ["p1-32:32", "p1-64:64", "p2-64:64", "p2-32:32"]
     assert specs == [["p1:p1-32,p1-64", "p2:p2-32,p2-64"]]
+
+
+def test_the_429_free_screen_drops_boards_whose_host_throttled(tmp_path: Path) -> None:
+    """The screen is the shape R4 asks for: a mover that is a 429 cannot move a clean board."""
+    study = tmp_path / "study"
+    acme = board("Acme", "https://acme.example/jobs")
+    rest = board("Rest", "https://rest.example/jobs")
+    write_arm(
+        study,
+        "p1-32",
+        32,
+        boards=[acme, rest],
+        trace=[trace_row("acme.example", 429)],
+    )
+    write_arm(study, "p1-64", 64, boards=[rest], trace=[trace_row("acme.example", 200)])
+
+    report = lane_parity.build_report(study, ["p1:p1-32,p1-64"], screen=True)
+    pair = report["pairs"][0]
+
+    assert pair["boards"]["symmetricDifference"] == 1, "the raw read still sees the loss"
+    screen = pair["screen"]
+    assert screen["mode"] == "429-free-hosts"
+    assert screen["excluded"] == {"low": 1, "high": 0}
+    assert screen["boards"] == {"low": 1, "high": 1}
+    assert screen["symmetricDifference"] == 0
+    assert report["screenVerdict"] == "parity-supported-on-429-free-hosts"
+
+
+def test_the_screen_does_not_excuse_a_board_lost_from_a_clean_host(tmp_path: Path) -> None:
+    study = tmp_path / "study"
+    write_arm(study, "p1-32", 32, boards=boards("A", "B"), trace=[trace_row("a.example", 200)])
+    write_arm(study, "p1-64", 64, boards=boards("A"), trace=[trace_row("a.example", 200)])
+
+    report = lane_parity.build_report(study, ["p1:p1-32,p1-64"], screen=True)
+
+    assert report["pairs"][0]["screen"]["symmetricDifference"] == 1
+    assert report["screenVerdict"] == "parity-not-supported-on-429-free-hosts"
+
+
+def test_the_screen_links_www_and_subdomains_to_the_throttled_host(tmp_path: Path) -> None:
+    study = tmp_path / "study"
+    sub = board("Sub", "https://sub.studio.example/jobs")
+    control = board("Control", "https://control.example/jobs")
+    write_arm(
+        study,
+        "p1-32",
+        32,
+        boards=[sub, control],
+        trace=[trace_row("studio.example", 429)],
+    )
+    write_arm(study, "p1-64", 64, boards=[control], trace=[trace_row("studio.example", 200)])
+
+    page = lane_parity._render_report(  # noqa: SLF001
+        lane_parity.build_report(study, ["p1:p1-32,p1-64"], screen=True)
+    )
+
+    assert "429-free screen: excluded 1 / 0 boards" in page
+    assert "symdiff 0" in page
+    assert "429-free screen verdict: parity-supported-on-429-free-hosts" in page
+
+
+def test_a_screen_with_no_clean_boards_says_so(tmp_path: Path) -> None:
+    study = tmp_path / "study"
+    acme = board("Acme", "https://acme.example/jobs")
+    write_arm(study, "p1-32", 32, boards=[acme], trace=[trace_row("acme.example", 429)])
+    write_arm(study, "p1-64", 64, boards=[], trace=[trace_row("acme.example", 429)])
+
+    report = lane_parity.build_report(study, ["p1:p1-32,p1-64"], screen=True)
+
+    assert report["pairs"][0]["screen"]["boards"] == {"low": 0, "high": 0}
+    assert report["screenVerdict"] == "429-free-population-empty"
