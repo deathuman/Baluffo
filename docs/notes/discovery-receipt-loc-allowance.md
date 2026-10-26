@@ -491,3 +491,21 @@ tool only reads artifacts the audit already writes.
   stays under the 400-line default, so no per-file exception.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Lane-parity 429 attribution repair (2026-10-26)
+
+The correction that read the lane study's Workable losses as 429s rather than zero-job outcomes grew
+the tool's attribution inputs and pinned the trap with two tests.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `tools` | 39550 | 39585 | +35 |
+| `tests` | 263592 | 263707 | +115 |
+
+- `tools` +35: boards carry `sourceId` and the endpoint, rejections carry identity, name, adapter and
+  endpoint, `_hosts_for` reads the endpoint host, `_same_candidate` separates two tenants of one
+  studio, and a matched rejection with no `failureErrorCounts` hit counts as the host failure it is.
+- `tests` +115: the fixtures can write rejections and endpoint-bearing boards; the report tests add a
+  429 that must beat a sibling's zero-job row and two Square Enix tenants that must keep their own zero.
+
+All other areas unchanged; exact measured values, no spare headroom.

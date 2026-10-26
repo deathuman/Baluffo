@@ -125,6 +125,102 @@ def test_a_board_missing_from_a_host_that_read_fine_is_not_blamed_on_lanes(
     assert row["zeroJob"]["jobsFound"] == 0
 
 
+def test_a_probe_429_is_not_explained_by_a_siblings_zero_job(tmp_path: Path) -> None:
+    """A provider rejection carries no studio or url; the board identity is what pins it.
+
+    The artifact's probe-failure rows leave `studio` and `url` empty, so matching them by
+    studio label finds nothing and falls through to the zero-job row of a *sibling*
+    candidate — which reads as "probed empty" when the board was actually rate-limited.
+    """
+    study = tmp_path / "study"
+    workable = board(
+        "1TK (Workable)",
+        "",
+        studio="1TK",
+        api_url="https://apply.workable.com/api/v1/widget/accounts/1tk?details=true",
+        source_id="workable:account:1tk",
+        adapter="workable",
+    )
+    write_arm(study, "p1-32", 32, boards=[workable])
+    write_arm(
+        study,
+        "p1-64",
+        64,
+        boards=[],
+        zero_job=[
+            {
+                "id": "smartrecruiters:company_id:1tk",
+                "name": "1TK (SmartRecruiters)",
+                "studio": "1TK",
+                "jobsFound": 0,
+            }
+        ],
+        rejections=[
+            {
+                "reason": "probe_failed",
+                "reasonDetail": "probe_failed",
+                "sourceId": "workable:account:1tk",
+                "name": "1TK (Workable)",
+                "adapter": "workable",
+                "error": (
+                    "https://apply.workable.com/1tk: Client error '429 Too Many Requests' "
+                    "for url 'https://apply.workable.com/1tk'"
+                ),
+                "candidate": {
+                    "api_url": "https://apply.workable.com/api/v1/widget/accounts/1tk?details=true"
+                },
+            }
+        ],
+    )
+
+    row = _report(study, ["p1:p1-32,p1-64"])["pairs"][0]["attribution"][0]
+
+    assert row["rejection"]["reason"] == "probe_failed"
+    assert "429" in row["rejection"]["error"]
+    assert row["zeroJob"] is None, "a sibling's zero is not this board's outcome"
+    assert row["failedOnHost"] is True
+
+
+def test_two_tenants_of_one_studio_do_not_borrow_each_others_zero(tmp_path: Path) -> None:
+    study = tmp_path / "study"
+    studio = "Beautiful Game Studios (Square-Enix Europe)"
+    name = f"{studio} (Workable)"
+    low = [
+        board(
+            name,
+            "http://eu.square-enix.com/jobs",
+            studio=studio,
+            api_url=f"https://apply.workable.com/api/v1/widget/accounts/{tenant}?details=true",
+            source_id=f"workable:account:{tenant}",
+            adapter="workable",
+        )
+        for tenant in ("square-enix", "square-enix-america")
+    ]
+    write_arm(study, "p1-32", 32, boards=low)
+    write_arm(
+        study,
+        "p1-64",
+        64,
+        boards=[],
+        zero_job=[
+            {
+                "id": "workable:account:square-enix-america",
+                "name": name,
+                "studio": studio,
+                "jobsFound": 0,
+            }
+        ],
+    )
+
+    rows = _report(study, ["p1:p1-32,p1-64"])["pairs"][0]["attribution"]
+    by_tenant = {
+        row["identity"].rsplit("/", 1)[-1]: row for row in rows if row["presentIn"] == "32 only"
+    }
+
+    assert by_tenant["square-enix-america"]["zeroJob"]["jobsFound"] == 0
+    assert by_tenant["square-enix"]["zeroJob"] is None
+
+
 def test_floor_is_the_same_lane_churn_and_an_excess_is_a_violation(tmp_path: Path) -> None:
     study = tmp_path / "study"
     specs = counterbalanced(

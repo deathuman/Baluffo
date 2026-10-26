@@ -5,14 +5,13 @@
 >   proof) had never had qualifying evidence. The target recovered from its 504 window, so all three were
 >   executed locally on one revision and independently checked.
 > - **Status:** **local evidence present, production acceptance open.** Six gates exit 0 (three builders,
->   three independent checkers). The 64-lane timing case is strong; **outcome parity is priced, not
->   disproven** — four counterbalanced pairs across two studies put 64 lanes about **2%** of boards
->   behind (net **442 → 433**, **9 losses in 10 pairs** with P6's six, sign test **p ≈ 0.021**), with the
->   repeat losers being Workable tenants whose pages read fine rather than throttled hosts
->   ([2026-10-26 follow-up](discovery-64-lane-parity-2026-10-26.md)).
+>   three independent checkers). The 64-lane timing case is strong; **outcome parity stays open** — four
+>   counterbalanced pairs across two studies changed boards on 23 occasions and every one is a host 429
+>   on the arm that lacked the board, so no lane-driven board cost is measured and the earlier ~2%
+>   "price" is withdrawn ([2026-10-26 follow-up](discovery-64-lane-parity-2026-10-26.md)).
 >   The one recorded "defect" — a jobs list rendering **4** rows per page
 >   while the build configures **10** — is the adaptive recalculator's floor of 4, not a defect (R3).
->   Five residuals remain open below.
+>   Six residuals remain open below.
 > - **Verified against:** `37df08902414c2eb5e0e01c5c2e39b97af62814c` (`main`, 20 ahead of `origin/main`,
 >   source version `0.3.019`). Deployed revision `af935dfca32a8506669dfbc74abce9b0d1d4b967` is a label
 >   inferred from published OCI tags, not a read of the running container.
@@ -74,19 +73,19 @@ B. Against them the timing case stands and the outcome case does not:
 - Leg B pair 2's total failure count rose **329** against a **317** tolerance while its homepage-stage
   failures **fell by 3**.
 
-**Outcome parity revisited 2026-10-26 (R4).** Two fresh counterbalanced pairs over the same 3,000
-representative rows did not reproduce the one-way loss: 64 lanes lost **4** net boards in pair 1 and
-**gained 2** in pair 2 (pooled **219 → 217** over 6,000 row-audits), both inside the **9-board**
-same-lane churn floor, and host-level 429s appeared for **6 of the 10** differing boards, split 3
-against each side at the same per-host limit of 3 — one of them 1TK's recovery fetch on a sibling
-tenant while its own page read fine. A same-day re-run of the whole measurement then lost
-boards in both pairs (net **223 → 216**), pair 1 board for board identical to the first study. Across
-the six pairs above plus those four, the pooled rate is **9 losses in 10** (two-sided sign test
-**p ≈ 0.021**) and net **−9** boards over 12,000 row-audits — about **2%** per pair. The lane count is
-therefore a throughput-for-coverage trade rather than free parallelism, and the repeat losers are
-Workable tenants whose pages read fine and whose probe or provider inference answered differently, not
-hosts that were throttled. The follow-up, its per-host table and the failure-count excursions that
-remain unproven are recorded in [the parity snapshot](discovery-64-lane-parity-2026-10-26.md).
+**Outcome parity revisited 2026-10-26 (R4).** Four counterbalanced pairs over the same 3,000
+representative rows changed boards on **23** occasions in total, and **all 23** are **429**s on the arm
+that did not keep them: **11** Workable boards throttled at `apply.workable.com`, one Workable board on
+its own homepage, **9** other homepages and **3** static probes. The two arms in which *every* Workable
+probe failed are the two pair-1 64-lane arms, each immediately after the first arm of its study; the
+recorded pair-2 64-lane arm kept all four Workable boards, so the lane count is neither necessary nor
+sufficient. An earlier reading of these pairs counted the repeat Workable losses as zero-job or
+provider-inference differences and priced the wider lane at about **2%** of boards; that reading came
+from a probe-failure row that carries neither studio nor URL, so the attribution fell through to a
+sibling candidate's zero-job row. With the attribution fixed, **no lane-driven board cost is measured**
+and R4 stays open — at this population size the board measure cannot separate a lane effect from
+per-host throttling. The follow-up, its per-host table and the two failure-count excursions are
+recorded in [the parity snapshot](discovery-64-lane-parity-2026-10-26.md).
 
 ## Browser proof against the deployed build
 
@@ -123,7 +122,7 @@ list is a UX decision rather than a fix.
 | R1 | Running container's digest never read; deployment identity is an inference from published labels + appVersion | one `docker inspect` on the Umbrel host (command in `p6-baseline-20261017/phase0-provenance.md`) |
 | R2 | Target 504 window `2026-10-16T23:56:54Z` → recovery `2026-10-17T03:12:16Z`; cause unknown | container logs for that window, or an operator statement |
 | R3 | ~~Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages~~ — **closed 2026-10-26**: `itemsPerPage: 10` is the pre-calculation default, and `recalculateItemsPerPage` floors at 4 (`max(4, min(25, floor(availableHeight / rowHeight)))`) at the revision the deployment labels identify (`af935dfc`); 40,008 / 4 = 10,002 is the expected result | nothing to fix; whether a floor of 4 suits a 40k-row list is a UX decision |
-| R4 | ~~Outcome parity at 64 lanes unproven (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance)~~ — **closed 2026-10-26**: four counterbalanced pairs across two same-day studies over the same 3,000 rows — pair 1 loses **4** both times with the identical six boards lost and two gained, pair 2 goes **+2** then **−3** — net **442 → 433** (about **2%** per pair), **9 losses in 10 pairs** with the six above (sign test **p ≈ 0.021**); the 429 attributions split 6-5 and the repeat losers are Workable tenants whose pages read fine, so this is a board cost of the wider lane rather than throttling; failure-identity churn runs 14-22% even between same-lane arms, so the 99%-of-tolerance reading measured weather | nothing further to measure; step 5 of the lane plan now prices ~2% of boards against the **1.4-2.0×** homepage gain |
+| R4 | **Outcome parity at 64 lanes unproven** (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance). Four later counterbalanced pairs changed boards on 23 occasions and every one is a 429 on the arm that lacked the board; a 64-lane arm also ran clean, so no lane-driven board cost is measured and the earlier ~2% "price" is withdrawn | a run shape where per-host 429s do not move 1-8 boards per arm — a per-arm endpoint-status trace, or a production-sized run against a populated registry |
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
 | R7 | Baseline leg-B `data/` overwrite of `sheet-directory-discovery-audit.json`; not byte-recoverable | none — recorded in `legB-isolation-defect.md` |

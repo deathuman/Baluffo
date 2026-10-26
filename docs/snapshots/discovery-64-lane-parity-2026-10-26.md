@@ -1,26 +1,30 @@
-# 64 lanes costs a few boards, and the cost repeats — 2026-10-26
+# 64 lanes has no measured board cost — the board diff was 429 weather — 2026-10-26
 
 > - **Class:** measurement — answers residual **R4** of the P6 closeout; no shipped behaviour changes.
 > - **Trigger:** R4 recorded outcome parity as unproven from six pairs in which the 64-lane arm lost
 >   boards **6/6** (two-sided sign test **p = 0.0312**). Its own closing condition was two more
 >   counterbalanced pairs, or one production-sized 64-lane run with a per-host board diff.
-> - **Status:** **not free: three of the four pairs measured on this population lose boards at 64
->   lanes.** Pair 1 loses **4** both times — the same six boards lost and the same two gained — while
->   pair 2 gains **2** in the first study and loses **3** in the second. Pooled **442 → 433** across
->   four pairs and 12,000 row-audits (net **−9**, about **2%** of the boards an arm finds per pair),
->   and **9 of 10 pairs** counting P6's six. Both studies return `parity-not-supported`; the re-run is
->   the first to trip the board measure itself.
+> - **Status:** **no lane-driven board difference is measured.** Four counterbalanced pairs across two
+>   same-day studies differ on **23 boards**, and **all 23** carry a **429** on the arm that lacks them:
+>   12 Workable boards (11 throttled on `apply.workable.com`, one on its own homepage), plus **9**
+>   homepage and **3** probe 429s on other hosts. A 64-lane arm also ran **clean** — the recorded pair 2 kept all four Workable boards
+>   while a 32-lane arm lost them — so the lane count is neither necessary nor sufficient for the loss.
+>   Timing reproduces: the 64-lane homepage phase is **1.4-2.0×** faster; whole-run wall is **1.04-1.23×**.
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
 >   10,500 rows, 8,370 eligible), 2026-10-26T13:28–13:50Z.
 > - **Re-run:** the whole measurement again through `study --pairs 2` at `71bc5e11`,
 >   2026-10-26T16:38:49Z-16:56Z, evidence in `_out/perf-runs/discovery/lane-parity-fresh/`. Population
 >   digest `08d24f4435c54bfb` in all four arms — bit-identical to the four recorded here.
+> - **Correction:** an earlier revision of this note read the Workable losses as zero-job or
+>   provider-inference outcomes. They are 429s. The artifact's probe-failure rows carry neither
+>   `studio` nor `url`, so the report's studio match found nothing and fell through to a *sibling*
+>   candidate's zero-job row. `lane_parity.py` now matches a rejection by probe identity and endpoint,
+>   and counts it as the host failure it is; see §"The attribution defect".
 > - **Then inspect:** `_out/perf-runs/discovery/lane-parity/` — four arm records, `report.json` and
 >   the pre-registered `RULE.md`, with the re-run beside it in
->   `_out/perf-runs/discovery/lane-parity-fresh/`. The tool that reproduces both is
->   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py),
->   promoted from the one-off harness after the study, re-run over these four records to confirm it
->   writes the figures below, then driven end-to-end for the re-run.
+>   `_out/perf-runs/discovery/lane-parity-fresh/`. Both `report.json` files were regenerated with the
+>   corrected attribution. The tool that reproduces them is
+>   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py).
 
 ## Design
 
@@ -62,39 +66,43 @@ Same-lane churn supplies the floor, and it is not zero:
 | 32 (`p1-32` vs `p2-32`) | 3 | 977 | 136 | 19 | 44.6 s |
 | 64 (`p1-64` vs `p2-64`) | **9** | **611** | 17 | 14 | 21.4 s |
 
-So the **9-board** floor exceeds pair 1's 8 and pair 2's 2, the direction reverses between these two
-pairs — which is what the re-run below does not reproduce — and the 64-lane arms are the *steadier*
-pair run-to-run (611 failure identities against 977, 17 total
-failures against 136). The strict pre-registered rule still returns `parity-not-supported` here, on
-two failure-count excursions and not on boards: pair 1's failure-identity difference of **1,004** is
-2.8% over the 977 floor, and pair 2's homepage-failure delta of **25** is 6 counts over the 19
-floor — with **32 lanes** holding the extra failures there, not 64.
+The strict pre-registered rule returns `parity-not-supported` on two failure-count excursions and
+not on boards: pair 1's failure-identity difference of **1,004** is 2.8% over the 977 floor, and
+pair 2's homepage-failure delta of **25** is 6 counts over the 19 floor — with **32 lanes** holding
+the extra failures there, not 64.
 
-## Per-host diff
+## Per-host diff: every differing board is a 429
 
-Ten boards differ across these two pairs. Each is attributed to its host's record in the arm that
-lacks it:
+Each differing board is attributed to its endpoint's record in the arm that lacks it. After the
+attribution fix, **23 of 23** differing boards across both studies carry a 429 on that side:
 
-| Board | Present in | Other arm's record for that host |
-|---|---|---|
-| 2Awesome Studio | 32 only | `homepage_fetch` **429** at 64 |
-| Finitude | 32 only | `homepage_fetch` **429** at 64 |
-| 1TK (Workable) | 32 only | read fine at 64; probe found **0 jobs** |
-| Beautiful Game Studios (Square-Enix Europe) ×2 boards | 32 only | no host failure at 64; provider inference differs |
-| Everplay Group (Workable) | 32 only | no host failure at 64; provider inference differs |
-| Fakefish | 64 only | `homepage_fetch` **429** at 32 |
-| Fun Waffle Game Company | 64 only | `homepage_fetch` **429** at 32 |
-| Hardsuit Labs (Workable) | 64 only | `homepage_fetch` **429** at 32 |
-| Draconic Interactive | 64 only | no host failure at 32 |
+| Study | Pair | Differing | Workable endpoint 429 | Homepage 429 | Probe 429 |
+|---|---|---|---|---|---|
+| recorded | 1 | 8 | 4 | 4 | 0 |
+| recorded | 2 | 2 | 0 | 1 | 1 |
+| re-run | 1 | 8 | 4 | 3 | 1 |
+| re-run | 2 | 5 | 3 | 1 | 1 |
 
-Host-level 429s appear in the other arm for six of the ten boards, split 3 against each side, all at
-the same per-host limit of 3. One of those is 1TK, where the hit is a recovery fetch on a different
-Workable tenant while its own listing read fine and the probe found 0 jobs at 64 — a host signal, not
-the board's own failure. The other four have no failure at all in the other arm: the Square Enix pair,
-Everplay and Draconic differ as provider-inference outcomes on pages that read in both arms, the same
-page-level variance the P6 closeout traced on the post-fix tree.
+The Workable column is the whole answer to "why do 1TK and the two Square Enix tenants probe
+empty at 64 lanes": they do not. `https://apply.workable.com/api/v1/widget/accounts/<tenant>` was
+answering **429 Too Many Requests** to the probe, and the rejection row names the tenant's public
+page (`https://apply.workable.com/1tk`, `: Client error '429 …'`). At 32 lanes the same four boards
+answer normally — 1TK **1-2** jobs, `square-enix` **5**, `square-enix-america` **1**, `team-17-digital`
+**4** — in all four 32-lane arms. The recorded pair 2 shows the other side of it: a **64-lane** arm
+kept all four, so the loss is not a property of the setting.
 
-## Re-run: the same verdict, pair 1 board for board, a cost that does not alternate
+The Workable endpoint's probe failures per arm, in wall-clock order, are **58/110** (13:28),
+**121/121** (13:34), **96/116** (13:38), **95/119** (13:43), then **63/117** (16:38), **117/118**
+(16:43), **111/119** (16:47), **90/116** (16:51). The two arms where *every* Workable probe failed
+are the two pair-1 64-lane arms — each the arm immediately after the first arm of its study. That is
+a throttle episode ordered by time, with a clean 64-lane arm inside the same recorded study, not a
+lane effect. Probe pressure cannot depend on the lane count either: the probe runs at a fixed
+**40** total / **40** provider bucket with **24** fetch concurrency in every arm, the Workable
+candidate count is flat (**114-123**), and `runtime.fetchConcurrency` is byte-identical across arms.
+What the lane count changes is *when* the probe phase starts, which is how a board lands inside or
+outside the host's throttle window.
+
+## Re-run: the same verdict, pair 1 board for board, the same 429 explanation
 
 The tool's `study` sequencing was the one path no study had exercised end-to-end — the arms above were
 recorded by the one-off harness and only judged by `report`. Driving `study --pairs 2` at `71bc5e11`
@@ -111,56 +119,74 @@ eligible, the same 3,000 pinned, in **all eight arms across both studies**.
 | re-run | 1 | 111 → 107 | −4 | 8 (6 / 2) | 273.5 → 261.9 | 16.7 ms/row | 1.72× |
 | re-run | 2 | 112 → 109 | −3 | 5 (4 / 1) | 261.1 → 242.6 | 17.4 ms/row | 1.40× |
 
-Pair 1 came back **board for board identical**. The same six boards are 32-only — the two Square Enix
-tenants, 1TK, Everplay, 2Awesome and Finitude — and the same two are 64-only, Fakefish and Fun Waffle,
-with the same net **−4** and the same set diff of **8**. That is the strongest reproducibility available
-here: not the same count, the same boards.
+Pair 1 came back **board for board identical**: the same six boards are 32-only (the two Square Enix
+tenants, 1TK, Everplay, 2Awesome and Finitude) and the same two are 64-only (Fakefish and Fun Waffle).
+That is reproducibility of *which hosts were throttled in which arm*, not of a lane effect: all eight
+are 429s on the arm that lacks them, and the two "gains" are 429s on the 32-lane side.
 
-Pair 2 did not. The first study gained Hardsuit Labs and Draconic at 64 lanes (109 → 111, none lost);
-the re-run lost 1TK, the Square Enix pair and Draconic and gained only Fun Waffle (112 → 109).
-**Draconic gains at 64 lanes in one study and loses at 64 lanes in the next, three hours apart on the
-same page.** Pooled, the re-run is one-way — **223 → 216**, net **−7** over 6,000 row-audits — where
-the first study was net **−2**, and its floor is tighter: **5 / 626 / 38 / 29** boards / failure
-identities / total failures / homepage failures against **9 / 977 / 136 / 19**.
-
-The verdict is unchanged: `parity-not-supported`, here on pair 1 (set diff 8 against the 5-board floor,
-failure identities 696 against 626, total failures 81 against 38). The 429 column is unchanged too: the
-two static boards that died on 429 at 64 lanes in the first study, 2Awesome and Finitude, died the same
-way again. What is new is that the board count now carries the cost in three of the four pairs, where
-the first study's carried it in one of two: the differing set stays small — 2 to 8 boards of about
-110 — but its direction does not alternate with the arm order.
+Pair 2 did not reproduce: the first study gained Hardsuit Labs and Draconic at 64 lanes, the re-run
+lost 1TK, the Square Enix pair and Draconic and gained only Fun Waffle. Both of the first study's
+gains are also 429s on the 32-lane side, and Draconic's loss in the re-run is a 429 on its own probe.
+Pooled, the re-run is **223 → 216** and the first study **219 → 217**, but neither pool is a board
+set that lanes decided; they are the sum of which endpoints were throttled when.
 
 Timing reproduces on the phase and not on the wall: the 64-lane homepage fetch costs **16.7** and
-**17.4 ms/row** against **17.2** and **18.0**, so the phase gain is a property of the setting; whole-run
-wall speedup is only **1.04×** and **1.08×** against **1.23×** and **1.15×**, because recovery and 429
-retries own most of the remainder and they are the weather.
+**17.4 ms/row** against **17.2** and **18.0**, so the phase gain is a property of the setting;
+whole-run wall speedup is only **1.04×** and **1.08×** against **1.23×** and **1.15×**, because
+recovery and 429 retries own most of the remainder and they are the weather.
+
+## The attribution defect
+
+`rejectedForActivation` rows for probe failures are built from the candidate (`src/source_discovery/
+gamedevmap_rejection.py::_rejection`), which sets `sourceId`, `name`, `adapter` and the whole
+`candidate` object — but leaves `studio` and `url` empty. `lane_parity._attribute` matched a rejection
+by `studio == board.studio`, found none, and fell through to the zero-job list, which it matched by
+**studio label**. A studio with several provider candidates then lends the missing board a sibling's
+zero: 1TK's lost Workable board was explained by its SmartRecruiters row, and the two Square Enix
+tenants share both a studio label *and* a board name, so either could stand in for the other. That is
+where the "zero-job probe" and "provider-inference" readings in the earlier revision came from.
+
+The fix, in `tools/measurements/discovery/lane_parity.py`:
+
+- boards carry `sourceId` and the endpoint (`api_url` / `board_url`), and `_hosts_for` includes the
+  endpoint host — a Workable board's careers URL is `http://eu.square-enix.com/jobs` or empty, which
+  is why `apply.workable.com` never appeared as its host;
+- rejections carry `sourceId`, `name`, `adapter` and their endpoint, and are matched by probe identity
+  first, endpoint second;
+- a zero-job row is matched by identity when both sides have one, and only by name otherwise — never
+  by studio alone, so two tenants of one studio cannot borrow each other's result;
+- a matched rejection with no `failureErrorCounts` hit counts as the host failure it is, because probe
+  429s are not in that aggregate.
+
+Two tests pin it: a 429 rejection beats a sibling's zero-job row, and two Square Enix tenants keep
+their own zero. Regenerating both `report.json` files is what turned 23 attributed boards into 23
+429s and moved `failedOnHost` from "no host failure" to the tenant's own 429.
 
 ## What this settles, and what it does not
 
-- **R4's answer is a price, not a verdict.** 64 lanes finds a few fewer boards and the direction
-  repeats: three losses and one gain across the four pairs on this population, **9 losses in 10 pairs**
-  counting P6's six (two-sided sign test **p ≈ 0.021**), net **−9** boards here. P6's six ran on a
-  different tree and population, so that pooled count is a weak test, and four pairs alone decide
-  nothing — but the reading that fits all of it is a small one-way board cost of about **2%** per pair,
-  not the flat result the first study reported. That makes the lane count a throughput-for-coverage
-  trade, and the **1.4-2.0×** homepage gain is what pays for it.
-- **The repeat losses are probe outcomes, not fetch failures.** Across all four pairs the 429
-  attributions split **6 against 64 lanes and 5 against 32**, so throttling does not explain the
-  direction. What repeats is a small Workable core: 1TK and the two Square Enix tenants are 32-only in
-  **three of the four pairs**, and their loss is a probe outcome rather than a fetch failure — 1TK is a
-  zero-job probe whenever it is lost, the Square Enix pair differ as provider-inference or zero-job
-  outcomes, and Everplay has no failure recorded at all. The two static boards lost in both pair 1s
-  are 429s at 64, and Draconic is the one board that changes sides. That probe path, not another pair,
-  is where the next measurement belongs.
+- **R4's "price" reading is withdrawn.** The earlier revision read three losses and one gain as a
+  board cost of about **2%** per pair, supported by **9 losses in 10 pairs** (p ≈ 0.021) once P6's six
+  were pooled. Every board in that count that changed sides on this population is a 429 — 23 of 23
+  after the fix — so the sign test counts throttle luck and arm order, not the lane setting. A 64-lane
+  arm has also run clean (recorded pair 2), which no consistent lane cost would allow. The honest
+  statement is that **no lane-driven board cost has been measured**, and that the board measure
+  cannot separate a lane effect from host throttling at this population size.
+- **The Workable core is host throttling, not a probe or inference difference.** The three boards are
+  rejected with `429 Too Many Requests` from `apply.workable.com`; their pages read in both arms and
+  their jobs are present whenever the probe is. The full-block arms are the two pair-1 64-lane arms,
+  each right after the first arm of its study, and the recorded pair-2 64-lane arm is clean.
 - **Failure-identity parity is not proven, only bounded.** Identity churn runs **14-22%** of the
-  aggregate even between same-lane arms, so that measure is dominated by which URL returned which error
-  on the day. Its two excursions are recorded above rather than rounded away.
+  aggregate even between same-lane arms, and the same 429s that move boards also move these identities,
+  so the measure is dominated by which URL returned which error on the day. Its two excursions are
+  recorded above rather than rounded away.
 - **The registry was empty.** This checkout has no `data/source-registry-active.json`, so every board
   found is new; the comparison is arm-to-arm on the same population, not against the populated registry
   P6 measured. Board counts land at **106-113** against P6's **114-117**, which is the closest check
   available that the arms are the same measurement.
-- **Not re-run: P6's six pairs.** They stand as recorded. These are four fresh pairs under the same
-  population rule, from two studies, not a reanalysis.
+- **Not re-run: P6's six pairs.** They stand as recorded, on a different tree and population. If their
+  six losses were also 429s, the 9-in-10 count disappears entirely; nothing here can settle that,
+  because the P6 artifacts do not carry the rejection detail this attribution needs. R4 stays open
+  rather than closed on the strength of this population.
 
 ## Reproducing the numbers
 

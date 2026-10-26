@@ -92,8 +92,10 @@ arguments), only the lane count differs, each arm gets its own data dir, and a p
 counterbalanced. `arm` proves its lane count from the artifact's own `phaseRuntime` receipt and
 refuses to be compared if the receipt does not show it; `report` judges the pairs against the
 study's **same-lane churn** rather than a threshold carried over from an earlier study, and
-attributes every differing board to its host's record in the other arm (a 429 is lane-driven,
-a board missing from a host that read fine is not).
+attributes every differing board to its record in the other arm -- a host 429 or a probe rejection
+matched by candidate identity and endpoint, not by studio label, and never a sibling candidate's
+zero-job row. A 429 names the host that failed; it is not proof the lane count caused it, because
+the same host also throttles at one lane count and not at another.
 
 ```bash
 # the whole measurement: N counterbalanced pairs, low then high, high then low, then a verdict

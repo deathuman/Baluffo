@@ -14,8 +14,26 @@ from typing import Any
 from tools.measurements.discovery import lane_parity
 
 
-def board(name: str, url: str, *, studio: str = "") -> dict[str, Any]:
-    return {"name": name, "studio": studio or name, "careersUrl": url, "adapter": "static"}
+def board(
+    name: str,
+    url: str,
+    *,
+    studio: str = "",
+    api_url: str = "",
+    source_id: str = "",
+    adapter: str = "static",
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "name": name,
+        "studio": studio or name,
+        "careersUrl": url,
+        "adapter": adapter,
+    }
+    if api_url:
+        row["api_url"] = api_url
+    if source_id:
+        row["id"] = source_id
+    return row
 
 
 def boards(*names: str) -> list[dict[str, Any]]:
@@ -32,6 +50,7 @@ def write_arm(
     homepage_failures: int = 0,
     total_failures: int = 100,
     zero_job: list[dict[str, Any]] | None = None,
+    rejections: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write one arm's artifact and record, shaped like a real study arm."""
     artifact_path = study / "arms" / name / "data" / lane_parity.ARTIFACT_NAME
@@ -44,7 +63,7 @@ def write_arm(
                 "failureCounts": {lane_parity.HOMEPAGE_STAGE: homepage_failures},
                 "failureErrorCounts": dict(errors or {}),
                 "failures": [{"stage": "homepage_fetch", "name": "sampled"}],
-                "rejectedForActivation": [],
+                "rejectedForActivation": list(rejections or []),
                 "zeroJobCandidates": list(zero_job or []),
                 "summary": {
                     "failures": total_failures,

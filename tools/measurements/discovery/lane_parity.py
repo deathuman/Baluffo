@@ -28,8 +28,10 @@ floor therefore needs **two arms per lane count**: a study with one pair has no 
 verdict is `inconclusive` rather than every difference being a violation of zero.
 
 Every board that differs is then attributed to the other arm's record for its host: a 429 or
-timeout on that host is lane-driven, while a board missing from a host that read fine is a
-downstream (probe or inference) difference and belongs to a different investigation.
+timeout on that host names the failing party, while a board missing from a host that read fine is
+a downstream (probe or inference) difference and belongs to a different investigation. A host
+failure says where to look, not that the lane count caused it -- a multi-tenant provider also
+throttles at one lane count and not at another, so the same 429 can appear in either arm.
 
 Read the failure counts from the artifact's whole-run `failureCounts` and
 `failureErrorCounts`, never from its `failures` sample: that list is capped at 200 rows, and
@@ -320,6 +322,7 @@ def _arm_outcomes(arm: dict[str, Any], study: Path) -> dict[str, Any]:
         identity = board_identity_key(candidate)
         boards[identity] = {
             "identity": identity,
+            "sourceId": str(candidate.get("id") or "").strip(),
             "name": str(candidate.get("name") or "").strip(),
             "studio": str(candidate.get("studio") or "").strip(),
             "adapter": str(candidate.get("adapter") or "").strip(),
@@ -329,6 +332,9 @@ def _arm_outcomes(arm: dict[str, Any], study: Path) -> dict[str, Any]:
                 or candidate.get("base_url")
                 or ""
             ).strip(),
+            "endpointUrl": str(
+                candidate.get("api_url") or candidate.get("board_url") or ""
+            ).strip(),
             "entryUrl": str(candidate.get("sourceDirectoryEntryUrl") or "").strip(),
         }
     error_counts = {
@@ -337,6 +343,7 @@ def _arm_outcomes(arm: dict[str, Any], study: Path) -> dict[str, Any]:
     }
     zero_job = [
         {
+            "sourceId": str(row.get("id") or "").strip(),
             "name": str(row.get("name") or "").strip(),
             "studio": str(row.get("studio") or "").strip(),
             "jobsFound": row.get("jobsFound"),
@@ -346,7 +353,15 @@ def _arm_outcomes(arm: dict[str, Any], study: Path) -> dict[str, Any]:
     ]
     rejected = [
         {
+            "sourceId": str(row.get("sourceId") or "").strip(),
+            "name": str(row.get("name") or "").strip(),
+            "adapter": str(row.get("adapter") or "").strip(),
             "url": str(row.get("url") or "").strip(),
+            "endpointUrl": str(
+                _as_dict(row.get("candidate")).get("api_url")
+                or _as_dict(row.get("candidate")).get("board_url")
+                or ""
+            ).strip(),
             "studio": str(row.get("studio") or "").strip(),
             "reason": str(row.get("reason") or "").strip(),
             "reasonDetail": str(row.get("reasonDetail") or "").strip(),
@@ -373,11 +388,28 @@ def _arm_outcomes(arm: dict[str, Any], study: Path) -> dict[str, Any]:
 
 def _hosts_for(board: dict[str, Any]) -> set[str]:
     hosts = set()
-    for key in ("url", "entryUrl"):
+    for key in ("url", "endpointUrl", "entryUrl"):
         host = (urlparse(str(board.get(key) or "")).netloc or "").strip().lower()
         if host:
             hosts.add(host)
     return hosts
+
+
+def _same_candidate(board: dict[str, Any], other: dict[str, Any]) -> bool:
+    """Whether `other` is this board's own candidate, not a sibling's.
+
+    Two Workable tenants of one studio share the studio label and can even share the board
+    name, so a studio match is not identity: it lets a sibling's zero-job row stand in for a
+    board that was in fact rejected on 429. The probe identity separates them, and is used
+    whenever both sides carry one.
+    """
+    board_id = str(board.get("sourceId") or "").strip()
+    other_id = str(other.get("sourceId") or "").strip()
+    if board_id and other_id:
+        return board_id == other_id
+    board_name = str(board.get("name") or "").strip()
+    other_name = str(other.get("name") or "").strip()
+    return bool(board_name) and board_name == other_name
 
 
 def _attribute(board: dict[str, Any], other: dict[str, Any]) -> dict[str, Any]:
@@ -389,24 +421,27 @@ def _attribute(board: dict[str, Any], other: dict[str, Any]) -> dict[str, Any]:
         if any(host in identity.lower() for host in hosts)
     ]
     hits.sort(key=lambda row: (-row["count"], row["identity"]))
-    rejection = next(
-        (
-            row
-            for row in other["rejected"]
-            if (row["studio"] and row["studio"] == board["studio"])
-            or (row["url"] and row["url"] == board["url"])
-        ),
-        None,
-    )
-    zero = next(
-        (
-            row
-            for row in other["zeroJob"]
-            if (row["studio"] and row["studio"] == board["studio"])
-            or (row["name"] and row["name"] == board["name"])
-        ),
-        None,
-    )
+    rejection = next((row for row in other["rejected"] if _same_candidate(board, row)), None)
+    if rejection is None:
+        # Probe failures name their endpoint in the error, and that is the only field a
+        # provider rejection reliably carries: `studio` and `url` are empty on those rows.
+        rejection = next(
+            (
+                row
+                for row in other["rejected"]
+                if (row["url"] and row["url"] == board["url"])
+                or (row["endpointUrl"] and row["endpointUrl"] == board["endpointUrl"])
+            ),
+            None,
+        )
+    if not hits and rejection and rejection["error"]:
+        # Probe failures are not in `failureErrorCounts`, so without this a 429 on the
+        # board's own endpoint reads as "no host failure" and the loss gets blamed on the
+        # probe or on inference. The rejection is the record of that request failing.
+        identity = f"{rejection['reason']}|{rejection['error']}"
+        if any(host in identity.lower() for host in hosts):
+            hits = [{"identity": identity, "count": 1}]
+    zero = next((row for row in other["zeroJob"] if _same_candidate(board, row)), None)
     return {
         "hostFailureHits": hits[:3],
         "failedOnHost": bool(hits),

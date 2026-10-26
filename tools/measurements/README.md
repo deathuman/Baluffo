@@ -133,6 +133,13 @@ python tools/measurements/discovery/lane_parity.py report --study _out/parity \
 Nothing writes to `data/`: each arm sets its own `BALUFFO_DATA_DIR` and artifact path. Arm
 records land in `<study>/arms/<name>/arm.json` and the verdict in `<study>/report.json`.
 
+The attribution matches a rejection by probe identity (`sourceId`) and endpoint, because a
+provider probe failure carries neither `studio` nor `url`; a zero-job row is matched by identity
+when both sides carry one, and never by studio alone, so two tenants of one studio cannot borrow
+each other's result. A matched probe 429 also counts as the host failure it is. Read the result as
+*where the request failed*, not as proof of a lane effect: a multi-tenant host throttles at one
+lane count and can be clean at another.
+
 ### Pipeline Measurements
 
 ```bash
