@@ -6,8 +6,9 @@
 >   behind it.
 > - **Status:** one bound shipped (probe batch), one lever refused on evidence, four targets ranked
 > - **Verified against:** `b7c2fd9c` + the change in this snapshot
-> - **Then inspect:** [`../plans/fetch-pipeline-performance-instrumentation-plan.md`](../plans/fetch-pipeline-performance-instrumentation-plan.md)
->   (the fetch lane's D1–D10 decisions and its corpus harness), [`../scraping-pipeline.md`](../scraping-pipeline.md)
+> - **Then inspect:** [`../measurement-methods.md`](../measurement-methods.md)
+>   (the fetch lane's replay rules, instrumentation ceilings and epoch retention; command detail in
+>   [`../../tools/README.md`](../../tools/README.md)), [`../scraping-pipeline.md`](../scraping-pipeline.md)
 
 ## What was measured, and from where
 

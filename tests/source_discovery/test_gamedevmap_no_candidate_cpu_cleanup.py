@@ -7,7 +7,7 @@ and that skipping it is byte-identical. These oracles FAIL before the cleanup
 (the no-candidate page runs provider inference twice) and PASS after (exactly
 once), while a candidate page still runs the full pipeline.
 
-Owner: gate for docs/plans/discovery-performance-follow-up-plan.md P5.
+Owner: gate for the P5 homepage no-candidate CPU cleanup.
 Verify:
   python -m pytest tests/source_discovery/test_gamedevmap_no_candidate_cpu_cleanup.py -q
 """

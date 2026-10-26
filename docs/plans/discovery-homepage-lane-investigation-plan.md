@@ -3,7 +3,7 @@
 > - **Class:** performance-tooling
 > - **Trigger:** The homepage fetch is volume-bound, and the existing 64-lane arm is faster but not yet separated from live-host and 429 variance. A decision needs a fresh baseline after the probe-permit release.
 > - **Verified against:** 9b8901f8 plus the 2026-10-12 discovery lane snapshots
-> - **Status:** Deferred until receipt coverage and lifecycle-safety gates P1–P2 in [the end-to-end follow-up plan](discovery-performance-follow-up-plan.md) pass, followed by a pinned three-batch baseline and a healthy matching deployment.
+> - **Status:** Deferred until receipt coverage and lifecycle-safety gates P1–P2 pass (both accepted 2026-10-13–14), followed by a pinned three-batch baseline and a healthy matching deployment. The 2026-10-17 baseline and three lane pairs are recorded in [the P6 closeout](../snapshots/discovery-p6-closeout-2026-10-17.md), whose R4 keeps 64-lane outcome parity unproven.
 
 ## Question
 

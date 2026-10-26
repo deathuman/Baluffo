@@ -1,11 +1,11 @@
 # Measurement Methods
 
 > - **Status:** Active
-> - **Use this when:** someone brings you a LOC-reduction, dead-code, duplication, or "merge these files" claim, or you are about to measure one yourself
-> - **Canonical for:** how structural claims about this repo get verified — clone scanning, CSS liveness, staging-before-measuring, and what counts as proof
+> - **Use this when:** someone brings you a LOC-reduction, dead-code, duplication, or "merge these files" claim, you are about to measure one yourself, or you are about to trust a replay or A/B figure
+> - **Canonical for:** how claims about this repo get verified — clone scanning, CSS liveness, staging-before-measuring, hermetic fetch replay, and what counts as proof
 > - **Not canonical for:** what the current numbers are, test command routing (see [`testing.md`](testing.md)), or line budgets (see [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md))
 > - **Then inspect:** [`test-reduction-policy.md`](test-reduction-policy.md) for which tests may be deleted or merged
-> - **Last updated:** 2026-10-01
+> - **Last updated:** 2026-10-26
 
 Extracted from the retired structure/test audit programme. The programmes are gone; the
 **methods** are not, because they were reused across every wave and every one of them
@@ -160,10 +160,61 @@ ccTLD handling) and pinned by `test_suffix_containment_is_bidirectional_and_not_
 It is the shape to watch for generally: any "are these the same company" shortcut that reduces a
 host to a fixed number of labels will be wrong for some suffix.
 
+## A replay is a function of the clock
+
+The pipeline's *fetch set* does not come from the registry alone.
+`get_incremental_cache_decision` reads `datetime.now(UTC)` (`src/jobs/state_incremental.py:185`) and
+skips any source whose `nextEligibleCheckAt` is still in the future (`:186-189`), recomputing ages
+against the same clock. So a replay on a later day does **not** reproduce the recorded run: it fetches
+a *different set* of sources, producing neither a parity failure nor a clean pass — just a different
+workload wearing the same report.
+
+Both obvious fixes are refused. Injecting a clock (`now_fn`) would be a new root-injection seam, which
+`AGENTS.md` forbids. Backdating seed timestamps per replay changes the replay's own input, so the seed
+stops being the control. What works already exists: **run record and replay with
+`force_refresh_all`**, an existing parameter of the same decision function (`:178-179`) that
+short-circuits to `run_now`.
+
+That choice carries two consequences into every report built on it:
+
+- The measurement is the **full-fetch** workload, not a scheduled run, so an absolute replay wall
+  clock is a harness figure. Never quote it as a production one.
+- A corpus must be **recorded** the same way. A record from a normal run is missing every source that
+  run skipped, so it cannot satisfy parity.
+
+## What a hermetic fetch replay settles, and what it cannot
+
+The lane lives in `tools/measurements/corpus/`; command routing is in [`testing.md`](testing.md) and
+tool detail in [`tools/README.md`](../tools/README.md). The rules that keep a number from it honest:
+
+| Rule | What it means |
+|---|---|
+| Replay refutes; it never confirms | Network time is removed, so a wall-clock claim can be shown **not** to have shrunk the work. Confirming one needs a live paired run, and every report labels which it is. |
+| Parity, or a bind that names its hosts | A corpus miss or a parity divergence fails the run. A drift passes only as `parity-bound`, and only when every differing row belongs to a host the record's own conflict audit declared. |
+| An epoch is a capture, not a cache | One recorded day, local under `_out/perf-runs/`, never committed. A re-record is a *different* corpus, so keep the epoch a disputed claim cites. |
+| Supersession is by record time | A newer epoch becomes current and the older manifest records `supersededBy`. There is deliberately no pointer file: a missing or corrupt pointer is the failure the registry work already hit. |
+| Ceilings on instrumentation | Always-on counters ≤0.5% of runtime, opt-in instrumentation ≤2%. A slice that misses its ceiling ships with the counter disabled. |
+| Default off, aggregate, additive | Every counter resolves its env flag at import, aggregates per source, and adds report keys without renaming any. Profiling reuses `BALUFFO_PROFILE` rather than a second framework. |
+| The lane is the fetch lane | Discovery and browser fallback are outside the corpus, and the coverage report names them, so "we replayed the fetch lane" cannot be read as "we replayed all traffic". |
+
+**One ceiling is unmeasured, and the harness is why.** S6 measured the always-on counters at **−0.77%**,
+inside a **1.63%** noise floor, and the opt-in profiler at **+96.8%** — so the ≤2% ceiling is missed by
+the instrument meant to demonstrate it. An in-process cProfile driver cannot see a sampling
+instrument, so until the all-threads sampler is wired where the harness can measure it, treat the
+opt-in figure as **unmeasured**, not as 2%
+([S6](snapshots/fetch-pipeline-corpus-evidence-2026-10-08.md)).
+
+**An unverified claim stays labelled unverified.** Replay found the shipped −11.3% pool claim's
+variable inert, so its verdict is **inconclusive by harness** — neither refuted nor confirmed. The
+verdict is recorded in the snapshot and the claim's commit is not rewritten, because rewriting history
+would destroy the provenance that makes the correction readable.
+
 ## Related
 
 - [`test-reduction-policy.md`](test-reduction-policy.md) — which tests may be
   deleted or merged, and the retained-test boundaries that gate it
 - [`testing.md`](testing.md) — test command routing and fixture layout
+- [`../tools/README.md`](../tools/README.md) — command-level detail for the corpus lane and the
+  measurement tools this method governs
 - A durable check belongs in `tools/repo_health/` with a test. Scratch under `_out/` is
   gitignored, and a finding that lives only there is not a guardrail.

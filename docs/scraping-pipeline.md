@@ -69,6 +69,64 @@ Scrapy path (for scrapy_static sources from browser queue)
 - Manual migration identity backfill: Admin may explicitly link an existing active/pending supported provider row to an existing static/generic source by writing `migrationSourceIdentity` and Admin-owned link metadata onto the provider row. This is reversible only for links owned by `admin_provider_link_backfill`, does not modify the static row, does not create a permanent redundancy rule, does not mutate `REDUNDANT_STATIC_IF_PROVIDER`, and has no force-suppress behavior. Admin UI controls expose one reviewed apply/clear action at a time; they do not auto-apply, bulk apply, or perform source cleanup.
 - Browser fallback queue: Sources classified as `blocked_or_challenge`, `anti_bot_or_challenge`, `rate_limited`, or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with Scrapy-Playwright (`use_browser=True`).
 
+### Discovery probe batches: what bounds a wave
+
+Four properties of the probe wave are contracts rather than tuning knobs; each was bought with a false
+failure, a starved host or a closed client.
+
+**The deadline is sized for the work, not for one request.** `probe_row_timeout_units`
+(`probe.py:892`) bounds what one candidate may legitimately spend, in units of `timeout_s`: an ordinary
+adapter tries each probe URL once per timeout-retry attempt, and a Workday board with a listing URL
+probes through one structured POST with `retries=2`, a 1 s backoff and its own timeout retry.
+`run_bounded_probe_batch_async` multiplies that ceiling into
+`row_work_s = requests_per_row × timeout_s`, then
+`row_work_s × rows / effective_concurrency + row_work_s`. The probe-aware entry passes the wave's
+maximum; the parameter defaults to 1, so a caller that knows nothing about probe rows keeps the
+previous bound. Sized for a single request, the same wave completed 0 of 5 valid rows; sized for its
+rows, 5 of 5. The cost is deliberate: a dripping row's cutoff grows from `timeout_s` to
+`requests_per_row × timeout_s` — bounded, not unbounded.
+
+**The deadline divides by the lanes the wave can actually use.** A candidate holds its family bucket
+permit before a total permit, so a provider- or static-only wave runs at that family's cap, not at
+`total`. `effective_concurrency` is `min(total, Σ min(family cap, rows in family), rows)`, because
+dividing by `total` overstates realizable throughput and manufactures deadline failures on a
+family-saturated wave.
+
+**A host permit is taken before a total permit.** Both orderings complete the same work at the same
+caps, but total-first lets one slow host's queue hold every total lane while fast hosts wait. On a
+grouped fixture (one slow host at 0.2 s/job, three fast, `total_cap=6`, `per_host_cap=2`) fast-host
+mean wall falls 0.819 s → 0.000 s under host-ready ordering while total wall stays ~1.24 s, because
+the slow host still bounds it. That is fairness; no stage-level speedup is claimed for it.
+
+**A batch retires its shared client only when nothing can still enter it.**
+`_InFlightFetches.retire_when_idle(..., defer_if_pool_active=True)` defers the close while the count
+is zero but a pool thread may be about to enter, so a fetch past its per-call bound no longer reads a
+closed client. A genuinely idle batch still closes immediately; the force-close poll that follows
+(100 ms) narrows the remaining window rather than eliminating it.
+
+The receipts for all of this are projected, never re-derived: `probeLifecycle` and its sibling
+`pageFetchLifecycle` are described in [`admin-bridge-api.md`](admin-bridge-api.md). Two rules are
+easy to get wrong — a page batch has a **total** deadline, so `fetchesBoundedOut` is not a page-batch
+signal, and a receipt counts at the worker's real enter and leave, so a cache hit is not a cancelled
+fetch.
+
+### Known unmeasured costs in the discovery lane
+
+Recorded so a later pass neither re-derives them nor mistakes them for measured wins. **None is
+authorized, scheduled or priced.**
+
+| Cost | Where it is | What a claim needs first |
+|---|---|---|
+| Double serialization on every artifact write | `stamp_artifact_size` (`audit_ledger.py:140`) dumps the artifact to measure its bytes, then `save_json_atomic` serializes it again — one extra full pass per non-cache audit | a byte count that needs no full dump (an incremental serializer, or the writer's own size), proving the stamped value unchanged, then wall/CPU on an isolated large fixture |
+| Compare-then-rewrite reads the whole artifact first | `save_json_atomic`'s plain-JSON branch loads and deep-compares the existing file before serializing: read and write both touch the whole artifact | evidence that the comparison protects a property a cheaper mtime/size/digest check cannot, with the no-op write kept for identical payloads |
+| Whole-run TTL freshness | `run_directory_audit` reuses an artifact only when `artifact_is_fresh` (`audit_ledger.py:170`) passes for the entire run, so any staleness re-runs every stage — the only whole-run lever here | whether per-stage freshness is a valid contract at all; candidate identity, dedupe and summary aggregation may make a partial refresh incorrect, so this is a behaviour change needing its own review |
+
+The first two sit under `save_json_atomic`, shared with the registry, runtime evidence and every
+sidecar: a change there inherits the registry write-policy gates and must not be bundled with an
+artifact-specific one. The per-poll `sha256` this inventory also carried is closed above 5 MiB by the
+`stat` fingerprint ([`admin-bridge-api.md`](admin-bridge-api.md)); below that threshold the digest is
+cheap enough to keep.
+
 ## Static source triage
 
 - Preserve registry rows when a static source is no longer viable. Move unsupported static entries to hidden pending with an explicit `pendingReason` instead of deleting them.
@@ -154,6 +212,15 @@ is what tells the two apart, because a 304 is not a zero read. Neither skip move
 `nextEligibleCheckAt` — a skip is not a check — so the window, not the run cadence, decides when
 the probe happens. Plain freshness skips (`skip_fresh`, `cache_within_freshness_window`) still
 leave the success clock alone.
+
+**Skips are observable, not gated.** A skipped source reports its own decision (`skip_fresh`,
+`cooldown_skip`, `skip_revalidate`), and `tools/coverage_drain.py` buckets it as `not_selected` —
+deliberately separable from `fetched_empty`, so "never asked" is never confused with "asked and
+empty". Nothing *fails* a run that skips sources, though: "every source runs every run" is met in
+practice rather than enforced, and a full acceptance run holding it (2,056 of 2,056 resolved, zero
+`excluded`, 2026-09-24) is an observation about that run, not a gate. A no-skip assertion in the
+acceptance path is proposed and not scheduled; until one exists, read `not_selected` yourself before
+quoting a run as complete.
 
 **Multi-page boards ask per page.** A 304 on page 1 says nothing about the pages behind it, so a
 board with more than one configured listing page stores one validator per page in

@@ -102,7 +102,7 @@ the build first.
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
 | R7 | Baseline leg-B `data/` overwrite of `sheet-directory-discovery-audit.json`; not byte-recoverable | none — recorded in `legB-isolation-defect.md` |
-| R8 | The plan's P6 table still shows the 2026-10-16 "not run" statuses; the plan file carries an uncommitted hunk, so this pass did not edit it | apply the replacement paragraph in closeout §8.5 when that hunk is committed |
+| R8 | ~~The plan's P6 table still shows the 2026-10-16 "not run" statuses~~ — **closed 2026-10-26**: the plan was folded into [`measurement-methods.md`](../measurement-methods.md), [`scraping-pipeline.md`](../scraping-pipeline.md) and its own slice snapshots, then deleted, so this note is the P6 record and the stale table no longer exists | nothing further |
 
 ## Where the evidence lives
 

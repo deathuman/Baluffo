@@ -2,8 +2,7 @@
 
 Canonical execution record for the **full-source reference epoch**: a corpus that covers every
 registered loader, not a stride sample of them. Part of the fetch-pipeline performance work;
-design and decisions live in
-[`docs/plans/fetch-pipeline-performance-instrumentation-plan.md`](../plans/fetch-pipeline-performance-instrumentation-plan.md),
+the lane's durable rules live in [`measurement-methods.md`](../measurement-methods.md),
 the S2–S7/S0 receipts in
 [`fetch-pipeline-corpus-evidence-2026-10-08.md`](fetch-pipeline-corpus-evidence-2026-10-08.md),
 and the first optimisation pass measured on the harness in

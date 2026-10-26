@@ -24,9 +24,9 @@ def _minimal_docs_root(tmp_path: Path) -> Path:
 def test_markdown_links_ignore_gitignored_out_evidence(tmp_path: Path, monkeypatch) -> None:
     """`_out/` links name evidence that lives outside the repository.
 
-    Real case: docs/plans/discovery-performance-follow-up-plan.md links three
-    `../../_out/perf-runs/...` artifacts, and every clone without `_out` failed
-    the docs group on links that were valid where the evidence lived.
+    Real case: a discovery plan linked three `../../_out/perf-runs/...` artifacts,
+    and every clone without `_out` failed the docs group on links that were valid
+    where the evidence lived. That plan has since been folded into the canonical docs.
     """
     docs = _minimal_docs_root(tmp_path)
     (docs / "plan.md").write_text(

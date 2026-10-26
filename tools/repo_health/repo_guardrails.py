@@ -219,9 +219,9 @@ def _local_markdown_target(raw: str) -> str | None:
 # `_out/` holds gitignored evidence -- perf runs, closeouts, probe bodies. A link
 # to it cannot resolve in a fresh clone or in CI, where the directory never
 # exists. Reading that as a broken doc link failed the docs group on every clean
-# checkout: docs/plans/discovery-performance-follow-up-plan.md names three
-# `../../_out/perf-runs/...` artifacts that live only on the author's disk. The
-# evidence is checked where it is produced, not by the doc-link guard.
+# checkout: a discovery plan once named three `../../_out/perf-runs/...` artifacts
+# that live only on the author's disk. The evidence is checked where it is
+# produced, not by the doc-link guard.
 def _points_at_gitignored_evidence(target: str, resolved: Path) -> bool:
     if "_out" in Path(target).parts:
         return True

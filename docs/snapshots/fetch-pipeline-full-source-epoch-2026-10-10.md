@@ -1,8 +1,8 @@
 # Full-source corpus epoch — execution evidence, 2026-10-10
 
 Canonical execution record for the **2026-10-10 full-source reference epoch**. Part of the
-fetch-pipeline performance work; design and decisions live in
-[`docs/plans/fetch-pipeline-performance-instrumentation-plan.md`](../plans/fetch-pipeline-performance-instrumentation-plan.md),
+fetch-pipeline performance work; the lane's durable rules live in
+[`measurement-methods.md`](../measurement-methods.md),
 the S2–S7/S0 receipts in
 [`fetch-pipeline-corpus-evidence-2026-10-08.md`](fetch-pipeline-corpus-evidence-2026-10-08.md),
 the first optimisation pass in

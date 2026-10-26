@@ -1,9 +1,10 @@
 # Corpus replay harness — execution evidence (S2–S7, S0), 2026-10-08
 
-Canonical execution record for slices **S2–S7 and S0** of
-[`docs/plans/fetch-pipeline-performance-instrumentation-plan.md`](../plans/fetch-pipeline-performance-instrumentation-plan.md).
-That plan keeps the design, the acceptance criteria and the decisions D1–D10; this file keeps the
-receipts — what ran, what it measured, and what it could not see.
+Canonical execution record for slices **S2–S7 and S0** of the hermetic fetch lane. The durable design
+rules — the clock dependence and `force_refresh_all`, the two instrumentation ceilings, epoch retention
+and the lane's scope — live in [`measurement-methods.md`](../measurement-methods.md); the command detail
+in [`tools/README.md`](../../tools/README.md). This file keeps the receipts — what ran, what it
+measured, and what it could not see.
 
 Everything here is local: epochs and studies live under `_out/perf-runs/`, are never committed, and
 are cited by name so a disputed number can be re-read rather than re-argued.

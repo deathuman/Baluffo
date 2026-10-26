@@ -1,8 +1,8 @@
 # Fetch-lane CPU attribution — first S1 run (2026-10-08)
 
-Canonical execution record for slice **S1** of
-[`docs/plans/fetch-pipeline-performance-instrumentation-plan.md`](../plans/fetch-pipeline-performance-instrumentation-plan.md):
-attribute the ~1 core the fetch pipeline spends, on which thread, and in which functions.
+Canonical execution record for slice **S1** of the hermetic fetch lane: attribute the ~1 core the fetch
+pipeline spends, on which thread, and in which functions. The lane's durable rules are in
+[`measurement-methods.md`](../measurement-methods.md).
 
 This is **evidence, not a speedup**. Nothing was optimised; the point was to replace the
 GIL inference every earlier decision rested on with a measurement.

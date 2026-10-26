@@ -8,8 +8,9 @@
 >   **landed**; the transport diff and the acquire-order swap are both in the tree and covered by
 >   deterministic tests.
 > - **Status:** Active — items 1, 3, and 4 have landed. The observed close-under-fetch failure in
->   item 2 is fixed, but a late-entry race remains unproven; track it in
->   [discovery-performance-follow-up-plan.md](discovery-performance-follow-up-plan.md). Item 5's audit
+>   item 2 is fixed, and the late-entry race is proven and closed: retirement defers while a pool
+>   thread may still enter, pinned by `test_probe_batch_late_entry_race.py`
+>   ([the batch bounds](../scraping-pipeline.md)). Item 5's audit
 >   leg has run: queue/verdict passes and wall is inconclusive. The normal discovery smoke has since
 >   run as well — flow identity holds and the wall is inside the drift again; a matching `appVersion`
 >   deployment remains open.
@@ -85,7 +86,8 @@ not stack both changes in one A/B.
    `retire_when_idle()` observes zero under lock and closes after unlocking. A late worker can enter in
    that gap or after retirement. This is a static race hypothesis, not a reproduced failure; add a
    deterministic admission test and close the item only if it proves a retired client cannot be used.
-   Track it in [discovery-performance-follow-up-plan.md](discovery-performance-follow-up-plan.md).
+   Closed by the deferred retirement in [the batch bounds](../scraping-pipeline.md):
+   `retire_when_idle(..., defer_if_pool_active=True)` plus `test_probe_batch_late_entry_race.py`.
    Evidence: [discovery-probe-client-lifecycle-2026-10-12.md](../snapshots/discovery-probe-client-lifecycle-2026-10-12.md).
 3. ~~**Reprice permit allocation on the chosen transport.**~~ **Done** — three balanced pairs, both
    arms on the shipped path, with permit-wait time captured by bucket.

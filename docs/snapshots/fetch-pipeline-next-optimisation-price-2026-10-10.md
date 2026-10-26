@@ -1,8 +1,7 @@
 # Pricing the next fetch-lane optimisation — the row-payload conversion (2026-10-10)
 
-Canonical execution record for the step the
-[fetch performance plan](../plans/fetch-pipeline-performance-instrumentation-plan.md) leaves after
-S0 and the [first optimisation pass](fetch-pipeline-normalization-pass-2026-10-08.md): choosing the
+Canonical execution record for the step the replay harness leaves after S0 and the
+[first optimisation pass](fetch-pipeline-normalization-pass-2026-10-08.md): choosing the
 **next** fetch-lane optimisation on measured evidence and **pricing it before committing to it**.
 The evidence base is S1's
 ([attribution snapshot](fetch-pipeline-cpu-attribution-2026-10-08.md)): the transport loop holds

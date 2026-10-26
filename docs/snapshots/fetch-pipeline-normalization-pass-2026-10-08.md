@@ -1,8 +1,8 @@
 # First optimisation pass — normalisation memoisation, measured on replay (2026-10-08)
 
-Canonical execution record for the **first optimisation pass** the
-[fetch performance plan](../plans/fetch-pipeline-performance-instrumentation-plan.md) left open
-after S0: *"first optimisation pass — chosen on S1's evidence"*. S1
+Canonical execution record for the **first optimisation pass** the replay harness left open after S0:
+*"first optimisation pass — chosen on S1's evidence"*. Its durable rules are in
+[`measurement-methods.md`](../measurement-methods.md). S1
 ([snapshot](fetch-pipeline-cpu-attribution-2026-10-08.md)) named the target: not concurrency and
 not the transport, but the regex-heavy text/location normalisation path (`text_utils`,
 `location_rules`, `location`), where `re.sub` alone held 31.6% of the sampled CPU.
