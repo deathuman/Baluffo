@@ -109,8 +109,8 @@ python tools/measurements/discovery/lane_parity.py report \
 
 Read failure counts from the artifact's whole-run `failureCounts`/`failureErrorCounts`, never
 its `failures` list: that sample is capped at 200 rows and understated one pair's homepage
-change by 7x. The study that closed P6's R4 is in
-`docs/snapshots/discovery-64-lane-parity-2026-10-26.md`.
+change by 7x. The two studies that answered P6's R4 — the recorded arms and the end-to-end re-run
+through `study` — are in `docs/snapshots/discovery-64-lane-parity-2026-10-26.md`.
 
 ### `measurements/corpus/`
 The hermetic fetch lane: record one real run's HTTP into a content-addressed corpus, then replay

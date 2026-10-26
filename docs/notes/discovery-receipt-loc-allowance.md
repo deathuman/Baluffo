@@ -468,7 +468,7 @@ values, no spare headroom.
 
 ## Discovery lane-parity tool (2026-10-26)
 
-The 32/64-lane parity study that closed P6's R4 ran from an untracked harness under `_out/`. It is
+The 32/64-lane parity study that answered P6's R4 ran from an untracked harness under `_out/`. It is
 now a reusable tool, so `tools` and `tests` grow by exactly its size; `src` is untouched because the
 tool only reads artifacts the audit already writes.
 
