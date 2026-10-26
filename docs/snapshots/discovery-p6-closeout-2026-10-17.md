@@ -1,13 +1,14 @@
 # The P6 baseline, lane study and Browser proof now exist — 2026-10-17
 
-> - **Class:** measurement and evidence closeout, with one shipped-surface defect recorded and not fixed
+> - **Class:** measurement and evidence closeout — one finding first recorded as a shipped-surface defect was later explained as expected behaviour (R3)
 > - **Trigger:** the discovery performance plan's three operator gates (baseline, 32/64 lane study, Browser
 >   proof) had never had qualifying evidence. The target recovered from its 504 window, so all three were
 >   executed locally on one revision and independently checked.
 > - **Status:** **local evidence present, production acceptance open.** Six gates exit 0 (three builders,
 >   three independent checkers). The 64-lane timing case is strong; **outcome parity is unproven** (boards
->   were lost in all six pairs). One deployed-build defect was found: the jobs list renders **4** rows per
->   page while the build configures **10**. Eight residuals are listed below.
+>   were lost in all six pairs). The one recorded "defect" — a jobs list rendering **4** rows per page
+>   while the build configures **10** — is the adaptive recalculator's floor of 4, not a defect (R3).
+>   Six residuals remain open below.
 > - **Verified against:** `37df08902414c2eb5e0e01c5c2e39b97af62814c` (`main`, 20 ahead of `origin/main`,
 >   source version `0.3.019`). Deployed revision `af935dfca32a8506669dfbc74abce9b0d1d4b967` is a label
 >   inferred from published OCI tags, not a read of the running container.
@@ -85,11 +86,17 @@ rendering. Driven as a first-time user: all five admin tabs select and render wi
 (0 / 3 / 4 / 375 / 80); the jobs search narrows 40,008 → 528 and clears; pagination advances 1-4 → 5-8;
 the Remote type filter gives 6,411.
 
-**Defect found, not fixed:** the jobs list renders **4 rows per page** (counted in the DOM on two
-pages) against the deployed build's own `itemsPerPage: 10` — 10,002 pages for 40,008 jobs. The cause
-is unestablished, and the served `state.js` is **not** HEAD's (`pendingSavedJobActions` is absent), so
-the deployed bundle diverges from HEAD and this is not reproducible against HEAD without identifying
-the build first.
+**First recorded as a defect, explained 2026-10-26 (R3).** The jobs list rendered **4 rows per page**
+(counted in the DOM on two pages) against the deployed build's own `itemsPerPage: 10`, which read as
+10,002 pages for 40,008 jobs with no established cause. `itemsPerPage: 10` is only the value before
+the page recalculates: `recalculateItemsPerPage` sets `max(4, min(25, floor(availableHeight /
+rowHeight)))`, so 4 is the floor a short viewport with tall stacked-card rows reaches. The formula is
+present at the revision the deployment labels identify (`af935dfc`, release 0.3.019), whose `state.js`
+also lacks `pendingSavedJobActions` — the marker the pass used to call the served bundle not-HEAD's.
+That divergence is real, but it does not touch this behaviour; the digest check in R1 is still what
+would confirm the running container's identity. The arithmetic closes exactly: 40,008 jobs over
+4 rows is the observed 10,002 pages. There is no code defect, and whether a floor of 4 suits a 40k-row
+list is a UX decision rather than a fix.
 
 ## Residuals
 
@@ -97,7 +104,7 @@ the build first.
 |---|---|---|
 | R1 | Running container's digest never read; deployment identity is an inference from published labels + appVersion | one `docker inspect` on the Umbrel host (command in `p6-baseline-20261017/phase0-provenance.md`) |
 | R2 | Target 504 window `2026-10-16T23:56:54Z` → recovery `2026-10-17T03:12:16Z`; cause unknown | container logs for that window, or an operator statement |
-| R3 | Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages | reproduce on HEAD with the page-size probe; then a code fix or a redeploy-plus-verify |
+| R3 | ~~Jobs list renders 4 rows/page against `itemsPerPage: 10`; 10,002 pages~~ — **closed 2026-10-26**: `itemsPerPage: 10` is the pre-calculation default, and `recalculateItemsPerPage` floors at 4 (`max(4, min(25, floor(availableHeight / rowHeight)))`) at the revision the deployment labels identify (`af935dfc`); 40,008 / 4 = 10,002 is the expected result | nothing to fix; whether a floor of 4 suits a 40k-row list is a UX decision |
 | R4 | Outcome parity at 64 lanes unproven (6/6 board losses, p=0.0312; identity criterion at 99% of tolerance) | two more pairs, or one production-sized 64-lane run with a per-host board diff |
 | R5 | Leg B lane peaks are single-source (no wrapper on the runner path) | a shipped instrumentation seam, in its own change |
 | R6 | Browser pass boundary slip: the first harness clicked "Retry now"; lifecycle stayed 0 current / 240 recent, harness rewritten and re-run | nothing target-side; the record stays |
