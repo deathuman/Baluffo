@@ -118,6 +118,9 @@ from .gamedevmap_artifact_store import (
     gamedevmap_active_dry_run_path as gamedevmap_active_dry_run_path,
 )
 from .gamedevmap_artifact_store import (
+    write_homepage_analysis_child_receipt as write_homepage_analysis_child_receipt,
+)
+from .gamedevmap_artifact_store import (
     write_probe_lifecycle_receipt as write_probe_lifecycle_receipt,
 )
 from .gamedevmap_recovery_comparison import (
@@ -200,6 +203,9 @@ from .gamedevmap_rerun import (
     _parse_rerun_reasons,
     _prune_rerun_rejections,
     _select_rerun_rows,
+)
+from .homepage_analysis_child import (
+    HomepageAnalysisChild as HomepageAnalysisChild,
 )
 from .io_runtime import endpoint_url as endpoint_url
 from .page_analysis import analyze_fetched_page
@@ -1043,13 +1049,15 @@ def _build_gamedevmap_active_batch_strategy(
     phase_receipts: list[PhaseRuntimeReceipt] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     page_fetch_lifecycles: list[PageFetchLifecycle] | None = None,
+    analysis_child: HomepageAnalysisChild | None = None,
 ) -> active_audit_runtime.ActiveAuditBatchStrategy:
     # One receipt per batch, kept live: the deferred client close lands after the batch returns, so
     # the object is read again when the artifact is written rather than only at the batch's exit.
     receipts = probe_lifecycles if probe_lifecycles is not None else []
-    # The run-wide CPU/lane receipts, and the current batch's slice of them. A batch starts at
-    # `prepare_rows`, which is the only hook the batch runtime calls before any phase, so clearing
-    # here is what keeps `timings.batches[].phaseRuntime` to this batch's phases.
+    # The run-wide CPU/lane receipts, and the current batch's slice of them. The runtime drains the
+    # slice at the end of a batch's head and again at the end of its tail -- two drains rather than
+    # one, because a pipelined loop starts the next batch's head before this batch's tail -- so what
+    # the drain returns is exactly the phases the batch has run since the previous boundary.
     all_phase_receipts = phase_receipts if phase_receipts is not None else []
     all_page_fetch_lifecycles = page_fetch_lifecycles if page_fetch_lifecycles is not None else []
     batch_phase_receipts: list[PhaseRuntimeReceipt] = []
@@ -1064,17 +1072,43 @@ def _build_gamedevmap_active_batch_strategy(
             batch_phase_receipts.append(receipt)
             all_phase_receipts.append(receipt)
 
+    # The homepage analysis, when a worker is wired: `analysis_start` hands the batch over without
+    # waiting, and `analysis_collect` picks the result up in the batch's tail -- a whole next-batch
+    # fetch later. The phase receipt covers the collect, so it measures what the phase cost *this*
+    # process: in the sequential path that is the analysis itself, and deferred it is the wait plus
+    # the decode. The worker's own wall and CPU, the hand-off and the wait are in the transport's
+    # receipt, published beside the artifact so the phase's real cost is never read from the
+    # parent's share alone.
+    analysis_start_hook: Callable[[list[dict[str, Any]]], Any] | None = None
+    analysis_collect_hook: Callable[[Any], Any] | None = None
+    if analysis_child is not None:
+        # The hand-off is not the phase: between it and the collect sit the rest of the batch's tail
+        # and the next batch's head, and a receipt created at the hand-off would report that whole
+        # span as `homepage_analysis` -- measured live, 95 s of "analysis" per batch in an 831 s arm
+        # whose real phase cost was 113 s in total. So the receipt is created where the parent is
+        # actually inside the phase, at the collect, exactly as the inline path does it, and the
+        # wait it could not hide is what `childWallS`/`parentWaitS` in the worker's receipt say.
+        def _analysis_collect(handle: Any) -> Any:
+            return _run_phase(
+                "homepage_analysis",
+                lambda _receipt: analysis_child.collect(handle),
+            )
+
+        analysis_start_hook = analysis_child.start
+        analysis_collect_hook = _analysis_collect
+
     def _prepare_rows(rows: list[dict[str, Any]]) -> Any:
-        # Clearing first makes this call the batch's boundary; the receipt then covers the inference
-        # itself, which is where the batch's first CPU goes.
-        batch_phase_receipts.clear()
+        # The batch's first phase, and the receipt that covers the inference itself: where the
+        # batch's first CPU goes.
         return _run_phase(
             "direct_inference",
             lambda _receipt: _prepare_gamedevmap_active_batch_rows(rows, index_url=index_url),
         )
 
-    def _batch_phase_receipts() -> list[dict[str, Any]]:
-        return [receipt.snapshot() for receipt in batch_phase_receipts]
+    def _drain_batch_phase_receipts() -> list[dict[str, Any]]:
+        drained = [receipt.snapshot() for receipt in batch_phase_receipts]
+        batch_phase_receipts.clear()
+        return drained
 
     def _probe_with_lifecycle(all_candidates: list[dict[str, Any]]) -> Any:
         receipt = ProbeBatchLifecycle()
@@ -1139,6 +1173,8 @@ def _build_gamedevmap_active_batch_strategy(
             "homepage_analysis",
             lambda _receipt: _analyze_gamedevmap_active_homepages(results, index_url=index_url),
         ),
+        analysis_start=analysis_start_hook,
+        analysis_collect=analysis_collect_hook,
         fetch_recovery=lambda jobs, label: _run_phase(
             _gamedevmap_recovery_fetch_phase(label),
             lambda receipt: _fetch_gamedevmap_active_recovery(
@@ -1190,7 +1226,7 @@ def _build_gamedevmap_active_batch_strategy(
         ),
         probe_candidates=_probe_with_lifecycle,
         probe_lifecycle=_latest_receipt,
-        phase_runtime=_batch_phase_receipts,
+        phase_runtime=_drain_batch_phase_receipts,
         apply_probe_results=lambda probe_results: (
             active_audit_runtime.apply_active_audit_probe_results(
                 artifact,
@@ -1342,44 +1378,57 @@ def run_gamedevmap_active_source_dry_run(
     probe_lifecycles: list[ProbeBatchLifecycle] = []
     phase_receipts: list[PhaseRuntimeReceipt] = []
     page_fetch_lifecycles: list[PageFetchLifecycle] = []
-    batch_strategy = _build_gamedevmap_active_batch_strategy(
-        artifact=artifact,
-        index_url=index_url,
-        timeout_s=timeout_s,
-        fetcher=fetcher,
-        homepage_fetch_concurrency=homepage_fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        recovery_timeout_s=recovery_timeout_s,
-        recovery_fetch_concurrency=recovery_fetch_concurrency,
-        recovery_per_host_concurrency=recovery_per_host_concurrency,
-        recovery_cache=recovery_cache,
-        probe_lifecycles=probe_lifecycles,
-        phase_receipts=phase_receipts,
-        progress_callback=strategy_progress_callback,
-        page_fetch_lifecycles=page_fetch_lifecycles,
+    # The homepage analysis runs in a worker process when one is supported -- the phase is the
+    # audit's largest CPU consumer and the fetch waves leave the machine idle, so each batch is
+    # analyzed beside the next batch's fetch. Any failure retires the transport and that batch (and
+    # every later one) is analyzed here instead, so the audit cannot lose a batch to it.
+    analysis_child = HomepageAnalysisChild(
+        _analyze_gamedevmap_active_homepages,
+        analysis_kwargs={"index_url": index_url},
+        log=emit_log,
     )
-    loop_strategy = _build_gamedevmap_active_loop_strategy(
-        artifact=artifact,
-        output_path=output_path,
-        parsed_rows=parsed_rows,
-        representative_rows=representative_rows,
-        completed_urls=completed_urls,
-        compare_artifact_path=compare_artifact_path,
-        batch_strategy=batch_strategy,
-        probe_lifecycles=probe_lifecycles,
-        phase_receipts=phase_receipts,
-        page_fetch_lifecycles=page_fetch_lifecycles,
-        progress_callback=subtask_progress_callback,
-    )
+    try:
+        batch_strategy = _build_gamedevmap_active_batch_strategy(
+            artifact=artifact,
+            index_url=index_url,
+            timeout_s=timeout_s,
+            fetcher=fetcher,
+            homepage_fetch_concurrency=homepage_fetch_concurrency,
+            per_host_concurrency=per_host_concurrency,
+            recovery_timeout_s=recovery_timeout_s,
+            recovery_fetch_concurrency=recovery_fetch_concurrency,
+            recovery_per_host_concurrency=recovery_per_host_concurrency,
+            recovery_cache=recovery_cache,
+            probe_lifecycles=probe_lifecycles,
+            phase_receipts=phase_receipts,
+            progress_callback=strategy_progress_callback,
+            page_fetch_lifecycles=page_fetch_lifecycles,
+            analysis_child=analysis_child,
+        )
+        loop_strategy = _build_gamedevmap_active_loop_strategy(
+            artifact=artifact,
+            output_path=output_path,
+            parsed_rows=parsed_rows,
+            representative_rows=representative_rows,
+            completed_urls=completed_urls,
+            compare_artifact_path=compare_artifact_path,
+            batch_strategy=batch_strategy,
+            probe_lifecycles=probe_lifecycles,
+            phase_receipts=phase_receipts,
+            page_fetch_lifecycles=page_fetch_lifecycles,
+            progress_callback=subtask_progress_callback,
+        )
 
-    active_audit_runtime.run_active_audit_loop(
-        artifact=artifact,
-        source_rows=representative_rows,
-        completed_identities=completed_urls,
-        batch_size=batch_size,
-        max_batches=max_batches,
-        strategy=loop_strategy,
-    )
+        active_audit_runtime.run_active_audit_loop(
+            artifact=artifact,
+            source_rows=representative_rows,
+            completed_identities=completed_urls,
+            batch_size=batch_size,
+            max_batches=max_batches,
+            strategy=loop_strategy,
+        )
+    finally:
+        analysis_child.close()
 
     # The artifact is tens of MB on a real walk, so the probe-wave receipt the Ops view polls is
     # published beside it. Both come from the same live receipts that filled the artifact's own
@@ -1389,6 +1438,14 @@ def run_gamedevmap_active_source_dry_run(
         artifact_path=output_path,
         artifact=artifact,
         lifecycles=probe_lifecycles,
+    )
+    # Where the homepage analysis ran, batch by batch, with the worker's own wall and CPU: the
+    # artifact's `homepage_analysis` phase receipt can only speak for the parent's share of a
+    # deferred phase, so this is the file a reader measures the phase from.
+    write_homepage_analysis_child_receipt(
+        artifact_path=output_path,
+        artifact=artifact,
+        receipt=analysis_child.receipt(),
     )
     emit_log(f"GameDevMap active-source dry run written to {output_path}.")
     if subtask_progress_callback is not None:

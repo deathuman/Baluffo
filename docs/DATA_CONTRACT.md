@@ -705,6 +705,27 @@ outlived their per-call bound and kept running — `fetchesOutstandingAtExit`,
 decisions, source verdicts, promotion, demotion, or freshness, and a missing receipt reads as absent
 rather than as a clean wave.
 
+### Discovery homepage-analysis worker receipt
+
+A GameDevMap active audit may run one batch's homepage analysis in a worker process, so that phase
+overlaps the next batch's fetch instead of extending the run. The artifact's own `homepage_analysis`
+phase receipt then measures the parent's time inside the collect -- the wait it could not hide and
+the decode -- so the run publishes `gamedevmap-analysis-worker-receipt.json` beside
+`gamedevmap-active-source-dry-run.json` with the worker's own numbers. It carries the run's `runId`, timestamps and `sourceArtifact` name
+plus `homepageAnalysisChild`:
+
+| Field | Type | Description |
+|---|---|---|
+| `mode` | `string` | `child` while the transport is still live for later batches, `inline` when it is retired or was never enabled |
+| `enabled` | `boolean` | Whether the worker was requested (`BALUFFO_DISCOVERY_HOMEPAGE_ANALYSIS_CHILD`, on by default) |
+| `disabledReason` | `string` | Why it is not carrying batches (`disabled-by-env`, `frozen-runtime`, `analysis-not-picklable`, a spawn failure, a retired worker's cause); empty while it is live |
+| `batches` | `Array<Object>` | Per batch: `index`, `transport` (`child`/`inline`/`fallback`), `fellBack`, `beginMs`, `handoffMs`, `handoffBytes`, `childWallMs`, `childCpuMs`, `waitMs`, `decodeMs`, `collectMs` |
+| `summary` | `object` | The run's split: `calls`, `offloaded`, `inlined`, `fallbacks`, `childWallS`, `childCpuS`, `parentWaitS`, `parentHandoffS`, `parentInlineS`, `handoffBytes` |
+
+It is diagnostics only, like the probe-lifecycle receipt: it must not feed queue decisions, source
+verdicts, promotion, demotion, or freshness. A run with no batches writes no file; an in-process run
+writes one that says `inline` and its reason, so an absent file is never read as "the worker ran".
+
 ### Admin/Ops registry sync confidence
 
 `/ops/health` may include additive `kpis.registrySync` for Admin/Ops observability. It is derived from existing local registry buckets, tombstones, sync runtime state, and sync run history; it must not be copied into source rows or used to auto-promote, demote, reject, tombstone, hide, delete, or merge sources.

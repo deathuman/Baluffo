@@ -27,6 +27,17 @@ _BALUFFO_RUNTIME_ISOLATION_KEYS = (
 for _key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
     os.environ.pop(_key, None)
 
+# The homepage-analysis worker transport spawns a process, and the suite keeps it off by default:
+# a monkeypatched analysis seam is invisible inside a child interpreter, and a spawn per audit test
+# is slow and host-dependent. The transport's own tests turn it on explicitly (monkeypatch.setenv),
+# and every run outside pytest -- including the live audit -- is enabled unless the operator says
+# otherwise. A host that exported the knob cannot change what the suite measures either.
+_SUITE_DISABLED_PROCESS_TRANSPORTS = {
+    "BALUFFO_DISCOVERY_HOMEPAGE_ANALYSIS_CHILD": "0",
+}
+for _key, _value in _SUITE_DISABLED_PROCESS_TRANSPORTS.items():
+    os.environ[_key] = _value
+
 from pathlib import Path
 
 import pytest
@@ -79,9 +90,13 @@ def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
     """Prevent one test (or host) from leaving desktop spawn env around for the next test."""
     for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
         os.environ.pop(key, None)
+    for key, value in _SUITE_DISABLED_PROCESS_TRANSPORTS.items():
+        os.environ[key] = value
     yield
     for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
         os.environ.pop(key, None)
+    for key, value in _SUITE_DISABLED_PROCESS_TRANSPORTS.items():
+        os.environ[key] = value
 
 
 @pytest.fixture(autouse=True)

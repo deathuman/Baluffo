@@ -60,6 +60,8 @@ DRY_RUN_SCHEMA_VERSION = 3
 # beside it. `summary.probeLifecycle` stays the authoritative copy inside the artifact.
 PROBE_LIFECYCLE_RECEIPT_FILENAME = "gamedevmap-audit-receipt.json"
 PROBE_LIFECYCLE_RECEIPT_SCHEMA_VERSION = 1
+ANALYSIS_WORKER_RECEIPT_FILENAME = "gamedevmap-analysis-worker-receipt.json"
+ANALYSIS_WORKER_RECEIPT_SCHEMA_VERSION = 1
 
 
 FAILURE_SAMPLE_LIMIT = 200
@@ -278,6 +280,42 @@ def write_probe_lifecycle_receipt(
         "probeLifecycle": receipt,
     }
     audit_ledger.save_artifact_atomic(payload, probe_lifecycle_receipt_path(artifact_path))
+    return payload
+
+
+def homepage_analysis_child_receipt_path(artifact_path: Path | None = None) -> Path:
+    """The analysis-worker receipt that sits beside an artifact (default: the configured one)."""
+    base = artifact_path if artifact_path is not None else gamedevmap_active_dry_run_path()
+    return Path(base).parent / ANALYSIS_WORKER_RECEIPT_FILENAME
+
+
+def write_homepage_analysis_child_receipt(
+    *,
+    artifact_path: Path,
+    artifact: dict[str, Any],
+    receipt: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Publish where the homepage analysis ran beside the artifact, batch by batch.
+
+    A deferred analysis runs out of process, so the artifact's own `homepage_analysis` phase
+    receipt measures the parent's time inside the collect: the wait it could not hide, and the
+    decode. This file carries the worker's own wall and CPU, the hand-off, and which transport each
+    batch used -- including a run that stayed in-process, whose reason is worth recording rather
+    than inferring from an absent file. A run with no batches writes nothing. Returns the payload
+    written, or `{}`.
+    """
+    batches = list((receipt or {}).get("batches") or [])
+    if not batches:
+        return {}
+    payload = {
+        "schemaVersion": ANALYSIS_WORKER_RECEIPT_SCHEMA_VERSION,
+        "runId": str(artifact.get("runId") or ""),
+        "startedAt": str(artifact.get("startedAt") or ""),
+        "finishedAt": str(artifact.get("finishedAt") or ""),
+        "sourceArtifact": Path(artifact_path).name,
+        "homepageAnalysisChild": dict(receipt or {}),
+    }
+    audit_ledger.save_artifact_atomic(payload, homepage_analysis_child_receipt_path(artifact_path))
     return payload
 
 

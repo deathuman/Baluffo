@@ -53,7 +53,13 @@ from .active_audit_artifact_runtime import run_active_audit_cache as run_active_
 from .active_audit_artifact_runtime import (
     save_updated_active_audit_artifact as save_updated_active_audit_artifact,
 )
+from .active_audit_batch_runtime import (
+    finish_active_audit_batch as finish_active_audit_batch,
+)
 from .active_audit_batch_runtime import run_active_audit_batch as run_active_audit_batch
+from .active_audit_batch_runtime import (
+    start_active_audit_batch as start_active_audit_batch,
+)
 from .active_audit_batch_strategy import (
     _apply_recovery_with_progress as _apply_recovery_with_progress,
 )
@@ -87,6 +93,7 @@ from .active_audit_candidate_rows import (
     validated_active_candidates_from_artifact as validated_active_candidates_from_artifact,
 )
 from .active_audit_contracts import ActiveAuditArtifactCounts as ActiveAuditArtifactCounts
+from .active_audit_contracts import ActiveAuditBatchHead as ActiveAuditBatchHead
 from .active_audit_contracts import ActiveAuditBatchResult as ActiveAuditBatchResult
 from .active_audit_contracts import ActiveAuditBatchStrategy as ActiveAuditBatchStrategy
 from .active_audit_contracts import (
@@ -136,6 +143,34 @@ def build_active_audit_loop_strategy(
             completed_identities=completed_identities,
         )
 
+    # A strategy that can defer its homepage analysis gets the pipelined loop: batch N's tail runs
+    # after batch N+1's head has started, so the analysis overlaps the next batch's fetch instead of
+    # extending the run. A strategy without a transport keeps the sequential loop, unchanged.
+    def _start_batch(
+        batch_rows: list[dict[str, Any]],
+        cursor: int,
+        batch_number: int,
+    ) -> ActiveAuditBatchHead:
+        return start_active_audit_batch(
+            artifact=artifact,
+            batch_rows=batch_rows,
+            cursor=cursor,
+            batch_number=batch_number,
+            strategy=batch_strategy,
+            defer_analysis=True,
+        )
+
+    def _finish_batch(head: ActiveAuditBatchHead) -> None:
+        finish_active_audit_batch(
+            head,
+            artifact=artifact,
+            strategy=batch_strategy,
+            completed_identities=completed_identities,
+        )
+
+    pipelined = (
+        batch_strategy.analysis_start is not None and batch_strategy.analysis_collect is not None
+    )
     return ActiveAuditLoopStrategy(
         row_identity=row_identity,
         emit_batch_log=emit_batch_log,
@@ -143,4 +178,6 @@ def build_active_audit_loop_strategy(
         before_write=before_write,
         write_artifact=write_artifact,
         progress_callback=progress_callback,
+        start_batch=_start_batch if pipelined else None,
+        finish_batch=_finish_batch if pipelined else None,
     )

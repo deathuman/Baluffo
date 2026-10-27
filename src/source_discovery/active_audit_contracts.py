@@ -103,6 +103,33 @@ class ActiveAuditBatchResult:
 
 
 @dataclass
+class ActiveAuditBatchHead:
+    """A batch up to and including its homepage fetch: what the tail needs to finish it.
+
+    The split exists so the homepage analysis can run in a worker process while the loop starts the
+    next batch (see `homepage_analysis_child`). `deferred_analysis` says whether `analysis_handle`
+    is a live job to collect, or a marker that the tail should analyze the fetched results in the
+    calling process.
+    """
+
+    batch_number: int
+    cursor: int
+    batch_rows: list[dict[str, Any]]
+    progress_base: dict[str, Any]
+    batch_timing: dict[str, Any]
+    batch_started: float
+    head_finished: float
+    prepared: ActiveAuditPreparedRows
+    homepage_fetch_results: list[dict[str, Any]]
+    analysis_handle: Any = None
+    deferred_analysis: bool = False
+    # The head's own phase receipts, drained from the strategy when the head ends: a pipelined loop
+    # runs the next head before this batch's tail, so the tail cannot ask the strategy for "this
+    # batch's" receipts at its own end. The tail drains the rest and the two are concatenated.
+    phase_receipts: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class ActiveAuditBatchStrategy:
     prepare_rows: Callable[[list[dict[str, Any]]], ActiveAuditPreparedRows]
     fetch_homepages: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
@@ -143,7 +170,15 @@ class ActiveAuditBatchStrategy:
     probe_lifecycle: Callable[[], dict[str, Any]] | None = None
     # The batch's per-phase wall/CPU/lane receipts, in phase order. Optional for the same reason:
     # a batch that reports none records no `phaseRuntime` row, and the artifact's shape is unchanged.
+    # A drain, not a view: the runtime calls it at the end of a batch's head and again at the end of
+    # its tail, and the supplier returns (and forgets) the receipts since the previous call. Queued
+    # batches therefore never mix phases, and the two halves are concatenated in phase order.
     phase_runtime: Callable[[], list[dict[str, Any]]] | None = None
+    # A deferred analysis, both or neither: `analysis_start` hands one batch's fetch results to the
+    # transport and returns a handle without blocking, and `analysis_collect` turns that handle back
+    # into the batch's result. With neither, `analyze_homepages` runs the analysis synchronously.
+    analysis_start: Callable[[list[dict[str, Any]]], Any] | None = None
+    analysis_collect: Callable[[Any], ActiveHomepageBatchResult] | None = None
     progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
@@ -162,3 +197,8 @@ class ActiveAuditLoopStrategy:
     before_write: Callable[[], None]
     write_artifact: Callable[[bool], None]
     progress_callback: Callable[[dict[str, Any]], None] | None = None
+    # The pipelined pair, both or neither: with them the loop starts batch N+1's head before
+    # finishing batch N's tail, so a deferred analysis overlaps the next batch's fetch. Without
+    # them every batch runs whole through `run_batch`, sequentially, exactly as before.
+    start_batch: Callable[[list[dict[str, Any]], int, int], ActiveAuditBatchHead] | None = None
+    finish_batch: Callable[[ActiveAuditBatchHead], None] | None = None

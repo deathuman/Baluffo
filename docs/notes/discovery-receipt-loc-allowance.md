@@ -509,3 +509,53 @@ the tool's attribution inputs and pinned the trap with two tests.
   429 that must beat a sibling's zero-job row and two Square Enix tenants that must keep their own zero.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis worker transport (2026-10-27)
+
+The overlap that hides the GameDevMap audit's homepage-analysis phase behind the next batch's fetch
+grew `src` by a new worker transport and a head/tail split of the batch runtime, and `tests` by the
+transport's own suite and the pipelined loop's.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 190710 | 191643 | +933 |
+| `tests` | 264128 | 264667 | +539 |
+
+- `src` +933: `src/source_discovery/homepage_analysis_child.py` (new, 445) is the transport — spawn,
+  hand-off on its own thread, collect, fallback, retire, and its receipt. The other 488 sit in
+  already-tracked modules: `active_audit_loop_runtime.py` gains the pipelined loop beside the
+  sequential one, `active_audit_batch_runtime.py` the batch head/tail split and the two phase-receipt
+  drains, `gamedevmap_active_dry_run.py` its wiring and the receipt publication,
+  `gamedevmap_artifact_store.py` the receipt writer, `active_audit_runtime.py` and
+  `active_audit_contracts.py` the strategy surface (`analysis_start`/`analysis_collect`,
+  `ActiveAuditBatchHead`, the drain contract) and `active_audit_batch_strategy.py` the passthrough.
+- `tests` +539: `test_homepage_analysis_child.py` (new, 292) pins out-of-process execution, the
+  disabled and fallback paths, the env knob, and a whole audit run whose candidates and rejections
+  match the in-process run; `test_active_audit_batch_pipeline.py` (new, 230) pins the head/tail split
+  and the overlap order; `tests/conftest.py` (+15) and `test_phase_runtime_receipt.py` record the
+  drain contract.
+
+All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis worker instrument corrections (2026-10-27)
+
+The two instrument defects the discarded runs exposed — a deferred receipt paired by stack, and a
+receipt created at the hand-off rather than at the collect — were fixed before the measured build,
+which rewrote comments in the source and replaced a flaky magnitude bound with a pairing pin in the
+tests.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 191643 | 191650 | +7 |
+| `tests` | 264667 | 264746 | +79 |
+
+- `src` +7: the corrected interval's rewritten comments, plus the pass the pre-push hooks require —
+  the in-process timing is returned as `(result, collect_ms)` and handed to the recorder as explicit
+  arguments (typed without a mapping the dead-code hook reads as unused), and every call of the
+  strategy's optional callables goes through a bound local.
+- `tests` +79: `test_phase_runtime_receipt.py` gains the pairing pin (a deferred batch's phase
+  receipt is its own batch's collect, mutation-checked against the stack pairing that reported
+  769 s in an 831 s arm) and drops the old magnitude bound that could pass on wall noise; the new
+  suites cast their stand-in transport and results at the boundary the real types define.
+
+All other areas unchanged; exact measured values, no spare headroom.

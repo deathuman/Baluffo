@@ -1,9 +1,19 @@
 """Active audit single-batch execution.
 
-AI boundary owns: one active-audit batch from prepare through direct inference, homepage fetch/analysis, recovery waves, merge, and probe.
-AI boundary implement in: this file for single-batch execution; artifact persistence stays in active_audit_artifact_runtime.
+AI boundary owns: one active-audit batch -- its head (prepare through homepage fetch, analysis
+start) and its tail (analysis result through direct inference, homepage fetch/analysis, recovery
+waves, merge, and probe).
+AI boundary implement in: this file for single-batch execution; artifact persistence stays in active_audit_artifact_runtime, and the loop that may pipeline heads and tails stays in active_audit_loop_runtime.
 AI boundary search before contracts: batch strategy callables, artifact progress keys, and active audit batch tests.
 AI boundary verify: `python -m pytest tests/source_discovery/test_active_audit_runtime.py tests/source_discovery/test_active_audit_runtime_batch.py -q`.
+
+Why the split: the homepage analysis is 17% of an arm's wall and one saturated core, and the batch
+is the only place it can be overlapped with I/O. `start_active_audit_batch` runs the batch up to its
+homepage fetch and -- when the strategy defers the analysis -- hands the fetched results to the
+transport without waiting; `finish_active_audit_batch` collects that result and runs every phase
+that depends on it. `run_active_audit_batch` is the same two calls in a row, so a sequential caller
+(the resumable loop without pipelining, tests, and any other reader of the historical surface) gets
+exactly the old behaviour.
 """
 
 from __future__ import annotations
@@ -22,19 +32,34 @@ from .active_audit_batch_strategy import (
 )
 from .active_audit_batch_strategy import _duration_ms as _duration_ms
 from .active_audit_batch_strategy import _emit_progress as _emit_progress
+from .active_audit_contracts import ActiveAuditBatchHead as ActiveAuditBatchHead
 from .active_audit_contracts import ActiveAuditBatchResult as ActiveAuditBatchResult
 from .active_audit_contracts import ActiveAuditBatchStrategy as ActiveAuditBatchStrategy
 
 
-def run_active_audit_batch(
+def _drain_phase_receipts(strategy: ActiveAuditBatchStrategy) -> list[dict[str, Any]]:
+    """Take this batch's phase receipts so far, leaving the strategy empty for the next boundary."""
+    if strategy.phase_runtime is None:
+        return []
+    return [dict(row) for row in (strategy.phase_runtime() or [])]
+
+
+def start_active_audit_batch(
     *,
     artifact: dict[str, Any],
     batch_rows: list[dict[str, Any]],
     cursor: int,
     batch_number: int,
     strategy: ActiveAuditBatchStrategy,
-    completed_identities: set[str],
-) -> ActiveAuditBatchResult:
+    defer_analysis: bool = False,
+) -> ActiveAuditBatchHead:
+    """Run one batch's head: prepare rows, fetch homepages, and start the analysis if deferred.
+
+    `defer_analysis` is the caller's promise that it will collect the analysis before its result is
+    needed (the pipelined loop does, by finishing the previous batch's tail first). When the
+    strategy declares no transport, or this caller does not defer, `homepageAnalysisMs` and the
+    analysis itself stay in the tail exactly as they always were.
+    """
     batch_started = time.perf_counter()
     batch_timing: dict[str, Any] = {
         "batch": int(batch_number),
@@ -90,18 +115,71 @@ def run_active_audit_batch(
         force=True,
     )
 
-    homepage_analysis_started = time.perf_counter()
-    _emit_progress(
-        strategy.progress_callback,
-        {
-            **progress_base,
-            "phase": "homepage_analysis",
-            "phaseLabel": "Analyzing studio homepages",
-            "phaseTotal": len(homepage_fetch_results),
-        },
-        force=True,
+    start_analysis = strategy.analysis_start
+    deferred_analysis = bool(
+        defer_analysis and start_analysis is not None and strategy.analysis_collect is not None
     )
-    homepage_result = strategy.analyze_homepages(homepage_fetch_results)
+    analysis_handle: Any = None
+    if deferred_analysis and start_analysis is not None:
+        _emit_progress(
+            strategy.progress_callback,
+            {
+                **progress_base,
+                "phase": "homepage_analysis",
+                "phaseLabel": "Analyzing studio homepages",
+                "phaseTotal": len(homepage_fetch_results),
+            },
+            force=True,
+        )
+        analysis_handle = start_analysis(homepage_fetch_results)
+
+    return ActiveAuditBatchHead(
+        batch_number=int(batch_number),
+        cursor=int(cursor),
+        batch_rows=list(batch_rows),
+        progress_base=progress_base,
+        batch_timing=batch_timing,
+        batch_started=batch_started,
+        head_finished=time.perf_counter(),
+        prepared=prepared,
+        homepage_fetch_results=homepage_fetch_results,
+        analysis_handle=analysis_handle,
+        deferred_analysis=deferred_analysis,
+        phase_receipts=_drain_phase_receipts(strategy),
+    )
+
+
+def finish_active_audit_batch(
+    head: ActiveAuditBatchHead,
+    *,
+    artifact: dict[str, Any],
+    strategy: ActiveAuditBatchStrategy,
+    completed_identities: set[str],
+) -> ActiveAuditBatchResult:
+    """Run one batch's tail: the homepage analysis result and every phase that depends on it."""
+    tail_started = time.perf_counter()
+    batch_timing = head.batch_timing
+    progress_base = head.progress_base
+    batch_rows = head.batch_rows
+    prepared = head.prepared
+    homepage_fetch_results = head.homepage_fetch_results
+
+    homepage_analysis_started = time.perf_counter()
+    collect_analysis = strategy.analysis_collect
+    if head.deferred_analysis and collect_analysis is not None:
+        homepage_result = collect_analysis(head.analysis_handle)
+    else:
+        _emit_progress(
+            strategy.progress_callback,
+            {
+                **progress_base,
+                "phase": "homepage_analysis",
+                "phaseLabel": "Analyzing studio homepages",
+                "phaseTotal": len(homepage_fetch_results),
+            },
+            force=True,
+        )
+        homepage_result = strategy.analyze_homepages(homepage_fetch_results)
     batch_timing["homepageAnalysisMs"] = _duration_ms(homepage_analysis_started)
 
     recovery_wave1_fetch_started = time.perf_counter()
@@ -321,12 +399,13 @@ def run_active_audit_batch(
         if probe_lifecycle:
             batch_timing["probeLifecycle"] = dict(probe_lifecycle)
     # The batch's phase receipts: wall and process CPU per phase, plus the lane occupancy its fetches
-    # reported. `phaseRuntime` is not an `Ms` key, so the timing rollup leaves it out of `totalsMs` --
-    # those totals are wall-clock consumers' numbers and must not gain CPU.
-    if strategy.phase_runtime is not None:
-        phase_runtime = strategy.phase_runtime()
-        if phase_runtime:
-            batch_timing["phaseRuntime"] = [dict(row) for row in phase_runtime]
+    # reported. The head's half was drained when the head ended -- a pipelined loop ran another
+    # batch's head in between -- so the tail drains the rest and the two are joined in phase order.
+    # `phaseRuntime` is not an `Ms` key, so the timing rollup leaves it out of `totalsMs` -- those
+    # totals are wall-clock consumers' numbers and must not gain CPU.
+    phase_runtime = [*head.phase_receipts, *_drain_phase_receipts(strategy)]
+    if phase_runtime:
+        batch_timing["phaseRuntime"] = phase_runtime
 
     completed_identities.update(
         strategy.row_identity(row) for row in batch_rows if strategy.row_identity(row)
@@ -334,7 +413,17 @@ def run_active_audit_batch(
     progress = _as_dict(artifact.get("progress"))
     progress["batchesCompleted"] = _safe_int(progress.get("batchesCompleted")) + 1
     artifact["progress"] = progress
-    batch_timing["totalMs"] = _duration_ms(batch_started)
+    # The batch's own elapsed work, not the wall between its first and last phase: a pipelined loop
+    # runs another batch's head in between, and that time is that batch's, not this one's.
+    batch_timing["totalMs"] = max(
+        0,
+        int(
+            round(
+                ((head.head_finished - head.batch_started) + (time.perf_counter() - tail_started))
+                * 1000
+            )
+        ),
+    )
     batch_timing["artifactWriteMs"] = 0
     strategy.append_timing(batch_timing)
     _emit_progress(
@@ -354,4 +443,29 @@ def run_active_audit_batch(
         candidates=merged.candidates,
         recovery_jobs=recovery_jobs,
         recovered_homepages=recovered_homepages,
+    )
+
+
+def run_active_audit_batch(
+    *,
+    artifact: dict[str, Any],
+    batch_rows: list[dict[str, Any]],
+    cursor: int,
+    batch_number: int,
+    strategy: ActiveAuditBatchStrategy,
+    completed_identities: set[str],
+) -> ActiveAuditBatchResult:
+    """One batch, head then tail, in the calling process: the sequential path, unchanged."""
+    head = start_active_audit_batch(
+        artifact=artifact,
+        batch_rows=batch_rows,
+        cursor=cursor,
+        batch_number=batch_number,
+        strategy=strategy,
+    )
+    return finish_active_audit_batch(
+        head,
+        artifact=artifact,
+        strategy=strategy,
+        completed_identities=completed_identities,
     )

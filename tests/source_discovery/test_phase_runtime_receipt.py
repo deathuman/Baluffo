@@ -17,8 +17,10 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
+from src.source_discovery.homepage_analysis_child import HomepageAnalysisChild
 from src.source_discovery.phase_runtime_receipt import PhaseRuntimeReceipt
 from tests.helpers.timing import ScriptedClock
 
@@ -265,9 +267,11 @@ def test_the_audit_records_a_lane_receipt_that_measures_real_occupancy() -> None
 def test_every_batch_carries_only_its_own_phases() -> None:
     """Per-batch receipts, not a running list: a batch's row is what this batch ran.
 
-    The strategy clears its batch slice when the batch starts (`prepare_rows`), and the run-level
-    rollup reads the same receipts by phase. A list that were never cleared would make batch 2's
-    `phaseRuntime` four phases larger than batch 1's -- and would double the rollup's occurrences.
+    The runtime drains the strategy's slice at the end of a batch's head and again at the end of its
+    tail -- the loop pipelines them, so one drain would hand the next head's phases to the previous
+    batch -- and the run-level rollup reads the same receipts by phase. A slice that were never
+    drained would make batch 2's `phaseRuntime` four phases larger than batch 1's -- and would double
+    the rollup's occurrences.
     """
     with workspace_tmpdir("phase-receipt-batches") as root:
         saved = _run_audit(root, max_batches=2)
@@ -315,6 +319,82 @@ def test_the_receipts_stay_out_of_the_wall_clock_totals() -> None:
     assert abs(int(homepage["wallMs"]) - wall_total) < 1000, (
         "the receipt's wall is the same phase the wall-clock total measures"
     )
+
+
+class _ScriptedReceipts:
+    """A `PhaseRuntimeReceipt` factory whose receipts read one clock the test moves by hand."""
+
+    def __init__(self) -> None:
+        self.clock = ScriptedClock()
+        self.cpu = ScriptedClock()
+
+    def __call__(self, *, phase: str, **_ignored: Any) -> PhaseRuntimeReceipt:
+        return PhaseRuntimeReceipt(phase=phase, clock=self.clock, cpu_clock=self.cpu)
+
+
+class _FakeAnalysisTransport:
+    """A transport whose collects take a scripted 20 ms and 30 ms, in collection order."""
+
+    def __init__(self, clock: ScriptedClock) -> None:
+        self.clock = clock
+        self.waits_s = [0.020, 0.030]
+        self.handles: list[SimpleNamespace] = []
+
+    def start(self, results: list[dict[str, Any]]) -> SimpleNamespace:
+        handle = SimpleNamespace(index=len(self.handles) + 1, results=list(results))
+        self.handles.append(handle)
+        return handle
+
+    def collect(self, handle: SimpleNamespace) -> Any:
+        from src.source_discovery.active_audit_contracts import ActiveHomepageBatchResult
+
+        self.clock.advance(self.waits_s.pop(0))
+        return ActiveHomepageBatchResult(homepages_fetched=len(handle.results))
+
+
+def test_a_deferred_analysis_receipt_measures_the_collect_not_the_wait(monkeypatch) -> None:
+    """Two heads handed over before either tail collects: each receipt covers its own collect.
+
+    The wait between the hand-off and the collect is not the phase: it holds the rest of the
+    batch's tail and the next batch's head. A receipt created at the hand-off reported that span as
+    `homepage_analysis` -- measured live, **95 s** per batch in an 831 s arm whose whole phase cost
+    113 s. The waits below are scripted (20 ms and 30 ms), so what is read is the interval and the
+    pairing, not a timing.
+    """
+    from src.source_discovery import gamedevmap_active_dry_run as dry_run
+
+    receipts = _ScriptedReceipts()
+    monkeypatch.setattr(dry_run, "PhaseRuntimeReceipt", receipts)
+    strategy = dry_run._build_gamedevmap_active_batch_strategy(
+        artifact={},
+        index_url="https://index.example",
+        timeout_s=5,
+        fetcher=lambda *_args, **_kwargs: "",
+        homepage_fetch_concurrency=1,
+        per_host_concurrency=1,
+        recovery_timeout_s=5,
+        recovery_fetch_concurrency=1,
+        recovery_per_host_concurrency=1,
+        recovery_cache={},
+        analysis_child=cast(HomepageAnalysisChild, _FakeAnalysisTransport(receipts.clock)),
+    )
+
+    start_analysis = strategy.analysis_start
+    collect_analysis = strategy.analysis_collect
+    assert start_analysis is not None and collect_analysis is not None
+
+    first = start_analysis([{"url": "https://one.example"}])
+    receipts.clock.advance(0.100)  # the next head, handed over before either tail collects
+    second = start_analysis([{"url": "https://two.example"}])
+    receipts.clock.advance(0.200)
+    collect_analysis(first)
+    receipts.clock.advance(0.010)
+    collect_analysis(second)
+
+    phase_runtime = strategy.phase_runtime
+    assert phase_runtime is not None
+    drained = [row for row in phase_runtime() if row["phase"] == "homepage_analysis"]
+    assert [row["wallMs"] for row in drained] == [20, 30]
 
 
 def test_a_run_without_receipts_records_no_section() -> None:

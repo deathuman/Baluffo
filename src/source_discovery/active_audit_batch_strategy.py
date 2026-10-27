@@ -101,12 +101,16 @@ def build_active_audit_batch_strategy(
     append_timing: Callable[[dict[str, Any]], None],
     probe_lifecycle: Callable[[], dict[str, Any]] | None = None,
     phase_runtime: Callable[[], list[dict[str, Any]]] | None = None,
+    analysis_start: Callable[[list[dict[str, Any]]], Any] | None = None,
+    analysis_collect: Callable[[Any], ActiveHomepageBatchResult] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ActiveAuditBatchStrategy:
     return ActiveAuditBatchStrategy(
         prepare_rows=prepare_rows,
         fetch_homepages=fetch_homepages,
         analyze_homepages=analyze_homepages,
+        analysis_start=analysis_start,
+        analysis_collect=analysis_collect,
         fetch_recovery=fetch_recovery,
         apply_recovery=apply_recovery,
         recovery_homepage_key=recovery_homepage_key,
