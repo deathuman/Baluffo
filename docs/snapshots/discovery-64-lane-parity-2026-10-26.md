@@ -1,4 +1,4 @@
-# 64 lanes has no measured board cost — the board diff was 429 weather — 2026-10-26
+# 64 lanes has no measured board cost and no measured host-rate cost — the board diff was 429 weather — 2026-10-26
 
 > - **Class:** measurement — answers residual **R4** of the P6 closeout; no shipped behaviour changes.
 > - **Trigger:** R4 recorded outcome parity as unproven from six pairs in which the 64-lane arm lost
@@ -19,9 +19,12 @@
 >   A pre-registered **429-free screen** then re-judged four traced counterbalanced pairs over only the
 >   boards whose hosts never answered **429** in either arm: every raw mover (**11 of 11**) is a 429, and
 >   the clean board sets are **identical in all four pairs** (107/107, 105/105, 106/106, 103/103, symdiff
->   **0**), so no board moves where throttling is excluded. What the screen cannot answer is whether 64
->   lanes raise a host's own 429 rate, because it removes throttled hosts by construction (§"429-free
->   screen").
+>   **0**), so no board moves where throttling is excluded. The separate question the screen cannot
+>   answer — whether 64 lanes raise a host's own 429 rate — is then measured by comparing each host with
+>   itself across the fresh study's four arms (§"Per-host rate"): the homepage order-cancelled delta is
+>   **−0.37 pp** (95% CI **[−0.94, +0.10]**, upper bound **+0.10 pp**, about 3 requests in 3,000) and
+>   the probe phase **−0.01 pp** with **0 of 541** hosts changing rate, so no host-level increase is
+>   measured there either.
 >   Timing reproduces across the four studies: the homepage phase is **1.39-1.96×** faster and whole-run
 >   wall **1.04-1.40×**.
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
@@ -38,8 +41,15 @@
 >   hosts never answered 429 in either arm. A fresh counterbalanced study
 >   (`_out/perf-runs/discovery/lane-parity-429free/`, 2026-10-26T22:10-22:30Z, same digest and CSV) and
 >   the two earlier traced pairs leave **0** clean board differences — all **11** raw movers are 429s —
->   so the board question closes on this population where throttling is absent; whether 64 lanes raise
->   a host's own 429 rate stays open. See §"429-free screen".
+>   so the board question closes on this population where throttling is absent. The rate question is
+>   read separately on the fresh study's four arms and closes with it (§"Per-host rate").
+> - **Per-host rate:** re-derived on 2026-10-27 from the fresh 429-free study's four arms, compared
+>   host with itself because its pair 1 ran 32 then 64 and its pair 2 ran 64 then 32. All **2,990**
+>   homepage hosts carry an identical URL set and request count in all four arms: the 64 − 32 delta is
+>   **+3.17 pp** when 64 ran second and **−3.90 pp** when 32 ran second, leaving **−0.37 pp** (95% CI
+>   **[−0.94, +0.10]**, upper bound **+0.10 pp**). The **541** common probe hosts are flat
+>   (**0 of 541** changed), with `apply.workable.com` at **100%** and the other three big APIs at **0%**
+>   in every arm. See §"Per-host rate".
 > - **Correction:** an earlier revision of this note read the Workable losses as zero-job or
 >   provider-inference outcomes. They are 429s. The artifact's probe-failure rows carry neither
 >   `studio` nor `url`, so the report's studio match found nothing and fell through to a *sibling*
@@ -49,7 +59,8 @@
 >   the pre-registered `RULE.md`, with the re-run beside it in
 >   `_out/perf-runs/discovery/lane-parity-fresh/`, the P6-shaped re-run in `lane-parity-p6shape/`, and
 >   the two traced pairs with their `trace.txt` in `lane-trace-smoke/` and `lane-trace-reverse/`, and
->   the 429-free screen study in `lane-parity-429free/`. Every `report.json` was regenerated with the
+>   the 429-free screen study in `lane-parity-429free/`, whose per-host rate read is preserved beside
+>   its traces as `rate_analysis.py` / `rate-analysis.txt`. Every `report.json` was regenerated with the
 >   corrected attribution and the screen read. The tool that reproduces them is
 >   [`tools/measurements/discovery/lane_parity.py`](../../tools/measurements/discovery/lane_parity.py).
 
@@ -280,14 +291,6 @@ pairs gain **91,355 → 51,914 ms** (1.76×) and **77,474 → 46,115 ms** (1.68�
 
 What this does **not** settle:
 
-- **Whether 64 lanes raise a host's own 429 rate.** The screen removes throttled hosts by construction,
-  so it cannot price them. The fresh trace reproduces the earlier order pattern: the arm that ran
-  **second** has the higher homepage 429 rate in both pairs (**2.2% → 5.3%** when 64 ran second;
-  **4.2% → 8.1%** when 32 ran second), so the 64 − 32 homepage gap changes sign between the pairs
-  (**+3.1 pp**, **−3.9 pp**) while the same 32-lane arm spans **2.2% → 8.1%** across runs. The probe
-  phase is flat (8.0% vs 8.0%; 7.5% vs 7.9%), `apply.workable.com` is 100% throttled in every arm's
-  probe, and the 429s again spread over **95-99%** of each fresh phase's span (**3-6 of ten bins**)
-  rather than forming one episode.
 - **Power.** The clean sets are **~100 boards per arm**; an effect below one board is invisible, and
   the excluded hosts are, by construction, the ones that throttled.
 - **P6's six pairs** remain unreadable, and this is one population on one day. The board question is
@@ -301,6 +304,59 @@ python tools/measurements/discovery/lane_parity.py report \
     --study _out/perf-runs/discovery/lane-parity-429free \
     --pairs p1:p1-32,p1-64 p2:p2-32,p2-64 --screen-429-free
 ```
+
+## Per-host rate: 64 lanes raise no host's own 429 rate
+
+The screen's open question was causal: does the wider arm provoke the throttling it is then blamed
+for? The fresh study's four arms answer it, because its pair 1 ran 32 then 64 and its pair 2 ran 64
+then 32. The homepage phase — the one `activeAuditHomepageFetchConcurrency` drives — is a clean
+paired sample: all **2,990** hosts appear in all four arms with an **identical URL set** and an
+**identical request count** (3,000 requests per arm). The probe phase has **541** hosts present in
+all four arms, including the four that carry about **80%** of its requests.
+
+| Arm (run position) | Homepage 429 / requests | Rate | 64 − 32 |
+|---|---:|---:|---:|
+| `p1-32` (1st) | 65 / 3,000 | 2.17% | — |
+| `p1-64` (2nd) | 160 / 3,000 | 5.33% | **+3.17 pp** |
+| `p2-64` (1st) | 127 / 3,000 | 4.23% | — |
+| `p2-32` (2nd) | 244 / 3,000 | 8.13% | **−3.90 pp** |
+
+The lane delta changes sign with position, so averaging the two pairs cancels the position effect:
+**−0.37 pp**, cluster-bootstrap 95% CI **[−0.94, +0.10]** over the 2,990 hosts, one-sided upper bound
+**+0.10 pp** — at most about **3 extra 429s per 3,000** homepage requests. Per host the order-cancelled
+deltas are **+110 / −137 / 2,743 zero** (two-sided sign test **p = 0.098**), and **43** hosts answer
+429 in all four arms; excluding those hard blocks the arms are **0.74 / 3.96 / 2.84 / 6.80%**, the
+same position pattern. The probe phase is exactly flat, in the same arm order as the homepage table:
+
+| Host | Requests per arm | 429s per arm | Rate |
+|---|---:|---:|---:|
+| `boards-api.greenhouse.io` | 1,092 / 1,091 / 1,091 / 1,089 | 0 / 0 / 0 / 0 | 0% |
+| `api.smartrecruiters.com` | 599 / 599 / 599 / 599 | 0 / 0 / 0 / 0 | 0% |
+| `api.lever.co` | 607 / 624 / 682 / 687 | 0 / 0 / 0 / 0 | 0% |
+| `apply.workable.com` | 228 / 230 / 232 / 234 | 228 / 230 / 232 / 234 | 100% |
+
+On the 541 common probe hosts the rates are **7.46 / 7.48 / 7.41 / 7.46%** in that order; order-cancelled
+**−0.01 pp** [−0.09, +0.01], and **0 of 541** hosts changed rate. The 56 probe hosts outside the
+common set carry **20 / 19 / 21 / 5** 429s but are asked in only some arms, so they cannot enter the
+four-arm paired read; no host-level sample has the wider arm throttling more.
+
+The recovery phase cannot answer the question and its aggregate rate is not one. Its 429s are
+**616 / 479 / 597 / 215 off the common host set** — mostly hosts that answer 6/6 whenever asked — so
+the **13.15 / 11.10 / 13.06 / 6.80%** phase totals measure which hard-blocked hosts each arm asked,
+not a rate. On the 1,982 hosts present in all four arms the counts are **79/4,452, 79/4,452,
+79/4,464, 113/4,552**; the +34 in `p2-32` is request depth: 26 hosts are asked 6 pages there against
+2 in the other arms (2 429s each, +52), offset by 3 hosts asked 6 elsewhere and 2 there (−18), and
+the deeper arm is the **32**-lane one.
+
+Why the null is expected: `perHostConcurrency` is pinned at **3** in every arm, and a homepage host
+has one URL, so the wider arm keeps more requests in flight across *different* hosts, not more
+against one host. The only measured driver is run position — the second arm of either pair is about
+**1.9-2.5×** likelier to see a host 429 — which is a time/warm-state effect, not a lane effect.
+
+Limits: one population on one day, one pair per order, and the trace records a successful page fetch
+as 200 after `raise_for_status` and a 429 exactly. The analysis is preserved beside the traces
+(`rate_analysis.py`, `rate-analysis.txt`) and re-derives every number above from the four
+`request-trace.jsonl` files on 2026-10-27; no new live traffic was sent.
 
 ## The attribution defect
 
@@ -339,8 +395,8 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   statement is that **no lane-driven board cost has been measured**, and that the board measure
   cannot separate a lane effect from host throttling at this population size. The 429-free screen
   (§"429-free screen") now does separate them: across four traced pairs **no board changes where no
-  host throttled**, so R4's board question is settled on this population, and what stays open is
-  whether the lane count raises a host's own 429 rate.
+  host throttled**, so R4's board question is settled on this population; the rate question is
+  measured in §"Per-host rate" and no host-level increase survives.
 - **The Workable core is host throttling, not a probe or inference difference.** The three boards are
   rejected with `429 Too Many Requests` from `apply.workable.com`; their pages read in both arms and
   their jobs are present whenever the probe is. The full-block arms are the two pair-1 64-lane arms,
@@ -359,9 +415,9 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   survives — the record keeps counts only (1-6 losses per pair, 6/6, p = 0.0312). If those losses were
   also 429s the 9-in-10 count disappears entirely, and this population cannot settle it. The P6 shape
   was re-run instead (above): it reproduces the direction with every mover a 429, but not P6's
-  identities. R4 stays open only for the rate question; its board comparison no longer waits on these
-  arms, because the screen settles it where throttling is absent. The rate question still needs a
-  measurement that holds hosts constant while lanes change, or the arms restored.
+  identities. R4's board and rate questions are both measured on this population: the screen settles
+  the first where throttling is absent, and the per-host read settles the second with the hosts held
+  fixed (§"Per-host rate"). What remains open is P6's six loss identities, whose arms are still absent.
 
 ## Reproducing the numbers
 
@@ -374,6 +430,14 @@ python tools/measurements/discovery/lane_parity.py study \
 python tools/measurements/discovery/lane_parity.py report \
     --study _out/perf-runs/discovery/lane-parity \
     --pairs p1:p1-32,p1-64 p2:p2-32,p2-64
+```
+
+The per-host rate read (§"Per-host rate") is an analysis over the same traces, preserved beside them
+because it is not part of the shipped report:
+
+```bash
+python _out/perf-runs/discovery/lane-parity-429free/rate_analysis.py \
+    _out/perf-runs/discovery/lane-parity-429free
 ```
 
 A re-run needs a fresh `--study` directory: an arm record is immutable, and `--force` is reserved for
