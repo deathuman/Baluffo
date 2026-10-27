@@ -24,7 +24,13 @@
 >   itself across the fresh study's four arms (§"Per-host rate"): the homepage order-cancelled delta is
 >   **−0.37 pp** (95% CI **[−0.94, +0.10]**, upper bound **+0.10 pp**, about 3 requests in 3,000) and
 >   the probe phase **−0.01 pp** with **0 of 541** hosts changing rate, so no host-level increase is
->   measured there either.
+>   measured there either. The 2026-10-27 acceptance pass then measured a **+2.42 pp** homepage rise on a
+>   fresh pair set, failed its gate, and left the config at 32
+>   ([acceptance snapshot](discovery-64-lane-acceptance-2026-10-27.md)). A pre-registered
+>   **8-quad** ABBA/BAAB re-read then measured **+0.37 pp** (95% CI **[−0.44, +1.17]**; **6/8**
+>   quads positive), so the acceptance pass's **+2.42 pp** is outside the interval and is attributed
+>   to weather, not a lane cost; the quad's same-lane drift reaches **+5.1 pp**. The **0.5 pp** question stays
+>   `inconclusive` (MDE ~**1.0 pp**). See [the quad snapshot](discovery-homepage-lane-rate-quad-2026-10-27.md).
 >   Timing reproduces across the four studies: the homepage phase is **1.39-1.96×** faster and whole-run
 >   wall **1.04-1.40×**.
 > - **Verified against:** `2f85d3db` (`main`), live GameDevMap CSV `896da851…` (1,884,186 chars,
@@ -50,6 +56,12 @@
 >   **[−0.94, +0.10]**, upper bound **+0.10 pp**). The **541** common probe hosts are flat
 >   (**0 of 541** changed), with `apply.workable.com` at **100%** and the other three big APIs at **0%**
 >   in every arm. See §"Per-host rate".
+> - **Quad re-read:** the 2026-10-27 acceptance pass's **+2.42 pp** is not reproduced. Eight
+>   pre-registered ABBA/BAAB quads on the same 1,000-row slice give **+0.37 pp** (95% CI
+>   **[−0.44, +1.17]**; host bootstrap **[+0.12, +0.64]**; **6/8** positive), and the within-quad
+>   same-lane drift reaches **+5.1 pp**. The pre-registered verdict is `inconclusive-at-0.5pp`: a
+>   **+2.4 pp** lane cost is excluded, a **+0.5 pp** one is not. See
+>   [the quad snapshot](discovery-homepage-lane-rate-quad-2026-10-27.md).
 > - **Correction:** an earlier revision of this note read the Workable losses as zero-job or
 >   provider-inference outcomes. They are 429s. The artifact's probe-failure rows carry neither
 >   `studio` nor `url`, so the report's studio match found nothing and fell through to a *sibling*
@@ -358,6 +370,14 @@ as 200 after `raise_for_status` and a 429 exactly. The analysis is preserved bes
 (`rate_analysis.py`, `rate-analysis.txt`) and re-derives every number above from the four
 `request-trace.jsonl` files on 2026-10-27; no new live traffic was sent.
 
+**Quad re-read (2026-10-27).** Four arms leave one degree of freedom for the lane effect and none
+for the position term; the **+3.17 / −3.90 pp** split above is the position term showing itself. An
+eight-quad ABBA/BAAB study on the same population then estimated both at once: **+0.37 pp**
+**[−0.44, +1.17]** for lanes, with same-lane drift up to **+5.1 pp**. That brackets this section's
+**−0.37 pp** and excludes the acceptance pass's **+2.42 pp**, so the rate question is no longer a
+reason to keep 32; the page/board gate remains the open check. See
+[the quad snapshot](discovery-homepage-lane-rate-quad-2026-10-27.md).
+
 ## The attribution defect
 
 `rejectedForActivation` rows for probe failures are built from the candidate (`src/source_discovery/
@@ -396,7 +416,9 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   cannot separate a lane effect from host throttling at this population size. The 429-free screen
   (§"429-free screen") now does separate them: across four traced pairs **no board changes where no
   host throttled**, so R4's board question is settled on this population; the rate question is
-  measured in §"Per-host rate" and no host-level increase survives.
+  measured in §"Per-host rate" and no host-level increase survives **on that study**. The separate
+  2026-10-27 acceptance pass measured **+2.42 pp** and failed its gate, so the config change is not
+  supported ([acceptance snapshot](discovery-64-lane-acceptance-2026-10-27.md)).
 - **The Workable core is host throttling, not a probe or inference difference.** The three boards are
   rejected with `429 Too Many Requests` from `apply.workable.com`; their pages read in both arms and
   their jobs are present whenever the probe is. The full-block arms are the two pair-1 64-lane arms,
@@ -418,6 +440,16 @@ their own zero. Regenerating both `report.json` files is what turned 23 attribut
   identities. R4's board and rate questions are both measured on this population: the screen settles
   the first where throttling is absent, and the per-host read settles the second with the hosts held
   fixed (§"Per-host rate"). What remains open is P6's six loss identities, whose arms are still absent.
+
+## Acceptance pass (2026-10-27)
+
+The plan's step 5 gate was run on `f60de72e` after this study: two counterbalanced pairs over the same
+3,000 rows. It **fails**. Pair 2's homepage gain (**19.7 s**) is inside the 32-lane spread (**22.1 s**)
+and its whole-run gain is **3.1 s** against **51.8 s**; 64 fetched **96** and **34** fewer pages as
+homepage 429s rose **105** and **40**; and the per-host, order-cancelled homepage rate is **+2.42 pp**
+(95% CI **[+1.80, +2.98]**, **+127/−35** hosts). The 2026-10-26 board and rate reads above remain the
+evidence for that study; the 64-lane config change is not supported and 32 stays. Detail, arm records
+and traces: [acceptance snapshot](discovery-64-lane-acceptance-2026-10-27.md).
 
 ## Reproducing the numbers
 
