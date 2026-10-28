@@ -584,3 +584,23 @@ covered the same shape on the browser path.
   no rows on the fixture.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis host-normalization memo (2026-10-28)
+
+`normalized_host` is memoized on the text it produces: the transform moves into a bounded
+`lru_cache` and the public function keeps the exact conversion it had for every non-`str` value.
+The URL-inference memo was measured and refused (0.8% repeat rate), so it contributes no lines.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 191672 | 191688 | +16 |
+| `tests` | 264926 | 264969 | +43 |
+
+- `src` +16: the cache function, its bound and the public function's conversion, plus the comment
+  recording the measured price (27.2 ns a call, 0.79 s over 29.19M calls, 29.2M hits / 28.2k misses
+  on the corpus) and why the cache is bounded and keyed on the produced text.
+- `tests` +43: `test_url_hosts.py` gains the input table the memo must reproduce exactly (hosts,
+  patterns, empty, `None`, falsy non-strings, numbers, bytes, a tuple), the cache-hit pin that could
+  not exist before the memo, and the bound pin that keeps a long-lived process from growing it.
+
+All other areas unchanged; exact measured values, no spare headroom.
