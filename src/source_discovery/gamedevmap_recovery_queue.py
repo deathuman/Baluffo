@@ -92,6 +92,10 @@ def _no_careers_reason_detail(
         social_profile_hosts=SOCIAL_PROFILE_HOSTS,
         third_party_profile_hosts=THIRD_PARTY_PROFILE_HOSTS,
         jobish_url_fn=lambda url, _body: links.jobish(url),
+        # The index already lowercased this body for the static builder; the js-shell test would
+        # lower it a second time otherwise. `page_links_for` guarantees the body identity, so this
+        # is the same string the test would have produced.
+        lowered=links.lowered(),
         include_noscript_script_shell=True,
     )
 

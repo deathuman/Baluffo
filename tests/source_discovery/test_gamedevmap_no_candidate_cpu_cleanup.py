@@ -389,6 +389,47 @@ def test_audit_candidate_page_yields_its_provider_candidate_and_skips_the_handle
     assert details == [], "a candidate page should not compute the no-careers detail at all"
 
 
+# --- the lowered-body hand-off (the js-shell test's second `str.lower()`) -----------------------
+
+
+def test_audit_hands_the_js_shell_test_the_page_index_s_own_lowered_body(monkeypatch) -> None:
+    """The reason detail passes `PageLinks.lowered()` down instead of letting the js-shell test
+    lowercase the same body a second time, and the bucket it produces is unchanged."""
+    captured: list[tuple[str, str | None]] = []
+    real = rq.shared_no_candidate_reason_detail
+
+    def _capture(page_url: str, html: str, **kwargs: Any) -> str:
+        captured.append((page_url, kwargs.get("lowered")))
+        return real(page_url, html, **kwargs)
+
+    monkeypatch.setattr(rq, "shared_no_candidate_reason_detail", _capture)
+
+    _provider, _static, _rejected, primary, _secondary, _browser, _fetched = _audit_batch(
+        NO_CANDIDATE_HTML
+    )
+
+    assert captured == [(AUDIT_ROW["url"], NO_CANDIDATE_HTML.lower())]
+    assert {job["payload"]["homepageReasonDetail"] for job in primary} == {"no_jobish_links"}
+
+
+def test_audit_lowered_hand_off_still_buckets_a_js_shell_as_js_shell(monkeypatch) -> None:
+    captured: list[tuple[str, str | None]] = []
+    real = rq.shared_no_candidate_reason_detail
+
+    def _capture(page_url: str, html: str, **kwargs: Any) -> str:
+        captured.append((page_url, kwargs.get("lowered")))
+        return real(page_url, html, **kwargs)
+
+    monkeypatch.setattr(rq, "shared_no_candidate_reason_detail", _capture)
+
+    _provider, _static, _rejected, _primary, _secondary, browser, _fetched = _audit_batch(
+        JS_SHELL_HTML
+    )
+
+    assert captured == [(AUDIT_ROW["url"], JS_SHELL_HTML.lower())]
+    assert len(browser) == 1 and browser[0]["reasonDetail"] == "js_shell"
+
+
 def test_audit_skipped_queue_pass_returns_no_rows_on_this_page() -> None:
     """The invariant the skip rests on, checked directly: run the queue's own pass against the
     same html and studio and it contributes no rows."""

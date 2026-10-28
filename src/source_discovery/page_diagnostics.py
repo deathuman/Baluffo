@@ -21,11 +21,20 @@ def _host_in(host_value: str, hosts: set[str]) -> bool:
 def looks_like_js_shell(
     html: str,
     *,
+    lowered: str | None = None,
     short_html_threshold: int = 500,
     include_noscript_script_shell: bool = False,
 ) -> bool:
+    """Whether this body is a client-rendered shell.
+
+    `lowered` is the same body already lowercased by its page index (`PageLinks.lowered()`), which
+    the no-candidate path has in hand: the homepage-analysis phase pays a full-body `str.lower()`
+    here for every page otherwise, and it is the same string. Output is identical by construction —
+    lowercasing does not change length or whitespace, so `text.strip()` and every substring test
+    read the same characters either way. Passing a different body's text would be a caller bug.
+    """
     text = str(html or "")
-    lowered = text.lower()
+    lowered = lowered if lowered is not None else text.lower()
     if len(text.strip()) < int(short_html_threshold) and "<script" in lowered:
         return True
     if ("<script" in lowered) and (
@@ -50,6 +59,7 @@ def no_candidate_reason_detail(
     third_party_profile_hosts: set[str] | None = None,
     profile_hosts: set[str] | None = None,
     jobish_url_fn: Callable[[str, str], list[str]],
+    lowered: str | None = None,
     short_html_threshold: int = 500,
     include_noscript_script_shell: bool = False,
 ) -> str:
@@ -62,6 +72,7 @@ def no_candidate_reason_detail(
         return "profile_host"
     if looks_like_js_shell(
         html,
+        lowered=lowered,
         short_html_threshold=short_html_threshold,
         include_noscript_script_shell=include_noscript_script_shell,
     ):
