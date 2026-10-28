@@ -15,6 +15,10 @@
 >   series whose phase replay is sharper than its own effect (CPU agrees: **+32.45 / +36.55 s**
 >   against **2.05 / 2.05 s**). All four runs reproduce the reference counts batch by batch *and*
 >   per-collection content digests exactly, and every warm repeat matches its own first pass.
+>   A live full-population pair confirms it in the worker: **87.69 / 86.91 → 64.95 / 62.89 s**
+>   (**+22.74 s** wall, **+24.02 s** CPU), both arms 9/9 child with 0 fallbacks on the same
+>   **8,370**-row population, digest `66165df36a10c023` and CSV — at the lower edge of the
+>   pre-registered band, and recorded as a confirmation rather than as new evidence.
 > - **Verified against:** `c8f03fa2` in a clean worktree (`.tmp/link-index/before-tree`) and this
 >   tree, over the captured production arm of 2026-10-27, 2026-10-28.
 > - **Then inspect:** `_out/perf-runs/discovery/homepage-analysis-link-index-20261028/` —
@@ -135,6 +139,32 @@ Saving **3.85 s a batch-1 lifecycle** (**37.1%**), **3.8×** the largest single-
 (**1.01 s**); the implied phase price, at eight full batches plus 370/1,000, is **32.2 s** — within
 **1.7 s** of the replay's smaller pair, from an instrument that never loads the whole phase.
 
+## The live confirmation
+
+One live arm per build at production settings (`--lanes 32 --batches 0 --batch-size 1000 --timeout
+6 --no-trace`), before first, each launched from its own checkout so the harness imports that tree,
+with the arm's own `BALUFFO_DATA_DIR`:
+
+| Reading | `c8f03fa2` | indexed | Delta |
+| --- | ---: | ---: | ---: |
+| Worker wall | 87.69 s | 64.95 s | **+22.74 s** |
+| Worker CPU | 86.91 s | 62.89 s | **+24.02 s** |
+| Arm wall (information only) | 654.8 s | 613.5 s | +41.3 s |
+| Parent hand-off | 1.55 s / 1,053 MB | 1.56 s / 1,049 MB | flat |
+
+Both arms report population **8,370**, digest `66165df36a10c023`, `remainingUrls` 0 and the same
+CSV sha256; both are `mode: child` with **9/9** batches offloaded and **0** fallbacks. The CPU pair
+sits **8.4 s below** the replay's smaller CPU pair (**32.45 s**) and inside the
+pre-registration's **±10 s** band (**22.6-46.9 s**) — **at its lower edge, not comfortably inside**, which is the honest reading: the live page set is not
+the captured one, and per-batch CPU deltas range from **0.09 s** (batch 2, effectively flat) to
+**4.80 s** (batch 4), with eight of nine directions favouring the index.
+
+Counts differ as two live arms always do — homepages fetched **7,453 → 7,417**, provider candidates
+**7,322 → 7,292**, static **1,733 → 1,725**, zero-job **3,193 → 3,184**, failures **12,310 → 12,038**,
+recovery pages **2,274 → 2,278** — and boards are **345 / 345** with four lost and four gained, both
+lists named in the study's `report.txt`. That is a bound on the pair, not a parity claim: parity is
+the replay's reading on fixed inputs, above.
+
 ## Where this leaves the homepage-analysis cost
 
 The phase's three output-identical cuts now stand at **−19.9 s** (queue's provider pass), **−7.8 s**
@@ -159,4 +189,7 @@ here), and body size: the largest decile is still half the phase. The next cut h
   `PageLinks` view against the public extractor it replaces, plus the batch-scan oracle that pins one
   href scan for a whole no-candidate page.
 * Production runs the phase in a child worker, so this saving is worker headroom (and, through the
-  worker, arm wall) rather than a direct parent-side number.
+  worker, arm wall) rather than a direct parent-side number. The live pair prices exactly that, and
+  lands below the replay's per-batch price because its bodies are a different fetch.
+* The live pair is one order and one session; its page sets differ by 0.5% of homepages, which is
+  why it is a confirmation of direction and rough size, not a second effect measurement.
