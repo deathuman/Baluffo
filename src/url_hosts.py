@@ -23,6 +23,27 @@ def normalized_host(value: object) -> str:
     return _normalized_host_text(value if isinstance(value, str) else str(value or ""))
 
 
+def host_matches_normalized_domain(host_text: str, domain_text: str) -> bool:
+    """`host_matches_domain` for a host and domain that are already normalized.
+
+    The provider-admission walk re-asked the same question for the same host once per domain
+    pattern; this is the same comparison without the normalization, so the walk normalizes its
+    host once instead of once per pattern.
+    """
+    domain = domain_text.removeprefix(".")
+    return bool(host_text and domain and (host_text == domain or host_text.endswith(f".{domain}")))
+
+
+def host_matches_normalized_pattern(host_text: str, pattern_text: str) -> bool:
+    """`host_matches_domain_pattern` for a host and pattern that are already normalized."""
+    if pattern_text.startswith("."):
+        domain = pattern_text.removeprefix(".")
+        return bool(
+            host_text and domain and host_text != domain and host_text.endswith(f".{domain}")
+        )
+    return host_matches_normalized_domain(host_text, pattern_text)
+
+
 def host_matches_domain(host: object, domain: object) -> bool:
     normalized = normalized_host(host)
     normalized_domain = normalized_host(domain).removeprefix(".")
@@ -49,12 +70,6 @@ def host_matches_domain_pattern(host: object, pattern: object) -> bool:
     if text.startswith("."):
         return host_matches_subdomain(host, text)
     return host_matches_domain(host, text)
-
-
-def host_matches_any_domain_pattern(host: object, patterns: object) -> bool:
-    if not isinstance(patterns, (list, tuple, set, frozenset)):
-        return False
-    return any(host_matches_domain_pattern(host, pattern) for pattern in patterns)
 
 
 def url_host(url: object) -> str:

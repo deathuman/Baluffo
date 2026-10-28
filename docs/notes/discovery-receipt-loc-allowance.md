@@ -604,3 +604,30 @@ The URL-inference memo was measured and refused (0.8% repeat rate), so it contri
   not exist before the memo, and the bound pin that keeps a long-lived process from growing it.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis provider-walk host hoist (2026-10-28)
+
+`infer_provider_adapter` normalizes the host once per admission and compares pre-normalized
+pattern text, instead of re-normalizing the same host once per pattern through the memo. The
+normalizing helpers stay and delegate to two new text-level leaf functions, so every other caller
+keeps its behaviour; the helper the walk no longer uses is deleted.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 191688 | 191720 | +32 |
+| `tests` | 264969 | 265048 | +79 |
+
+- `src` +32: `url_hosts` gains `host_matches_normalized_domain` and
+  `host_matches_normalized_pattern`, whose docstrings say which duplicate work they remove, and the
+  four normalizing helpers delegate to them; `provider_inference` gains the pattern table
+  normalized once at import, normalizes the host once in the walk (with the comment recording the
+  52 calls per admission, the recorded 629,560-admission population and the measured 3.28 s
+  against the memo's 0.79 s), and normalizes in `_oracle_hcm_candidate` so a
+  builder that used to go through the normalizing helper keeps the same answer; the unused
+  `host_matches_any_domain_pattern` wrapper is removed (-6).
+- `tests` +79: `test_url_hosts.py` gains the host/pattern tables that pin both text-level
+  helpers against the normalizing ones they replace; `test_provider_inference.py` gains the walk
+  table over real provider hosts, comparing `infer_provider_adapter` row by row against the generic
+  per-pattern helper and asserting non-matches stay `None`.
+
+All other areas unchanged; exact measured values, no spare headroom.

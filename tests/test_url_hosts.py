@@ -2,6 +2,8 @@ from src import url_hosts
 from src.url_hosts import (
     host_matches_domain,
     host_matches_domain_pattern,
+    host_matches_normalized_domain,
+    host_matches_normalized_pattern,
     host_matches_subdomain,
     normalized_host,
     url_host_matches_domain,
@@ -53,6 +55,37 @@ def test_normalized_host_matches_the_transform_it_memoizes() -> None:
     """The memo returns exactly what the uncached expression returns, for every input shape."""
     for value in _NORMALIZED_HOST_VALUES:
         assert normalized_host(value) == str(value or "").strip().lower().rstrip("."), value
+
+
+# Hosts and patterns the provider walk holds, including bare-domain and leading-dot patterns and
+# the near-misses the boundary rule exists for.
+_PATTERN_CASES = (
+    ("jobs.greenhouse.io", "boards.greenhouse.io"),
+    ("boards.greenhouse.io", "boards.greenhouse.io"),
+    ("boards.greenhouse.io", ".greenhouse.io"),
+    ("greenhouse.io", ".greenhouse.io"),
+    ("evilgreenhouse.io", ".greenhouse.io"),
+    ("apply.workable.com", "apply.workable.com"),
+    ("studio.recruitee.com", ".recruitee.com"),
+    ("", ".recruitee.com"),
+    ("example.com", ""),
+)
+
+
+def test_normalized_domain_matches_the_normalizing_helper() -> None:
+    """The text-level match answers exactly what `host_matches_domain` answers."""
+    for host, domain in _PATTERN_CASES:
+        assert host_matches_normalized_domain(normalized_host(host), normalized_host(domain)) == (
+            host_matches_domain(host, domain)
+        ), (host, domain)
+
+
+def test_normalized_pattern_matches_the_normalizing_helper() -> None:
+    """The text-level pattern match answers exactly what `host_matches_domain_pattern` answers."""
+    for host, pattern in _PATTERN_CASES:
+        assert host_matches_normalized_pattern(normalized_host(host), normalized_host(pattern)) == (
+            host_matches_domain_pattern(host, pattern)
+        ), (host, pattern)
 
 
 def test_normalized_host_serves_a_repeat_from_its_cache() -> None:

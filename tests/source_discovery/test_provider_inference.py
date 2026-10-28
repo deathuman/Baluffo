@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.source_discovery import provider_inference
+from src.url_hosts import host_matches_domain_pattern, normalized_host
 
 
 @pytest.mark.parametrize(
@@ -139,6 +140,51 @@ def test_shared_provider_inference_builds_oracle_hcm_identity_shape() -> None:
     assert row["listing_url"] == url
     assert row["base_url"] == "https://fa-exhj-saasfaprod1.fa.ocs.oraclecloud.com"
     assert row["site_path"] == "/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
+
+
+def test_adapter_walk_reads_a_normalized_copy_of_the_pattern_table() -> None:
+    """The walk's table is the shipped one, normalized once, and nothing else."""
+    expected = tuple(
+        (adapter, tuple(normalized_host(pattern) for pattern in patterns))
+        for adapter, patterns in provider_inference._HOST_DOMAIN_PATTERNS
+    )
+    assert provider_inference._NORMALIZED_HOST_DOMAIN_PATTERNS == expected
+
+
+@pytest.mark.parametrize(
+    ("host", "adapter"),
+    [
+        ("boards.greenhouse.io", "greenhouse"),
+        ("boards-api.greenhouse.io", "greenhouse"),
+        ("jobs.ashbyhq.com", "ashby"),
+        ("beamdog.bamboohr.com", "bamboohr"),
+        ("bamboohr.com", "bamboohr"),
+        ("yallaplay.breezy.hr", "breezy"),
+        ("lostboysinteractive.applytojob.com", "jazzhr"),
+        ("example.recruitee.com", "recruitee"),
+        ("example.pinpointhq.com", "pinpoint"),
+        ("apply.workable.com", "workable"),
+        ("jagex-limited.workable.com", "workable"),
+        ("example.teamtailor.com", "teamtailor"),
+        ("app.dover.com", "dover"),
+        ("example.jobs.personio.de", "personio"),
+        ("tencent.wd1.myworkdayjobs.com", "workday"),
+        ("breezy.hr", None),
+        ("www.example.com", None),
+    ],
+)
+def test_adapter_walk_agrees_with_the_domain_pattern_table(host: str, adapter: str | None) -> None:
+    """Every table row resolves as the generic per-pattern helper would, and non-matches stay None."""
+    expected = next(
+        (
+            name
+            for name, patterns in provider_inference._HOST_DOMAIN_PATTERNS
+            if any(host_matches_domain_pattern(host, pattern) for pattern in patterns)
+        ),
+        None,
+    )
+    assert adapter == expected, (host, adapter)
+    assert provider_inference.infer_provider_adapter(host, "") == adapter
 
 
 def test_shared_provider_inference_preserves_workable_hyphenated_account() -> None:

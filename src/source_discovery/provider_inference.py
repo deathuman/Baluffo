@@ -6,7 +6,12 @@ from urllib.parse import ParseResult, urlparse
 
 from src.ashby_board_urls import ashby_posting_api_url
 from src.dover_board_urls import DOVER_HOST, dover_board_slug, dover_slug_api_url
-from src.url_hosts import host_matches_any_domain_pattern, host_matches_domain
+from src.url_hosts import (
+    host_matches_domain,
+    host_matches_normalized_domain,
+    host_matches_normalized_pattern,
+    normalized_host,
+)
 
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
 
@@ -45,9 +50,20 @@ _HOST_DOMAIN_PATTERNS = (
     ("workday", (".myworkdayjobs.com",)),
 )
 
+# The same table with each pattern normalized once at import: `infer_provider_adapter` runs on every
+# embedded link of every page (629,560 admissions on one recorded phase, twelve rows holding
+# eighteen patterns in all), and normalizing the host per pattern made `normalized_host` the hottest
+# leaf. The walk now normalizes the host once per admission and compares text: on that recorded
+# population it falls 6.00 -> 2.72 s, against the 0.79 s the memo saved
+# (`_out/perf-runs/discovery/host-hoist-20261028/`).
+_NORMALIZED_HOST_DOMAIN_PATTERNS = tuple(
+    (adapter, tuple(normalized_host(pattern) for pattern in patterns))
+    for adapter, patterns in _HOST_DOMAIN_PATTERNS
+)
 
-def _is_oraclecloud_host(host: str) -> bool:
-    return host_matches_domain(host, "oraclecloud.com")
+
+def _is_oraclecloud_host(host_text: str) -> bool:
+    return host_matches_normalized_domain(host_text, "oraclecloud.com")
 
 
 def _is_oracle_hcm_candidate_path(path: str) -> bool:
@@ -80,13 +96,14 @@ def _html_matches_any_provider(html: str) -> str | None:
 
 
 def infer_provider_adapter(host: str, path: str, html: str | None = None) -> str | None:
-    if _is_oraclecloud_host(host) and _is_oracle_hcm_candidate_path(path):
+    host_text = normalized_host(host)
+    if _is_oraclecloud_host(host_text) and _is_oracle_hcm_candidate_path(path):
         return "oracle_hcm"
-    for adapter, patterns in _HOST_DOMAIN_PATTERNS:
-        if host_matches_any_domain_pattern(host, patterns):
+    for adapter, patterns in _NORMALIZED_HOST_DOMAIN_PATTERNS:
+        if any(host_matches_normalized_pattern(host_text, pattern) for pattern in patterns):
             return adapter
     if (host == "api.lever.co" and "/v0/postings/" in path) or (
-        host_matches_domain(host, "lever.co") and host != "api.lever.co"
+        host_matches_normalized_domain(host_text, "lever.co") and host != "api.lever.co"
     ):
         return "lever"
     if (host == "api.smartrecruiters.com" and "/companies/" in path) or (
@@ -390,7 +407,7 @@ def _oracle_hcm_candidate(
     path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    if not _is_oraclecloud_host(host) or not _is_oracle_hcm_candidate_path(path):
+    if not _is_oraclecloud_host(normalized_host(host)) or not _is_oracle_hcm_candidate_path(path):
         return None
     scheme = parsed.scheme or "https"
     base_url = f"{scheme}://{host}"
