@@ -541,6 +541,20 @@ _HTTP_STATUS_RES = (
 )
 
 
+def parse_probe_status(text: str) -> int | None:
+    """The HTTP status a probe failure's text names, or None when it names none.
+
+    Public because a probe result outlives its exception: the audit's durable known-dead memo reads
+    statuses back from the rejection text it stored, and must classify them by the same rule this
+    module uses live.
+    """
+    for pattern in _HTTP_STATUS_RES:
+        match = pattern.search(str(text or ""))
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def probe_http_status(exc: BaseException) -> int | None:
     """The HTTP status behind a probe failure, from whichever client raised it."""
     response = getattr(exc, "response", None)
@@ -550,12 +564,7 @@ def probe_http_status(exc: BaseException) -> int | None:
     code = getattr(exc, "code", None)
     if isinstance(code, int):
         return code
-    text = str(exc)
-    for pattern in _HTTP_STATUS_RES:
-        match = pattern.search(text)
-        if match:
-            return int(match.group(1))
-    return None
+    return parse_probe_status(str(exc))
 
 
 def is_definitive_not_found(exc: BaseException) -> bool:

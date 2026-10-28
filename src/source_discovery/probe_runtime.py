@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -68,6 +70,25 @@ class ProbeClassification:
 
 def candidate_id(candidate: dict[str, Any]) -> str:
     return str(source_identity(candidate) or "").strip()
+
+
+def _env_int_or_zero(name: str) -> int:
+    """Read an optional non-negative env integer; unset or invalid means 0 (off)."""
+    raw = str(os.getenv(name) or "").strip()
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        return 0
+
+
+def probe_circuit_breaker_timeouts() -> int:
+    """Timeouts on one host in one wave before the rest of that host's wave is skipped.
+
+    0 (the default) disables the breaker, so the shipped audit's probe is unchanged. A wave is one
+    `run_bounded_probe_batch_async` call, i.e. one audit batch: a host that had a rough batch is
+    retried in the next one rather than parked for the run.
+    """
+    return _env_int_or_zero("BALUFFO_DISCOVERY_PROBE_CIRCUIT_BREAKER_TIMEOUTS")
 
 
 def candidate_with_probe_evidence(
@@ -347,6 +368,9 @@ async def run_bounded_probe_batch_async(
 ) -> list[ProbeResult]:
     probe_options = dict(probe_kwargs or {})
     limits = probe_concurrency_defaults()
+    breaker_after = probe_circuit_breaker_timeouts()
+    host_timeouts: dict[str, int] = {}
+    open_hosts: set[str] = set()
     total_sem = asyncio.Semaphore(int(limits["total"]))
     bucket_sems = {
         "static": asyncio.Semaphore(int(limits["static"])),
@@ -416,6 +440,11 @@ async def run_bounded_probe_batch_async(
         # batcher, where the same loophole parked a GameDevMap batch for 900 s). Every path is
         # wrapped this way, the default HTTP client included.
         budget = max(1.0, float(call_timeout_s))
+        host = urlparse(str(url or "")).netloc.strip().lower()
+        if host and host in open_hosts:
+            raise TimeoutError(
+                f"host circuit open after {host_timeouts.get(host, 0)} timeouts: {host}"
+            )
 
         def sync_fetch() -> str:
             through_client = fetcher is default_fetcher
@@ -450,6 +479,11 @@ async def run_bounded_probe_batch_async(
         except TimeoutError as exc:
             # The await is over; the thread behind it is not -- this is the count the batch's own
             # deadline walks away from, and the reason a client close has to wait.
+            if breaker_after and host:
+                timeout_count = host_timeouts.get(host, 0) + 1
+                host_timeouts[host] = timeout_count
+                if timeout_count >= breaker_after:
+                    open_hosts.add(host)
             if lifecycle is not None:
                 lifecycle.note_fetch_bounded_out()
             # say why: asyncio's own TimeoutError stringifies to "", and an empty error is a
