@@ -667,6 +667,13 @@ def _extract_candidates_from_homepages(
     def _handle_no_candidate(
         row: dict[str, Any], target_url: str, html: str
     ) -> active_audit_runtime.NoCandidateOutcome:
+        # This handler is only reached when the page outcome found no candidates, and
+        # `classify_fetched_page` reports that only after `analyze_fetched_page` ran this same
+        # provider inference on this same html and studio and returned no rows (its provider rows
+        # pass through unfiltered). The queue's own pass would re-run it to find nothing again —
+        # measured on a production arm at 5,874 calls / 15.3 s, 0 of them non-empty — and it
+        # computed this same reason detail a second time (8.5 s beside this call's 8.6 s). So the
+        # detail is computed once here and handed down, and the queue is told its pass is covered.
         detail = _no_careers_reason_detail(target_url, html)
         provider_candidates: list[dict[str, Any]] = []
         primary_recovery_jobs: list[dict[str, Any]] = []
@@ -681,6 +688,8 @@ def _extract_candidates_from_homepages(
             primary_recovery_jobs=primary_recovery_jobs,
             secondary_recovery_jobs=secondary_recovery_jobs,
             browser_recovery_candidates=browser_recovery_candidates,
+            reason_detail=detail,
+            provider_pass_done=True,
         )
         rejected_rows: list[dict[str, Any]] = []
         if not queued:

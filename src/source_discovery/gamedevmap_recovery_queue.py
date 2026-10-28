@@ -160,9 +160,20 @@ def _queue_no_careers_recovery(
     primary_recovery_jobs: list[dict[str, Any]],
     secondary_recovery_jobs: list[dict[str, Any]],
     browser_recovery_candidates: list[dict[str, Any]],
+    reason_detail: str | None = None,
+    provider_pass_done: bool = False,
 ) -> bool:
+    """Queue one no-candidate page, reusing work the caller already did.
+
+    `reason_detail` is the caller's own `_no_careers_reason_detail(target_url, html)` when it holds
+    one, so the deterministic call is not repeated; `provider_pass_done` states that the caller's
+    page outcome already ran this same provider inference on this same html and studio and found
+    nothing, which leaves this function's own pass nothing to add and skips it.
+    """
     studio = str(row.get("studio") or "").strip()
-    detail = _no_careers_reason_detail(target_url, html)
+    detail = (
+        reason_detail if reason_detail is not None else _no_careers_reason_detail(target_url, html)
+    )
     if detail == "js_shell":
         browser_recovery_candidates.append(
             browser_recovery_helpers.browser_recovery_candidate_row(
@@ -174,13 +185,15 @@ def _queue_no_careers_recovery(
                 reason_detail=detail,
             )
         )
-    row_provider_candidates = _provider_candidates_from_html_text(
-        row=row,
-        page_url=target_url,
-        html=html,
-        index_url=index_url,
-    )
-    provider_candidates.extend(row_provider_candidates)
+    row_provider_candidates: list[dict[str, Any]] = []
+    if not provider_pass_done:
+        row_provider_candidates = _provider_candidates_from_html_text(
+            row=row,
+            page_url=target_url,
+            html=html,
+            index_url=index_url,
+        )
+        provider_candidates.extend(row_provider_candidates)
     primary_jobs, secondary_jobs = directory_recovery_helpers.plan_recovery_fetch_job_waves(
         page_url=target_url,
         html=html,

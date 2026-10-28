@@ -559,3 +559,28 @@ tests.
   suites cast their stand-in transport and results at the boundary the real types define.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis no-candidate redundancy cuts (2026-10-28)
+
+The audit's no-candidate handler stops re-running the provider inference its page outcome already
+ran and stops computing the no-careers reason detail a second time; the queue takes both as inputs
+from the caller that has them, and the tests pin the skipped work with an oracle file that already
+covered the same shape on the browser path.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 191650 | 191672 | +22 |
+| `tests` | 264746 | 264926 | +180 |
+
+- `src` +22: `gamedevmap_recovery_queue._queue_no_careers_recovery` takes `reason_detail` and
+  `provider_pass_done`, with the docstring that says what each caller guarantees, and
+  `gamedevmap_active_dry_run._handle_no_candidate` computes the detail once, hands it down, and
+  records the removed work it was measured to cost (5,874 second passes / 15.3 s, 8.5 s of duplicate
+  detail per production arm).
+- `tests` +180: `test_gamedevmap_no_candidate_cpu_cleanup.py` gains the audit-path section — one
+  inference and one detail per no-candidate page, the output-parity check that forces the old
+  behaviour back on and compares all seven outputs, the js_shell branch still firing through the
+  handed-down value, a candidate page that never reaches the handler, and the skipped pass returning
+  no rows on the fixture.
+
+All other areas unchanged; exact measured values, no spare headroom.
