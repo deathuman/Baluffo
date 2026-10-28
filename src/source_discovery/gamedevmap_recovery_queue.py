@@ -24,12 +24,10 @@ from .gamedevmap import _apply_gamedevmap_provenance
 from .gamedevmap_rejection import _rejection
 from .io_runtime import endpoint_url
 from .page_diagnostics import no_candidate_reason_detail as shared_no_candidate_reason_detail
+from .page_links import PageLinks, page_links_for
 from .probe_runtime import probe_candidates_async as shared_probe_candidates_async
 from .provider_inference_filters import split_bad_provider_inferences
-from .web_search import (
-    extract_jobish_links,
-    infer_provider_candidates_from_html,
-)
+from .web_search import infer_provider_candidates_from_html
 
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
 
@@ -81,13 +79,19 @@ def _host_in(host: str, blocked_hosts: set[str]) -> bool:
     return recovery_url_planner.host_in(host, blocked_hosts)
 
 
-def _no_careers_reason_detail(page_url: str, html: str) -> str:
+def _no_careers_reason_detail(
+    page_url: str,
+    html: str,
+    *,
+    page_links: PageLinks | None = None,
+) -> str:
+    links = page_links_for(html, page_links)
     return shared_no_candidate_reason_detail(
         page_url,
         html,
         social_profile_hosts=SOCIAL_PROFILE_HOSTS,
         third_party_profile_hosts=THIRD_PARTY_PROFILE_HOSTS,
-        jobish_url_fn=lambda url, body: extract_jobish_links(body, url),
+        jobish_url_fn=lambda url, _body: links.jobish(url),
         include_noscript_script_shell=True,
     )
 
@@ -162,6 +166,7 @@ def _queue_no_careers_recovery(
     browser_recovery_candidates: list[dict[str, Any]],
     reason_detail: str | None = None,
     provider_pass_done: bool = False,
+    page_links: PageLinks | None = None,
 ) -> bool:
     """Queue one no-candidate page, reusing work the caller already did.
 
@@ -172,7 +177,9 @@ def _queue_no_careers_recovery(
     """
     studio = str(row.get("studio") or "").strip()
     detail = (
-        reason_detail if reason_detail is not None else _no_careers_reason_detail(target_url, html)
+        reason_detail
+        if reason_detail is not None
+        else _no_careers_reason_detail(target_url, html, page_links=page_links)
     )
     if detail == "js_shell":
         browser_recovery_candidates.append(
@@ -210,7 +217,11 @@ def _queue_no_careers_recovery(
         adapter="gamedevmap",
         failure_stage="gamedevmap_recovery_fetch",
         blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
-        html_url_candidate_fn=recovery_url_planner.html_url_candidates,
+        # The page index already answers what `html_url_candidates` would scan for again.
+        html_url_candidate_fn=(
+            None if page_links is not None else recovery_url_planner.html_url_candidates
+        ),
+        page_links=page_links,
     )
     primary_recovery_jobs.extend(primary_jobs)
     secondary_recovery_jobs.extend(secondary_jobs)

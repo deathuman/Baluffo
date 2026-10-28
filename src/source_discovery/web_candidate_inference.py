@@ -11,12 +11,10 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse as urlparse
 
-from src.shared.regex import find_urls_in_text
-
+from .page_links import PageLinks, page_links_for
 from .provider_inference import infer_provider_adapter, provider_candidate
 from .provider_inference import infer_web_candidate as shared_infer_web_candidate
 from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
-from .web_search_extract import extract_links_from_html
 
 _ATS_HTML_SIGNATURES: list[tuple[str, str]] = [
     ("bamboohr", "bamboohr"),
@@ -52,6 +50,7 @@ def infer_provider_candidates_from_html(
     studio: str,
     nl_priority: bool,
     discovery_method: str = "web_search",
+    page_links: PageLinks | None = None,
 ) -> list[dict[str, Any]]:
     from .io_runtime import collapse_competing_candidates
 
@@ -67,11 +66,12 @@ def infer_provider_candidates_from_html(
         page_candidate["evidenceScore"] = int(page_candidate.get("evidenceScore") or 0) + 10
         page_candidate["careersUrl"] = page_url
         candidates.append(page_candidate)
-    embedded_urls = extract_links_from_html(html)
-    embedded_urls.extend(find_urls_in_text(str(html or "")))
-    html_lower = str(html or "").lower()
+    links = page_links_for(html, page_links)
+    embedded_urls = links.links()
+    embedded_urls.extend(links.absolute_urls())
     keyword_match = careers_keyword_count(page_url)
     if keyword_match:
+        html_lower = links.lowered()
         parsed = urlparse(page_url)
         host = (parsed.hostname or "").lower()
         path = parsed.path or ""

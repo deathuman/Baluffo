@@ -6,7 +6,13 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
+from .page_links import PageLinks, page_links_for
+from .scoring import (
+    careers_keyword_count,
+    careers_keyword_count_lowered,
+    studio_domain_match,
+    unique_string_list,
+)
 from .web_search import is_blocked_generic_static_url
 
 
@@ -63,10 +69,14 @@ def build_static_candidate_from_page(
     studio: str,
     nl_priority: bool,
     discovery_method: str,
+    page_links: PageLinks | None = None,
 ) -> dict[str, Any] | None:
     if is_blocked_generic_static_url(page_url):
         return None
-    if not careers_keyword_count(page_url) and careers_keyword_count(html) == 0:
+    if (
+        not careers_keyword_count(page_url)
+        and careers_keyword_count_lowered(page_links_for(html, page_links).lowered()) == 0
+    ):
         return None
     from .probe import static_probe_evidence
 

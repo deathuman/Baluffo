@@ -30,6 +30,7 @@ from .page_diagnostics import (
 from .page_diagnostics import (
     no_candidate_reason_detail as page_no_candidate_reason_detail,
 )
+from .page_links import PageLinks
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -365,7 +366,20 @@ def _recovery_url_entries(
     include_jobish_links: bool = True,
     blocked_hosts: set[str] | None = None,
     html_url_candidate_fn: Any | None = None,
+    page_links: PageLinks | None = None,
 ) -> list[tuple[str, str]]:
+    # One jobish pass answers both the URL list and the per-URL attribution, instead of the
+    # planner walking the same body twice.
+    jobish_urls = (
+        same_party_jobish_urls(
+            page_url,
+            html,
+            html_url_candidate_fn=html_url_candidate_fn,
+            page_links=page_links,
+        )
+        if include_jobish_links
+        else []
+    )
     urls = recovery_urls(
         page_url,
         html,
@@ -374,21 +388,12 @@ def _recovery_url_entries(
         blocked_hosts=blocked_hosts,
         include_jobish_links=include_jobish_links,
         html_url_candidate_fn=html_url_candidate_fn,
+        page_links=page_links,
+        jobish_links=jobish_urls,
     )
     if not urls:
         return []
-    linked = {
-        str(url or "").split("#", 1)[0].strip()
-        for url in (
-            same_party_jobish_urls(
-                page_url,
-                html,
-                html_url_candidate_fn=html_url_candidate_fn,
-            )
-            if include_jobish_links
-            else []
-        )
-    }
+    linked = {str(url or "").split("#", 1)[0].strip() for url in jobish_urls}
     return [
         (url, HTML_JOBISH_RECOVERY_URL_SOURCE if url in linked else GENERATED_RECOVERY_URL_SOURCE)
         for url in urls
@@ -434,6 +439,7 @@ def plan_recovery_fetch_job_waves(
     primary_include_jobish_links: bool = True,
     secondary_include_jobish_links: bool = False,
     html_url_candidate_fn: Any | None = None,
+    page_links: PageLinks | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     def jobs_for_wave(
         *,
@@ -449,6 +455,7 @@ def plan_recovery_fetch_job_waves(
             blocked_hosts=blocked_hosts or set(PROFILE_HOSTS),
             include_jobish_links=include_jobish_links,
             html_url_candidate_fn=html_url_candidate_fn,
+            page_links=page_links,
         )
         jobs: list[dict[str, Any]] = []
         for url, source in entries:

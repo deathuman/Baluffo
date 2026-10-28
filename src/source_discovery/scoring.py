@@ -9,7 +9,11 @@ from .config import CAREERS_URL_HINTS, DEFAULT_DISCOVERY_THRESHOLDS
 
 
 def careers_keyword_count(text: str) -> int:
-    lowered = str(text or "").lower()
+    return careers_keyword_count_lowered(str(text or "").lower())
+
+
+def careers_keyword_count_lowered(lowered: str) -> int:
+    """`careers_keyword_count` for a body a page index already lowercased."""
     return sum(1 for token in CAREERS_URL_HINTS if token in lowered)
 
 

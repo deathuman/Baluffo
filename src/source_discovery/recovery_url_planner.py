@@ -2,14 +2,11 @@ from __future__ import annotations
 
 """Shared recovery URL planning helpers for source-discovery adapters."""
 
-import html as html_lib
 from collections.abc import Callable
 from re import Pattern
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 
-from src.shared.regex import find_urls_in_text
-
-from .web_search_extract import extract_jobish_links, extract_links_from_html
+from .page_links import PageLinks, page_links_for
 
 
 def host(url: str) -> str:
@@ -47,21 +44,9 @@ def html_url_candidates(
     html: str,
     *,
     provider_url_pattern: Pattern[str] | None = None,
+    page_links: PageLinks | None = None,
 ) -> list[str]:
-    text = html_lib.unescape(str(html or "")).replace("\\/", "/")
-    candidates = [*extract_links_from_html(text), *find_urls_in_text(text)]
-    if provider_url_pattern is not None:
-        for raw in provider_url_pattern.findall(text):
-            candidates.append(unquote(raw))
-    out: list[str] = []
-    seen = set()
-    for raw in candidates:
-        url = str(raw or "").strip().strip("\"'.,;)")
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        out.append(url)
-    return out
+    return page_links_for(html, page_links).url_candidates(provider_url_pattern)
 
 
 def common_recovery_urls(
@@ -84,10 +69,14 @@ def same_party_jobish_urls(
     html: str,
     *,
     html_url_candidate_fn: Callable[[str], list[str]] | None = None,
+    page_links: PageLinks | None = None,
 ) -> list[str]:
-    candidates = [*extract_jobish_links(html, page_url)]
-    candidate_fn = html_url_candidate_fn or html_url_candidates
-    for raw_url in candidate_fn(html):
+    links = page_links_for(html, page_links)
+    candidates = [*links.jobish(page_url)]
+    candidate_values = (
+        html_url_candidate_fn(html) if html_url_candidate_fn is not None else links.url_candidates()
+    )
+    for raw_url in candidate_values:
         if not same_party_url(page_url, raw_url):
             continue
         parsed = urlparse(raw_url)
@@ -114,6 +103,8 @@ def recovery_urls(
     blocked_hosts: set[str] | None = None,
     include_jobish_links: bool = True,
     html_url_candidate_fn: Callable[[str], list[str]] | None = None,
+    page_links: PageLinks | None = None,
+    jobish_links: list[str] | None = None,
 ) -> list[str]:
     page_host = host(page_url)
     if blocked_hosts and host_in(page_host, blocked_hosts):
@@ -121,13 +112,18 @@ def recovery_urls(
     out: list[str] = []
     seen = set()
     jobish_urls = (
-        same_party_jobish_urls(
-            page_url,
-            html,
-            html_url_candidate_fn=html_url_candidate_fn,
+        list(jobish_links)
+        if jobish_links is not None
+        else (
+            same_party_jobish_urls(
+                page_url,
+                html,
+                html_url_candidate_fn=html_url_candidate_fn,
+                page_links=page_links,
+            )
+            if include_jobish_links
+            else []
         )
-        if include_jobish_links
-        else []
     )
     for candidate_url in [
         *jobish_urls,

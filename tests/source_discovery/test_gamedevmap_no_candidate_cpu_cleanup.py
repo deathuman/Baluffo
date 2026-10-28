@@ -21,12 +21,13 @@ Verify:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
 from src.source_discovery import gamedevmap_recovery_queue as rq
+from src.source_discovery import page_links as page_links_module
 from src.source_discovery import web_search
 
 from .gamedevmap_test_helpers import INDEX_URL
@@ -267,13 +268,33 @@ def _count_audit_work(
     real_detail = rq._no_careers_reason_detail
     details: list[str] = []
 
-    def _counting_detail(page_url: str, html: str) -> str:
+    def _counting_detail(page_url: str, html: str, **kwargs: Any) -> str:
         details.append(str(page_url))
-        return real_detail(page_url, html)
+        return real_detail(page_url, html, **kwargs)
 
     monkeypatch.setattr(rq, "_no_careers_reason_detail", _counting_detail)
     monkeypatch.setattr(dry_run, "_no_careers_reason_detail", _counting_detail)
     return calls, details, real_detail
+
+
+def test_audit_no_candidate_page_scans_the_body_once(monkeypatch) -> None:
+    """The outcome, the detail and both recovery waves share one href scan of the page.
+
+    Failing-before: the same body was walked seven times for hrefs on this path (the provider
+    pass, the explicit-careers pass, the reason detail and four recovery passes).
+    """
+    real = page_links_module.href_values
+    scans: list[int] = []
+
+    def _counting(body: str) -> list[str]:
+        scans.append(len(body))
+        return real(body)
+
+    monkeypatch.setattr(page_links_module, "href_values", _counting)
+
+    _audit_batch(NO_CANDIDATE_HTML)
+
+    assert scans == [len(NO_CANDIDATE_HTML)], f"expected one href scan, got {len(scans)}"
 
 
 def test_audit_no_candidate_page_runs_provider_inference_exactly_once(monkeypatch) -> None:

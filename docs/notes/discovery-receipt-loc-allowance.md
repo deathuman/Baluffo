@@ -631,3 +631,29 @@ keeps its behaviour; the helper the walk no longer uses is deleted.
   per-pattern helper and asserting non-matches stay `None`.
 
 All other areas unchanged; exact measured values, no spare headroom.
+
+## Homepage-analysis per-body link index (2026-10-28)
+
+One fetched body gets one lazily derived link index (`PageLinks`), shared by the page outcome, the
+no-careers reason detail and both recovery waves; the recovery planner also stops running its
+jobish pass twice in one plan. The extractors keep their public signatures and gain an optional
+index, so every other caller is unchanged.
+
+| Area | Previous baseline | Current exact baseline | Delta |
+| --- | ---: | ---: | ---: |
+| `src` | 191720 | 191909 | +189 |
+| `tests` | 265048 | 265210 | +162 |
+
+- `src` +189: the new `page_links` leaf holds the index and its six views plus the
+  `page_links_for` identity guard (about 140 lines with docstrings); `web_search_extract` splits
+  the href scan from the derivations it feeds and compiles the pattern once (+30); `page_analysis`,
+  `static_candidates`, `web_candidate_inference`, `recovery_url_planner`, `directory_page_recovery`,
+  `gamedevmap_recovery_queue` and `gamedevmap_active_dry_run` thread the optional index through
+  their signatures (+30 net, less the duplicate jobish block the planner no longer carries);
+  `scoring` gains `careers_keyword_count_lowered`.
+- `tests` +162: `test_page_links.py` pins every view against the public extractor it replaces over a
+  body that exercises all branches, pins one href scan across all views, and pins that an
+  equal-but-distinct body is a different page; the no-candidate CPU oracle gains a batch-scan
+  oracle that pins a whole no-candidate page to one href scan.
+
+All other areas unchanged; exact measured values, no spare headroom.

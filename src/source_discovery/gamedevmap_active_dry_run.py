@@ -209,6 +209,7 @@ from .homepage_analysis_child import (
 )
 from .io_runtime import endpoint_url as endpoint_url
 from .page_analysis import analyze_fetched_page
+from .page_links import PageLinks, page_links_for
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -494,7 +495,9 @@ def _gamedevmap_page_outcome(
     row: dict[str, Any],
     index_url: str,
     recovery_source: str = "",
+    page_links: PageLinks | None = None,
 ) -> PageOutcome:
+    links = page_links_for(html, page_links)
     studio = str(row.get("studio") or "").strip()
     context = FetchedPageContext(
         page_url=page_url,
@@ -551,7 +554,7 @@ def _gamedevmap_page_outcome(
             provider_rows=_provider_rows,
             explicit_static=_explicit_static,
             generic_static=_generic_static,
-            analyze_page=analyze_fetched_page,
+            analyze_page=partial(analyze_fetched_page, page_links=links),
         ),
     )
 
@@ -565,6 +568,7 @@ def _append_analyzed_candidates(
     recovery_source: str,
     provider_candidates: list[dict[str, Any]],
     static_candidates: list[dict[str, Any]],
+    page_links: PageLinks | None = None,
 ) -> bool:
     if len(html) > 1_000_000:
         html = f"{html[:500_000]}\n{html[-500_000:]}"
@@ -574,6 +578,7 @@ def _append_analyzed_candidates(
         row=row,
         index_url=index_url,
         recovery_source=recovery_source,
+        page_links=page_links,
     )
     provider_candidates.extend(outcome.provider_candidates)
     static_candidates.extend(outcome.static_candidates)
@@ -649,15 +654,26 @@ def _extract_candidates_from_homepages(
             reason_detail="homepage_fetch_failed",
         )
 
+    # The no-candidate handler runs immediately after this page's analysis, on the same body
+    # object. Holding that body beside its index keeps one scan for both halves of the page; the
+    # entry is dropped here when the page found candidates, and popped by its consumer otherwise.
+    page_links_by_body: dict[int, tuple[str, PageLinks]] = {}
+
     def _analyze_homepage(
         row: dict[str, Any], target_url: str, html: str
     ) -> active_audit_runtime.HomepagePageOutcome:
+        links = PageLinks(html)
         outcome = _gamedevmap_page_outcome(
             page_url=target_url,
             html=html,
             row=row,
             index_url=index_url,
+            page_links=links,
         )
+        if outcome.found_candidates:
+            page_links_by_body.pop(id(html), None)
+        else:
+            page_links_by_body[id(html)] = (html, links)
         return active_audit_runtime.HomepagePageOutcome(
             provider_candidates=outcome.provider_candidates,
             static_candidates=outcome.static_candidates,
@@ -674,7 +690,11 @@ def _extract_candidates_from_homepages(
         # measured on a production arm at 5,874 calls / 15.3 s, 0 of them non-empty — and it
         # computed this same reason detail a second time (8.5 s beside this call's 8.6 s). So the
         # detail is computed once here and handed down, and the queue is told its pass is covered.
-        detail = _no_careers_reason_detail(target_url, html)
+        # The analysis's link index is reused here too: reason detail and both recovery waves used
+        # to rescan this body seven more times for hrefs.
+        cached = page_links_by_body.pop(id(html), None)
+        links = cached[1] if cached is not None and cached[0] is html else PageLinks(html)
+        detail = _no_careers_reason_detail(target_url, html, page_links=links)
         provider_candidates: list[dict[str, Any]] = []
         primary_recovery_jobs: list[dict[str, Any]] = []
         secondary_recovery_jobs: list[dict[str, Any]] = []
@@ -690,6 +710,7 @@ def _extract_candidates_from_homepages(
             browser_recovery_candidates=browser_recovery_candidates,
             reason_detail=detail,
             provider_pass_done=True,
+            page_links=links,
         )
         rejected_rows: list[dict[str, Any]] = []
         if not queued:

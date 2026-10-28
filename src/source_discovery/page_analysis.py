@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .config import CAREERS_URL_HINTS
+from .page_links import PageLinks, page_links_for
 
 _COMMON_SECOND_LEVEL_SUFFIXES = frozenset({"ac", "co", "com", "edu", "gov", "net", "org"})
 _LANDING_PAGE_SEGMENTS = frozenset(
@@ -104,14 +105,15 @@ def extract_explicit_careers_url_from_page(
     studio: str,
     nl_priority: bool,
     discovery_method: str,
+    page_links: PageLinks | None = None,
 ) -> str:
-    from .web_search import extract_jobish_links, infer_web_candidate
+    from .web_search import infer_web_candidate
 
     page_host = _normalized_host(page_url)
     if not page_host:
         return ""
     landing_candidates: list[str] = []
-    for candidate_url in extract_jobish_links(html, page_url):
+    for candidate_url in page_links_for(html, page_links).jobish(page_url):
         candidate_host = _normalized_host(candidate_url)
         if not candidate_host or not _same_party_host(page_host, candidate_host):
             continue
@@ -140,16 +142,19 @@ def analyze_fetched_page(
     studio: str,
     nl_priority: bool,
     discovery_method: str,
+    page_links: PageLinks | None = None,
 ) -> dict[str, Any]:
     from .static_candidates import build_static_candidate_from_page
     from .web_search import infer_provider_candidates_from_html
 
+    links = page_links_for(html, page_links)
     provider_candidates = infer_provider_candidates_from_html(
         page_url=page_url,
         html=html,
         studio=studio,
         nl_priority=nl_priority,
         discovery_method=discovery_method,
+        page_links=links,
     )
     if provider_candidates:
         return {
@@ -163,6 +168,7 @@ def analyze_fetched_page(
         studio=studio,
         nl_priority=nl_priority,
         discovery_method=discovery_method,
+        page_links=links,
     )
     if explicit_careers_url:
         return {
@@ -179,5 +185,6 @@ def analyze_fetched_page(
             studio=studio,
             nl_priority=nl_priority,
             discovery_method=discovery_method,
+            page_links=links,
         ),
     }
