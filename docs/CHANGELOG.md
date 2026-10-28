@@ -47,6 +47,8 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.027] - 2026-10-28
+
 ### Changed
 
 - **An empty board is asked before it is downloaded, even on its first check.** A board with no
@@ -72,6 +74,14 @@ Four rules the guardrail enforces so this cannot quietly regress:
   board, one per page for a board split across several. A page that stops publishing a tag drops
   it, and a page a run could not read keeps the tag it had. Boards whose reads go through a custom
   fetcher still learn their tag at the first check, as before.
+
+### Notes
+
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.026:
+  the same-origin Linux container,
+  GHCR multi-arch image publishing,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
 
 ## [0.3.026] - 2026-10-24
 
@@ -259,29 +269,6 @@ Four rules the guardrail enforces so this cannot quietly regress:
 - An alternative browser engine that was never part of a shipped build is retired from the fetch
   fallback path; the Chromium fallback and every user-visible fetch outcome stay as they were.
 - Distribution surfaces are unchanged. Each behaves as it did in 0.3.021:
-  the same-origin Linux container,
-  GHCR multi-arch image publishing,
-  wildcard browser CORS allow headers,
-  desktop localhost bridge compatibility.
-
-## [0.3.021] - 2026-10-17
-> **Desktop rollup.** This is the first desktop package since 0.3.017, so it also carries the
-> user-facing work released on the container channel in 0.3.018 through 0.3.020.
-
-### Changed
-
-- **The private Umbrel app-store packaging is retired.** Baluffo still publishes the same-origin
-  container image on GHCR, but the private store metadata, the Umbrel Compose deployment files, and
-  the release steps that maintained them are gone. A version bump no longer looks for them, and the
-  container workflow no longer treats them as a publish trigger.
-
-### Notes
-
-- **First desktop package since 0.3.017.** It also carries the user-facing work from 0.3.018 through
-  0.3.020: provider boards are read directly instead of through a guessed careers page, saved-job
-  state stays with the session that asked for it, Discovery stops re-asking boards it has already
-  ruled out or that never answer, and the runtime database reclaims space instead of growing.
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.020:
   the same-origin Linux container,
   GHCR multi-arch image publishing,
   wildcard browser CORS allow headers,
