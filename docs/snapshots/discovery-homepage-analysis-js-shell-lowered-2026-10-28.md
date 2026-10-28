@@ -108,8 +108,11 @@ The phase is **~47.4 s** on this corpus in a quiet window, and nothing output-id
   index does not carry;
 * recovery party filtering (**9.80 s**), whose duplicate-check hypothesis was refuted.
 
-The next price is the one the cost snapshot refused to take first: body caps change output and are
-paid for in extra recovery fetches, so they are a discovery decision rather than a pure cut.
+The next price was the one the cost snapshot refused to take first: body caps change output and are
+paid for in extra recovery fetches. That price is now taken in
+[`discovery-homepage-analysis-body-caps-2026-10-28.md`](discovery-homepage-analysis-body-caps-2026-10-28.md)
+— every level loses provider/static candidates and adds recovery rows, so no cap ships and the
+`> 1 MB` head+tail truncation stays on the page outcome only.
 
 ## Limits
 

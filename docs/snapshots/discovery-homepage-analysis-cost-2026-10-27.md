@@ -177,6 +177,10 @@ recovery/probe phases after it) on a machine with 15 idle cores.
 4. **Do not cap bodies as a first move.** The −28/−45 s is paid back in extra recovery fetch work
    and changed discovery; if a cap is ever wanted, the top decile is where the money is and the
    existing `>1 MB` head+tail truncation is the precedent to follow, not a straight cut.
+   **Closed 2026-10-28:** the cap question was re-priced after the five output-identical cuts in
+   [`discovery-homepage-analysis-body-caps-2026-10-28.md`](discovery-homepage-analysis-body-caps-2026-10-28.md)
+   — every level and both shapes lose provider/static candidates and add recovery rows, so no cap
+   belongs and the `>1 MB` head+tail truncation stays on the page outcome only.
 
 ## Limits
 
