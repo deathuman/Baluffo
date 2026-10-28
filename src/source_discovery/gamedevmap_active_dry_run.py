@@ -33,6 +33,7 @@ from src.source_registry import unique_sources
 
 from . import (
     active_audit_runtime,
+    known_dead_boards,
 )
 from . import (
     audit_ledger as audit_ledger,
@@ -1069,6 +1070,8 @@ def _build_gamedevmap_active_batch_strategy(
     index_url: str,
     timeout_s: int,
     fetcher,
+    known_dead_memo: dict[str, dict[str, Any]] | None = None,
+    known_dead_memo_path: Path | None = None,
     homepage_fetch_concurrency: int,
     per_host_concurrency: int,
     recovery_timeout_s: int,
@@ -1143,15 +1146,21 @@ def _build_gamedevmap_active_batch_strategy(
     def _probe_with_lifecycle(all_candidates: list[dict[str, Any]]) -> Any:
         receipt = ProbeBatchLifecycle()
         receipts.append(receipt)
+        memo = known_dead_memo if known_dead_memo is not None else {}
         return _run_phase(
             "probe",
             lambda phase_receipt: asyncio.run(
-                _probe_candidates_async(
+                known_dead_boards.probe_with_known_dead(
                     all_candidates,
-                    timeout_s=timeout_s,
-                    fetcher=fetcher,
-                    lifecycle=receipt,
-                    receipt=phase_receipt,
+                    memo,
+                    probe=lambda rows: _probe_candidates_async(
+                        rows,
+                        timeout_s=timeout_s,
+                        fetcher=fetcher,
+                        lifecycle=receipt,
+                        receipt=phase_receipt,
+                    ),
+                    memo_path=known_dead_memo_path,
                 )
             ),
         )
@@ -1322,6 +1331,19 @@ def run_gamedevmap_active_source_dry_run(
         ),
     )
     output_path = output_path or gamedevmap_active_dry_run_path()
+    # The boards a previous run settled with a 404/410 from their own endpoint. Read once per run; the
+    # probe entry writes it after each batch that learned something. Beside the artifact, so an
+    # isolated data dir gets its own memo and a reset cannot lose the knowledge with the artifact.
+    known_dead_memo_path = (
+        output_path.parent / known_dead_boards.KNOWN_DEAD_BOARDS_FILENAME
+        if known_dead_boards.memo_ttl_days() > 0
+        else None
+    )
+    known_dead_memo = (
+        known_dead_boards.load_memo(known_dead_memo_path)
+        if known_dead_memo_path is not None
+        else {}
+    )
     recovery_escalation_helpers_set_recheck_queue_path(
         output_path.parent / "discovery-feed-recheck-queue.json"
     )
@@ -1423,6 +1445,8 @@ def run_gamedevmap_active_source_dry_run(
             index_url=index_url,
             timeout_s=timeout_s,
             fetcher=fetcher,
+            known_dead_memo=known_dead_memo,
+            known_dead_memo_path=known_dead_memo_path,
             homepage_fetch_concurrency=homepage_fetch_concurrency,
             per_host_concurrency=per_host_concurrency,
             recovery_timeout_s=recovery_timeout_s,

@@ -705,6 +705,29 @@ outlived their per-call bound and kept running — `fetchesOutstandingAtExit`,
 decisions, source verdicts, promotion, demotion, or freshness, and a missing receipt reads as absent
 rather than as a clean wave.
 
+### Discovery known-dead board memo
+
+A GameDevMap active audit writes `gamedevmap-known-dead-boards.json` beside
+`gamedevmap-active-source-dry-run.json`: the provider boards a previous run settled with a **404/410
+from the board's own listing endpoint** (`api.lever.co/<account>`,
+`boards-api.greenhouse.io/<slug>`). Its purpose is to stop re-probing the same dead boards on every
+full re-audit, so it is the one discovery side file that may affect what a run fetches.
+
+| Field | Type | Description |
+|---|---|---|
+| `schemaVersion` | `number` | `1` |
+| `updatedAt` | `string` (ISO 8601) | When the file was last written |
+| `ttlDays` | `number` | The `BALUFFO_DISCOVERY_KNOWN_DEAD_DAYS` value in force when written (default `7`) |
+| `boards` | `Object<string, Object>` | Keyed by **provider host + tenant**; each entry has `firstSeenAt`, `lastSeenAt` and `hits` |
+
+Rules a reader can rely on: only `404`/`410` from an authoritative provider endpoint is recorded (a
+timeout, a `429` or a 5xx is not); identity is host + tenant, never a studio label, row URL or registry
+id; entries older than `ttlDays` are ignored on read and pruned on write; a missing, unreadable or
+corrupt file means **no suppression**, never an error. A skipped candidate still produces a rejection
+row (`known dead board (memoized <iso>): <key>`), so artifact counts and `probeFailures` read exactly
+as a live 404 would. The memo never promotes, demotes or registers anything, and it is not
+authoritative: deleting it costs probe time, never correctness.
+
 ### Discovery homepage-analysis worker receipt
 
 A GameDevMap active audit may run one batch's homepage analysis in a worker process, so that phase
