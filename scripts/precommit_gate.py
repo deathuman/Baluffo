@@ -194,7 +194,11 @@ def has_staged_changes() -> bool:
 
 
 def should_run_repo_guardrails(files: list[str]) -> bool:
-    watched_roots = ("src/", "frontend/", "tests/", "scripts/", ".github/", "docs/")
+    # `.githooks/` is gate configuration like `.github/`: the `workflow` group's
+    # assertions read the hook scripts (release-tag gating, the no-backticks guard,
+    # the timed-lint shape), so a hook-only commit used to take the release-only
+    # fallback below and could land a hook no group had judged before the push.
+    watched_roots = ("src/", "frontend/", "tests/", "scripts/", ".github/", "docs/", ".githooks/")
     watched_exact = {
         "AGENTS.md",
         "CONTRIBUTING.md",

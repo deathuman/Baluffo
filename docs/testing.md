@@ -247,6 +247,8 @@ Measured baseline on the primary Windows development machine, re-measured 2026-0
 - Full local CI mode: about `109s`; it skips the standalone ratchet step, whose modules its `test:py` run already contains
 - Warmup path after environments exist: under `1s`
 
+The commit gate's guardrail half is filtered by path. A commit touching `src/`, `frontend/`, `tests/`, `scripts/`, `.github/`, `.githooks/`, `docs/` or one of the watched root files runs all sixteen groups (about `31s` measured); a shipped path outside that set (`Dockerfile`, `styles/`, runtime `data/`) runs only the `release` group, which is the container version gate every commit needs. `.githooks/` joined the watched roots because the `workflow` group asserts on the hook scripts, so a hook-only commit used to reach the push gate before any group had judged it.
+
 The main source of the “first push timed out” complaint is usually hook environment bootstrap or accidentally using the full local CI path as the default push gate. Warm hooks once after a new clone, Python switch, or cache reset to avoid the first-run pre-commit spike:
 
 ```bash
