@@ -52,7 +52,7 @@ cssselect==1.4.0
     #   scrapy
 defusedxml==0.7.1
     # via scrapy
-filelock==3.29.0
+filelock==4.2.4
     # via tldextract
 frozenlist==1.8.0
     # via
@@ -189,7 +189,7 @@ secretstorage==3.5.0
     # via keyring
 service-identity==24.2.0
     # via scrapy
-setuptools==83.0.0
+setuptools==84.2.1
     # via pyinstaller
 tldextract==5.3.1
     # via scrapy
