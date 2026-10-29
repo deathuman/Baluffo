@@ -60,7 +60,7 @@ def _status_from_error(exc: BaseException) -> int | None:
     if code is not None:
         try:
             return int(code)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
     match = re.search(r"\b(?:HTTP Error |Client error '|Server error ')(\d{3})", str(exc))
     return int(match.group(1)) if match else None

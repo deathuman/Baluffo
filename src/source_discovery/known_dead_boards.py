@@ -61,7 +61,7 @@ def memo_ttl_days() -> int:
         return DEFAULT_TTL_DAYS
     try:
         return max(0, int(raw))
-    except ValueError:
+    except (OverflowError, ValueError):
         return DEFAULT_TTL_DAYS
 
 

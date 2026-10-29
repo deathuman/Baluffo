@@ -77,7 +77,7 @@ def _env_int_or_zero(name: str) -> int:
     raw = str(os.getenv(name) or "").strip()
     try:
         return max(0, int(raw)) if raw else 0
-    except ValueError:
+    except (OverflowError, ValueError):
         return 0
 
 
