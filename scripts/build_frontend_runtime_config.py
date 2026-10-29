@@ -39,9 +39,13 @@ def render_frontend_runtime_config_js(payload: dict[str, dict[str, Any]]) -> str
 
 def write_frontend_runtime_config(output_path: Path = DEFAULT_OUTPUT_PATH) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Pin LF: `.gitattributes` declares `eol=lf`, and text mode would write CRLF
+    # on Windows, leaving the tracked file permanently "modified" while
+    # `git diff` normalizes the difference away.
     output_path.write_text(
         render_frontend_runtime_config_js(build_frontend_runtime_config_payload()),
         encoding="utf-8",
+        newline="\n",
     )
     return output_path
 

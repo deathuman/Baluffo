@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest import mock
 
 from scripts import build_frontend_runtime_config as frontend_runtime_config
@@ -25,6 +26,21 @@ def test_render_js_exports_frozen_payload() -> None:
     assert "Object.freeze" in text
     assert "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG" in text
     assert "export const" not in text
+
+
+def test_writer_pins_repo_line_endings(tmp_path: Path) -> None:
+    """The writer must emit LF, not the platform's newline.
+
+    `.gitattributes` declares `* text=auto eol=lf`, so a CRLF copy is reported as
+    modified while `git diff` normalizes the difference to nothing: a working
+    tree that stays dirty forever on Windows. The content test above cannot see
+    it, because `read_text` translates CRLF back to LF before comparing.
+    """
+    target = frontend_runtime_config.write_frontend_runtime_config(
+        tmp_path / "frontend-runtime-config.js"
+    )
+
+    assert b"\r\n" not in target.read_bytes()
 
 
 def test_checked_in_generated_file_matches_current_render() -> None:
