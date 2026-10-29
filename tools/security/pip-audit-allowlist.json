@@ -3,7 +3,7 @@
     {
       "id": "CVE-2026-106454",
       "package": "twisted",
-      "reason": "Non-applicable: advisory is a ReDoS in twisted.mail.imap4.wildcardToRegexp(), reachable only by a Twisted IMAP4 server that passes an authenticated client's LIST/LSUB pattern to re.compile(). Baluffo runs no IMAP server and never imports twisted.mail; Twisted is a transitive Scrapy dependency selected only as twisted.internet.asyncioreactor.AsyncioSelectorReactor (src/scrapers/settings.py). No fixed release exists as of 2026-10-17: PyPI's latest is 26.4.0, the version pip-audit flags, so a bump cannot clear the finding. Revisit at review_by: drop this entry when a twisted release after 26.4.0 fixes the advisory.",
+      "reason": "Non-applicable: advisory is a ReDoS in twisted.mail.imap4.wildcardToRegexp(), reachable only by a Twisted IMAP4 server that passes an authenticated client's LIST/LSUB pattern to re.compile(). Baluffo runs no IMAP server and never imports twisted.mail; Twisted is a transitive Scrapy dependency selected only as twisted.internet.asyncioreactor.AsyncioSelectorReactor (src/scrapers/settings.py). pip-audit lists no fixed version for this advisory -- `fix_versions` is empty on 2026-10-29 -- unlike the six sibling Twisted entries, whose fixed version is the 26.10.0rc1 pre-release. No published release is recorded as clearing this one, so neither the current 26.4.0 pin nor a move to 26.10.0rc1 would remove the finding. Revisit at review_by: drop this entry when a twisted release is published that pip-audit records as fixing the advisory; a 26.10.x stable clears the six siblings but not necessarily this one.",
       "owner": "deathuman",
       "review_by": "2027-01-15"
     },
