@@ -132,6 +132,10 @@ class StaticSourceContext:
     # top so multi-page boards fit their budget instead of truncating.
     pagination_budget_floor_s: int = 0
     pagination_budget_extension_s: int = 0
+    # Time this source has spent in *failed* attempts. Deliberately not part of the
+    # deadline arithmetic: the deadline says how much clock the source may have, while
+    # this says how much of it may be spent failing before the source is abandoned.
+    failure_elapsed_s: float = 0.0
     kept_before: int = 0
     progress_state: dict[str, Any] = field(
         default_factory=lambda: {
@@ -302,6 +306,43 @@ class StaticSourceContext:
             self.warnings.append(f"static:{self.source_name}:{target_url}: {msg}")
             return
         self.errors.append(f"static:{self.source_name}:{target_url}: {exc}")
+
+    def record_failed_attempt(self, seconds: float) -> None:
+        self.failure_elapsed_s += max(0.0, float(seconds))
+
+    def failure_budget_s(self) -> int:
+        return max(0, int(self.runtime_config.static_failure_budget_s or 0))
+
+    def source_has_kept_jobs(self) -> bool:
+        """True once this source has kept a job -- the only exemption from the budget.
+
+        The budget exists for boards that only stall. Exempting a source the moment it
+        keeps a job makes "no kept board is lost" structural: once there is something to
+        lose, the normal path and the normal deadline govern the source again.
+
+        A *detail page read* is deliberately not an exemption. The 2026-10-29 capture
+        contains 24-27 error rows per slow arm that had read a detail page and still kept
+        nothing; exempting them would have left ~40% of the failure tail in place while
+        protecting no job in any of the four arms.
+        """
+        return bool(
+            self.current_source_kept_count() or int(self.entry_report.get("keptCount") or 0)
+        )
+
+    def failure_budget_exhausted(self) -> bool:
+        budget_s = self.failure_budget_s()
+        if budget_s <= 0 or self.source_has_kept_jobs():
+            return False
+        return self.failure_elapsed_s >= float(budget_s)
+
+    def stop_for_failure_budget(self, *, target_url: str) -> None:
+        # A distinct message from `time budget exceeded`: one means the source ran out of
+        # clock, the other that it spent its clock failing, and only the second says
+        # retries were the cost. Consumers keying on the old string are unaffected.
+        self.entry_report["classification"] = "timeout"
+        self.entry_report["status"] = "error"
+        self.entry_report["error"] = f"failure budget exceeded ({self.failure_budget_s()}s)"
+        self.warnings.append(f"static:{self.source_name}:{target_url}: failure_budget_exceeded")
 
     def stop_for_budget_exhaustion(self, *, target_url: str) -> None:
         self.entry_report["classification"] = "timeout"

@@ -143,6 +143,10 @@ class StaticSourceRuntimeConfig:
     listing_only_hosts: list[str]
     default_path_tokens: list[str]
     default_query_keys: list[str]
+    # Failure-only comma, not a source deadline -- see STATIC_FAILURE_BUDGET_DEFAULT_S.
+    # Last field on purpose: the dataclass predates it and every existing construction
+    # site passes keywords, so a default keeps those call sites unchanged.
+    static_failure_budget_s: int = 60
 
 
 @dataclass(frozen=True)
@@ -425,6 +429,21 @@ class StaticHtmlFetcher:
 # which is why 25s was the outlier and 90s is a realignment rather than a new limit.
 STATIC_SOURCE_TIME_BUDGET_DEFAULT_S = 90
 
+# Seconds a static source may spend in *failed* attempts while it has produced nothing.
+#
+# The 2026-10-29 counterbalanced block measured the slow regime's cost as failure time: the
+# same 522-532 sources failed in every arm, but 56-76 of them stalled past 60 s in the slow
+# arms against 12 in the fast one, and error seconds ran 5.8-16.2 ks. The per-source budget
+# above does not bound that: pagination earns up to ``6 x base`` on discovery and is never
+# revoked, so a multi-page board that stops making progress can sit at ~540 s -- exactly the
+# 526 s / 409 s / 345 s stalls in the capture.
+#
+# 60 s is the replayed best point: it removes 14-17% of a slow arm's wall and 0.7% of a fast
+# arm's, and touches only rows whose ``fetchedCount`` was 0 in 4/4 arms. Applied only while
+# the source has kept no job, so it can never abandon a board that was going to yield work.
+# 0 disables it.
+STATIC_FAILURE_BUDGET_DEFAULT_S = 60
+
 
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:
     static_profile = (
@@ -460,6 +479,14 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     return StaticSourceRuntimeConfig(
         static_profile=static_profile,
         static_detail_concurrency=detail_concurrency,
+        # Failure time only: a board that fetched nothing may burn this long in failed
+        # attempts before the source is abandoned with its usual error row.
+        static_failure_budget_s=coerce_int(
+            os.getenv("BALUFFO_STATIC_FAILURE_BUDGET_S"),
+            STATIC_FAILURE_BUDGET_DEFAULT_S,
+            minimum=0,
+            maximum=2**31 - 1,
+        ),
         # 90s, not 25s (2026-10-06). The 25s default starved boards that were mid-fetch when
         # the clock expired, and the report filed them as failures -- `time_budget_exceeded` --
         # so a configured limit read as 134 broken boards on a live run. Raising it to 90s,

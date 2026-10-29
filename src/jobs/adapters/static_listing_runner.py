@@ -189,6 +189,8 @@ class StaticFetchRunner:
             ):
                 break
             self._run_listing_batch(listing_batch_jobs)
+            if self._failure_budget_exhausted(target_url):
+                break
         drop_non_game_rows(self.ctx)
         _finish_generic_source(self.ctx, self.stage_state)
 
@@ -250,6 +252,26 @@ class StaticFetchRunner:
             return False
         self.ctx.stop_for_budget_exhaustion(target_url=page_url)
         return True
+
+    def _failure_budget_exhausted(self, page_url: str) -> bool:
+        if not self.ctx.failure_budget_exhausted():
+            return False
+        self.ctx.stop_for_failure_budget(target_url=page_url)
+        self.stop_source = True
+        return True
+
+    # mutation — modifies in-place state
+    def _note_batch_failure(self, results: list[dict[str, Any]], started: float) -> None:
+        """Charge a batch that produced nothing to the source's failure budget.
+
+        Only a wholly failed batch counts: a single ``ok`` row means the board is
+        working, and a slow-but-live fanout must not be punished for its slow rows.
+        The elapsed time is measured here because the budget is about time spent, not
+        rows counted -- the returned rows carry no per-batch clock.
+        """
+        if any(bool(result.get("ok")) for result in results):
+            return
+        self.ctx.record_failed_attempt(time.perf_counter() - started)
 
     # network — makes HTTP requests
     def _fetch_listing_html_sync(
@@ -530,6 +552,7 @@ class StaticFetchRunner:
                 f"{'' if len(listing_batch_jobs) == 1 else 's'} for {self.source_name}."
             ),
         )
+        batch_started = time.perf_counter()
         listing_results = fetch_pages_batched(
             self.deps.timeout_s,
             listing_batch_jobs,
@@ -541,6 +564,7 @@ class StaticFetchRunner:
             per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
             progress_callback=self._on_listing_batch_progress,
         )
+        self._note_batch_failure(listing_results, batch_started)
         # All fetches in the batch have completed, so every capture is settled:
         # adopt them in report order, on the main thread, before results are read.
         self._apply_listing_read_validators()

@@ -460,6 +460,7 @@ def _run_detail_batch(
     ]
     detail_batch_meta: dict[str, dict[str, Any]] = {}
     ctx.stats["detail_batch_count"] = int(ctx.stats.get("detail_batch_count") or 0) + 1
+    batch_started = time.perf_counter()
     detail_results = fetch_pages_batched(
         ctx.run_deps.timeout_s,
         _build_detail_batch_jobs(detail_batch),
@@ -481,6 +482,7 @@ def _run_detail_batch(
             total,
         ),
     )
+    _note_detail_batch_failure(ctx, detail_results, batch_started)
     for detail_result_row in detail_results:
         if _detail_budget_exhausted(ctx, plan, reserve_s=0.0):
             state.stop_source = True
@@ -488,6 +490,19 @@ def _run_detail_batch(
         _process_detail_result_row(ctx, plan, state, detail_batch_meta, detail_result_row)
     if not state.stop_source:
         state.index = detail_batch_start + len(detail_batch)
+
+
+def _note_detail_batch_failure(
+    ctx: StaticSourceContext, results: list[dict[str, Any]], started: float
+) -> None:
+    """Charge a wholly failed detail batch to the source's failure budget.
+
+    Mirrors the listing lane's accounting: any ``ok`` row proves the board is live, so
+    the batch is free; only a batch that produced nothing is charged.
+    """
+    if any(bool(row.get("ok")) for row in results):
+        return
+    ctx.record_failed_attempt(time.perf_counter() - started)
 
 
 # mutation — modifies in-place state
@@ -520,6 +535,10 @@ def _run_static_detail_traversal(
         if state.stop or state.stop_source:
             break
         if _detail_budget_exhausted(ctx, plan, reserve_s=1.0):
+            state.stop_source = True
+            break
+        if ctx.failure_budget_exhausted():
+            ctx.stop_for_failure_budget(target_url=plan.page_url)
             state.stop_source = True
             break
         _run_detail_batch(ctx, plan, state)
