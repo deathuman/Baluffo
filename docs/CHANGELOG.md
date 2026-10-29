@@ -47,6 +47,44 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.028] - 2026-10-29
+
+> This is a desktop rollup: it contains the 0.3.026 and 0.3.027 releases as well as the discovery
+> work below, so a desktop install upgrading from 0.3.025 receives the whole set in one step.
+
+### Changed
+
+- **Discovery stops re-asking boards that already said the page does not exist.** A board whose own
+  listing endpoint answered 404 or 410 used to be probed again on every full audit. That answer is
+  now kept for seven days beside the audit artifact, keyed by the board's host and tenant, and a
+  skipped candidate still produces a rejection row, so the report reads exactly as a live 404 would.
+  On a frozen 9,050-candidate population the probe fell **40.8%** (216.5 s to 128.2 s across two
+  pairs) and lost no board: 360 kept with the memo, 358-359 without it. `BALUFFO_DISCOVERY_KNOWN_DEAD_DAYS`
+  sets the window and `0` turns the memo off.
+
+- **The homepage analysis reads each fetched page for links once instead of repeatedly.** The
+  extractors that look for a careers link each walked the same HTML, so a page with no candidates
+  was scanned about nine times over. One lazily built index per fetched body now serves the provider
+  walk, the explicit-link extractor, the static candidate builder, the no-careers reason and both
+  recovery waves. On the captured production population, scans fall from **9.03 to 3.79** body walks
+  per readable page and the phase falls from about **87 s to 53 s**, with results identical batch by
+  batch and per collection; a live worker pair confirms **87.7/86.9 s to 65.0/62.9 s**.
+
+- **The container channel analyzes one batch's homepages while the next batch is fetched.** The
+  analysis runs in a worker process handed the parent's own function and inputs, so a batch's
+  result is unchanged; any failure falls back to analyzing that batch in-process and retires the
+  transport for the rest of the run. Two counterbalanced full-population pairs took **126.5 s** and
+  **94.0 s** off the audit's wall (**748.8 to 622.3 s**, **729.6 to 635.6 s**). The packaged desktop
+  app keeps the in-process analysis, because a frozen build does not start the worker.
+
+### Notes
+
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.027:
+  the same-origin Linux container,
+  GHCR multi-arch image publishing,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
+
 ## [0.3.027] - 2026-10-28
 
 ### Changed
@@ -233,42 +271,6 @@ Four rules the guardrail enforces so this cannot quietly regress:
   full report parse. First-run bootstrap promotion writes that sidecar too, so a fresh install no
   longer pays the parse.
 - Distribution surfaces are unchanged. Each behaves as it did in 0.3.022:
-  the same-origin Linux container,
-  GHCR multi-arch image publishing,
-  wildcard browser CORS allow headers,
-  desktop localhost bridge compatibility.
-
-## [0.3.022] - 2026-10-19
-
-### Changed
-
-- **The desktop app shows its window sooner, and stops making the first screen wait on background
-  work.** The bridge begins serving before it finishes the rest of its post-start chain, and the
-  heavy startup work — the overdue job-availability refresh, the saved-state pull and the database
-  maintenance pass — is now held back until the first page has finished its opening burst of
-  requests. A launch with no window still gets that work done, so headless and container runs lose
-  nothing. Opening a mature runtime database also no longer adds seconds before syncing starts.
-
-- **A packaged launch does less work before it can answer.** Around a quarter of the modules the
-  packaged bridge used to load at startup — the discovery and fetch-adapter code, the jobs-feed and
-  lifecycle helpers, the parsers and the sync machinery — are now loaded when a request or a task
-  first needs them. Measured on the 2026-10-18 portable build across four runs, the time from
-  entrypoint start to the bridge being configured fell from a 240 ms median to 113 ms.
-
-### Fixed
-
-- **A failing metrics read can no longer stall the bridge's request loop.** The accepted-request
-  counter is read on every pass of the loop, and a value it could not represent used to raise out
-  of the loop instead of degrading to zero.
-
-### Notes
-
-- **Duplicate detection for the Elevato studio boards reads each posting once** instead of
-  re-scanning the whole feed for every pair it considers. The jobs it produces, their identities
-  and the per-board outcomes are unchanged.
-- An alternative browser engine that was never part of a shipped build is retired from the fetch
-  fallback path; the Chromium fallback and every user-visible fetch outcome stay as they were.
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.021:
   the same-origin Linux container,
   GHCR multi-arch image publishing,
   wildcard browser CORS allow headers,
