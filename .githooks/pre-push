@@ -285,18 +285,28 @@ if [ "$need_gate" -eq 1 ]; then
   # that let float("inf") escape -- and main stayed red for three pushes while every
   # local gate was green. Running only the scans that read the checked-out tree keeps
   # the step near fifteen seconds instead of the suite's four minutes.
-  echo "Running the live-tree static ratchets before pushing to main..."
-  if run_timed_command "test:py:ratchets" npm run test:py:ratchets; then
-    ratchet_status=0
+  #
+  # Full local CI mode already runs these modules: run_full_ci_checks below starts
+  # `npm run test:py`, which selects the whole suite including every module listed in
+  # scripts/static_ratchet_gate.py. The guard skips only the standalone copy; a failing
+  # ratchet still stops the push, from the full run, so coverage is what stays and the
+  # duplicate 22 s is what goes.
+  if [ "$full_ci_enabled" -eq 0 ]; then
+    echo "Running the live-tree static ratchets before pushing to main..."
+    if run_timed_command "test:py:ratchets" npm run test:py:ratchets; then
+      ratchet_status=0
+    else
+      ratchet_status=$?
+    fi
+    if [ "$ratchet_status" -ne 0 ]; then
+      hook_end_ms="$(ms_now)"
+      end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+      log_timing "pre-push-end" "$ratchet_status" "$end_elapsed_ms"
+      log_timing_csv "pre-push-end" "$end_elapsed_ms" "$ratchet_status" "$branch_ref"
+      exit "$ratchet_status"
+    fi
   else
-    ratchet_status=$?
-  fi
-  if [ "$ratchet_status" -ne 0 ]; then
-    hook_end_ms="$(ms_now)"
-    end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
-    log_timing "pre-push-end" "$ratchet_status" "$end_elapsed_ms"
-    log_timing_csv "pre-push-end" "$end_elapsed_ms" "$ratchet_status" "$branch_ref"
-    exit "$ratchet_status"
+    echo "Skipping the standalone static ratchet step: full CI mode runs it inside test:py."
   fi
 
   gate_status=0

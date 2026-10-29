@@ -229,7 +229,7 @@ The tracked Git pre-push hook keeps the default local push path narrow and makes
 - Normal push to `main` **or a `v*` release tag**: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`, then `npm run test:py:ratchets`. Tag gating matters because a tag publishes the GitHub release, the signed desktop update manifest, and the GHCR image. Feature branches and `refs/tags/rollback-*` are deliberately not gated; `test_pre_push_hook_gates_release_tags` pins that distinction by running the hook's real ref-detection block.
 
 The third step exists because the first two execute no test at all: pre-commit, pip-audit and repo guardrails inspect the tree, and knip inspects JS, so a live-tree pytest scan could only fail after the push, in CI's Tests job. That is how the int-coercion ratchet named three `int(<bare name>)` handlers that let `float("inf")` escape and left `main` red for three pushes while every local gate was green. `scripts/static_ratchet_gate.py` runs only the modules whose assertions read the checked-out tree -- the AST scans, the docs-versus-registry audits and the git-read version policy -- which is 98 tests in about 16 s of pytest (roughly 22 s including interpreter start) rather than the developer lane's four minutes. Modules that drive their guard against a temp fixture belong in the suite, not here, and the three redundant or non-hermetic exclusions (`test_repo_guardrails.py`, `test_rule_list_guardrail.py`, `test_workflow_syntax_policy.py`) are documented in the script.
-- Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`.
+- Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`. It skips the standalone `test:py:ratchets` step, because `npm run test:py` in that mode already selects the same modules; a failing ratchet still blocks the push, from the full run, and the step prints that it was skipped.
 - Optional hook warmup: set `PRE_PUSH_WARM_HOOKS=1` or run `npm run prepush:warm`.
 - Optional timing CSV log: set `PRE_PUSH_TIMING_LOG=1`.
 - Optional custom timing log path: set `PRE_PUSH_TIMING_LOG_PATH=<path>`.
@@ -243,8 +243,8 @@ The hook emits lightweight console timing lines in this format:
 Measured baseline on the primary Windows development machine, re-measured 2026-09-29 after mypy/eslint/vulture moved to the commit path and `v*` tags became gated:
 
 - Commit gate (`lint:precommit:changed`): about `35s` (was about `24s` before the pre-push hooks joined it; ~+10.5s)
-- Default `main` **or `v*` tag** push gate: about `115s` (`lint:precommit:ci` about `89s`, `lint:deadcode:js` about `2s`, and `test:py:ratchets` about `23s`), measured 2026-10-29
-- Full local CI mode: about `109s`
+- Default `main` **or `v*` tag** push gate: `115-130s` (`lint:precommit:ci` `89-104s` across the two 2026-10-29 runs, `lint:deadcode:js` about `2s`, and `test:py:ratchets` about `22-24s`)
+- Full local CI mode: about `109s`; it skips the standalone ratchet step, whose modules its `test:py` run already contains
 - Warmup path after environments exist: under `1s`
 
 The main source of the “first push timed out” complaint is usually hook environment bootstrap or accidentally using the full local CI path as the default push gate. Warm hooks once after a new clone, Python switch, or cache reset to avoid the first-run pre-commit spike:
