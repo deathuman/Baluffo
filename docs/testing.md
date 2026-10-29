@@ -226,7 +226,9 @@ The repo-specific tuning lives in `.gitleaks.toml`, with filename-aware hook rou
 
 The tracked Git pre-push hook keeps the default local push path narrow and makes the full local CI-equivalent gate explicit.
 
-- Normal push to `main` **or a `v*` release tag**: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`. Tag gating matters because a tag publishes the GitHub release, the signed desktop update manifest, and the GHCR image. Feature branches and `refs/tags/rollback-*` are deliberately not gated; `test_pre_push_hook_gates_release_tags` pins that distinction by running the hook's real ref-detection block.
+- Normal push to `main` **or a `v*` release tag**: runs `npm run lint:precommit:ci`, then `npm run lint:deadcode:js`, then `npm run test:py:ratchets`. Tag gating matters because a tag publishes the GitHub release, the signed desktop update manifest, and the GHCR image. Feature branches and `refs/tags/rollback-*` are deliberately not gated; `test_pre_push_hook_gates_release_tags` pins that distinction by running the hook's real ref-detection block.
+
+The third step exists because the first two execute no test at all: pre-commit, pip-audit and repo guardrails inspect the tree, and knip inspects JS, so a live-tree pytest scan could only fail after the push, in CI's Tests job. That is how the int-coercion ratchet named three `int(<bare name>)` handlers that let `float("inf")` escape and left `main` red for three pushes while every local gate was green. `scripts/static_ratchet_gate.py` runs only the modules whose assertions read the checked-out tree -- the AST scans, the docs-versus-registry audits and the git-read version policy -- which is 98 tests in about 16 s of pytest (roughly 22 s including interpreter start) rather than the developer lane's four minutes. Modules that drive their guard against a temp fixture belong in the suite, not here, and the three redundant or non-hermetic exclusions (`test_repo_guardrails.py`, `test_rule_list_guardrail.py`, `test_workflow_syntax_policy.py`) are documented in the script.
 - Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`.
 - Optional hook warmup: set `PRE_PUSH_WARM_HOOKS=1` or run `npm run prepush:warm`.
 - Optional timing CSV log: set `PRE_PUSH_TIMING_LOG=1`.
@@ -241,7 +243,7 @@ The hook emits lightweight console timing lines in this format:
 Measured baseline on the primary Windows development machine, re-measured 2026-09-29 after mypy/eslint/vulture moved to the commit path and `v*` tags became gated:
 
 - Commit gate (`lint:precommit:changed`): about `35s` (was about `24s` before the pre-push hooks joined it; ~+10.5s)
-- Default `main` **or `v*` tag** push gate: about `80s` (`lint:precommit:ci` plus about `2s` for `lint:deadcode:js`)
+- Default `main` **or `v*` tag** push gate: about `115s` (`lint:precommit:ci` about `89s`, `lint:deadcode:js` about `2s`, and `test:py:ratchets` about `23s`), measured 2026-10-29
 - Full local CI mode: about `109s`
 - Warmup path after environments exist: under `1s`
 
@@ -251,7 +253,7 @@ The main source of the “first push timed out” complaint is usually hook envi
 npm run prepush:warm
 ```
 
-If an external launcher or local automation wraps `git push origin main` with a hard timeout, keep the default hook behavior unchanged and raise only that outer timeout to at least `150s`. No tracked repo-side `git push` wrapper currently enforces a `120s` timeout, so any remaining cap is outside the repository hook source.
+If an external launcher or local automation wraps `git push origin main` with a hard timeout, keep the default hook behavior unchanged and raise only that outer timeout to at least `180s`. No tracked repo-side `git push` wrapper currently enforces a `120s` timeout, so any remaining cap is outside the repository hook source.
 
 ## Test layout and fixtures
 
@@ -268,6 +270,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Full pre-commit sweep (local and CI; identical command) | `npm run lint:precommit:ci` |
 | Repository policy guardrails | `npm run lint:repo-guardrails` |
 | Frontend unit tests | `npm run test:frontend:unit` |
+| Live-tree static ratchets (pre-push) | `npm run test:py:ratchets` |
 | Python dependency security audit | `npm run security:python` |
 | JavaScript dependency security audit | `npm run security:js` |
 | Build ship bundle | `npm run build:ship-bundle` |

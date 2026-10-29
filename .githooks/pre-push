@@ -279,6 +279,26 @@ if [ "$need_gate" -eq 1 ]; then
     exit "$deadcode_status"
   fi
 
+  # The static ratchets are the one pytest surface the push path never ran: pre-commit,
+  # pip-audit and knip do not execute a single test, so `Tests` was the first place a
+  # live-tree scan could fail. It did -- the int-coercion ratchet named three handlers
+  # that let float("inf") escape -- and main stayed red for three pushes while every
+  # local gate was green. Running only the scans that read the checked-out tree keeps
+  # the step near fifteen seconds instead of the suite's four minutes.
+  echo "Running the live-tree static ratchets before pushing to main..."
+  if run_timed_command "test:py:ratchets" npm run test:py:ratchets; then
+    ratchet_status=0
+  else
+    ratchet_status=$?
+  fi
+  if [ "$ratchet_status" -ne 0 ]; then
+    hook_end_ms="$(ms_now)"
+    end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+    log_timing "pre-push-end" "$ratchet_status" "$end_elapsed_ms"
+    log_timing_csv "pre-push-end" "$end_elapsed_ms" "$ratchet_status" "$branch_ref"
+    exit "$ratchet_status"
+  fi
+
   gate_status=0
   if [ "$full_ci_enabled" -eq 1 ]; then
     if run_full_ci_checks; then
