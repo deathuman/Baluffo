@@ -54,6 +54,7 @@ from duplicate_body_policy import (
     check_duplicate_function_bodies,
     collect_duplicate_patterns,
 )
+from eol_contract_policy import check_root_eol_contract, check_worktree_eol_contract
 from loc_budget import check_loc_budget
 from release_artifacts_policy import (
     check_desktop_update_manifest_version,
@@ -100,6 +101,7 @@ GROUPS = (
     "fixtures",
     "line-budget",
     "loc",
+    "eol",
     "release",
     "registry",
     "bundle",
@@ -1026,6 +1028,24 @@ def run_loc_group() -> list[GuardFailure]:
     return [failure] if failure is not None else []
 
 
+def run_eol_group() -> list[GuardFailure]:
+    """Working-tree bytes against the `.gitattributes` EOL contract.
+
+    The per-file check is deliberately paired with the root-rule check: an
+    absent or narrowed `* text=auto eol=lf` would leave every tracked file
+    without an `eol` constraint, and the scan would pass while meaning nothing.
+    """
+    failures: list[GuardFailure] = []
+    for name, messages in (
+        ("check_root_eol_contract", check_root_eol_contract(ROOT)),
+        ("check_worktree_eol_contract", check_worktree_eol_contract(ROOT)),
+    ):
+        failure = _failure_from_messages("eol", name, messages)
+        if failure is not None:
+            failures.append(failure)
+    return failures
+
+
 def run_bundle_group() -> list[GuardFailure]:
     failures: list[GuardFailure] = []
     completeness = _failure_from_messages(
@@ -1170,6 +1190,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
     "loc": run_loc_group,
+    "eol": run_eol_group,
     "release": run_release_group,
     "registry": run_registry_group,
     "bundle": run_bundle_group,

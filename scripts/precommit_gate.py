@@ -205,6 +205,7 @@ def should_run_repo_guardrails(files: list[str]) -> bool:
         "README.md",
         "package.json",
         "package-lock.json",
+        ".gitattributes",
         ".pre-commit-config.yaml",
         "ruff.toml",
         "mypy.ini",
