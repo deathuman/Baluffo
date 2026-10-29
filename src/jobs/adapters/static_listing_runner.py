@@ -261,17 +261,25 @@ class StaticFetchRunner:
         return True
 
     # mutation — modifies in-place state
-    def _note_batch_failure(self, results: list[dict[str, Any]], started: float) -> None:
-        """Charge a batch that produced nothing to the source's failure budget.
+    def _note_batch_outcome(self, results: list[dict[str, Any]], started: float) -> None:
+        """Charge this batch's failed share of the wall to the source's failure budget.
 
-        Only a wholly failed batch counts: a single ``ok`` row means the board is
-        working, and a slow-but-live fanout must not be punished for its slow rows.
-        The elapsed time is measured here because the budget is about time spent, not
-        rows counted -- the returned rows carry no per-batch clock.
+        Charging only *wholly* failed batches made the budget inert: real stalls come in
+        mixed batches, so a source could burn minutes and accrue nothing. Phase 1's first
+        arm proved that -- `on-1` recorded **0** budget rows across 499 failures.
+
+        The charge is ``elapsed x failed / total``, which is the failed share of the batch's
+        own clock, because the returned rows carry no per-page timing. A wholly failed batch
+        therefore still pays its full elapsed time (the replay's assumption), while a live
+        fanout pays only for its failing rows and can never be charged for work it delivered.
         """
-        if any(bool(result.get("ok")) for result in results):
+        total = len(results)
+        if not total:
             return
-        self.ctx.record_failed_attempt(time.perf_counter() - started)
+        failed = sum(1 for result in results if not bool(result.get("ok")))
+        if not failed:
+            return
+        self.ctx.record_failed_attempt((time.perf_counter() - started) * failed / total)
 
     # network — makes HTTP requests
     def _fetch_listing_html_sync(
@@ -564,7 +572,7 @@ class StaticFetchRunner:
             per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
             progress_callback=self._on_listing_batch_progress,
         )
-        self._note_batch_failure(listing_results, batch_started)
+        self._note_batch_outcome(listing_results, batch_started)
         # All fetches in the batch have completed, so every capture is settled:
         # adopt them in report order, on the main thread, before results are read.
         self._apply_listing_read_validators()

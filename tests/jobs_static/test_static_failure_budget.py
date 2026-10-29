@@ -12,6 +12,11 @@ attempts, and only while the source has kept no job. The moment a board keeps a
 job it returns to the normal path, which is what makes "no kept board is lost"
 structural rather than a hope. A detail-page read is deliberately not an
 exemption -- see ``source_has_kept_jobs``.
+
+The charge is the failed share of a batch's clock. Charging only *wholly* failed
+batches, as the first implementation did, left the budget inert on the mixed
+batches real stalls arrive in: Phase 1's first arm recorded 0 budget rows across
+499 failures.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from dataclasses import replace
 
 import pytest
 
-from src.jobs.adapters.static_listing_traversal import _note_detail_batch_failure
+from src.jobs.adapters.static_listing_traversal import _note_detail_batch_outcome
 from src.jobs.adapters.static_runtime_support import (
     STATIC_FAILURE_BUDGET_DEFAULT_S,
     build_static_source_runtime_config,
@@ -113,28 +118,50 @@ def test_stop_records_a_distinct_reason() -> None:
 # --- batch accounting ---------------------------------------------------------
 
 
-def test_wholly_failed_batch_is_charged() -> None:
+def test_wholly_failed_batch_is_charged_in_full() -> None:
     runner, ctx, _log = _make_runner({_BASE: _pagination_pages_html()})
     started = time.perf_counter() - 0.5
-    runner._note_batch_failure([{"ok": False}, {"ok": False}], started)
+    runner._note_batch_outcome([{"ok": False}, {"ok": False}], started)
     assert ctx.failure_elapsed_s >= 0.5
 
 
-def test_partial_success_is_free() -> None:
-    # One ok row proves the board is live; a slow-but-live fanout must not be charged.
+def test_live_batch_is_free() -> None:
     runner, ctx, _log = _make_runner({_BASE: _pagination_pages_html()})
     started = time.perf_counter() - 0.5
-    runner._note_batch_failure([{"ok": False}, {"ok": True}], started)
+    runner._note_batch_outcome([{"ok": True}, {"ok": True}], started)
     assert ctx.failure_elapsed_s == 0.0
 
 
-def test_detail_helper_charges_only_wholly_failed_batches() -> None:
+def test_mixed_batch_charges_only_its_failed_share() -> None:
+    # Three of four pages failed over one second: charge 0.75 s, not the whole second.
+    runner, ctx, _log = _make_runner({_BASE: _pagination_pages_html()})
+    started = time.perf_counter() - 1.0
+    runner._note_batch_outcome([{"ok": True}, {"ok": False}, {"ok": False}, {"ok": False}], started)
+    assert 0.7 <= ctx.failure_elapsed_s <= 0.8
+
+
+def test_detail_helper_charges_failed_share() -> None:
     ctx = _ctx()
-    started = time.perf_counter() - 0.5
-    _note_detail_batch_failure(ctx, [{"ok": True}], started)
+    started = time.perf_counter() - 1.0
+    _note_detail_batch_outcome(ctx, [{"ok": True}, {"ok": True}], started)
     assert ctx.failure_elapsed_s == 0.0
-    _note_detail_batch_failure(ctx, [{"ok": False}], started)
-    assert ctx.failure_elapsed_s >= 0.5
+    _note_detail_batch_outcome(ctx, [{"ok": False}, {"ok": False}], started)
+    assert ctx.failure_elapsed_s >= 0.9
+
+
+def test_mixed_batches_accumulate_to_the_threshold() -> None:
+    # Two half-failed second-long batches accrue 0.5 s each, so a 1 s budget trips.
+    runner, ctx, _log = _make_runner({_BASE: _pagination_pages_html()})
+    ctx.runtime_config = replace(ctx.runtime_config, static_failure_budget_s=1)
+    for _ in range(2):
+        runner._note_batch_outcome([{"ok": True}, {"ok": False}], time.perf_counter() - 1.0)
+    assert ctx.failure_budget_exhausted()
+
+
+def test_empty_batch_is_free() -> None:
+    runner, ctx, _log = _make_runner({_BASE: _pagination_pages_html()})
+    runner._note_batch_outcome([], time.perf_counter() - 0.5)
+    assert ctx.failure_elapsed_s == 0.0
 
 
 # --- runner wiring ------------------------------------------------------------

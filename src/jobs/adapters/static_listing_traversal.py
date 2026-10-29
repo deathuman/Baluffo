@@ -482,7 +482,7 @@ def _run_detail_batch(
             total,
         ),
     )
-    _note_detail_batch_failure(ctx, detail_results, batch_started)
+    _note_detail_batch_outcome(ctx, detail_results, batch_started)
     for detail_result_row in detail_results:
         if _detail_budget_exhausted(ctx, plan, reserve_s=0.0):
             state.stop_source = True
@@ -492,17 +492,22 @@ def _run_detail_batch(
         state.index = detail_batch_start + len(detail_batch)
 
 
-def _note_detail_batch_failure(
+def _note_detail_batch_outcome(
     ctx: StaticSourceContext, results: list[dict[str, Any]], started: float
 ) -> None:
-    """Charge a wholly failed detail batch to the source's failure budget.
+    """Charge a detail batch's failed share of the wall to the source's failure budget.
 
-    Mirrors the listing lane's accounting: any ``ok`` row proves the board is live, so
-    the batch is free; only a batch that produced nothing is charged.
+    Mirrors the listing lane: ``elapsed x failed / total``, so a wholly failed batch pays
+    its full clock and a live fanout pays only for its failing rows. Charging whole
+    batches alone left the budget inert on mixed batches (Phase 1's first arm: 0 rows).
     """
-    if any(bool(row.get("ok")) for row in results):
+    total = len(results)
+    if not total:
         return
-    ctx.record_failed_attempt(time.perf_counter() - started)
+    failed = sum(1 for row in results if not bool(row.get("ok")))
+    if not failed:
+        return
+    ctx.record_failed_attempt((time.perf_counter() - started) * failed / total)
 
 
 # mutation — modifies in-place state

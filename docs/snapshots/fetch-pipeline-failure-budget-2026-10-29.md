@@ -27,8 +27,9 @@ each stalling 100–500 s with `status=error` and no stage timings.
 - A source that has **kept no job** may spend at most `B` seconds in failed attempts.
 - `B = 60` by default (`BALUFFO_STATIC_FAILURE_BUDGET_S`; `0` disables). 75 and 90 replay worse on
   every arm.
-- Only a **wholly failed batch** is charged — a batch with one `ok` row is free, so a slow-but-live
-  fanout is never punished.
+- A batch is charged its **failed share** of its own clock (`elapsed × failed / total`), so a wholly
+  failed batch pays in full and a live fanout pays only for its failing rows. Charging whole
+  batches alone left the budget inert — see the Phase 1 attempt below.
 - The first kept job exempts the source for the rest of its run, which makes "no kept board is lost"
   structural rather than empirical.
 - It is a second stop condition beside `_page_budget_exhausted`. The 90 s budget, the pagination
@@ -67,7 +68,8 @@ The shipped predicate was replayed against the four captured arms by importing t
 
 Coverage invariants: **0** touched rows with `fetchedCount>0`, **0** with `keptCount>0`. Residual
 error seconds **9,164 / 5,661 / 7,772 / 9,012**; worst single failure **526 / 94 / 345 / 408 s** →
-60 s of charged failure time (a live row can overshoot by one attempt).
+60 s of charged failure time (a live row can overshoot by one attempt). The replay treats an error
+row's whole duration as failure time, which is an upper bound once accrual is per-batch share.
 
 One replay bug is worth keeping: the first pass charged every row's whole duration as failure time
 and reported **97** trips on `cur-1` instead of 76, because `ok` rows never accrue failure time.
@@ -80,6 +82,23 @@ It does not collapse the bimodal regime. Between the slow and fast arms the sour
 moves 12–17%, a fast arm under 1%. The rest is `ok` rows answering more slowly in that window, which
 is network weather and not something a retry budget can remove.
 
+## Phase 1, first attempt — the treatment was inert
+
+A first ABBA block on one build (`off` = `BALUFFO_STATIC_FAILURE_BUDGET_S=0`, `on` = `60`) was
+stopped after its first two arms. `on-1` finished in **1,406.8 s**, but it recorded **0** rows
+carrying `failure budget exceeded` across **499** failures: the budget never fired. Its speed was
+the fast regime, not the policy, and the contrast was measuring weather.
+
+The cause was the accounting, not the threshold. Charging a batch only when **every** row failed
+means a real stall — which arrives as a batch where some pages fail and some succeed — accrues
+nothing, so a source could burn minutes and never reach 60 s. The fix is the failed-share charge
+above: `elapsed × failed / total`, full for a wholly failed batch, proportional otherwise.
+
+That the stalls are not board properties had been checked separately: the twelve slowest error rows
+from `off-1` (399–526 s stalls) were re-run as an isolated 12-board slice and finished in **6.8 s**,
+worst error **3.9 s**. A live pair can therefore only see the policy when a stall window happens to
+occur, so stall incidence in the `off` arm is recorded as the covariate rather than assumed.
+
 ## Verification
 
 `tests/jobs_static` — **678 passed**, including the 13 new budget tests and the untouched
@@ -89,8 +108,10 @@ ratcheted to `src 192,362` / `tests 266,601`.
 
 ## Next
 
-Phase 1 is an ABBA pair on a single build with `BALUFFO_STATIC_FAILURE_BUDGET_S=0` against `=60`, so
-the contrast is the policy rather than a build. The primary endpoints are report-level and nearly
-noise-free — touched-set identity, error seconds, worst failure duration, kept and `outputCount`,
-and the success tail above 90 s — because the block's measured minimum detectable wall effect is
-**73.6%**, far above a 14% change.
+The counterbalanced pair runs on a single build with `BALUFFO_STATIC_FAILURE_BUDGET_S=0` against
+`=60`, so the contrast is the policy rather than a build. The primary endpoints are report-level
+and nearly noise-free — budget-row identity, error seconds, worst failure duration, kept and
+`outputCount`, and the success tail above 90 s — because the block's measured minimum detectable
+wall effect is **73.6%**, far above a 14% change. Because stalls are transient, the honest reading
+is conditional: the pair measures the policy only if its `off` arm actually stalls, and stall
+incidence is reported beside every wall number.
