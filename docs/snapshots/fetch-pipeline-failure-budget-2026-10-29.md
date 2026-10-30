@@ -1,7 +1,8 @@
 # Fetch pipeline — a failure budget for static sources
 
 **Date:** 2026-10-29 · **Lane:** fetch-pipeline, static sources · **Status:** implemented; coverage
-verified on the captured arms, live arm pair pending.
+verified on the captured arms; **two live arm pairs found the treatment inert**, and the mechanism is
+recorded below. Not shipped as a wall win.
 A static source that has kept no job may spend **60 s** in failed attempts and is then abandoned
 (`failure budget exceeded (60s)`), instead of sitting inside the pagination extension for up to
 **630 s**. Replayed on the four captured counterbalanced arms, that is **76 / 12 / 56 / 75** touched
@@ -82,36 +83,57 @@ It does not collapse the bimodal regime. Between the slow and fast arms the sour
 moves 12–17%, a fast arm under 1%. The rest is `ok` rows answering more slowly in that window, which
 is network weather and not something a retry budget can remove.
 
-## Phase 1, first attempt — the treatment was inert
+## Phase 1 — a null record twice, and why the rule never fires
 
-A first ABBA block on one build (`off` = `BALUFFO_STATIC_FAILURE_BUDGET_S=0`, `on` = `60`) was
-stopped after its first two arms. `on-1` finished in **1,406.8 s**, but it recorded **0** rows
-carrying `failure budget exceeded` across **499** failures: the budget never fired. Its speed was
-the fast regime, not the policy, and the contrast was measuring weather.
+Both blocks run on one build with the kill switch as the only difference (`off` =
+`BALUFFO_STATIC_FAILURE_BUDGET_S=0`, `on` = `60`), so the contrast is the policy and not a build.
 
-The cause was the accounting, not the threshold. Charging a batch only when **every** row failed
-means a real stall — which arrives as a batch where some pages fail and some succeed — accrues
-nothing, so a source could burn minutes and never reach 60 s. The fix is the failed-share charge
-above: `elapsed × failed / total`, full for a wholly failed batch, proportional otherwise.
+| block | arm | budget | wall | kept | error s | err >60 s | max err | budget rows |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `p1` | `off-1` | 0 | 2,638.1 | 7,072 | 11,387 | 49 | 400 | 0 |
+| `p1` | `on-1` | 60 | 1,406.8 | 7,440 | 5,136 | 11 | 92 | **0** |
+| `p1b` | `off-3` | 0 | 1,615.2 | 7,059 | 5,681 | 11 | 130 | 0 |
+| `p1b` | `on-3` | 60 | 3,299.6 | 7,214 | 17,272 | 87 | 280 | **0** |
 
-That the stalls are not board properties had been checked separately: the twelve slowest error rows
-from `off-1` (399–526 s stalls) were re-run as an isolated 12-board slice and finished in **6.8 s**,
-worst error **3.9 s**. A live pair can therefore only see the policy when a stall window happens to
-occur, so stall incidence in the `off` arm is recorded as the covariate rather than assumed.
+`on-1` finished 47% faster than its control and `on-3` 104% slower, and **neither stopped a single
+row**: 0 budget rows across 499 and 534 failures. Both arms are drawings of the weather, not of the
+policy, and the analyser now says so instead of scoring them — with no touched row, only the
+coverage endpoint is evaluable.
+
+The first block's cause was the accounting: charging a batch only when **every** row failed meant a
+mixed batch accrued nothing. That was fixed to the failed share of the batch clock
+(`elapsed × failed / total`, commit `abf09e70`) and the second block still recorded zero. So the
+cause is not the charge rule. Four measurements locate it:
+
+1. **The wiring works.** A single-source run with the seams patched logs `CHARGE +1.2 total=1.2
+   budget=60` then `CHECK total=1.2 ... -> False` on a failing board, and `CHARGE +0.3 ...
+   exempt=True -> False` on a healthy one. Charges reach the accumulator and checks consult it.
+2. **The stalled rows have no failure time to charge.** Across the 87 error rows over 60 s in
+   `on-3`, the outer clock sums to **12,021 s** while their own `listing_fetch_ms` sums to **353 s**
+   — most report **one** listing batch and **0 ms** of measured fetch. The seconds are outside the
+   batch clock, so the rule has nothing to accrue.
+3. **The batch deadline is not the overrun either.** A wedged-but-alive fetch (a thread that sleeps
+   200 s) makes `fetch_pages_batched` return at its deadline — **30.0 s** sync, **30.3 s** async —
+   with `total batch deadline exceeded (30s)` rows. The deadline is enforced promptly.
+4. **The stalls are transient.** The 16 slowest boards from `on-3` re-run as a 16-worker slice
+   finish in **8.0 s** (worst row 6.5 s), each batch returning in under a second.
+
+So the slow seconds are exterior to batch fetch — the same wall-weather the four-arm block already
+showed in `ok` rows — and a per-source failure budget bounds a quantity that is near zero on this
+population. The rule cannot remove cost it never sees. It remains correct (coverage was never at
+risk: 0 touched rows in both blocks, and no kept board is lost with the budget on), it is simply
+not a wall lever here.
 
 ## Verification
 
-`tests/jobs_static` — **678 passed**, including the 13 new budget tests and the untouched
-pagination-extension, pagination-follow and time-budget-default suites. Ruff check and format clean.
-Guardrail groups `loc`, `duplication`, `test-shape`, `dead-code` and `eol` pass; the LOC baseline is
-ratcheted to `src 192,362` / `tests 266,601`.
+`tests/jobs_static` — **681 passed**, including the 16 budget tests and the untouched
+pagination-extension, pagination-follow and time-budget-default suites. Ruff check and format clean;
+the LOC baseline covers the new leaves.
 
 ## Next
 
-The counterbalanced pair runs on a single build with `BALUFFO_STATIC_FAILURE_BUDGET_S=0` against
-`=60`, so the contrast is the policy rather than a build. The primary endpoints are report-level
-and nearly noise-free — budget-row identity, error seconds, worst failure duration, kept and
-`outputCount`, and the success tail above 90 s — because the block's measured minimum detectable
-wall effect is **73.6%**, far above a 14% change. Because stalls are transient, the honest reading
-is conditional: the pair measures the policy only if its `off` arm actually stalls, and stall
-incidence is reported beside every wall number.
+The failure budget is not shipped as a performance win; with two null blocks there is nothing to
+claim. The open question is where the 180–280 s rows actually spend their time, since it is not in
+`fetch_pages_batched` and not charged to any batch — the two candidates are the browser fallback
+and the per-host gate wait. That needs a stage-timing probe on a stalled re-run, and it should be
+pre-registered before any code changes, exactly as this lever was.
