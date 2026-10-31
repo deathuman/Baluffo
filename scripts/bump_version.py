@@ -2,12 +2,13 @@
 """Bump the Baluffo version across every release artifact.
 
 Keeps the version-bearing files in sync so a release bump is one command instead
-of three hand-edits (the exact drift that caused the v0.2.139 release notes
+of several hand-edits (the exact drift that caused the v0.2.139 release notes
 mismatch):
 
   - src/app_version.py
   - docs/CHANGELOG.md  (moves the [Unreleased] section into a dated release)
-  - dist/baluffo-ship/app/current.txt
+  - dist/baluffo-ship/app/current.txt (when present)
+  - Umbrel app manifest and compose image tag (when present)
 
 Before writing anything it compares the version every present artifact declares.
 A half-applied earlier bump (app version moved but the changelog or the packaged
@@ -42,12 +43,21 @@ from src.python_version_guard import ensure_required_python
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 APP_VERSION_RE = re.compile(r'APP_VERSION = "([^"]+)"')
 
-# Every artifact that declares the version, in the order a bump touches them.
+# Every present artifact that declares the version, in the order a bump touches
+# them. Umbrel metadata is optional in release fixtures and non-store checkouts.
 # Used only to detect drift: the bump helpers below own the rewriting.
 _RELEASE_ARTIFACTS: tuple[tuple[str, str], ...] = (
     ("src/app_version.py", r'APP_VERSION = "([^"]+)"'),
     ("docs/CHANGELOG.md", r"^## \[(\d+\.\d+\.\d+)\]"),
     ("dist/baluffo-ship/app/current.txt", r"^(\d+\.\d+\.\d+)\s*$"),
+    (
+        "deathuman-baluffo/umbrel-app.yml",
+        r"^version:\s*[\"']?(\d+\.\d+\.\d+)[\"']?\s*$",
+    ),
+    (
+        "deathuman-baluffo/docker-compose.yml",
+        r"^[ \t]*image:\s*[\"']?ghcr\.io/deathuman/baluffo:(\d+\.\d+\.\d+)[\"']?\s*$",
+    ),
 )
 
 
@@ -66,8 +76,8 @@ def _write(path: Path, text: str) -> None:
 def read_declared_versions(root: Path) -> list[tuple[str, str | None]]:
     """Return ``(artifact, declared version)`` for every present release artifact.
 
-    An unbuilt ``current.txt`` is absent from the list: there is nothing to
-    disagree with.
+    An unbuilt ``current.txt`` and absent Umbrel metadata are omitted from the
+    list: there is nothing to disagree with in an unbuilt package or fixture.
     """
     declared: list[tuple[str, str | None]] = []
     for rel_path, pattern in _RELEASE_ARTIFACTS:
@@ -136,6 +146,26 @@ def bump_current_txt(version: str) -> str:
     return f"{version}\n"
 
 
+def bump_umbrel_manifest(text: str, version: str) -> str:
+    pattern = re.compile(r"(^version:[ \t]*[\"']?)\d+\.\d+\.\d+([\"']?[ \t]*$)", re.MULTILINE)
+    updated, count = pattern.subn(rf"\g<1>{version}\g<2>", text, count=1)
+    if count != 1:
+        raise ValueError("deathuman-baluffo/umbrel-app.yml has no version field.")
+    return updated
+
+
+def bump_umbrel_compose(text: str, version: str) -> str:
+    pattern = re.compile(
+        r"(^[ \t]*image:[ \t]*[\"']?ghcr\.io/deathuman/baluffo:)"
+        r"\d+\.\d+\.\d+([\"']?[ \t]*$)",
+        re.MULTILINE,
+    )
+    updated, count = pattern.subn(rf"\g<1>{version}\g<2>", text, count=1)
+    if count != 1:
+        raise ValueError("deathuman-baluffo/docker-compose.yml has no pinned Baluffo image tag.")
+    return updated
+
+
 def main(argv: list[str] | None = None) -> int:
     ensure_required_python()
     parser = argparse.ArgumentParser(
@@ -161,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
     app_version_path = ROOT / "src" / "app_version.py"
     changelog_path = ROOT / "docs" / "CHANGELOG.md"
     current_txt_path = ROOT / "dist" / "baluffo-ship" / "app" / "current.txt"
+    umbrel_manifest_path = ROOT / "deathuman-baluffo" / "umbrel-app.yml"
+    umbrel_compose_path = ROOT / "deathuman-baluffo" / "docker-compose.yml"
 
     current = APP_VERSION_RE.search(_read(app_version_path))
     current_version = current.group(1) if current else None
@@ -184,6 +216,14 @@ def main(argv: list[str] | None = None) -> int:
         # move. Creating one would invent an artifact that
         # `read_declared_versions` deliberately ignores when it is absent.
         targets.append((current_txt_path, bump_current_txt(version)))
+    if umbrel_manifest_path.is_file():
+        targets.append(
+            (umbrel_manifest_path, bump_umbrel_manifest(_read(umbrel_manifest_path), version))
+        )
+    if umbrel_compose_path.is_file():
+        targets.append(
+            (umbrel_compose_path, bump_umbrel_compose(_read(umbrel_compose_path), version))
+        )
 
     changed = [(path, new_text) for path, new_text in targets if _read(path) != new_text]
     if not changed:
