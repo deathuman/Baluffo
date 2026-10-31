@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.028"
+version: "0.3.029"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
