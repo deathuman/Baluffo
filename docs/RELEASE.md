@@ -729,6 +729,12 @@ ghcr.io/deathuman/baluffo
 
 The GHCR workflow builds `linux/amd64` and `linux/arm64` using Docker buildx and QEMU. Pull request builds validate the image without pushing; default-branch and tag builds publish to GHCR when the workflow runs. Docs, tests, and repo-process-only branch/PR changes are path-filtered out so they do not republish the current app-version or `latest` tags. Tag pushes and manual `workflow_dispatch` publishes are not skipped by those path filters.
 
+### Umbrel Community App Store
+
+The repository also serves as a community app store. Add `https://github.com/deathuman/Baluffo` in Umbrel's app-store interface, then install the `deathuman-baluffo` package. Its manifest version and container image tag must match the released Baluffo version. The compose service routes through Umbrel's `app_proxy` to the web service on port `8080` with proxy authentication disabled, mounts `${APP_DATA_DIR}/data` at `/data`, and declares host-facing port `8877` in the manifest.
+
+The normal push and pull-request container workflow filters `umbrel-app-store.yml`, `deathuman-baluffo/**`, and `scripts/bump_version.py`, so store metadata-only edits do not start an image build. A release version bump also changes `src/app_version.py`, which remains a shipped path and triggers the required image build. Tag pushes and manual workflow dispatch remain explicit build paths.
+
 Raw LAN exposure is a supported deployment choice for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
 
 When a host deployment is in scope, live smoke is required before closeout. Verify:

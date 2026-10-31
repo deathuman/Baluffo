@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: $APP_DEATHUMAN_BALUFFO_HOST
+      APP_PORT: $APP_DEATHUMAN_BALUFFO_PORT
+      PROXY_AUTH_ADD: "false"
+
+  web:
+    image: ghcr.io/deathuman/baluffo:0.3.028
+    init: true
+    restart: on-failure
+    stop_grace_period: 1m
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

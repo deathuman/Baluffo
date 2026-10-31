@@ -47,6 +47,10 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+### Added
+
+- **Baluffo can be installed from its Umbrel community app store.** Add the Baluffo GitHub repository in Umbrel, then install the app; it uses the published `0.3.028` image and keeps app data in Umbrel's persistent storage. Store-only metadata changes do not trigger normal container builds.
+
 ## [0.3.028] - 2026-10-29
 
 > This is a desktop rollup: it combines the fetcher changes that shipped to the container
