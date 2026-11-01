@@ -67,6 +67,7 @@
     "src/jobs/adapters/static_listing_flow.py::_probe_listing_pages": 19,
     "src/jobs/adapters/static_listing_pagination.py::_anchor_base_url": 12,
     "src/jobs/adapters/static_listing_rows.py::_append_rendered_row": 12,
+    "src/jobs/adapters/static_listing_rows.py::window": 15,
     "src/jobs/adapters/static_listing_runner.py::_fetch_listing_job_async": 11,
     "src/jobs/adapters/static_scrapy.py::_run_scrapy_static_source_entry": 15,
     "src/jobs/adapters/static_scrapy.py::run_scrapy_static_source": 19,
