@@ -78,12 +78,9 @@ NON_SHIPPED_PATTERNS = (
     "opencode.json",
     "LICENSE",
     "release-notes.md",
-    # Umbrel reads these deployment files directly; they do not change app behavior.
+    # Umbrel deployment metadata and release tooling are not runtime inputs.
     "umbrel-app-store.yml",
-    "deathuman-baluffo/umbrel-app.yml",
-    "deathuman-baluffo/docker-compose.yml",
-    "deathuman-baluffo/exports.sh",
-    # Release tooling is not imported by the application runtime.
+    "deathuman-baluffo/**",
     "scripts/bump_version.py",
     # A manifest or lockfile edit is usually a dev-dependency edit -- a linter, a
     # type checker -- and those install into the image's *build* stage only.

@@ -26,9 +26,7 @@ on:
       - "LICENSE"
       - "release-notes.md"
       - "umbrel-app-store.yml"
-      - "deathuman-baluffo/umbrel-app.yml"
-      - "deathuman-baluffo/docker-compose.yml"
-      - "deathuman-baluffo/exports.sh"
+      - "deathuman-baluffo/**"
       - "scripts/bump_version.py"
       # A manifest or lockfile edit is usually a dev-dependency edit, and dev
       # deps install into the image's build stage only -- `Dockerfile` copies
@@ -66,9 +64,7 @@ on:
       - "LICENSE"
       - "release-notes.md"
       - "umbrel-app-store.yml"
-      - "deathuman-baluffo/umbrel-app.yml"
-      - "deathuman-baluffo/docker-compose.yml"
-      - "deathuman-baluffo/exports.sh"
+      - "deathuman-baluffo/**"
       - "scripts/bump_version.py"
       - "package.json"
       - "package-lock.json"

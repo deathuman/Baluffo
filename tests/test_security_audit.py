@@ -85,6 +85,19 @@ def test_valid_allowlist_entries_become_ignore_args(tmp_path: Path, monkeypatch)
     assert "--disable-pip" in command
 
 
+def test_empty_allowlist_does_not_suppress_pip_audit(tmp_path: Path) -> None:
+    allowlist = tmp_path / "pip-audit-allowlist.json"
+    _write_allowlist(allowlist, json.dumps({"allowlist": []}))
+    ignored = security_audit.load_allowlist(allowlist, today=date(2026, 10, 17))
+    command = security_audit.build_pip_audit_command(ignored)
+
+    assert "--ignore-vuln" not in command
+    assert "--no-deps" in command
+    assert "--disable-pip" in command
+    assert command[-4:-2] == ["--format", "json"]
+    assert command[-2:] == ["--output", str(security_audit.REPORT_PATH)]
+
+
 def test_resolution_command_targets_the_container_platform() -> None:
     """The lock is resolved for the image's CPython/linux target, not this machine."""
     command = security_audit.build_resolution_command()

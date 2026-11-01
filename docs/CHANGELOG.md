@@ -62,6 +62,10 @@ Four rules the guardrail enforces so this cannot quietly regress:
   ends with a recorded error instead of waiting indefinitely, and each phase is
   written to the log as it starts so a slow run can be told apart from a stuck one.
 
+- A source that has stopped making progress is now given up on after 60 seconds of failed
+  attempts, instead of holding the run for up to ten minutes. Runs finish sooner in the slow case,
+  and no board that was still producing jobs is affected.
+
 ### Notes
 
 - Distribution surfaces are unchanged. Each behaves as it did in 0.3.029:
@@ -70,13 +74,15 @@ Four rules the guardrail enforces so this cannot quietly regress:
   wildcard browser CORS allow headers,
   desktop localhost bridge compatibility.
 
-## [0.3.029] - 2026-10-29
+## [0.3.029] - 2026-10-31
 
-### Changed
+### Added
 
-- A source that has stopped making progress is now given up on after 60 seconds of failed
-  attempts, instead of holding the run for up to ten minutes. Runs finish sooner in the slow case,
-  and no board that was still producing jobs is affected.
+- **Baluffo can be installed from its Umbrel community app store.** Add the Baluffo GitHub repository in Umbrel, then install the app; it uses the published `0.3.029` image and keeps app data in Umbrel's persistent storage. Store-only metadata changes do not trigger normal container builds.
+
+### Security
+
+- **The Python dependency audit is clear.** Updated Twisted to 26.10.0 and pyasn1 to 0.6.5 to address the reported vulnerabilities.
 
 ### Notes
 
