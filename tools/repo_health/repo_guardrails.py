@@ -987,7 +987,7 @@ def run_release_group() -> list[GuardFailure]:
         if failure:
             failures.append(failure)
     # The container shipped-code version gate stops container code from shipping to
-    # the GHCR channel under a frozen version string. The commit hook asks for the
+    # the GHCR/Umbrel channel under a frozen version string. The commit hook asks for the
     # pending check: the window cannot see a commit that does not exist yet, so the
     # old arrangement let the offending commit land and only failed afterwards.
     # Pre-push and CI check the whole window, which also catches commits that were

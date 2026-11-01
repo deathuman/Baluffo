@@ -9,8 +9,9 @@ on every guardrail pass and pre-push.
 
 That gap is the 0.2.140 reuse trap in a different disguise. Once a version is
 published, every later ``main`` push republishes the same tag with newer code
-under the same version string, so nothing tells a consumer pinned to that
-version that the content changed at all.
+under the same version string while ``deathuman-baluffo/umbrel-app.yml`` keeps
+the old version, so Umbrel's string-equality update check does not offer the
+new image to an existing install.
 
 This check closes it as an opt-in release lane: it is wired into
 ``release:preflight`` only, never into the always-on guardrail set, so the gate
@@ -119,9 +120,9 @@ def check_version_published(version: str, *, timeout: int = DEFAULT_TIMEOUT) -> 
         digest=digest,
         detail=(
             f"{REGISTRY}/{REPOSITORY}:{version} is ALREADY published ({digest}); "
-            "pushing shipped code now republishes this tag with newer code under the "
-            "same version string, so consumers pinned to it see no reason to update "
-            "-- bump the version instead"
+            "pushing shipped code now republishes this tag with newer code while "
+            "umbrel-app.yml keeps the old version string, so Umbrel will not offer "
+            "the update -- bump the version instead"
         ),
     )
 

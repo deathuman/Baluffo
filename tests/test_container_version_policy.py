@@ -68,7 +68,11 @@ def _head_sha(repo: Path) -> str:
 
 def test_is_shipped_path_classifies_docs_vs_code() -> None:
     assert _is_shipped_path("src/jobs/adapters/plugins/static/phapp.py")
-    assert _is_shipped_path("scripts/bump_version.py")
+    assert not _is_shipped_path("scripts/bump_version.py")
+    assert not _is_shipped_path("umbrel-app-store.yml")
+    assert not _is_shipped_path("deathuman-baluffo/umbrel-app.yml")
+    assert not _is_shipped_path("deathuman-baluffo/docker-compose.yml")
+    assert not _is_shipped_path("deathuman-baluffo/exports.sh")
     assert _is_shipped_path("data/defaults/source-registry-active.seed.json")
     assert _is_shipped_path("Dockerfile")
     assert not _is_shipped_path("docs/RELEASE.md")

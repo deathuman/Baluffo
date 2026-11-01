@@ -47,6 +47,12 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+### Added
+
+- Umbrel users can again install and update Baluffo through Deathuman's private
+  community app store. The store entry uses the same container image as other
+  self-hosted deployments.
+
 ## [0.3.029] - 2026-10-29
 
 ### Changed

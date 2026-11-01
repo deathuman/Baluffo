@@ -27,7 +27,7 @@ CHANGELOG_MAX_RELEASED_SECTIONS = 5
 # "implementation detail leaked into release notes" smell; a human decides.
 _ADVISORY_INTERNAL_LEAK_PATTERNS = (
     (r"`[^`]*\.(?:py|mjs|cjs|js|ts|css|yml|yaml|json|gz)`", "code filename"),
-    (r"`(?:src|tools|tests|frontend|docs|scripts)/", "repo path"),
+    (r"`(?:src|tools|tests|frontend|docs|scripts|deathuman-baluffo)/", "repo path"),
     (r"static_source::", "loader id"),
     (r"\b__[a-z]+__\b", "dunder attribute"),
 )

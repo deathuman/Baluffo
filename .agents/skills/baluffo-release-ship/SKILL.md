@@ -27,14 +27,14 @@ Use this skill to run Baluffo release work without rediscovering the release pat
    - For a ready release, use the repo release preflight from `docs/RELEASE.md`.
    - Build local portable artifacts only when the docs call for it or when artifact inspection is needed.
    - For packaged failures, inspect the smoke report JSON and runtime artifacts before changing tests or retrying.
-   - For container releases, follow the dedicated lane in `docs/RELEASE.md`: focused gates, Docker build or clean-context fallback, published-image sync readiness, live route checks when a host is in scope, and a manual or scheduled pipeline smoke before closeout.
+   - For container releases, follow the dedicated lane in `docs/RELEASE.md`: focused gates, Docker build or clean-context fallback, published-image sync readiness, live route checks when a host is in scope, and a manual or scheduled pipeline smoke before closeout. When shipping the Umbrel app-store channel, keep the app manifest and Compose image tag aligned with `src/app_version.py` and verify the updated store install on the Umbrel host.
 
 4. Publish or recover carefully.
    - Never move, delete, or recreate release tags without explicit user approval.
    - Treat local release preflight as necessary but not sufficient for GitHub secret-backed packaged sync generation.
    - After pushing a tag, watch all tag-triggered workflows that publish release artifacts or images: `build-portable-exe`, `Build Container`, and `build-linux`.
    - Verify the release is published, not draft, not prerelease, with portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when that workflow publishes it.
-   - After pushing a container release to `main`, watch the normal main checks plus `Build Container`; verify the GHCR tag, multi-arch digest/platforms, and packaged `/sync/status` readiness from the published image.
+   - After pushing a container release to `main`, watch the normal main checks plus `Build Container`; verify the GHCR tag, multi-arch digest/platforms, and packaged `/sync/status` readiness from the published image. For Umbrel installs, update through the private app store and verify the proxied app on port `8877`.
    - If a live deployment smoke exposes a blocker, bump to the next patch version instead of reusing the failed image identity, keep existing tags untouched, and document the intermediate failed patch in the closeout.
    - Remember that default-branch and tagged pushes can trigger container image publication; account for GHCR tag side effects when a single app version is shared, even for docs-only release-process commits.
    - Verify desktop manifest version, channel, schema, key id, signature, minimum updater version, rollback flag, portable asset URL, checksum, and size against the published release asset.

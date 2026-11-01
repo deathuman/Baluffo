@@ -22,9 +22,11 @@ Baluffo aggregates game development job listings from across the web into one fa
 
 That's it. Your data stays on your machine. Windows packaged data lives under `%APPDATA%\Baluffo`; Linux follows XDG paths. See [Local Setup](docs/LOCAL_SETUP.md) and [WSL/Linux Setup](docs/WSL_SETUP.md) for development and platform details.
 
-### Container
+### Umbrel / Container
 
-Baluffo also ships as one same-origin container image, `ghcr.io/deathuman/baluffo:<version>`, for self-hosted HTTP deployments:
+Baluffo ships as one same-origin container image, `ghcr.io/deathuman/baluffo:<version>`, for self-hosted HTTP deployments. This repository also works as Deathuman's private Umbrel community app store: add the repository to Umbrel's app stores, then install Baluffo from its listing. The store metadata is in [`umbrel-app-store.yml`](umbrel-app-store.yml) and [`deathuman-baluffo/`](deathuman-baluffo/); Umbrel proxies the app on LAN port `8877`.
+
+For a direct container deployment, run:
 
 ```bash
 docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:<version>

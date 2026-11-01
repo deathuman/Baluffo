@@ -2,10 +2,12 @@
 """Bump the Baluffo version across every release artifact.
 
 Keeps the version-bearing files in sync so a release bump is one command instead
-of three hand-edits (the exact drift that caused the v0.2.139 release notes
+of five hand-edits (the exact drift that caused the v0.2.139 release notes
 mismatch):
 
   - src/app_version.py
+  - deathuman-baluffo/umbrel-app.yml
+  - deathuman-baluffo/docker-compose.yml
   - docs/CHANGELOG.md  (moves the [Unreleased] section into a dated release)
   - dist/baluffo-ship/app/current.txt
 
@@ -46,6 +48,11 @@ APP_VERSION_RE = re.compile(r'APP_VERSION = "([^"]+)"')
 # Used only to detect drift: the bump helpers below own the rewriting.
 _RELEASE_ARTIFACTS: tuple[tuple[str, str], ...] = (
     ("src/app_version.py", r'APP_VERSION = "([^"]+)"'),
+    ("deathuman-baluffo/umbrel-app.yml", r'^version:\s*"(\d+\.\d+\.\d+)"'),
+    (
+        "deathuman-baluffo/docker-compose.yml",
+        r"ghcr\.io/deathuman/baluffo:(\d+\.\d+\.\d+)",
+    ),
     ("docs/CHANGELOG.md", r"^## \[(\d+\.\d+\.\d+)\]"),
     ("dist/baluffo-ship/app/current.txt", r"^(\d+\.\d+\.\d+)\s*$"),
 )
@@ -110,6 +117,25 @@ def bump_app_version(text: str, version: str) -> str:
     return re.sub(r'APP_VERSION = "\d+\.\d+\.\d+"', f'APP_VERSION = "{version}"', text, count=1)
 
 
+def bump_umbrel_app(text: str, version: str) -> str:
+    return re.sub(
+        r'^(version:\s*)"\d+\.\d+\.\d+"',
+        rf'\g<1>"{version}"',
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+
+def bump_docker_compose(text: str, version: str) -> str:
+    return re.sub(
+        r"(ghcr\.io/deathuman/baluffo:)\d+\.\d+\.\d+",
+        rf"\g<1>{version}",
+        text,
+        count=1,
+    )
+
+
 def bump_changelog(text: str, version: str, date: str) -> str:
     lines = text.splitlines()
     unreleased_idx = next(
@@ -159,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     app_version_path = ROOT / "src" / "app_version.py"
+    umbrel_app_path = ROOT / "deathuman-baluffo" / "umbrel-app.yml"
+    compose_path = ROOT / "deathuman-baluffo" / "docker-compose.yml"
     changelog_path = ROOT / "docs" / "CHANGELOG.md"
     current_txt_path = ROOT / "dist" / "baluffo-ship" / "app" / "current.txt"
 
@@ -179,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
         (app_version_path, bump_app_version(_read(app_version_path), version)),
         (changelog_path, bump_changelog(_read(changelog_path), version, args.date)),
     ]
+    if umbrel_app_path.is_file():
+        targets.insert(1, (umbrel_app_path, bump_umbrel_app(_read(umbrel_app_path), version)))
+    if compose_path.is_file():
+        targets.insert(2, (compose_path, bump_docker_compose(_read(compose_path), version)))
     if current_txt_path.is_file():
         # A clean checkout has not been packaged, so it has no `current.txt` to
         # move. Creating one would invent an artifact that

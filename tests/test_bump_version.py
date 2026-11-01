@@ -1,8 +1,8 @@
-"""Bump-helper behaviour: the three release artifacts, plus drift detection.
+"""Bump-helper behaviour: the core release artifacts, plus drift detection.
 
-The private app-store metadata is gone, so a bump touches only `src/app_version.py`,
-`docs/CHANGELOG.md`, and `dist/baluffo-ship/app/current.txt`. What still has to
-hold is that a half-applied earlier bump is reported instead of carried forward.
+The small fixture omits optional Umbrel app-store artifacts; when present, the
+bump synchronizes them with `src/app_version.py`. A half-applied bump must still
+be reported instead of carried forward.
 """
 
 import sys

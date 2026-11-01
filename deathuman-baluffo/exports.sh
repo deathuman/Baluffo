@@ -1,0 +1,2 @@
+export APP_DEATHUMAN_BALUFFO_HOST="deathuman-baluffo_web_1"
+export APP_DEATHUMAN_BALUFFO_PORT="8080"

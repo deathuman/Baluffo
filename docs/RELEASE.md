@@ -8,7 +8,9 @@ Baluffo ships through three distribution channels:
 
 - Ship bundle: the canonical zip-first release channel built around a versioned `app\versions\<version>` layout, PowerShell launchers, and the updater/recovery flow.
 - Portable EXE: a Windows desktop wrapper built with `PyInstaller` and the desktop launcher runtime that embeds the ship bundle under `ship\` and uses the ship bundle as its runtime payload.
-- Container: a Linux container published to `ghcr.io/deathuman/baluffo` for same-origin HTTP service deployments.
+- Container / Umbrel: a Linux container published to `ghcr.io/deathuman/baluffo`
+  for same-origin HTTP service deployments and private Umbrel community app-store
+  installs.
 
 Important rules:
 
@@ -20,7 +22,7 @@ Important rules:
 
 ## Cross-Channel Release Checkpoint
 
-Before publishing a desktop release after a run of container-only patches, compare the latest public desktop tag with current `main`. If shared fixes accumulated since that tag, write a desktop-facing rollup changelog entry and use a new release identity rather than tagging a narrow container patch whose notes understate the desktop-visible change set.
+Before publishing a desktop release after a run of container/Umbrel-only patches, compare the latest public desktop tag with current `main`. If shared fixes accumulated since that tag, write a desktop-facing rollup changelog entry and use a new release identity rather than tagging a narrow container patch whose notes understate the desktop-visible change set.
 
 For example, when the latest public desktop release is behind `main`, the release owner should explicitly decide whether the next release is:
 
@@ -252,7 +254,7 @@ Portable desktop in-app update flow:
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
-### Container
+### Container / Umbrel
 
 Prerequisites:
 
@@ -293,20 +295,34 @@ Runtime notes:
 - The `.dockerignore` file must keep local secrets, sync config, local profiles, DBs, logs, `_out`, fetched artifacts, docs, and tests out of the image context.
 
 The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
-Docs, tests, and repo-process-only branch/PR changes are path-filtered out of the container workflow, so they should not republish the current app-version or `latest` GHCR tags. Tag pushes and manual `workflow_dispatch` runs still publish normally.
+Docs, tests, repo-process-only changes, and Umbrel store metadata are path-filtered out of the container workflow, so they should not republish the current app-version or `latest` GHCR tags. The release-only version bump helper is filtered out too. Bumping `src/app_version.py` still triggers the image build for a release. Tag pushes and manual `workflow_dispatch` runs still publish normally.
+
+Umbrel store metadata lives in [`umbrel-app-store.yml`](../umbrel-app-store.yml)
+and [`deathuman-baluffo/`](../deathuman-baluffo/). The Compose file uses
+`app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts
+`${APP_DATA_DIR}/data:/data`. Umbrel binds the manifest's `port: 8877` through
+`app_proxy`; do not add a `web` service `ports: "8877:8080"` mapping.
 
 Self-hosted container deployments that expose the port on a LAN are unauthenticated for anyone who can reach it: UI, Admin, and local-data routes included. Do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins. The embedded source-sync config follows the existing desktop packaging deterrence model and should use the same least-privilege GitHub App allowlist.
 
 Container ship checklist:
 
-1. Run `python scripts/bump_version.py <next>` to move `src/app_version.py`, `docs/CHANGELOG.md`, and `dist/baluffo-ship/app/current.txt` to the same patch version. Before writing, the command compares the version every present artifact declares and refuses to run when they disagree — a half-applied earlier bump would otherwise be carried forward, leaving release notes for a version the app never declared; pass `--allow-drift` to rewrite them all deliberately.
+1. Run `python scripts/bump_version.py <next>` to move `src/app_version.py`,
+   `deathuman-baluffo/umbrel-app.yml`, `deathuman-baluffo/docker-compose.yml`,
+   `docs/CHANGELOG.md`, and `dist/baluffo-ship/app/current.txt` to the same patch
+   version. Before writing, the command compares the version every present
+   artifact declares and refuses to run when they disagree — a half-applied
+   earlier bump would otherwise leave release notes or the store entry on an
+   older version; pass `--allow-drift` to rewrite them all deliberately.
 2. Run the focused tests for the changed runtime surface, then the broader frontend/refactor/lint gates requested by the release plan.
 3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`.
 4. Smoke the local image with a fresh `/data` mount: `/ops/health`, UI load, same-origin runtime config, no wildcard CORS, disabled desktop-only routes, profile/job persistence, and source-sync status expectations for the build type.
 5. Push `main`, then verify normal main checks and `Build Container` are green when the change touches image-relevant paths. For docs/test/process-only changes, the container workflow may be intentionally skipped.
 6. Confirm `ghcr.io/deathuman/baluffo:<version>` exists with `linux/amd64` and `linux/arm64` manifests, and record the multi-arch digest.
 7. Smoke the published image far enough to prove `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []` for official publishes.
-8. Deploy the published image to a host and verify the live app before declaring shipped.
+8. Deploy the published image to a host and verify the live app before declaring
+   shipped. For Umbrel, update or reinstall Baluffo through the private app store
+   and verify the proxied LAN app on port `8877`.
 
 If a live deployment smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
 
@@ -704,7 +720,7 @@ The same release commit is also where the changelog's **clamp** is applied. `doc
 
 Bumping straight from one released section to the next (as 0.3.004 and 0.3.005 did) is also how a change ends up described twice. `test_no_change_is_claimed_by_two_release_sections` fails when the same bullet appears in two release sections, because it makes each of them appear to ship a change only one of them did. Fold the unreleased sections into the new one and keep each change described once. The single exception is a deliberate **rollup** release that restates an earlier release's notes for users skipping versions: it may duplicate bullets provided it declares that in a blockquote under its heading, exactly as `## [0.3.001]` does.
 
-### Container Verification
+### Container / Umbrel Verification
 
 Container builds use the checked-in `Dockerfile` and run:
 

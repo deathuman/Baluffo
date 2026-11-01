@@ -48,10 +48,10 @@ from src.baluffo_version import compare_baluffo_versions
 # the anchor every release window is measured from.
 VERSION_FILES = ("src/app_version.py",)
 
-# Paths that never change the container image: docs, tests, repo tooling, CI
-# config, AI continuity notes, and root-level docs/identity files. Everything
-# else (src/, frontend/, scripts/, Dockerfile, requirements, data/contracts,
-# data/defaults, ...) is shipped code.
+# Paths that do not change runtime behavior: docs, tests, repo tooling, CI
+# config, AI continuity notes, and deployment metadata consumed outside the
+# container. Everything else (src/, frontend/, runtime scripts, Dockerfile,
+# requirements, data/contracts, data/defaults, ...) is shipped code.
 # Keep this superset of the container workflow's `paths-ignore` list so the
 # gate and the republish trigger stay aligned.
 #
@@ -78,6 +78,13 @@ NON_SHIPPED_PATTERNS = (
     "opencode.json",
     "LICENSE",
     "release-notes.md",
+    # Umbrel reads these deployment files directly; they do not change app behavior.
+    "umbrel-app-store.yml",
+    "deathuman-baluffo/umbrel-app.yml",
+    "deathuman-baluffo/docker-compose.yml",
+    "deathuman-baluffo/exports.sh",
+    # Release tooling is not imported by the application runtime.
+    "scripts/bump_version.py",
     # A manifest or lockfile edit is usually a dev-dependency edit -- a linter, a
     # type checker -- and those install into the image's *build* stage only.
     # `Dockerfile` runs `npm ci` in a frontend stage and copies forward just the
