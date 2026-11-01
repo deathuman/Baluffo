@@ -58,6 +58,12 @@ DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S = 5.0
 # recorded with its thread and stack: that is the only evidence that attributes a
 # multi-second startup or route stall to the writer that caused it.
 DEFAULT_SLOW_WRITE_WARN_MS = 1000
+# `busy_timeout` bounds SQLite's own contention, not the in-process write lock.
+# Maintenance holds that lock for a whole VACUUM (tens of seconds, minutes on a
+# multi-gigabyte database), so the wait must be generous but still bounded: a
+# wedged holder would otherwise park every later writer forever with no error,
+# no journal row, and a task that never leaves `running`.
+DEFAULT_WRITE_LOCK_TIMEOUT_MS = 300_000
 SLOW_WRITE_STACK_LIMIT = 12
 MAINTENANCE_STATUS_DEFERRED = "deferred"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
@@ -80,6 +86,10 @@ _T = TypeVar("_T")
 
 class BaluffoStoreError(RuntimeError):
     """Raised when the runtime store cannot satisfy a required storage operation."""
+
+
+class _WriteLockTimeout(BaluffoStoreError):
+    """The store write lock was never acquired; no transaction was opened."""
 
 
 @dataclass(frozen=True)
@@ -128,6 +138,7 @@ class BaluffoStore:
         defer_maintenance: bool = False,
         compaction_hold: bool = False,
         slow_write_warn_ms: int = DEFAULT_SLOW_WRITE_WARN_MS,
+        write_lock_timeout_ms: int = DEFAULT_WRITE_LOCK_TIMEOUT_MS,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.db_name = str(db_name or DEFAULT_DB_NAME)
@@ -180,6 +191,7 @@ class BaluffoStore:
         self._maintenance_deferred = bool(defer_maintenance)
         self._compaction_hold = bool(compaction_hold)
         self.slow_write_warn_ms = max(0, int(slow_write_warn_ms))
+        self.write_lock_timeout_ms = max(1, int(write_lock_timeout_ms))
         self._post_serve_maintenance_started = False
         self._reader: sqlite3.Connection | None = None
 
@@ -313,13 +325,26 @@ class BaluffoStore:
             self._write_attempts += 1
             try:
                 lock_started = time.perf_counter()
-                with self._write_lock:
+                if not self._write_lock.acquire(timeout=self.write_lock_timeout_ms / 1000.0):
+                    waited_s = time.perf_counter() - lock_started
+                    self._record_slow_write(
+                        operation="write_lock_timeout", waited_s=waited_s, held_s=0.0
+                    )
+                    self._healthy = False
+                    self._last_write_error = "store write lock still held"
+                    raise _WriteLockTimeout(
+                        f"store write lock still held after {int(waited_s)}s "
+                        f"(write_lock_timeout_ms={self.write_lock_timeout_ms})"
+                    )
+                try:
                     waited_s = time.perf_counter() - lock_started
                     hold_started = time.perf_counter()
                     self._writer.execute("BEGIN IMMEDIATE")
                     result = callback(self._writer)
                     self._writer.commit()
                     held_s = time.perf_counter() - hold_started
+                finally:
+                    self._write_lock.release()
                 self._record_slow_write(operation="write", waited_s=waited_s, held_s=held_s)
                 self._last_write_error = ""
                 self._write_transactions += 1
@@ -340,6 +365,12 @@ class BaluffoStore:
                     break
                 self._sleep_for_retry(attempt)
             except BaseException as exc:
+                if isinstance(exc, _WriteLockTimeout):
+                    # The lock was never acquired, so nothing was begun on the shared
+                    # writer connection: rolling back here would abort the holder's
+                    # in-flight transaction instead.
+                    LOGGER.error(str(exc))
+                    raise
                 self._rollback_after_error()
                 self._healthy = False
                 self._last_write_error = str(exc)

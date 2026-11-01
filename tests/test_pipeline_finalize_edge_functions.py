@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from src.jobs import pipeline_finalize
@@ -63,3 +64,52 @@ def test_write_lifecycle_archive_rows_writes_non_empty_years_only(tmp_path: Path
     assert rows["job-1"]["status"] == "archived"
     assert not archive_2025.exists()
     assert not archive_2025.with_suffix(f"{archive_2025.suffix}.gz").exists()
+
+
+def test_finalization_phase_announces_phase_before_its_first_write(capsys) -> None:
+    calls: list[str] = []
+    logged_before_write: list[str] = []
+    timings: dict[str, int] = {}
+
+    def write_task_state(**_kwargs) -> None:
+        calls.append("task_state")
+        logged_before_write.append(capsys.readouterr().out)
+
+    def write_progress_report(**_kwargs) -> None:
+        calls.append("progress")
+
+    with pipeline_finalize._finalization_phase(
+        key="deduplicating",
+        label="Deduplicating jobs",
+        progress_phase={},
+        task_runtime=object(),
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=timings,
+    ):
+        calls.append("body")
+
+    assert calls == ["task_state", "progress", "body"]
+    assert "phase_enter deduplicating" in "".join(logged_before_write)
+    assert "phase_exit deduplicating" in capsys.readouterr().out
+    assert timings["deduplicatingMs"] >= 0
+
+
+def test_finalization_phase_dumps_thread_stacks_when_it_stalls(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(pipeline_finalize, "FINALIZE_PHASE_STALL_WARN_S", 0.0)
+    monkeypatch.setattr(pipeline_finalize, "FINALIZE_STALL_POLL_S", 0.01)
+
+    with pipeline_finalize._finalization_phase(
+        key="writing_outputs",
+        label="Writing outputs",
+        progress_phase={},
+        task_runtime=object(),
+        write_progress_report=lambda **_kwargs: None,
+        write_task_state=lambda **_kwargs: None,
+        timings={},
+    ):
+        time.sleep(0.2)
+
+    out = capsys.readouterr().out
+    assert "finalize_phase_stalled phase=writing_outputs" in out
+    assert "thread=pipeline-finalize-stall-writing_outputs" in out

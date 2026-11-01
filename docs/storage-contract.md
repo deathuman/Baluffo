@@ -89,6 +89,13 @@ Store rules:
 
 - Keep one bridge/runtime write-owner abstraction. Narrow helpers must not open ad hoc SQLite write connections.
 - Retry `SQLITE_BUSY` with bounded exponential backoff and a total deadline.
+- Bound the wait for the in-process write lock too
+  (`BALUFFO_STORAGE_WRITE_LOCK_TIMEOUT_MS`, default `300000`). `busy_timeout`
+  covers SQLite's own contention; it does not cover a holder inside this process
+  (a VACUUM, or a callback that blocked), and an unbounded wait there parks every
+  later writer with no error and a task that never leaves `running`. On timeout
+  the write raises `BaluffoStoreError`, marks the store unhealthy, and journals a
+  `sqliteSlowWrite` row with `operation == "write_lock_timeout"`.
 - Bulk writes default to 500 rows per transaction.
 - Migrations are idempotent and tracked in a migration table.
 - Startup verifies schema version, WAL mode, foreign keys, and `quick_check`.

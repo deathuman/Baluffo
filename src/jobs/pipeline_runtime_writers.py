@@ -41,6 +41,12 @@ from .pipeline_runtime_summary import (
 
 ACTIVE_FETCH_TASK_STATE_MIN_INTERVAL_S = 5.0
 ACTIVE_FETCH_REPORT_MIN_INTERVAL_S = 5.0
+# Telemetry must never park the pipeline. Both writers below hold a lock across
+# artifact writes, so an unbounded acquire hands a stuck store write the power to
+# freeze the run: the post-fetch handoff waited on ``report_lock`` for 194 minutes
+# on 0.3.029 while the reporter sat inside a locked SQLite write.
+PROGRESS_REPORT_LOCK_TIMEOUT_S = 5.0
+TASK_STATE_LOCK_TIMEOUT_S = 5.0
 
 
 class FetchTextLimited(Protocol):
@@ -561,7 +567,8 @@ def write_progress_report(
     run_id: str = "",
     force: bool = False,
 ) -> None:
-    with runtime.report_lock:
+    def _write_locked() -> None:
+        """Build and write the snapshot; the caller already holds ``report_lock``."""
         now_mono = time.perf_counter()
         current_phase = str(phase_key or "").strip()
         phase_changed = current_phase != runtime.last_report_phase_key
@@ -638,6 +645,21 @@ def write_progress_report(
                 include_sources=True,
             )
 
+    lock = runtime.report_lock
+    if not lock.acquire(timeout=PROGRESS_REPORT_LOCK_TIMEOUT_S):
+        # A snapshot is advisory: skipping one costs a phase tick, while waiting
+        # on it forever costs the run. The next tick republishes the same state.
+        print(
+            "[jobs_fetcher] WARN progress_report_lock_busy "
+            f"timeoutS={PROGRESS_REPORT_LOCK_TIMEOUT_S}",
+            flush=True,
+        )
+        return
+    try:
+        _write_locked()
+    finally:
+        lock.release()
+
 
 def make_task_state_writer(
     *,
@@ -658,7 +680,8 @@ def make_task_state_writer(
         terminal_error_code: str = "",
         terminal_summary: dict[str, Any] | None = None,
     ) -> None:
-        with runtime.task_lock:
+        def _write_locked() -> None:
+            """Build and write the task state; the caller already holds ``task_lock``."""
             now_mono = time.perf_counter()
             if (
                 not force
@@ -698,6 +721,23 @@ def make_task_state_writer(
                     [payload],
                     snapshot_at=str(payload.get("heartbeatAt") or now_iso() or ""),
                 )
+
+        lock = runtime.task_lock
+        if finished_at:
+            # The terminal write is the run's final state as the UI reads it, so
+            # it waits instead of being skipped. Every inner write is bounded
+            # (store lock timeout), so this wait is finite.
+            lock.acquire()
+        elif not lock.acquire(timeout=TASK_STATE_LOCK_TIMEOUT_S):
+            print(
+                f"[jobs_fetcher] WARN task_state_lock_busy timeoutS={TASK_STATE_LOCK_TIMEOUT_S}",
+                flush=True,
+            )
+            return
+        try:
+            _write_locked()
+        finally:
+            lock.release()
 
     return write_task_state
 

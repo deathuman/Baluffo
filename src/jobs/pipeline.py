@@ -234,14 +234,24 @@ def run_pipeline(
         phase_clock.close("executing_sources")
         setup.progress_phase["key"] = "merging_results"
         setup.progress_phase["label"] = "Merging results"
+        # Name each handoff step: this stretch writes no progress, so a stall here
+        # used to leave the log ending on the last source of the fetch phase.
+        print("[jobs_fetcher] INFO phase_enter merging_results", flush=True)
         setup.write_progress_report(force=True)
         setup.stop_progress_reporter()
         phase_clock.close("merging_results")
         phase_clock.publish(setup.runtime_payload)
+        hydrate_started = time.perf_counter()
         # ponytail: both row segments are rehydrated INSIDE _hydrate_row_segments,
         # keeping them out of run_pipeline's frame entirely — no caller-side pin
         # means finalize's dead-ref trim actually frees the objects.
         canonical_rows_for_finalize = _hydrate_row_segments(setup)
+        print(
+            f"[jobs_fetcher] INFO hydrated rows={len(canonical_rows_for_finalize)} "
+            f"seeded={int(getattr(setup, 'seeded_row_count', 0) or 0)} "
+            f"elapsedMs={int((time.perf_counter() - hydrate_started) * 1000)}",
+            flush=True,
+        )
         try:
             return cast(
                 dict[str, Any],

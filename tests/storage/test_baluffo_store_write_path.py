@@ -261,3 +261,27 @@ def test_fast_store_write_stays_out_of_the_slow_write_journal() -> None:
         stacks = "".join(str(row.get("stack") or "") for row in _slow_store_write_rows(data_dir))
 
         assert "test_fast_store_write_stays_out_of_the_slow_write_journal" not in stacks
+
+
+def test_write_lock_wait_times_out_instead_of_hanging_forever() -> None:
+    with workspace_tmpdir("baluffo-store-write-lock-timeout") as data_dir:
+        with BaluffoStore(data_dir, write_lock_timeout_ms=50) as store:
+            held = threading.Event()
+            release = threading.Event()
+
+            def hold_write_lock() -> None:
+                with store._write_lock:
+                    held.set()
+                    release.wait(5)
+
+            holder = threading.Thread(target=hold_write_lock, daemon=True)
+            holder.start()
+            assert held.wait(2)
+            try:
+                with pytest.raises(BaluffoStoreError, match="store write lock still held"):
+                    store.write(lambda conn: conn.execute("SELECT 1"))
+            finally:
+                release.set()
+                holder.join(timeout=5)
+
+            assert "write lock" in str(store.health()["lastWriteError"])

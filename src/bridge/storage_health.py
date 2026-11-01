@@ -21,6 +21,7 @@ from src.storage.baluffo_store import (
     DEFAULT_BUSY_RETRY_MAX_MS,
     DEFAULT_BUSY_TIMEOUT_MS,
     DEFAULT_DB_NAME,
+    DEFAULT_WRITE_LOCK_TIMEOUT_MS,
 )
 
 _STORE_LOCK = threading.RLock()
@@ -54,6 +55,9 @@ def _storage_busy_config() -> dict[str, Any]:
         ),
         "busy_retry_max_ms": _env_int(
             "BALUFFO_STORAGE_BUSY_RETRY_MAX_MS", DEFAULT_BUSY_RETRY_MAX_MS
+        ),
+        "write_lock_timeout_ms": _env_int(
+            "BALUFFO_STORAGE_WRITE_LOCK_TIMEOUT_MS", DEFAULT_WRITE_LOCK_TIMEOUT_MS
         ),
     }
 

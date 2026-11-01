@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from src.jobs.pipeline_runtime_summary import (
 from src.jobs.pipeline_runtime_writers import (
     make_fetch_text_limited,
     make_progress_report_dispatcher,
+    make_task_state_writer,
     write_progress_report,
 )
 from src.pipeline_io import write_atomic_if_changed, write_hot_text_if_changed
@@ -393,3 +395,103 @@ def test_build_detailed_source_rows_merges_task_runtime_with_family_reports() ->
     assert rows[0]["keptCount"] == 5
     assert rows[0]["adapter"] == "static"
     assert rows[0]["studio"] == "Studio A"
+
+
+def test_progress_report_skips_instead_of_blocking_when_its_lock_is_held(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A stuck reporter must cost a snapshot, never the merge handoff.
+
+    On 0.3.029 the post-fetch handoff waited on ``report_lock`` while the reporter
+    thread sat inside a locked SQLite write: the run froze for 194 minutes with a
+    live process and no log line. The lock is advisory, so it is now bounded.
+    """
+    from src.jobs import pipeline_runtime_writers
+
+    monkeypatch.setattr(pipeline_runtime_writers, "PROGRESS_REPORT_LOCK_TIMEOUT_S", 0.2)
+    runtime = PipelineTaskRuntime(task_rows={})
+    wrote: list[str] = []
+
+    def fake_write(path: Path, _text: str) -> bool:
+        wrote.append(str(path))
+        return True
+
+    runtime.report_lock.acquire()
+    try:
+        started = time.perf_counter()
+        write_progress_report(
+            runtime=runtime,
+            canonical_rows=[],
+            lifecycle_rows={},
+            source_reports=[],
+            runtime_payload={},
+            started_at="2026-04-19T00:00:00Z",
+            paths=build_pipeline_paths(tmp_path),
+            schema_version=SCHEMA_VERSION,
+            studio_source_registry=[],
+            load_registry_from_file=lambda *_args, **_kwargs: [],
+            read_approved_since_last_run=lambda *_args, **_kwargs: 0,
+            lifecycle_counts=lambda *_args, **_kwargs: {},
+            build_pipeline_summary=lambda *_args, **_kwargs: {},
+            normalize_fetch_report_payload=lambda payload: payload,
+            write_text_if_changed=fake_write,
+            phase_key="merging_results",
+            phase_label="Merging results",
+            run_id="run-lock-busy",
+            force=True,
+        )
+        elapsed = time.perf_counter() - started
+    finally:
+        runtime.report_lock.release()
+
+    assert elapsed < 2.0  # timing-ok: hang detector; the acquire under test caps at 0.2s
+    assert wrote == []
+
+
+def test_interim_task_state_write_skips_but_the_terminal_write_waits(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from src.jobs import pipeline_runtime_writers
+
+    monkeypatch.setattr(pipeline_runtime_writers, "TASK_STATE_LOCK_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(
+        pipeline_runtime_writers, "build_fetch_live_task_payload", lambda **_kwargs: {}
+    )
+    runtime = PipelineTaskRuntime(task_rows={})
+    task_state_path = tmp_path / "task-state.json"
+    write_task_state = make_task_state_writer(
+        runtime=runtime,
+        run_id="run-terminal",
+        started_at="2026-04-19T00:00:00Z",
+        report_path=str(tmp_path / "report.json"),
+        task_state_path=task_state_path,
+        active_snapshot_path=None,
+        normalize_task_state_payload=lambda payload, **_kwargs: payload,
+        write_text_if_changed=write_atomic_if_changed,
+    )
+
+    runtime.task_lock.acquire()
+    try:
+        write_task_state(force=False)
+    finally:
+        runtime.task_lock.release()
+    assert not task_state_path.exists()
+
+    holder_released = threading.Event()
+
+    def hold_lock() -> None:
+        with runtime.task_lock:
+            time.sleep(0.3)
+        holder_released.set()
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    try:
+        # Terminal write blocks for the lock instead of being skipped: the UI
+        # reads this payload as the run's final state.
+        write_task_state(finished_at="2026-04-19T00:30:00Z", force=True)
+    finally:
+        holder.join(timeout=5)
+
+    assert holder_released.is_set()
+    assert task_state_path.exists()

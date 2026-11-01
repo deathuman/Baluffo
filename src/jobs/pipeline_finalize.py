@@ -15,8 +15,10 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline finaliz
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
+import traceback
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
@@ -170,6 +172,20 @@ from .finalize_reports import (
     write_failed_pipeline_report as write_failed_pipeline_report,
 )
 
+FINALIZE_PHASE_STALL_WARN_S = 600.0
+FINALIZE_STALL_POLL_S = 15.0
+
+
+def _dump_thread_stacks(marker: str) -> None:
+    """Print every thread's stack once, so a stalled phase names its own holder."""
+    frames = sys._current_frames()
+    for thread in threading.enumerate():
+        frame = frames.get(thread.ident or 0)
+        if frame is None:
+            continue
+        stack = "".join(traceback.format_stack(frame))
+        print(f"[jobs_fetcher] ERROR {marker} thread={thread.name} stack={stack!r}", flush=True)
+
 
 @contextmanager
 def _finalization_phase(
@@ -190,8 +206,11 @@ def _finalization_phase(
         pass
     if hasattr(task_runtime, "task_lock"):
         update_fetch_runtime_phase(task_runtime, phase_key=key, phase_label=label)
-    write_task_state(finished_at="", force=True)
-    write_progress_report(force=True)
+    started = time.perf_counter()
+    # Announce the phase BEFORE its first write. A phase whose first task-state
+    # write blocks used to leave no trace: the log ended on the previous phase,
+    # so a run stuck here read as "the last source is still running".
+    _log_rss(f"phase_enter {key}")
     stop = threading.Event()
 
     def heartbeat() -> None:
@@ -204,14 +223,30 @@ def _finalization_phase(
         daemon=True,
         name=f"pipeline-finalize-{key}",
     )
-    started = time.perf_counter()
+
+    # A separate thread on purpose: the heartbeat blocks on the same write path
+    # the stall is stuck in, so it can never report the stall itself.
+    def stall_monitor() -> None:
+        while not stop.wait(FINALIZE_STALL_POLL_S):
+            if time.perf_counter() - started >= FINALIZE_PHASE_STALL_WARN_S:
+                _dump_thread_stacks(f"finalize_phase_stalled phase={key}")
+                return
+
+    monitor = threading.Thread(
+        target=stall_monitor,
+        daemon=True,
+        name=f"pipeline-finalize-stall-{key}",
+    )
     thread.start()
-    _log_rss(f"phase_enter {key}")
+    monitor.start()
     try:
+        write_task_state(finished_at="", force=True)
+        write_progress_report(force=True)
         yield
     finally:
         stop.set()
         thread.join(timeout=1.0)
+        monitor.join(timeout=1.0)
         timings[f"{key}Ms"] = max(0, int((time.perf_counter() - started) * 1000))
         _log_rss(f"phase_exit {key}")
         try:
