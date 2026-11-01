@@ -148,25 +148,12 @@ def test_committed_security_inputs_close_python_security_caveats(repo_root: Path
     entries = json.loads(allowlist_path.read_text(encoding="utf-8"))["allowlist"]
 
     assert "Scrapy==2.19.0" in requirements
-    assert "Twisted==26.4.0" in requirements
+    assert "Twisted==26.10.0" in requirements
     assert "scrapy==2.19.0" in lock
-    assert "twisted==26.4.0" in lock
-    # Every allowlisted advisory is a Twisted finding whose affected component
-    # (IMAP4 server, conch telnet, words XMPP/IRC, twisted.web, twisted.names) is
-    # never instantiated: Twisted is only Scrapy's asyncio reactor here. None can be
-    # upgraded away either -- 26.4.0 is PyPI's latest and the flagged version, and
-    # the fixes exist only as the 26.10.0rc1/rc2 pre-releases. Pinning the exact id
-    # set means any *other* advisory has to be dealt with by an upgrade.
-    assert advisory_ids == [
-        "CVE-2026-106454",
-        "CVE-2026-115778",
-        "CVE-2026-115774",
-        "CVE-2026-115775",
-        "CVE-2026-115776",
-        "CVE-2026-115877",
-        "CVE-2026-83813",
-    ]
-    assert [entry["package"] for entry in entries] == ["twisted"] * len(advisory_ids)
+    assert "twisted==26.10.0" in lock
+    assert "pyasn1==0.6.5" in lock
+    assert advisory_ids == []
+    assert entries == []
 
 
 def test_missing_pip_audit_fails_with_install_guidance(monkeypatch) -> None:
