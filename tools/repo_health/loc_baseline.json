@@ -4,10 +4,10 @@
     "<root>": 1918,
     "frontend": 50741,
     "probes": 758,
-    "scripts": 26672,
-    "src": 192375,
+    "scripts": 26705,
+    "src": 192697,
     "styles": 10232,
-    "tests": 266628,
-    "tools": 41104
+    "tests": 267144,
+    "tools": 41111
   }
 }

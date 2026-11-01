@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from html import unescape
 from typing import Any
 from urllib.parse import urlparse
@@ -46,6 +47,7 @@ from src.jobs.adapters.static_listing_state import (
 from src.jobs.common.config import (
     GUEST_JUNK_GUARD_ENABLED,
     PROVISIONAL_CARD_FALLBACK_ENABLED,
+    STATIC_INLINE_DETAIL_FANOUT_ENABLED,
     STATIC_SHELL_DETAIL_SKIP_ENABLED,
 )
 from src.jobs.common.origin_junk import is_junk_provenance_row
@@ -54,6 +56,7 @@ from src.jobs.page_gating import (
     looks_like_static_parser_noise_title,
 )
 from src.jobs.text_utils import clean_text, normalize_url
+from src.shared.http_batch import fetch_pages_batched
 from src.shared.regex import find_urls_in_text
 
 from .static_runtime import StaticSourceContext
@@ -240,7 +243,11 @@ def _detail_host_shell_skipped(ctx: StaticSourceContext, link: str) -> bool:
 
 # mutation — modifies in-place state
 def _fetch_rendered_detail_rows(
-    ctx: StaticSourceContext, link: str, title: str, source_budget_s: int
+    ctx: StaticSourceContext,
+    link: str,
+    title: str,
+    source_budget_s: int,
+    prefetched: _InlinePrefetch | None = None,
 ) -> list[Any]:
     from src.jobs.adapters import static_listing as _sl
 
@@ -258,6 +265,10 @@ def _fetch_rendered_detail_rows(
         ctx.stats["detail_shell_skipped"] = int(ctx.stats.get("detail_shell_skipped") or 0) + 1
         return []
     try:
+        if prefetched is not None and prefetched.error is not None:
+            # The prefetch already paid this page's attempt. Re-raise the same exception at the
+            # row's turn so the accounting below and the caller's abort see the serial shape.
+            raise prefetched.error
         detail_result = _sl.process_detail_link(
             detail=link,
             detail_title=title,
@@ -272,6 +283,9 @@ def _fetch_rendered_detail_rows(
             ignored_link_titles=ctx.ignored_link_titles,
             default_path_tokens=ctx.runtime_config.default_path_tokens,
             default_query_keys=ctx.runtime_config.default_query_keys,
+            prefetched_html=None if prefetched is None else prefetched.html,
+            prefetched_cache_hit=False if prefetched is None else prefetched.cache_hit,
+            prefetched_fetch_ms=None if prefetched is None else prefetched.fetch_ms,
         )
     except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
         if not _is_expected_static_listing_fetch_fallback(exc):
@@ -330,6 +344,82 @@ def _append_rendered_detail_rows(ctx: StaticSourceContext, rows: list[Any]) -> i
     return emitted_count
 
 
+_RENDERED_SKIP = "skip"
+_RENDERED_EMIT = "emit"
+_RENDERED_VERIFY = "verify"
+_RENDERED_VERIFY_PROVISIONAL = "verify_provisional"
+_RENDERED_QUEUE = "queue"
+
+
+@dataclass(frozen=True)
+class _RenderedRowPlan:
+    action: str
+    title: str = ""
+    link: str = ""
+    job_like: bool = False
+    junk: bool = False
+
+
+# pure — reads ctx field
+def _plan_rendered_row(
+    ctx: StaticSourceContext, raw_row: dict[str, Any]
+) -> tuple[dict[str, Any], _RenderedRowPlan]:
+    """The one place that decides what a rendered card row will do.
+
+    Read twice: once by the concurrent prefetch to know which detail pages are about to be
+    fetched, once by the row loop at the row's own turn. Both reads run this function, so the
+    prefetch cannot disagree with the loop about *which* cards verify; and because the loop
+    re-plans against the state it has reached, a prefetched page the loop then skips costs a
+    request and nothing else. Returns the row copy the caller should emit, not the raw dict.
+    """
+    row = dict(raw_row)
+    if clean_text(row.pop("_renderedCardMode", "")) == "fallback":
+        return row, _RenderedRowPlan(_RENDERED_SKIP)
+    if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+        return row, _RenderedRowPlan(_RENDERED_SKIP, junk=True)
+    row["adapter"] = "static"
+    row["studio"] = _source_studio(ctx)
+    row["source"] = _source_label(ctx)
+    title = clean_text(row.get("title"))
+    link = normalize_url(row.get("jobLink"))
+    location_hint = clean_text(row.pop("_locationHint", ""))
+    if looks_like_static_parser_noise_title(title):
+        return row, _RenderedRowPlan(_RENDERED_SKIP)
+    if _is_provisional_static_artifact_row(row):
+        # Bandai 2026-09-14 fallback parity: the provisional demotion used
+        # to be unconditional — queued as a detail candidate and nothing
+        # else — so when the conversion stage died (the 38 sibling detail
+        # verifications burning the source budget), the card's posting
+        # died with it even though the card itself carried the evidence.
+        # Verify inline against the card's own detail URL first; on empty
+        # result, fall back to the card row exactly like the non-provisional
+        # lane's `if row:` arm. Probable-detail URLs only (the traversal
+        # candidate fan-out already bounds improbable URLs by cap); no
+        # job-like gate — the bandai shape is non-job-like under the same
+        # language-shape misclassification this fallback protects, and the
+        # non-provisional lane already verifies non-job-like titles first.
+        if (
+            link
+            and PROVISIONAL_CARD_FALLBACK_ENABLED
+            and is_probable_job_detail_url(
+                link,
+                ctx.source,
+                default_path_tokens=ctx.runtime_config.default_path_tokens,
+                default_query_keys=ctx.runtime_config.default_query_keys,
+            )
+            and not _detail_host_shell_skipped(ctx, link)
+        ):
+            return row, _RenderedRowPlan(_RENDERED_VERIFY_PROVISIONAL, title, link)
+        return row, _RenderedRowPlan(_RENDERED_QUEUE, title, link)
+    if not link or link in ctx.seen_links:
+        return row, _RenderedRowPlan(_RENDERED_SKIP)
+    job_like = looks_like_job_title_candidate(title)
+    needs_lookup = (not job_like) or _needs_detail_location_resolution(row, link, location_hint)
+    if not needs_lookup:
+        return row, _RenderedRowPlan(_RENDERED_EMIT, title, link, job_like=True)
+    return row, _RenderedRowPlan(_RENDERED_VERIFY, title, link, job_like=job_like)
+
+
 # mutation — modifies in-place state
 def _append_rendered_row(
     ctx: StaticSourceContext,
@@ -338,86 +428,61 @@ def _append_rendered_row(
     page_url: str,
     detail_links: list[StaticDetailCandidate],
     detail_seen: set[str],
+    prefetch: dict[str, Any] | None = None,
 ) -> tuple[int, bool, int]:
-    row = dict(raw_row)
-    if clean_text(row.pop("_renderedCardMode", "")) == "fallback":
-        return 0, False, 0
-    if GUEST_JUNK_GUARD_ENABLED and is_junk_provenance_row(row, source=ctx.source):
+    row, plan = _plan_rendered_row(ctx, raw_row)
+    if plan.junk:
         ctx.stats["junk_provenance_rows_dropped"] = (
             int(ctx.stats.get("junk_provenance_rows_dropped") or 0) + 1
         )
         return 0, False, 0
-    row["adapter"] = "static"
-    row["studio"] = _source_studio(ctx)
-    row["source"] = _source_label(ctx)
-    title = clean_text(row.get("title"))
-    link = normalize_url(row.get("jobLink"))
-    location_hint = clean_text(row.pop("_locationHint", ""))
-    if looks_like_static_parser_noise_title(title):
+    if plan.action == _RENDERED_SKIP:
         return 0, False, 0
-    if _is_provisional_static_artifact_row(row):
-        if link:
-            # Bandai 2026-09-14 fallback parity: the provisional demotion used
-            # to be unconditional — queued as a detail candidate and nothing
-            # else — so when the conversion stage died (the 38 sibling detail
-            # verifications burning the source budget), the card's posting
-            # died with it even though the card itself carried the evidence.
-            # Verify inline against the card's own detail URL first; on empty
-            # result, fall back to the card row exactly like the non-provisional
-            # lane's `if row:` arm. Probable-detail URLs only (the traversal
-            # candidate fan-out already bounds improbable URLs by cap); no
-            # job-like gate — the bandai shape is non-job-like under the same
-            # language-shape misclassification this fallback protects, and the
-            # non-provisional lane already verifies non-job-like titles first.
-            if (
-                PROVISIONAL_CARD_FALLBACK_ENABLED
-                and is_probable_job_detail_url(
-                    link,
-                    ctx.source,
-                    default_path_tokens=ctx.runtime_config.default_path_tokens,
-                    default_query_keys=ctx.runtime_config.default_query_keys,
-                )
-                and not _detail_host_shell_skipped(ctx, link)
-            ):
-                # The listing-only rendered meta ("detailFetchRequired: False")
-                # must not stamp over a page that just did detail work.
-                ctx.stats["provisional_inline_verified"] = (
-                    int(ctx.stats.get("provisional_inline_verified") or 0) + 1
-                )
-                detail_rows = _fetch_rendered_detail_rows(ctx, link, title, source_budget_s)
-                if detail_rows:
-                    ctx.seen_links.add(link)
-                    return _append_rendered_detail_rows(ctx, detail_rows), True, 0
-                ctx.stats["provisional_card_fallback_emitted"] = (
-                    int(ctx.stats.get("provisional_card_fallback_emitted") or 0) + 1
-                )
-                row["provisionalCardFallback"] = True
-                ctx.seen_links.add(link)
-                ctx.jobs.append(row)
-                return 1, False, 0
+    prefetched = (prefetch or {}).get(plan.link) if plan.link else None
+    if plan.action == _RENDERED_QUEUE:
+        # A demoted card without a URL still counts as a provisional row; it just has
+        # nothing to queue.
+        if plan.link:
             _append_detail_candidate(
                 detail_links,
                 detail_seen,
                 ctx.seen_links,
-                candidate_url=link,
-                anchor_text=title,
+                candidate_url=plan.link,
+                anchor_text=plan.title,
                 depth=0,
                 parent_url=page_url,
                 ctx=ctx,
             )
         return 0, False, 1
-    if not link or link in ctx.seen_links:
-        return 0, False, 0
-    job_like = looks_like_job_title_candidate(title)
-    needs_lookup = (not job_like) or _needs_detail_location_resolution(row, link, location_hint)
-    if not needs_lookup:
-        ctx.seen_links.add(link)
+    if plan.action == _RENDERED_EMIT:
+        ctx.seen_links.add(plan.link)
         ctx.jobs.append(row)
         return 1, True, 0
-    emitted_rows = _fetch_rendered_detail_rows(ctx, link, title, source_budget_s)
+    if plan.action == _RENDERED_VERIFY_PROVISIONAL:
+        # The listing-only rendered meta ("detailFetchRequired: False")
+        # must not stamp over a page that just did detail work.
+        ctx.stats["provisional_inline_verified"] = (
+            int(ctx.stats.get("provisional_inline_verified") or 0) + 1
+        )
+        detail_rows = _fetch_rendered_detail_rows(
+            ctx, plan.link, plan.title, source_budget_s, prefetched=prefetched
+        )
+        if detail_rows:
+            ctx.seen_links.add(plan.link)
+            return _append_rendered_detail_rows(ctx, detail_rows), True, 0
+        ctx.stats["provisional_card_fallback_emitted"] = (
+            int(ctx.stats.get("provisional_card_fallback_emitted") or 0) + 1
+        )
+        row["provisionalCardFallback"] = True
+        ctx.seen_links.add(plan.link)
+        ctx.jobs.append(row)
+        return 1, False, 0
+    emitted_rows = _fetch_rendered_detail_rows(
+        ctx, plan.link, plan.title, source_budget_s, prefetched=prefetched
+    )
     if emitted_rows:
-        ctx.seen_links.add(link)
-        return _append_rendered_detail_rows(ctx, emitted_rows), job_like, 0
+        ctx.seen_links.add(plan.link)
+        return _append_rendered_detail_rows(ctx, emitted_rows), plan.job_like, 0
     if row:
         ctx.jobs.append(row)
         return 1, False, 0
@@ -502,6 +567,130 @@ def _append_rendered_json_rows(
     return emitted
 
 
+@dataclass(frozen=True)
+class _InlinePrefetch:
+    """One card's already-paid detail fetch, or the attempt that failed."""
+
+    html: str = ""
+    cache_hit: bool = False
+    fetch_ms: int = 0
+    error: BaseException | None = None
+
+
+class _InlineDetailPrefetcher:
+    """Pay for the detail pages the card loop is about to reach, one lane-window ahead.
+
+    The loop calls :meth:`window` at each card before planning it, so the fetch can never run
+    ahead of the cards the loop is about to consume. That is the difference between a bounded
+    lookahead and an up-front page-wide prefetch: on a 350-card board whose source budget dies
+    at card 40, the page-wide version paid for hundreds of pages the serial lane never reached
+    (measured on the 2026-10-30 smoke: +54% requests, fewer pages visited), while this one
+    pays at most ``lanes - 1`` beyond the card that died.
+
+    A page the batch never got to is deliberately *not* recorded as a failure: the loop fetches
+    it itself, so a budget death still surfaces as the serial lane's ``TimeoutError`` at the
+    serial lane's card. A page the batch did run and that failed keeps its original exception
+    and is re-raised by the row, preserving the serial abort and its accounting.
+    """
+
+    __slots__ = ("_ctx", "_rows", "_lanes", "_planned", "_abandoned", "prefetched")
+
+    def __init__(self, ctx: StaticSourceContext, rendered_rows: list[Any], lanes: int) -> None:
+        self._ctx = ctx
+        self._rows = rendered_rows
+        self._lanes = max(1, int(lanes))
+        self._planned: set[str] = set()
+        self._abandoned = False
+        self.prefetched: dict[str, _InlinePrefetch] = {}
+
+    def window(self, index: int) -> None:
+        """Ensure the cards in ``[index, index + lanes)`` have their detail HTML paid for."""
+        ctx = self._ctx
+        if self._abandoned or ctx.remaining_budget_s() <= 0 or ctx.failure_budget_exhausted():
+            return
+        planned: list[tuple[str, str]] = []
+        for raw_row in self._rows[index : index + self._lanes]:
+            if not isinstance(raw_row, dict):
+                continue
+            _row, plan = _plan_rendered_row(ctx, raw_row)
+            if plan.action not in (_RENDERED_VERIFY, _RENDERED_VERIFY_PROVISIONAL):
+                continue
+            if not plan.link or plan.link in self._planned:
+                continue
+            if _detail_host_shell_skipped(ctx, plan.link):
+                continue
+            self._planned.add(plan.link)
+            planned.append((plan.link, plan.title))
+        if not planned:
+            return
+
+        outcomes: dict[str, _InlinePrefetch] = {}
+
+        def _fetch(
+            job: dict[str, Any],
+            url: str,
+            timeout_s: int,
+            *,
+            outcomes: dict[str, _InlinePrefetch] = outcomes,
+        ) -> str:
+            del job, timeout_s
+            started = time.perf_counter()
+            try:
+                html, cache_hit = ctx.html_fetcher.fetch_html_cached(
+                    url,
+                    remaining_budget_s=ctx.remaining_budget_s(),
+                    retries_override=ctx.run_deps.retries,
+                )
+            except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+                # The shapes the batch turns into per-row failures; the row re-raises this
+                # same object later, so its classification and message stay the serial's.
+                outcomes[url] = _InlinePrefetch(error=exc)
+                raise
+            outcomes[url] = _InlinePrefetch(
+                html=html,
+                cache_hit=bool(cache_hit),
+                fetch_ms=int((time.perf_counter() - started) * 1000),
+            )
+            return html
+
+        try:
+            results = fetch_pages_batched(
+                ctx.run_deps.timeout_s,
+                [{"url": url, "payload": title} for url, title in planned],
+                sync_fetch=_fetch,
+                total_concurrency=len(planned),
+                per_host_concurrency=len(planned),
+            )
+        except Exception:
+            # A shape the batch refuses is the serial lane's to raise, at the row that reaches it.
+            self._abandoned = True
+            return
+        failed = False
+        for result in results:
+            url = clean_text(result.get("url"))
+            outcome = outcomes.get(url)
+            if outcome is None:
+                continue
+            self.prefetched[url] = outcome
+            if not result.get("ok"):
+                failed = True
+        if failed:
+            # The serial lane aborts on the first failing card; do not prefetch past it.
+            self._abandoned = True
+
+
+def _inline_detail_prefetcher(
+    ctx: StaticSourceContext, rendered_rows: list[Any]
+) -> _InlineDetailPrefetcher | None:
+    """The prefetcher, or None when the flag is off or the shape cannot overlap."""
+    if not STATIC_INLINE_DETAIL_FANOUT_ENABLED:
+        return None
+    lanes = max(1, int(ctx.runtime_config.static_detail_concurrency or 1))
+    if lanes < 2 or len(rendered_rows) < 2:
+        return None
+    return _InlineDetailPrefetcher(ctx, rendered_rows, lanes)
+
+
 def _append_rendered_card_rows(
     ctx: StaticSourceContext,
     listing_html: str,
@@ -530,7 +719,10 @@ def _append_rendered_card_rows(
     emitted_count = 0
     has_job_like_title = False
     provisional_count = 0
-    for raw_row in rendered_rows:
+    # The window is advanced from inside the loop, one card at a time, so the fan-out can
+    # only ever be `lanes - 1` cards ahead of the row it is about to emit.
+    prefetcher = _inline_detail_prefetcher(ctx, rendered_rows)
+    for index, raw_row in enumerate(rendered_rows):
         # Budget guard (2026-10-23): per-row verification is the only network
         # work in this lane, and it had no checkpoint. Lanterns ran 588 s
         # against a 90 s budget because the guard inside process_detail_link
@@ -540,6 +732,8 @@ def _append_rendered_card_rows(
         if ctx.remaining_budget_s() <= 0:
             ctx.stop_for_budget_exhaustion(target_url=page_url)
             break
+        if prefetcher is not None:
+            prefetcher.window(index)
         count, job_like, provisional = _append_rendered_row(
             ctx,
             raw_row,
@@ -547,6 +741,7 @@ def _append_rendered_card_rows(
             page_url,
             detail_links,
             detail_seen,
+            None if prefetcher is None else prefetcher.prefetched,
         )
         emitted_count += count
         has_job_like_title = has_job_like_title or (job_like and count > 0)

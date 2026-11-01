@@ -139,3 +139,5 @@ slopo-agent-configs/
 .windsurf/
 C:/tmp/
 .empryo
+# Imported-conversation attachments are per-session context, never repo content.
+.cloud-attachments/

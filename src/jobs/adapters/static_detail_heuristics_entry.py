@@ -244,6 +244,12 @@ def process_detail_link(
     ignored_link_titles: set[str],
     default_path_tokens: list[str] | None = None,
     default_query_keys: list[str] | None = None,
+    # A concurrent prefetch may have already paid this page's network time. Passing the
+    # fetched document (with its real cost) keeps this function's parse, cacheHit and
+    # fetchMs semantics identical to the serial call that would have fetched it here.
+    prefetched_html: str | None = None,
+    prefetched_cache_hit: bool = False,
+    prefetched_fetch_ms: int | None = None,
 ) -> dict[str, Any]:
     fetch_started = time.perf_counter()
     if is_malformed_or_self_detail_url(detail):
@@ -264,12 +270,16 @@ def process_detail_link(
     )
     if remaining_budget_s < 1.0:
         raise TimeoutError(f"time budget exceeded ({static_source_time_budget_s}s)")
-    detail_html, cache_hit = fetch_html_cached(
-        detail,
-        remaining_budget_s=remaining_budget_s,
-        retries_override=detail_retries,
-    )
-    fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
+    if prefetched_html is not None:
+        detail_html, cache_hit = prefetched_html, bool(prefetched_cache_hit)
+        fetch_ms = max(0, int(prefetched_fetch_ms or 0))
+    else:
+        detail_html, cache_hit = fetch_html_cached(
+            detail,
+            remaining_budget_s=remaining_budget_s,
+            retries_override=detail_retries,
+        )
+        fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
     del timeout_s
     return process_detail_html(
         detail=detail,

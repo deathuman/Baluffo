@@ -35,6 +35,7 @@ from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
+from .pipeline_runtime_writers import bind_fetch_text_to_source
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
 
@@ -64,6 +65,18 @@ _EXPECTED_SOURCE_OPERATION_EXCEPTIONS = (
 
 class _SourceExecutionFailure(RuntimeError):
     """Expected per-source loader/canonicalizer failure safe to report as source error."""
+
+
+def _source_counted_fetch_text(fetch_text: Any, source_name: str, counters: Any) -> Any:
+    """Bind a gate limiter to its source, then count attempts through it.
+
+    Binding has to come first: the limiter resolves its source from the calling
+    thread, and the batch pool a static lane fetches from has no thread-local source,
+    so the bound view is what keeps those waits booked instead of dropped.
+    """
+    return fetch_counters.wrap_fetch_text(
+        bind_fetch_text_to_source(fetch_text, source_name), counters
+    )
 
 
 def _build_loader_kwargs(
@@ -791,9 +804,9 @@ def execute_loader(
     # behavior on the disabled path. Both per-source fetch callables share one counter, so
     # a static source's detail fetches and listing fetches land in the same row.
     source_counters = fetch_counters.start_source_counters()
-    counted_fetch_text = fetch_counters.wrap_fetch_text(fetch_text_limited, source_counters)
+    counted_fetch_text = _source_counted_fetch_text(fetch_text_limited, name, source_counters)
     counted_static_fetch_text = (
-        fetch_counters.wrap_fetch_text(fetch_text_static_limited, source_counters)
+        _source_counted_fetch_text(fetch_text_static_limited, name, source_counters)
         if fetch_text_static_limited
         else fetch_text_static_limited
     )

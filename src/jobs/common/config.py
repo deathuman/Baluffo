@@ -208,6 +208,24 @@ STATIC_SHELL_DETAIL_SKIP_ENABLED = os.environ.get(
     "yes",
 )
 
+# Inline detail fan-out (2026-10-30): the rendered-card verification lane fetched
+# every card's detail page one at a time on the source thread, so a board's inline
+# time was the SUM of its page latencies -- measured at 2 981 s across a
+# full-population arm, 70.2% of the whole detail cost (see
+# docs/snapshots/fetch-pipeline-detail-request-audit-2026-10-30.md). With this on,
+# `_prefetch_inline_detail_pages` fetches the same HTML concurrently, bounded by
+# `static_detail_concurrency` lanes and the same per-request timeout/retry settings,
+# and the row loop still emits, counts and aborts in card order. Off by default:
+# the concurrency shape is the one part no offline replay can settle.
+# Fail-open: set BALUFFO_STATIC_INLINE_DETAIL_FANOUT=1 to enable.
+STATIC_INLINE_DETAIL_FANOUT_ENABLED = os.environ.get(
+    "BALUFFO_STATIC_INLINE_DETAIL_FANOUT", "0"
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Bandai trace remediation (2), 2026-09-14: provisional-artifact demotion with
 # no fallback. Demoted cards queued as detail candidates died unconverted when
 # the conversion stage never ran (budget death) — the card itself carried the

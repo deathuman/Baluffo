@@ -45,8 +45,11 @@ ACTIVE_FETCH_REPORT_MIN_INTERVAL_S = 5.0
 
 class FetchTextLimited(Protocol):
     _baluffo_gate_wait_stats: Callable[[str], dict[str, int]]
+    _baluffo_gate_wait_totals: Callable[[], dict[str, int]]
 
     def __call__(self, url: str, timeout: int) -> str: ...
+
+    def for_source(self, source_name: str) -> Callable[[str, int], str]: ...
 
 
 class FetchPrepProgressWriter:
@@ -219,15 +222,43 @@ class _FetchTextLimiter:
         self.gate_namespace = gate_namespace
         self.wait_reason_label = wait_reason_label
         self.collect_wait_stats = collect_wait_stats
+        # Every call books here whether or not the calling thread knows its source. The
+        # per-source row used to be the only bucket, so a wait paid on a lane thread (which
+        # never sees `thread_local.source_name`) was dropped outright -- the recorded figure
+        # read ~16x under the gate's own measured wait on the 2026-10-30 population arms.
+        self.wait_totals_ms = 0
+        self.wait_totals_count = 0
+        self.wait_unattributed_ms = 0
+        self.wait_unattributed_count = 0
+        self.wait_totals_lock = threading.Lock()
 
     def __call__(self, url: str, timeout: int) -> str:
+        return self._call(url, timeout, self._current_source_name())
+
+    def for_source(self, source_name: str) -> Callable[[str, int], str]:
+        """A view of this limiter whose every call is stamped with one source.
+
+        The static lanes fetch through a thread pool this process owns, and a
+        `threading.local` does not cross a thread boundary, so their calls arrive with no
+        source name. Binding at the per-source boundary is what attributes them without
+        threading a context through the shared batch helper.
+        """
+        name = clean_text(source_name)
+        if not name:
+            return self
+        return _SourceBoundFetchText(limiter=self, source_name=name)
+
+    def _call(self, url: str, timeout: int, source_name: str) -> str:
         host, gate = self._domain_gate(url)
-        current = self._current_source_name()
-        wait_started = time.perf_counter()
+        current = clean_text(source_name)
         self._mark_waiting(current, host, url)
+        # Bracket the admission only: the wait-reason write above is task-state IO, and
+        # charging it to the gate is what made the recorded wait incomparable with a
+        # proxy timing `acquire()`.
+        wait_started = time.perf_counter()
         gate.acquire()
+        wait_ms = int((time.perf_counter() - wait_started) * 1000)
         try:
-            wait_ms = int((time.perf_counter() - wait_started) * 1000)
             self._update_running_source(current, host, url, wait_ms)
             return self.fetch_text_impl(url, timeout)
         finally:
@@ -259,17 +290,31 @@ class _FetchTextLimiter:
         self.write_task_state()
 
     def _record_gate_wait(self, source_name: str, wait_ms: int) -> None:
-        if not (self.collect_wait_stats and wait_ms > 0):
+        """Book one call's wait; attribution decides the bucket, never whether it is booked.
+
+        A zero-wait admission still counts: the count exists to be comparable with an
+        external proxy's acquire count, and skipping fast admissions understated it.
+        """
+        if not self.collect_wait_stats:
             return
+        waited = max(0, int(wait_ms))
+        attributed = False
         with self.runtime.task_lock:
-            row = self.runtime.task_rows.get(source_name)
+            row = self.runtime.task_rows.get(source_name) if source_name else None
             if isinstance(row, dict):
-                row["_staticDomainGateWaitMs"] = int(row.get("_staticDomainGateWaitMs") or 0) + max(
-                    0, wait_ms
+                row["_staticDomainGateWaitMs"] = (
+                    int(row.get("_staticDomainGateWaitMs") or 0) + waited
                 )
                 row["_staticDomainGateWaitCount"] = (
                     int(row.get("_staticDomainGateWaitCount") or 0) + 1
                 )
+                attributed = True
+        with self.wait_totals_lock:
+            self.wait_totals_ms += waited
+            self.wait_totals_count += 1
+            if not attributed:
+                self.wait_unattributed_ms += waited
+                self.wait_unattributed_count += 1
 
     def _clear_wait_reason(self, source_name: str, host: str, url: str) -> None:
         if not self.wait_reason_label:
@@ -329,9 +374,9 @@ class _FetchTextLimiter:
             self._append_slow_source_warning(source_name, row, time.perf_counter())
 
     def _update_running_source(self, source_name: str, host: str, url: str, wait_ms: int) -> None:
+        self._record_gate_wait(source_name, wait_ms)
         if not (source_name and source_name in self.runtime.task_rows):
             return
-        self._record_gate_wait(source_name, wait_ms)
         self._clear_wait_reason(source_name, host, url)
         now_mono = time.perf_counter()
         if (now_mono - float(self.runtime.last_heartbeat_write.get(source_name) or 0.0)) < 4.0:
@@ -349,6 +394,37 @@ class _FetchTextLimiter:
                 "domainGateWaitMs": int(row.get("_staticDomainGateWaitMs") or 0),
                 "domainGateWaitCount": int(row.get("_staticDomainGateWaitCount") or 0),
             }
+
+    def _baluffo_gate_wait_totals(self) -> dict[str, int]:
+        with self.wait_totals_lock:
+            return {
+                "domainGateWaitMsTotal": int(self.wait_totals_ms),
+                "domainGateWaitCountTotal": int(self.wait_totals_count),
+                "domainGateWaitMsUnattributed": int(self.wait_unattributed_ms),
+                "domainGateWaitCountUnattributed": int(self.wait_unattributed_count),
+            }
+
+
+class _SourceBoundFetchText:
+    """``_FetchTextLimiter`` view stamped with one source for every call."""
+
+    __slots__ = ("_limiter", "_source_name")
+
+    def __init__(self, *, limiter: _FetchTextLimiter, source_name: str) -> None:
+        self._limiter = limiter
+        self._source_name = source_name
+
+    def __call__(self, url: str, timeout: int) -> str:
+        return self._limiter._call(url, timeout, self._source_name)
+
+    def _baluffo_gate_wait_stats(self, source_name: str) -> dict[str, int]:
+        return self._limiter._baluffo_gate_wait_stats(source_name)
+
+    def _baluffo_gate_wait_totals(self) -> dict[str, int]:
+        return self._limiter._baluffo_gate_wait_totals()
+
+    def for_source(self, source_name: str) -> Callable[[str, int], str]:
+        return self._limiter.for_source(source_name)
 
 
 def initialize_task_runtime(
@@ -624,6 +700,16 @@ def make_task_state_writer(
                 )
 
     return write_task_state
+
+
+def bind_fetch_text_to_source(fetch_text: Any, source_name: str) -> Any:
+    """Stamp ``source_name`` on every call through a gate limiter, when it supports it.
+
+    Callables that are not limiters (test doubles, a bare ``fetch_text``) pass through
+    unchanged, so this is safe on any loader dependency.
+    """
+    binder = getattr(fetch_text, "for_source", None)
+    return binder(source_name) if callable(binder) else fetch_text
 
 
 def make_fetch_text_limited(
