@@ -260,6 +260,10 @@ def _serialize_jobs_feed_reconciliation(func):
         paths = kwargs.get("paths")
         if paths is None or not hasattr(paths, "output_dir"):
             raise TypeError("finalize_pipeline_run requires paths with an output_dir")
+        # Announce the wait before it starts: the lock acquire blocks ahead of
+        # finalize's own phase announcement, so a contended lock used to leave
+        # the log ending on the last fetch source with no finalize phase at all.
+        print("[jobs_fetcher] INFO phase_enter waiting_reconciliation_lock", flush=True)
         with jobs_feed_reconciliation_lock(paths.output_dir):
             if existing_json_candidate(paths.lifecycle_state_path) is not None:
                 kwargs = dict(kwargs)
