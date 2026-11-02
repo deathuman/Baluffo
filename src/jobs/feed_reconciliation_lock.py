@@ -50,51 +50,55 @@ def _lock_timeout_s() -> float:
     return value if value > 0 else 0.0
 
 
-def _lock_holder_summary(lock_path: Path) -> str:
-    """Name the process holding an ``flock`` on ``lock_path`` (Linux only).
+def _read_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
 
-    ``/proc/locks`` lists the holder and, on a following line, the blocked
-    waiters. Naming the holder in the warning is the difference between a run
-    that says "waiting" and one that says who to look at.
-    """
+
+def _pid_from_lock_line(line: str, inode: str) -> int | None:
+    if "->" in line:
+        return None
+    parts = line.split()
+    if len(parts) < 6:
+        return None
+    dev_inode = parts[5].split(":")
+    if len(dev_inode) != 3 or dev_inode[2] != inode:
+        return None
+    try:
+        pid = int(parts[4])
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def _holder_pid_for_inode(inode: str) -> int | None:
+    try:
+        with open("/proc/locks", encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return None
+    for line in lines:
+        pid = _pid_from_lock_line(line, inode)
+        if pid is not None:
+            return pid
+    return None
+
+
+def _lock_holder_summary(lock_path: Path) -> str:
+    """Name the process holding an ``flock`` on ``lock_path`` (Linux only)."""
     if not sys.platform.startswith("linux"):
         return "unknown"
     try:
         inode = str(lock_path.stat().st_ino)
     except OSError:
         return "unknown"
-    try:
-        with open("/proc/locks", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                if "->" in line:
-                    continue
-                parts = line.split()
-                if len(parts) < 6:
-                    continue
-                dev_inode = parts[5].split(":")
-                if len(dev_inode) != 3 or dev_inode[2] != inode:
-                    continue
-                try:
-                    pid = int(parts[4])
-                except ValueError:
-                    continue
-                if pid <= 0:
-                    continue
-                cmdline = ""
-                try:
-                    cmdline = (
-                        Path(f"/proc/{pid}/cmdline")
-                        .read_bytes()
-                        .replace(b"\0", b" ")
-                        .decode("utf-8", "replace")
-                        .strip()
-                    )
-                except OSError:
-                    pass
-                return f"pid={pid} cmd={cmdline[:160] or '<unknown>'}"
-    except OSError:
+    pid = _holder_pid_for_inode(inode)
+    if pid is None:
         return "unknown"
-    return "unknown"
+    return f"pid={pid} cmd={_read_cmdline(pid)[:160] or '<unknown>'}"
 
 
 def _acquire_with_deadline(
