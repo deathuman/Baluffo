@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.032"
+version: "0.3.033"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,8 +19,9 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  The Admin page no longer shows "Bridge Reconnecting" while the app is working
-  normally, and the connection badge goes back to its real state once a short
-  reconnect finishes. Existing jobs, saved jobs and notes are kept.
+  Admin navigation is faster: the source table reloads instantly after its first
+  open, the Ops badges no longer recalculate for minutes during a run, and the
+  page no longer shows "data delayed" after a slow first call. Existing jobs,
+  saved jobs and notes are kept.
 storage:
   dataRoot: data

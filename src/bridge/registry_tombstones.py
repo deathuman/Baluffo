@@ -76,6 +76,8 @@ def is_tombstoned(
     row_or_id: str | dict[str, Any], tombstones: dict[str, dict[str, Any]] | None = None
 ) -> bool:
     records = tombstones if isinstance(tombstones, dict) else load_tombstones()
+    if not records:
+        return False
     if isinstance(row_or_id, dict):
         row = row_or_id
         row_id = source_identity(row)
@@ -95,6 +97,11 @@ def filter_tombstoned_rows(
     rows: list[dict[str, Any]], tombstones: dict[str, dict[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
     records = tombstones if isinstance(tombstones, dict) else load_tombstones()
+    if not records:
+        # Nothing can match, yet the old loop computed a source identity and URL
+        # fingerprint for every row. That per-row URL parsing dominated the JSON
+        # source-table read at 3.9k rows, where the registry has no tombstones.
+        return [row for row in rows if isinstance(row, dict)]
     filtered: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):

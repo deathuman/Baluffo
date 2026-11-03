@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
@@ -58,6 +60,20 @@ from src.storage.source_registry_runtime import (
 
 NormalizeManualStaticFunc = Callable[[dict[str, Any]], dict[str, Any]]
 RuntimeStoreFactory = Callable[[], SourceRegistryRuntimeStore]
+
+# A summary read costs ~0.4s on a Pi (state row plus JSON export scan) and the Ops
+# summary routes repeated it on every poll. Registry writes bump `generation`, so
+# that value keys an exact cache: stale counts are impossible, only re-reads are
+# skipped. SQLite-authority only; the JSON-authority path stays uncached.
+_SQLITE_SUMMARY_CACHE: dict[str, tuple[tuple[str, ...], dict[str, Any]]] = {}
+_SQLITE_SUMMARY_CACHE_LOCK = threading.Lock()
+_SQLITE_SUMMARY_CACHE_LIMIT = 8
+
+# JSON-authority source tables rebuild the normalized registry and rerun the
+# safe-demotion conflict derivation on every open (~7s on a Pi during a fetch
+# run). The result is deterministic for unchanged inputs, so key a cache by the
+# mtime/size signature of every input file and skip the rebuild.
+_JSON_TABLE_STATE_CACHE_TTL_S = 120.0
 StorageDiagnosticRecorder = Callable[..., None]
 
 _DUPLICATE_STATE_FIELDS = {
@@ -118,6 +134,14 @@ class RegistryService:
         self._record_storage_diagnostic = (
             record_storage_diagnostic or default_record_storage_diagnostic
         )
+        self._table_state_cache: (
+            tuple[
+                tuple[tuple[str, int, int], ...],
+                float,
+                dict[str, list[dict[str, Any]]],
+            ]
+            | None
+        ) = None
         self._last_auto_heal_report: dict[str, Any] = {
             "autoHealed": False,
             "duplicateSourceIdCount": 0,
@@ -206,6 +230,52 @@ class RegistryService:
             self._json_file_exists(path)
             for path in (self._paths.active, self._paths.pending, self._paths.rejected)
         )
+
+    def _json_state_signature(self) -> tuple[tuple[str, int, int], ...]:
+        """Mtime/size identity of every file the JSON table state depends on.
+
+        Includes gzip variants and adjacent ``.jsonl`` journal overlays: either
+        can silently supersede the base file in the shared loaders.
+        """
+        signature: list[tuple[str, int, int]] = []
+        for path in (
+            self._paths.active,
+            self._paths.pending,
+            self._paths.rejected,
+            self._tombstones_path(),
+            Path(self._paths.active).with_name("jobs-source-state.json"),
+        ):
+            base = Path(path)
+            candidates = [base]
+            if base.suffix != ".gz":
+                candidates.append(base.with_name(base.name + ".gz"))
+                candidates.append(base.with_name(f"{base.stem}.jsonl"))
+            for candidate in candidates:
+                try:
+                    stat = candidate.stat()
+                except OSError:
+                    continue
+                signature.append((str(candidate), stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
+    def _json_table_state(self) -> dict[str, list[dict[str, Any]]]:
+        """Normalized, demotion-applied JSON state for the compact table.
+
+        Cold derivation measured ~7s on the Pi's 3.9k-row registry while a fetch
+        run competed for CPU. Cached by input signature; bucket lists are
+        shallow-copied so callers cannot reorder or append to the cache.
+        """
+        signature = self._json_state_signature()
+        cached = self._table_state_cache
+        if (
+            cached is not None
+            and cached[0] == signature
+            and time.monotonic() - cached[1] <= _JSON_TABLE_STATE_CACHE_TTL_S
+        ):
+            return {bucket: list(rows) for bucket, rows in cached[2].items()}
+        state = self._load_json_state_normalized(save_on_change=False)
+        self._table_state_cache = (signature, time.monotonic(), state)
+        return {bucket: list(rows) for bucket, rows in state.items()}
 
     def _rollback_to_json(
         self, code: str, message: str, details: dict[str, Any] | None = None
@@ -685,28 +755,45 @@ class RegistryService:
         if mode == "sqlite":
             try:
                 summary = self._runtime_store().current_summary()
-                if str(summary.get("generation") or "").strip():
-                    if self._has_registry_json_exports():
-                        json_summary = self._cheap_json_summary_payload(
-                            reason="sqlite_export_summary"
-                        )
-                        return {
-                            **json_summary,
-                            "authorityMode": mode,
-                            "generation": str(summary.get("generation") or ""),
-                            "publishedAt": str(summary.get("publishedAt") or ""),
-                            "updatedAt": str(summary.get("updatedAt") or ""),
-                            "sqliteStateHash": str(summary.get("stateHash") or ""),
-                            "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
-                        }
-                    return {
+            except _STORAGE_OPERATION_ERRORS:
+                summary = {}
+            generation = str(summary.get("generation") or "").strip()
+            if generation:
+                cache_key = str(self._paths.active)
+                cache_signature = (
+                    mode,
+                    generation,
+                    str(summary.get("stateHash") or ""),
+                    str(summary.get("tombstoneHash") or ""),
+                    str(summary.get("updatedAt") or ""),
+                )
+                with _SQLITE_SUMMARY_CACHE_LOCK:
+                    cached = _SQLITE_SUMMARY_CACHE.get(cache_key)
+                if cached is not None and cached[0] == cache_signature:
+                    return dict(cached[1])
+                if self._has_registry_json_exports():
+                    json_summary = self._cheap_json_summary_payload(reason="sqlite_export_summary")
+                    payload = {
+                        **json_summary,
+                        "authorityMode": mode,
+                        "generation": generation,
+                        "publishedAt": str(summary.get("publishedAt") or ""),
+                        "updatedAt": str(summary.get("updatedAt") or ""),
+                        "sqliteStateHash": str(summary.get("stateHash") or ""),
+                        "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
+                    }
+                else:
+                    payload = {
                         **summary,
                         "authorityMode": mode,
                         "summaryExact": False,
                         "countBasis": "storage",
                     }
-            except _STORAGE_OPERATION_ERRORS:
-                pass
+                with _SQLITE_SUMMARY_CACHE_LOCK:
+                    if len(_SQLITE_SUMMARY_CACHE) >= _SQLITE_SUMMARY_CACHE_LIMIT:
+                        _SQLITE_SUMMARY_CACHE.pop(next(iter(_SQLITE_SUMMARY_CACHE)))
+                    _SQLITE_SUMMARY_CACHE[cache_key] = (cache_signature, dict(payload))
+                return payload
         return {
             **self._cheap_json_summary_payload(reason=f"{mode}_summary"),
             "authorityMode": mode,
@@ -808,7 +895,7 @@ class RegistryService:
         authority_mode: str,
     ) -> dict[str, Any]:
         try:
-            state = self._load_json_state_normalized(save_on_change=False)
+            state = self._json_table_state()
         except _STORAGE_OPERATION_ERRORS as exc:
             self._record_registry_diagnostic(
                 "source_registry_json_compact_read_failed",

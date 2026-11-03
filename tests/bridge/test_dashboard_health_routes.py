@@ -263,6 +263,17 @@ def test_admin_ops_tab_counts_summary_returns_pending_for_unbounded_counts(
         json.dumps({"summary": {"candidateCount": 3}}),
         encoding="utf-8",
     )
+    # The badge reads cached conflict counts only; a stale envelope stands in for
+    # the summary caches a real bridge writes during conflict derivation.
+    (tmp_path / "registry-conflicts-summary.json").write_text(
+        json.dumps(
+            {
+                "cacheKey": "stale-key",
+                "payload": {"summary": {"conflictCount": 0}, "summaryStatus": "ready"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     handler = FakeHandler()
     result = handle_get(

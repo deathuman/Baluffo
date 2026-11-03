@@ -47,6 +47,12 @@ from src.shared.utils import int_or_default as _safe_int
 # catches real file changes within the TTL on the next refresh.
 OPS_TAB_COUNTS_CACHE_TTL_S = 30.0
 
+# Admin polls this route every few seconds. Without a single-flight guard two
+# concurrent fills each ran the whole badge derivation (measured 118s average /
+# 177s max on a Pi during an active run, past the gateway's 60s cut). The losing
+# racer now answers with last-known counts instead of starting a second scan.
+_OPS_TAB_COUNTS_COMPUTE_LOCK = threading.Lock()
+
 
 class _AdminOpsTabCountsRouteApi(Protocol):
     DISCOVERY_REPORT_PATH: Path
@@ -306,14 +312,9 @@ def _write_ops_tab_counts_cache(path: Path, key: list[list[Any]], payload: dict[
             pass
 
 
-def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
-    cache_path = _ops_tab_counts_cache_path(api)
-    cache_key = _ops_tab_counts_cache_key(api)
-    with time_operation("admin.ops_tab_counts.summary.cache_read"):
-        cached = _read_ops_tab_counts_cache(cache_path, cache_key)
-    if cached is not None:
-        return cached
-
+def _build_ops_tab_count_badges(
+    api: _AdminOpsTabCountsRouteApi,
+) -> dict[str, dict[str, Any]]:
     badges: dict[str, dict[str, Any]] = {}
 
     try:
@@ -376,16 +377,77 @@ def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, 
             error=str(exc),
         )
 
-    payload = {
+    return badges
+
+
+def _read_ops_tab_counts_cache_ignoring_key(path: Path) -> dict[str, Any] | None:
+    """Last written envelope regardless of key/TTL, marked stale.
+
+    During an active fetch run the fetch report mtime moves continuously, so the
+    keyed cache never hits. Serving the previous badge payload is cheaper and
+    more useful than recomputing the derivation on every poll.
+    """
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(cached, dict):
+        return None
+    payload = cached.get("payload")
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return None
+    try:
+        cached_at = float(cached.get("cachedAtUnix") or 0.0)
+    except (TypeError, ValueError, OverflowError):
+        cached_at = 0.0
+    if not math.isfinite(cached_at) or cached_at <= 0.0:
+        return None
+    payload["cachedResponse"] = True
+    payload["cachedStale"] = True
+    payload["cachedAgeS"] = round(max(0.0, time.time() - cached_at), 2)
+    return payload
+
+
+def _ops_tab_counts_concurrent_payload(
+    api: _AdminOpsTabCountsRouteApi, cache_path: Path
+) -> dict[str, Any]:
+    stale = _read_ops_tab_counts_cache_ignoring_key(cache_path)
+    if stale is not None:
+        stale["computing"] = True
+        return stale
+    return {
         "ok": True,
         "summaryView": True,
         "detailLevel": "summary",
         "generatedAt": api.now_iso(),
-        "badges": badges,
+        "badges": {},
+        "computing": True,
     }
-    with time_operation("admin.ops_tab_counts.summary.cache_write"):
-        _write_ops_tab_counts_cache(cache_path, cache_key, payload)
-    return payload
+
+
+def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
+    cache_path = _ops_tab_counts_cache_path(api)
+    cache_key = _ops_tab_counts_cache_key(api)
+    with time_operation("admin.ops_tab_counts.summary.cache_read"):
+        cached = _read_ops_tab_counts_cache(cache_path, cache_key)
+    if cached is not None:
+        return cached
+
+    if not _OPS_TAB_COUNTS_COMPUTE_LOCK.acquire(blocking=False):
+        return _ops_tab_counts_concurrent_payload(api, cache_path)
+    try:
+        payload = {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "generatedAt": api.now_iso(),
+            "badges": _build_ops_tab_count_badges(api),
+        }
+        with time_operation("admin.ops_tab_counts.summary.cache_write"):
+            _write_ops_tab_counts_cache(cache_path, cache_key, payload)
+        return payload
+    finally:
+        _OPS_TAB_COUNTS_COMPUTE_LOCK.release()
 
 
 def handle_admin_ops_tab_counts_routes(

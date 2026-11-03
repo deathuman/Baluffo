@@ -20,6 +20,8 @@ from src.bridge.registry_conflicts import (
     write_registry_conflicts_summary_cache,
 )
 from src.bridge.registry_conflicts_summary import (
+    load_any_cached_registry_conflicts_full,
+    load_any_cached_registry_conflicts_summary,
     load_registry_conflicts_full_cache,
     write_registry_conflicts_full_cache,
 )
@@ -93,61 +95,77 @@ def slice_registry_conflicts_for_query(
     return payload
 
 
+def _registry_conflicts_badge(
+    *,
+    count: int,
+    loaded: bool = True,
+    error: str = "",
+) -> dict[str, Any]:
+    safe_count = max(0, int(count or 0))
+    if not loaded:
+        title = "Registry conflict count unavailable"
+    elif safe_count > 0:
+        title = f"{safe_count} registry conflict{'' if safe_count == 1 else 's'}"
+    else:
+        title = "No registry conflicts"
+    return {
+        "count": safe_count,
+        "tone": "warning" if safe_count > 0 else "neutral",
+        "title": title,
+        "loaded": bool(loaded),
+        "error": str(error or ""),
+    }
+
+
+def _registry_summary_row_count(registry_summary: dict[str, Any]) -> int | None:
+    counts = ("activeCount", "pendingCount", "rejectedCount")
+    if not any(key in registry_summary for key in counts):
+        return None
+    return sum(max(0, _safe_int(registry_summary.get(key), 0)) for key in counts)
+
+
+def _last_known_conflicts_summary(source_state_path: Path) -> dict[str, Any]:
+    cached = load_any_cached_registry_conflicts_summary(source_state_path=source_state_path)
+    if cached:
+        return cached
+    full_payload = load_any_cached_registry_conflicts_full(source_state_path)
+    if full_payload:
+        # Reduce the cached full payload instead of rebuilding it: summarize is a
+        # bounded slice of already-derived cards, the derivation is the 54s part.
+        return summarize_registry_conflicts_payload(full_payload)
+    return {}
+
+
 def registry_conflicts_badge_from_exact_summary(
     api: _RegistryConflictsRouteApi,
 ) -> dict[str, Any]:
-    registry_summary = api.get_registry_summary_payload()
+    """Registry conflict badge from caches only.
+
+    This badge is polled with the Admin shell, so it must stay cheap even while a
+    run rewrites the source-state signature and invalidates the exact cache key.
+    It serves last-known counts in that case and never builds the full conflict
+    queue: that derivation measured 54s+ on a Pi and is the conflicts tab's job.
+    """
+    registry_summary = _as_dict(api.get_registry_summary_payload())
+    if _registry_summary_row_count(registry_summary) == 0:
+        return _registry_conflicts_badge(count=0)
     source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
-    adjudication = api.load_registry_conflict_adjudication()
-    registry_auto_heal = api.get_registry_auto_heal_report()
     conflicts_payload = load_registry_conflicts_summary_payload(
         registry_summary=registry_summary,
         source_state_path=source_state_path,
-        adjudication_payload=adjudication,
-        registry_auto_heal=registry_auto_heal,
+        adjudication_payload=api.load_registry_conflict_adjudication(),
+        registry_auto_heal=api.get_registry_auto_heal_report(),
     )
     if _clean_text(conflicts_payload.get("summaryStatus")).lower() != "ready":
-        # Adjudication drags in discovery probing and the jobs adapter closure; the
-        # summary-cache fast path (and bridge startup) must not pay for it.
-        from src.bridge.registry_conflict_adjudication import overlay_adjudication
-
-        full_payload = load_registry_conflicts_payload(
-            load_state=api.load_state,
-            load_json_object=api.load_json_object,
-            source_state_path=source_state_path,
-            adjudication_payload=adjudication,
+        conflicts_payload = _last_known_conflicts_summary(source_state_path)
+    if not conflicts_payload:
+        return _registry_conflicts_badge(
+            count=0,
+            loaded=False,
+            error="conflict_summary_not_ready",
         )
-        full_payload = overlay_adjudication(full_payload, adjudication)
-        full_payload["registrySummary"] = registry_summary
-        full_payload["registryAutoHeal"] = registry_auto_heal
-        full_payload["ok"] = True
-        conflicts_payload = summarize_registry_conflicts_payload(full_payload)
-        try:
-            cache_key = build_registry_conflicts_summary_cache_key(
-                registry_summary=registry_summary,
-                source_state_path=source_state_path,
-                adjudication_payload=adjudication,
-            )
-            write_registry_conflicts_summary_cache(
-                source_state_path=source_state_path,
-                cache_key=cache_key,
-                payload=conflicts_payload,
-            )
-        except OSError:
-            logger.debug("Could not write registry conflicts summary cache", exc_info=True)
     summary = _as_dict(conflicts_payload.get("summary"))
-    count = _safe_int(summary.get("conflictCount"), 0)
-    return {
-        "count": max(0, count),
-        "tone": "warning" if count > 0 else "neutral",
-        "title": (
-            f"{count} registry conflict{'' if count == 1 else 's'}"
-            if count > 0
-            else "No registry conflicts"
-        ),
-        "loaded": True,
-        "error": "",
-    }
+    return _registry_conflicts_badge(count=_safe_int(summary.get("conflictCount"), 0))
 
 
 def handle_registry_conflict_routes(

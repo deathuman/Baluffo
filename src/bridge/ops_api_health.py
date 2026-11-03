@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused ops API tests.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,6 +24,15 @@ from src.bridge.discovery_audit_artifacts import (
 from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active, _task_type
 from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
+
+# Active runs recompute the KPI payload on every call so stage transitions
+# surface at once, but its expensive inputs only move when a fetch finishes or
+# the registry is written: history projection measured p95 1555ms and registry
+# summary p95 745ms on a Pi with a run active. The payload already declares
+# itself stale during a run (fetchKpisStaleDuringActiveRun), so this TTL bounds
+# that declared staleness; the active-run probe, alerts, and generatedAt stay
+# per-call.
+_OPS_FETCH_KPIS_ACTIVE_STABLE_TTL_S = 15.0
 
 
 @dataclass(frozen=True)
@@ -63,6 +73,12 @@ class OpsHealthDeps:
 
 
 class OpsApiHealthMixin(OpsApiState):
+    # (expiresAt, (history, metrics, registry summary)); filled only while a run
+    # is active, where the route recomputes on every call.
+    _ops_fetch_kpis_stable_cache: (
+        tuple[float, tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]] | None
+    ) = None
+
     def build_ops_health_deps(self) -> OpsHealthDeps:
         return OpsHealthDeps(
             get_history=lambda: self.get_projected_run_history().rows,
@@ -304,21 +320,49 @@ class OpsApiHealthMixin(OpsApiState):
                 },
             }
 
+    def _fetch_kpis_stable_parts(
+        self, *, active: bool
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+        """History rows, fetch metrics, and registry summary for the KPI payload.
+
+        Idle calls compute them fresh; the route's own 15s cache already covers
+        that case. While a run is active the route recomputes per call, so the
+        parts are reused for one declared-staleness window instead of paying
+        ~1.2s of history projection and registry scanning per navigation.
+        """
+        if not active:
+            return self._compute_fetch_kpis_stable_parts()
+        now = time.monotonic()
+        cached = self._ops_fetch_kpis_stable_cache
+        if cached is not None and cached[0] > now:
+            return cached[1]
+        parts = self._compute_fetch_kpis_stable_parts()
+        self._ops_fetch_kpis_stable_cache = (now + _OPS_FETCH_KPIS_ACTIVE_STABLE_TTL_S, parts)
+        return parts
+
+    def _compute_fetch_kpis_stable_parts(
+        self,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+        with time_operation("ops.fetch_kpis.summary.history"):
+            history = list(self.get_projected_run_history().rows or [])
+            metrics = _ops_health.collect_fetch_history_metrics(
+                history,
+                self._deps.parse_iso,
+                self._deps.now_utc,
+            )
+        with time_operation("ops.fetch_kpis.summary.registry"):
+            try:
+                registry_summary = as_json_object(self._deps.get_registry_summary_payload())
+            except (OSError, TypeError, ValueError):
+                registry_summary = {}
+        return history, metrics, registry_summary
+
     def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
         with time_operation("ops.fetch_kpis.summary.total"):
             active_summary = self._active_pipeline_or_fetch_summary()
-            with time_operation("ops.fetch_kpis.summary.history"):
-                history = list(self.get_projected_run_history().rows or [])
-                metrics = _ops_health.collect_fetch_history_metrics(
-                    history,
-                    self._deps.parse_iso,
-                    self._deps.now_utc,
-                )
-            with time_operation("ops.fetch_kpis.summary.registry"):
-                try:
-                    registry_summary = as_json_object(self._deps.get_registry_summary_payload())
-                except (OSError, TypeError, ValueError):
-                    registry_summary = {}
+            history, metrics, registry_summary = self._fetch_kpis_stable_parts(
+                active=bool(active_summary)
+            )
             last_success = as_json_object(metrics.get("lastSuccessFetch"))
             latest_fetch = as_json_object(metrics.get("latestFetch"))
             latest_summary = as_json_object(latest_fetch.get("summary"))

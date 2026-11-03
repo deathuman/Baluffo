@@ -45,6 +45,12 @@ HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS = 60.0
 CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
 SCHEDULE_BRIDGE_TIMEOUT_SECONDS = 2.5
 SYNC_SUMMARY_BRIDGE_TIMEOUT_SECONDS = 1.5
+# Admin's first call. Its bridge-side payload measures p95 934 ms / max 1036 ms
+# on a Pi with a run active, so the old 0.75 s cutoff abandoned healthy
+# bootstraps; the fallback it then built cost ~1.3 s more because it makes its
+# own bridge calls, which left the Admin page on "data delayed; retrying" after
+# every navigation. 3 s keeps ~3x headroom over the observed maximum.
+ADMIN_BOOTSTRAP_PROXY_TIMEOUT_SECONDS = 3.0
 
 # Diagnostic reads the Admin page polls on a timer. A bridge-side stall used to
 # surface as a 504 here, which the page then read as "bridge offline"; the last
@@ -974,7 +980,10 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             self._proxy_or_fallback(state.dashboard_health_summary_payload)
             return True
         if path == "/admin/bootstrap":
-            self._proxy_or_fallback(state.admin_bootstrap_payload)
+            self._proxy_or_fallback(
+                state.admin_bootstrap_payload,
+                timeout=ADMIN_BOOTSTRAP_PROXY_TIMEOUT_SECONDS,
+            )
             return True
         return False
 

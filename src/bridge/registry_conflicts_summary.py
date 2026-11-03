@@ -222,6 +222,29 @@ def load_cached_registry_conflicts_summary(
     )
 
 
+def load_any_cached_registry_conflicts_summary(*, source_state_path: Path) -> dict[str, Any] | None:
+    """Last written summary, ignoring the cache key.
+
+    A key mismatch only means the registry/source evidence moved (typically a
+    heartbeat or a fetch report rewrite during an active run); the badge caller
+    serves these counts as last-known rather than paying the full derivation.
+    """
+    envelope = read_pipeline_json_object(
+        _registry_conflicts_summary_cache_path(source_state_path), {}
+    )
+    body = _as_dict(envelope.get("payload")) if isinstance(envelope, dict) else {}
+    return body or None
+
+
+def load_any_cached_registry_conflicts_full(
+    source_state_path: Path,
+) -> dict[str, Any] | None:
+    """Last written full payload, ignoring the cache key (summarize is cheap)."""
+    envelope = read_pipeline_json_object(_registry_conflicts_full_cache_path(source_state_path), {})
+    body = _as_dict(envelope.get("payload")) if isinstance(envelope, dict) else {}
+    return body or None
+
+
 def write_registry_conflicts_summary_cache(
     *,
     source_state_path: Path,

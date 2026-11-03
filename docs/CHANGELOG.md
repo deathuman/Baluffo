@@ -47,6 +47,38 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.033] - 2026-11-03
+
+### Fixed
+
+- The Admin page no longer stalls on its first call after a slow moment. Its startup request
+  was cut off after 0.75 seconds while a healthy answer can take about a second, so the page
+  fell back to "data delayed; retrying" on every navigation; it now waits up to three seconds,
+  roughly triple the slowest answer measured on the box.
+- The Ops tab badges no longer spend minutes recalculating while a run is active. The counts are
+  read from the last completed scan and refreshed in the background, and a second copy of that
+  work cannot start while one is already running; before any scan has finished the badges show
+  as computing instead of holding the page.
+- The source table reloads instantly after its first open. Building it used to re-normalize every
+  registry row and re-derive the conflict groups on each open even when the registry had not
+  changed; repeated opens now reuse that result until a registry or source-state file changes,
+  and a registry with no removed sources no longer re-fingerprints every row's listing URL just
+  to prove none match.
+- Ops fetch statistics stay responsive during a run. The parts that only change when a fetch
+  finishes are reused for up to 15 seconds, while the active-run status, alerts, and response
+  timestamp are still read fresh, so an open Ops tab no longer pays about a second of history
+  and registry scanning on every refresh.
+- On installs that keep the registry in the app database, summary counts are reused until the
+  registry actually changes, instead of rescanning it on every Admin and Ops poll.
+
+### Notes
+
+- Distribution surfaces are unchanged. Each behaves as it did in 0.3.032:
+  the same-origin Linux container,
+  GHCR multi-arch image publishing,
+  wildcard browser CORS allow headers,
+  desktop localhost bridge compatibility.
+
 ## [0.3.032] - 2026-11-03
 
 ### Fixed
@@ -113,24 +145,6 @@ Four rules the guardrail enforces so this cannot quietly regress:
   wildcard browser CORS allow headers,
   desktop localhost bridge compatibility.
 
-## [0.3.029] - 2026-10-31
-
-### Added
-
-- **Baluffo can be installed from its Umbrel community app store.** Add the Baluffo GitHub repository in Umbrel, then install the app; it uses the published `0.3.029` image and keeps app data in Umbrel's persistent storage. Store-only metadata changes do not trigger normal container builds.
-
-### Security
-
-- **The Python dependency audit is clear.** Updated Twisted to 26.10.0 and pyasn1 to 0.6.5 to address the reported vulnerabilities.
-
-### Notes
-
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.028:
-  the same-origin Linux container,
-  GHCR multi-arch image publishing,
-  wildcard browser CORS allow headers,
-  desktop localhost bridge compatibility.
-
 ## [0.3.028] - 2026-10-29
 
 > This is a desktop rollup: it combines the fetcher changes that shipped to the container
@@ -144,7 +158,7 @@ Four rules the guardrail enforces so this cannot quietly regress:
   sources, so this is a sample rather than a whole fetch: the same boards finished in 181 s and
   183 s at 16 sources in parallel, against 222 s and 207 s at 12, with board failures flat
   (36 against 37 of 200). Going to 24 gave the gain back (221 s), because a handful of boards
-  stalled for 100–160 s each and doubled the total work.
+  stalled for 100â€“160 s each and doubled the total work.
 
 - **Slow boards are picked up first, so a run's last minutes are not spent on boards that only just
   started.** A fetch used to start boards in report order, which put the slowest ones last: the last
@@ -152,21 +166,21 @@ Four rules the guardrail enforces so this cannot quietly regress:
   the rest of the fetcher sat idle. Boards are now started in the order they took last time, and
   results are still combined in selection order. A bounded buffer holds results that finish early,
   so a stall deep enough to fill it (at least 256 results behind one board) can combine one result
-  early — the only case where which copy of a duplicated job is kept could differ.
+  early â€” the only case where which copy of a duplicated job is kept could differ.
 
 - **A single-page static board whose page has not changed is no longer parsed at all.** Static boards
   with one listing page that kept jobs and have not been read for three hours now ask the site first:
-  the fetcher sends a HEAD request — conditional once it knows the page's version tag, plain on the
-  first pass to learn it — and, when the answer is "not modified", finishes the board without
+  the fetcher sends a HEAD request â€” conditional once it knows the page's version tag, plain on the
+  first pass to learn it â€” and, when the answer is "not modified", finishes the board without
   parsing it, opening detail pages or trying the browser. Two live boards answered the check with
   304 in 193 ms and 251 ms; full reads of boards in the same session took 2.3 s and 14.2 s. Boards
   with one listing page that kept nothing get the same check once their twelve-hour re-check window
   expires and they have come up empty on two runs in a row, so an empty board is no longer
   re-downloaded only to confirm it is still empty. A board that answered "not modified" then waits
-  out its window — three hours, or twelve for one that keeps nothing — before asking again, instead
+  out its window â€” three hours, or twelve for one that keeps nothing â€” before asking again, instead
   of spending a check on every run. Boards that publish no version tag still take the full read;
-  the check costs them one HEAD first — and a board or provider feed that stops publishing one drops
-  the stored tag rather than asking with a retired value — while boards whose job list is drawn by
+  the check costs them one HEAD first â€” and a board or provider feed that stops publishing one drops
+  the stored tag rather than asking with a retired value â€” while boards whose job list is drawn by
   the browser always take the full read:
   their page looks the same whether or not the jobs behind it changed. Boards split across several
   listing pages also keep the full read, because one page's answer cannot vouch for the pages behind
@@ -187,13 +201,13 @@ Four rules the guardrail enforces so this cannot quietly regress:
   fetcher asks every page, skipping the download, parsing and detail pages only when all of them say
   nothing has changed; a page that changed still triggers the full read, and a page that stops
   publishing a tag drops only its own entry. The same change stops a multi-page board from reading
-  its later pages over and over inside one run — a five-page board used to read fifteen pages, and
+  its later pages over and over inside one run â€” a five-page board used to read fifteen pages, and
   now reads five.
 
 - **A board's version tag is kept from the ordinary read, so its first re-check can already ask
   "has this changed?"** The tag used to be learned only by the first check after a board's window
   expired, which meant every board waited another full window before an unchanged page could be
-  skipped. The read that produces the jobs now stores the tag as well — one for a single-page
+  skipped. The read that produces the jobs now stores the tag as well â€” one for a single-page
   board, one per page for a board split across several. A page that stops publishing a tag drops
   it, and a page a run could not read keeps the tag it had. Boards whose reads go through a custom
   fetcher still learn their tag at the first check, as before.
