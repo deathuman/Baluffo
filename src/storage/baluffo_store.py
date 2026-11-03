@@ -64,6 +64,11 @@ DEFAULT_SLOW_WRITE_WARN_MS = 1000
 # wedged holder would otherwise park every later writer forever with no error,
 # no journal row, and a task that never leaves `running`.
 DEFAULT_WRITE_LOCK_TIMEOUT_MS = 300_000
+# Diagnostics must not wait on that lock at all: maintenance holds it for a whole
+# VACUUM, and /ops/storage-health answering late is what turned a busy store into
+# a gateway timeout and then into a "bridge offline" badge. The read falls back to
+# the last value taken while the writer was idle, and says so.
+DEFAULT_HEALTH_LOCK_TIMEOUT_MS = 250
 SLOW_WRITE_STACK_LIMIT = 12
 MAINTENANCE_STATUS_DEFERRED = "deferred"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
@@ -139,6 +144,7 @@ class BaluffoStore:
         compaction_hold: bool = False,
         slow_write_warn_ms: int = DEFAULT_SLOW_WRITE_WARN_MS,
         write_lock_timeout_ms: int = DEFAULT_WRITE_LOCK_TIMEOUT_MS,
+        health_lock_timeout_ms: int = DEFAULT_HEALTH_LOCK_TIMEOUT_MS,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.db_name = str(db_name or DEFAULT_DB_NAME)
@@ -192,6 +198,11 @@ class BaluffoStore:
         self._compaction_hold = bool(compaction_hold)
         self.slow_write_warn_ms = max(0, int(slow_write_warn_ms))
         self.write_lock_timeout_ms = max(1, int(write_lock_timeout_ms))
+        self.health_lock_timeout_ms = max(1, int(health_lock_timeout_ms))
+        # Captured while the writer is idle at open; health() reports these instead
+        # of queueing behind a held write lock.
+        self._last_known_wal_mode = "wal"
+        self._last_known_foreign_keys = 1
         self._post_serve_maintenance_started = False
         self._reader: sqlite3.Connection | None = None
 
@@ -238,6 +249,7 @@ class BaluffoStore:
         if wal_mode != "wal":
             self._healthy = False
             raise BaluffoStoreError(f"Unable to enable SQLite WAL mode: {wal_mode}")
+        self._last_known_wal_mode = wal_mode
         self._writer.execute("PRAGMA synchronous=NORMAL")
         self._writer.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         self._writer.execute("PRAGMA foreign_keys=ON")
@@ -247,6 +259,7 @@ class BaluffoStore:
         if foreign_keys != 1:
             self._healthy = False
             raise BaluffoStoreError("Unable to enable SQLite foreign key enforcement")
+        self._last_known_foreign_keys = foreign_keys
 
     def _read_connection(self) -> sqlite3.Connection:
         with self._read_lock:
@@ -555,9 +568,26 @@ class BaluffoStore:
             return "deferred-large-database", True
         return self.quick_check(limit=1), False
 
+    def _pragma_with_source(self, sql: str, fallback: Any) -> tuple[Any, str]:
+        """Read a writer-only pragma without waiting on a held write lock.
+
+        A VACUUM can hold the write lock for tens of seconds, and minutes on a
+        multi-gigabyte database. Diagnostics used to queue behind it and the route
+        never answered at all, so the caller gets the value captured while the
+        writer was last idle, tagged `cached-busy`, instead of an unbounded wait.
+        """
+        if not self._write_lock.acquire(timeout=self.health_lock_timeout_ms / 1000.0):
+            return fallback, "cached-busy"
+        try:
+            return self._writer.execute(sql).fetchone()[0], "live"
+        finally:
+            self._write_lock.release()
+
     def wal_mode(self) -> str:
-        with self._write_lock:
-            return str(self._writer.execute("PRAGMA journal_mode").fetchone()[0] or "").lower()
+        wal_mode, _source = self._pragma_with_source(
+            "PRAGMA journal_mode", self._last_known_wal_mode
+        )
+        return str(wal_mode or "").lower()
 
     def checkpoint_required(self, *, mode: str = "TRUNCATE") -> dict[str, int]:
         checkpoint_mode = mode.upper()
@@ -1113,18 +1143,35 @@ class BaluffoStore:
             raise BaluffoStoreError(f"SQLite quick_check failed for {path}: {result}")
 
     def health(self) -> dict[str, Any]:
+        health_started = time.perf_counter()
         quick_check, quick_check_deferred = self.quick_check_for_health()
         migration_version = self.migration_version()
         busy_rate = self._busy_count / max(1, self._write_attempts)
         sizes = self.file_sizes()
         quick_check_ok = quick_check == "ok" or quick_check_deferred
+        lock_started = time.perf_counter()
+        wal_mode, wal_mode_source = self._pragma_with_source(
+            "PRAGMA journal_mode", self._last_known_wal_mode
+        )
+        foreign_keys, foreign_keys_source = self._pragma_with_source(
+            "PRAGMA foreign_keys", self._last_known_foreign_keys
+        )
+        lock_wait_ms = int(round((time.perf_counter() - lock_started) * 1000))
         return {
             "schemaVersion": STORAGE_SCHEMA_VERSION,
             "databasePath": str(self.db_path),
             **sizes,
             "migrationVersion": migration_version,
-            "walMode": self.wal_mode(),
-            "foreignKeys": self._foreign_keys_enabled(),
+            "walMode": str(wal_mode or "").lower(),
+            "walModeSource": wal_mode_source,
+            "foreignKeys": int(foreign_keys or 0),
+            "foreignKeysSource": foreign_keys_source,
+            "healthLockBusy": "cached-busy" in {wal_mode_source, foreign_keys_source},
+            "healthLockTimeoutMs": self.health_lock_timeout_ms,
+            "healthTiming": {
+                "lockWaitMs": lock_wait_ms,
+                "healthMs": int(round((time.perf_counter() - health_started) * 1000)),
+            },
             "quickCheck": quick_check,
             "quickCheckScope": "deferred" if quick_check_deferred else "limited",
             "quickCheckDeferred": quick_check_deferred,
@@ -1139,7 +1186,3 @@ class BaluffoStore:
             "compaction": self.compaction_status(),
             "authorityModes": self.get_authority_modes(),
         }
-
-    def _foreign_keys_enabled(self) -> int:
-        with self._write_lock:
-            return int(self._writer.execute("PRAGMA foreign_keys").fetchone()[0] or 0)

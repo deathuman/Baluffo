@@ -178,7 +178,9 @@ landing on top of a running fetch or sync, which writes continuously and would
 otherwise queue behind tens of seconds of VACUUM on the same multi-gigabyte
 database.
 
-`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log.
+`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
+
+The read is bounded, because a diagnostic must answer while maintenance holds the write lock: the writer-only pragmas use a short lock timeout and fall back to the values captured while the writer was idle (`walModeSource`/`foreignKeysSource` = `cached-busy`, `healthLockBusy: true`), and the payload is cached per data dir for a few seconds (`healthSource`, `healthCacheAgeMs`) with `healthTiming` reporting the cost. A read that cannot run at all reports `healthStalled: true` and `healthSource: "unavailable"` while leaving `healthy` at its last known value: a diagnostic that did not run is not evidence of corruption and must not raise the Admin storage alert. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log.
 
 ## Migration Safety
 

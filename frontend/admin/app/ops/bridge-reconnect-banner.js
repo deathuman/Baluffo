@@ -26,6 +26,10 @@
  */
 
 const RECONNECTING_LABEL = "Bridge Reconnecting";
+// The states setBridgeStatusBadge() renders. The waiting state takes the badge
+// over, so it has to hand back exactly one of these when the wait ends.
+const BADGE_STATES = ["online", "offline", "checking", "degraded"];
+const DEFAULT_BADGE = { state: "checking", label: "Bridge Checking" };
 
 // Long enough that a normal bridge start (~6s cold on this hardware) is never
 // gated, short enough that a dead bridge does not hold the page hostage.
@@ -58,6 +62,8 @@ export function createBridgeReconnectBanner({
   // runs (the Admin runtime does not start one). Owning the flag keeps the
   // banner and the badge reading the same signal.
   let bridgeReachable = true;
+  // What the badge said before the wait took it over.
+  let preWaitBadge = null;
 
   const isBootstrapPending = () => getBootstrapStatus() === "pending";
   const isWaiting = () => isBootstrapPending() || !bridgeReachable;
@@ -86,17 +92,35 @@ export function createBridgeReconnectBanner({
     }
   }
 
+  function snapshotBadge(badge) {
+    const state = BADGE_STATES.find(name => badge.classList.contains(name)) || DEFAULT_BADGE.state;
+    return {
+      state,
+      label: String(badge.textContent || "").trim() || DEFAULT_BADGE.label
+    };
+  }
+
   function renderBadge() {
     const badge = refs.adminBridgeStatusBadgeEl;
     if (!badge) return;
     if (isWaiting()) {
-      badge.classList.remove("online", "offline", "checking", "degraded");
+      if (preWaitBadge === null && !badge.classList.contains("reconnecting")) {
+        preWaitBadge = snapshotBadge(badge);
+      }
+      badge.classList.remove(...BADGE_STATES);
       badge.classList.add("reconnecting");
       badge.textContent = isBootstrapPending() ? "Bridge Starting" : RECONNECTING_LABEL;
       return;
     }
-    // Hand the badge back to the bridge status watch once we are reachable.
-    badge.classList.remove("reconnecting");
+    // Hand the badge back in the state it was in before the wait. Stripping only
+    // `reconnecting` left the pending label with no state class: a grey pill
+    // reading "Bridge Reconnecting" while every request was succeeding.
+    const restore = preWaitBadge || (badge.classList.contains("reconnecting") ? DEFAULT_BADGE : null);
+    if (restore === null) return;
+    preWaitBadge = null;
+    badge.classList.remove("reconnecting", ...BADGE_STATES);
+    badge.classList.add(restore.state);
+    badge.textContent = restore.label;
   }
 
   function renderGate() {

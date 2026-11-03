@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.031"
+version: "0.3.032"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,8 +19,8 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  A run that has finished collecting jobs no longer sits on "Running fetch" while
-  it merges results, and each phase is logged as it starts. Existing jobs, saved
-  jobs and notes are kept.
+  The Admin page no longer shows "Bridge Reconnecting" while the app is working
+  normally, and the connection badge goes back to its real state once a short
+  reconnect finishes. Existing jobs, saved jobs and notes are kept.
 storage:
   dataRoot: data

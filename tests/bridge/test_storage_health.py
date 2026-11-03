@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.storage_health import (
+    _StoreOpenBusy,
     close_storage_stores,
     get_storage_health_payload,
     get_storage_store,
@@ -215,3 +218,84 @@ def test_get_storage_store_clamps_invalid_storage_busy_env_config(
         assert store.busy_retry_max_ms == 10
     finally:
         close_storage_stores()
+
+
+def test_storage_health_payload_does_not_wait_on_a_held_write_lock(tmp_path: Path) -> None:
+    """A VACUUM holds the write lock for the whole rebuild.
+
+    Diagnostics used to queue behind it with no timeout, so the route never
+    answered, the gateway returned 504, and the Admin page reported the bridge as
+    offline. The read now reports its last known values instead.
+    """
+    store = get_storage_store(tmp_path)
+    release = threading.Event()
+    holding = threading.Event()
+
+    def hold_write_lock() -> None:
+        with store._write_lock:
+            holding.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_write_lock, daemon=True)
+    holder.start()
+    try:
+        assert holding.wait(timeout=5)
+        started = time.perf_counter()
+        payload = get_storage_health_payload(tmp_path)
+        elapsed = time.perf_counter() - started
+    finally:
+        release.set()
+        holder.join(timeout=5)
+        close_storage_stores()
+
+    storage = payload["storage"]
+    # timing-ok: a read that took the lock would wait out the holder's 10s release
+    assert elapsed < 2.0
+    assert storage["healthLockBusy"] is True
+    assert storage["walModeSource"] == "cached-busy"
+    assert storage["healthLockTimeoutMs"] > 0
+    assert storage["healthTiming"]["lockWaitMs"] >= 0
+    # A busy lock is not a health verdict: the last known WAL state still stands.
+    assert storage["walMode"] == "wal"
+    assert storage["healthy"] is True
+
+
+def test_storage_health_payload_is_cached_within_the_ttl(tmp_path: Path, monkeypatch) -> None:
+    health_calls: list[int] = []
+
+    class CountingStore:
+        def health(self):
+            health_calls.append(1)
+            return {"healthy": True, "walMode": "wal", "quickCheck": "ok"}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: CountingStore(),
+    )
+
+    first = get_storage_health_payload(tmp_path)
+    second = get_storage_health_payload(tmp_path)
+
+    assert first["storage"]["healthSource"] == "live"
+    assert second["storage"]["healthSource"] == "cached"
+    assert second["storage"]["healthCacheAgeMs"] >= 0
+    assert len(health_calls) == 1
+    close_storage_stores()
+
+
+def test_storage_health_payload_reports_a_stalled_read_without_a_health_verdict(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def busy_store(*_args, **_kwargs):
+        raise _StoreOpenBusy("runtime store open still in progress after 2.0s")
+
+    monkeypatch.setattr("src.bridge.storage_health.get_storage_store", busy_store)
+
+    payload = get_storage_health_payload(tmp_path)
+
+    assert payload["ok"] is True
+    assert payload["storage"]["healthStalled"] is True
+    assert payload["storage"]["healthSource"] == "unavailable"
+    # A diagnostic that could not run must not raise the Admin storage alert.
+    assert payload["storage"]["healthy"] is True
+    assert payload["storage"]["databaseBytes"] == 0

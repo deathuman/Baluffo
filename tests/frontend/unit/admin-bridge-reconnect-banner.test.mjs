@@ -244,3 +244,50 @@ describe("admin bridge reconnect banner", () => {
     assert.equal(refs.bridgeReconnectRetryBtnEl.disabled, true);
   });
 });
+
+test("hands the badge back after a reconnect instead of leaving the pending label", () => {
+  // Regression: leaving the wait only stripped `reconnecting`, so the badge kept
+  // the pending "Bridge Reconnecting" text with no state class - a grey pill that
+  // claimed a reconnect while every bridge request was succeeding.
+  const { banner, refs } = createFixture();
+  const badge = refs.adminBridgeStatusBadgeEl;
+  badge.classList.remove("checking");
+  badge.classList.add("online");
+  badge.textContent = "Bridge Online";
+
+  banner.setBridgeReachable(false);
+  assert.equal(badge.textContent, "Bridge Reconnecting");
+  assert.equal(badge.classList.contains("reconnecting"), true);
+  assert.equal(badge.classList.contains("online"), false);
+
+  banner.setBridgeReachable(true);
+  assert.equal(badge.textContent, "Bridge Online");
+  assert.equal(badge.classList.contains("online"), true);
+  assert.equal(badge.classList.contains("reconnecting"), false);
+});
+
+test("leaves the badge untouched when no wait was ever shown", () => {
+  const { banner, refs } = createFixture();
+  const badge = refs.adminBridgeStatusBadgeEl;
+  badge.classList.remove("checking");
+  badge.classList.add("online");
+  badge.textContent = "Bridge Online";
+
+  banner.sync();
+
+  assert.equal(badge.textContent, "Bridge Online");
+  assert.equal(badge.classList.contains("online"), true);
+});
+
+test("restores a neutral checking badge when the wait began from a bare badge", () => {
+  const { banner, refs } = createFixture();
+  const badge = refs.adminBridgeStatusBadgeEl;
+  badge.classList.remove("checking");
+  badge.textContent = "";
+
+  banner.setBridgeReachable(false);
+  banner.setBridgeReachable(true);
+
+  assert.equal(badge.classList.contains("checking"), true);
+  assert.equal(badge.textContent, "Bridge Checking");
+});

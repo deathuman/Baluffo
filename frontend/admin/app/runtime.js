@@ -130,11 +130,17 @@ function appendLogRow(container, event) {
 }
 
 function getBridge(path, options = {}) {
-  return callBridge(() => getBridgeFromData(ADMIN_BRIDGE_BASE, path, options));
+  return callBridge(
+    () => getBridgeFromData(ADMIN_BRIDGE_BASE, path, options),
+    { affectsReachability: options.affectsReachability !== false }
+  );
 }
 
 function postBridge(path, payload, options = {}) {
-  return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload, options));
+  return callBridge(
+    () => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload, options),
+    { affectsReachability: options.affectsReachability !== false }
+  );
 }
 
 async function waitForAdminBridgeReady() {

@@ -471,7 +471,10 @@ export function createActionCenterController({
           getBridge(HEALTH_ROUTE, { timeoutMs: 5000 }).catch(() => null),
           getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
           includeStorage
-            ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
+            // Diagnostic-only: a slow storage read must not report the bridge as
+            // offline, because every data route in the same batch answered.
+            ? getBridge("/ops/storage-health", { timeoutMs: 5000, affectsReachability: false })
+              .catch(() => null)
             : Promise.resolve(pollCache.storage || null)
         ]);
       const storagePayload = includeStorage ? storage : pollCache.storage || null;

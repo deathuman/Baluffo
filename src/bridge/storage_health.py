@@ -8,9 +8,11 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused storage health t
 
 from __future__ import annotations
 
+import copy
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,29 @@ _DIAGNOSTICS_BY_DATA_DIR: dict[Path, list[dict[str, Any]]] = {}
 _MAX_DIAGNOSTICS = 40
 _MAINTENANCE_DEFERRED = False
 _COMPACTION_HOLD = False
+
+# A diagnostics read must answer while a VACUUM holds the store write lock, so
+# each data dir keeps a short-lived last-good payload and a bounded store-open
+# wait. The Admin Action Center polls this route on a timer; without both bounds a
+# single stuck read parked one HTTP thread per poll and the route never answered.
+HEALTH_CACHE_TTL_S = 5.0
+HEALTH_STORE_OPEN_TIMEOUT_S = 2.0
+_STORE_BUILD_LOCKS: dict[Path, threading.Lock] = {}
+_HEALTH_LOCKS: dict[Path, threading.Lock] = {}
+_HEALTH_CACHE: dict[Path, tuple[float, float, dict[str, Any]]] = {}
+
+
+class _StoreOpenBusy(BaluffoStoreError):
+    """Another thread is opening the store; a diagnostics read must not queue."""
+
+
+def _keyed_lock(registry: dict[Path, threading.Lock], key: Path) -> threading.Lock:
+    with _STORE_LOCK:
+        lock = registry.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            registry[key] = lock
+        return lock
 
 
 def _resolve_data_dir(data_dir: Path | str) -> Path:
@@ -83,19 +108,45 @@ def runtime_db_file_sizes(data_dir: Path | str) -> dict[str, int]:
     return _runtime_db_file_sizes(_resolve_data_dir(data_dir))
 
 
-def get_storage_store(data_dir: Path | str) -> BaluffoStore:
+def get_storage_store(
+    data_dir: Path | str,
+    *,
+    build_timeout_s: float | None = None,
+) -> BaluffoStore:
+    """Open (once) and return the runtime store for a data dir.
+
+    `build_timeout_s` bounds the wait for another thread's in-flight construction.
+    Opening a store means running migrations, which can itself wait on the database
+    file, so an unbounded wait here is the other way this route could hang.
+    """
     resolved = _resolve_data_dir(data_dir)
     with _STORE_LOCK:
         store = _STORES_BY_DATA_DIR.get(resolved)
-        if store is None:
-            store = BaluffoStore(
-                resolved,
-                defer_maintenance=_MAINTENANCE_DEFERRED,
-                compaction_hold=_COMPACTION_HOLD,
-                **_storage_busy_config(),
-            )
+    if store is not None:
+        return store
+    build_lock = _keyed_lock(_STORE_BUILD_LOCKS, resolved)
+    if build_timeout_s is None:
+        build_lock.acquire()
+    elif not build_lock.acquire(timeout=max(0.0, float(build_timeout_s))):
+        raise _StoreOpenBusy(
+            f"runtime store open still in progress after {float(build_timeout_s):.1f}s"
+        )
+    try:
+        with _STORE_LOCK:
+            store = _STORES_BY_DATA_DIR.get(resolved)
+        if store is not None:
+            return store
+        store = BaluffoStore(
+            resolved,
+            defer_maintenance=_MAINTENANCE_DEFERRED,
+            compaction_hold=_COMPACTION_HOLD,
+            **_storage_busy_config(),
+        )
+        with _STORE_LOCK:
             _STORES_BY_DATA_DIR[resolved] = store
         return store
+    finally:
+        build_lock.release()
 
 
 def storage_maintenance_deferred() -> bool:
@@ -167,10 +218,46 @@ def resume_storage_maintenance(
     return results
 
 
-def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
-    resolved = _resolve_data_dir(data_dir)
+def _stalled_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
+    """Answer without a fresh reading, and say exactly that.
+
+    `healthy` stays true because a busy or unopened store is no evidence of
+    corruption: the Admin Action Center raises a critical storage alert on
+    `healthy === false`, and a diagnostic that could not run must not do that.
+    `healthStalled` is the signal that this is not a reading.
+    """
+    return {
+        "ok": True,
+        "storage": {
+            "healthy": True,
+            "healthStalled": True,
+            "healthSource": "unavailable",
+            "error": reason,
+            "dataDir": str(resolved),
+            **_runtime_db_file_sizes(resolved),
+            "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
+        },
+    }
+
+
+def _cached_storage_payload(
+    resolved: Path, cached: dict[str, Any], *, age_ms: float
+) -> dict[str, Any]:
+    payload = copy.deepcopy(cached)
+    storage = payload.get("storage")
+    if isinstance(storage, dict):
+        storage["healthSource"] = "cached"
+        storage["healthCacheAgeMs"] = max(0, int(round(age_ms)))
+        storage["diagnostics"] = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
+    return payload
+
+
+def _compute_storage_health(resolved: Path) -> dict[str, Any]:
     try:
-        health = get_storage_store(resolved).health()
+        store = get_storage_store(resolved, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+        health = store.health()
+    except _StoreOpenBusy as exc:
+        return _stalled_storage_payload(resolved, reason=str(exc))
     except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
         return {
             "ok": False,
@@ -183,7 +270,26 @@ def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
             },
         }
     health["diagnostics"] = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
+    health["healthSource"] = "live"
     return {"ok": bool(health.get("healthy")), "storage": health}
+
+
+def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
+    resolved = _resolve_data_dir(data_dir)
+    # Single-flight per data dir: concurrent polls share one compute instead of
+    # stacking HTTP threads behind the same store read.
+    with _keyed_lock(_HEALTH_LOCKS, resolved):
+        cached = _HEALTH_CACHE.get(resolved)
+        now = time.monotonic()
+        if cached is not None and cached[0] > now:
+            return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
+        payload = _compute_storage_health(resolved)
+        if payload["storage"].get("healthStalled") and cached is not None:
+            # Never replace a real reading with a "could not read" answer.
+            return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
+        if not payload["storage"].get("healthStalled"):
+            _HEALTH_CACHE[resolved] = (now + HEALTH_CACHE_TTL_S, now, payload)
+        return payload
 
 
 def record_storage_diagnostic(
@@ -207,6 +313,8 @@ def record_storage_diagnostic(
         rows = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
         rows.append(diagnostic)
         _DIAGNOSTICS_BY_DATA_DIR[resolved] = rows[-_MAX_DIAGNOSTICS:]
+        # Surface a new diagnostic on the next poll, not after the TTL.
+        _HEALTH_CACHE.pop(resolved, None)
 
 
 def close_storage_stores() -> None:
@@ -215,6 +323,9 @@ def close_storage_stores() -> None:
         stores = list(_STORES_BY_DATA_DIR.values())
         _STORES_BY_DATA_DIR.clear()
         _DIAGNOSTICS_BY_DATA_DIR.clear()
+        _HEALTH_CACHE.clear()
+        _STORE_BUILD_LOCKS.clear()
+        _HEALTH_LOCKS.clear()
         _COMPACTION_HOLD = False
     for store in stores:
         store.close()

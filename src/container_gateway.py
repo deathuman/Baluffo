@@ -46,6 +46,42 @@ CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
 SCHEDULE_BRIDGE_TIMEOUT_SECONDS = 2.5
 SYNC_SUMMARY_BRIDGE_TIMEOUT_SECONDS = 1.5
 
+# Diagnostic reads the Admin page polls on a timer. A bridge-side stall used to
+# surface as a 504 here, which the page then read as "bridge offline"; the last
+# good reading is far more useful than an error, so it is kept and served marked
+# stale. Bounded so a payload from an hour ago is never presented as current.
+_LAST_GOOD_GET_ROUTES = frozenset({"/ops/storage-health"})
+_LAST_GOOD_MAX_AGE_S = 300.0
+_LAST_GOOD_BODIES: dict[str, tuple[float, bytes]] = {}
+_LAST_GOOD_LOCK = threading.Lock()
+
+
+def _remember_last_good(path: str, body: bytes) -> None:
+    with _LAST_GOOD_LOCK:
+        _LAST_GOOD_BODIES[path] = (time.monotonic(), body)
+
+
+def _stale_last_good_payload(path: str) -> dict[str, Any] | None:
+    with _LAST_GOOD_LOCK:
+        entry = _LAST_GOOD_BODIES.get(path)
+    if entry is None:
+        return None
+    age_s = time.monotonic() - entry[0]
+    if age_s > _LAST_GOOD_MAX_AGE_S:
+        return None
+    try:
+        payload = json.loads(entry[1].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {
+        **payload,
+        "stale": True,
+        "gatewayFallback": True,
+        "staleAgeS": round(max(0.0, age_s), 1),
+    }
+
 
 # Heavy GET routes: exact path or prefix match. Sub-resource prefixes use a trailing
 # slash so they cannot accidentally match their parent.
@@ -794,6 +830,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         *,
         timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS,
         _cached_body: bytes | None = None,
+        cache_key: str | None = None,
     ) -> None:
         state = self._state()
         target = f"{state.internal_base_url}{self.path}"
@@ -810,14 +847,24 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         try:
             with urlopen(request, timeout=float(timeout)) as response:
                 response_body = response.read()
-                self._send_proxied_response(
-                    int(response.status or 200),
-                    response.headers,
-                    response_body,
-                )
+                status = int(response.status or 200)
+                if cache_key and status == 200:
+                    _remember_last_good(cache_key, response_body)
+                self._send_proxied_response(status, response.headers, response_body)
         except HTTPError as exc:
-            self._send_proxied_response(int(exc.code or 500), exc.headers, exc.read())
+            body = exc.read()
+            if cache_key and int(exc.code or 0) == 504:
+                stale = _stale_last_good_payload(cache_key)
+                if stale is not None:
+                    self.send_json(stale)
+                    return
+            self._send_proxied_response(int(exc.code or 500), exc.headers, body)
         except (OSError, TimeoutError, URLError) as exc:
+            if cache_key:
+                stale = _stale_last_good_payload(cache_key)
+                if stale is not None:
+                    self.send_json(stale)
+                    return
             self.send_json(
                 {
                     "ok": False,
@@ -960,7 +1007,10 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             return
         if state.static_service.handle_get(self, path=path):
             return
-        self._proxy(timeout=_proxy_timeout_for("GET", path))
+        self._proxy(
+            timeout=_proxy_timeout_for("GET", path),
+            cache_key=path if path in _LAST_GOOD_GET_ROUTES else None,
+        )
 
     def do_POST(self) -> None:
         path = _route_path(self.path)

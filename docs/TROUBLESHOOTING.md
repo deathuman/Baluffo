@@ -67,6 +67,22 @@ Local listeners now use a 128-deep listen backlog and HTTP/1.1 keep-alive (see
 the backlog. If the banner still appears, capture `acceptMetrics` before
 changing anything else.
 
+### Admin badge flips to "Bridge Reconnecting" while requests succeed
+
+A single slow diagnostic must not read as a dead bridge. `GET /ops/storage-health`
+is bounded and cached: it reports `healthSource` (`live`, `cached`, or
+`unavailable`), `healthLockBusy`, and `healthTiming`, and a read that cannot take
+the store write lock returns `healthStalled: true` instead of hanging. The Admin
+Action Center marks that poll diagnostic-only, so a failure there leaves the
+storage card stale but never changes the badge.
+
+| Check | How to read it |
+|-------|----------------|
+| Route latency | `curl -w '%{http_code} %{time_total}'` on `/ops/storage-health`; it should answer well inside a second |
+| Lock contention | `healthLockBusy: true` with `walModeSource: "cached-busy"` means a VACUUM or checkpoint held the write lock for the read window |
+| Gateway timeout | A 504 is served from the gateway's last good reading (`stale: true`, `gatewayFallback: true`, `staleAgeS`); an error body instead means nothing was cached yet |
+| Badge truth | The badge text and its state class must always agree; a grey pill reading "Bridge Reconnecting" was a presentation bug, not a bridge failure |
+
 ### Saved jobs not persisting
 
 | Possible Cause | Solution |
