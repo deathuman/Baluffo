@@ -6,8 +6,11 @@ import { chromium } from "@playwright/test";
 // ponytail: single-purpose measurement driver; promote into perf_complete only
 // if container Jobs boot needs recurring benchmarking beyond acceptance runs.
 
+const LIGHT_FEED_RE = /\/data\/jobs-unified-light\.json(?:\?|$)/;
+
+// The full feed is the first paint since 0.3.034; only the desktop report
+// probe and the two Ops calls are forbidden before interactive.
 const FORBIDDEN_INITIAL = [
-  { label: "jobs-unified-light.json", re: /\/data\/jobs-unified-light\.json(?:\?|$)/ },
   { label: "jobs-fetch-report.json", re: /\/data\/jobs-fetch-report\.json(?:\?|$)/ },
   { label: "/ops/task-state", re: /\/ops\/task-state\?/ },
   { label: "/ops/dashboard-health", re: /\/ops\/dashboard-health\?/ }
@@ -225,20 +228,19 @@ async function runBootMode(browser, args) {
   await page.waitForTimeout(BOOT_GRACE_MS);
   const metrics = await collectMetrics(page);
 
-  // Acceptance contract: nothing heavy BEFORE interactive (bounded boot).
-  // The deferred full-feed sync intentionally fetches light JSON after
-  // interactive, so pre-interactive is the forbidden zone.
+  // Acceptance contract: the full feed may be requested before interactive;
+  // the report probe and Ops calls are the forbidden pre-interactive work.
   const preInteractiveRequests = tracker.requests.filter(item => item.atMs <= interactiveAtMs);
   const forbiddenInBoot = findForbidden(preInteractiveRequests);
   const forbiddenAfterBoot = findForbidden(tracker.requests.filter(item => item.atMs > interactiveAtMs));
-  const startupSnapshotHit = tracker.requests.some(item => /\/data\/jobs-unified-startup\.json(?:\?|$)/.test(item.url));
+  const lightFeedRequested = tracker.requests.some(item => LIGHT_FEED_RE.test(item.url));
+  const preInteractiveLightFeed = preInteractiveRequests.some(item => LIGHT_FEED_RE.test(item.url));
 
   const checks = [
-    { name: "no pre-interactive jobs-unified-light.json request", ok: !forbiddenInBoot.some(item => item.what === "jobs-unified-light.json") },
     { name: "no pre-interactive jobs-fetch-report.json request", ok: !forbiddenInBoot.some(item => item.what === "jobs-fetch-report.json") },
     { name: "no pre-interactive /ops/task-state request", ok: !forbiddenInBoot.some(item => item.what === "/ops/task-state") },
     { name: "no pre-interactive /ops/dashboard-health request", ok: !forbiddenInBoot.some(item => item.what === "/ops/dashboard-health") },
-    { name: "startup snapshot requested", ok: args.mode === "warm" ? true : startupSnapshotHit, detail: startupSnapshotHit ? undefined : "not observed (may be cached)" },
+    { name: "full feed requested before interactive", ok: preInteractiveLightFeed, detail: preInteractiveLightFeed ? undefined : "not observed" },
     { name: "interactive under 5000ms", ok: interactiveMs < 5000, detail: `${interactiveMs}ms` },
     { name: "CLS below 0.1", ok: metrics.clsTotal < 0.1, detail: `cls=${metrics.clsTotal}` },
     { name: "no long task above 200ms during boot", ok: metrics.longTasks.every(task => task.duration <= 200), detail: `max=${metrics.longTasks[0]?.duration ?? 0}ms` },
@@ -249,16 +251,9 @@ async function runBootMode(browser, args) {
 
   if (args.mode === "warm") {
     checks.push({ name: "boot did not render from cache", ok: !/local cache/i.test(metrics.sourceStatus), detail: metrics.sourceStatus });
-    const lightAfterInteractive = tracker.requests.some(item =>
-      /\/data\/jobs-unified-light\.json/.test(item.url) && item.atMs > interactiveAtMs);
-    checks.push({
-      name: "reload-needed badge visible or auto-hydration already fetched the full feed",
-      ok: metrics.badgeVisible || lightAfterInteractive,
-      detail: metrics.badgeVisible ? "badge" : "auto-hydrated"
-    });
     // The Reload button and Updates-found badge were removed with the density
-    // pass — full-feed hydration is automatic, so there is nothing to click.
-    // The auto-hydration check above covers the post-boot full-feed fetch.
+    // pass — full-feed hydration is automatic. The boot check above covers the
+    // warm signal's refresh because the full feed is now the first request.
   }
 
   const summary = {
@@ -267,6 +262,8 @@ async function runBootMode(browser, args) {
     capturedAt: new Date().toISOString(),
     seededRowCount,
     interactiveMs,
+    lightFeedRequested,
+    preInteractiveLightFeed,
     preInteractiveRequests: preInteractiveRequests.map(item => item.url.replace(args.baseUrl, "")),
     forbiddenInBoot,
     forbiddenAfterBootInformational: forbiddenAfterBoot,

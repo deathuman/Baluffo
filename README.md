@@ -36,7 +36,7 @@ Raw-LAN mode is for trusted local networks only, because authentication is inten
 
 ### Umbrel Community App Store
 
-Add `https://github.com/deathuman/Baluffo` as a community app store in Umbrel, then install **Baluffo** from the store. The package pins the published `0.3.028` container image, routes the app proxy to the web service on port `8080`, and stores persistent data in Umbrel's app data directory mounted at `/data`. The manifest declares port `8877` for host access. Store metadata-only changes are excluded from the normal container build triggers; changing the shipped app version still triggers its release build.
+Add `https://github.com/deathuman/Baluffo` as a community app store in Umbrel, then install **Baluffo** from the store. The package pins the published container image for the current release, routes the app proxy to the web service on port `8080`, and stores persistent data in Umbrel's app data directory mounted at `/data`. The manifest declares port `8877` for host access. Store metadata-only changes are excluded from the normal container build triggers; changing the shipped app version still triggers its release build.
 
 ---
 

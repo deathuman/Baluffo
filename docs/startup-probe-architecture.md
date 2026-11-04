@@ -448,10 +448,12 @@ in those runs) before touching the site server.
 ## Page-Side Hoist For The First-Render Requests
 
 `jobs.html` loads `frontend/jobs/early-data.js` as a classic script ahead of the
-module entry. It starts the two requests the first render waits for -- the
-startup snapshot (`data/jobs-unified-startup.json`) and, in the desktop app, the
-fetch report (`data/jobs-fetch-report.json`) -- while the browser is still
-fetching the boot modules (~115 files in a cold packaged page load).
+module entry. It starts the startup snapshot (`data/jobs-unified-startup.json`)
+and, in the desktop app, the fetch report (`data/jobs-fetch-report.json`) while
+the browser is still fetching the boot modules (~115 files in a cold packaged
+page load). Since 0.3.034 the first render waits for the full feed
+(`data/jobs-unified-light.json`) instead; the snapshot is a preloaded fallback
+for a missing or unreadable full feed.
 
 Issued from the graph instead, both requests queue behind that burst. Profiled
 cold starts spent 0.96--1.12 s inside the Fetch-Report Probe span on a file the
@@ -468,19 +470,18 @@ construction -- read `resourceResponseStartMs` / `resourceResponseEndMs` for the
 real network window, and the page-clock spans for the wait that disappeared.
 
 The report is also not read on the first-render path. `initJobsFeed` starts the
-probe and paints the startup snapshot; the first-run gate is evaluated when the
-report lands, so a page that already has rows never waits for it -- with the
-report held back by 800 ms, rows still appeared at ~205 ms. When that late
-verdict asks for a bootstrap it runs *behind* the rendered rows: the empty
+probe and loads the full feed; the first-run gate is evaluated when the report
+lands, so a page that already has rows never waits for it. When that late verdict
+asks for a bootstrap it runs *behind* the rendered rows: the empty
 `first_run_bootstrap` state and its `Preparing first-run jobs` modal are skipped
 there (they belong to a launch that has nothing to show), the status line carries
 the explanation, and the feed refreshes when the bootstrap completes. The trace
 marks the case with `late: true` and `rowsRendered` on
 `jobs_first_run_gate_evaluated`, plus `jobs_first_run_gate_applied_late`.
 
-A page with no snapshot still awaits the report before deciding, because there
-there the verdict *is* the first paint: that is the launch that shows the bootstrap
-state, and it stays exactly as it was.
+A page with neither a full feed nor a snapshot still awaits the report before
+deciding, because there the verdict *is* the first paint: that is the launch
+that shows the bootstrap state, and it stays exactly as it was.
 
 ### The container page inlines the hoist
 
@@ -1269,19 +1270,22 @@ ships.
 
 Boot used to be one synchronous block: cache the DOM, start the bridge watch,
 build the quick-filter chrome, bind page and window events, start auth, and only
-then let `initJobsFeed` reach the startup snapshot. None of that can change what
-the first rows look like, so it now runs in a follow-up task that the first
-rendered rows release (`markStartupRendered` → `startBootFollowUp`), with boot's
-1.5 s fallback covering a page that never paints. Boot itself now does only the
-DOM cache, the list delegation, the URL state read and the feed call, so the
-snapshot read is the first thing it waits on. (`early-data.js` already started
-the request at parse time; what moves is the read, the parse and the render.)
+then let `initJobsFeed` reach the full feed. None of that can change what the
+first rows look like, so it now runs in a follow-up task that the first rendered
+rows release (`markStartupRendered` → `startBootFollowUp`), with boot's 1.5 s
+fallback covering a page that never paints. Boot itself now does only the DOM
+cache, the list delegation, the URL state read and the feed call, so the full-feed
+read is the first thing it waits on; the snapshot read is the fallback.
 
 The filter values are synced by the render itself (`applyStateToFilters`), so
 the visible selects are correct in the first row paint; the quick presets, the
 click handlers and the auth pill catch up one task later. Auth resolves behind
 the rows and re-renders them with the profile's saved/seen marks, the same as an
 async auth callback did before.
+
+> The measurements below predate 0.3.034's full-feed-first boot. They still
+> measure the row-render work, but the "snapshot read" columns describe the
+> fallback path; the current boot reads the full feed first.
 
 Measured on one tree with the previous boot restored on the other side,
 alternating run order, readiness = first job row (n=15 at 4×, n=20 at 1×):
