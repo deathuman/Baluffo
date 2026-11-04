@@ -107,6 +107,50 @@
   font-size: 0.87rem;
 }
 
+.jobs-page .filter-group--search {
+  grid-column: 1 / -1;
+}
+
+.jobs-page .search-input-shell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.jobs-page .search-input-shell input {
+  width: 100%;
+  padding-right: 2.35rem;
+}
+
+.jobs-page .search-clear-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.32rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.jobs-page .search-clear-btn:hover {
+  background: color-mix(in srgb, var(--surface-18) 72%, transparent);
+  color: var(--text-primary);
+}
+
+.jobs-page .search-clear-btn[hidden] {
+  display: none;
+}
+
 .jobs-page .filter-group select:focus,
 .jobs-page .filter-group input:focus,
 .jobs-page .country-picker-btn:focus {
@@ -975,6 +1019,12 @@
 .jobs-page :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 86%, #ffffff);
   outline-offset: 2px;
+}
+
+@media (min-width: 1150px) {
+  .jobs-page .filter-group--search {
+    grid-column: span 3;
+  }
 }
 
 @media (max-width: 1024px) {

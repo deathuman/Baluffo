@@ -31,6 +31,7 @@ export const JOBS_TOKENS = Object.freeze({
   professionFilter: "profession-filter",
   professionSearchFilter: "profession-search-filter",
   searchFilter: "search-filter",
+  searchClearBtn: "search-filter-clear",
   sortFilter: "sort-filter",
   sourceStatus: "source-status",
   fetchProgress: "fetch-progress",

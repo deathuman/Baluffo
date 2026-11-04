@@ -191,9 +191,22 @@ export function createJobsEventsController({
     }, true);
 
     if (dom.searchFilter) {
-      bindUi(dom.searchFilter, "input", debounce(() => {
+      const applySearchChange = debounce(() => {
         filtersController.onFilterChange();
-      }, 180));
+      }, 180);
+      bindUi(dom.searchFilter, "input", () => {
+        filtersController.syncSearchClearButton();
+        applySearchChange();
+      });
+    }
+
+    if (dom.searchClearBtn && dom.searchFilter) {
+      bindUi(dom.searchClearBtn, "click", () => {
+        dom.searchFilter.value = "";
+        filtersController.syncSearchClearButton();
+        filtersController.onFilterChange();
+        dom.searchFilter.focus();
+      });
     }
 
     bindWindowResize(windowObject, debounce(() => {

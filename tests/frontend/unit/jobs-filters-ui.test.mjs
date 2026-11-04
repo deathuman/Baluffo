@@ -90,6 +90,7 @@ function createFullFiltersControllerHarness({ selectedCity = "" } = {}) {
     sectorFilter: createSelectElement(),
     sortFilter: createSelectElement(),
     searchFilter: createElement(),
+    searchClearBtn: createElement({ hidden: true }),
     countryPickerOptions: createElement(),
     quickActionsEl: createElement(),
     quickFiltersOptionsEl: createElement(),
@@ -145,6 +146,28 @@ test("jobs quick filter reset button reflects whether default presets are alread
     value: ["remote", "new-only", "exclude-internship", "netherlands", "technical-artist", "clear"]
   });
 });
+
+test("jobs search clear button tracks the search input value", () => withFakeDocument(() => {
+  const { controller, refs, state } = createFullFiltersControllerHarness();
+
+  refs.searchFilter.value = "engineer";
+  controller.syncSearchClearButton();
+
+  assert.equal(refs.searchClearBtn.hidden, false);
+  assert.equal(refs.searchClearBtn.getAttribute("aria-hidden"), "false");
+
+  refs.searchFilter.value = "   ";
+  controller.syncSearchClearButton();
+
+  assert.equal(refs.searchClearBtn.hidden, true);
+  assert.equal(refs.searchClearBtn.getAttribute("aria-hidden"), "true");
+
+  state.filters.search = "designer";
+  controller.applyStateToStaticFilters();
+
+  assert.equal(refs.searchFilter.value, "designer");
+  assert.equal(refs.searchClearBtn.hidden, false);
+}));
 
 test("jobs city filter defers thousands of options until the selector is used", () => withFakeDocument(() => {
   const { controller, refs } = createFullFiltersControllerHarness();

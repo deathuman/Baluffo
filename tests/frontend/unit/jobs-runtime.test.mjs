@@ -197,6 +197,7 @@ test("jobs events controller handles filter UI, resize, storage, and keyboard na
     pageState,
     runtimeState,
     filtersController: {
+      syncSearchClearButton: () => {},
       onFilterChange: () => {
         calls.search += 1;
       },
@@ -290,6 +291,67 @@ test("jobs events controller handles filter UI, resize, storage, and keyboard na
   assert.deepEqual(calls.storage, ["signal-1"]);
   assert.deepEqual(calls.goToPage, [2]);
   assert.equal(pageState.itemsPerPage, 14);
+});
+
+test("jobs search clear button empties the query and reapplies filters", () => {
+  const dom = {
+    searchFilter: createElement({
+      focus() {
+        this.focused = true;
+      }
+    }),
+    searchClearBtn: createElement({ hidden: true })
+  };
+  const calls = { search: 0, sync: 0 };
+  const syncSearchClearButton = () => {
+    calls.sync += 1;
+    dom.searchClearBtn.hidden = !dom.searchFilter.value.trim();
+  };
+  const controller = createJobsEventsController({
+    dom,
+    pageState: { currentPage: 1, itemsPerPage: 5, filters: {} },
+    runtimeState: { allJobs: [], secondaryEventsBound: false },
+    filtersController: {
+      syncSearchClearButton,
+      onFilterChange: () => {
+        calls.search += 1;
+      }
+    },
+    authController: {},
+    rememberCurrentJobsUrl: () => {},
+    navigateDesktopPage: () => {},
+    openAdminPageFromJobs: async () => {},
+    triggerJobsPipelineRun: async () => {},
+    handleAutoRefreshSignalValue: () => {},
+    applyFiltersAndRender: () => {},
+    bindUi: (element, type, handler) => {
+      element?.addEventListener(type, handler);
+    },
+    bindAsyncClick: () => {},
+    bindHandlersMap: () => {},
+    debounce: handler => handler,
+    jobsAutoRefreshSignalKey: "jobs-auto-refresh",
+    jobsListDelegation: () => {},
+    goToPage: () => {},
+    windowObject: createWindowStub(),
+    documentObject: createDocumentStub()
+  });
+
+  controller.bindEvents();
+
+  dom.searchFilter.value = "engineer";
+  dom.searchFilter.dispatch("input", { target: dom.searchFilter });
+
+  assert.equal(dom.searchClearBtn.hidden, false);
+  assert.equal(calls.sync, 1);
+  assert.equal(calls.search, 1);
+
+  dom.searchClearBtn.dispatch("click", {});
+
+  assert.equal(dom.searchFilter.value, "");
+  assert.equal(dom.searchFilter.focused, true);
+  assert.equal(dom.searchClearBtn.hidden, true);
+  assert.equal(calls.search, 2);
 });
 
 test("jobs runtime state builder groups mutable runtime state and clones filter arrays", () => {

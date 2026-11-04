@@ -21,6 +21,7 @@ export function cacheJobsDom(doc = document) {
     professionFilter: doc.querySelector(ui(t.professionFilter)),
     professionSearchFilter: doc.querySelector(ui(t.professionSearchFilter)),
     searchFilter: doc.querySelector(ui(t.searchFilter)),
+    searchClearBtn: doc.querySelector(ui(t.searchClearBtn)),
     sortFilter: doc.querySelector(ui(t.sortFilter)),
     resultsSummary: doc.querySelector(ui(t.resultsSummary)),
     sourceStatus: doc.querySelector(ui(t.sourceStatus)),

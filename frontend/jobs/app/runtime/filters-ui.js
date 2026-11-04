@@ -103,11 +103,19 @@ export function createJobsFiltersController({
     refs.activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "";
   }
 
+  function syncSearchClearButton() {
+    if (!refs.searchClearBtn || !refs.searchFilter) return;
+    const hasSearch = refs.searchFilter.value.trim().length > 0;
+    refs.searchClearBtn.hidden = !hasSearch;
+    refs.searchClearBtn.setAttribute("aria-hidden", hasSearch ? "false" : "true");
+  }
+
   function applyStateToStaticFilters() {
     if (refs.workTypeFilter) refs.workTypeFilter.value = state.filters.workType;
     if (refs.lifecycleStatusFilter) refs.lifecycleStatusFilter.value = state.filters.lifecycleStatus || "active";
     if (refs.searchFilter) refs.searchFilter.value = state.filters.search;
     if (refs.sortFilter) refs.sortFilter.value = state.filters.sort;
+    syncSearchClearButton();
   }
 
   function renderProfessionOptions(query = "") {
@@ -409,6 +417,7 @@ export function createJobsFiltersController({
 
   return {
     updateFilterOptions,
+    syncSearchClearButton,
     applyStateToStaticFilters,
     applyStateToFilters,
     syncStateFromFilters,

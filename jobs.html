@@ -178,14 +178,25 @@
         </select>
       </div>
 
-      <div class="filter-group">
+      <div class="filter-group filter-group--search">
         <label for="search-filter">Search:</label>
-        <input
-          type="text"
-          id="search-filter"
-          data-ui="search-filter"
-          placeholder="Search by title, company, city..."
-        >
+        <div class="search-input-shell">
+          <input
+            type="text"
+            id="search-filter"
+            data-ui="search-filter"
+            placeholder="Search by title, company, city..."
+          >
+          <button
+            id="search-filter-clear"
+            data-ui="search-filter-clear"
+            type="button"
+            class="search-clear-btn"
+            aria-label="Clear search"
+            data-tooltip="Clear the search text."
+            hidden
+          >×</button>
+        </div>
       </div>
 
     </div>
