@@ -21,6 +21,7 @@ def _clean_snapshot(
     phase: str = "page_fetch",
     submitted: int = 2,
     finished: int = 2,
+    failed: int = 0,
 ) -> dict[str, Any]:
     """A settled receipt shaped exactly like PageFetchLifecycle.snapshot()."""
     return {
@@ -38,7 +39,7 @@ def _clean_snapshot(
         "submitted": submitted,
         "started": submitted,
         "finished": finished,
-        "failed": 0,
+        "failed": failed,
         "cancelledBeforeStart": 0,
         "queuedNow": submitted - submitted,
         "outstandingNow": submitted - finished,
@@ -104,6 +105,27 @@ def test_build_sidecar_round_trips_real_lifecycle_snapshots() -> None:
     assert entry["rollup"]["submitted"] == 3
     assert entry["rollup"]["finished"] == 3
     assert entry["rollup"]["state"] == "clean"
+    assert entry["failureStageCounts"] == {}
+
+
+def test_build_sidecar_counts_failure_rows_by_stage() -> None:
+    artifact = _artifact(
+        _clean_snapshot(batch_id="1", source="gameprog", submitted=30, finished=30, failed=30)
+    )
+    artifact["failures"] = [{"stage": "recovery_fetch"} for _ in range(29)] + [
+        {"stage": "page_fetch"}
+    ]
+
+    envelope = sidecar.build_page_fetch_lifecycle_sidecar(
+        artifact, Path("data/gameprog-discovery-audit.json")
+    )
+
+    assert envelope is not None
+    entry = envelope["sources"]["gameprog"]
+    assert entry["rollup"]["failed"] == 30
+    # The lifecycle only knows a worker failed; the artifact row's stage says whether it was a
+    # primary page fetch or a generated recovery guess. Keep that distinction for the operator view.
+    assert entry["failureStageCounts"] == {"recovery_fetch": 29, "page_fetch": 1}
 
 
 def test_build_sidecar_dedupes_batches_first_wins() -> None:

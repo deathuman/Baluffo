@@ -44,7 +44,7 @@ test("admin merge: a summary poll's empty receipt read keeps the detailed probe 
 
   assert.equal(merged.kpis.probeLifecycle.clientsUnclosed, 1);
   assert.equal(merged.kpis.registrySync.activeCount, 3, "the sibling nested KPI behaves the same way");
-  assert.match(line, /2 abandoned by their own bound/i);
+  assert.match(line, /2 hit their per-call timeout/i);
   assert.doesNotMatch(html, /no probe-wave receipt published/i);
 });
 
@@ -93,6 +93,7 @@ const PAGE_FETCH_DETAIL = {
       truncated: true,
       omittedCount: 3,
       receiptCount: 2,
+      failureStageCounts: { recovery_fetch: 1 },
       rollup: { batchCount: 2, submitted: 9, finished: 6, failed: 1, outstandingNow: 2, pendingAsyncCleanup: 1, state: "pending" }
     },
     gamesmap: {
@@ -124,6 +125,9 @@ test("admin merge: a summary poll without a source keeps the detailed page-fetch
   const { html, line } = renderPageFetchLifecycle(merged.kpis);
 
   assert.equal(merged.kpis.pageFetchLifecycle.sources.gameprog.rollup.outstandingNow, 2);
+  assert.deepEqual(merged.kpis.pageFetchLifecycle.sources.gameprog.failureStageCounts, {
+    recovery_fetch: 1
+  });
   assert.equal(merged.kpis.pageFetchLifecycle.sources.gamesmap.state, "clean");
   assert.match(line, /gameprog/i);
   assert.match(line, /gamesmap/i);

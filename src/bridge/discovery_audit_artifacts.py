@@ -60,6 +60,7 @@ PAGE_FETCH_LIFECYCLE_SOURCE_KEYS = (
     "truncated",
     "omittedCount",
     "receiptCount",
+    "failureStageCounts",
 )
 # The rollup counters of one source's page-fetch batches, in the producer's own field order.
 PAGE_FETCH_LIFECYCLE_ROLLUP_KEYS = (
@@ -287,28 +288,50 @@ def _artifact_path(data_dir: Path, filename: str) -> Path:
     return candidate
 
 
+def _page_fetch_lifecycle_stage_counts(value: Any) -> dict[str, int]:
+    """Project the bounded per-stage failure counters, dropping unreadable entries."""
+    if not isinstance(value, dict):
+        return {}
+    projected: dict[str, int] = {}
+    for stage, count in list(value.items())[:8]:
+        stage_text = _safe_scalar(stage)
+        count_value = _safe_scalar(count)
+        if isinstance(stage_text, str) and isinstance(count_value, int):
+            projected[stage_text] = count_value
+    return projected
+
+
+def _page_fetch_lifecycle_rollup(value: Any) -> dict[str, Any]:
+    """Project the known rollup counters from a source receipt, dropping everything else."""
+    if not isinstance(value, dict):
+        return {}
+    counters: dict[str, Any] = {}
+    for key in PAGE_FETCH_LIFECYCLE_ROLLUP_KEYS:
+        if key not in value:
+            continue
+        scalar = _safe_scalar(value.get(key))
+        if scalar is not None:
+            counters[key] = scalar
+    return counters
+
+
 def _page_fetch_lifecycle_source_entry(entry: Any) -> dict[str, Any]:
     """One source's published receipt fields and rollup, and nothing else the envelope carries."""
     if not isinstance(entry, dict):
         return {}
     projected: dict[str, Any] = {}
     for key in PAGE_FETCH_LIFECYCLE_SOURCE_KEYS:
-        if key not in entry:
+        if key == "failureStageCounts" or key not in entry:
             continue
         value = _safe_scalar(entry.get(key))
         if value is not None:
             projected[key] = value
-    rollup = entry.get("rollup")
-    if isinstance(rollup, dict):
-        counters: dict[str, Any] = {}
-        for key in PAGE_FETCH_LIFECYCLE_ROLLUP_KEYS:
-            if key not in rollup:
-                continue
-            value = _safe_scalar(rollup.get(key))
-            if value is not None:
-                counters[key] = value
-        if counters:
-            projected["rollup"] = counters
+    stage_counts = _page_fetch_lifecycle_stage_counts(entry.get("failureStageCounts"))
+    if stage_counts:
+        projected["failureStageCounts"] = stage_counts
+    rollup = _page_fetch_lifecycle_rollup(entry.get("rollup"))
+    if rollup:
+        projected["rollup"] = rollup
     return projected
 
 

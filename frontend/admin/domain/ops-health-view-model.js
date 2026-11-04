@@ -242,6 +242,7 @@ function compactPageFetchLifecycle(receipt) {
         truncated: Boolean(entry.truncated),
         omittedCount: toNumber(entry.omittedCount),
         receiptCount: toNumber(entry.receiptCount),
+        failureStageCounts: compactSummaryObject(entry.failureStageCounts),
         rollup: compactSummaryObject(rollup)
       };
     });

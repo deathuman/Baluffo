@@ -49,6 +49,7 @@ def _sidecar_payload(
         "truncated": truncated,
         "omittedCount": 4 if truncated else 0,
         "receiptCount": 2,
+        "failureStageCounts": {"recovery_fetch": 1},
         "rollup": {
             "schemaVersion": 1,
             "receiptType": "pageFetchLifecycleRollup",
@@ -103,6 +104,7 @@ def test_sidecar_row_projects_per_source_receipts_and_never_the_raw_receipts(
     assert entry["truncated"] is False
     assert entry["omittedCount"] == 0
     assert entry["receiptCount"] == 2
+    assert entry["failureStageCounts"] == {"recovery_fetch": 1}
     assert entry["rollup"]["batchCount"] == 2
     assert entry["rollup"]["submitted"] == 6
     assert entry["rollup"]["failed"] == 1

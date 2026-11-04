@@ -51,6 +51,7 @@ MAX_SIDECAR_BYTES = 262_144  # 256 KiB on disk, matches the P0 contract limit.
 # than an LF model predicts. Enforce a one-byte guard margin so the reader's stat check can never
 # reject a sidecar this module wrote on any platform.
 _WRITE_MARGIN_BYTES = 1
+MAX_FAILURE_STAGE_KEYS = 8
 
 
 def sidecar_path_for_artifact(output_path: Path) -> Path:
@@ -133,12 +134,39 @@ def _rollup_payload(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     return dict(rollup_page_fetch_lifecycles(proxies))
 
 
+def _failure_stage_counts(artifact: dict[str, Any]) -> dict[str, int]:
+    """Count the artifact's failure rows by stage, bounded for the small sidecar.
+
+    The page lifecycle rollup only knows that a worker failed; it cannot say whether the
+    failure was a primary page fetch or a generated recovery guess. The audit artifact's
+    failure rows carry that distinction in their `stage`, so the sidecar carries a small
+    aggregate beside the lifecycle counters. This is deliberately a count map, not raw
+    failure rows: the sidecar stays small and the audit artifact remains the detail source.
+    """
+    failures = artifact.get("failures")
+    if not isinstance(failures, list):
+        return {}
+    counts: dict[str, int] = {}
+    for row in failures:
+        if not isinstance(row, dict):
+            continue
+        stage = str(row.get("stage") or row.get("failureStage") or "unknown").strip()[:80]
+        stage = stage or "unknown"
+        counts[stage] = counts.get(stage, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    bounded = dict(ordered[:MAX_FAILURE_STAGE_KEYS])
+    if len(ordered) > MAX_FAILURE_STAGE_KEYS:
+        bounded["other"] = sum(count for _, count in ordered[MAX_FAILURE_STAGE_KEYS:])
+    return bounded
+
+
 def _source_entry(
     *,
     source: str,
     run_id: str,
     artifact_name: str,
     receipts: list[dict[str, Any]],
+    failure_stage_counts: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     rollup = _rollup_payload(receipts)
     return {
@@ -150,6 +178,7 @@ def _source_entry(
         "truncated": False,
         "omittedCount": 0,
         "receiptCount": len(receipts),
+        "failureStageCounts": dict(failure_stage_counts or {}),
         "rollup": rollup,
         "receipts": receipts,
     }
@@ -338,6 +367,7 @@ def build_page_fetch_lifecycle_sidecar(
         if source not in sources:
             sources.append(source)
 
+    failure_stage_counts = _failure_stage_counts(artifact)
     per_source: dict[str, dict[str, Any]] = {}
     for source in sources:
         per_source[source] = _source_entry(
@@ -345,6 +375,7 @@ def build_page_fetch_lifecycle_sidecar(
             run_id=run_id,
             artifact_name=Path(output_path).name,
             receipts=limited.get(source) or [],
+            failure_stage_counts=failure_stage_counts,
         )
 
     envelope = {

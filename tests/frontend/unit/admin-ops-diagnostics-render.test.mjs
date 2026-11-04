@@ -211,8 +211,9 @@ test("admin render: discovery audit artifact diagnostics are bounded and actiona
                 truncated: false,
                 omittedCount: 0,
                 receiptCount: 1,
+                failureStageCounts: { recovery_fetch: 1 },
                 rollup: {
-                  batchCount: 1, submitted: 3, finished: 3, failed: 0,
+                  batchCount: 1, submitted: 3, finished: 3, failed: 1,
                   outstandingNow: 0, pendingAsyncCleanup: 0, state: "clean"
                 }
               }
@@ -246,6 +247,7 @@ test("admin render: discovery audit artifact diagnostics are bounded and actiona
   assert.match(metricsEl.innerHTML, /Page fetch lifecycle/i);
   assert.match(metricsEl.innerHTML, /gameprog/i);
   assert.match(metricsEl.innerHTML, /3 page fetches/i);
+  assert.match(metricsEl.innerHTML, /1 recovery guess failed/i);
 
   copyButton.click();
   refreshButton.click();
@@ -263,10 +265,13 @@ test("admin render: discovery audit artifact diagnostics are bounded and actiona
   assert.equal(copiedPfl.fingerprint, "def456");
   assert.equal(copiedPfl.pageFetchLifecycle.sources.gameprog.state, "clean");
   assert.equal(copiedPfl.pageFetchLifecycle.sources.gameprog.rollup.outstandingNow, 0);
+  assert.deepEqual(copiedPfl.pageFetchLifecycle.sources.gameprog.failureStageCounts, {
+    recovery_fetch: 1
+  });
   assert.equal(refreshed, 1);
 });
 
-test("admin render: the probe lifecycle receipt reads as abandoned fetches and an unclosed client", () => {
+test("admin render: the probe lifecycle receipt reads as bounded fetches and an unclosed client", () => {
   const metricsEl = makeEl();
 
   renderAdminOpsFetcherMetrics(metricsEl, {
@@ -300,7 +305,7 @@ test("admin render: the probe lifecycle receipt reads as abandoned fetches and a
   assert.match(metricsEl.innerHTML, /Probe lifecycle/i);
   assert.match(metricsEl.innerHTML, /client left unclosed/i);
   assert.match(metricsEl.innerHTML, /17 probe fetches/i);
-  assert.match(metricsEl.innerHTML, /2 abandoned by their own bound/i);
+  assert.match(metricsEl.innerHTML, /2 hit their per-call timeout/i);
   assert.match(metricsEl.innerHTML, /1 inside the shared client/i);
   assert.match(metricsEl.innerHTML, /1 clients unclosed/i);
 });
@@ -329,6 +334,27 @@ test("admin render: probe lifecycle KPI says so when no receipt is published, an
   assert.match(cleanEl.innerHTML, /admin-status-chip healthy">clean</i);
   assert.match(cleanEl.innerHTML, /0 clients unclosed/i);
   assert.doesNotMatch(cleanEl.innerHTML, /no probe-wave receipt published/i);
+});
+
+test("admin render: a probe that hit its bound but settled is clean, not attention", () => {
+  const el = makeEl();
+  renderAdminOpsKpis(el, {
+    probeLifecycle: {
+      batches: 1,
+      fetchesStarted: 885,
+      fetchesBoundedOut: 1,
+      fetchesOutstandingAtExit: 0,
+      clientFetchesOutstandingAtExit: 0,
+      clientsUnclosed: 0,
+      deadlineExits: 0
+    }
+  }, "healthy", {});
+
+  assert.match(el.innerHTML, /admin-status-chip healthy">clean</i);
+  assert.match(el.innerHTML, /1 hit their per-call timeout/i);
+  assert.match(el.innerHTML, /1 settled before the batch left/i);
+  assert.match(el.innerHTML, /0 still running when the batch left/i);
+  assert.doesNotMatch(el.innerHTML, /probe attention/i);
 });
 
 test("admin render: task failure-attempt diagnostics are bounded and copyable", () => {
@@ -548,4 +574,41 @@ test("admin render: page-fetch KPI says so when no receipt is published", () => 
 
   assert.doesNotMatch(cleanEl.innerHTML, /no page-fetch receipt published/i);
   assert.match(cleanEl.innerHTML, /3 page fetches/i);
+});
+
+test("admin render: recovery failures do not turn a settled page lifecycle into attention", () => {
+  const el = makeEl();
+  renderAdminOpsKpis(el, {
+    pageFetchLifecycle: {
+      runId: "run-recovery",
+      sources: {
+        gameprog: {
+          source: "gameprog",
+          state: "clean",
+          coverage: "full",
+          truncated: false,
+          omittedCount: 0,
+          receiptCount: 1,
+          failureStageCounts: { recovery_fetch: 204 },
+          rollup: {
+            batchCount: 1,
+            submitted: 365,
+            finished: 365,
+            failed: 204,
+            outstandingNow: 0,
+            pendingAsyncCleanup: 0,
+            state: "clean"
+          }
+        }
+      }
+    }
+  }, "warning", {});
+
+  const html = el.innerHTML;
+  assert.match(html, /lifecycle clean/i);
+  assert.match(html, /204 recovery guesses failed/i);
+  assert.match(html, /161 succeeded/i);
+  assert.match(html, /204 failed \(55\.9%\)/i);
+  assert.match(html, /Failure stages: 204 recovery guesses/i);
+  assert.doesNotMatch(html, /page attention/i);
 });
