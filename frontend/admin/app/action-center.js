@@ -48,7 +48,7 @@ const SIGNAL_LABELS = {
   storage_health: "Storage health issue detected",
   stale_fetch: "Jobs fetch is stale",
   sync_status: "Sync needs attention",
-  failed_sources: "Some sources failed in last fetch"
+  failed_sources: "Source outcomes need review"
 };
 
 function formatAge(hours) {
@@ -249,25 +249,46 @@ function evaluateFailedSources(healthData) {
   if (ageHours > STALE_FETCH_HOURS) return null;
 
   const failedRatio = Number(kpis.failedSourceRatioLatest || 0);
-  if (failedRatio <= 0) return null;
 
   // The ratio alone conflates a transport failure with a board that fetched fine
   // and kept nothing. The bounded sourceOutcomeSummary comes from the report
   // sidecar, so this distinction costs no full-report read on the poll path.
   const outcome = kpis.sourceOutcomeSummary || {};
-  const zeroKept = Number(outcome.zeroKeptSources || 0);
+  const failedSources = Number(outcome.failedSources || 0);
+  const zeroReviewFallback = Math.max(
+    0,
+    Number(outcome.zeroKeptNeedsReviewSources || 0) - failedSources
+  );
+  const zeroReview = Number.isFinite(Number(outcome.zeroKeptNeedsReviewNonFailedSources))
+    ? Number(outcome.zeroKeptNeedsReviewNonFailedSources)
+    : zeroReviewFallback;
+  if (failedRatio <= 0 && failedSources <= 0 && zeroReview <= 0) return null;
+
   const browserFallback = Number(outcome.browserFallbackRecommendedSources || 0);
+  const browserAttempted = Number(outcome.browserFallbackAttemptedSources || 0);
   const details = [];
-  if (zeroKept > 0) details.push(`${formatCount(zeroKept)} kept zero jobs`);
-  if (browserFallback > 0) details.push(`${formatCount(browserFallback)} need browser fallback`);
+  if (failedSources > 0 && zeroReview > 0) {
+    details.push(`${formatCount(zeroReview)} other zero-kept sources need review`);
+  }
+  if (browserFallback > 0) {
+    const attempted = browserAttempted > 0 ? ` (${formatCount(browserAttempted)} attempted)` : "";
+    details.push(`${formatCount(browserFallback)} need browser fallback${attempted}`);
+  }
   const breakdown = details.length ? `; ${details.join("; ")}` : "";
 
   const pct = Math.round(failedRatio * 100);
+  const failedCopy = failedSources > 0
+    ? `${formatCount(failedSources)} source${failedSources === 1 ? "" : "s"} failed in the last fetch`
+    : zeroReview > 0
+      ? `${formatCount(zeroReview)} zero-kept source${zeroReview === 1 ? "" : "s"} need review`
+      : `${pct}% of sources failed in the last fetch`;
   return {
     id: "failed_sources",
     severity: "warning",
-    summary: `${pct}% of sources failed in the last fetch${breakdown}`,
-    actions: ["review", "retry_failed", "dismiss"]
+    summary: `${failedCopy}${breakdown}`,
+    actions: failedSources > 0
+      ? ["review", "retry_failed", "dismiss"]
+      : ["review", "dismiss"]
   };
 }
 

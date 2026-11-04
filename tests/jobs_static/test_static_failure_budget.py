@@ -115,6 +115,18 @@ def test_stop_records_a_distinct_reason() -> None:
     assert ctx.warnings[-1].endswith("failure_budget_exceeded")
 
 
+def test_time_budget_exhaustion_does_not_queue_browser_fallback() -> None:
+    """A clock timeout is not evidence that a browser would render the board.
+
+    In fetch_0ffd5ba6cb all 89 timeout rows carried this flag, and 39 had already
+    kept jobs; counting them as browser work inflated the 143 recommendation count.
+    """
+    ctx = _ctx()
+    ctx.stop_for_budget_exhaustion(target_url=_BASE)
+    assert ctx.entry_report["classification"] == "timeout"
+    assert ctx.entry_report["browserFallbackRecommended"] is False
+
+
 # --- batch accounting ---------------------------------------------------------
 
 

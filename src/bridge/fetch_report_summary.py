@@ -67,7 +67,10 @@ _SOURCE_HEALTH_SUMMARY_KEYS = (
     "excludedSources",
     "zeroKeptSources",
     "zeroKeptNeedsReviewSources",
+    "zeroKeptNeedsReviewNonFailedSources",
     "browserFallbackRecommendedSources",
+    "browserFallbackAttemptedSources",
+    "browserFallbackFailedSources",
     "providerChildFailureCount",
 )
 

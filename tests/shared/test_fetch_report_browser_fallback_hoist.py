@@ -25,14 +25,29 @@ from src.jobs.common.contracts_source_reports import normalize_source_report_row
 RECOMMENDED_COUNT = 3
 
 
-def _row(*, name: str, recommended: bool, error: str = "", top_level: bool = False) -> dict:
+def _row(
+    *,
+    name: str,
+    recommended: bool,
+    error: str = "",
+    top_level: bool = False,
+    attempted: bool = False,
+    used: bool = False,
+) -> dict:
     """A source row shaped like the live report's.
 
     ``top_level=False`` reproduces the defect: the flag exists only inside ``details[0]``.
     """
     row: dict = {
         "adapter": "static",
-        "details": [{"browserFallbackRecommended": recommended, "stats": "{}"}],
+        "details": [
+            {
+                "browserFallbackRecommended": recommended,
+                "browserFallbackAttempted": attempted,
+                "browserFallbackUsed": used,
+                "stats": "{}",
+            }
+        ],
         "error": error,
         "keptCount": 0,
         "name": name,
@@ -82,6 +97,16 @@ def test_an_explicit_top_level_value_is_not_overwritten_by_the_detail():
     row["details"] = [{"browserFallbackRecommended": False}]
     normalized = normalize_source_report_row(row)
     assert normalized["browserFallbackRecommended"] is True
+
+
+def test_attempts_and_outcomes_are_lifted_and_counted():
+    row = _row(name="blocked", recommended=True, error="HTTP 403", attempted=True, used=False)
+    normalized = normalize_source_report_row(row)
+    assert normalized["browserFallbackAttempted"] is True
+    assert normalized["browserFallbackUsed"] is False
+    health = derive_source_health([normalized])
+    assert health["browserFallbackAttemptedSources"] == 1
+    assert health["browserFallbackFailedSources"] == 1
 
 
 def test_the_quarantine_fields_are_lifted_too():

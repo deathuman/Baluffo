@@ -1053,7 +1053,10 @@ tombstone, suppress, reject, or delete sources.
 | `dynamicRedundantStaticSources` | `number` | Static rows skipped at runtime because a linked provider has repeated validated coverage. |
 | `zeroKeptSources` | `number` | Non-excluded rows with `keptCount=0`. |
 | `zeroKeptNeedsReviewSources` | `number` | Zero-kept rows not classified as a known legitimate empty/no-openings result. |
+| `zeroKeptNeedsReviewNonFailedSources` | `number` | The subset of `zeroKeptNeedsReviewSources` with `status!=error`, separating review work from actual failed sources. |
 | `browserFallbackRecommendedSources` | `number` | Rows with `browserFallbackRecommended=true`. |
+| `browserFallbackAttemptedSources` | `number` | Rows where a browser fallback was actually launched, excluding recommendations skipped by budget or a missing helper. |
+| `browserFallbackFailedSources` | `number` | Attempted rows whose browser fallback returned no HTML. |
 | `browserFallbackLastRefusalReason` | `string` | Why the last fallback attempt was refused (`cooldown_active`); empty when the last attempt was served. Never overwrites `browserFallbackLastError`, which is the environment cause that closed the breaker. |
 | `browserFallbackLastRefusedAt` | `string` | Timestamp of the last refusal. |
 | `browserFallbackRunLastError` | `string` | **Run-level**: the environment error that closed the breaker, stamped only on rows with `browserFallbackRecommended=true`. The cause belongs to the run, not the row, which is why the field is `Run`-prefixed. |

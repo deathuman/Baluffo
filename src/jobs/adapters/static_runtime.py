@@ -346,7 +346,11 @@ class StaticSourceContext:
 
     def stop_for_budget_exhaustion(self, *, target_url: str) -> None:
         self.entry_report["classification"] = "timeout"
-        self.entry_report["browserFallbackRecommended"] = True
+        # Budget exhaustion is not browser evidence: a browser is slower than
+        # the HTTP path, and 39 of the 89 rows flagged this way in
+        # fetch_0ffd5ba6cb had already kept jobs. Queueing them inflated the
+        # browser-fallback count without producing an attempt.
+        self.entry_report["browserFallbackRecommended"] = False
         # Truthful budget: include the pagination extension so operators see
         # the budget the run actually had, not the base config number.
         self.entry_report["error"] = f"time budget exceeded ({self.effective_source_budget_s()}s)"

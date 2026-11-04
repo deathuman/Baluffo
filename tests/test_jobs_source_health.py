@@ -169,6 +169,7 @@ def test_derive_source_health_ranks_mixed_source_rows() -> None:
     assert health["dynamicRedundantStatic"][0]["coveredByProviderSourceId"] == "Studio Greenhouse"
     assert health["zeroKeptSources"] == 3
     assert health["zeroKeptNeedsReviewSources"] == 2
+    assert health["zeroKeptNeedsReviewNonFailedSources"] == 1
     assert health["browserFallbackRecommendedSources"] == 1
     assert health["slowestSources"][0]["name"] == "static_zero_review"
     assert health["topProductiveSources"][0]["name"] == "provider_good"

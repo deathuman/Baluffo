@@ -338,13 +338,16 @@ class StaticFetchRunner:
         )
 
     # mutation — modifies in-place state
-    def _record_fetch_meta(self, url, started, timeout_s, fallback_used, fallback_error) -> None:
+    def _record_fetch_meta(
+        self, url, started, timeout_s, fallback_used, fallback_error, fallback_succeeded
+    ) -> None:
         self.stage_state.record_batch_meta(
             url,
             durationMs=int((time.perf_counter() - started) * 1000),
             timeoutS=timeout_s,
             cacheHit=False,
             browserFallbackUsed=fallback_used,
+            browserFallbackSucceeded=fallback_succeeded,
             browserFallbackError=fallback_error,
         )
 
@@ -363,9 +366,12 @@ class StaticFetchRunner:
         self.stage_state.note_terminal_reason(terminal_reason, self.ctx)
 
     # mutation — modifies in-place state
-    def _log_playwright_fallback(self, url: str, reason: str, html: str) -> None:
+    def _log_playwright_fallback(
+        self, url: str, reason: str, html: str, budget_s: int, error: str
+    ) -> None:
         print(
-            f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
+            f"[static] playwright_fallback_used url={url!r} reason={reason} "
+            f"budget_s={budget_s} got_html={bool(html)} error={clean_text(error)!r}",
             file=sys.stderr,
             flush=True,
         )
@@ -401,6 +407,7 @@ class StaticFetchRunner:
             effective_timeout_s,
             browser_fallback_attempted,
             browser_fallback_error,
+            bool(html and browser_fallback_attempted),
         )
         return html
 
@@ -414,17 +421,36 @@ class StaticFetchRunner:
             anti_bot_browser_retry=self.anti_bot_browser_retry,
         )
         try_playwright = self.deps.try_playwright
-        attempted = bool(try_playwright is not None and should_fallback)
-        if attempted:
+        browser_budget_s = 0
+        if should_fallback and try_playwright is not None:
             browser_budget_s = effective_timeout_for_remaining_budget(
                 timeout_s=self.deps.timeout_s,
                 remaining_budget_s=self.ctx.remaining_budget_s(),
             )
-            if browser_budget_s > 0:
-                self.stage_state.increment_browser_fallbacks()
-                if try_playwright is not None:
-                    html, fallback_error = try_playwright(url, browser_budget_s)
-            self._log_playwright_fallback(url, reason, html)
+        attempted = bool(try_playwright is not None and should_fallback and browser_budget_s > 0)
+        if attempted:
+            assert try_playwright is not None
+            self.stage_state.increment_browser_fallbacks()
+            html, fallback_error = try_playwright(url, browser_budget_s)
+            self.entry_report["browserFallbackAttempted"] = True
+            if html:
+                self.entry_report["browserFallbackUsed"] = True
+            if fallback_error:
+                self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
+            self._log_playwright_fallback(url, reason, html, browser_budget_s, fallback_error)
+        elif should_fallback:
+            skipped_reason = (
+                "browser_helper_unavailable"
+                if try_playwright is None
+                else "source_budget_exhausted"
+            )
+            self.entry_report["browserFallbackSkippedReason"] = skipped_reason
+            print(
+                f"[static] playwright_fallback_skipped url={url!r} reason={reason} "
+                f"budget_s={browser_budget_s} skipped_reason={skipped_reason}",
+                file=sys.stderr,
+                flush=True,
+            )
         if not html:
             self._note_listing_fetch_failure(err_str, attempted, reason)
             raise RuntimeError(err_str)
@@ -510,6 +536,7 @@ class StaticFetchRunner:
             effective_timeout_s,
             browser_fallback_attempted,
             browser_fallback_error,
+            bool(html and browser_fallback_attempted),
         )
         return html
 
@@ -722,7 +749,8 @@ class StaticFetchRunner:
     ) -> str:
         from src.jobs.adapters import static_listing as _sl
 
-        if not (self.deps.try_playwright and condition and html):
+        try_playwright = self.deps.try_playwright
+        if try_playwright is None or not condition or not html:
             return html
         fallback_timeout_s = effective_timeout_for_remaining_budget(
             timeout_s=max(1, timeout_s),
@@ -751,10 +779,14 @@ class StaticFetchRunner:
             # keep it. Fail-open by design: any oracle error falls back to the
             # legacy render path.
             return html
-        html2, _ = self.deps.try_playwright(page_url, fallback_timeout_s)
-        self._log_playwright_fallback(page_url, label, html2)
+        html2, fallback_error = try_playwright(page_url, fallback_timeout_s)
+        self._log_playwright_fallback(page_url, label, html2, fallback_timeout_s, fallback_error)
+        self.entry_report["browserFallbackAttempted"] = True
         if html2:
+            self.entry_report["browserFallbackUsed"] = True
             self.stage_state.increment_browser_fallbacks()
+        if fallback_error:
+            self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
             # S6 (Big Moxi 2026-09-12): a render that provably mounted the app
             # (JS shell) without a challenge interstitial and surfaced near-
             # zero visible text is a rendered-empty confirmation. Two such

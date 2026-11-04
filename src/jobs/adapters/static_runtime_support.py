@@ -598,6 +598,10 @@ def build_static_entry_report(
         "error": "",
         "browserEscalationEligible": False,
         "browserEscalationEnabled": False,
+        "browserFallbackAttempted": False,
+        "browserFallbackUsed": False,
+        "browserFallbackAttemptError": "",
+        "browserFallbackSkippedReason": "",
         "deadListingPageCount": 0,
         "loss": {
             "staticNonJobUrlRejected": 0,

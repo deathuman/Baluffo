@@ -169,11 +169,14 @@ def _apply_browser_fallback_fields(
     # Boolean, not text: clean_text(False) is "" and clean_text(True) is "True", so routing
     # this through the text path would write a string where the contract says bool -- and
     # `bool("")` happens to be False, which is why that would have looked correct.
-    if "browserFallbackRecommended" in src:
-        target["browserFallbackRecommended"] = bool(src.get("browserFallbackRecommended"))
-    elif "browserFallbackRecommended" in detail:
-        target["browserFallbackRecommended"] = bool(detail.get("browserFallbackRecommended"))
+    for key in ("browserFallbackRecommended", "browserFallbackAttempted", "browserFallbackUsed"):
+        if key in src:
+            target[key] = bool(src.get(key))
+        elif key in detail:
+            target[key] = bool(detail.get(key))
     text_fields = (
+        "browserFallbackAttemptError",
+        "browserFallbackSkippedReason",
         "browserFallbackQuarantinedUntilAt",
         "browserFallbackLastAttemptAt",
         "browserFallbackLastFailureAt",

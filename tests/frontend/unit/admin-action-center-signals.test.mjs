@@ -81,8 +81,12 @@ test("failed-source copy separates zero-yield and browser-fallback counts", asyn
             lastSuccessfulFetchAge: "1h",
             failedSourceRatioLatest: 0.189,
             sourceOutcomeSummary: {
+              failedSources: 391,
               zeroKeptSources: 2055,
-              browserFallbackRecommendedSources: 206
+              zeroKeptNeedsReviewSources: 1598,
+              zeroKeptNeedsReviewNonFailedSources: 1207,
+              browserFallbackRecommendedSources: 206,
+              browserFallbackAttemptedSources: 35
             }
           }
         };
@@ -95,10 +99,39 @@ test("failed-source copy separates zero-yield and browser-fallback counts", asyn
   await controller.pollActionCenter({ includeStorage: false });
 
   const html = refs.actionCenterItemsEl.innerHTML;
-  assert.match(html, /19% of sources failed in the last fetch/);
-  assert.match(html, /2,055 kept zero jobs/);
-  assert.match(html, /206 need browser fallback/);
+  assert.match(html, /391 sources failed in the last fetch/);
+  assert.match(html, /1,207 other zero-kept sources need review/);
+  assert.match(html, /206 need browser fallback \(35 attempted\)/);
+  assert.doesNotMatch(html, /2,055 kept zero jobs/);
   assert.equal((html.match(/class="action-center-signal /g) || []).length, 1);
+});
+
+test("zero-kept review is not hidden behind a zero failure ratio", async () => {
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0,
+            sourceOutcomeSummary: {
+              failedSources: 0,
+              zeroKeptNeedsReviewNonFailedSources: 1207
+            }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: false });
+  const html = refs.actionCenterItemsEl.innerHTML;
+  assert.match(html, /1,207 zero-kept sources need review/);
+  assert.match(html, /data-signal="failed_sources"/);
+  assert.doesNotMatch(html, /Retry failed/);
 });
 
 test("action center renders every reachable signal and no unreachable overflow row", async () => {

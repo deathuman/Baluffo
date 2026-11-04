@@ -108,6 +108,10 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         "classification": clean_text(row.get("classification")),
         "zeroKeptClassification": clean_text(row.get("zeroKeptClassification")),
         "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
+        "browserFallbackAttempted": bool(row.get("browserFallbackAttempted")),
+        "browserFallbackUsed": bool(row.get("browserFallbackUsed")),
+        "browserFallbackAttemptError": clean_text(row.get("browserFallbackAttemptError")),
+        "browserFallbackSkippedReason": clean_text(row.get("browserFallbackSkippedReason")),
         "error": clean_text(row.get("error")),
         "exclusionReason": clean_text(row.get("exclusionReason")),
         "coveredByProviderSourceId": clean_text(row.get("coveredByProviderSourceId")),
@@ -194,7 +198,10 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
     ]
     zero_kept_rows = [row for row in rows if row["keptCount"] == 0 and row["status"] != "excluded"]
     zero_review_rows = [row for row in zero_kept_rows if _zero_kept_needs_review(row)]
+    zero_review_nonfailed_rows = [row for row in zero_review_rows if row["status"] != "error"]
     browser_rows = [row for row in rows if row["browserFallbackRecommended"]]
+    browser_attempted_rows = [row for row in rows if row["browserFallbackAttempted"]]
+    browser_failed_rows = [row for row in browser_attempted_rows if not row["browserFallbackUsed"]]
 
     failure_counts: Counter[str] = Counter()
     failure_examples: dict[str, list[str]] = {}
@@ -256,7 +263,10 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         "dynamicRedundantStaticSources": len(dynamic_redundant_rows),
         "zeroKeptSources": len(zero_kept_rows),
         "zeroKeptNeedsReviewSources": len(zero_review_rows),
+        "zeroKeptNeedsReviewNonFailedSources": len(zero_review_nonfailed_rows),
         "browserFallbackRecommendedSources": len(browser_rows),
+        "browserFallbackAttemptedSources": len(browser_attempted_rows),
+        "browserFallbackFailedSources": len(browser_failed_rows),
         "sourcesNeedingAttention": attention_rows[:_TRIAGE_ROW_LIMIT],
         "zeroKeptNeedsReview": sorted(
             zero_review_rows,
@@ -304,7 +314,10 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "dynamicRedundantStaticSources",
         "zeroKeptSources",
         "zeroKeptNeedsReviewSources",
+        "zeroKeptNeedsReviewNonFailedSources",
         "browserFallbackRecommendedSources",
+        "browserFallbackAttemptedSources",
+        "browserFallbackFailedSources",
         "providerChildFailureCount",
     ):
         normalized[key] = _clamped_int(src.get(key), normalized[key], 0)
