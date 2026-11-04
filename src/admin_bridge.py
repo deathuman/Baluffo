@@ -454,6 +454,7 @@ parse_iso = admin_entrypoint_runtime_mod.parse_iso
 update_desktop_session_lifecycle = _bind_admin_root(
     admin_entrypoint_runtime_mod.update_desktop_session_lifecycle
 )
+note_desktop_page_boot = _bind_admin_root(admin_entrypoint_runtime_mod.note_desktop_page_boot)
 owner_session_should_exit = _bind_admin_root(admin_entrypoint_runtime_mod.owner_session_should_exit)
 pid_is_running = _bind_admin_root(admin_entrypoint_runtime_mod.pid_is_running)
 

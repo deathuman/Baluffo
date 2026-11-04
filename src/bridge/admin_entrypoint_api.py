@@ -50,6 +50,7 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         mark_desktop_session_activity=root_mod.mark_desktop_session_activity,
         get_desktop_session_payload=root_mod.get_desktop_session_payload,
         update_desktop_session_lifecycle=root_mod.update_desktop_session_lifecycle,
+        note_desktop_page_boot=root_mod.note_desktop_page_boot,
         desktop_local_data_store=root_mod.desktop_local_data_store,
         append_startup_metric=root_mod.append_startup_metric,
         read_startup_metrics=root_mod.read_startup_metrics,

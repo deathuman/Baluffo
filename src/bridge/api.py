@@ -101,6 +101,10 @@ def _noop_desktop_local_data_store() -> None:
     return None
 
 
+def _noop_desktop_page_boot() -> JsonObject | None:
+    return None
+
+
 def _empty_startup_metrics(_limit: int = 200) -> list[JsonObject]:
     return []
 
@@ -366,6 +370,7 @@ class BridgeApi:
     update_desktop_session_lifecycle: Callable[..., tuple[int, JsonObject]] = (
         _not_implemented_lifecycle
     )
+    note_desktop_page_boot: Callable[[], JsonObject | None] = _noop_desktop_page_boot
 
     desktop_local_data_store: DesktopLocalDataStoreFactory = _noop_desktop_local_data_store
     append_startup_metric: Callable[[str, dict[str, Any] | None], None] = _noop

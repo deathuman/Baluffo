@@ -338,6 +338,29 @@ def update_desktop_session_lifecycle(
     return status_code, result
 
 
+def note_desktop_page_boot(*, root_mod: Any) -> dict[str, Any] | None:
+    cancelled = bridge_runtime_state.note_desktop_page_boot()
+    if not cancelled:
+        return None
+    session_payload = bridge_runtime_state.get_desktop_session_payload()
+    payload = {
+        "sessionId": str(session_payload.get("sessionId") or ""),
+        "pageId": str(cancelled.get("pageId") or ""),
+        "reason": str(cancelled.get("reason") or ""),
+        "cancelledBy": "page_boot",
+        "requestedAt": str(cancelled.get("requestedAt") or ""),
+    }
+    root_mod.bridge_log(
+        "info",
+        "admin_bridge_desktop_regular_close_shutdown_cancelled",
+        session_id=payload["sessionId"],
+        page_id=payload["pageId"],
+        reason=payload["reason"],
+    )
+    append_startup_metric("desktop_regular_close_shutdown_cancelled", payload, root_mod=root_mod)
+    return payload
+
+
 def _desktop_update_handoff_active(root_mod: Any) -> bool:
     try:
         status = root_mod._get_desktop_update_service().get_status_payload()

@@ -65,6 +65,14 @@ class _LocalDataGetRouteApi(Protocol):
 
 
 def _handle_session_route(handler: BridgeResponseWriter, *, api: _LocalDataGetRouteApi) -> bool:
+    # The first request a replacement page makes is the earliest evidence that a
+    # pagehide came from an in-app navigation rather than a window close. Cancel
+    # any pending regular-close request before the payload is built so the page
+    # reads back a clean session. Optional: minimal capability objects predate it.
+    note_page_boot = getattr(api, "note_desktop_page_boot", None)
+    if callable(note_page_boot):
+        note_page_boot()
+
     def _payload() -> dict[str, Any]:
         route_started_at = time.perf_counter()
         session_started_at = time.perf_counter()

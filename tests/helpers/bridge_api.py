@@ -308,6 +308,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
             "state": str(kw.get("state") or ""),
         },
     )
+    api.note_desktop_page_boot = lambda: None
 
     return api
 
@@ -346,6 +347,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         mark_desktop_session_activity=admin_bridge.mark_desktop_session_activity,
         get_desktop_session_payload=admin_bridge.get_desktop_session_payload,
         update_desktop_session_lifecycle=admin_bridge.update_desktop_session_lifecycle,
+        note_desktop_page_boot=admin_bridge.note_desktop_page_boot,
         desktop_local_data_store=admin_bridge.desktop_local_data_store,
         append_startup_metric=admin_bridge.append_startup_metric,
         read_startup_metrics=admin_bridge.read_startup_metrics,

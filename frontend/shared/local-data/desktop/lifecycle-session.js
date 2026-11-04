@@ -183,7 +183,13 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
     sendDesktopClosingSignal("beforeunload");
     return undefined;
   });
-  window.addEventListener?.("pagehide", () => {
+  window.addEventListener?.("pagehide", event => {
+    // A page entering the back-forward cache is not closing: the browser may
+    // restore it, and the `focus` handler re-asserts `alive` if it does.
+    if (event?.persisted) {
+      desktopState.desktopCloseAttemptPending = false;
+      return;
+    }
     if (consumeDesktopNavigationBypass()) {
       desktopState.desktopCloseAttemptPending = false;
       return;

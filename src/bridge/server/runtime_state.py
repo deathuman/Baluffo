@@ -57,7 +57,11 @@ STARTUP_METRICS_PATH = (
 DESKTOP_SESSION_LOCK = threading.RLock()
 DESKTOP_SESSION_CLOSING_GRACE_S = 8.0
 DESKTOP_SESSION_ACTIVITY_AT = ""
-REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S = 0.5
+# A regular close is a claim, not proof. An in-app navigation whose pagehide
+# outlives the frontend bypass window looks identical to a user close, so the
+# bridge waits for the replacement page's first request to cancel the request
+# before it stops the runtime (see note_desktop_page_boot).
+REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S = 2.0
 OWNER_STATE: dict[str, Any] = {
     "ownerMode": "",
     "ownerToken": "",
@@ -190,6 +194,28 @@ def _clear_regular_shutdown_request() -> None:
     DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
     DESKTOP_SESSION_STATE["shutdownReason"] = ""
     DESKTOP_SESSION_STATE["shutdownPageId"] = ""
+
+
+def note_desktop_page_boot() -> dict[str, Any] | None:
+    """Cancel a pending regular close when a replacement page starts booting.
+
+    The first request a replacement page makes is the earliest evidence the
+    bridge can observe that a pagehide came from an in-app navigation. Returning
+    the cancelled request lets the caller record why the fast path was abandoned
+    instead of leaving the cancellation invisible.
+    """
+    with DESKTOP_SESSION_LOCK:
+        shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "").strip().lower()
+        shutdown_requested_at = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "").strip()
+        if not shutdown_requested_at or shutdown_reason not in REGULAR_DESKTOP_CLOSE_REASONS:
+            return None
+        cancelled = {
+            "requestedAt": shutdown_requested_at,
+            "reason": shutdown_reason,
+            "pageId": str(DESKTOP_SESSION_STATE.get("shutdownPageId") or ""),
+        }
+        _clear_regular_shutdown_request()
+        return cancelled
 
 
 def _record_desktop_shutdown_request(
@@ -442,6 +468,7 @@ __all__ = [
     "get_desktop_session_payload",
     "get_owner_state",
     "mark_desktop_session_activity",
+    "note_desktop_page_boot",
     "owner_session_should_exit",
     "read_startup_metrics",
     "update_desktop_session_lifecycle",

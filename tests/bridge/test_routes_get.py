@@ -61,6 +61,20 @@ def test_session_no_user(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["timing"]["payloadBuildMs"] >= 0
 
 
+def test_session_route_cancels_pending_regular_close(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    calls: list[bool] = []
+    api.note_desktop_page_boot = lambda: calls.append(True)
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/desktop-local-data/session", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert calls == [True]
+
+
 def test_profiles_returns_sorted_profiles_with_current_flag(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     store.sign_in("Zed")

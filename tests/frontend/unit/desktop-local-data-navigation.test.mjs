@@ -453,6 +453,25 @@ test("pagehide without beforeunload still signals desktop closing", async () => 
   assert.match(beaconCalls[0].url, /desktop-session-lifecycle/);
 });
 
+test("pagehide from the back-forward cache does not signal desktop closing", async () => {
+  const { eventListeners, beaconCalls, fetchCalls } = setupDesktopGlobals();
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  eventListeners.get("pagehide")({ persisted: true });
+
+  assert.equal(beaconCalls.length, 0);
+  const closingCalls = fetchCalls.filter(call => {
+    if (!call.url.includes("/app/desktop-session-lifecycle")) return false;
+    return JSON.parse(String(call.options?.body || "{}")).state === "closing";
+  });
+  assert.equal(closingCalls.length, 0);
+});
+
 test("desktop sign-in loads existing profiles before prompting", async () => {
   const promptCalls = [];
   setupDesktopGlobals({
