@@ -229,7 +229,15 @@ def _workable_candidate(
     ):
         account = host.split(".workable.com", 1)[0].strip().lower()
     else:
-        account = ((_path_tokens(path) or [""])[-1]).strip().lower()
+        # apply.workable.com/<account> is the board; a trailing /llms.txt is a
+        # machine-readable hint, not the account name. The widget API puts the
+        # account after /accounts/, while ordinary board URLs put it first.
+        tokens = _path_tokens(path)
+        if "accounts" in tokens:
+            idx = tokens.index("accounts")
+            account = (tokens[idx + 1] if idx + 1 < len(tokens) else "").strip().lower()
+        else:
+            account = (tokens[0] if tokens else "").strip().lower()
     if not account:
         return None
     return {

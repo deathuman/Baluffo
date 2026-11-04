@@ -123,6 +123,9 @@ export function createJobsBoot(deps) {
       setSourceStatus: text => deps.feedController.setSourceStatus(text),
       setProgress: visible => deps.feedController.setProgress(visible),
       refreshJobsNow: options => deps.feedController.refreshJobsNow(options),
+      prefetchJobsFeed: typeof deps.feedController.prefetchFirstLoadJobs === "function"
+        ? () => deps.feedController.prefetchFirstLoadJobs()
+        : undefined,
       updateLastUpdatedText: timestamp => deps.feedController.updateLastUpdatedText(timestamp),
       fetchJobsReport: options => deps.feedController.fetchJobsReport(options),
       fetchJobsTaskLive: (options = {}) => deps.callJobsBridge("/ops/task-live/fetch?view=summary", {

@@ -132,6 +132,47 @@ def test_a_403_root_is_unproven_not_gone(monkeypatch: pytest.MonkeyPatch) -> Non
     assert terminal is False
 
 
+def test_an_unreachable_root_is_not_terminal_in_candidate_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _probe(
+        monkeypatch,
+        {
+            "https://dead.example/": {
+                "ok": False,
+                "status": 0,
+                "final_url": "",
+                "error": "URLError",
+            },
+            "http://dead.example/": {
+                "ok": False,
+                "status": 0,
+                "final_url": "",
+                "error": "URLError",
+            },
+        },
+    )
+    terminal, _ = retire.root_is_terminal(
+        "https://dead.example/jobs", timeout=1, allow_unreachable=False
+    )
+    assert terminal is False
+
+
+def test_candidate_input_reads_only_retirable_zero_buckets() -> None:
+    payload = {
+        "buckets": {
+            "shared_zero": [{"sourceUrl": "https://dead.example/jobs"}],
+            "umbrel_only_zero": [{"sourceUrl": "https://dead.example/other"}],
+            "desktop_only_zero": [{"sourceUrl": "https://desktop-only.example/jobs"}],
+            "preserve_output": [{"sourceUrl": "https://kept.example/jobs"}],
+        }
+    }
+    assert retire.extract_candidate_sources(payload) == [
+        {"source_url": "https://dead.example/jobs", "name": "", "reason": ""},
+        {"source_url": "https://dead.example/other", "name": "", "reason": ""},
+    ]
+
+
 def test_an_unreachable_root_on_both_schemes_is_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _probe(
         monkeypatch,
@@ -185,6 +226,60 @@ def test_prepare_retirements_refuses_when_the_control_failed() -> None:
     }
     with pytest.raises(ValueError, match="control"):
         retire.prepare_retirements(plan)
+
+
+def test_build_plan_candidate_mode_uses_the_probe_not_the_report_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report_path = tmp_path / "report.json"
+    registry_path = tmp_path / "registry.json"
+    candidates_path = tmp_path / "candidates.json"
+    report_path.write_text(json.dumps({"sources": []}), encoding="utf-8")
+    registry_path.write_text(
+        json.dumps(
+            [
+                {"id": "static:listing_url:https://dead.example/jobs", "adapter": "static"},
+                {"id": "static:listing_url:https://alive.example/jobs", "adapter": "static"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidates_path.write_text(
+        json.dumps(
+            {
+                "buckets": {
+                    "umbrel_only_zero": [
+                        {"sourceUrl": "https://dead.example/jobs", "failureBucket": "site_changed"},
+                        {
+                            "sourceUrl": "https://alive.example/jobs",
+                            "failureBucket": "needs_review",
+                        },
+                    ],
+                    "preserve_output": [{"sourceUrl": "https://dead.example/jobs", "keptCount": 0}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        retire, "_control_probe", lambda **_: {"ok": True, "root": "control", "probe": {}}
+    )
+
+    def _probe(source_url: str, *, timeout: float, allow_unreachable: bool = True):
+        assert allow_unreachable is False
+        if source_url == "https://dead.example/jobs":
+            return True, {"terminal": True, "status": 404}
+        return False, {"terminal": False, "status": 200}
+
+    monkeypatch.setattr(retire, "root_is_terminal", _probe)
+
+    plan = retire.build_plan(report_path, registry_path, timeout=1, candidates_path=candidates_path)
+    assert plan["candidates"] == 2
+    assert [item["row"]["id"] for item in plan["retired"]] == [
+        "static:listing_url:https://dead.example/jobs"
+    ]
+    assert plan["control"]["ok"] is True
 
 
 def test_build_plan_retires_only_the_terminal_matched_rows(

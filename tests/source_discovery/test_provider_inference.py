@@ -203,6 +203,31 @@ def test_shared_provider_inference_preserves_workable_hyphenated_account() -> No
     )
 
 
+def test_workable_candidate_uses_board_account_not_machine_hint() -> None:
+    row = provider_inference.infer_web_candidate(
+        "https://apply.workable.com/team-17-digital/llms.txt",
+        "Everplay Group",
+        nl_priority=False,
+    )
+
+    assert row is not None
+    assert row["adapter"] == "workable"
+    assert row["account"] == "team-17-digital"
+    assert "llms.txt" not in row["api_url"]
+
+
+def test_workable_widget_api_still_reads_the_account_segment() -> None:
+    row = provider_inference.infer_web_candidate(
+        "https://apply.workable.com/api/v1/widget/accounts/anzu",
+        "Anzu",
+        nl_priority=False,
+    )
+
+    assert row is not None
+    assert row["adapter"] == "workable"
+    assert row["account"] == "anzu"
+
+
 def test_shared_provider_inference_rejects_unknown_and_empty_provider_tokens() -> None:
     assert (
         provider_inference.infer_web_candidate(

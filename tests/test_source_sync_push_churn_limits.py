@@ -10,21 +10,21 @@ import pytest
 from src import source_sync as sync
 from src.source_sync_shard import build_sharded_snapshot_bundle
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
-from tests.test_source_sync_push_churn import _FakeResponse, _Recorder
+from tests.source_sync_http_fakes import FakeResponse, Recorder
 
 
-def _unchanged_sharded_remote_opener(local: dict) -> _Recorder:
+def _unchanged_sharded_remote_opener(local: dict) -> Recorder:
     remote_snapshot = sync.build_snapshot(local, source_label="admin_bridge")
     bundle = build_sharded_snapshot_bundle(remote_snapshot, max_shard_size=10_000)
     shard = bundle["shards"][0]
     encoded_manifest = base64.b64encode(json.dumps(bundle["manifest"]).encode("utf-8")).decode(
         "ascii"
     )
-    return _Recorder(
+    return Recorder(
         [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
-            _FakeResponse(200, {"sha": "manifest-sha", "content": encoded_manifest}),
-            _FakeResponse(
+            FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            FakeResponse(200, {"sha": "manifest-sha", "content": encoded_manifest}),
+            FakeResponse(
                 200,
                 {
                     "sha": "shard-sha",
@@ -38,9 +38,9 @@ def _unchanged_sharded_remote_opener(local: dict) -> _Recorder:
 def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
     source_sync_test_root.write_packaged_config()
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    opener = _Recorder(
+    opener = Recorder(
         [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -183,9 +183,9 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
         )
     )
     assert snapshot_size_bytes > sync.SNAPSHOT_SIZE_WARN_BYTES
-    opener = _Recorder(
+    opener = Recorder(
         [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -200,7 +200,7 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
                 hdrs={},
                 fp=None,
             ),
-            _FakeResponse(201, {"content": {"sha": "newsha"}}),
+            FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -220,9 +220,9 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     with sync._AUTH_MANAGER_LOCK:  # noqa: SLF001
         sync._AUTH_MANAGER.clear()  # noqa: SLF001
     monkeypatch.setattr(sync, "DEFAULT_SOURCE_SYNC_SHARD_SIZE_BYTES", 100)
-    rejection_opener = _Recorder(
+    rejection_opener = Recorder(
         [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -279,9 +279,9 @@ def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_r
         )
     )
     assert old_limit < snapshot_size_bytes < sync.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
-    opener = _Recorder(
+    opener = Recorder(
         [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -296,7 +296,7 @@ def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_r
                 hdrs={},
                 fp=None,
             ),
-            _FakeResponse(201, {"content": {"sha": "newsha"}}),
+            FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)

@@ -65,6 +65,7 @@ export function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
     "sevenDayFetchSuccessRate",
     "avgFetchDurationMs7d",
     "failedSourceRatioLatest",
+    "sourceOutcomeSummary",
     "pendingSourcesCount",
     "pendingApprovalsCount"
   ].forEach(key => {

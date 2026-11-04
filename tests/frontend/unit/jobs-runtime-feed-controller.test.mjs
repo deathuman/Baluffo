@@ -209,3 +209,33 @@ test("jobs feed controller forwards allowSheetsFallback to source fetcher", asyn
   assert.equal(forwarded.allowSheetsFallback, false);
   assert.equal(forwarded.timeoutMs, 100);
 });
+
+test("jobs feed controller prefetches first-load jobs with the first-load timeout", async () => {
+  let forwarded = null;
+  const { controller } = createFeedController({
+    fetchUnifiedJobsFromSources: async options => {
+      forwarded = options;
+      return { jobs: [], error: "" };
+    }
+  });
+
+  await controller.prefetchFirstLoadJobs();
+
+  assert.equal(forwarded.timeoutMs, 4500);
+  assert.equal(forwarded.allowSheetsFallback, false);
+});
+
+test("jobs feed controller forwards a prefetched feed to the refresh", async () => {
+  let forwarded = null;
+  const prefetchedFeed = Promise.resolve({ jobs: [{ id: "job-1" }] });
+  const { controller } = createFeedController({
+    refreshJobsFeed: async request => {
+      forwarded = request;
+      return true;
+    }
+  });
+
+  await controller.refreshJobsNow({ manual: false, firstLoad: true, prefetchedFeed });
+
+  assert.equal(forwarded.prefetchedFeed, prefetchedFeed);
+});

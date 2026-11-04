@@ -202,6 +202,13 @@ export function createJobsFeedController({
     });
   }
 
+  function prefetchFirstLoadJobs() {
+    return fetchUnifiedJobs({
+      timeoutMs: jobsFirstLoadRequestTimeoutMs,
+      allowSheetsFallback: false
+    });
+  }
+
   async function fetchJsonFromCandidates(urls, options) {
     return fetchJsonFromCandidatesFromSources(urls, options);
   }
@@ -226,8 +233,8 @@ export function createJobsFeedController({
     return runtimeState.dataSourcesLoadPromise;
   }
 
-  async function refreshJobsNow({ manual, firstLoad = false }) {
-    return refreshJobsFeed({ manual, firstLoad }, {
+  async function refreshJobsNow({ manual, firstLoad = false, prefetchedFeed = null }) {
+    return refreshJobsFeed({ manual, firstLoad, prefetchedFeed }, {
       getRefreshInFlight: () => runtimeState.refreshInFlight,
       setRefreshInFlight: value => {
         runtimeState.refreshInFlight = Boolean(value);
@@ -314,6 +321,7 @@ export function createJobsFeedController({
     readCachedJobs,
     updateLastUpdatedText,
     refreshJobsNow,
+    prefetchFirstLoadJobs,
     writeCachedJobs,
     loadStartupPreviewJobs,
     fetchJobsReport,

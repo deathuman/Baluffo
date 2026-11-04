@@ -58,6 +58,19 @@ _SOURCE_ROW_KEYS = (
     "exclusionReason",
 )
 
+# The KPI/action-center path must not read the full report just to explain a failure
+# ratio. These counts are already computed by the source-health normalizer; keep the
+# projection to scalars so the sidecar remains cheap to parse on a poll.
+_SOURCE_HEALTH_SUMMARY_KEYS = (
+    "totalSources",
+    "failedSources",
+    "excludedSources",
+    "zeroKeptSources",
+    "zeroKeptNeedsReviewSources",
+    "browserFallbackRecommendedSources",
+    "providerChildFailureCount",
+)
+
 
 def fetch_report_summary_path(report_path: Path | str) -> Path:
     return Path(report_path).with_name(FETCH_REPORT_SUMMARY_FILE_NAME)
@@ -65,6 +78,22 @@ def fetch_report_summary_path(report_path: Path | str) -> Path:
 
 def _source_row(row: dict[str, Any]) -> dict[str, Any]:
     return {key: row.get(key) for key in _SOURCE_ROW_KEYS if key in row}
+
+
+def compact_source_health_summary(source_health: Any) -> dict[str, int]:
+    """The scalar source-health counts safe to carry on a polling payload."""
+    src = _as_dict(source_health)
+    if not src:
+        return {}
+    summary: dict[str, int] = {}
+    for key in _SOURCE_HEALTH_SUMMARY_KEYS:
+        if key in src:
+            summary[key] = max(0, _safe_int(src.get(key), 0))
+    return summary
+
+
+def _source_health_summary(payload: dict[str, Any]) -> dict[str, int]:
+    return compact_source_health_summary(payload.get("sourceHealth"))
 
 
 def _summary_source_count(payload: dict[str, Any], summary: dict[str, Any]) -> int:
@@ -134,6 +163,9 @@ def compact_fetch_report_summary_payload(
         "sourceCount": source_count,
         "sourcesTruncated": False,
     }
+    source_health_summary = _source_health_summary(report)
+    if source_health_summary:
+        result["sourceHealth"] = source_health_summary
     for key in (
         "lifecycleSummary",
         "availabilitySummary",

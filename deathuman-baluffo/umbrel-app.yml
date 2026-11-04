@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.033"
+version: "0.3.034"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,9 +19,11 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Admin navigation is faster: the source table reloads instantly after its first
-  open, the Ops badges no longer recalculate for minutes during a run, and the
-  page no longer shows "data delayed" after a slow first call. Existing jobs,
-  saved jobs and notes are kept.
+  The Jobs page now opens the full feed directly and shows a loading state,
+  using the last saved snapshot only if the full feed cannot load. The Admin
+  action center now separates zero-job sources from sources needing browser
+  fallback. Source sync retries GitHub rate-limit and server errors, and Workable
+  board detection no longer mistakes a machine-readable help file for an account.
+  Existing jobs, saved jobs and notes are kept.
 storage:
   dataRoot: data

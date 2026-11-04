@@ -10,7 +10,7 @@
 import { EMPTY_TITLE_FEED_MESSAGE } from "./feed-constants.js";
 import { coverageScope, reportFinishedTimestamp } from "./feed-report-probe.js";
 
-async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
+async function refreshJobsFeed({ manual, firstLoad = false, prefetchedFeed = null }, deps) {
   const {
     getRefreshInFlight,
     setRefreshInFlight,
@@ -57,10 +57,12 @@ async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
       markJobsStep("jobs_feed_fetch_start");
       emitMetric("jobs_first_load_refresh_start");
     }
-    const result = await fetchUnifiedJobs({
-      timeoutMs: firstLoad ? firstLoadRequestTimeoutMs : 20000,
-      allowSheetsFallback: !firstLoad
-    });
+    const result = prefetchedFeed
+      ? await prefetchedFeed
+      : await fetchUnifiedJobs({
+        timeoutMs: firstLoad ? firstLoadRequestTimeoutMs : 20000,
+        allowSheetsFallback: !firstLoad
+      });
     if (firstLoad) {
       markJobsStep("jobs_feed_fetch_done", {
         ok: Boolean(result.jobs && result.jobs.length > 0)

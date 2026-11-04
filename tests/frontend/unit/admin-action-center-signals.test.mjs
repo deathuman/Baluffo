@@ -71,6 +71,36 @@ test("action center never renders a non-finite fetch age as Infinityd", async ()
   assert.match(html, /Last successful fetch was at an unknown time/);
 });
 
+test("failed-source copy separates zero-yield and browser-fallback counts", async () => {
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0.189,
+            sourceOutcomeSummary: {
+              zeroKeptSources: 2055,
+              browserFallbackRecommendedSources: 206
+            }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: false });
+
+  const html = refs.actionCenterItemsEl.innerHTML;
+  assert.match(html, /19% of sources failed in the last fetch/);
+  assert.match(html, /2,055 kept zero jobs/);
+  assert.match(html, /206 need browser fallback/);
+  assert.equal((html.match(/class="action-center-signal /g) || []).length, 1);
+});
+
 test("action center renders every reachable signal and no unreachable overflow row", async () => {
   // Three is the ceiling: `stale_fetch` needs a fetch age above 12h and
   // `failed_sources` needs one at or below 12h, so they are mutually exclusive. The

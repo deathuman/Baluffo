@@ -109,6 +109,54 @@ test("refreshJobsFeed marks first-load fetch and render milestones", async () =>
   });
 });
 
+test("refreshJobsFeed consumes a prefetched feed instead of fetching again", async () => {
+  let fetchCalls = 0;
+  let allJobs = [];
+  const prefetched = Promise.resolve({ jobs: [{ id: "job-1" }], sourceName: "test" });
+  const ok = await refreshJobsFeed({ manual: false, firstLoad: true, prefetchedFeed: prefetched }, {
+    getRefreshInFlight: () => false,
+    setRefreshInFlight: () => {},
+    dispatchRefreshRequested: () => {},
+    setProgress: () => {},
+    setSourceStatus: () => {},
+    firstLoadRequestTimeoutMs: 4500,
+    fetchUnifiedJobs: async () => {
+      fetchCalls += 1;
+      return { jobs: [{ id: "job-2" }] };
+    },
+    dispatchRefreshFailed: () => {},
+    showToast: () => {},
+    logError: () => {},
+    getAllJobs: () => allJobs,
+    setAllJobs: jobs => {
+      allJobs = jobs;
+    },
+    normalizeRows: rows => rows.map(row => ({ ...row, normalized: true })),
+    isDesktopRuntimeMode: () => true,
+    writeCachedJobs: async () => {},
+    fetchJobsReport: async () => ({
+      finishedAt: "2026-05-17T10:00:00+00:00",
+      summary: { outputCount: 1 }
+    }),
+    updateLastUpdatedText: () => {},
+    recalculateItemsPerPage: () => {},
+    updateFilterOptions: () => {},
+    applyStateToFilters: () => {},
+    applyFiltersAndRender: () => {},
+    markStartupRendered: () => {},
+    markJobsFirstInteractive: () => {},
+    markJobsStep: () => {},
+    measureJobsStep: () => {},
+    emitMetric: () => {},
+    dispatchRefreshCompleted: () => {},
+    renderDataSources: async () => {}
+  });
+
+  assert.equal(ok, true);
+  assert.equal(fetchCalls, 0, "the prefetched read is reused");
+  assert.deepEqual(allJobs.map(job => job.id), ["job-1"]);
+});
+
 test("refreshJobsFeed treats all-filtered missing-title rows as no data", async () => {
   let refreshInFlight = false;
   let allJobs = [{ id: "old-job" }];
@@ -328,7 +376,7 @@ test("initJobsFeed skips first-run notice and bootstrap for returning desktop us
 
 test("initJobsFeed does not infer first-run from a stale failed report without launch flag", async () => {
   const { localStorage } = createLocalStorage();
-  let bootstrapStarts = 0, startupPreviewCalled = false, pendingAutoRefreshCalled = false, refreshOptions = null;
+  let bootstrapStarts = 0, startupPreviewCalls = 0, pendingAutoRefreshCalled = false, refreshOptions = null;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
     windowObject: { localStorage },
@@ -338,7 +386,7 @@ test("initJobsFeed does not infer first-run from a stale failed report without l
       summary: { outputCount: 41765, error: "owner_inactive_without_terminal_report" }
     }),
     startJobsBootstrap: async () => { bootstrapStarts += 1; return { started: true }; },
-    loadStartupPreviewJobs: async () => { startupPreviewCalled = true; return false; },
+    loadStartupPreviewJobs: async () => { startupPreviewCalls += 1; return false; },
     refreshJobsNow: async options => {
       refreshOptions = options;
       return true;
@@ -348,7 +396,7 @@ test("initJobsFeed does not infer first-run from a stale failed report without l
 
   await initJobsFeed(deps);
 
-  assert.equal(startupPreviewCalled, true);
+  assert.equal(startupPreviewCalls, 0, "the full feed is loaded without a snapshot pass");
   assert.equal(pendingAutoRefreshCalled, true);
   assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
   assert.equal(bootstrapStarts, 0);

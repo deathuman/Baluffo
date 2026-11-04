@@ -16,7 +16,6 @@
  */
 
 import {
-  JOBS_FULL_FEED_SYNC_DELAY_MS,
   LOCAL_FEED_MISSING_MESSAGE
 } from "./feed-constants.js";
 import {
@@ -28,8 +27,7 @@ import {
 } from "./feed-bootstrap-marker.js";
 import {
   isActiveBootstrapReport,
-  isSuccessfulJobsFetchReport,
-  reportFinishedTimestamp
+  isSuccessfulJobsFetchReport
 } from "./feed-report-probe.js";
 import { createFirstRunBootstrapFlow } from "./feed-first-run-flow.js";
 
@@ -74,6 +72,7 @@ export async function initJobsFeed(deps) {
     setHasInitializedJobsFeed,
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
+    prefetchJobsFeed,
     loadStartupPreviewJobs,
     showError,
     getAllJobs
@@ -93,12 +92,11 @@ export async function initJobsFeed(deps) {
 
 try {
     // No auth handshake here: boot starts it behind the first rows, so the
-    // snapshot read below is the first thing this path waits on.
+    // feed read below is the first thing this path waits on.
     const desktopMode = isDesktopRuntimeMode();
     // The report probe is a gate, not feed data: it decides whether a first-run
-    // bootstrap is needed. Start it here and read it where its answer matters, so
-    // the first paint never waits on it -- a report that lands after rows are on
-    // screen is applied behind them (``applyFirstRunGateBehindRenderedRows``).
+    // bootstrap is needed. Read it before the feed loads, because a cold launch
+    // must show the tutorial rather than a missing-feed error.
     const reportProbe = desktopMode && typeof fetchJobsReport === "function"
       ? fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
       : Promise.resolve(null);
@@ -137,40 +135,8 @@ try {
       });
     }
 
-    // The report landed after the snapshot painted: apply its verdict behind the
-    // rows already on screen. Swapping in the empty bootstrap state or its modal
-    // notice here is exactly the flash this path exists to avoid, so the bootstrap
-    // runs quietly and the status line explains it.
-    async function applyFirstRunGateBehindRenderedRows(localReport) {
-      const gate = evaluateFirstRunGate(localReport);
-      const rowsRendered = getAllJobs().length;
-      emitGateEvaluated(gate, { late: true, rowsRendered });
-      // The snapshot painted before this report existed, so its "Last updated"
-      // stamp had nothing to show: fill it in now instead of waiting for the
-      // delayed full-feed refresh.
-      const finishedAt = reportFinishedTimestamp(localReport);
-      if (finishedAt) updateLastUpdatedText(finishedAt);
-      if (!gate.firstRunRequired) return;
-      emitMetric("jobs_first_run_gate_applied_late", {
-        action: gate.firstRunAction || "skip",
-        rowsRendered
-      });
-      if (gate.launchColdStartPending) markLaunchColdStartHandled(windowObject);
-      if (gate.firstRunAction !== "start" && gate.firstRunAction !== "reattach") {
-        // A terminal failure cannot be repaired by clearing the screen, and the
-        // snapshot rows are still readable: report it without replacing them.
-        setSourceStatus(bootstrapRetryMessage(localReport));
-        return;
-      }
-      try {
-        await startBootstrapAndLoad();
-      } catch (err) {
-        showError(String(err?.message || "Unable to refresh first-run jobs."), retryBootstrap);
-      }
-    }
-
-    // ponytail: container boots on the bounded startup snapshot; normalizing a
-    // full IndexedDB feed here blocks boot for seconds. Full feed via explicit Reload.
+    // ponytail: container boots straight to the full feed; reading and
+    // normalizing a full IndexedDB cache first would block boot for seconds.
     const cached = (desktopMode || isContainerRuntimeMode()) ? null : await readCachedJobs();
     emitMetric("jobs_cache_checked", {
       desktopMode,
@@ -204,26 +170,31 @@ try {
       return;
     }
 
-    // Rows first, gate second: the snapshot decides what the page paints, and the
-    // report only decides what happens behind it.
-    const previewLoaded = await loadStartupPreviewJobs();
-    if (previewLoaded) {
-      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
-      setHasInitializedJobsFeed(true);
-      scheduleNonCriticalStartupWork();
-      await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
-      reportProbe
-        .then(localReport => applyFirstRunGateBehindRenderedRows(localReport))
-        .catch(() => {});
-      // ponytail: auto-hydrate the complete feed right after interactive so
-      // the full list never requires pressing Reload; snapshot keeps boot fast.
-      windowObject.setTimeout(() => {
-        refreshJobsNow({ manual: false }).catch(() => {});
-      }, JOBS_FULL_FEED_SYNC_DELAY_MS);
-      return;
-    }
+    // The feed read is independent of the first-run gate, so start it alongside
+    // the report probe and hand the result to refreshJobsNow once the gate
+    // clears. A known cold launch skips it: the tutorial owns the first load.
+    const markerBeforeProbe = desktopMode
+      ? bootstrapAutoStartMarker(windowObject)
+      : { status: "none" };
+    const launchColdStartPending = desktopMode
+      && Boolean(desktopJobsColdStart)
+      && !launchColdStartAlreadyHandled(windowObject);
+    const prefetchedFeed = desktopMode
+      && !launchColdStartPending
+      && markerBeforeProbe.status !== "running"
+      && markerBeforeProbe.status !== "legacy"
+      && typeof prefetchJobsFeed === "function"
+      ? Promise.resolve()
+        .then(() => prefetchJobsFeed())
+        .catch(err => ({
+          jobs: [],
+          error: String(err?.message || "Could not fetch job listings.")
+        }))
+      : null;
 
-    // Nothing on screen yet, so the gate's answer is what decides what to show.
+    // The full feed is the first thing painted. The bounded startup snapshot is
+    // only a fallback for a missing or unreadable full feed: showing a handful of
+    // rows and swapping them out later made the page look ready before it was.
     const localReport = await reportProbe;
     const gate = evaluateFirstRunGate(localReport);
     emitGateEvaluated(gate);
@@ -252,11 +223,25 @@ try {
       return;
     }
 
-    const ok = await refreshJobsNow({ manual: false, firstLoad: true });
+    const ok = await refreshJobsNow({
+      manual: false,
+      firstLoad: true,
+      ...(prefetchedFeed ? { prefetchedFeed } : {})
+    });
     setHasInitializedJobsFeed(true);
     scheduleNonCriticalStartupWork();
     await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
     if (!ok) {
+      const previewLoaded = await loadStartupPreviewJobs();
+      if (previewLoaded) {
+        setSourceStatus(
+          `Loaded ${getAllJobs().length.toLocaleString()} jobs from the last snapshot. The full feed is unavailable.`
+        );
+        setHasInitializedJobsFeed(true);
+        scheduleNonCriticalStartupWork();
+        await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
+        return;
+      }
       if (isDesktopRuntimeMode() && isSuccessfulJobsFetchReport(localReport)) {
         try {
           const recovered = await startBootstrapAndLoad();

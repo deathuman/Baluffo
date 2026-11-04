@@ -237,6 +237,11 @@ function evaluateSyncStatus(syncData) {
   return null;
 }
 
+function formatCount(value) {
+  const count = Number(value || 0);
+  return Number.isFinite(count) ? count.toLocaleString("en-US") : "0";
+}
+
 function evaluateFailedSources(healthData) {
   if (!healthData) return null;
   const kpis = healthData.kpis || {};
@@ -246,11 +251,22 @@ function evaluateFailedSources(healthData) {
   const failedRatio = Number(kpis.failedSourceRatioLatest || 0);
   if (failedRatio <= 0) return null;
 
+  // The ratio alone conflates a transport failure with a board that fetched fine
+  // and kept nothing. The bounded sourceOutcomeSummary comes from the report
+  // sidecar, so this distinction costs no full-report read on the poll path.
+  const outcome = kpis.sourceOutcomeSummary || {};
+  const zeroKept = Number(outcome.zeroKeptSources || 0);
+  const browserFallback = Number(outcome.browserFallbackRecommendedSources || 0);
+  const details = [];
+  if (zeroKept > 0) details.push(`${formatCount(zeroKept)} kept zero jobs`);
+  if (browserFallback > 0) details.push(`${formatCount(browserFallback)} need browser fallback`);
+  const breakdown = details.length ? `; ${details.join("; ")}` : "";
+
   const pct = Math.round(failedRatio * 100);
   return {
     id: "failed_sources",
     severity: "warning",
-    summary: `${pct}% of sources failed in the last fetch`,
+    summary: `${pct}% of sources failed in the last fetch${breakdown}`,
     actions: ["review", "retry_failed", "dismiss"]
   };
 }

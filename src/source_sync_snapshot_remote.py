@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import ssl
 import time
 from collections.abc import Callable
@@ -20,6 +21,17 @@ from urllib.error import URLError
 from src.source_sync_shard import read_sharded_snapshot
 
 logger = logging.getLogger(__name__)
+
+_HTTP_STATUS_RE = re.compile(r"\bHTTP\s+(\d{3})\b", re.IGNORECASE)
+
+
+class RemoteSyncHTTPError(RuntimeError):
+    """HTTP failure from the remote sync API, retaining the status for retry policy."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = int(status)
+
 
 from src.source_sync_snapshot import normalize_snapshot
 
@@ -309,18 +321,32 @@ def write_remote_snapshot(
         opener=opener,
     )
     if status >= 400:
-        msg = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
-        if int(status or 0) == 409:
-            module._set_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT, msg)
-            raise module.SyncOperationError(module.RUNTIME_STATE_REMOTE_CONFLICT, msg)
-        raise RuntimeError(msg)
+        status_code = int(status or 0)
+        detail = str(body.get("message") or "").strip()
+        if status_code == 409:
+            conflict_message = detail or f"GitHub PUT failed with HTTP {status_code}"
+            module._set_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT, conflict_message)
+            raise module.SyncOperationError(module.RUNTIME_STATE_REMOTE_CONFLICT, conflict_message)
+        msg = f"GitHub PUT failed with HTTP {status_code}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise RemoteSyncHTTPError(status_code, msg)
     content = body.get("content") if isinstance(body.get("content"), dict) else {}
     module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
     return {"ok": True, "sha": str(content.get("sha") or "")}
 
 
 def _is_transient_request_error(exc: BaseException) -> bool:
-    return isinstance(getattr(exc, "__cause__", None), (URLError, ssl.SSLError))
+    if isinstance(getattr(exc, "__cause__", None), (URLError, ssl.SSLError)):
+        return True
+    status = getattr(exc, "status", None)
+    if isinstance(status, int):
+        return status in {408, 425, 429} or 500 <= status < 600
+    match = _HTTP_STATUS_RE.search(str(exc))
+    if not match:
+        return False
+    code = int(match.group(1))
+    return code in {408, 425, 429} or 500 <= code < 600
 
 
 def _retry_transient_get(

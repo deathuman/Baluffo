@@ -261,3 +261,34 @@ def test_compact_summary_preserves_the_status_the_gate_reads() -> None:
 
     assert compact["summary"]["status"] == "error"
     assert compact["summary"]["outputCount"] == 4
+
+
+def test_compact_summary_projects_only_source_health_counts() -> None:
+    compact = compact_fetch_report_summary_payload(
+        {
+            "sourceHealth": {
+                "totalSources": 10,
+                "failedSources": 3,
+                "excludedSources": 1,
+                "zeroKeptSources": 7,
+                "zeroKeptNeedsReviewSources": 6,
+                "browserFallbackRecommendedSources": 2,
+                "providerChildFailureCount": 1,
+                "topFailureBuckets": [{"key": "site_changed", "count": 3}],
+                "sourcesNeedingAttention": [{"name": "large-row"}],
+            }
+        },
+        detail_level="summary",
+    )
+
+    assert compact["sourceHealth"] == {
+        "totalSources": 10,
+        "failedSources": 3,
+        "excludedSources": 1,
+        "zeroKeptSources": 7,
+        "zeroKeptNeedsReviewSources": 6,
+        "browserFallbackRecommendedSources": 2,
+        "providerChildFailureCount": 1,
+    }
+    assert "topFailureBuckets" not in compact["sourceHealth"]
+    assert "sourcesNeedingAttention" not in compact["sourceHealth"]

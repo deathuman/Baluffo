@@ -4,81 +4,103 @@ import assert from "node:assert/strict";
 import { initJobsFeed } from "../../../frontend/jobs/app/feed.js";
 import { createBaseDeps, createLocalStorage } from "./helpers/jobs-feed-test-helpers.mjs";
 
-async function waitFor(predicate, { timeoutMs = 2000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error("condition not met in time");
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
-}
-
-test("initJobsFeed paints the startup snapshot without waiting for the report probe", async () => {
+test("initJobsFeed waits for the first-run gate before loading the feed", async () => {
   const { localStorage } = createLocalStorage();
   let resolveReport;
   const pendingReport = new Promise(resolve => {
     resolveReport = resolve;
   });
-  let startupPreviewCalled = false;
-  let bootstrapStarts = 0;
-  const lastUpdated = [];
+  let refreshCalls = 0;
+  let previewCalls = 0;
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
-    windowObject: { localStorage, setTimeout: () => 0 },
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
     fetchJobsReport: () => pendingReport,
-    updateLastUpdatedText: value => lastUpdated.push(value),
-    startJobsBootstrap: async () => {
-      bootstrapStarts += 1;
-      return { started: true };
-    },
     loadStartupPreviewJobs: async () => {
-      startupPreviewCalled = true;
-      deps.setAllJobs([{ id: "snapshot-1" }]);
+      previewCalls += 1;
+      return true;
+    },
+    refreshJobsNow: async () => {
+      refreshCalls += 1;
       return true;
     }
   });
 
-  await initJobsFeed(deps);
+  const init = initJobsFeed(deps);
+  await new Promise(resolve => setTimeout(resolve, 0));
 
-  assert.equal(startupPreviewCalled, true, "the snapshot is what the first render waits on");
-  assert.deepEqual(calls.allJobs.at(-1), [{ id: "snapshot-1" }]);
-  assert.equal(bootstrapStarts, 0);
+  assert.equal(refreshCalls, 0, "the feed must not load before the gate answers");
+  assert.equal(previewCalls, 0, "no partial snapshot is painted ahead of the gate");
+  assert.deepEqual(calls.allJobs, []);
 
   resolveReport({
     finishedAt: "2026-05-17T10:00:00+00:00",
     summary: { status: "ok", outputCount: 5 }
   });
-  await waitFor(() => calls.metrics.some(metric => metric.event === "jobs_first_run_gate_evaluated"));
+  await init;
 
-  const gate = calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated");
-  assert.equal(gate.payload.action, "skip");
-  assert.equal(gate.payload.late, true);
-  assert.equal(gate.payload.rowsRendered, 1);
-  assert.equal(bootstrapStarts, 0);
+  assert.equal(refreshCalls, 1);
+  assert.equal(previewCalls, 0);
   assert.deepEqual(calls.notices, []);
-  assert.deepEqual(
-    lastUpdated,
-    [Date.parse("2026-05-17T10:00:00+00:00")],
-    "the late report fills in the stamp the snapshot could not show"
-  );
+  assert.deepEqual(calls.showError, []);
 });
 
-test("initJobsFeed applies a late first-run gate behind rendered rows without clearing them", async () => {
-  const { storage, localStorage } = createLocalStorage();
-  let reportCalls = 0;
-  let resolveFirstReport;
-  const firstReport = new Promise(resolve => {
-    resolveFirstReport = resolve;
+test("initJobsFeed prefetches the full feed while the report probe is pending", async () => {
+  const { localStorage } = createLocalStorage();
+  let resolveReport;
+  const pendingReport = new Promise(resolve => {
+    resolveReport = resolve;
   });
+  let prefetchCalls = 0;
+  let refreshCalls = 0;
+  let refreshOptions = null;
+  const { deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    fetchJobsReport: () => pendingReport,
+    prefetchJobsFeed: () => {
+      prefetchCalls += 1;
+      return Promise.resolve({ jobs: [{ id: "job-1" }], sourceName: "test" });
+    },
+    refreshJobsNow: async options => {
+      refreshCalls += 1;
+      refreshOptions = options;
+      return true;
+    }
+  });
+
+  const init = initJobsFeed(deps);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(prefetchCalls, 1, "the feed read starts without waiting for the probe");
+  assert.equal(refreshCalls, 0, "the feed commit still waits for the gate");
+
+  resolveReport({
+    finishedAt: "2026-05-17T10:00:00+00:00",
+    summary: { status: "ok", outputCount: 5 }
+  });
+  await init;
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(refreshOptions.prefetchedFeed instanceof Promise, true);
+});
+
+test("initJobsFeed shows the first-run tutorial instead of loading the feed on a cold start", async () => {
+  const { localStorage } = createLocalStorage();
   let bootstrapStarts = 0;
-  const refreshCalls = [];
+  let reportCalls = 0;
+  let refreshCalls = 0;
+  let previewCalls = 0;
+  let prefetchCalls = 0;
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
-    windowObject: { localStorage, setTimeout: () => 0 },
+    isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
+    windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
     fetchJobsReport: async () => {
       reportCalls += 1;
-      if (reportCalls === 1) return firstReport;
+      if (reportCalls === 1) return { summary: { outputCount: 0 } };
       return {
         finishedAt: "2026-05-17T10:00:00+00:00",
         summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
@@ -86,47 +108,33 @@ test("initJobsFeed applies a late first-run gate behind rendered rows without cl
     },
     startJobsBootstrap: async () => {
       bootstrapStarts += 1;
-      return { started: true, runId: "jobs_bootstrap_late" };
+      return { started: true, runId: "jobs_bootstrap_first_run" };
+    },
+    prefetchJobsFeed: () => {
+      prefetchCalls += 1;
+      return Promise.resolve({ jobs: [{ id: "job-1" }] });
     },
     loadStartupPreviewJobs: async () => {
-      deps.setAllJobs([{ id: "snapshot-1" }]);
+      previewCalls += 1;
       return true;
     },
-    refreshJobsNow: async options => {
-      refreshCalls.push(options);
+    refreshJobsNow: async () => {
+      refreshCalls += 1;
       return true;
     }
   });
 
   await initJobsFeed(deps);
-  assert.deepEqual(
-    calls.rendered.filter(entry => entry.stage === "first_run_bootstrap"),
-    [],
-    "nothing may paint the empty bootstrap state before the gate answers"
-  );
 
-  resolveFirstReport({ summary: { outputCount: 0 } });
-  await waitFor(() => refreshCalls.length === 1);
-
+  assert.equal(previewCalls, 0);
+  assert.equal(prefetchCalls, 0, "the tutorial owns the first feed load");
   assert.equal(bootstrapStarts, 1);
-  assert.deepEqual(refreshCalls, [{ manual: false, firstLoad: true }]);
-  assert.deepEqual(calls.notices, [], "a late gate must not raise the first-run modal over rows");
-  assert.equal(
-    calls.allJobs.some(rows => rows.length === 0),
-    false,
-    "rendered rows are never cleared by the late gate"
-  );
-  const late = calls.metrics.find(metric => metric.event === "jobs_first_run_gate_applied_late");
-  assert.equal(late.payload.action, "start");
-  assert.equal(late.payload.rowsRendered, 1);
+  assert.equal(refreshCalls, 1, "the completed bootstrap feed is loaded once");
+  assert.equal(calls.notices.length, 1, "the first-run tutorial is shown");
+  assert.deepEqual(calls.rendered[0], { stage: "first_run_bootstrap", rowCount: 0 });
   assert.deepEqual(calls.startupStates.at(-1), {
     state: "interactive",
     detail: "first_run_bootstrap"
   });
-  assert.equal(
-    calls.sourceStatus.at(-1),
-    "Refreshing first-run sheet jobs. This can take several minutes..."
-  );
   assert.deepEqual(calls.showError, []);
-  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
 });

@@ -207,10 +207,27 @@ export function createJobsPageFlow(deps) {
     return updateResultsSummaryFromView(deps.dom.resultsSummary, total, from, to, loadedTotal);
   }
 
+  function renderJobsLoadingState() {
+    const jobsList = deps.dom?.jobsList;
+    if (!jobsList) return;
+    if (jobsList.dataset) {
+      jobsList.dataset.renderState = "loading";
+      delete jobsList.dataset.contentSignature;
+    }
+    // Rendered here rather than in the HTML shell: the page must not open with
+    // a passive loading placeholder, and this row is replaced by the full feed.
+    jobsList.innerHTML = '<div class="jobs-loading" role="status" aria-live="polite">'
+      + '<span class="jobs-loading-spinner" aria-hidden="true"></span>'
+      + '<span>Loading jobs…</span></div>';
+  }
+
   function setJobsStartupState(state, detail = "") {
     if (!deps.documentObject?.body) return;
     const normalized = normalizeToken(state) || "loading";
     deps.documentObject.body.setAttribute("data-jobs-startup-state", normalized);
+    if (normalized === "loading") {
+      renderJobsLoadingState();
+    }
     if (detail) {
       deps.documentObject.body.setAttribute("data-jobs-startup-detail", String(detail));
     } else {

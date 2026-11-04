@@ -18,6 +18,8 @@ bug here cannot land a silent retirement.
 Usage:
   python tools/coverage_retire.py --report <fetch-report.json[.gz]> \\
       --registry data/defaults/source-registry-active.seed.json --out _out/coverage/retire-plan.json
+  python tools/coverage_retire.py ... --candidates _out/umbrel-cleanup/candidates.json \\
+      --out _out/umbrel-cleanup/retire-plan.json
   python tools/coverage_retire.py ... --apply --expect-rows N
 """
 
@@ -66,6 +68,10 @@ except Exception:  # noqa: BLE001
 
 _UA = "baluffo-coverage-retire"
 _REDIRECT_RE = re.compile(r"Unsafe static redirect from (\S+) to ([^;\s]+)", re.IGNORECASE)
+_SOURCE_URL_KEYS = ("sourceUrl", "source_url", "url", "sourceURL")
+# A worksheet also carries boards that kept jobs and boards that failed only on the
+# other machine. Neither is a retirement candidate for this run.
+_CANDIDATE_BUCKETS = frozenset({"shared_zero", "umbrel_only_zero"})
 
 # A board root that serves today, so a probe failure on a candidate is evidence about the
 # candidate rather than about the probe. Verified 200 through this exact path.
@@ -104,6 +110,52 @@ def classified_terminal_sources(pairs: Sequence[tuple[str, str]]) -> dict[str, s
     return terminal
 
 
+def extract_candidate_sources(payload: Any) -> list[dict[str, str]]:
+    """Read zero-output candidates from a worksheet or a plain list.
+
+    The worksheet is deliberately allowed to be either the full ``candidates.json``
+    shape (``buckets`` of row dicts) or a simple list of URLs. Provider-family rows
+    have no ``sourceUrl`` and are skipped: a family row is not a board identity and
+    cannot be retired by host.
+    """
+    rows: list[Any] = []
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, Mapping):
+        buckets = payload.get("buckets")
+        if isinstance(buckets, Mapping):
+            for key, value in buckets.items():
+                if key in _CANDIDATE_BUCKETS and isinstance(value, list):
+                    rows.extend(value)
+        for key in ("candidates", "sources"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                rows.extend(value)
+
+    candidates: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if isinstance(row, str):
+            source_url = row.strip()
+            name = ""
+            reason = ""
+        elif isinstance(row, Mapping):
+            source_url = ""
+            for key in _SOURCE_URL_KEYS:
+                source_url = str(row.get(key) or "").strip()
+                if source_url:
+                    break
+            name = str(row.get("name") or "")
+            reason = str(row.get("failureBucket") or row.get("zeroKeptClassification") or "")
+        else:
+            continue
+        if not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        candidates.append({"source_url": source_url, "name": name, "reason": reason})
+    return candidates
+
+
 def probe_root(url: str, *, timeout: float) -> dict[str, Any]:
     request = Request(url, headers={"User-Agent": _UA})
     try:
@@ -124,12 +176,16 @@ def _root_of(url: str) -> str:
     return f"https://{parsed.hostname or ''}/"
 
 
-def root_is_terminal(source_url: str, *, timeout: float) -> tuple[bool, dict[str, Any]]:
+def root_is_terminal(
+    source_url: str, *, timeout: float, allow_unreachable: bool = True
+) -> tuple[bool, dict[str, Any]]:
     """Whether the source's board root is gone, judged now rather than from the snapshot.
 
-    Terminal means: the root cannot be fetched on either scheme, answers 404/410, or
-    redirects to a different site that classifies ``site_gone_or_moved``. A challenge or
-    server error (403/429/5xx) is *not* terminal -- unproven is not gone.
+    Terminal means: the root answers 404/410, or redirects to a different site that
+    classifies ``site_gone_or_moved``. A challenge or server error (403/429/5xx) is
+    *not* terminal -- unproven is not gone. An unreachable host is terminal only in
+    the legacy redirect path (``allow_unreachable=True``); candidate cleanup requires
+    a terminal HTTP answer because a DNS/timeout failure is not evidence of closure.
     """
     source_root = _root_of(source_url)
     probes: list[dict[str, Any]] = []
@@ -153,7 +209,8 @@ def root_is_terminal(source_url: str, *, timeout: float) -> tuple[bool, dict[str
             # An HTTP answer that is neither a page nor gone (403/429/5xx): unproven.
             return False, {**probe, "checked": candidate}
         # status 0: a transport failure on this scheme; the other scheme may still answer.
-    return True, {"terminal_by": "unreachable", "checked": source_root, "probes": probes}
+    result = {"terminal_by": "unreachable", "checked": source_root, "probes": probes}
+    return (True if allow_unreachable else False), result
 
 
 def match_registry_rows(
@@ -193,25 +250,46 @@ def _control_probe(*, timeout: float) -> dict[str, Any]:
 
 
 def build_plan(
-    report_path: Path, registry_path: Path, *, timeout: float, limit: int | None = None
+    report_path: Path,
+    registry_path: Path,
+    *,
+    timeout: float,
+    limit: int | None = None,
+    candidates_path: Path | None = None,
 ) -> dict[str, Any]:
     report = _load_json(report_path)
     registry = _load_json(registry_path)
     rows = registry if isinstance(registry, list) else list(registry.get("rows") or [])
     pairs = extract_redirect_pairs(report)
-    terminal_sources = classified_terminal_sources(pairs)
+    candidate_mode = candidates_path is not None
+    candidate_rows = (
+        extract_candidate_sources(_load_json(candidates_path)) if candidate_mode else []
+    )
+    if candidate_mode:
+        # Candidate mode: the worksheet already selected zero-output rows. The probe,
+        # not the row's report status, decides whether the board is actually gone.
+        terminal_sources = {row["source_url"]: row for row in candidate_rows}
+        allow_unreachable = False
+    else:
+        terminal_sources = {
+            source_url: {"source_url": source_url, "target_url": target_url}
+            for source_url, target_url in classified_terminal_sources(pairs).items()
+        }
+        allow_unreachable = True
     control = _control_probe(timeout=timeout)
 
     retired: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    for source_url, target_url in sorted(terminal_sources.items()):
+    for source_url, source_meta in sorted(terminal_sources.items()):
         if limit is not None and len(retired) >= limit:
             break
         matched = match_registry_rows(rows, source_url)
         if not matched:
             skipped.append({"source_url": source_url, "why": "no registry row on that host"})
             continue
-        terminal, probe = root_is_terminal(source_url, timeout=timeout)
+        terminal, probe = root_is_terminal(
+            source_url, timeout=timeout, allow_unreachable=allow_unreachable
+        )
         if not terminal:
             skipped.append(
                 {"source_url": source_url, "why": "board root still answers", "probe": probe}
@@ -222,7 +300,7 @@ def build_plan(
                 {
                     "row": dict(row),
                     "source_url": source_url,
-                    "target_url": target_url,
+                    "target_url": str(source_meta.get("target_url") or ""),
                     "classification": SITE_GONE,
                     "probe": {"terminal": terminal, **probe},
                     "control": control,
@@ -231,6 +309,7 @@ def build_plan(
     return {
         "report": str(report_path),
         "registry": str(registry_path),
+        "candidates": len(candidate_rows),
         "pairs": len(pairs),
         "terminal_sources": len(terminal_sources),
         "control": control,
@@ -244,7 +323,8 @@ def render(plan: Mapping[str, Any]) -> str:
         f"report: {plan['report']}",
         f"registry: {plan['registry']}",
         f"  redirect pairs in report : {plan['pairs']}",
-        f"  site_gone_or_moved       : {plan['terminal_sources']}",
+        f"  candidate sources        : {plan.get('candidates', 0)}",
+        f"  terminal sources         : {plan['terminal_sources']}",
         f"  control ({plan['control']['root']}) : {'ok' if plan['control']['ok'] else 'FAILED'}",
         f"  rows to retire           : {len(plan['retired'])}",
         f"  skipped                  : {len(plan['skipped'])}",
@@ -282,6 +362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--registry", required=True, type=Path)
+    parser.add_argument("--candidates", type=Path, help="worksheet or URL list for 404/410 cleanup")
     parser.add_argument("--out", type=Path, help="where to write the plan (dry run)")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expect-rows", type=int)
@@ -290,7 +371,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
 
-    plan = build_plan(args.report, args.registry, timeout=args.timeout, limit=args.limit)
+    plan = build_plan(
+        args.report,
+        args.registry,
+        timeout=args.timeout,
+        limit=args.limit,
+        candidates_path=args.candidates,
+    )
     print(render(plan))
 
     prepared = prepare_retirements(plan)

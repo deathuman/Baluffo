@@ -21,6 +21,10 @@ from src.bridge.discovery_audit_artifacts import (
 from src.bridge.discovery_audit_artifacts import (
     load_probe_lifecycle_receipt as load_probe_lifecycle_receipt,
 )
+from src.bridge.fetch_report_summary import (
+    compact_source_health_summary,
+    load_fetch_report_summary_artifact,
+)
 from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active, _task_type
 from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
@@ -384,6 +388,13 @@ class OpsApiHealthMixin(OpsApiState):
                 )
             if source_count > 0:
                 kpis["failedSourceRatioLatest"] = round(failed_sources / source_count, 4)
+            # Read the bounded sidecar, never the full report: this runs on the
+            # cached fetch-kpis poll. Omit the key when the sidecar is absent so a
+            # bootstrap/first-run payload keeps its previous shape.
+            source_artifact = load_fetch_report_summary_artifact(self._paths.jobs_fetch_report)
+            source_outcome = compact_source_health_summary(source_artifact.get("sourceHealth"))
+            if source_outcome:
+                kpis["sourceOutcomeSummary"] = source_outcome
             if "pendingCount" in registry_summary:
                 pending_sources_count = int(registry_summary.get("pendingCount") or 0)
                 kpis["pendingSourcesCount"] = pending_sources_count

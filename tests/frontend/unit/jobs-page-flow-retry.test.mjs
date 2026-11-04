@@ -64,6 +64,24 @@ function createDeps(overrides = {}) {
   return { deps, bodyAttrs };
 }
 
+test("Jobs startup loading state works with a read-only dataset property", () => {
+  const dataset = { renderState: "rows", contentSignature: "previous" };
+  const jobsList = { innerHTML: "" };
+  Object.defineProperty(jobsList, "dataset", {
+    get: () => dataset,
+    configurable: true
+  });
+  const { deps } = createDeps({
+    dom: { jobsList, pagination: {}, resultsSummary: { textContent: "" } }
+  });
+  const flow = createJobsPageFlow(deps);
+
+  assert.doesNotThrow(() => flow.setJobsStartupState("loading"));
+  assert.equal(dataset.renderState, "loading");
+  assert.equal(dataset.contentSignature, undefined);
+  assert.match(jobsList.innerHTML, /Loading jobs/);
+});
+
 test("Jobs page-flow forwards retry click events to custom retry handlers", async () => {
   let retryHandler = null;
   let receivedEvent = null;

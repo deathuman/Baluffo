@@ -178,12 +178,17 @@ def push_manifest(
         opener=opener,
     )
     if status >= 400:
-        message_text = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
-        if int(status or 0) == 409 and hasattr(module, "SyncOperationError"):
+        status_code = int(status or 0)
+        detail = str(body.get("message") or "").strip()
+        if status_code == 409 and hasattr(module, "SyncOperationError"):
+            conflict_message = detail or f"GitHub PUT failed with HTTP {status_code}"
             conflict_code = getattr(module, "RUNTIME_STATE_REMOTE_CONFLICT", "remote_conflict")
             if hasattr(module, "_set_runtime_state"):
-                module._set_runtime_state(conflict_code, message_text)
-            raise module.SyncOperationError(conflict_code, message_text)
+                module._set_runtime_state(conflict_code, conflict_message)
+            raise module.SyncOperationError(conflict_code, conflict_message)
+        message_text = f"GitHub PUT failed with HTTP {status_code}"
+        if detail:
+            message_text = f"{message_text}: {detail}"
         raise RuntimeError(message_text)
     content = body.get("content") if isinstance(body.get("content"), dict) else {}
     if hasattr(module, "_clear_runtime_state") and hasattr(module, "RUNTIME_STATE_REMOTE_CONFLICT"):
@@ -219,8 +224,16 @@ def push_shard(
         opener=opener,
     )
     if status >= 400:
-        message_text = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
-        if int(status or 0) in {409, 422}:
+        status_code = int(status or 0)
+        detail = str(body.get("message") or "").strip()
+        message_text = (
+            detail or f"GitHub PUT failed with HTTP {status_code}"
+            if status_code == 409
+            else f"GitHub PUT failed with HTTP {status_code}"
+        )
+        if status_code != 409 and detail:
+            message_text = f"{message_text}: {detail}"
+        if status_code in {409, 422}:
             try:
                 read_shard(module, config, shard.manifest_entry(), opener=opener)
             except _EXPECTED_REMOTE_SYNC_EXCEPTIONS as exc:
