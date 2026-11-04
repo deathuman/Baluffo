@@ -28,8 +28,10 @@ from .static_runtime_support import (
     build_static_entry_report,
     build_static_source_deadline,
     classify_static_fetch_exception,
+    is_fetchable_http_url,
     pagination_budget_extension_s,
     remaining_static_source_budget_s,
+    safe_url_for_error,
 )
 
 
@@ -293,19 +295,41 @@ class StaticSourceContext:
 
     def record_static_fetch_failure(self, *, target_url: str, exc: Exception | str) -> None:
         msg = str(exc)
+        if target_url and not is_fetchable_http_url(target_url):
+            self.stats["non_fetchable_url_errors_skipped"] = (
+                int(self.stats.get("non_fetchable_url_errors_skipped") or 0) + 1
+            )
+            self.warnings.append(
+                f"static:{self.source_name}:{safe_url_for_error(target_url)}: "
+                "skipped non-fetchable URL"
+            )
+            return
+        target = safe_url_for_error(target_url)
         classification, browser_recommended = classify_static_fetch_exception(
             exc,
             anti_bot_retry=bool(self.source.get("antiBotBrowserRetry")),
             target_url=target_url,
         )
+        if "Unsafe static redirect" in msg:
+            self.entry_report["status"] = "error"
+            self.entry_report["error"] = msg
+            self.errors.append(f"static:{self.source_name}:{target}: {msg}")
+            return
+        if classification == "ssl_certificate_error":
+            self.entry_report["status"] = "error"
+            self.entry_report["classification"] = classification
+            self.entry_report["browserFallbackRecommended"] = False
+            self.entry_report["error"] = msg
+            self.errors.append(f"static:{self.source_name}:{target}: {msg}")
+            return
         if classification in {"anti_bot_or_challenge", "blocked_or_challenge", "timeout"}:
             self.entry_report["status"] = "error"
             self.entry_report["classification"] = classification
             self.entry_report["browserFallbackRecommended"] = browser_recommended
             self.entry_report["error"] = msg
-            self.warnings.append(f"static:{self.source_name}:{target_url}: {msg}")
+            self.warnings.append(f"static:{self.source_name}:{target}: {msg}")
             return
-        self.errors.append(f"static:{self.source_name}:{target_url}: {exc}")
+        self.errors.append(f"static:{self.source_name}:{target}: {exc}")
 
     def record_failed_attempt(self, seconds: float) -> None:
         self.failure_elapsed_s += max(0.0, float(seconds))
@@ -373,7 +397,13 @@ def build_static_source_context(
 ) -> StaticSourceContext:
     source_name = clean_text(source.get("name")) or "static_source"
     company = clean_text(source.get("company")) or source_name
-    pages = _as_pages(source.get("pages"))
+    raw_pages = _as_pages(source.get("pages"))
+    pages = [page for page in raw_pages if is_fetchable_http_url(page)]
+    skipped_page_count = len(raw_pages) - len(pages)
+    if skipped_page_count:
+        warnings.append(
+            f"static:{source_name}: skipped {skipped_page_count} non-fetchable page URL(s)"
+        )
     entry_report = build_static_entry_report(
         source=source,
         source_name=source_name,

@@ -4788,13 +4788,13 @@
     "deferCount": 0,
     "firstDeferredAt": "",
     "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T12:55:27.565044+00:00",
-    "stateChangedBy": "discovery_auto_approve",
+    "registryState": "rejected",
+    "pendingReason": "reclassified_to_workable_provider",
+    "stateChangedAt": "2026-11-04T00:00:00Z",
+    "stateChangedBy": "adapter_reclassification_20261104",
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
+    "lastDemotedAt": "2026-11-04T00:00:00Z",
+    "enabledByDefault": false,
     "promotionReason": "manual_review_only"
   },
   {
@@ -36416,9 +36416,7 @@
     "company": "Atvis",
     "adapter": "static",
     "pages": [
-      "https://atvis.com/index.php/jobba-hos-oss/",
-      "https://atvis.com/index.php/jobba-hos-oss/",
-      "https://www.linkedin.com/jobs/view/4292601640/"
+      "https://atvis.com/index.php/jobba-hos-oss/"
     ],
     "listing_url": "https://atvis.com/index.php/jobba-hos-oss/",
     "nlPriority": false,
@@ -36441,8 +36439,7 @@
     "detailPagesSample": [
       "https://atvis.com/index.php/jobba-hos-oss/",
       "https://atvis.com/index.php/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fatvis.com%2Findex.php%2Fjobba-hos-oss%2F",
-      "https://atvis.com/index.php/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fatvis.com%2Findex.php%2Fjobba-hos-oss%2F&",
-      "https://www.linkedin.com/jobs/view/4292601640/"
+      "https://atvis.com/index.php/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fatvis.com%2Findex.php%2Fjobba-hos-oss%2F&"
     ],
     "gamedevmapRecovery": true,
     "gamedevmapRecoverySource": "same_party_recovery_url",
@@ -100749,7 +100746,7 @@
     ],
     "listing_url": "https://www.garena.sg",
     "nlPriority": false,
-    "enabledByDefault": true,
+    "enabledByDefault": false,
     "discoveryMethod": "gamedevmap",
     "discoveryStage": "generic_static",
     "careersUrl": "https://www.garena.sg",
@@ -100818,12 +100815,12 @@
     "deferReason": "adapter_cap",
     "dropStage": "deferred_by_cap",
     "dropReason": "adapter_cap",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-26T20:23:21.870094+00:00",
-    "stateChangedBy": "discovery_auto_approve",
+    "registryState": "rejected",
+    "pendingReason": "duplicate_host_redirect_policy",
+    "stateChangedAt": "2026-11-04T00:00:00Z",
+    "stateChangedBy": "duplicate_redirect_repair_20261104",
     "lastPromotedAt": "2026-04-26T20:23:21.870094+00:00",
-    "lastDemotedAt": "",
+    "lastDemotedAt": "2026-11-04T00:00:00Z",
     "promotionReason": "cap_deferred_jobs_found"
   },
   {
@@ -136366,5 +136363,51 @@
     "quarantinedAt": "",
     "quarantineReason": "",
     "hiddenFromDefault": false
+  },
+  {
+    "name": "Square Enix America (Workable)",
+    "studio": "Square Enix America",
+    "company": "Square Enix America",
+    "adapter": "workable",
+    "account": "square-enix-america",
+    "api_url": "https://apply.workable.com/api/v1/widget/accounts/square-enix-america?details=true",
+    "careersUrl": "https://apply.workable.com/square-enix-america/",
+    "nlPriority": false,
+    "enabledByDefault": true,
+    "id": "workable:account:square-enix-america",
+    "candidateState": "live",
+    "approvedAt": "2026-11-04T00:00:00Z",
+    "approvedBy": "adapter_reclassification_20261104",
+    "liveAt": "2026-11-04T00:00:00Z",
+    "quarantinedAt": "",
+    "quarantineReason": "",
+    "promotionLane": "manual_review",
+    "rankScore": 0,
+    "rankReasons": [],
+    "deferCount": 0,
+    "firstDeferredAt": "",
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-11-04T00:00:00Z",
+    "stateChangedBy": "adapter_reclassification_20261104",
+    "lastPromotedAt": "2026-11-04T00:00:00Z",
+    "lastDemotedAt": "",
+    "promotionReason": "provider_widget_probe",
+    "discoveredAt": "2026-11-04T00:00:00Z",
+    "lastProbedAt": "2026-11-04T00:00:00Z",
+    "jobsFound": 1,
+    "sampleCount": 1,
+    "confidence": "high",
+    "reasons": [
+      "live_jobs_detected",
+      "provider_widget_probe"
+    ],
+    "sourceDirectory": "manual_provider_probe",
+    "sourceDirectoryEntryUrl": "https://apply.workable.com/square-enix-america/",
+    "evidenceSource": "manual_provider_probe",
+    "evidenceTypes": [
+      "provider_widget_probe"
+    ]
   }
 ]

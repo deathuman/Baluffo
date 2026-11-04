@@ -29,6 +29,28 @@ def test_a_linkedin_999_is_a_block_rather_than_an_empty_board() -> None:
     )
 
 
+def test_ssl_hostname_mismatch_is_classified_separately_from_timeout() -> None:
+    url = "https://careers.liquidswords.com/jobs/1851070-open-application"
+    exc = RuntimeError(
+        f"Network error for {url}: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify "
+        "failed: Hostname mismatch, certificate is not valid for 'careers.liquidswords.com'"
+    )
+
+    assert classify_static_fetch_exception(exc, target_url=url) == (
+        "ssl_certificate_error",
+        False,
+    ), "a certificate mismatch cannot be repaired by retrying or a browser"
+
+
+def test_plain_network_errors_still_classify_as_timeout() -> None:
+    exc = RuntimeError("Network error for https://example.com/jobs: connection reset by peer")
+
+    assert classify_static_fetch_exception(exc, target_url="https://example.com/jobs") == (
+        "timeout",
+        True,
+    )
+
+
 def test_static_fetch_fallback_predicate_keeps_unexpected_runtime_errors_visible() -> None:
     assert is_static_fetch_fallback_exception(RuntimeError("HTTP 429 Too Many Requests"))
     assert is_static_fetch_fallback_exception(RuntimeError("Network error for https://example.com"))
@@ -145,6 +167,23 @@ def test_littlechicken_plugin_detail_fetch_fallback_is_expected_fetch_failures_o
             },
             parse_jobpostings_from_html=jf.parse_jobpostings_from_html,
         )
+
+
+def test_redirect_refusal_precedes_warnings_in_partial_errors() -> None:
+    from src.jobs.adapters.static_sources import _static_partial_errors
+
+    redirect = (
+        "static:Coldwood:https://coldwood.com: Unsafe static redirect from "
+        "https://coldwood.com to https://www.stillfront.com/en [site_gone_or_moved]"
+    )
+    partial_errors = _static_partial_errors(
+        ["static:Coldwood:https://coldwood.com: time_budget_exceeded"] * 2,
+        [redirect, "static:Coldwood:https://coldwood.com: HTTP 500"],
+    )
+
+    assert partial_errors[0] == redirect
+    assert partial_errors.count("static:Coldwood:https://coldwood.com: time_budget_exceeded") == 1
+    assert partial_errors[-1] == "static:Coldwood:https://coldwood.com: HTTP 500"
 
 
 def test_kojima_dynamic_listing_fallback_is_expected_fetch_failures_only() -> None:

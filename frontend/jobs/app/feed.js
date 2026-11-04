@@ -230,7 +230,11 @@ try {
     });
     setHasInitializedJobsFeed(true);
     scheduleNonCriticalStartupWork();
-    await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
+    // A successful full feed is already the refresh a stored admin signal asks
+    // for. Only the failed-feed/snapshot fallback needs the deferred retry.
+    await applyPendingAutoRefreshSignal(
+      isContainerRuntimeMode() ? { acknowledgeOnly: true, feedLoaded: ok } : {}
+    );
     if (!ok) {
       const previewLoaded = await loadStartupPreviewJobs();
       if (previewLoaded) {
@@ -239,7 +243,6 @@ try {
         );
         setHasInitializedJobsFeed(true);
         scheduleNonCriticalStartupWork();
-        await applyPendingAutoRefreshSignal(isContainerRuntimeMode() ? { acknowledgeOnly: true } : {});
         return;
       }
       if (isDesktopRuntimeMode() && isSuccessfulJobsFetchReport(localReport)) {

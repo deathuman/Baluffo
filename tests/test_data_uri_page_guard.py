@@ -13,7 +13,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.jobs.adapters.static_runtime_support import StaticHtmlFetcher
+from src.jobs.adapters.static_runtime import StaticRunDeps, build_static_source_context
+from src.jobs.adapters.static_runtime_support import (
+    StaticHtmlFetcher,
+    build_static_source_runtime_config,
+)
 from src.source_discovery import probe
 
 
@@ -69,6 +73,74 @@ def test_build_request_still_accepts_http_urls(tmp_path: Path) -> None:
     request = fetcher.build_request("https://studio.example/jobs/")
     assert request is not None
     assert request.fetch_url == "https://studio.example/jobs"
+
+
+def _source_context(pages: list[str]):
+    run_deps = StaticRunDeps(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+    )
+    fetcher = StaticHtmlFetcher(
+        fetch_text=run_deps.fetch_text,
+        timeout_s=run_deps.timeout_s,
+        retries=run_deps.retries,
+        backoff_s=run_deps.backoff_s,
+    )
+    warnings: list[str] = []
+    errors: list[str] = []
+    ctx = build_static_source_context(
+        run_deps=run_deps,
+        runtime_config=build_static_source_runtime_config(1),
+        html_fetcher=fetcher,
+        source={"name": "CarX", "company": "CarX", "pages": pages},
+        selected_source_count=1,
+        jobs=[],
+        warnings=warnings,
+        errors=errors,
+        details=[],
+    )
+    return ctx, warnings, errors
+
+
+def test_source_context_drops_non_fetchable_pages() -> None:
+    ctx, warnings, errors = _source_context(
+        ["https://carx-online.com", "data:image/png;base64,AAAA"]
+    )
+
+    assert ctx.pages == ["https://carx-online.com"]
+    assert any("skipped 1 non-fetchable page URL" in warning for warning in warnings)
+    assert errors == []
+
+
+def test_non_fetchable_fetch_failure_is_skipped_without_payload() -> None:
+    ctx, _warnings, errors = _source_context(["https://carx-online.com"])
+    payload = "data:image/png;base64," + "A" * 10_000
+    ctx.record_static_fetch_failure(
+        target_url=payload,
+        exc=RuntimeError(f"Network error for {payload}: URL too long"),
+    )
+
+    assert errors == []
+    assert ctx.stats["non_fetchable_url_errors_skipped"] == 1
+    assert all(payload not in warning for warning in ctx.warnings)
+    assert any("<inline data URL (" in warning for warning in ctx.warnings)
+
+
+def test_ssl_failure_is_reportable_as_ssl_not_timeout() -> None:
+    ctx, _warnings, _errors = _source_context(["https://careers.liquidswords.com/career"])
+    url = "https://careers.liquidswords.com/jobs/1851070-open-application"
+    ctx.record_static_fetch_failure(
+        target_url=url,
+        exc=RuntimeError(
+            f"Network error for {url}: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify "
+            "failed: Hostname mismatch"
+        ),
+    )
+
+    assert ctx.entry_report["classification"] == "ssl_certificate_error"
+    assert any("Hostname mismatch" in error for error in ctx.errors)
 
 
 def test_list_rows_with_inline_asset_urls_flags_contaminated_rows() -> None:

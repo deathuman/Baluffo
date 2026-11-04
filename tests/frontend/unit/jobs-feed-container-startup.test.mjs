@@ -90,7 +90,22 @@ test("container boot applies pending admin signals as acknowledge-only", async (
   await initJobsFeed(deps);
 
   assert.equal(refreshCalls, 1);
-  assert.deepEqual(appliedOptions, [{ acknowledgeOnly: true }]);
+  assert.deepEqual(appliedOptions, [{ acknowledgeOnly: true, feedLoaded: true }]);
+});
+
+test("container boot defers the admin refresh when the full feed did not load", async () => {
+  const appliedOptions = [];
+  const { deps } = createBaseDeps({
+    isContainerRuntimeMode: () => true,
+    readCachedJobs: async () => null,
+    loadStartupPreviewJobs: async () => true,
+    refreshJobsNow: async () => false,
+    applyPendingAutoRefreshSignal: options => appliedOptions.push(options)
+  });
+
+  await initJobsFeed(deps);
+
+  assert.deepEqual(appliedOptions, [{ acknowledgeOnly: true, feedLoaded: false }]);
 });
 
 test("browser startup keeps applying pending signals through the normal refresh path", async () => {

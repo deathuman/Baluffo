@@ -44,6 +44,10 @@ from src.jobs.adapters.static_listing_state import (
     _is_provisional_static_artifact_row,
     _needs_detail_location_resolution,
 )
+from src.jobs.adapters.static_runtime_support import (
+    is_fetchable_http_url,
+    safe_url_for_error,
+)
 from src.jobs.common.config import (
     GUEST_JUNK_GUARD_ENABLED,
     PROVISIONAL_CARD_FALLBACK_ENABLED,
@@ -251,6 +255,15 @@ def _fetch_rendered_detail_rows(
 ) -> list[Any]:
     from src.jobs.adapters import static_listing as _sl
 
+    if not is_fetchable_http_url(link):
+        ctx.stats["non_fetchable_detail_url_errors_skipped"] = (
+            int(ctx.stats.get("non_fetchable_detail_url_errors_skipped") or 0) + 1
+        )
+        ctx.warnings.append(
+            f"static:{ctx.source_name}:{safe_url_for_error(link)}: skipped non-fetchable URL"
+        )
+        return []
+
     # Bandai 2026-09-14 shell-skip: rendered-card verification fetches each
     # card's detail page; on JS-shell-CDN hosts (hrmos tenants) every fetch
     # returns a shell the parser can only reject, so 38 verifications burned
@@ -299,7 +312,7 @@ def _fetch_rendered_detail_rows(
         # abort-on-first-failure semantics are unchanged.
         ctx.stats["detail_pages_visited"] += 1
         ctx.stats["detail_fetch_failed"] += 1
-        ctx.errors.append(f"static:{ctx.source_name}:{link}: {exc}")
+        ctx.errors.append(f"static:{ctx.source_name}:{safe_url_for_error(link)}: {exc}")
         raise
     ctx.stats["detail_pages_visited"] += 1
     ctx.emit_source_progress(

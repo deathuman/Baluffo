@@ -36,6 +36,18 @@ _STATIC_SHARD_SOURCE_NAMES = {
 }
 
 
+def _dedupe_messages(messages: list[str]) -> list[str]:
+    return list(dict.fromkeys(messages))
+
+
+def _static_partial_errors(warnings: list[str], errors: list[str]) -> list[str]:
+    """Put the cause before the symptoms in the report's bounded error slice."""
+
+    redirect_errors = [error for error in errors if "Unsafe static redirect" in error]
+    other_errors = [error for error in errors if "Unsafe static redirect" not in error]
+    return _dedupe_messages([*redirect_errors, *warnings, *other_errors])
+
+
 def static_source_shard(row: dict[str, Any]) -> str:
     label = clean_text(row.get("studio")) or clean_text(row.get("name"))
     first_alpha = ""
@@ -139,7 +151,7 @@ def run_static_studio_pages_source(
         adapter="static",
         studio=diag_studio,
         details=details,
-        partial_errors=(warnings + errors),
+        partial_errors=_static_partial_errors(warnings, errors),
     )
     if jobs:
         return jobs

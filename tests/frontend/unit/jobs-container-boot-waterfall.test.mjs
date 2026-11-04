@@ -105,13 +105,13 @@ function signalRaw(id = "sig-container-1") {
   return JSON.stringify({ id, source: "admin_fetcher", finishedAt: "2026-08-26T08:00:00.000Z" });
 }
 
-test("container boot schedules an automatic refresh for a stored admin signal without fetching mid-boot", async () => {
+test("container boot schedules an automatic refresh for a stored admin signal when the full feed was not loaded", async () => {
   const { deps, recorded } = createDeps({
     readAutoRefreshSignal: () => signalRaw()
   });
   const flow = createJobsPageFlow(deps);
 
-  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
+  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true, feedLoaded: false });
 
   // ponytail: the ack itself stays cheap — the refresh is deferred, never run
   // synchronously mid-boot.
@@ -125,10 +125,25 @@ test("container boot schedules an automatic refresh for a stored admin signal wi
   assert.deepEqual(recorded.triggered, ["refresh"]);
   assert.match(recorded.statusTexts.at(-1), /Loading new jobs/i);
 
-  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
+  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true, feedLoaded: false });
 
   assert.deepEqual(recorded.triggered, ["refresh"]);
   assert.deepEqual(recorded.appliedIds, ["sig-container-1"]);
+});
+
+test("container boot acknowledges a stored admin signal without a second refresh when the full feed loaded", async () => {
+  const { deps, recorded } = createDeps({
+    readAutoRefreshSignal: () => signalRaw("sig-container-loaded")
+  });
+  const flow = createJobsPageFlow(deps);
+
+  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true, feedLoaded: true });
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(recorded.triggered, []);
+  assert.deepEqual(recorded.appliedIds, ["sig-container-loaded"]);
+  assert.deepEqual(recorded.statusTexts, []);
+  assert.equal(deps.runtimeState.pendingAutoRefreshSignal, null);
 });
 
 test("container boot acknowledges an in-memory pending signal without another storage fetch", async () => {
@@ -148,7 +163,7 @@ test("container boot acknowledges an in-memory pending signal without another st
   });
   const flow = createJobsPageFlow(deps);
 
-  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true });
+  await flow.applyPendingAutoRefreshSignal({ acknowledgeOnly: true, feedLoaded: false });
 
   assert.equal(storageReads, 0);
   await new Promise(resolve => setTimeout(resolve, 0));

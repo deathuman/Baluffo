@@ -31,9 +31,9 @@ export function createJobsPageFlow(deps) {
 
   // ponytail: container boot used to acknowledge an unapplied admin fetcher
   // signal as "reload needed" and rely on the (now removed) Reload button.
-  // Boot still keeps its cheap ack-only path — no feed download mid-boot —
-  // but the refresh is now scheduled automatically right after boot instead
-  // of asking the user; the Last-updated line is the only signal.
+  // The full feed boot is already that refresh, so a successful load only
+  // acknowledges the signal; a failed-feed/snapshot fallback schedules one
+  // deferred retry after the page is usable.
   const AUTO_REFRESH_ACK_STATUS_TEXT = "Loading new jobs from the latest fetcher run...";
   const AUTO_REFRESH_ACK_FAILURE_STATUS_TEXT = "Could not load new jobs from the latest fetcher run. Use Update jobs to retry.";
   const AUTO_REFRESH_ACK_DELAY_MS = 1500;
@@ -45,11 +45,12 @@ export function createJobsPageFlow(deps) {
       || parseAutoRefreshSignalFromStartup(deps.readAutoRefreshSignal(deps.jobsAutoRefreshSignalKey));
   }
 
-  function acknowledgeUnappliedAutoRefreshSignal() {
+  function acknowledgeUnappliedAutoRefreshSignal({ feedLoaded = false } = {}) {
     const signal = resolveUnappliedAutoRefreshSignal();
     if (!signal?.id || signal.id === deps.runtimeState.lastHandledAutoRefreshSignalId) return;
-    deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_STATUS_TEXT);
     markAutoRefreshSignalHandled(signal.id);
+    if (feedLoaded) return;
+    deps.feedController.setSourceStatus(AUTO_REFRESH_ACK_STATUS_TEXT);
     const delayMs = Math.max(0, Number(deps.autoRefreshAckDelayMs ?? AUTO_REFRESH_ACK_DELAY_MS));
     setTimeout(() => {
       Promise.resolve()
@@ -76,7 +77,7 @@ export function createJobsPageFlow(deps) {
 
   async function applyPendingAutoRefreshSignal(options = {}) {
     if (options.acknowledgeOnly) {
-      acknowledgeUnappliedAutoRefreshSignal();
+      acknowledgeUnappliedAutoRefreshSignal({ feedLoaded: Boolean(options.feedLoaded) });
       return;
     }
     return applyPendingJobsAutoRefreshSignal({

@@ -44,6 +44,45 @@ from .static_cookie_retry import (
 # loop guard bounded.
 _MAX_STATIC_REDIRECT_HOPS = 4
 
+_INLINE_ASSET_SCHEMES = frozenset({"data", "blob"})
+
+
+def is_fetchable_http_url(url: str) -> bool:
+    """True only for absolute http(s) URLs with a host.
+
+    Inline assets and other schemes are page content, never fetchable pages.
+    """
+
+    text = clean_text(url)
+    if not text:
+        return False
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return False
+    return (parsed.scheme or "").lower() in {"http", "https"} and bool(parsed.hostname)
+
+
+def safe_url_for_error(url: str) -> str:
+    """A bounded, human-readable URL for fetch diagnostics.
+
+    Inline assets carry their payload in the URL; replace them with a short marker.
+    """
+
+    text = clean_text(url)
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return "<unparseable URL>"
+    scheme = (parsed.scheme or "").lower()
+    if scheme in _INLINE_ASSET_SCHEMES:
+        return f"<inline {scheme} URL ({len(text)} chars)>"
+    if len(text) > 500:
+        return f"{text[:497]}..."
+    return text
+
 
 def safe_page_urljoin(base: str, url: str) -> str:
     """Join a page-controlled href against the page URL without raising.
@@ -91,6 +130,19 @@ def classify_static_fetch_exception(
             classification = "blocked_or_challenge"
         else:
             classification = "rate_limited"
+    elif any(
+        token in msg.lower()
+        for token in (
+            "certificate_verify_failed",
+            "certificate verify failed",
+            "hostname mismatch",
+            "[ssl:",
+        )
+    ):
+        # A TLS certificate failure is not a timeout. Retrying or escalating to
+        # a browser cannot repair a hostname mismatch, and reporting it as a
+        # timeout sends operators to the wrong fix (Liquid Swords, 2026-11-04).
+        classification = "ssl_certificate_error"
     elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
         classification = "timeout"
     return classification, classification in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
@@ -232,7 +284,7 @@ class StaticHtmlFetcher:
                 # fetch error every pass; refuse instead of fetching.
                 return None
             normalized = raw
-        if not normalized:
+        if not normalized or not is_fetchable_http_url(normalized):
             return None
         fetch_url = normalized
         effective_timeout_s = self._timeout_s

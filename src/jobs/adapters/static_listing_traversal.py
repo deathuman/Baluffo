@@ -28,7 +28,9 @@ from src.jobs.adapters.static_listing_state import (
     _nested_detail_limit_for,
 )
 from src.jobs.adapters.static_runtime_support import (
+    is_fetchable_http_url,
     remaining_static_source_budget_s,
+    safe_url_for_error,
     static_source_budget_exhausted,
 )
 from src.jobs.common.origin_junk import is_junk_provenance_row
@@ -186,9 +188,21 @@ def _record_detail_fetch_error(
     detail: str,
     msg: str,
 ) -> None:
+    if not is_fetchable_http_url(detail):
+        ctx.stats["non_fetchable_detail_url_errors_skipped"] = (
+            int(ctx.stats.get("non_fetchable_detail_url_errors_skipped") or 0) + 1
+        )
+        ctx.warnings.append(
+            f"static:{ctx.source_name}:{safe_url_for_error(detail)}: skipped non-fetchable URL"
+        )
+        return
+    if "Unsafe static redirect" in msg:
+        ctx.entry_report["status"] = "error"
+        ctx.entry_report["error"] = msg
     linked_in_throttle = "linkedin" in f"{plan.page_url} {msg}".lower()
     detail_host = (urlparse(detail).netloc or "").strip().lower()
     page_host = (urlparse(plan.page_url).netloc or "").strip().lower()
+    safe_detail = safe_url_for_error(detail)
     ctx.stats["detail_fetch_failed"] += 1
     if "Exceeded maximum allowed redirects" in msg:
         state.redirect_loop_count += 1
@@ -200,9 +214,9 @@ def _record_detail_fetch_error(
         ctx.entry_report["classification"] = "blocked_or_challenge"
         ctx.entry_report["browserFallbackRecommended"] = True
         ctx.entry_report["error"] = msg
-        ctx.warnings.append(f"static:{ctx.source_name}:{detail}: {msg}")
+        ctx.warnings.append(f"static:{ctx.source_name}:{safe_detail}: {msg}")
     else:
-        ctx.errors.append(f"static:{ctx.source_name}:{detail}: {msg}")
+        ctx.errors.append(f"static:{ctx.source_name}:{safe_detail}: {msg}")
     if state.redirect_loop_count >= 2 or state.off_domain_failure_count >= 2:
         _stop_detail_traversal_adaptively(ctx, plan, state)
 
@@ -249,6 +263,11 @@ def _nested_detail_candidates(
             continue
         child_url = normalize_url(item.get("url"))
         if not child_url or child_url in ctx.seen_links or child_url in state.scheduled_urls:
+            continue
+        if not is_fetchable_http_url(child_url):
+            ctx.stats["non_fetchable_detail_candidates_skipped"] = (
+                int(ctx.stats.get("non_fetchable_detail_candidates_skipped") or 0) + 1
+            )
             continue
         # Same origin-aware junk drop as the intake doors: guest-view shapes
         # found inside fetched pages (e.g. LinkedIn search pagination) are not
