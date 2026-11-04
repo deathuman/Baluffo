@@ -782,11 +782,11 @@ class StaticFetchRunner:
         html2, fallback_error = try_playwright(page_url, fallback_timeout_s)
         self._log_playwright_fallback(page_url, label, html2, fallback_timeout_s, fallback_error)
         self.entry_report["browserFallbackAttempted"] = True
+        if fallback_error:
+            self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
         if html2:
             self.entry_report["browserFallbackUsed"] = True
             self.stage_state.increment_browser_fallbacks()
-        if fallback_error:
-            self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
             # S6 (Big Moxi 2026-09-12): a render that provably mounted the app
             # (JS shell) without a challenge interstitial and surfaced near-
             # zero visible text is a rendered-empty confirmation. Two such
