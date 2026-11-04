@@ -10,6 +10,10 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused registry demotio
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
@@ -37,6 +41,45 @@ from src.source_registry_state import (
     transition_registry_to_pending,
     transition_registry_to_rejected,
 )
+
+_CONFLICT_DERIVATION_CACHE_MAX_ENTRIES = 2
+_CONFLICT_DERIVATION_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_CONFLICT_DERIVATION_CACHE_LOCK = threading.Lock()
+
+
+def _conflict_derivation_cache_key(registry_state: Any, source_state_payload: Any) -> str:
+    encoded = json.dumps(
+        {"registryState": registry_state, "sourceState": source_state_payload},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _cached_conflict_payload(
+    registry_state: Any,
+    source_state_payload: Any,
+    derive: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """Reuse one derived conflict queue for repeated reads of unchanged inputs.
+
+    Content hashing makes a stale hit impossible; the small LRU only bounds memory.
+    Callers in the safe-demotion path treat the payload as read-only.
+    """
+    cache_key = _conflict_derivation_cache_key(registry_state, source_state_payload)
+    with _CONFLICT_DERIVATION_CACHE_LOCK:
+        cached = _CONFLICT_DERIVATION_CACHE.get(cache_key)
+        if cached is not None:
+            _CONFLICT_DERIVATION_CACHE.move_to_end(cache_key)
+            return cached
+    payload = derive()
+    with _CONFLICT_DERIVATION_CACHE_LOCK:
+        _CONFLICT_DERIVATION_CACHE[cache_key] = payload
+        _CONFLICT_DERIVATION_CACHE.move_to_end(cache_key)
+        while len(_CONFLICT_DERIVATION_CACHE) > _CONFLICT_DERIVATION_CACHE_MAX_ENTRIES:
+            _CONFLICT_DERIVATION_CACHE.popitem(last=False)
+    return payload
 
 
 def _independent_provider_board_suppression(

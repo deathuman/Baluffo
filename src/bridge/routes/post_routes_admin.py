@@ -319,10 +319,10 @@ def _handle_review_post(
     """Every route whose only effect is to *record* a human review decision.
 
     Grouped so ``handle_post`` dispatches one review concern rather than growing
-    a branch per review artifact: the dedup pair review, the source-policy pair
-    review, and the registry repair review all read an artifact, append a
-    validated decision, and write it back atomically. None of them mutates the
-    registry or any other state, which is exactly why they belong together.
+    a branch per review artifact. The dedup pair review, source-policy pair
+    review, and registry repair review only read and write review artifacts.
+    The migration-link action is the exception: it reads and persists registry
+    state itself, so it keeps its own ``load_state`` call.
     """
     return _handle_source_policy_post(
         handler, api=api, path=path, data=data
@@ -332,7 +332,6 @@ def _handle_review_post(
 def handle_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
-    state = api.load_state()
     data = as_json_object(payload)
 
     if _handle_review_post(handler, api=api, path=path, data=data):
@@ -356,6 +355,7 @@ def handle_post(
         return True
 
     if path == "/registry/approve":
+        state = api.load_state()
         ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
         moved = [
@@ -380,6 +380,7 @@ def handle_post(
         return True
 
     if path == "/registry/reject":
+        state = api.load_state()
         ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
         state["pending"] = remaining
@@ -400,6 +401,7 @@ def handle_post(
         return True
 
     if path == "/registry/demote-active":
+        state = api.load_state()
         ids = as_json_list(data.get("ids"))
         selected = set(str(item) for item in ids)
         moved = []
@@ -450,6 +452,7 @@ def handle_post(
             )
             return True
 
+        state = api.load_state()
         requested_ids = {
             str(item).strip() for item in as_json_list(data.get("ids")) if str(item).strip()
         }
@@ -478,6 +481,7 @@ def handle_post(
         return True
 
     if path == "/registry/restore-rejected":
+        state = api.load_state()
         ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])
         state["rejected"] = remaining
@@ -497,6 +501,7 @@ def handle_post(
         return True
 
     if path == "/registry/delete":
+        state = api.load_state()
         ids = as_json_list(data.get("ids"))
         if not ids:
             ids = as_json_list(data.get("selected"))

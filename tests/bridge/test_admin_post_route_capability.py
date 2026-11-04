@@ -12,6 +12,7 @@ class MinimalAdminPostRouteApi:
         self.APPROVAL_STATE_PATH = root / "approval.json"
         self.DEDUP_REVIEW_STATE_PATH = root / "dedup-review-state.json"
         self.JOBS_FETCH_REPORT_PATH = root / "jobs-fetch-report.json"
+        self.REGISTRY_REPAIR_REVIEW_PATH = root / "registry-repair-review.json"
         self.SOURCE_POLICY_REVIEW_STATE_PATH = root / "source-policy-review-state.json"
         self.state = {
             "active": [{"id": "active-1", "url": "https://active.test/jobs"}],
@@ -22,6 +23,7 @@ class MinimalAdminPostRouteApi:
         self.alert_state: dict[str, Any] = {"acked": {}}
         self.sync_status_updates: list[dict[str, Any]] = []
         self.tombstones: dict[str, Any] = {}
+        self.load_state_calls = 0
 
     def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         return 202, {"ok": True, "abortPayload": payload}
@@ -54,6 +56,7 @@ class MinimalAdminPostRouteApi:
         return dict(self.saved_json.get(path, default if isinstance(default, dict) else {}))
 
     def load_state(self) -> dict[str, list[dict[str, Any]]]:
+        self.load_state_calls += 1
         return {key: [dict(row) for row in rows] for key, rows in self.state.items()}
 
     def load_tombstones(self) -> dict[str, Any]:
@@ -213,3 +216,36 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
 
     sync_pull = _post(api, "/sync/pull", {})
     assert sync_pull.sent[-1]["payload"]["action"] == "pull"
+
+
+def test_review_posts_do_not_load_registry_state(tmp_path: Path) -> None:
+    api = MinimalAdminPostRouteApi(tmp_path)
+
+    for path in (
+        "/source-policy/review-action",
+        "/dedup/review-action",
+        "/registry/repair-review-action",
+    ):
+        response = _post(api, path, {})
+        assert response.sent[-1]["status"] == 400
+        assert api.load_state_calls == 0, path
+
+    migration = _post(
+        api,
+        "/source-policy/migration-link-action",
+        {
+            "action": "apply_migration_identity_link",
+            "providerSourceId": "missing-provider",
+            "staticSourceId": "missing-static",
+        },
+    )
+    assert migration.sent[-1]["status"] == 400
+    assert api.load_state_calls == 1
+
+    fetcher = _post(api, "/tasks/run-fetcher", {"force": True})
+    assert fetcher.sent[-1]["payload"]["started"] is True
+    assert api.load_state_calls == 1
+
+    approved = _post(api, "/registry/approve", {"ids": ["pending-1"]})
+    assert approved.sent[-1]["payload"]["approved"] == 1
+    assert api.load_state_calls >= 2

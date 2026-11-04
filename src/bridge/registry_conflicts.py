@@ -37,6 +37,7 @@ from src.bridge.registry_conflicts_demotions import (
     _apply_pending_rejection_targets,
     _apply_pending_static_fragment_alias_targets,
     _apply_safe_demotion_targets,
+    _cached_conflict_payload,
     _eligible_safe_demotion_cards,
     _empty_safe_demotion_result,
     _restore_families_left_without_active_rows,
@@ -151,7 +152,11 @@ def apply_registry_conflict_safe_demotions(
         }
 
     requested_ids = {_clean_text(item) for item in (ids or []) if _clean_text(item)}
-    conflict_payload = derive_registry_conflict_queue(state, source_state_payload)
+    conflict_payload = _cached_conflict_payload(
+        state,
+        source_state_payload,
+        lambda: derive_registry_conflict_queue(state, source_state_payload),
+    )
     eligible_by_id = _eligible_safe_demotion_cards(conflict_payload, action_filter)
     protected = {_clean_text(item) for item in (protected_ids or set()) if _clean_text(item)}
     selected_ids = (requested_ids or set(eligible_by_id)) - protected

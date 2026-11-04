@@ -27,6 +27,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+from src.bridge import registry_conflicts, registry_conflicts_demotions
 from src.bridge.registry_conflicts_demotions import (
     _restore_families_left_without_active_rows,
     _safe_demotion_applied_entry,
@@ -179,3 +182,68 @@ def test_restoring_a_family_clears_the_superseded_pointer() -> None:
     assert "supersededBySourceId" not in promoted
     # The family key is history and stays; the pointer is a claim about the present and goes.
     assert promoted["conflictFamilyKey"] == "static studio"
+
+
+def _clear_conflict_derivation_cache() -> None:
+    with registry_conflicts_demotions._CONFLICT_DERIVATION_CACHE_LOCK:
+        registry_conflicts_demotions._CONFLICT_DERIVATION_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
+def _clear_conflict_derivation_cache_around_test():
+    _clear_conflict_derivation_cache()
+    yield
+    _clear_conflict_derivation_cache()
+
+
+def _cache_test_state() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "active": [{"id": "active-1", "name": "Studio", "adapter": "greenhouse"}],
+        "pending": [],
+        "rejected": [],
+    }
+
+
+def test_safe_demotion_conflict_derivation_reuses_unchanged_inputs(monkeypatch) -> None:
+    calls: list[tuple[Any, Any]] = []
+
+    def fake_derive(registry_state: Any, source_state_payload: Any = None) -> dict[str, Any]:
+        calls.append((registry_state, source_state_payload))
+        return {"conflicts": []}
+
+    monkeypatch.setattr(registry_conflicts, "derive_registry_conflict_queue", fake_derive)
+    _clear_conflict_derivation_cache()
+    state = _cache_test_state()
+    source_state = {"sources": {"Studio": {"lastKeptCount": 3}}}
+
+    first = registry_conflicts.apply_registry_conflict_safe_demotions(state, source_state)
+    second = registry_conflicts.apply_registry_conflict_safe_demotions(state, source_state)
+
+    assert len(calls) == 1
+    assert first["demoted"] == 0
+    assert second["demoted"] == 0
+    assert first["state"] == second["state"]
+
+    changed_state = {**state, "active": [*state["active"], {"id": "active-2"}]}
+    registry_conflicts.apply_registry_conflict_safe_demotions(changed_state, source_state)
+    assert len(calls) == 2
+
+    changed_source = {"sources": {"Studio": {"lastKeptCount": 4}}}
+    registry_conflicts.apply_registry_conflict_safe_demotions(state, changed_source)
+    assert len(calls) == 3
+
+
+def test_safe_demotion_cache_does_not_share_returned_state(monkeypatch) -> None:
+    monkeypatch.setattr(
+        registry_conflicts,
+        "derive_registry_conflict_queue",
+        lambda *_args, **_kwargs: {"conflicts": []},
+    )
+    _clear_conflict_derivation_cache()
+    state = _cache_test_state()
+
+    first = registry_conflicts.apply_registry_conflict_safe_demotions(state, {})
+    first["state"]["active"][0]["name"] = "mutated"
+    second = registry_conflicts.apply_registry_conflict_safe_demotions(state, {})
+
+    assert second["state"]["active"][0]["name"] == "Studio"
