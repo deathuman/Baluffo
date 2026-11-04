@@ -1,21 +1,17 @@
-## [0.3.034] - 2026-11-04
+## [0.3.035] - 2026-11-04
 
 ### Fixed
 
-- The Jobs page now opens the full feed directly and shows a loading state while it loads. The
-  last saved startup snapshot is used only if the full feed cannot be loaded, so a new session
-  no longer briefly shows a partial list.
-- The Admin action center now explains failed-source counts by separating sources that kept zero
-  jobs from sources that need browser fallback.
-- Source sync now retries GitHub rate-limit and server errors instead of failing the push on the
-  first transient response.
-- Workable board detection no longer mistakes a site's machine-readable help file for its account
-  name.
+- Registry Conflicts no longer times out when its saved list is out of date. The panel shows the
+  last saved list, or a short "building" message when there is none, while a fresh copy is
+  assembled in the background, then updates itself.
+- Closing the desktop window while a new page is still loading no longer shuts the app down
+  mid-navigation; the pending close is cancelled when the replacement page boots.
+- The Admin action center no longer raises its attention chip for a source probe that used its
+  full time budget but settled, and reports page failures as outcome counts instead.
 
 ### Notes
 
-- Distribution surfaces are unchanged. Each behaves as it did in 0.3.033:
-  the same-origin Linux container,
-  GHCR multi-arch image publishing,
-  wildcard browser CORS allow headers,
-  desktop localhost bridge compatibility.
+- Distribution behavior is unchanged from 0.3.034: the same-origin Linux container,
+  GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
+  desktop localhost bridge compatibility all work as before.

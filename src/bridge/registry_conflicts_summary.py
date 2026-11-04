@@ -11,6 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflic
 from __future__ import annotations
 
 import json
+import time
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -168,6 +169,15 @@ def build_registry_conflicts_summary_cache_key(
 
 def _registry_conflicts_full_cache_path(source_state_path: Path) -> Path:
     return Path(source_state_path).with_name("registry-conflicts-full.json")
+
+
+def registry_conflicts_full_cache_age_seconds(source_state_path: Path) -> int | None:
+    """Age of the last full payload, or ``None`` when it was never written."""
+    try:
+        mtime = _registry_conflicts_full_cache_path(source_state_path).stat().st_mtime
+    except OSError:
+        return None
+    return max(0, int(time.time() - mtime))
 
 
 def _load_keyed_cache_payload(cache_path: Path, cache_key: str) -> dict[str, Any] | None:

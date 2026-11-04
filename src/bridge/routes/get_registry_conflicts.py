@@ -8,22 +8,23 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any, Protocol
 
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
-    load_registry_conflicts_payload,
     load_registry_conflicts_summary_payload,
     summarize_registry_conflicts_payload,
-    write_registry_conflicts_summary_cache,
+)
+from src.bridge.registry_conflicts_refresh import (
+    is_registry_conflicts_refresh_in_flight,
+    schedule_registry_conflicts_refresh,
 )
 from src.bridge.registry_conflicts_summary import (
     load_any_cached_registry_conflicts_full,
     load_any_cached_registry_conflicts_summary,
     load_registry_conflicts_full_cache,
-    write_registry_conflicts_full_cache,
+    registry_conflicts_full_cache_age_seconds,
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_payload_helpers import (
@@ -33,8 +34,6 @@ from src.bridge.routes.route_payload_helpers import (
     clean_text as _clean_text,
 )
 from src.shared.utils import int_or_default as _safe_int
-
-logger = logging.getLogger(__name__)
 
 
 class _RegistryConflictsRouteApi(Protocol):
@@ -202,38 +201,34 @@ def handle_registry_conflict_routes(
             adjudication_payload=adjudication,
         )
         payload = load_registry_conflicts_full_cache(source_state_path, cache_key)
+        full_cache_status = "fresh"
+        refresh_in_flight = is_registry_conflicts_refresh_in_flight(cache_key)
         if payload is None:
-            payload = load_registry_conflicts_payload(
-                load_state=lambda: state,
-                load_json_object=api.load_json_object,
-                source_state_path=source_state_path,
-                adjudication_payload=adjudication,
-            )
-            try:
-                write_registry_conflicts_full_cache(
-                    source_state_path,
-                    cache_key,
-                    payload,
-                )
-            except OSError:
-                logger.debug("Could not write registry conflicts full cache", exc_info=True)
-        payload = overlay_adjudication(payload, adjudication)
-        payload["registrySummary"] = api.summarize_state(state)
-        payload["registryAutoHeal"] = registry_auto_heal
-        payload["ok"] = True
-        try:
-            cache_key = build_registry_conflicts_summary_cache_key(
-                registry_summary=registry_summary,
-                source_state_path=source_state_path,
-                adjudication_payload=adjudication,
-            )
-            write_registry_conflicts_summary_cache(
+            # Never derive the queue inside the request: a cold build measured
+            # 54s+ on a Pi while the Admin client aborts at 18s. Serve the last
+            # payload and rebuild once in the background instead.
+            refresh_in_flight = schedule_registry_conflicts_refresh(
+                api=api,
                 source_state_path=source_state_path,
                 cache_key=cache_key,
-                payload=summarize_registry_conflicts_payload(payload),
+                adjudication_payload=adjudication,
             )
-        except OSError:
-            logger.debug("Could not write registry conflicts summary cache", exc_info=True)
+            payload = load_any_cached_registry_conflicts_full(source_state_path)
+            if payload is None:
+                building_payload = load_registry_conflicts_summary_payload(
+                    registry_summary=registry_summary,
+                    source_state_path=source_state_path,
+                    adjudication_payload=adjudication,
+                    registry_auto_heal=registry_auto_heal,
+                )
+                building_payload["detailStatus"] = "building"
+                building_payload["fullCacheStatus"] = "building"
+                building_payload["fullCacheAgeSeconds"] = None
+                building_payload["refreshInFlight"] = refresh_in_flight
+                handler.send_json(building_payload)
+                return True
+            full_cache_status = "stale"
+
         limit = max(0, _safe_int((query.get("limit") or ["0"])[0]))
         offset = max(0, _safe_int((query.get("offset") or ["0"])[0]))
         queue = _clean_text((query.get("queue") or [""])[0]).lower()
@@ -241,6 +236,17 @@ def handle_registry_conflict_routes(
             payload = slice_registry_conflicts_for_query(
                 payload, limit=limit, offset=offset, queue=queue
             )
+        # Overlay after slicing: the envelope's adjudication object is shared,
+        # but the per-card family overlay is only needed for the returned page.
+        payload = overlay_adjudication(payload, adjudication)
+        payload["registrySummary"] = api.summarize_state(state)
+        payload["registryAutoHeal"] = registry_auto_heal
+        payload["ok"] = True
+        payload["fullCacheStatus"] = full_cache_status
+        payload["fullCacheAgeSeconds"] = registry_conflicts_full_cache_age_seconds(
+            source_state_path
+        )
+        payload["refreshInFlight"] = refresh_in_flight
         handler.send_json(payload)
         return True
 

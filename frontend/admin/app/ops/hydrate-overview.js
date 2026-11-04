@@ -37,6 +37,13 @@ export function createOverviewHydration({
   let dedupListsDetailLoad = null;
   // ponytail: fixed 50-row pages; tune if conflict payloads grow past ~5k cards
   const REGISTRY_CONFLICTS_PAGE_SIZE = 50;
+  // The gateway allows heavy routes 60s; the bridge rebuilds a cold conflict
+  // cache in the background, so this budget is only a safety net.
+  const REGISTRY_CONFLICTS_DETAIL_TIMEOUT_MS = 60000;
+  const REGISTRY_CONFLICTS_BUILD_RETRY_MS = 3000;
+  const REGISTRY_CONFLICTS_BUILD_MAX_RETRIES = 20;
+  const REGISTRY_CONFLICTS_STALE_REFRESH_MS = 5000;
+  const REGISTRY_CONFLICTS_STALE_MAX_REFRESHES = 12;
 
   function loadOpsOverviewDetailData(renderToken = currentRenderToken()) {
     if (opsOverviewDetailLoad && opsOverviewDetailLoadToken === renderToken) return opsOverviewDetailLoad;
@@ -164,6 +171,15 @@ export function createOverviewHydration({
     return sourcePolicyDetailLoad;
   }
 
+  function scheduleRegistryConflictsReload(delayMs) {
+    if (state.registryConflictsReloadTimer) return;
+    state.registryConflictsReloadTimer = maybeUnrefTimer(setTimeout(() => {
+      state.registryConflictsReloadTimer = null;
+      if (state.adminOpsActiveTab !== "registry-conflicts") return;
+      loadRegistryConflictsDetail({ force: true }).catch(() => {});
+    }, delayMs));
+  }
+
   async function loadRegistryConflictsDetail({ force = false } = {}) {
     if (!force && state.registryConflictsDetailLoaded) {
       return getCachedRegistryConflictsPayload();
@@ -171,15 +187,43 @@ export function createOverviewHydration({
     if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
     registryConflictsDetailLoad = (async () => {
       try {
-        const payload = await getBridge(`${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}`);
+        const payload = await getBridge(
+          `${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}`,
+          { timeoutMs: REGISTRY_CONFLICTS_DETAIL_TIMEOUT_MS }
+        );
         const registryConflictsPayload = payload
           && typeof payload === "object"
           && !Array.isArray(payload)
           ? payload
           : { summary: { conflictCount: 0 }, conflicts: [] };
+        const detailStatus = String(registryConflictsPayload?.detailStatus || "").toLowerCase();
+        const fullCacheStatus = String(registryConflictsPayload?.fullCacheStatus || "").toLowerCase();
         state.latestRegistryConflictsPayload = registryConflictsPayload;
-        state.registryConflictsDetailLoaded = true;
         state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+        if (detailStatus === "building") {
+          state.registryConflictsDetailLoaded = false;
+          state.registryConflictsDetailRetryCount = Number(state.registryConflictsDetailRetryCount || 0) + 1;
+          if (refs.adminRegistryConflictsReviewEl) {
+            refs.adminRegistryConflictsReviewEl.innerHTML = `<div class="muted">${escapeHtml(
+              "Building the registry conflict list on the device. This can take up to a minute on slower hardware."
+            )}</div>`;
+          }
+          rerenderOpsTabBadges();
+          if (state.registryConflictsDetailRetryCount <= REGISTRY_CONFLICTS_BUILD_MAX_RETRIES) {
+            scheduleRegistryConflictsReload(REGISTRY_CONFLICTS_BUILD_RETRY_MS);
+          }
+          return registryConflictsPayload;
+        }
+        state.registryConflictsDetailLoaded = true;
+        state.registryConflictsDetailRetryCount = 0;
+        if (fullCacheStatus === "stale" && registryConflictsPayload?.refreshInFlight) {
+          state.registryConflictsStaleRefreshCount = Number(state.registryConflictsStaleRefreshCount || 0) + 1;
+          if (state.registryConflictsStaleRefreshCount <= REGISTRY_CONFLICTS_STALE_MAX_REFRESHES) {
+            scheduleRegistryConflictsReload(REGISTRY_CONFLICTS_STALE_REFRESH_MS);
+          }
+        } else {
+          state.registryConflictsStaleRefreshCount = 0;
+        }
         renderRegistryConflictsQueue(registryConflictsPayload);
         rerenderOpsTabBadges();
         return registryConflictsPayload;
@@ -204,8 +248,10 @@ export function createOverviewHydration({
     if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
     registryConflictsDetailLoad = (async () => {
       const next = await getBridge(
-        `${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}&offset=${loaded}`
+        `${REGISTRY_CONFLICTS_DETAIL_PATH}?limit=${REGISTRY_CONFLICTS_PAGE_SIZE}&offset=${loaded}`,
+        { timeoutMs: REGISTRY_CONFLICTS_DETAIL_TIMEOUT_MS }
       );
+      if (String(next?.detailStatus || "") === "building") return null;
       const cards = Array.isArray(next?.conflicts) ? next.conflicts : [];
       const current = getObjectValue(state.latestRegistryConflictsPayload);
       if (cards.length && current === payload) {

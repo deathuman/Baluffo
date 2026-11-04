@@ -22,6 +22,22 @@ import {
   renderRationaleChip
 } from "./registry-conflicts-rows.js";
 
+function formatCacheAgeSeconds(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 90) return ` (${Math.max(1, Math.round(seconds))}s old)`;
+  return ` (${Math.max(1, Math.round(seconds / 60))}m old)`;
+}
+
+function renderConflictCacheNotice(payload) {
+  if (stringValue(payload?.fullCacheStatus).toLowerCase() !== "stale") return "";
+  return `
+    <div class="muted admin-registry-conflicts-cache-notice">
+      Showing the last saved conflict list${formatCacheAgeSeconds(payload?.fullCacheAgeSeconds)}. The device is rebuilding it in the background.
+    </div>
+  `;
+}
+
 function renderTriageFilterOption(bucket, activeFilter) {
   const token = stringValue(bucket?.bucket, "ambiguous_manual_review");
   const label = stringValue(bucket?.label, token);
@@ -270,6 +286,7 @@ function renderLoadMoreFooter(visibleCount, loadedCount, totalCount) {
 }
 
 export {
+  renderConflictCacheNotice,
   renderConflictFilterToolbar,
   renderConflictGroups,
   renderLoadMoreFooter

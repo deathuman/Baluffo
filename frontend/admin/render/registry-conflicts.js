@@ -32,6 +32,7 @@ import {
   sortedConflictCards
 } from "./registry-conflicts-model.js";
 import {
+  renderConflictCacheNotice,
   renderConflictFilterToolbar,
   renderConflictGroups,
   renderLoadMoreFooter
@@ -71,6 +72,8 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
       activeSearchQuery,
       checkingConflicts,
       conflicts,
+      fullCacheStatus: stringValue(payload?.fullCacheStatus),
+      fullCacheAgeSeconds: Number(payload?.fullCacheAgeSeconds || 0),
       suppressedIndependentProviderBoards
     });
     if (canPatchInPlace && reviewEl.dataset.registryConflictsSig === signature) return;
@@ -78,6 +81,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
 
     const conflictCount = Number(summary?.conflictCount || conflicts.length || 0);
     reviewEl.innerHTML = `
+      ${renderConflictCacheNotice(payload)}
       ${renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter, activeSearchQuery)}
       ${renderRegistryConflictActionStrip(payload, visibleConflicts, checkingConflicts)}
       ${renderSuppressedIndependentProviderBoards(payload)}

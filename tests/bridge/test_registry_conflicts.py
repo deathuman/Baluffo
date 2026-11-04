@@ -6,9 +6,11 @@ from pathlib import Path
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
     derive_registry_conflict_queue,
+    load_registry_conflicts_payload,
     summarize_registry_conflicts_payload,
     write_registry_conflicts_summary_cache,
 )
+from src.bridge.registry_conflicts_summary import write_registry_conflicts_full_cache
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -73,6 +75,20 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
         "rejected": [],
     }
 
+    adjudication = api.load_registry_conflict_adjudication()
+    cache_key = build_registry_conflicts_summary_cache_key(
+        registry_summary=api.get_registry_summary_payload(),
+        source_state_path=source_state_path,
+        adjudication_payload=adjudication,
+    )
+    cached_payload = load_registry_conflicts_payload(
+        load_state=api.load_state,
+        load_json_object=api.load_json_object,
+        source_state_path=source_state_path,
+        adjudication_payload=adjudication,
+    )
+    write_registry_conflicts_full_cache(source_state_path, cache_key, cached_payload)
+
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/registry/conflicts", query={})
 
@@ -80,6 +96,7 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
     assert handler.sent[-1]["status"] == 200
     payload = handler.sent[-1]["payload"]
     assert payload["ok"] is True
+    assert payload["fullCacheStatus"] == "fresh"
     assert payload["summary"]["conflictCount"] == 1
     assert payload["conflicts"][0]["winner"]["health"] == "healthy"
     assert payload["conflicts"][0]["losers"][0]["actions"][0]["route"] == "/registry/approve"

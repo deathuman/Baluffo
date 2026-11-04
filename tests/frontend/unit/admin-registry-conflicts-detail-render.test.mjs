@@ -169,3 +169,17 @@ test("registry conflicts CSS keeps cards in a bounded scroll list without clippi
   assert.doesNotMatch(detailsRule, /overflow:\s*hidden/);
   assert.match(diffBodyRule, /overflow-x:\s*auto/);
 });
+
+test("registry conflicts renderer shows the stale cache notice with its age", () => {
+  const reviewEl = createReviewElement();
+
+  renderAdminRegistryConflicts(reviewEl, {
+    fullCacheStatus: "stale",
+    fullCacheAgeSeconds: 125,
+    summary: { conflictCount: 0 },
+    conflicts: []
+  });
+
+  assert.match(reviewEl.innerHTML, /last saved conflict list/i);
+  assert.match(reviewEl.innerHTML, /2m old/);
+});

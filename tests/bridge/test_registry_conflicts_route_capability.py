@@ -64,7 +64,13 @@ class MinimalRegistryConflictsRouteApi:
         }
 
 
-def test_registry_conflict_routes_accept_minimal_capability_object(tmp_path: Path) -> None:
+def test_registry_conflict_routes_accept_minimal_capability_object(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        "src.bridge.routes.get_registry_conflicts.schedule_registry_conflicts_refresh",
+        lambda **kwargs: True,
+    )
     api = MinimalRegistryConflictsRouteApi(tmp_path)
 
     summary_handler = FakeHandler()
@@ -94,6 +100,7 @@ def test_registry_conflict_routes_accept_minimal_capability_object(tmp_path: Pat
         is True
     )
     full_payload = full_handler.sent[-1]["payload"]
+    assert full_payload["detailStatus"] == "building"
     assert full_payload["ok"] is True
     assert full_payload["registrySummary"] == {
         "activeCount": 1,

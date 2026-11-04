@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.bridge.registry_conflicts_summary import (
+    build_registry_conflicts_summary_cache_key,
+    write_registry_conflicts_full_cache,
+)
 from src.bridge.routes.get_registry_conflicts import (
     handle_registry_conflict_routes,
     slice_registry_conflicts_for_query,
@@ -25,6 +29,29 @@ def _card(priority: int, queue: str, family: str) -> dict[str, Any]:
 
 def _payload(cards: list[dict[str, Any]]) -> dict[str, Any]:
     return {"conflicts": list(cards), "summary": {"conflictCount": len(cards)}}
+
+
+def _seed_full_cache(api: MinimalRegistryConflictsRouteApi) -> None:
+    source_state_path = api.JOBS_FETCH_REPORT_PATH.with_name("jobs-source-state.json")
+    cache_key = build_registry_conflicts_summary_cache_key(
+        registry_summary=api.get_registry_summary_payload(),
+        source_state_path=source_state_path,
+        adjudication_payload={},
+    )
+    write_registry_conflicts_full_cache(
+        source_state_path,
+        cache_key,
+        {
+            "summary": {"conflictCount": 2},
+            "triage": {},
+            "review": {},
+            "automation": {},
+            "conflicts": [
+                _card(0, "q0", "a"),
+                _card(1, "q1", "b"),
+            ],
+        },
+    )
 
 
 def test_slice_pages_are_stable_and_sorted() -> None:
@@ -66,6 +93,7 @@ def test_slice_without_params_leaves_payload_untouched() -> None:
 
 def test_route_accepts_paging_params(tmp_path: Path) -> None:
     api = MinimalRegistryConflictsRouteApi(tmp_path)
+    _seed_full_cache(api)
     handler = FakeHandler()
     assert (
         handle_registry_conflict_routes(
@@ -93,6 +121,7 @@ def test_slice_preserves_total_conflict_count() -> None:
 
 def test_route_garbage_params_stay_byte_compatible(tmp_path: Path) -> None:
     api = MinimalRegistryConflictsRouteApi(tmp_path)
+    _seed_full_cache(api)
 
     plain_handler = FakeHandler()
     assert (
