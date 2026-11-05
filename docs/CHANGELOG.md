@@ -56,7 +56,9 @@ Four rules the guardrail enforces so this cannot quietly regress:
   needs.
 - Opening the Ops tab no longer re-parses the task-lifecycle ledger twice per
   poll; the JSON read is cached against the artifact's file signature and
-  refreshed by the bridge's own writes.
+  refreshed by the bridge's own writes. The health response also hands its
+  already-loaded task rows to the schedule summary instead of reading the ledger
+  again, and a cached poll skips the stale-task repair scan.
 - The registry-conflicts background refresh no longer parses the whole jobs
   feed. With the feed in SQLite it reads only the conflict sources through the
   `job_sources` index; otherwise it reads at most the first 10,000 rows of the

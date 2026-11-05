@@ -19,10 +19,9 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  The Jobs page now keeps a successful browser-rendered page instead of falling
-  back to the original static shell, so dynamic sources can return their jobs.
-  The container startup check now matches the full-feed-first Jobs page, so
-  release validation no longer reports a false failure. Existing jobs, saved jobs
-  and notes are kept.
+  The Ops tab no longer re-reads the task history twice per poll, so it stays
+  responsive with a long task ledger. Registry conflicts refresh faster and show
+  which job evidence they used, and the Jobs page rebuilds its startup snapshot
+  without parsing the whole feed. Existing jobs, saved jobs and notes are kept.
 storage:
   dataRoot: data
