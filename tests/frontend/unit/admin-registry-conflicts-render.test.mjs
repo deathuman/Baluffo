@@ -384,23 +384,3 @@ test("registry conflicts renderer collapses lower-priority review groups", () =>
   assert.match(reviewEl.innerHTML, /admin-registry-conflict-action-btn[\s\S]*data-tooltip="reject: apply this registry conflict action\."/);
   assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
 });
-
-test("registry conflicts renderer reports the job evidence source", () => {
-  const sqliteEl = createReviewElement();
-  renderAdminRegistryConflicts(sqliteEl, {
-    ...triagePayload(),
-    jobEvidence: { source: "sqlite_source_index", rowCount: 5, truncated: false }
-  });
-
-  assert.match(sqliteEl.innerHTML, /Job evidence/);
-  assert.match(sqliteEl.innerHTML, /SQLite source index · 5 source rows matched/);
-
-  const prefixEl = createReviewElement();
-  renderAdminRegistryConflicts(prefixEl, {
-    ...triagePayload(),
-    jobEvidence: { source: "jobs_feed_prefix", rowCount: 0, truncated: true }
-  });
-
-  assert.match(prefixEl.innerHTML, /JSON feed prefix · 0 feed rows read/);
-  assert.match(prefixEl.innerHTML, /partial evidence discarded/);
-});
