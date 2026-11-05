@@ -94,6 +94,9 @@ const documentObject = typeof document === "undefined"
   ? (globalThis.document || null)
   : document;
 const canManageAvailability = () => resolveCanManageAvailability(windowObject.location?.href || "");
+const finishSavedWorkspaceBoot = () => {
+  documentObject?.body?.classList?.remove("saved-workspace-pending");
+};
 
 let savedRuntime;
 let savedChrome;
@@ -114,6 +117,7 @@ savedRuntime = composeSavedRuntime({
   isSavedApiReady,
   canManageAvailability,
   savedActions: SAVED_ACTIONS,
+  finishSavedWorkspaceBoot,
   timelinePrefPrefix: TIMELINE_PREF_PREFIX,
   activityHighlightMs: ACTIVITY_HIGHLIGHT_MS,
   renderActivityEntryHtml,
@@ -298,6 +302,7 @@ savedBoot = createSavedBoot({
   renderSelectedJobHint: (...args) => savedRuntime.renderSelectedJobHint(...args),
   renderAuthRequired: (...args) => savedRuntime.renderAuthRequired(...args),
   setSourceStatus: (...args) => savedChrome.setSourceStatus(...args),
+  finishSavedWorkspaceBoot,
   documentObject
 });
 

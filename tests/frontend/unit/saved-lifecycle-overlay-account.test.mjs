@@ -17,6 +17,7 @@ function createHarness() {
   const subscriptions = [];
   const overlayRequests = [];
   const renders = [];
+  let finishCount = 0;
   const viewState = {
     currentUser: { uid: "user-1" },
     lastSavedJobsByKey: new Map(),
@@ -46,6 +47,7 @@ function createHarness() {
     renderSelectedJobHint() {},
     renderTimeline() {},
     renderSavedJobs(jobs) { renders.push(jobs); },
+    finishSavedWorkspaceBoot() { finishCount += 1; },
     markSavedFirstRender() {},
     refreshActivityLog: async () => {},
     loadSavedLifecycleOverlay() {
@@ -54,7 +56,16 @@ function createHarness() {
       return request.promise;
     }
   });
-  return { boot, viewState, subscriptions, overlayRequests, renders };
+  return {
+    boot,
+    viewState,
+    subscriptions,
+    overlayRequests,
+    renders,
+    get finishCount() {
+      return finishCount;
+    }
+  };
 }
 
 async function flushAsyncHandlers() {
@@ -76,6 +87,17 @@ function withDocument(callback) {
       else delete globalThis.document;
     });
 }
+
+test("Saved clears the startup workspace reservation after jobs render", () => withDocument(async () => {
+  const harness = createHarness();
+  const { boot, subscriptions } = harness;
+
+  boot.subscribeToSavedJobs("user-1");
+  emitJobs(subscriptions[0], "user-1");
+  await flushAsyncHandlers();
+
+  assert.equal(harness.finishCount, 1);
+}));
 
 test("Saved ignores a previous profile lifecycle overlay completion", () => withDocument(async () => {
   const harness = createHarness();

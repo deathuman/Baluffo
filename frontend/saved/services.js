@@ -4,6 +4,27 @@ import {
   authService
 } from "../local-data/services.js";
 
+// The saved page can boot before the bridge installs window.JobAppLocalData.
+// Wait briefly so the hinted saved-jobs request still overlaps the session
+// bootstrap instead of being dropped.
+function waitForLocalDataApi(timeoutMs = 2000, intervalMs = 25) {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  const existing = getLocalDataApi();
+  if (existing) return Promise.resolve(existing);
+  return new Promise(resolve => {
+    const startedAt = Date.now();
+    const poll = () => {
+      const api = getLocalDataApi();
+      if (api || Date.now() - startedAt >= timeoutMs) {
+        resolve(api || null);
+        return;
+      }
+      setTimeout(poll, intervalMs);
+    };
+    setTimeout(poll, 0);
+  });
+}
+
 export function isSavedApiReady() {
   return authService.isReady();
 }
@@ -11,6 +32,15 @@ export function isSavedApiReady() {
 export const savedPageService = {
   isAvailable() {
     return Boolean(getLocalDataApi());
+  },
+  async prefetchSavedJobs(uid) {
+    const api = await waitForLocalDataApi();
+    if (!api || typeof api.prefetchSavedJobs !== "function") return null;
+    try {
+      return await api.prefetchSavedJobs(uid);
+    } catch {
+      return null;
+    }
   },
   subscribeSavedJobs(uid, onChange, onError) {
     const api = getLocalDataApi();

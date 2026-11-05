@@ -126,7 +126,9 @@ export function composeSavedRuntime(deps) {
 
   const savedAuthReadyPoller = createAuthReadyPoller({
     isReady: () => deps.savedPageService.isAvailable() && deps.isSavedApiReady(),
-    onReady: () => savedAuthController.initSavedJobsPage()
+    onReady: () => savedAuthController.initSavedJobsPage(),
+    initialDelayMs: 100,
+    minDelayMs: 100
   });
 
   savedAuthController = createSavedAuthController({
@@ -178,6 +180,7 @@ export function composeSavedRuntime(deps) {
     subscribeToSavedJobs: (...args) => deps.subscribeToSavedJobs(...args),
     refreshActivityLog: (...args) => savedActivityController.refreshActivityLog(...args),
     timelineScopeAll: deps.timelineScopeAll,
+    finishSavedWorkspaceBoot: () => deps.finishSavedWorkspaceBoot?.(),
     showToast
   });
 

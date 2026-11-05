@@ -40,6 +40,7 @@ export function createSavedAuthController({
   setSavedFilterBarVisible,
   setSavedSortBarVisible,
   setSavedGroupBarVisible = () => {},
+  finishSavedWorkspaceBoot = () => {},
   loadTimelinePreferences,
   subscribeToSavedJobs,
   refreshActivityLog,
@@ -48,6 +49,7 @@ export function createSavedAuthController({
 }) {
   let initialAuthEventHandled = false;
   let pendingInitialGuestTimer = 0;
+  let prefetchStartedForUid = "";
 
   function setAuthStatus(text) {
     setSavedAuthStatus({
@@ -124,6 +126,7 @@ export function createSavedAuthController({
     renderAuthRequired("Your saved jobs workspace is stored per local profile, so guest browsing cannot show or edit saved jobs.");
     markSavedFirstRender("auth_required", 0);
     renderTimeline();
+    finishSavedWorkspaceBoot();
   }
 
   function handleSignedIn(user) {
@@ -153,12 +156,16 @@ export function createSavedAuthController({
     return !savedPageService.isAvailable() || !isSavedApiReady();
   }
 
-  function hasPersistedSessionHint() {
+  function getPersistedSessionHintUid() {
     try {
-      return Boolean(window.localStorage.getItem("baluffo_current_profile_id"));
+      return String(window.localStorage.getItem("baluffo_current_profile_id") || "").trim();
     } catch {
-      return false;
+      return "";
     }
+  }
+
+  function hasPersistedSessionHint() {
+    return Boolean(getPersistedSessionHintUid());
   }
 
   function cancelPendingInitialGuestTimer() {
@@ -179,6 +186,15 @@ export function createSavedAuthController({
       toggleAuthButtons(false);
       setAuthControlsReady(false);
       savedAuthReadyPoller.schedulePoll();
+      const hintedUid = getPersistedSessionHintUid();
+      if (
+        hintedUid
+        && hintedUid !== prefetchStartedForUid
+        && typeof savedPageService.prefetchSavedJobs === "function"
+      ) {
+        prefetchStartedForUid = hintedUid;
+        savedPageService.prefetchSavedJobs(hintedUid);
+      }
       setCustomJobAvailability(false);
       setSavedSortBarVisible(false);
       if (typeof setSavedGroupBarVisible === "function") {

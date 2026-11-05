@@ -226,6 +226,27 @@ test("saved html exposes compact grouping controls and group header styling", ()
   assert.doesNotMatch(savedCss, /\.saved-group-section\s*\{[^}]*box-shadow:/);
 });
 
+test("saved page reserves its workspace while auth and saved data boot", () => {
+  const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
+  const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
+
+  assert.match(savedHtml, /<body class="saved-page">/);
+  assert.match(savedHtml, /window\.localStorage\.getItem\("baluffo_current_profile_id"\)/);
+  assert.match(savedHtml, /document\.body\.classList\.add\("saved-workspace-pending"\)/);
+  assert.match(
+    savedCss,
+    /\.saved-page\.saved-workspace-pending #saved-workspace-strip\.hidden\s*\{[\s\S]*?display:\s*grid !important;[\s\S]*?visibility:\s*hidden;/
+  );
+  assert.match(
+    savedCss,
+    /\.saved-page\.saved-workspace-pending #saved-sort-bar\.hidden,[\s\S]*?#saved-custom-filter-bar\.hidden\s*\{[\s\S]*?display:\s*flex !important;[\s\S]*?visibility:\s*hidden;/
+  );
+  assert.match(
+    savedCss,
+    /\.saved-page\.saved-workspace-pending #saved-jobs-list\s*\{[\s\S]*?min-height:\s*600px;/
+  );
+});
+
 test("jobs html exposes desktop update controls in the header shell", () => {
   const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
   assert.match(html, /id="desktop-update-toggle-btn"/);

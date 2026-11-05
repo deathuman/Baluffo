@@ -2121,6 +2121,26 @@
   align-items: start;
 }
 
+/* The stats and control bars start hidden and are revealed only after auth and
+   saved data resolve. Keeping them out of layout until then moved the list and
+   footer by roughly 250px. Reserve the real controls (so their responsive
+   wrapping matches) and enough list height to keep the footer from jumping. */
+.saved-page.saved-workspace-pending #saved-workspace-strip.hidden {
+  display: grid !important;
+  visibility: hidden;
+}
+
+.saved-page.saved-workspace-pending #saved-sort-bar.hidden,
+.saved-page.saved-workspace-pending #saved-group-bar.hidden,
+.saved-page.saved-workspace-pending #saved-custom-filter-bar.hidden {
+  display: flex !important;
+  visibility: hidden;
+}
+
+.saved-page.saved-workspace-pending #saved-jobs-list {
+  min-height: 600px;
+}
+
 .saved-main-column {
   min-width: 0;
 }

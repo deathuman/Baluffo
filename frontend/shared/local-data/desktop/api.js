@@ -20,6 +20,7 @@ import { normalizeDesktopSession } from "./lifecycle.js";
 // Set by the composition that owns a desktop session; a hosted page leaves it as
 // the no-op. See `createDesktopLocalDataApi`.
 let desktopSessionLostHandler = () => {};
+const SAVED_JOBS_PREFETCHES = new Map();
 
 export function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
@@ -180,6 +181,19 @@ async function listSavedJobs(uid) {
   return Array.isArray(payload.rows) ? payload.rows : [];
 }
 
+function prefetchSavedJobs(uid) {
+  const key = String(uid || "").trim();
+  if (!key) return Promise.resolve([]);
+  const existing = SAVED_JOBS_PREFETCHES.get(key);
+  if (existing) return existing;
+  const request = listSavedJobs(key).catch(error => {
+    SAVED_JOBS_PREFETCHES.delete(key);
+    throw error;
+  });
+  SAVED_JOBS_PREFETCHES.set(key, request);
+  return request;
+}
+
 async function pollSavedSubscriptions() {
   for (const subscription of Array.from(SAVED_SUBSCRIPTIONS)) {
     try {
@@ -328,7 +342,9 @@ export function createDesktopLocalDataApi({ onDesktopSessionLost = null } = {}) 
         lastPayload: ""
       };
       SAVED_SUBSCRIPTIONS.add(subscription);
-      listSavedJobs(uid).then(rows => {
+      const prefetched = SAVED_JOBS_PREFETCHES.get(subscription.uid);
+      SAVED_JOBS_PREFETCHES.delete(subscription.uid);
+      (prefetched || listSavedJobs(uid)).then(rows => {
         subscription.lastPayload = JSON.stringify(rows);
         onChange(rows);
       }).catch(error => {
@@ -338,6 +354,7 @@ export function createDesktopLocalDataApi({ onDesktopSessionLost = null } = {}) 
       });
       return () => SAVED_SUBSCRIPTIONS.delete(subscription);
     },
+    prefetchSavedJobs,
     generateJobKey,
     buildAttachmentPath,
     canTransitionPhase,

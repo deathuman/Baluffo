@@ -212,6 +212,7 @@ export function createSavedBoot(deps) {
           return;
         }
         deps.renderSavedJobs(jobs);
+        deps.finishSavedWorkspaceBoot?.();
         markSavedFirstRender("saved_jobs", count);
         deps.refreshActivityLog().catch(() => {});
         deps.loadSavedLifecycleOverlay()
@@ -240,6 +241,7 @@ export function createSavedBoot(deps) {
         deps.setSourceStatus("Could not load saved jobs.");
           showToast("Could not load saved jobs.", "error");
         deps.renderAuthRequired("Unable to load your saved jobs right now.");
+        deps.finishSavedWorkspaceBoot?.();
         markSavedFirstRender("auth_error", 0);
       }
     );

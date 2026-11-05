@@ -10,6 +10,15 @@
   <link rel="stylesheet" href="styles/saved.css">
 </head>
 <body class="saved-page">
+  <script>
+    try {
+      if (window.localStorage.getItem("baluffo_current_profile_id")) {
+        document.body.classList.add("saved-workspace-pending");
+      }
+    } catch {
+      // Guest browsing remains available when storage is blocked.
+    }
+  </script>
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" type="button" aria-label="Switch theme">Theme</button>
   <div class="jobs-container">
     <div class="jobs-header">
