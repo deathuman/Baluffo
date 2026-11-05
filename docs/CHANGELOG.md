@@ -63,7 +63,9 @@ Four rules the guardrail enforces so this cannot quietly regress:
   JSON artifact. A truncated prefix is dropped and the conflicts are kept for
   review rather than suppressing boards on an incomplete job set. The Registry
   conflicts tab shows which path the refresh used, the rows read, and whether
-  a prefix was discarded.
+  a prefix was discarded. A SQLite generation older than the newest source-state
+  run raises a `sqlite_jobs_feed_stale` warning so stale job evidence is not
+  mistaken for a completed suppression check.
 - Availability changes written back to the jobs feed no longer read that feed
   twice.
 

@@ -134,6 +134,7 @@ function renderJobEvidenceDiagnostics(payload) {
   const source = stringValue(evidence?.source, "unknown");
   const rowCount = numberValue(evidence?.rowCount);
   const truncated = evidence?.truncated === true;
+  const stale = evidence?.stale === true;
   const label = source === "sqlite_source_index"
     ? "SQLite source index"
     : source === "jobs_feed_prefix"
@@ -142,7 +143,7 @@ function renderJobEvidenceDiagnostics(payload) {
         ? "unavailable"
         : "not reported";
   const detail = source === "sqlite_source_index"
-    ? `${rowCount.toLocaleString()} source ${rowCount === 1 ? "row" : "rows"} matched for the registry's sources`
+    ? `${rowCount.toLocaleString()} source ${rowCount === 1 ? "row" : "rows"} matched for the registry's sources${stale ? "; feed older than source state" : ""}`
     : source === "jobs_feed_prefix"
       ? `${rowCount.toLocaleString()} feed ${rowCount === 1 ? "row" : "rows"} read${truncated ? "; prefix truncated, partial evidence discarded" : ""}`
       : "the refresh has not reported job evidence yet";

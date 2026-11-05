@@ -43,3 +43,16 @@ test("registry conflicts renderer reports discarded JSON prefix evidence", () =>
   assert.match(reviewEl.innerHTML, /JSON feed prefix · 0 feed rows read/);
   assert.match(reviewEl.innerHTML, /prefix truncated, partial evidence discarded/);
 });
+
+test("registry conflicts renderer flags a stale SQLite generation", () => {
+  const reviewEl = reviewElement();
+  renderAdminRegistryConflicts(reviewEl, payload({
+    source: "sqlite_source_index",
+    rowCount: 5,
+    truncated: false,
+    feedPublishedAt: "2026-05-12T10:00:00+00:00",
+    stale: true
+  }));
+
+  assert.match(reviewEl.innerHTML, /feed older than source state/);
+});

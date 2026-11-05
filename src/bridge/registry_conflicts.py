@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -508,13 +509,14 @@ def _registry_source_aliases(registry_state: Any) -> set[str]:
 
 def _load_source_aware_job_rows(
     *, source_state_path: Path, registry_state: Any
-) -> list[dict[str, Any]] | None:
+) -> tuple[list[dict[str, Any]], str] | None:
     """Job evidence from the SQLite feed, filtered to the registry's sources.
 
     The live bridge keeps the feed in SQLite, so the sources in conflict can be
     read through the ``job_sources`` index instead of scanning the JSON
-    artifact. ``None`` asks the caller to fall back to the bounded JSON prefix:
-    no runtime database, JSON authority, or no published generation.
+    artifact. Returns the source rows and the generation's publish time;
+    ``None`` asks the caller to fall back to the bounded JSON prefix (no runtime
+    database, JSON authority, or no published generation).
     """
     data_dir = Path(source_state_path).parent
     from src.bridge.storage_health import get_storage_store
@@ -525,7 +527,7 @@ def _load_source_aware_job_rows(
         return None
     aliases = _registry_source_aliases(registry_state)
     if not aliases:
-        return []
+        return [], ""
     try:
         store = get_storage_store(data_dir)
         modes = store.get_authority_modes()
@@ -534,9 +536,49 @@ def _load_source_aware_job_rows(
     if str((modes or {}).get("jobsFeed") or "").strip().lower() != "sqlite":
         return None
     try:
-        return JobRuntimeStore(store).source_identity_rows(aliases)
+        runtime = JobRuntimeStore(store)
+        rows = runtime.source_identity_rows(aliases)
     except _SOURCE_AWARE_STORE_ERRORS:
         return None
+    if rows is None:
+        return None
+    return rows, runtime.current_feed_published_at()
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = _clean_text(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
+def _latest_source_state_run_at(source_state_payload: Any) -> datetime | None:
+    rows = _as_dict(_as_dict(source_state_payload).get("sources"))
+    latest: datetime | None = None
+    for row in rows.values():
+        if not isinstance(row, dict):
+            continue
+        observed = _parse_iso_datetime(row.get("lastRunAt") or row.get("lastCheckedAt"))
+        if observed is not None and (latest is None or observed > latest):
+            latest = observed
+    return latest
+
+
+def _sqlite_feed_is_stale(*, feed_published_at: str, source_state_payload: Any) -> bool:
+    """Whether a fetch run finished after the generation was published.
+
+    Comparing against source-level ``lastRunAt`` rather than the artifact's
+    mtime keeps finalize's write ordering out of the decision.
+    """
+    feed_time = _parse_iso_datetime(feed_published_at)
+    latest_run = _latest_source_state_run_at(source_state_payload)
+    if feed_time is None or latest_run is None:
+        return False
+    return feed_time < latest_run
 
 
 def load_registry_conflicts_payload(
@@ -553,16 +595,24 @@ def load_registry_conflicts_payload(
     fetch_report_payload = load_runtime_evidence(
         Path(source_state_path).with_name("jobs-fetch-report.json"), {}
     )
-    job_rows = _load_source_aware_job_rows(
+    source_job_evidence = _load_source_aware_job_rows(
         source_state_path=Path(source_state_path),
         registry_state=registry_state,
     )
     job_evidence_source = "sqlite_source_index"
+    job_evidence_feed_published_at = ""
+    job_evidence_stale = False
     job_rows_truncated = False
-    if job_rows is None:
+    if source_job_evidence is None:
         job_evidence_source = "jobs_feed_prefix"
         job_rows, job_rows_truncated = _load_conflict_job_rows(
             Path(source_state_path).with_name("jobs-unified.json")
+        )
+    else:
+        job_rows, job_evidence_feed_published_at = source_job_evidence
+        job_evidence_stale = _sqlite_feed_is_stale(
+            feed_published_at=job_evidence_feed_published_at,
+            source_state_payload=source_state_payload,
         )
     source_state_payload = _merge_fetch_report_source_details(
         source_state_payload,
@@ -578,10 +628,14 @@ def load_registry_conflicts_payload(
         "source": job_evidence_source,
         "rowCount": len(job_rows),
         "truncated": job_rows_truncated,
+        "feedPublishedAt": job_evidence_feed_published_at,
+        "stale": job_evidence_stale,
     }
     warnings: list[str] = []
     if job_rows_truncated:
         warnings.append("jobs_feed_row_limit_exceeded")
+    if job_evidence_stale:
+        warnings.append("sqlite_jobs_feed_stale")
     if not Path(source_state_path).exists():
         warnings.append("missing_jobs_source_state_artifact")
     if warnings:

@@ -109,6 +109,10 @@ an incomplete job set can make two boards look disjoint and wrongly suppress a
 real conflict. The Registry conflicts tab reports which path the refresh used
 (`SQLite source index` or `JSON feed prefix`), the rows read, and whether a
 prefix was discarded, so a suppression decision can be traced to its evidence.
+When the SQLite generation's publish time is older than the newest
+`lastRunAt`/`lastCheckedAt` in the source state, the payload also carries a
+`sqlite_jobs_feed_stale` warning and the line says the feed is older than the
+source state.
 
 When adding a route, ask whether the handler needs a predicate, a projection, or
 an index. If it does, a whole-artifact `json.loads` is the wrong reader even when

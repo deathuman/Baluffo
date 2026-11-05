@@ -68,6 +68,8 @@ def test_payload_reads_a_bounded_prefix_of_the_jobs_feed(tmp_path: Path, monkeyp
         "source": "jobs_feed_prefix",
         "rowCount": 5,
         "truncated": False,
+        "feedPublishedAt": "",
+        "stale": False,
     }
     assert payload["conflicts"] == []
     assert payload["suppressedIndependentProviderBoards"]["summary"] == {
@@ -97,6 +99,8 @@ def test_truncated_prefix_keeps_conflicts_instead_of_suppressing(
         "source": "jobs_feed_prefix",
         "rowCount": 0,
         "truncated": True,
+        "feedPublishedAt": "",
+        "stale": False,
     }
 
 
@@ -119,11 +123,11 @@ def test_published_sqlite_feed_reads_only_the_conflict_sources(tmp_path: Path) -
     payload = _payload(source_state_path)
 
     assert not (tmp_path / "jobs-unified.json").exists()
-    assert payload["jobEvidence"] == {
-        "source": "sqlite_source_index",
-        "rowCount": 5,
-        "truncated": False,
-    }
+    assert payload["jobEvidence"]["source"] == "sqlite_source_index"
+    assert payload["jobEvidence"]["rowCount"] == 5
+    assert payload["jobEvidence"]["truncated"] is False
+    assert payload["jobEvidence"]["stale"] is False
+    assert payload["jobEvidence"]["feedPublishedAt"]
     assert payload["conflicts"] == []
     assert payload["suppressedIndependentProviderBoards"]["summary"] == {
         "familyCount": 1,

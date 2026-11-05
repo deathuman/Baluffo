@@ -317,6 +317,15 @@ class JobRuntimeStore:
             return []
         return self.rows_for_generation(generation)
 
+    def current_feed_published_at(self) -> str:
+        """When the current feed generation was published, or the last update."""
+        row = self.store.execute_read(
+            "SELECT published_at, updated_at FROM job_feed_state WHERE id = 1"
+        )
+        if not row:
+            return ""
+        return _clean_text(row[0].get("published_at")) or _clean_text(row[0].get("updated_at"))
+
     def source_identity_rows(self, source_aliases: set[str]) -> list[dict[str, Any]] | None:
         """Source bundle entries for the given registry aliases in the current feed.
 
