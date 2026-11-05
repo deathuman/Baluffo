@@ -101,6 +101,11 @@ async function main() {
         "/registry/summary",
         "registry summary"
       );
+      // The deterministic fetch stub does not load the source registry, while a
+      // real fetch does. Read the full conflicts view (which calls load_state) so
+      // the fresh runtime seeds SQLite and records the source-registry diagnostic
+      // this lane checks; the summary paths intentionally never seed.
+      await fetchBridgeJson(apiRequest, "/registry/conflicts", "registry conflicts");
       const storageHealth = await fetchBridgeJson(
         apiRequest,
         "/ops/storage-health",
