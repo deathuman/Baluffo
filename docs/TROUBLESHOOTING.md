@@ -97,13 +97,16 @@ normalized rows against the file's inode/size/`mtime_ns`/`ctime_ns` and seeds
 that cache on each write, so a steady-state Ops poll costs a `stat` plus
 shallow copies while an external rewrite still invalidates the entry.
 
-The registry-conflicts refresh worker also reads the jobs feed for its
-source-job identity index. It now reads a bounded prefix (10,000 rows) one array
-element at a time instead of calling `json.loads` on the whole file, so the
-warm-up/rebuild thread cannot hold the GIL for the feed's full parse. When the
-feed exceeds the prefix, the worker discards the partial job evidence and keeps
-those conflicts for review: an incomplete job set can make two boards look
-disjoint and wrongly suppress a real conflict.
+The registry-conflicts refresh worker also needs source-job identity evidence
+for its candidates. When the live feed is published in SQLite it queries the
+`job_sources` index for the registry's own sources, so the evidence read is
+bounded by the conflict sources rather than by the feed size. On a JSON feed it
+falls back to a bounded prefix (10,000 rows) read one array element at a time
+instead of calling `json.loads` on the whole file, so the warm-up/rebuild thread
+cannot hold the GIL for the feed's full parse. When that prefix truncates, the
+worker discards the partial job evidence and keeps those conflicts for review:
+an incomplete job set can make two boards look disjoint and wrongly suppress a
+real conflict.
 
 When adding a route, ask whether the handler needs a predicate, a projection, or
 an index. If it does, a whole-artifact `json.loads` is the wrong reader even when

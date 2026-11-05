@@ -59,6 +59,51 @@ def test_replace_feed_publishes_generation_and_preserves_order_and_source_bundle
             }
 
 
+def test_source_identity_rows_needs_a_published_generation() -> None:
+    with workspace_tmpdir("job-runtime-source-rows-empty") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+
+            assert runtime.source_identity_rows({"greenhouse:siei"}) is None
+
+
+def test_source_identity_rows_filters_to_the_requested_sources() -> None:
+    rows = [
+        _row(
+            1,
+            source_bundle=[
+                {"source": "greenhouse:siei", "sourceJobId": "greenhouse:siei:100001"},
+            ],
+        ),
+        _row(
+            2,
+            source_bundle=[
+                {"source": "greenhouse:pdi", "sourceJobId": "greenhouse:pdi:200001"},
+                {"source": "greenhouse:haven", "sourceJobId": "greenhouse:haven:400001"},
+            ],
+        ),
+        _row(
+            3,
+            source_bundle=[
+                {"source": "greenhouse:naughtydog", "sourceJobId": "gh:300001"},
+            ],
+        ),
+    ]
+    with workspace_tmpdir("job-runtime-source-rows") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+            runtime.replace_feed(run_id="fetch_sources", rows=rows)
+
+            selected = runtime.source_identity_rows({"GREENHOUSE:SIEI", "greenhouse:pdi"})
+
+            assert selected is not None
+            assert {row["sourceJobId"] for row in selected} == {
+                "greenhouse:siei:100001",
+                "greenhouse:pdi:200001",
+            }
+            assert runtime.source_identity_rows(set()) == []
+
+
 def test_staged_generation_is_invisible_until_published() -> None:
     first_rows = [_row(1)]
     staged_rows = [_row(2)]

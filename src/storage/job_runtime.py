@@ -24,6 +24,7 @@ from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 
 JOB_FEED_SCHEMA_VERSION = 1
 DEFAULT_GENERATION_DELETE_CAP = 4
+_SOURCE_ALIAS_QUERY_CHUNK = 200
 
 
 def _now_iso() -> str:
@@ -315,6 +316,54 @@ class JobRuntimeStore:
         if not generation:
             return []
         return self.rows_for_generation(generation)
+
+    def source_identity_rows(self, source_aliases: set[str]) -> list[dict[str, Any]] | None:
+        """Source bundle entries for the given registry aliases in the current feed.
+
+        ``None`` means no generation is published, so the caller should fall
+        back to the JSON artifact. An empty list is authoritative: the indexed
+        ``job_sources`` rows for this generation contain none of those sources.
+        """
+        generation = self.current_generation()
+        if not generation:
+            return None
+        aliases = sorted(
+            {_clean_text(alias).lower() for alias in source_aliases if _clean_text(alias)}
+        )
+        if not aliases:
+            return []
+        payloads: list[dict[str, Any]] = []
+        for start in range(0, len(aliases), _SOURCE_ALIAS_QUERY_CHUNK):
+            chunk = aliases[start : start + _SOURCE_ALIAS_QUERY_CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self.store.execute_read(
+                f"""
+                SELECT payload_json
+                FROM job_sources
+                WHERE feed_generation = ?
+                  AND (source_id IN ({placeholders}) OR lower(source_name) IN ({placeholders}))
+                ORDER BY job_key ASC, source_ordinal ASC
+                """,
+                [generation, *chunk, *chunk],
+            )
+            payloads.extend(_json_loads_object(row.get("payload_json")) for row in rows)
+        unique: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for payload in payloads:
+            key = "::".join(
+                part
+                for part in (
+                    _clean_text(payload.get("source")),
+                    _clean_text(payload.get("sourceJobId")),
+                    _clean_text(payload.get("jobLink")),
+                )
+                if part
+            ) or _json_dumps(payload)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(payload)
+        return unique
 
     def rows_for_generation(self, generation: str) -> list[dict[str, Any]]:
         feed_generation = _clean_text(generation)

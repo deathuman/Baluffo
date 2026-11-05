@@ -1,10 +1,12 @@
-"""The conflicts refresh reads a bounded prefix of the jobs feed.
+"""The conflicts refresh reads job evidence without parsing the whole feed.
 
 `load_registry_conflicts_payload` runs inside the background refresh worker. A
-single whole-feed `json.loads` there holds the GIL for the artifact's full parse,
-so the payload reads a bounded row prefix instead. A truncated prefix must be
-discarded: partial job evidence can make boards look independent and suppress a
-real conflict, so truncation keeps conflicts for review.
+single whole-feed `json.loads` there holds the GIL for the artifact's full parse.
+When the feed is in SQLite it reads only the conflict sources through the
+`job_sources` index; otherwise it reads a bounded row prefix of the JSON
+artifact. A truncated prefix must be discarded: partial job evidence can make
+boards look independent and suppress a real conflict, so truncation keeps
+conflicts for review.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any
 
 from src.bridge import registry_conflicts as conflicts_module
 from src.bridge.registry_conflicts import load_registry_conflicts_payload
+from src.storage import BaluffoStore, JobRuntimeStore
 from tests.bridge.test_registry_conflicts_independent_providers import (
     _greenhouse_job_row,
     _sony_greenhouse_state,
@@ -85,3 +88,30 @@ def test_truncated_prefix_keeps_conflicts_instead_of_suppressing(
         "rowCount": 0,
     }
     assert "jobs_feed_row_limit_exceeded" in payload["warnings"]
+
+
+def test_published_sqlite_feed_reads_only_the_conflict_sources(tmp_path: Path) -> None:
+    source_state_path = tmp_path / "jobs-source-state.json"
+    source_state_path.write_text("{}", encoding="utf-8")
+    with BaluffoStore(tmp_path) as store:
+        store.set_authority_mode("jobsFeed", "sqlite", reason="test")
+        JobRuntimeStore(store).replace_feed(
+            run_id="seed",
+            rows=[
+                _greenhouse_job_row("siei", "100001"),
+                _greenhouse_job_row("siei", "100002"),
+                _greenhouse_job_row("pdi", "200001"),
+                _greenhouse_job_row("naughtydog", "300001"),
+                _greenhouse_job_row("haven", "400001"),
+            ],
+        )
+
+    payload = _payload(source_state_path)
+
+    assert not (tmp_path / "jobs-unified.json").exists()
+    assert payload["conflicts"] == []
+    assert payload["suppressedIndependentProviderBoards"]["summary"] == {
+        "familyCount": 1,
+        "rowCount": 4,
+    }
+    assert "jobs_feed_row_limit_exceeded" not in payload.get("warnings", [])

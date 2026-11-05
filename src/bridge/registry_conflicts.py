@@ -15,6 +15,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflic
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,7 @@ from src.bridge.registry_conflicts_row import (
     _unique_registry_rows,
     _with_live_adjudication_card,
 )
+from src.bridge.registry_conflicts_row_identity import _provider_source_aliases
 
 # ── Re-export public API from summary module ──
 from src.bridge.registry_conflicts_summary import (
@@ -491,6 +493,52 @@ def _load_conflict_job_rows(path: Path) -> tuple[list[dict[str, Any]], bool]:
     return rows, False
 
 
+_SOURCE_AWARE_STORE_ERRORS = (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error)
+
+
+def _registry_source_aliases(registry_state: Any) -> set[str]:
+    aliases: set[str] = set()
+    registry = _as_dict(registry_state)
+    for bucket in ("active", "pending", "rejected"):
+        for row in _as_list(registry.get(bucket)):
+            if isinstance(row, dict):
+                aliases.update(_provider_source_aliases(row))
+    return aliases
+
+
+def _load_source_aware_job_rows(
+    *, source_state_path: Path, registry_state: Any
+) -> list[dict[str, Any]] | None:
+    """Job evidence from the SQLite feed, filtered to the registry's sources.
+
+    The live bridge keeps the feed in SQLite, so the sources in conflict can be
+    read through the ``job_sources`` index instead of scanning the JSON
+    artifact. ``None`` asks the caller to fall back to the bounded JSON prefix:
+    no runtime database, JSON authority, or no published generation.
+    """
+    data_dir = Path(source_state_path).parent
+    from src.bridge.storage_health import get_storage_store
+    from src.storage.baluffo_store import DEFAULT_DB_NAME
+    from src.storage.job_runtime import JobRuntimeStore
+
+    if not (data_dir / DEFAULT_DB_NAME).exists():
+        return None
+    aliases = _registry_source_aliases(registry_state)
+    if not aliases:
+        return []
+    try:
+        store = get_storage_store(data_dir)
+        modes = store.get_authority_modes()
+    except _SOURCE_AWARE_STORE_ERRORS:
+        return None
+    if str((modes or {}).get("jobsFeed") or "").strip().lower() != "sqlite":
+        return None
+    try:
+        return JobRuntimeStore(store).source_identity_rows(aliases)
+    except _SOURCE_AWARE_STORE_ERRORS:
+        return None
+
+
 def load_registry_conflicts_payload(
     *,
     load_state: Callable[[], Any],
@@ -505,9 +553,15 @@ def load_registry_conflicts_payload(
     fetch_report_payload = load_runtime_evidence(
         Path(source_state_path).with_name("jobs-fetch-report.json"), {}
     )
-    job_rows, job_rows_truncated = _load_conflict_job_rows(
-        Path(source_state_path).with_name("jobs-unified.json")
+    job_rows = _load_source_aware_job_rows(
+        source_state_path=Path(source_state_path),
+        registry_state=registry_state,
     )
+    job_rows_truncated = False
+    if job_rows is None:
+        job_rows, job_rows_truncated = _load_conflict_job_rows(
+            Path(source_state_path).with_name("jobs-unified.json")
+        )
     source_state_payload = _merge_fetch_report_source_details(
         source_state_payload,
         fetch_report_payload,

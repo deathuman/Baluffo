@@ -57,10 +57,11 @@ Four rules the guardrail enforces so this cannot quietly regress:
 - Opening the Ops tab no longer re-parses the task-lifecycle ledger twice per
   poll; the JSON read is cached against the artifact's file signature and
   refreshed by the bridge's own writes.
-- The registry-conflicts background refresh reads at most the first 10,000
-  rows of the jobs feed instead of parsing the whole artifact. When the prefix
-  truncates, it drops that partial evidence and keeps the conflicts for review
-  rather than suppressing boards on an incomplete job set.
+- The registry-conflicts background refresh no longer parses the whole jobs
+  feed. With the feed in SQLite it reads only the conflict sources through the
+  `job_sources` index; otherwise it reads at most the first 10,000 rows of the
+  JSON artifact. A truncated prefix is dropped and the conflicts are kept for
+  review rather than suppressing boards on an incomplete job set.
 - Availability changes written back to the jobs feed no longer read that feed
   twice.
 
