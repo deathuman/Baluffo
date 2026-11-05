@@ -90,6 +90,13 @@ build lock, so concurrent boot requests cannot each repeat it. Availability
 reconciliation likewise parses the private feed from the text its rollback
 snapshot already read instead of decompressing it again.
 
+The task-lifecycle ledger follows the same rule. Under the JSON authority the
+Ops health projection reads it twice per request (current and recent task
+rows), and every heartbeat rewrites it. The service now caches the trimmed,
+normalized rows against the file's inode/size/`mtime_ns`/`ctime_ns` and seeds
+that cache on each write, so a steady-state Ops poll costs a `stat` plus
+shallow copies while an external rewrite still invalidates the entry.
+
 When adding a route, ask whether the handler needs a predicate, a projection, or
 an index. If it does, a whole-artifact `json.loads` is the wrong reader even when
 it is a single tidy line.

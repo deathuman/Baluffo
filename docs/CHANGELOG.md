@@ -54,6 +54,9 @@ Four rules the guardrail enforces so this cannot quietly regress:
 - The Jobs page no longer waits on a full jobs-feed parse when its startup
   snapshot has to be rebuilt; the bridge reads only the rows that snapshot
   needs.
+- Opening the Ops tab no longer re-parses the task-lifecycle ledger twice per
+  poll; the JSON read is cached against the artifact's file signature and
+  refreshed by the bridge's own writes.
 - Availability changes written back to the jobs feed no longer read that feed
   twice.
 

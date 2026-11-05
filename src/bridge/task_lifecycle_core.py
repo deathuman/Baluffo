@@ -24,6 +24,17 @@ TERMINAL_STATUSES = {"succeeded", "failed", "canceled", "orphaned"}
 
 ALLOWED_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES
 
+_LedgerSignature = tuple[int, int, int, int]
+_LedgerCacheKey = tuple[str, _LedgerSignature, int]
+
+
+def _ledger_signature(path: Path) -> _LedgerSignature | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (int(stat.st_ino), int(stat.st_size), int(stat.st_mtime_ns), int(stat.st_ctime_ns))
+
 
 class TaskLifecycleState:
     """Shared instance state + cross-mixin surface for the TaskLifecycleService mixins."""
@@ -37,6 +48,8 @@ class TaskLifecycleState:
     _task_runtime_store: Callable[[], Any] | None
     _record_storage_diagnostic: Callable[..., None] | None
     _max_rows: int
+    _rows_cache_key: _LedgerCacheKey | None = None
+    _rows_cache: tuple[dict[str, Any], ...] = ()
 
     def _load_rows_locked(self) -> list[dict[str, Any]]:
         raise NotImplementedError
@@ -59,13 +72,39 @@ class TaskLifecycleState:
 
 class TaskLifecycleCoreMixin(TaskLifecycleState):
     def _load_rows_locked(self) -> list[dict[str, Any]]:
+        signature = _ledger_signature(self._path)
+        cache_key = (str(self._path), signature, self._max_rows) if signature is not None else None
+        if cache_key is not None and self._rows_cache_key == cache_key:
+            # Top-level copies only: heartbeats and aborts update the rows they
+            # load in place, and those edits must never reach the cached ledger.
+            return [dict(row) for row in self._rows_cache]
         payload = self._load_json_object(self._path, {})
         raw_rows = payload.get("rows") if isinstance(payload, dict) else []
-        if not isinstance(raw_rows, list):
-            return []
-        rows = [self._normalize_row(row) for row in raw_rows if isinstance(row, dict)]
+        rows = (
+            [self._normalize_row(row) for row in raw_rows if isinstance(row, dict)]
+            if isinstance(raw_rows, list)
+            else []
+        )
         rows.sort(key=lambda row: _clean_text(row.get("startedAt") or row.get("finishedAt")))
-        return rows[-self._max_rows :]
+        trimmed = rows[-self._max_rows :]
+        self._register_rows_cache(trimmed)
+        return trimmed
+
+    def _register_rows_cache(self, rows: list[dict[str, Any]]) -> None:
+        """Cache the ledger rows against the file version just read or written.
+
+        Ops reads project the same ledger twice per request (current + recent),
+        and every heartbeat rewrites it. Keying on the artifact's own signature
+        makes a steady-state poll a stat plus shallow copies instead of two full
+        JSON parses, while an external rewrite still invalidates the entry.
+        """
+        signature = _ledger_signature(self._path)
+        if signature is None:
+            self._rows_cache_key = None
+            self._rows_cache = ()
+            return
+        self._rows_cache_key = (str(self._path), signature, self._max_rows)
+        self._rows_cache = tuple(dict(row) for row in rows)
 
     def _save_rows_locked(self, rows: list[dict[str, Any]]) -> None:
         trimmed = self._write_rows_json_locked(rows)
@@ -84,6 +123,9 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
                 "rows": trimmed,
             },
         )
+        # Seed the cache with what was just written: the next Ops read after a
+        # heartbeat must not re-parse the artifact it already has in memory.
+        self._register_rows_cache(trimmed)
         return trimmed
 
     def _mirror_row_to_storage(self, row: dict[str, Any]) -> None:
