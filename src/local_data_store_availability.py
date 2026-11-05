@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from src.jobs.availability_identity import (
     read_identity_quarantine,
 )
 from src.jobs.common.url import fingerprint_url
-from src.jobs.state_lifecycle import read_job_lifecycle_state
+from src.jobs.state_lifecycle import lifecycle_state_fingerprint, read_job_lifecycle_state
 from src.shared.json_io import read_json
 from src.shared.utils import now_iso
 
@@ -308,45 +309,120 @@ def availability_attention(paths: LocalDataPaths, uid: str) -> dict[str, Any]:
     return {"count": len(unread), "events": unread[:200]}
 
 
+_OVERLAY_EVIDENCE_KEYS = ("kind", "confidence", "checkedAt", "source", "httpStatus")
+
+# The Saved page polls this projection, and `jobs-lifecycle-state.json` is
+# gzip-backed, so an uncached read decompresses the whole artifact and hands it
+# to one `json.loads`. That is a single uninterrupted C call holding the GIL for
+# its entire duration: measured at 4.5-5.8 s per poll for a one-row answer, with
+# `/desktop-local-data/session` stalling for seconds inside the same window
+# because no other thread - including the accept loop - could run. The projection
+# is kept compact (five fields per availability id) rather than reusing the
+# parsed artifact, so this cache does not duplicate the rows the availability
+# service already holds on a memory-constrained container.
+_OVERLAY_CACHE_MAX_ENTRIES = 4
+_OVERLAY_CACHE_LOCK = threading.Lock()
+_OVERLAY_PROJECTIONS: dict[
+    tuple[str, str],
+    tuple[tuple[int, int] | None, tuple[int, int] | None, dict[str, dict[str, Any]]],
+] = {}
+_OVERLAY_BUILD_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+
+
+def _overlay_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    evidence = entry.get("availabilityEvidence")
+    compact_evidence = {
+        key: evidence.get(key)
+        for key in _OVERLAY_EVIDENCE_KEYS
+        if isinstance(evidence, dict) and evidence.get(key) is not None and evidence.get(key) != ""
+    }
+    return {
+        "availabilityStatus": str(entry.get("availabilityStatus") or "available"),
+        "availabilityCheckedAt": str(entry.get("availabilityCheckedAt") or ""),
+        "availabilityVerifiedAt": str(entry.get("availabilityVerifiedAt") or ""),
+        "availabilityUnavailableAt": str(entry.get("availabilityUnavailableAt") or ""),
+        "availabilityEvidence": compact_evidence,
+    }
+
+
+def _extend_overlay_projection(projection: dict[str, dict[str, Any]], rows: Any) -> None:
+    """Overlay one artifact's rows onto the projection, last writer winning.
+
+    Mirrors the previous join exactly: rows are keyed by their exact
+    ``availabilityId``, and the per-profile custom state is applied second so it
+    still overrides the canonical artifact for the same id.
+    """
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        availability_id = str(entry.get("availabilityId") or "")
+        if not availability_id:
+            continue
+        projection[availability_id] = _overlay_entry(entry)
+
+
+def _overlay_build_lock(key: tuple[str, str]) -> threading.Lock:
+    with _OVERLAY_CACHE_LOCK:
+        lock = _OVERLAY_BUILD_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _OVERLAY_BUILD_LOCKS[key] = lock
+        return lock
+
+
+def _overlay_projection(state_path: Path, custom_path: Path) -> dict[str, dict[str, Any]]:
+    """Return the availability-id projection, re-parsing only when an artifact changes.
+
+    Invalidation is the writer-visible ``(mtime_ns, size)`` fingerprint, the same
+    signal the availability service's row cache already trusts.
+    """
+    key = (str(state_path), str(custom_path))
+    state_stamp = lifecycle_state_fingerprint(state_path)
+    custom_stamp = lifecycle_state_fingerprint(custom_path)
+    with _OVERLAY_CACHE_LOCK:
+        cached = _OVERLAY_PROJECTIONS.get(key)
+        if cached is not None and cached[0] == state_stamp and cached[1] == custom_stamp:
+            return cached[2]
+    # One build per fingerprint: a cold miss is seconds of GIL-held parsing, and
+    # concurrent polls must not each pay it.
+    with _overlay_build_lock(key):
+        with _OVERLAY_CACHE_LOCK:
+            cached = _OVERLAY_PROJECTIONS.get(key)
+            if cached is not None and cached[0] == state_stamp and cached[1] == custom_stamp:
+                return cached[2]
+        projection: dict[str, dict[str, Any]] = {}
+        _extend_overlay_projection(projection, read_job_lifecycle_state(state_path).values())
+        _extend_overlay_projection(projection, read_job_lifecycle_state(custom_path).values())
+        with _OVERLAY_CACHE_LOCK:
+            _OVERLAY_PROJECTIONS[key] = (state_stamp, custom_stamp, projection)
+            while len(_OVERLAY_PROJECTIONS) > _OVERLAY_CACHE_MAX_ENTRIES:
+                _OVERLAY_PROJECTIONS.pop(next(iter(_OVERLAY_PROJECTIONS)))
+        return projection
+
+
 def availability_overlay(paths: LocalDataPaths, uid: str) -> dict[str, Any]:
     """Return the current exact-identity availability projection for one profile."""
 
     require_current_user(paths, uid)
     data_dir = paths.root.parent
-    lifecycle_entries = list(
-        read_job_lifecycle_state(data_dir / "jobs-lifecycle-state.json").values()
+    by_id = _overlay_projection(
+        data_dir / "jobs-lifecycle-state.json",
+        paths.root / "jobs-custom-availability-state.json",
     )
-    lifecycle_entries.extend(
-        read_job_lifecycle_state(paths.root / "jobs-custom-availability-state.json").values()
-    )
-    by_id = {
-        str(entry.get("availabilityId") or ""): entry
-        for entry in lifecycle_entries
-        if isinstance(entry, dict) and str(entry.get("availabilityId") or "")
-    }
     rows: list[dict[str, Any]] = []
     for saved in load_saved_job_rows(paths, uid)[:2000]:
         availability_id = str(saved.get("availabilityId") or "")
         entry = by_id.get(availability_id)
         if not entry:
             continue
-        evidence = entry.get("availabilityEvidence")
-        compact_evidence = {
-            key: evidence.get(key)
-            for key in ("kind", "confidence", "checkedAt", "source", "httpStatus")
-            if isinstance(evidence, dict)
-            and evidence.get(key) is not None
-            and evidence.get(key) != ""
-        }
         rows.append(
             {
                 "jobKey": str(saved.get("jobKey") or ""),
                 "availabilityId": availability_id,
-                "availabilityStatus": str(entry.get("availabilityStatus") or "available"),
-                "availabilityCheckedAt": str(entry.get("availabilityCheckedAt") or ""),
-                "availabilityVerifiedAt": str(entry.get("availabilityVerifiedAt") or ""),
-                "availabilityUnavailableAt": str(entry.get("availabilityUnavailableAt") or ""),
-                "availabilityEvidence": compact_evidence,
+                **entry,
+                # A fresh copy keeps the cached projection immutable to callers,
+                # exactly as the previous per-request dict did.
+                "availabilityEvidence": dict(entry["availabilityEvidence"]),
             }
         )
     return {"rows": rows}

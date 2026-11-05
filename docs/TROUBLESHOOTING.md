@@ -59,13 +59,28 @@ investigating further:
 | Bridge still alive | Bridge PID in `%LOCALAPPDATA%\Baluffo\desktop-session.json` matches the running `Baluffo.exe`; a restart is logged as a new `desktop_bridge_spawned` startup-trace event |
 | Not a cold-start race | A fresh launch waits only `BRIDGE_GATE_TIMEOUT_S` (4 s) for bridge readiness, so `desktop_bridge_gate_deferred` in the startup metrics is expected on a slow launch and is not this failure by itself |
 | Not a site failure | `:8080` staying healthy while only `:8877` fails isolates it to the bridge listener |
-| Accept stalls | `GET /ops/performance-profile` returns `acceptMetrics`; a non-zero `stallCount` or a raised `maxAcceptWaitMs` confirms the acceptor was descheduled under load |
+| Accept stalls | `GET /ops/performance-profile` returns `acceptMetrics`; a non-zero `stallCount` or a raised `maxAcceptWaitMs` means the process could not run the acceptor (see the GIL note below) |
 | Connection churn | `Get-NetTCPConnection -LocalPort 8877 \| Group-Object State`; a large `TimeWait` count means requests were not reusing sockets |
 
 Local listeners now use a 128-deep listen backlog and HTTP/1.1 keep-alive (see
 `src/shared/http_server_capacity.py`), so a page-load burst should not overflow
 the backlog. If the banner still appears, capture `acceptMetrics` before
 changing anything else.
+
+`maxAcceptWaitMs` is a GIL measure, not only a queue measure: the stopwatch
+stops when `accept()` returns to Python, so the recorded wait includes
+reacquiring the GIL. One uninterrupted C call elsewhere in the process raises it
+even when the kernel had a connection ready the whole time, and that same call is
+then the reason a small request such as `/desktop-local-data/session` takes
+seconds while reporting a `payloadBuildMs` of 0.
+
+Read it together with `operationTimings`. A whole-artifact `json.loads` is the
+usual culprit, because it holds the GIL for its full duration. One did: the
+Saved overlay parsed the gzip-backed `jobs-lifecycle-state.json` on every poll,
+measured at 4.5-5.8 s per call for a one-row answer. It now caches a compact
+projection keyed by the artifact's `mtime_ns`+`size`, and reports its own
+`desktop_local_data.availability_overlay` operation timing, so a regression
+shows up as a parse-bound operation rather than only as slow routes.
 
 ### Admin badge flips to "Bridge Reconnecting" while requests succeed
 

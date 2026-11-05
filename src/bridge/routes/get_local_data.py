@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
+from src.bridge.performance_profile import time_operation
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import LocalSavedJobRowSchema
@@ -272,7 +273,12 @@ def _handle_availability_overlay_route(
 ) -> bool:
     def _payload() -> dict[str, Any]:
         uid = (query.get("uid") or [""])[0]
-        return {"ok": True, **api.desktop_local_data_store().get_availability_overlay(uid)}
+        # Timed apart from the route duration so this profile answers the question
+        # the route alone cannot: a second spent here is the lifecycle parse (a
+        # cache miss), while route time beyond it is queueing around the GIL.
+        with time_operation("desktop_local_data.availability_overlay"):
+            overlay = api.desktop_local_data_store().get_availability_overlay(uid)
+        return {"ok": True, **overlay}
 
     send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
     return True
