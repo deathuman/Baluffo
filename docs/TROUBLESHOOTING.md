@@ -97,6 +97,14 @@ normalized rows against the file's inode/size/`mtime_ns`/`ctime_ns` and seeds
 that cache on each write, so a steady-state Ops poll costs a `stat` plus
 shallow copies while an external rewrite still invalidates the entry.
 
+The registry-conflicts refresh worker also reads the jobs feed for its
+source-job identity index. It now reads a bounded prefix (10,000 rows) one array
+element at a time instead of calling `json.loads` on the whole file, so the
+warm-up/rebuild thread cannot hold the GIL for the feed's full parse. When the
+feed exceeds the prefix, the worker discards the partial job evidence and keeps
+those conflicts for review: an incomplete job set can make two boards look
+disjoint and wrongly suppress a real conflict.
+
 When adding a route, ask whether the handler needs a predicate, a projection, or
 an index. If it does, a whole-artifact `json.loads` is the wrong reader even when
 it is a single tidy line.

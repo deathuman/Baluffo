@@ -94,8 +94,8 @@ from src.bridge.registry_conflicts_summary import (
     summarize_registry_conflicts_payload,
     write_registry_conflicts_summary_cache,
 )
-from src.shared.json_io import read_json
 from src.shared.json_io import read_json_object as read_pipeline_json_object
+from src.shared.partial_json import read_json_rows_prefix
 from src.source_registry import source_identity
 from src.source_registry_policy import duplicate_family_conflict_cards
 
@@ -471,6 +471,26 @@ def derive_registry_conflict_queue(
     }
 
 
+_CONFLICT_JOB_ROW_LIMIT = 10_000
+
+
+def _load_conflict_job_rows(path: Path) -> tuple[list[dict[str, Any]], bool]:
+    """Read at most ``_CONFLICT_JOB_ROW_LIMIT`` feed rows for the job index.
+
+    This runs in the background refresh worker, so one whole-artifact
+    ``json.loads`` would hold the GIL for the feed's full parse. A truncated
+    prefix is discarded rather than used: a partial job set can make two boards
+    look disjoint, which would wrongly prove independence and suppress a real
+    conflict. Returning no rows keeps those conflicts for review instead.
+    """
+    rows = read_json_rows_prefix(path, _CONFLICT_JOB_ROW_LIMIT + 1)
+    if rows is None:
+        return [], False
+    if len(rows) > _CONFLICT_JOB_ROW_LIMIT:
+        return [], True
+    return rows, False
+
+
 def load_registry_conflicts_payload(
     *,
     load_state: Callable[[], Any],
@@ -485,7 +505,9 @@ def load_registry_conflicts_payload(
     fetch_report_payload = load_runtime_evidence(
         Path(source_state_path).with_name("jobs-fetch-report.json"), {}
     )
-    job_rows = read_json(Path(source_state_path).with_name("jobs-unified.json"), [])
+    job_rows, job_rows_truncated = _load_conflict_job_rows(
+        Path(source_state_path).with_name("jobs-unified.json")
+    )
     source_state_payload = _merge_fetch_report_source_details(
         source_state_payload,
         fetch_report_payload,
@@ -497,6 +519,8 @@ def load_registry_conflicts_payload(
         job_rows,
     )
     warnings: list[str] = []
+    if job_rows_truncated:
+        warnings.append("jobs_feed_row_limit_exceeded")
     if not Path(source_state_path).exists():
         warnings.append("missing_jobs_source_state_artifact")
     if warnings:
