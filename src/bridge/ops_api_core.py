@@ -81,6 +81,12 @@ class OpsDeps:
     get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
+    # Optional rows-aware variant: lets a caller that already projected the
+    # recent rows (the ops health payload) hand them to the schedule entry so
+    # it does not project the whole ledger a second time.
+    get_jobs_pipeline_schedule_ops_entry_for_rows: (
+        Callable[[list[dict[str, Any]]], dict[str, Any]] | None
+    ) = None
     sync_config_status: Callable[[], dict[str, Any]] = field(default_factory=lambda: lambda: {})
     load_sync_runtime_state: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
@@ -210,6 +216,7 @@ class OpsApiState:
     _lifecycle_row_cache: dict[str, tuple[float, list[dict[str, Any]]]]
     _lifecycle_row_cache_lock: Any
     _pipeline_schedule_cache: tuple[float, dict[str, Any]] | None
+    _pipeline_schedule_rows_cache: tuple[float, dict[str, Any]] | None
 
     # Cross-mixin method surface. The bodies live in the ops_api mixin leaves;
     # these stubs let mypy type ``self`` in every leaf without repeating the
@@ -223,7 +230,9 @@ class OpsApiState:
     def _recent_lifecycle_rows(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    def _pipeline_schedule_ops_entry_cached(self) -> dict[str, Any]:
+    def _pipeline_schedule_ops_entry_cached(
+        self, *, recent_rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
     def load_alert_state(self) -> dict[str, Any]:
@@ -280,13 +289,28 @@ class OpsApiCoreMixin(OpsApiState):
         surface: str,
         loader: Callable[[], list[dict[str, Any]]],
     ) -> list[dict[str, Any]]:
+        rows, _served_from_cache = self._read_lifecycle_rows_cached_state(
+            cache_key=cache_key,
+            surface=surface,
+            loader=loader,
+        )
+        return rows
+
+    def _read_lifecycle_rows_cached_state(
+        self,
+        *,
+        cache_key: str,
+        surface: str,
+        loader: Callable[[], list[dict[str, Any]]],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Rows plus whether this read was served from the short-lived cache."""
         now = time.monotonic()
         with self._lifecycle_row_cache_lock:
             cached = self._lifecycle_row_cache.get(cache_key)
             if cached is not None:
                 expires_at, cached_rows = cached
                 if expires_at > now:
-                    return [dict(row) for row in cached_rows]
+                    return [dict(row) for row in cached_rows], True
 
         started_at = time.perf_counter()
         rows: list[dict[str, Any]] = []
@@ -305,7 +329,7 @@ class OpsApiCoreMixin(OpsApiState):
         expires_at = time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS
         with self._lifecycle_row_cache_lock:
             self._lifecycle_row_cache[cache_key] = (expires_at, [dict(row) for row in rows])
-        return [dict(row) for row in rows]
+        return [dict(row) for row in rows], False
 
     def _invalidate_lifecycle_row_cache(self) -> None:
         with self._lifecycle_row_cache_lock:
@@ -353,6 +377,10 @@ class OpsApiCoreMixin(OpsApiState):
         return False
 
     def _repair_stale_terminal_lifecycle_rows(self, rows: list[dict[str, Any]]) -> bool:
+        # Only an active row can be repaired, so an idle read must not pay for
+        # the pipeline-status lookup that live-evidence checks need.
+        if not any(_row_active(row) for row in rows):
+            return False
         pipeline_status = as_json_object(self._deps.get_jobs_pipeline_status_payload())
         repaired = False
         for row in rows:
@@ -400,11 +428,17 @@ class OpsApiCoreMixin(OpsApiState):
         return repaired
 
     def _current_lifecycle_rows(self) -> list[dict[str, Any]]:
-        rows = self._read_lifecycle_rows_cached(
+        rows, served_from_cache = self._read_lifecycle_rows_cached_state(
             cache_key="current",
             surface="taskRuns.current",
             loader=lambda: list(self._deps.get_lifecycle_current_runs()),
         )
+        # A cache hit was repaired (or cleared as healthy) by the read that filled
+        # the cache, and every repair invalidates it. Re-running the scan would
+        # only re-read pipeline status on every warm request; rows loaded fresh
+        # are still repaired immediately.
+        if served_from_cache:
+            return rows
         if self._repair_stale_terminal_lifecycle_rows(rows):
             rows = self._read_lifecycle_rows_cached(
                 cache_key="current",
@@ -420,20 +454,30 @@ class OpsApiCoreMixin(OpsApiState):
             loader=lambda: list(self._deps.get_lifecycle_recent_runs()),
         )
 
-    def _pipeline_schedule_ops_entry_cached(self) -> dict[str, Any]:
+    def _pipeline_schedule_ops_entry_cached(
+        self, *, recent_rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        rows_dep = self._deps.get_jobs_pipeline_schedule_ops_entry_for_rows
+        use_rows = recent_rows is not None and rows_dep is not None
         now = time.monotonic()
         with self._lifecycle_row_cache_lock:
-            cached = self._pipeline_schedule_cache
+            cached = (
+                self._pipeline_schedule_rows_cache if use_rows else self._pipeline_schedule_cache
+            )
             if cached is not None:
                 expires_at, payload = cached
                 if expires_at > now:
                     return dict(payload)
-        payload = dict(self._deps.get_jobs_pipeline_schedule_ops_entry() or {})
+        if use_rows and rows_dep is not None and recent_rows is not None:
+            payload = dict(rows_dep(recent_rows) or {})
+        else:
+            payload = dict(self._deps.get_jobs_pipeline_schedule_ops_entry() or {})
         with self._lifecycle_row_cache_lock:
-            self._pipeline_schedule_cache = (
-                time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS,
-                dict(payload),
-            )
+            entry = (time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS, dict(payload))
+            if use_rows:
+                self._pipeline_schedule_rows_cache = entry
+            else:
+                self._pipeline_schedule_cache = entry
         return payload
 
     def get_projected_run_history(self) -> _run_history_api.LifecycleProjection:

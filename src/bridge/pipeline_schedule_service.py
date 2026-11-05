@@ -123,17 +123,22 @@ class PipelineScheduleService:
         self.evaluate_due(reason="config_update")
         return self.get_payload()
 
-    def get_payload(self) -> dict[str, Any]:
+    def get_payload(self, *, recent_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         config = self.load_config()
         return {
             "ok": True,
             "savedConfig": dict(config),
-            "status": self.get_status(config=config),
+            "status": self.get_status(config=config, recent_rows=recent_rows),
         }
 
-    def get_status(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def get_status(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        recent_rows: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         cfg = config if isinstance(config, dict) else self.load_config()
-        schedule = self._schedule_state(cfg)
+        schedule = self._schedule_state(cfg, recent_rows=recent_rows)
         active_pipeline = self._active_pipeline_context()
         with self._lock:
             if not bool(schedule["due"]):
@@ -167,8 +172,10 @@ class PipelineScheduleService:
             ),
         }
 
-    def get_ops_schedule_entry(self) -> dict[str, Any]:
-        payload = self.get_payload()
+    def get_ops_schedule_entry(
+        self, *, recent_rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        payload = self.get_payload(recent_rows=recent_rows)
         saved = dict(payload.get("savedConfig") or {})
         status = dict(payload.get("status") or {})
         enabled = bool(saved.get("enabled"))
@@ -235,8 +242,10 @@ class PipelineScheduleService:
 
         return self._start_scheduled_pipeline(reason=reason)
 
-    def _schedule_state(self, config: dict[str, Any]) -> dict[str, Any]:
-        last_row = self._latest_terminal_pipeline_row()
+    def _schedule_state(
+        self, config: dict[str, Any], *, recent_rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        last_row = self._latest_terminal_pipeline_row(recent_rows)
         last_finished_at = _clean_text((last_row or {}).get("finishedAt"))
         next_run_at = ""
         due = False
@@ -295,9 +304,12 @@ class PipelineScheduleService:
             "activeChildRunId": _clean_text(payload.get("activeChildRunId")),
         }
 
-    def _latest_terminal_pipeline_row(self) -> dict[str, Any] | None:
+    def _latest_terminal_pipeline_row(
+        self, rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
         candidates: list[tuple[datetime, int, dict[str, Any]]] = []
-        for index, row in enumerate(self._get_lifecycle_recent_runs() or []):
+        recent_rows = self._get_lifecycle_recent_runs() if rows is None else rows
+        for index, row in enumerate(recent_rows or []):
             if not isinstance(row, dict):
                 continue
             task_type = _clean_text(row.get("taskType") or row.get("type")).lower()

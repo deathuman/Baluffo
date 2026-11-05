@@ -122,7 +122,9 @@ class _PipelineScheduleServiceLike(Protocol):
 
     def update_config(self, payload: JsonObject | None) -> JsonObject: ...
 
-    def get_ops_schedule_entry(self) -> JsonObject: ...
+    def get_ops_schedule_entry(
+        self, *, recent_rows: list[JsonObject] | None = None
+    ) -> JsonObject: ...
 
     def start_background_polling(self) -> JsonObject: ...
 
@@ -624,6 +626,11 @@ def get_ops_api(*, root_mod: Any) -> _OpsApiLike:
                 get_jobs_pipeline_schedule_ops_entry=lambda: get_pipeline_schedule_service(
                     root_mod=root_mod
                 ).get_ops_schedule_entry(),
+                get_jobs_pipeline_schedule_ops_entry_for_rows=lambda recent_rows: (
+                    get_pipeline_schedule_service(root_mod=root_mod).get_ops_schedule_entry(
+                        recent_rows=recent_rows
+                    )
+                ),
                 normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
                 normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
                 desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,

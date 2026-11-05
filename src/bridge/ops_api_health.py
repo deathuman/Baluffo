@@ -509,7 +509,11 @@ class OpsApiHealthMixin(OpsApiState):
             )
         with time_operation("ops.health.pipeline_schedule"):
             try:
-                pipeline_schedule = self._pipeline_schedule_ops_entry_cached()
+                # The recent rows above already cover the ledger; hand them over so
+                # the schedule entry does not project the same ledger again.
+                pipeline_schedule = self._pipeline_schedule_ops_entry_cached(
+                    recent_rows=None if active_run_present else recent_rows
+                )
             except (RuntimeError, OSError, TypeError, ValueError):
                 pipeline_schedule = {}
         if isinstance(pipeline_schedule, dict):

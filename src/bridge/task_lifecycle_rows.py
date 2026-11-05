@@ -49,16 +49,22 @@ class TaskLifecycleRowsMixin(TaskLifecycleState):
             return [dict(row) for row in self._load_rows_locked()]
 
     def get_current_runs(self) -> list[dict[str, Any]]:
+        # Project from one locked load instead of copying the ledger a second
+        # time through rows(); _load_rows_locked already returns row copies.
+        with self._lock:
+            rows = self._load_rows_locked()
         return [
             self._to_route_row(row, active=True)
-            for row in self.rows()
+            for row in rows
             if _clean_text(row.get("status")).lower() in ACTIVE_STATUSES
         ]
 
     def get_recent_runs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._load_rows_locked()
         return [
             self._to_route_row(row, active=False)
-            for row in self.rows()
+            for row in rows
             if _clean_text(row.get("status")).lower() in TERMINAL_STATUSES
         ]
 

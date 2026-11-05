@@ -148,6 +148,29 @@ def test_pipeline_schedule_next_run_uses_latest_terminal_pipeline_row(tmp_path: 
     assert harness.started_payloads[-1]["trigger"] == "schedule"
 
 
+def test_pipeline_schedule_ops_entry_uses_supplied_recent_rows(tmp_path: Path) -> None:
+    harness = _Harness(tmp_path)
+    harness.saved = {"schemaVersion": 1, "enabled": True, "intervalHours": 24}
+    harness.recent_runs = [
+        {"taskType": "pipeline", "status": "ok", "finishedAt": "2026-05-30T08:00:00+00:00"}
+    ]
+
+    empty = harness.service.get_ops_schedule_entry(recent_rows=[])
+    from_rows = harness.service.get_ops_schedule_entry(
+        recent_rows=[
+            {
+                "taskType": "pipeline",
+                "status": "ok",
+                "finishedAt": "2026-05-31T09:00:00+00:00",
+            }
+        ]
+    )
+
+    assert empty["lastPipelineFinishedAt"] == ""
+    assert from_rows["lastPipelineFinishedAt"] == "2026-05-31T09:00:00+00:00"
+    assert from_rows["nextRunAt"] == "2026-06-01T09:00:00+00:00"
+
+
 def test_pipeline_schedule_defers_once_while_any_lifecycle_task_is_active(
     tmp_path: Path,
 ) -> None:

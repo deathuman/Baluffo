@@ -40,6 +40,7 @@ class OpsApi(
         self._lifecycle_row_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self._lifecycle_row_cache_lock = threading.RLock()
         self._pipeline_schedule_cache: tuple[float, dict[str, Any]] | None = None
+        self._pipeline_schedule_rows_cache: tuple[float, dict[str, Any]] | None = None
 
 
 __all__ = ["OpsApi", "OpsDeps", "OpsHealthDeps", "OpsPaths"]
