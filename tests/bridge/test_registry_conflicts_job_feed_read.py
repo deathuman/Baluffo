@@ -64,6 +64,11 @@ def test_payload_reads_a_bounded_prefix_of_the_jobs_feed(tmp_path: Path, monkeyp
     payload = _payload(source_state_path)
 
     assert read_calls == [(feed_path, conflicts_module._CONFLICT_JOB_ROW_LIMIT + 1)]
+    assert payload["jobEvidence"] == {
+        "source": "jobs_feed_prefix",
+        "rowCount": 5,
+        "truncated": False,
+    }
     assert payload["conflicts"] == []
     assert payload["suppressedIndependentProviderBoards"]["summary"] == {
         "familyCount": 1,
@@ -88,6 +93,11 @@ def test_truncated_prefix_keeps_conflicts_instead_of_suppressing(
         "rowCount": 0,
     }
     assert "jobs_feed_row_limit_exceeded" in payload["warnings"]
+    assert payload["jobEvidence"] == {
+        "source": "jobs_feed_prefix",
+        "rowCount": 0,
+        "truncated": True,
+    }
 
 
 def test_published_sqlite_feed_reads_only_the_conflict_sources(tmp_path: Path) -> None:
@@ -109,6 +119,11 @@ def test_published_sqlite_feed_reads_only_the_conflict_sources(tmp_path: Path) -
     payload = _payload(source_state_path)
 
     assert not (tmp_path / "jobs-unified.json").exists()
+    assert payload["jobEvidence"] == {
+        "source": "sqlite_source_index",
+        "rowCount": 5,
+        "truncated": False,
+    }
     assert payload["conflicts"] == []
     assert payload["suppressedIndependentProviderBoards"]["summary"] == {
         "familyCount": 1,

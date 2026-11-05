@@ -106,7 +106,9 @@ instead of calling `json.loads` on the whole file, so the warm-up/rebuild thread
 cannot hold the GIL for the feed's full parse. When that prefix truncates, the
 worker discards the partial job evidence and keeps those conflicts for review:
 an incomplete job set can make two boards look disjoint and wrongly suppress a
-real conflict.
+real conflict. The Registry conflicts tab reports which path the refresh used
+(`SQLite source index` or `JSON feed prefix`), the rows read, and whether a
+prefix was discarded, so a suppression decision can be traced to its evidence.
 
 When adding a route, ask whether the handler needs a predicate, a projection, or
 an index. If it does, a whole-artifact `json.loads` is the wrong reader even when

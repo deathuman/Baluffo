@@ -132,6 +132,27 @@ def test_registry_conflicts_summary_route_omits_heavy_conflict_detail(tmp_path: 
     assert payload["detailRoute"] == "/registry/conflicts"
 
 
+def test_registry_conflicts_summary_reports_job_evidence_source() -> None:
+    summary = summarize_registry_conflicts_payload(
+        {
+            "summary": {"conflictCount": 0},
+            "warnings": [],
+            "jobEvidence": {
+                "source": "sqlite_source_index",
+                "rowCount": 5,
+                "truncated": False,
+            },
+            "conflicts": [],
+        }
+    )
+
+    assert summary["jobEvidence"] == {
+        "source": "sqlite_source_index",
+        "rowCount": 5,
+        "truncated": False,
+    }
+
+
 def test_registry_conflicts_summary_route_uses_cached_exact_summary(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
@@ -158,6 +179,11 @@ def test_registry_conflicts_summary_route_uses_cached_exact_summary(tmp_path: Pa
             "registrySummary": registry_summary,
             "registryAutoHeal": {},
             "warnings": [],
+            "jobEvidence": {
+                "source": "sqlite_source_index",
+                "rowCount": 3,
+                "truncated": False,
+            },
             "conflicts": [{"familyKey": "sample"}],
             "conflictSampleCount": 1,
             "conflictsTruncated": True,
@@ -182,6 +208,7 @@ def test_registry_conflicts_summary_route_uses_cached_exact_summary(tmp_path: Pa
     assert payload["summaryStatus"] == "ready"
     assert payload["summaryExact"] is True
     assert payload["summary"]["conflictCount"] == 12
+    assert payload["jobEvidence"]["source"] == "sqlite_source_index"
     assert payload["conflicts"][0]["familyKey"] == "sample"
 
 

@@ -557,8 +557,10 @@ def load_registry_conflicts_payload(
         source_state_path=Path(source_state_path),
         registry_state=registry_state,
     )
+    job_evidence_source = "sqlite_source_index"
     job_rows_truncated = False
     if job_rows is None:
+        job_evidence_source = "jobs_feed_prefix"
         job_rows, job_rows_truncated = _load_conflict_job_rows(
             Path(source_state_path).with_name("jobs-unified.json")
         )
@@ -572,6 +574,11 @@ def load_registry_conflicts_payload(
         adjudication_payload,
         job_rows,
     )
+    payload["jobEvidence"] = {
+        "source": job_evidence_source,
+        "rowCount": len(job_rows),
+        "truncated": job_rows_truncated,
+    }
     warnings: list[str] = []
     if job_rows_truncated:
         warnings.append("jobs_feed_row_limit_exceeded")

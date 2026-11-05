@@ -61,7 +61,9 @@ Four rules the guardrail enforces so this cannot quietly regress:
   feed. With the feed in SQLite it reads only the conflict sources through the
   `job_sources` index; otherwise it reads at most the first 10,000 rows of the
   JSON artifact. A truncated prefix is dropped and the conflicts are kept for
-  review rather than suppressing boards on an incomplete job set.
+  review rather than suppressing boards on an incomplete job set. The Registry
+  conflicts tab shows which path the refresh used, the rows read, and whether
+  a prefix was discarded.
 - Availability changes written back to the jobs feed no longer read that feed
   twice.
 

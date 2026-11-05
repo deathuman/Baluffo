@@ -129,6 +129,31 @@ function renderRegistryConflictActionStrip(payload, visibleConflicts, checkingCo
   `;
 }
 
+function renderJobEvidenceDiagnostics(payload) {
+  const evidence = objectValue(payload?.jobEvidence);
+  const source = stringValue(evidence?.source, "unknown");
+  const rowCount = numberValue(evidence?.rowCount);
+  const truncated = evidence?.truncated === true;
+  const label = source === "sqlite_source_index"
+    ? "SQLite source index"
+    : source === "jobs_feed_prefix"
+      ? "JSON feed prefix"
+      : source === "unavailable"
+        ? "unavailable"
+        : "not reported";
+  const detail = source === "sqlite_source_index"
+    ? `${rowCount.toLocaleString()} source ${rowCount === 1 ? "row" : "rows"} matched for the registry's sources`
+    : source === "jobs_feed_prefix"
+      ? `${rowCount.toLocaleString()} feed ${rowCount === 1 ? "row" : "rows"} read${truncated ? "; prefix truncated, partial evidence discarded" : ""}`
+      : "the refresh has not reported job evidence yet";
+  return `
+    <div class="admin-registry-conflict-action-summary admin-registry-conflict-job-evidence">
+      <span class="admin-registry-conflict-triage-badge">Job evidence</span>
+      ${escapeHtml(label)} · ${escapeHtml(detail)}
+    </div>
+  `;
+}
+
 function renderSuppressedIndependentProviderBoards(payload) {
   const audit = objectValue(payload?.suppressedIndependentProviderBoards);
   const summary = objectValue(audit?.summary);
@@ -164,6 +189,7 @@ function renderSuppressedIndependentProviderBoards(payload) {
 }
 
 export {
+  renderJobEvidenceDiagnostics,
   renderRegistryConflictActionStrip,
   renderSuppressedIndependentProviderBoards
 };

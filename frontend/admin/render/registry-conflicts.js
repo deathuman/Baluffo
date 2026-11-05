@@ -19,6 +19,7 @@ import { stringValue } from "../../shared/format-utils.js";
 import { escapeHtml } from "../../shared/ui/index.js";
 import { stableOpsSignature } from "./ops-shared.js";
 import {
+  renderJobEvidenceDiagnostics,
   renderRegistryConflictActionStrip,
   renderSuppressedIndependentProviderBoards
 } from "./registry-conflicts-actions.js";
@@ -47,6 +48,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     const triage = getTriagePayload(payload, conflicts);
     const review = getReviewPayload(payload, conflicts);
     const suppressedIndependentProviderBoards = objectValue(payload?.suppressedIndependentProviderBoards);
+    const jobEvidence = objectValue(payload?.jobEvidence);
     const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
     seedConflictFiltersFromHash(reviewEl);
     const activeTriageFilter = stringValue(reviewEl?.dataset?.registryConflictTriageFilter, "all");
@@ -74,7 +76,8 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
       conflicts,
       fullCacheStatus: stringValue(payload?.fullCacheStatus),
       fullCacheAgeSeconds: Number(payload?.fullCacheAgeSeconds || 0),
-      suppressedIndependentProviderBoards
+      suppressedIndependentProviderBoards,
+      jobEvidence
     });
     if (canPatchInPlace && reviewEl.dataset.registryConflictsSig === signature) return;
     if (canPatchInPlace) reviewEl.dataset.registryConflictsSig = signature;
@@ -84,6 +87,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
       ${renderConflictCacheNotice(payload)}
       ${renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter, activeSearchQuery)}
       ${renderRegistryConflictActionStrip(payload, visibleConflicts, checkingConflicts)}
+      ${renderJobEvidenceDiagnostics(payload)}
       ${renderSuppressedIndependentProviderBoards(payload)}
       <div class="admin-registry-conflicts-list">
         ${visibleConflicts.length
