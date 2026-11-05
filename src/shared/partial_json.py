@@ -168,63 +168,99 @@ def read_json_rows_prefix(path: Path, limit: int) -> list[dict[str, Any]] | None
         handle.close()
 
 
-def _read_rows_prefix(handle: Any, limit: int) -> list[dict[str, Any]] | None:
-    decoder = json.JSONDecoder()
-    buffer = ""
-    position = 0
-    eof = False
+_PREFIX_END = object()
+_PREFIX_UNSETTLED = object()
 
-    def pull() -> bool:
-        nonlocal buffer, eof
-        chunk = handle.read(_JSON_PREFIX_BLOCK_BYTES)
+
+class _JsonPrefixReader:
+    """Bounded-window reader over the top-level array of a JSON artifact."""
+
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+        self._decoder = json.JSONDecoder()
+        self.buffer = ""
+        self.position = 0
+        self.eof = False
+
+    def _pull(self) -> bool:
+        chunk = self._handle.read(_JSON_PREFIX_BLOCK_BYTES)
         if not chunk:
-            eof = True
+            self.eof = True
             return False
-        buffer += chunk
+        self.buffer += chunk
         return True
 
-    array_start = -1
-    searched = 0
-    while array_start < 0:
-        found = buffer.find("[", searched)
-        if found >= 0:
-            array_start = found
-            break
-        if eof:
-            return None
-        searched = len(buffer)
-        if not pull():
-            return None
-    if buffer[:array_start].strip().lstrip("\ufeff"):
+    def _skip_separators(self) -> None:
+        while (
+            self.position < len(self.buffer)
+            and self.buffer[self.position] in _JSON_PREFIX_SEPARATORS
+        ):
+            self.position += 1
+
+    def _fill(self) -> None:
+        while self.position >= len(self.buffer) and not self.eof:
+            if not self._pull():
+                break
+            self._skip_separators()
+
+    def start_array(self) -> bool:
+        searched = 0
+        while True:
+            found = self.buffer.find("[", searched)
+            if found >= 0:
+                break
+            if self.eof:
+                return False
+            searched = len(self.buffer)
+            if not self._pull():
+                return False
+        if self.buffer[:found].strip().lstrip("\ufeff"):
+            return False
+        self.position = found + 1
+        return True
+
+    def _extend_for_retry(self) -> bool:
+        if self.eof or (len(self.buffer) - self.position) > _JSON_PREFIX_MAX_ELEMENT_BYTES:
+            return False
+        return self._pull()
+
+    def _compact(self) -> None:
+        if self.position > _JSON_PREFIX_BLOCK_BYTES:
+            self.buffer = self.buffer[self.position :]
+            self.position = 0
+
+    def read_next(self) -> Any:
+        while True:
+            self._skip_separators()
+            self._fill()
+            if self.position >= len(self.buffer):
+                return _PREFIX_UNSETTLED
+            if self.buffer[self.position] == "]":
+                return _PREFIX_END
+            try:
+                value, end = self._decoder.raw_decode(self.buffer, self.position)
+            except json.JSONDecodeError:
+                if not self._extend_for_retry():
+                    return _PREFIX_UNSETTLED
+                continue
+            self.position = end
+            self._compact()
+            return value
+
+
+def _read_rows_prefix(handle: Any, limit: int) -> list[dict[str, Any]] | None:
+    reader = _JsonPrefixReader(handle)
+    if not reader.start_array():
         return None
-    position = array_start + 1
     rows: list[dict[str, Any]] = []
     while len(rows) < limit:
-        while position < len(buffer) and buffer[position] in _JSON_PREFIX_SEPARATORS:
-            position += 1
-        while position >= len(buffer) and not eof:
-            if not pull():
-                break
-            while position < len(buffer) and buffer[position] in _JSON_PREFIX_SEPARATORS:
-                position += 1
-        if position >= len(buffer):
-            return None
-        if buffer[position] == "]":
+        value = reader.read_next()
+        if value is _PREFIX_END:
             return rows
-        try:
-            value, end = decoder.raw_decode(buffer, position)
-        except json.JSONDecodeError:
-            if eof or (len(buffer) - position) > _JSON_PREFIX_MAX_ELEMENT_BYTES:
-                return None
-            if not pull():
-                return None
-            continue
-        position = end
+        if value is _PREFIX_UNSETTLED:
+            return None
         if isinstance(value, dict):
             rows.append(value)
-        if position > _JSON_PREFIX_BLOCK_BYTES:
-            buffer = buffer[position:]
-            position = 0
     return rows
 
 
