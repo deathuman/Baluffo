@@ -6,6 +6,7 @@ Extracted from ``TaskLaunchApi``.  Every function takes an explicit
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from collections.abc import Callable, Iterator
@@ -81,6 +82,33 @@ def _snapshot_artifacts(paths: tuple[Path, ...]) -> dict[Path, str | None]:
                 read_json_text(physical_path) if physical_path.exists() else None
             )
     return snapshot
+
+
+def _snapshot_text(snapshot: JobsFeedReconciliationSnapshot, path: Path) -> str | None:
+    """Return a logical artifact's snapshotted text, gzip variant first.
+
+    Mirrors the candidate order of ``read_json``: the gzip copy wins when it
+    exists, otherwise the plain copy does.
+    """
+    for physical_path in _artifact_snapshot_paths(path):
+        text = snapshot.artifacts.get(physical_path)
+        if text is not None:
+            return text
+    return None
+
+
+def _rows_from_feed_text(text: str | None) -> list[dict[str, Any]] | None:
+    if text is None:
+        return None
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(payload, list):
+        return [dict(row) for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+        return [dict(row) for row in payload["jobs"] if isinstance(row, dict)]
+    return None
 
 
 # ── diagnostic recorder ─────────────────────────────────────────────
@@ -399,7 +427,11 @@ def reconcile_jobs_feed_availability(
                 )
                 return None
         try:
-            rows = _read_jobs_feed_rows(ctx.jobs_fetch_report)
+            # The snapshot already holds this artifact's text, so parse that
+            # instead of decompressing and decoding the feed a second time.
+            rows = _rows_from_feed_text(
+                _snapshot_text(snapshot, _jobs_feed_path(ctx.jobs_fetch_report))
+            )
             if rows is None:
                 raise RuntimeError("private jobs feed is unavailable")
             tombstone_path = _jobs_feed_tombstone_path(ctx.jobs_fetch_report)

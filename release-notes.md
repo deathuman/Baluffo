@@ -1,17 +1,15 @@
-## [0.3.037] - 2026-11-04
+## [0.3.038] - 2026-11-05
 
 ### Fixed
 
-- Jobs sources that need a browser fallback now keep the rendered page instead of
-  falling back to the original static shell. A successful render is used as the
-  source result, so dynamic boards can recover rather than reporting an empty or
-  failed source.
-- The container boot-performance check now matches the full-feed-first Jobs page:
-  it expects the full feed before the page is interactive and no longer treats
-  that request as forbidden.
+- The Jobs page no longer waits on a full jobs-feed parse when its startup
+  snapshot has to be rebuilt; the bridge reads only the rows that snapshot
+  needs.
+- Availability changes written back to the jobs feed no longer read that feed
+  twice.
 
 ### Notes
 
-- Distribution behavior is unchanged from 0.3.036: the same-origin Linux container,
+- Distribution behavior is unchanged: the same-origin Linux container,
   GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
   desktop localhost bridge compatibility all work as before.

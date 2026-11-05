@@ -82,6 +82,18 @@ projection keyed by the artifact's `mtime_ns`+`size`, and reports its own
 `desktop_local_data.availability_overlay` operation timing, so a regression
 shows up as a parse-bound operation rather than only as slow routes.
 
+Two more fast paths no longer parse a whole artifact for a small answer.
+`data/jobs-unified-startup.json` is regenerated from the gzip-backed light feed
+when it is missing or oversized, and that repair used to `json.loads` the entire
+feed inside the GET; it now reads a bounded prefix of the first ten rows under a
+build lock, so concurrent boot requests cannot each repeat it. Availability
+reconciliation likewise parses the private feed from the text its rollback
+snapshot already read instead of decompressing it again.
+
+When adding a route, ask whether the handler needs a predicate, a projection, or
+an index. If it does, a whole-artifact `json.loads` is the wrong reader even when
+it is a single tidy line.
+
 ### Admin badge flips to "Bridge Reconnecting" while requests succeed
 
 A single slow diagnostic must not read as a dead bridge. `GET /ops/storage-health`

@@ -271,6 +271,43 @@ def test_gzip_feed_snapshot_restores_previous_projection(tmp_path: Path) -> None
     assert not (data_dir / "jobs-unified.json").exists()
 
 
+def test_reconciliation_reuses_snapshot_text_instead_of_rereading_feed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.bridge import task_launch_jobs_feed as jobs_feed
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    initial_row = _canonical_feed_row()
+    write_atomic_if_changed(data_dir / "jobs-unified.json", json.dumps([initial_row]))
+    context = JobsFeedContext(
+        data_dir=data_dir,
+        jobs_fetch_report=data_dir / "jobs-fetch-report.json",
+        now_iso=lambda: "2026-07-10T10:00:00+00:00",
+        bridge_log=lambda *_args, **_kwargs: None,
+        save_json_atomic=lambda _path, _payload: None,
+        job_runtime_store_factory=lambda: None,
+    )
+    rereads: list[Path] = []
+    real_read_json = jobs_feed.read_json
+
+    def tracking_read_json(path, fallback):
+        rereads.append(Path(path))
+        return real_read_json(path, fallback)
+
+    monkeypatch.setattr(jobs_feed, "read_json", tracking_read_json)
+
+    snapshot = reconcile_jobs_feed_availability(
+        context,
+        availability_id="availability_1",
+        entry={**initial_row, "availabilityStatus": "unavailable"},
+    )
+
+    assert snapshot is not None
+    assert rereads == []
+    assert read_json(data_dir / "jobs-unified.json", None) == []
+
+
 def test_sqlite_authority_without_generation_fails_closed(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()

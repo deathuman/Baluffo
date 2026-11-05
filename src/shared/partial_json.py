@@ -8,9 +8,12 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused partial JSON tes
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 from typing import Any
+
+from src.shared.json_io import existing_json_candidate
 
 
 def _skip_json_string(text: str, index: int) -> int:
@@ -125,6 +128,104 @@ def decode_json_span(
         return json.loads(text[start:end])
     except (TypeError, ValueError, json.JSONDecodeError):
         return default
+
+
+_JSON_PREFIX_BLOCK_BYTES = 64 * 1024
+_JSON_PREFIX_MAX_ELEMENT_BYTES = 4 * 1024 * 1024
+_JSON_PREFIX_SEPARATORS = " \t\r\n,"
+
+
+def _open_json_text(path: Path) -> Any:
+    if str(path).lower().endswith(".gz"):
+        return gzip.open(path, mode="rt", encoding="utf-8")
+    return Path(path).open(mode="r", encoding="utf-8")
+
+
+def read_json_rows_prefix(path: Path, limit: int) -> list[dict[str, Any]] | None:
+    """Return the first ``limit`` object rows of a top-level JSON array artifact.
+
+    Reads in bounded blocks and stops as soon as ``limit`` rows are decoded, so
+    the caller pays for the rows it receives instead of the whole file. Returns
+    ``None`` when the prefix cannot settle the answer - missing file, a
+    non-array payload such as the ``{"jobs": [...]}`` envelope, malformed or
+    truncated JSON, or an element larger than ``_JSON_PREFIX_MAX_ELEMENT_BYTES``.
+    Callers keep their whole-artifact reader as a fallback rather than guessing.
+    """
+    if limit <= 0:
+        return []
+    resolved = existing_json_candidate(Path(path))
+    if resolved is None:
+        return None
+    try:
+        handle = _open_json_text(resolved)
+    except OSError:
+        return None
+    try:
+        return _read_rows_prefix(handle, limit)
+    except (OSError, EOFError, UnicodeDecodeError):
+        return None
+    finally:
+        handle.close()
+
+
+def _read_rows_prefix(handle: Any, limit: int) -> list[dict[str, Any]] | None:
+    decoder = json.JSONDecoder()
+    buffer = ""
+    position = 0
+    eof = False
+
+    def pull() -> bool:
+        nonlocal buffer, eof
+        chunk = handle.read(_JSON_PREFIX_BLOCK_BYTES)
+        if not chunk:
+            eof = True
+            return False
+        buffer += chunk
+        return True
+
+    array_start = -1
+    searched = 0
+    while array_start < 0:
+        found = buffer.find("[", searched)
+        if found >= 0:
+            array_start = found
+            break
+        if eof:
+            return None
+        searched = len(buffer)
+        if not pull():
+            return None
+    if buffer[:array_start].strip().lstrip("\ufeff"):
+        return None
+    position = array_start + 1
+    rows: list[dict[str, Any]] = []
+    while len(rows) < limit:
+        while position < len(buffer) and buffer[position] in _JSON_PREFIX_SEPARATORS:
+            position += 1
+        while position >= len(buffer) and not eof:
+            if not pull():
+                break
+            while position < len(buffer) and buffer[position] in _JSON_PREFIX_SEPARATORS:
+                position += 1
+        if position >= len(buffer):
+            return None
+        if buffer[position] == "]":
+            return rows
+        try:
+            value, end = decoder.raw_decode(buffer, position)
+        except json.JSONDecodeError:
+            if eof or (len(buffer) - position) > _JSON_PREFIX_MAX_ELEMENT_BYTES:
+                return None
+            if not pull():
+                return None
+            continue
+        position = end
+        if isinstance(value, dict):
+            rows.append(value)
+        if position > _JSON_PREFIX_BLOCK_BYTES:
+            buffer = buffer[position:]
+            position = 0
+    return rows
 
 
 def read_json_prefix(path: Path, *, max_bytes: int = 1024 * 1024) -> str:

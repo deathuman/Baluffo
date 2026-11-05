@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,7 @@ from src.bridge.performance_profile import record_operation_duration
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS
 from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, read_json
+from src.shared.partial_json import read_json_rows_prefix
 from src.source_registry_io_paths import registry_seed_path_for
 from src.storage_metrics import duration_ms, record_storage_read
 
@@ -84,6 +86,12 @@ _ROOT_DATA_READ_SURFACES = {
 }
 STARTUP_FEED_BACKFILL_LIMIT = 10
 STARTUP_FEED_MAX_BYTES = 512 * 1024
+
+# A cold repair reads the light feed and rewrites the startup artifact from the
+# GET handler, so concurrent boot requests would otherwise each repeat the read
+# and the write. The lock is held only while an artifact is actually missing or
+# oversized; the steady-state path never takes it.
+_STARTUP_FEED_BACKFILL_LOCK = threading.Lock()
 
 
 def is_api_path(path: str) -> bool:
@@ -187,9 +195,9 @@ def _rows_from_jobs_payload(payload: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, dict)]
 
 
-def _load_jobs_rows(path: Path) -> list[dict[str, Any]]:
-    payload = read_json(path, None)
-    return _rows_from_jobs_payload(payload)
+def _load_jobs_rows_prefix(path: Path, limit: int) -> list[dict[str, Any]] | None:
+    """Return the first ``limit`` rows without parsing the whole feed."""
+    return read_json_rows_prefix(path, limit)
 
 
 def _startup_feed_bytes(rows: list[dict[str, Any]]) -> bytes:
@@ -284,7 +292,14 @@ class StaticFileService:
 
     def _generate_startup_feed_bytes(self) -> bytes | None:
         for light_path in self._startup_feed_light_candidates():
-            rows = _load_jobs_rows(light_path)
+            rows = _load_jobs_rows_prefix(light_path, STARTUP_FEED_BACKFILL_LIMIT)
+            if rows:
+                return _startup_feed_bytes(rows)
+        # A payload the prefix reader cannot settle (for example the
+        # {"jobs": [...]} envelope) still needs the whole-artifact read. That
+        # branch is reached only on the repair path, never in steady state.
+        for light_path in self._startup_feed_light_candidates():
+            rows = _rows_from_jobs_payload(read_json(light_path, None))
             if rows:
                 return _startup_feed_bytes(rows)
         return None
@@ -306,13 +321,17 @@ class StaticFileService:
 
     def _backfill_startup_feed(self) -> Path | None:
         startup_path = self._startup_feed_path()
-        replace_existing = startup_path.is_file() and _startup_feed_needs_repair(startup_path)
-        if startup_path.is_file() and not replace_existing:
+        if startup_path.is_file() and not _startup_feed_needs_repair(startup_path):
             return startup_path
-        body = self._generate_startup_feed_bytes()
-        if body is None:
-            return startup_path if startup_path.is_file() else None
-        return self._persist_startup_feed_bytes(body, replace_existing=replace_existing)
+        with _STARTUP_FEED_BACKFILL_LOCK:
+            startup_path = self._startup_feed_path()
+            if startup_path.is_file() and not _startup_feed_needs_repair(startup_path):
+                return startup_path
+            replace_existing = startup_path.is_file()
+            body = self._generate_startup_feed_bytes()
+            if body is None:
+                return startup_path if startup_path.is_file() else None
+            return self._persist_startup_feed_bytes(body, replace_existing=replace_existing)
 
     def _render_missing_data_bytes(self, normalized: str) -> tuple[bytes, str] | None:
         if normalized not in {"jobs-unified-startup.json", "data/jobs-unified-startup.json"}:
