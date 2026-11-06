@@ -40,6 +40,10 @@ export function createOverviewHydration({
   // The gateway allows heavy routes 60s; the bridge rebuilds a cold conflict
   // cache in the background, so this budget is only a safety net.
   const REGISTRY_CONFLICTS_DETAIL_TIMEOUT_MS = 60000;
+  // Source Policy enriches recommendations against the full registry and its
+  // evidence; on a large registry it can exceed the gateway's default 8s
+  // proxy budget.
+  const SOURCE_POLICY_DETAIL_TIMEOUT_MS = 60000;
   const REGISTRY_CONFLICTS_BUILD_RETRY_MS = 3000;
   const REGISTRY_CONFLICTS_BUILD_MAX_RETRIES = 20;
   const REGISTRY_CONFLICTS_STALE_REFRESH_MS = 5000;
@@ -148,7 +152,11 @@ export function createOverviewHydration({
     if (sourcePolicyDetailLoad) return sourcePolicyDetailLoad;
     sourcePolicyDetailLoad = (async () => {
       try {
-        const payload = await getBridge(SOURCE_POLICY_DETAIL_PATH);
+        // A panel read must not be reported as the bridge going offline.
+        const payload = await getBridge(SOURCE_POLICY_DETAIL_PATH, {
+          timeoutMs: SOURCE_POLICY_DETAIL_TIMEOUT_MS,
+          affectsReachability: false
+        });
         const sourcePolicyRecommendations = payload
           && typeof payload === "object"
           && !Array.isArray(payload)

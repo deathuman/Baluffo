@@ -39,6 +39,7 @@ function createOpsReviewQueueFixture({
     adminOpsTrendsEl: createElement()
   };
   const calls = [];
+  const bridgeCalls = [];
   const posts = [];
   const rendered = [];
   const toasts = [];
@@ -85,8 +86,9 @@ function createOpsReviewQueueFixture({
   const controller = createAdminOpsController({
     state,
     refs,
-    getBridge: async path => {
+    getBridge: async (path, options) => {
       calls.push(path);
+      bridgeCalls.push({ path, options });
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state?view=summary") return { tasks: [] };
@@ -144,6 +146,7 @@ function createOpsReviewQueueFixture({
   return {
     controller,
     calls,
+    bridgeCalls,
     posts,
     rendered,
     rows,
@@ -173,6 +176,19 @@ test("admin ops controller loads source policy recommendations for the review qu
     assert.ok(fixture.calls.includes("/source-policy/recommendations"));
     assert.ok(fixture.rendered.length >= 1);
     assert.equal(rendered.payload.recommendations.pairs[0].staticSourceId, "static:studio");
+  } finally {
+    fixture.restore();
+  }
+});
+
+test("admin ops controller keeps source policy panel reads off bridge reachability", async () => {
+  const fixture = createOpsReviewQueueFixture();
+  try {
+    await loadSourcePolicyPanel(fixture);
+
+    const call = fixture.bridgeCalls.find(entry => entry.path === "/source-policy/recommendations");
+    assert.equal(call?.options?.affectsReachability, false);
+    assert.equal(call?.options?.timeoutMs, 60000);
   } finally {
     fixture.restore();
   }

@@ -96,6 +96,7 @@ _HEAVY_GET_EXACT = frozenset(
         "/admin/ops-tab-counts",
         "/ops/dashboard-health",
         "/registry/sources",
+        "/source-policy/recommendations",
     }
 )
 _HEAVY_GET_PREFIXES = ("/registry/conflicts",)
