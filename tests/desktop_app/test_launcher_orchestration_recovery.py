@@ -117,7 +117,7 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
             },
         ),
         mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"),
-        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="process_exit"
         ) as watch_mock,
@@ -135,6 +135,7 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
+        desktop_session_id=save_mock.call_args.args[0]["desktopSessionId"],
         browser_name="msedge",
         browser_path="C:/Edge/msedge.exe",
         launch_accepted_elapsed_ms=mock.ANY,

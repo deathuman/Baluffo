@@ -261,6 +261,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
+        desktop_session_id=save_payload["desktopSessionId"],
         browser_name="msedge",
         browser_path="C:/Edge/msedge.exe",
         launch_accepted_elapsed_ms=mock.ANY,

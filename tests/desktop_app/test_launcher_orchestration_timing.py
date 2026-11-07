@@ -399,6 +399,7 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
         bridge_process=mock.ANY,
         browser_process=None,
         browser_pid=0,
+        desktop_session_id=save_payload["desktopSessionId"],
         launch_accepted_elapsed_ms=mock.ANY,
         require_window=False,
         background_active_work_recovery=False,
