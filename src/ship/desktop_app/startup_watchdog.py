@@ -201,6 +201,18 @@ def _legacy_update_success_marker_paths(config: DesktopRuntimeConfig):
     return None
 
 
+def _note_window_missing_once(data_dir: Path, *, started_mono: float, already_logged: bool) -> bool:
+    if already_logged:
+        return True
+    api = desktop_api()
+    api._append_startup_trace(
+        data_dir,
+        "desktop_browser_window_missing_waiting_for_bridge",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+    )
+    return True
+
+
 def _desktop_close_requested_for_session(data_dir: Path, desktop_session_id: str) -> bool:
     api = desktop_api()
     expected_session_id = str(desktop_session_id or "").strip()
@@ -312,16 +324,13 @@ def watch_browser_session(
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             mode="bridge_authoritative",
         )
+
         while True:
             if api.updater_install_requested(data_dir):
                 return "update_install_requested"
             if bridge_process.poll() is not None:
                 return "bridge_exit"
-            if (
-                browser_process is not None
-                and browser_process.poll() is not None
-                and not browser_exit_logged
-            ):
+            if browser_process is not None and browser_process.poll() is not None:
                 browser_exit_logged = True
                 return_code = browser_process.poll()
                 api._append_startup_trace(
@@ -387,13 +396,11 @@ def watch_browser_session(
                 if window_open:
                     window_missing_logged = False
                 else:
-                    if not window_missing_logged:
-                        window_missing_logged = True
-                        api._append_startup_trace(
-                            data_dir,
-                            "desktop_browser_window_missing_waiting_for_bridge",
-                            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                        )
+                    window_missing_logged = _note_window_missing_once(
+                        data_dir,
+                        started_mono=started_mono,
+                        already_logged=window_missing_logged,
+                    )
                     last_activity = api.latest_browser_session_activity_ts(
                         data_dir,
                         bridge_port=bridge_port,
