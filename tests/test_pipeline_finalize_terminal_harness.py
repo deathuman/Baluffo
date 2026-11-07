@@ -10,6 +10,7 @@ import pytest
 
 from src.jobs import pipeline_finalize
 from src.jobs.availability_identity import AvailabilityIdentityPreflightError
+from src.jobs.feed_reconciliation_lock import ReconciliationLockTimeout
 from src.jobs.finalize_availability import _previous_availability_health
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
@@ -513,6 +514,71 @@ def test_failed_finalization_writes_terminal_report_and_bounded_identity_counts(
             "terminal_summary": {
                 **report["summary"],
             },
+        }
+    ]
+
+
+def test_failed_finalization_persists_lock_holder_and_full_timeout_message(
+    tmp_path: Path,
+) -> None:
+    """A reconciliation-lock timeout must stay attributable after the
+    exception is gone: the holder pid/cmdline and the whole message belong on
+    the failed report summary the fetch lifecycle copies into the task row."""
+
+    paths = build_pipeline_paths(tmp_path)
+    task_runtime = PipelineTaskRuntime(
+        run_id="fetch_lock_timeout",
+        started_at="2026-07-17T08:00:00+00:00",
+        task_rows={},
+        recent_events=[],
+    )
+    task_state_calls: list[dict[str, Any]] = []
+    lock_path = tmp_path / "data" / ".jobs-feed-reconciliation.lock"
+    holder = "pid=4242 cmd=python src/jobs_fetcher.py --preset all"
+    timeout_error = ReconciliationLockTimeout(
+        f"timed out after 1200s waiting for {lock_path} (holder: {holder}); "
+        "set BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S=0 to wait indefinitely",
+        lock_path=lock_path,
+        timeout_s=1200.0,
+        holder=holder,
+        holder_pid=4242,
+        holder_command="python src/jobs_fetcher.py --preset all",
+    )
+
+    report = pipeline_finalize.write_failed_pipeline_report(
+        paths=paths,
+        source_reports=[],
+        canonical_rows=[],
+        runtime_payload={},
+        task_runtime=task_runtime,
+        write_task_state=lambda **kwargs: task_state_calls.append(kwargs),
+        started_at="2026-07-17T08:00:00+00:00",
+        run_id="fetch_lock_timeout",
+        error=timeout_error,
+    )
+
+    summary = report["summary"]
+    assert summary["errorCode"] == "reconciliation_lock_timeout"
+    assert summary["errorReason"] == str(timeout_error)
+    assert "pid=4242" in summary["errorReason"]
+    assert summary["lockPath"] == str(lock_path)
+    assert summary["lockTimeoutSeconds"] == 1200.0
+    assert summary["lockHolderPid"] == 4242
+    assert summary["lockHolderCommand"] == "python src/jobs_fetcher.py --preset all"
+    assert report["status"] == "error"
+    assert report["taskProgress"]["phaseKey"] == "failed"
+    assert json.loads(paths.report_path.read_text(encoding="utf-8")) == report
+    sidecar = json.loads(
+        paths.report_path.with_name("jobs-fetch-report-summary.json").read_text(encoding="utf-8")
+    )
+    assert sidecar["summary"]["errorCode"] == "reconciliation_lock_timeout"
+    assert sidecar["summary"]["errorReason"] == str(timeout_error)
+    assert task_state_calls == [
+        {
+            "finished_at": report["finishedAt"],
+            "force": True,
+            "terminal_error_code": "reconciliation_lock_timeout",
+            "terminal_summary": summary,
         }
     ]
 

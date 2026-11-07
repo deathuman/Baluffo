@@ -103,6 +103,54 @@ def test_lifecycle_next_write_compacts_old_terminal_fetch_rows(tmp_path: Path) -
     assert "recentEvents" not in old_row["progress"]
 
 
+def test_fetch_failure_row_keeps_reconciliation_lock_attribution(tmp_path: Path) -> None:
+    """The stored failed row must still name the lock holder and the whole
+    timeout message once the exception object is gone."""
+
+    lock_path = "C:/data/.jobs-feed-reconciliation.lock"
+    holder_command = "python src/jobs_fetcher.py --preset all"
+    reason = (
+        f"timed out after 1200s waiting for {lock_path} "
+        f"(holder: pid=4242 cmd={holder_command}); "
+        "set BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S=0 to wait indefinitely"
+    )
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    _save_json_atomic(lifecycle_path, {"schemaVersion": 1, "updatedAt": "", "rows": []})
+    service = _service(tmp_path)
+    service.start_run(
+        run_id="fetch_lock_timeout",
+        task_type="fetch",
+        started_at="2026-05-06T18:00:00+00:00",
+    )
+
+    service.fail_run(
+        "fetch_lock_timeout",
+        "fetch",
+        finished_at="2026-05-06T18:05:00+00:00",
+        terminal_reason="failed",
+        summary={
+            "error": "reconciliation_lock_timeout",
+            "errorCode": "reconciliation_lock_timeout",
+            "errorReason": reason,
+            "lockPath": lock_path,
+            "lockTimeoutSeconds": 1200.0,
+            "lockHolderPid": 4242,
+            "lockHolderCommand": holder_command,
+            "sources": [{"name": "drop"}],
+        },
+    )
+
+    row = json.loads(lifecycle_path.read_text(encoding="utf-8"))["rows"][0]
+    assert row["status"] == "failed"
+    assert row["summary"]["errorCode"] == "reconciliation_lock_timeout"
+    assert row["summary"]["errorReason"] == reason
+    assert row["summary"]["lockPath"] == lock_path
+    assert row["summary"]["lockTimeoutSeconds"] == 1200.0
+    assert row["summary"]["lockHolderPid"] == 4242
+    assert row["summary"]["lockHolderCommand"] == holder_command
+    assert "sources" not in row["summary"]
+
+
 def test_lifecycle_generic_rows_drop_nested_hot_payloads_but_keep_scalar_evidence(
     tmp_path: Path,
 ) -> None:

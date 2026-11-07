@@ -24,6 +24,7 @@ from src.jobs.availability_schedule import direct_enforcement_enabled
 from src.jobs.canonicalize import snapshot_sector_quality_audit
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS, OUTPUT_FIELDS
 from src.jobs.contamination_audit import build_public_text_quality_report
+from src.jobs.feed_reconciliation_lock import ReconciliationLockTimeout
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import (
     append_fetch_runtime_event,
@@ -231,7 +232,33 @@ def _write_social_review_artifact(
     return social_review_payload, social_review_path
 
 
-def _bounded_identity_failure_summary(exc: BaseException) -> tuple[str, str, dict[str, Any]]:
+_MAX_FAILURE_REASON_CHARS = 1000
+
+
+def _bounded_failure_reason(text: str) -> str:
+    value = " ".join(str(text or "").split())
+    if len(value) <= _MAX_FAILURE_REASON_CHARS:
+        return value
+    return f"{value[: _MAX_FAILURE_REASON_CHARS - 1]}\u2026"
+
+
+def _lock_timeout_failure_fields(exc: ReconciliationLockTimeout) -> dict[str, Any]:
+    """Scalar holder/context fields a failed run can carry into its task record."""
+    fields: dict[str, Any] = {}
+    if exc.lock_path:
+        fields["lockPath"] = exc.lock_path
+    if exc.timeout_s > 0:
+        fields["lockTimeoutSeconds"] = exc.timeout_s
+    if exc.holder_pid is not None:
+        fields["lockHolderPid"] = int(exc.holder_pid)
+    if exc.holder_command:
+        fields["lockHolderCommand"] = _bounded_failure_reason(exc.holder_command)
+    return fields
+
+
+def _bounded_identity_failure_summary(
+    exc: BaseException,
+) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
     if isinstance(exc, AvailabilityIdentityPreflightError):
         allowed_counts: dict[str, Any] = {
             clean_text(key): max(0, int(value or 0))
@@ -247,8 +274,18 @@ def _bounded_identity_failure_summary(exc: BaseException) -> tuple[str, str, dic
         }
         if reason_counts:
             allowed_counts["rejectionReasonCounts"] = dict(list(sorted(reason_counts.items()))[:16])
-        return exc.error_code, exc.reason, allowed_counts
-    return "pipeline_finalization_failed", type(exc).__name__, {}
+        return exc.error_code, exc.reason, allowed_counts, {}
+    if isinstance(exc, ReconciliationLockTimeout):
+        # The message already names the holder pid/cmdline, the lock path, and the
+        # wait deadline; keep it whole so a timeout stays attributable after the
+        # exception object is gone.
+        return (
+            "reconciliation_lock_timeout",
+            _bounded_failure_reason(str(exc)),
+            {},
+            _lock_timeout_failure_fields(exc),
+        )
+    return "pipeline_finalization_failed", type(exc).__name__, {}, {}
 
 
 def write_failed_pipeline_report(
@@ -268,7 +305,9 @@ def write_failed_pipeline_report(
     from src.jobs import pipeline_finalize as _pf
 
     finished_at = _pf.now_iso()
-    error_code, error_reason, identity_summary = _bounded_identity_failure_summary(error)
+    error_code, error_reason, identity_summary, failure_fields = _bounded_identity_failure_summary(
+        error
+    )
     finalization_timings = dict(getattr(task_runtime, "finalization_timings", {}) or {})
     source_rows = _final_source_rows(
         build_detailed_source_rows(task_runtime.task_rows, source_reports),
@@ -296,6 +335,7 @@ def write_failed_pipeline_report(
         "error": error_code,
         "errorCode": error_code,
         "errorReason": error_reason,
+        **failure_fields,
     }
     update_fetch_runtime_phase(
         task_runtime,

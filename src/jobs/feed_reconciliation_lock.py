@@ -35,7 +35,28 @@ def _retry_contended_lock(acquire: Callable[[], None]) -> None:
 
 
 class ReconciliationLockTimeout(TimeoutError):
-    """The lock stayed held by another process past the configured deadline."""
+    """The lock stayed held by another process past the configured deadline.
+
+    The holder details are kept as attributes so a failure report can persist
+    them structurally instead of only inside the human-readable message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        lock_path: Path | str = "",
+        timeout_s: float = 0.0,
+        holder: str = "unknown",
+        holder_pid: int | None = None,
+        holder_command: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.lock_path = str(lock_path or "")
+        self.timeout_s = float(timeout_s or 0.0)
+        self.holder = holder or "unknown"
+        self.holder_pid = holder_pid
+        self.holder_command = holder_command
 
 
 def _lock_timeout_s() -> float:
@@ -87,18 +108,24 @@ def _holder_pid_for_inode(inode: str) -> int | None:
     return None
 
 
-def _lock_holder_summary(lock_path: Path) -> str:
+def _lock_holder_details(lock_path: Path) -> dict[str, Any]:
     """Name the process holding an ``flock`` on ``lock_path`` (Linux only)."""
+    unknown: dict[str, Any] = {"summary": "unknown", "pid": None, "command": ""}
     if not sys.platform.startswith("linux"):
-        return "unknown"
+        return unknown
     try:
         inode = str(lock_path.stat().st_ino)
     except OSError:
-        return "unknown"
+        return unknown
     pid = _holder_pid_for_inode(inode)
     if pid is None:
-        return "unknown"
-    return f"pid={pid} cmd={_read_cmdline(pid)[:160] or '<unknown>'}"
+        return unknown
+    command = _read_cmdline(pid)[:160] or "<unknown>"
+    return {"summary": f"pid={pid} cmd={command}", "pid": pid, "command": command}
+
+
+def _lock_holder_summary(lock_path: Path) -> str:
+    return str(_lock_holder_details(lock_path)["summary"])
 
 
 def _acquire_with_deadline(
@@ -129,10 +156,16 @@ def _acquire_with_deadline(
                 raise
             now = time.monotonic()
             if deadline is not None and now >= deadline:
+                holder = _lock_holder_details(lock_path)
                 raise ReconciliationLockTimeout(
                     f"timed out after {timeout_s:.0f}s waiting for {lock_path} "
-                    f"(holder: {_lock_holder_summary(lock_path)}); "
-                    f"set {_LOCK_TIMEOUT_ENV}=0 to wait indefinitely"
+                    f"(holder: {holder['summary']}); "
+                    f"set {_LOCK_TIMEOUT_ENV}=0 to wait indefinitely",
+                    lock_path=lock_path,
+                    timeout_s=timeout_s,
+                    holder=str(holder["summary"]),
+                    holder_pid=holder["pid"],
+                    holder_command=str(holder["command"]),
                 ) from exc
             if now >= next_warn:
                 print(

@@ -51,9 +51,16 @@ def test_timeout_names_the_holder(tmp_path, monkeypatch):
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         handle.close()
 
-    message = str(excinfo.value)
+    timeout = excinfo.value
+    message = str(timeout)
     assert "timed out" in message
     assert f"pid={os.getpid()}" in message
+    # The failure report persists these structurally, so they must be readable
+    # without parsing the message.
+    assert timeout.timeout_s == 0.25
+    assert timeout.lock_path == str(lock_path)
+    assert timeout.holder_pid == os.getpid()
+    assert timeout.holder == f"pid={os.getpid()} cmd={timeout.holder_command}"
 
 
 @_POSIX_ONLY
