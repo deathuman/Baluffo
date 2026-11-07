@@ -27,6 +27,7 @@ APP_RUNTIME_SCRIPTS: tuple[str, ...] = (
     "ashby_board_urls.py",
     "baluffo_version.py",
     "baluffo_config.py",
+    "build_info.py",
     "contracts.py",
     "dover_board_urls.py",
     "exceptions.py",

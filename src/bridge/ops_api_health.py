@@ -28,6 +28,7 @@ from src.bridge.fetch_report_summary import (
 )
 from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active, _task_type
 from src.bridge.performance_profile import time_operation
+from src.build_info import read_build_info
 from src.shared.json_shapes import as_json_object
 
 # Active runs recompute the KPI payload on every call so stage transitions
@@ -286,6 +287,7 @@ class OpsApiHealthMixin(OpsApiState):
                 "service": "baluffo-bridge",
                 "desktopMode": bool(self._deps.desktop_mode),
                 "appVersion": str(self._deps.app_version or ""),
+                "build": read_build_info(),
                 "startupReady": startup_ready,
                 "generatedAt": self._deps.now_iso(),
                 "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
@@ -456,6 +458,7 @@ class OpsApiHealthMixin(OpsApiState):
                 "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
                 "startupReady": startup_ready,
                 "appVersion": str(self._deps.app_version or ""),
+                "build": read_build_info(),
                 "owner": {
                     "mode": str(owner_state.get("ownerMode") or ""),
                     "token": str(owner_state.get("ownerToken") or ""),

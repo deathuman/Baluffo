@@ -105,12 +105,18 @@ const MODULE_SCRIPT_RE = /<script\s+type="module"\s+src="[^"]+"\s*><\/script>/g;
 // The budgets leave a few KB of headroom and are deliberately tight -- growth is
 // allowed, but only by editing the table below, which makes the cost visible in
 // review instead of arriving as a quieter first paint.
+// The admin shell reached this number by 293 -> 294 -> 295 KiB in consecutive
+// changes before the overflow was actually split. It is a ceiling, not a ratchet:
+// new weight goes behind a dynamic import. Raise the budget only with a recorded
+// decision, never as the first response to an overflow.
+export const ADMIN_SHELL_HARD_CEILING_BYTES = 295 * 1024;
+
 export const PAGE_BUDGETS = {
   admin: {
     // The Action Center's browser-fallback health signal and its subscription to
     // the shared fetch-kpis feed are first-poll shell code, so they stay on the
     // first paint and the budget carries their bytes.
-    shellMaxBytes: 295 * 1024,
+    shellMaxBytes: ADMIN_SHELL_HARD_CEILING_BYTES,
     lazySurfaces: [{ name: "Ops surface", module: "frontend/admin/app/ops.js" }]
   },
   jobs: {
@@ -132,6 +138,19 @@ export const PAGE_BUDGETS = {
   }
 };
 
+function largestInputSizes(outputs, limit = 5) {
+  const totals = new Map();
+  for (const output of outputs) {
+    for (const [input, meta] of Object.entries(output?.inputs || {})) {
+      totals.set(input, (totals.get(input) || 0) + Number(meta?.bytesInOutput || 0));
+    }
+  }
+  return [...totals.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([input, bytes]) => `${input} (${bytes} B)`);
+}
+
 // Two ways a split rots, both silent at runtime and both caught here:
 // the shell grows back past its budget, or a surface that was moved behind a
 // dynamic import is imported by the shell again and rides the critical path.
@@ -143,11 +162,18 @@ export function assertPageBundleBudget({
   staticChunkBytes = 0,
   shellInputs = [],
   lazyChunks = [],
+  largestShellInputs = [],
   budget
 }) {
   const maxBytes = Number(budget?.shellMaxBytes);
   if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
     throw new Error(`No shell budget for the ${pageName} page; add one to PAGE_BUDGETS.`);
+  }
+  if (pageName === "admin" && maxBytes > ADMIN_SHELL_HARD_CEILING_BYTES) {
+    throw new Error(
+      "The admin shell budget is a hard ceiling. Move the new weight behind a dynamic "
+      + "import; do not raise ADMIN_SHELL_HARD_CEILING_BYTES."
+    );
   }
   const shellBytes = Number(entryBytes) + Number(staticChunkBytes);
   const overBy = shellBytes - maxBytes;
@@ -155,8 +181,10 @@ export function assertPageBundleBudget({
     throw new Error(
       `${pageName} shell is ${shellBytes} bytes (${(shellBytes / 1024).toFixed(0)} KB), `
       + `${overBy} bytes over its ${maxBytes}-byte budget. Move the new weight behind a `
-      + `dynamic import, or raise "${pageName}.shellMaxBytes" in PAGE_BUDGETS if the first `
-      + "paint genuinely needs it."
+      + `dynamic import${pageName === "admin" ? " (the admin shell is at its hard ceiling)" : `, or raise "${pageName}.shellMaxBytes" in PAGE_BUDGETS if the first paint genuinely needs it`}.`
+      + (largestShellInputs.length
+        ? ` Largest shell inputs: ${largestShellInputs.join(", ")}.`
+        : "")
     );
   }
   const shell = new Set(shellInputs);
@@ -293,6 +321,14 @@ async function bundleEntry(page, budget) {
   const lazyChunks = chunks
     .filter(chunk => !staticChunkSet.has(chunk.relativePath))
     .map(chunk => ({ relativePath: chunk.relativePath, inputs: chunkInputs(chunk) }));
+  const staticOutputs = staticChunks
+    .map(relativePath =>
+      outputMetaByPath.get(
+        path.relative(ROOT, path.join(pageOutDir(page), relativePath)).split(path.sep).join("/")
+      )
+    )
+    .filter(Boolean);
+  const shellInputSizes = largestInputSizes([entryOutput, ...staticOutputs]);
 
   assertDesktopComposition({
     pageName: page.name,
@@ -310,6 +346,7 @@ async function bundleEntry(page, budget) {
     staticChunkBytes,
     shellInputs: [...shellInputs],
     lazyChunks,
+    largestShellInputs: shellInputSizes,
     budget
   });
 

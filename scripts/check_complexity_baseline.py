@@ -178,13 +178,13 @@ def main() -> int:
         baseline_entries = validate_baseline(baseline, ruff_version=ruff_version)
         failures = compare_findings(baseline_entries, collect_current_findings())
     except ComplexityBaselineError as exc:
-        print(f"Complexity baseline check failed: {exc}", file=sys.stderr)
+        print(f"Complexity baseline check failed: {exc}")
         return 1
 
     if failures:
-        print("Complexity baseline check failed:", file=sys.stderr)
+        print("Complexity baseline check failed:")
         for failure in failures:
-            print(f"- {failure}", file=sys.stderr)
+            print(f"- {failure}")
         return 1
 
     print("Complexity baseline check passed.")

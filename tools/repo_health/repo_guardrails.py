@@ -1045,6 +1045,7 @@ def run_docs_group() -> list[GuardFailure]:
             "test_release_docs_cover_the_current_public_release_line",
             "test_changelog_keeps_unreleased_above_versioned_rollup",
             "test_changelog_clamps_released_sections",
+            "test_changelog_archive_holds_evicted_sections",
             "test_changelog_holds_no_unpublished_section_above_the_last_release_tag",
             "test_changelog_rule_lists_match_registered_guardrails",
             "test_no_change_is_claimed_by_two_release_sections",
@@ -1543,7 +1544,7 @@ def main(argv: list[str] | None = None) -> int:
     failures = run_groups(groups)
     if failures:
         for failure in failures:
-            print(f"[{failure.group}] {failure.name}\n{failure.message}\n", file=sys.stderr)
+            print(f"[{failure.group}] {failure.name}\n{failure.message}\n")
         return 1
     return 0
 

@@ -134,7 +134,7 @@ python scripts/toolbelt_check.py --install
 
 Default to the narrowest deterministic tool:
 
-- Use Serena for symbol-aware code reads/edits inside the repo.
+- Use Serena for symbol-aware code reads/edits inside the repo: `get_symbols_overview` before opening an unfamiliar file, `find_symbol` for a known definition, and `find_referencing_symbols` before changing a signature. If the tools are unavailable, say so once and fall back to `rg`.
 - Use `rg` for text search and `fd` for file discovery before falling back to shell-native search.
 - Use `ast-grep` for structural code queries, `jq`/`yq` for structured data, and `bat` for targeted line previews.
 - Use `tokei` for a one-command codebase composition overview.
@@ -261,6 +261,8 @@ See [`testing.md`](testing.md) for the full verification matrix.
 - Verify memory claims against repo files before acting, and do not let external memory override source, tests, docs, or `AGENTS.md`.
 - Do not add a new MCP, tool, or plugin until the failure mode is clear and the existing Serena/Basic Memory setup is insufficient.
 - Keep narrow tasks narrow; do not broaden a bug fix into a refactor or cross more than one subsystem boundary without a short edit plan.
+- Default to vertical batching: one request → code + tests + the narrowest gate + commit in one pass. Split the work only when a gate names a distinct failure that needs its own fix.
+- Keep the thread's `.state/STATE-<thread>.md` current at milestones, copying the shape from `.agents/STATE.template.md`.
 - Do not create a parallel workflow unless the old workflow is removed or intentionally preserved as compatibility.
 - For implementation changes, run the narrowest relevant verification from this guide or [`testing.md`](testing.md) before claiming completion; if verification cannot run, state why and name the next command.
 - Do not claim a behavior is fixed from inspection alone when a relevant test or syntax check exists, and do not hide partial failures behind a broad success summary.

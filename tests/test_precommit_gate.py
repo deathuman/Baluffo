@@ -296,7 +296,13 @@ def test_build_all_commands_chunks_filtered_repo_files(monkeypatch) -> None:
     ]
 
 
-def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> None:
+def test_run_all_reports_every_failing_stage(monkeypatch, capsys) -> None:
+    """A red stage must not hide the stages after it.
+
+    The gate used to return at the first failure, so a pre-commit miss masked
+    whether the guardrails and the complexity baseline were also red, and the
+    operator paid a second full run to find out.
+    """
     guardrails_called = False
     complexity_called = False
 
@@ -306,20 +312,27 @@ def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> No
     def fake_complexity() -> int:
         nonlocal complexity_called
         complexity_called = True
-        return 0
+        return 1
 
     def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
         nonlocal guardrails_called
         guardrails_called = True
-        return 0
+        return 1
 
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
     monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all() == 1
-    assert guardrails_called is False
-    assert complexity_called is False
+    assert guardrails_called is True
+    assert complexity_called is True
+
+    out = capsys.readouterr().out
+    assert "stage=pre-commit (" in out
+    assert "stage=pre-commit --hook-stage pre-push" in out
+    assert "stage=repo-guardrails exit=1" in out
+    assert "stage=complexity-baseline exit=1" in out
+    assert "pre-commit gate: 4 stage(s) failed:" in out
 
 
 def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:
@@ -355,6 +368,7 @@ def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
     monkeypatch.setattr(precommit_gate, "has_staged_changes", lambda: False)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
     assert precommit_gate.run_changed() == 0
 
     staged = [c for c in seen if "--hook-stage" in c]
@@ -373,11 +387,14 @@ def test_run_changed_fails_when_a_pre_push_hook_fails(monkeypatch, capsys) -> No
     monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda c: 1 if "mypy" in c else 0)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
 
     assert precommit_gate.run_changed() == 1
-    err = capsys.readouterr().err
-    assert "stage=pre-commit --hook-stage pre-push" in err
-    assert "mypy" in err
+    out = capsys.readouterr().out
+    assert "stage=pre-commit --hook-stage pre-push" in out
+    assert "mypy" in out
+    assert "pre-commit gate: 1 stage(s) failed: pre-commit --hook-stage pre-push (1)" in out
 
 
 def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch) -> None:
@@ -385,6 +402,7 @@ def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch
 
     monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
 
     def fake_guardrails(
         groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
@@ -401,3 +419,35 @@ def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch
 
     assert precommit_gate.run_changed() == 0
     assert guardrails_called is True
+
+
+def test_run_changed_runs_complexity_baseline(monkeypatch) -> None:
+    """The C901 baseline belongs to the commit path, not only the all-files pass."""
+    complexity_called = False
+
+    def fake_complexity() -> int:
+        nonlocal complexity_called
+        complexity_called = True
+        return 0
+
+    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
+
+    assert precommit_gate.run_changed() == 0
+    assert complexity_called is True
+
+
+def test_run_changed_blocks_on_complexity_failure(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 1)
+
+    assert precommit_gate.run_changed() == 1
+    out = capsys.readouterr().out
+    assert "stage=complexity-baseline exit=1" in out
+    assert "pre-commit gate: 1 stage(s) failed: complexity-baseline (1)" in out

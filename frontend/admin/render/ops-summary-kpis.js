@@ -89,6 +89,17 @@ function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   });
 }
 
+function formatBuildInfo(options = {}) {
+  const appVersion = String(options?.appVersion || "").trim();
+  if (!appVersion) return "";
+  const commit = String(options?.buildCommit || "").trim();
+  const builtAt = String(options?.buildAt || "").trim();
+  const detail = [commit ? commit.slice(0, 8) : "", builtAt].filter(Boolean).join(", ");
+  return `
+    <div class="muted admin-ops-build-info admin-ops-full-row">Running ${escapeHtml(appVersion)}${detail ? ` (${escapeHtml(detail)})` : ""}</div>
+  `;
+}
+
 function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
   if (!kpisEl) return;
   const fetchKpiPendingLabel = String(options?.fetchKpiPendingLabel || "Loading latest fetch KPI...");
@@ -237,6 +248,7 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     ${registryDiagnosticsHtml}
     ${probeLifecycleHtml}
     ${pageFetchLifecycleHtml}
+    ${formatBuildInfo(options)}
   `;
 }
 

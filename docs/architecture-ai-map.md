@@ -132,6 +132,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 **Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
 
 **Admin page:** `frontend/admin/app.js` -> `runtime.js` -> `runtime/{composition,overview,events,state,view,effects,actions}.js`, `app/{auth,fetcher,discovery,sync}.js`, `app/registry/{ui,load,mutations}.js`, `app/ops/{format,task-state,health,bridge-status}.js`
+  -> First paint has a hard 295 KiB ceiling (`ADMIN_SHELL_HARD_CEILING_BYTES` in `scripts/build_desktop_frontend.mjs`). New weight goes behind a dynamic import, the Ops surface stays lazy, and an overflow fails the build instead of raising the number again
   -> render exports stay stable through `frontend/admin/render.js` -> `frontend/admin/render/ops.js`
   -> ops renderer ownership lives in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
   -> run detail for the inspector drawer lives in `frontend/admin/render/ops-run-detail.js`, a pure HTML renderer imported by `ops-history.js` (never by `ops.js`, whose import list the frontend structure guardrails pin to `./ops-summary.js` and `./ops-history.js`); `ops-history.js` stages the rendered string on the clicked row and `app/inspector.js` paints it

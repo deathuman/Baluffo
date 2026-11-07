@@ -76,6 +76,37 @@ def test_bump_version_moves_every_artifact(
     ) == "0.9.900\n"
 
 
+def test_bump_version_archives_the_evicted_oldest_section(
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sixth released section moves to the archive instead of being deleted."""
+    bump_version = _load_bump_version(repo_root)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app_version.py").write_text('APP_VERSION = "0.3.005"\n', encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    sections = "\n".join(
+        f"## [0.3.00{index}] - 2026-01-0{index}\n\n### Fixed\n\n- fix {index}\n"
+        for index in range(5, 0, -1)
+    )
+    (tmp_path / "docs" / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- pending\n\n{sections}",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+
+    exit_code = bump_version.main(["0.3.006", "--date", "2026-02-01"])
+
+    assert exit_code == 0
+    changelog = (tmp_path / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    archive = (tmp_path / "docs" / "CHANGELOG-ARCHIVE.md").read_text(encoding="utf-8")
+    assert changelog.count("## [0.3.00") == 5
+    assert "## [0.3.001]" not in changelog
+    assert "## [0.3.001]" in archive
+    assert "## [0.3.006]" in changelog
+
+
 def test_bump_version_works_on_a_checkout_that_was_never_packaged(
     repo_root: Path,
     tmp_path: Path,

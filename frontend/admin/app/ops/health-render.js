@@ -312,7 +312,13 @@ export function createOpsRenderHub({
       refs.adminOpsKpisEl,
       renderKpis,
       String(health?.status || "healthy"),
-      { fetchKpiPendingLabel, fetchKpiPendingLabels }
+      {
+        fetchKpiPendingLabel,
+        fetchKpiPendingLabels,
+        appVersion: health?.appVersion,
+        buildCommit: health?.build?.commit,
+        buildAt: health?.build?.builtAt
+      }
     );
     renderPipelineScheduleModel();
     renderOpsTabBadges(refs, {

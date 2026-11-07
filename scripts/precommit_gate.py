@@ -7,6 +7,8 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -246,16 +248,66 @@ def run_complexity_baseline() -> int:
     return completed.returncode
 
 
+@dataclass(frozen=True)
+class _StageFailure:
+    """One gate stage that exited nonzero during an aggregated run."""
+
+    stage: str
+    return_code: int
+
+
+def _run_stage(
+    stage: str,
+    runner: Callable[[], int],
+    failures: list[_StageFailure],
+    *,
+    command: list[str] | None = None,
+) -> None:
+    """Run one stage and record its failure instead of aborting the gate.
+
+    Each stage used to return immediately, so a red pre-commit pass hid whether
+    the pre-push hooks, the guardrails, or the complexity baseline were also
+    failing; the operator paid another full run to find out.
+    """
+    return_code = runner()
+    if return_code == 0:
+        return
+    _report_failing_stage(stage, command or [], return_code)
+    failures.append(_StageFailure(stage, return_code))
+
+
+def _report_failing_stage(stage: str, command: list[str], return_code: int) -> None:
+    """Print which stage failed and with what command, on stdout.
+
+    Without this, a run whose guardrail groups all print "passed" and then exits
+    nonzero is not diagnosable from the log alone -- the exit code was the only
+    evidence of where the failure came from. Stdout rather than stderr keeps the
+    stage line next to the per-group "passed" lines printed in between.
+    """
+    suffix = f" ({' '.join(command[1:])})" if command else ""
+    print(f"pre-commit gate: stage={stage}{suffix} exit={return_code}")
+
+
+def _report_summary(failures: list[_StageFailure]) -> int:
+    """Print one closing line naming every failing stage; 1 if any failed."""
+    if not failures:
+        return 0
+    stages: dict[str, int] = {}
+    for failure in failures:
+        stages.setdefault(failure.stage, failure.return_code)
+    summary = ", ".join(f"{stage} ({code})" for stage, code in stages.items())
+    print(f"pre-commit gate: {len(stages)} stage(s) failed: {summary}")
+    return 1
+
+
 def run_changed() -> int:
     files = collect_changed_files()
     if not files:
         print("No changed files found for pre-commit; skipping.")
         return 0
+    failures: list[_StageFailure] = []
     command = build_changed_command(files)
-    return_code = _run_precommit_command(command)
-    if return_code != 0:
-        _report_failing_stage("pre-commit", command, return_code)
-        return return_code
+    _run_stage("pre-commit", lambda: _run_precommit_command(command), failures, command=command)
     # The pre-push-stage hooks used to run only in the all-files path, so a
     # commit could be green with a mypy error, an eslint finding, or a dead-code
     # finding and the operator hit it seconds later at push time. They are
@@ -267,43 +319,37 @@ def run_changed() -> int:
     # `pre-commit` process. Against a ~108s push gate that already runs them,
     # this is cheap enough to close the hole at its source.
     for hook_command in _pre_push_hook_commands():
-        return_code = _run_precommit_command(hook_command)
-        if return_code != 0:
-            _report_failing_stage("pre-commit --hook-stage pre-push", hook_command, return_code)
-            return return_code
+        _run_stage(
+            "pre-commit --hook-stage pre-push",
+            lambda hook_command=hook_command: _run_precommit_command(hook_command),
+            failures,
+            command=hook_command,
+        )
     if should_run_repo_guardrails(files):
         # Local commit: judge the staged change against the released version so the
         # offending commit never lands. The full post-bump window stays a pre-push
         # and CI check (run_all()), which also catches a run with hooks disabled.
-        return_code = run_repo_guardrails(pending_container_version_gate=True)
-        if return_code != 0:
-            _report_failing_stage("repo-guardrails", [], return_code)
-        return return_code
-    if has_staged_changes():
+        _run_stage(
+            "repo-guardrails",
+            lambda: run_repo_guardrails(pending_container_version_gate=True),
+            failures,
+        )
+    elif has_staged_changes():
         # The watched-root filter exists to keep the full guardrail run cheap. It
         # does not cover every shipped path -- `Dockerfile`, `styles/`, and the
         # runtime `data/` files are outside it -- so a commit touching only those
         # would otherwise skip the container version gate entirely. The release
         # group is the one check every commit needs.
-        return_code = run_repo_guardrails(groups=("release",), pending_container_version_gate=True)
-        if return_code != 0:
-            _report_failing_stage("repo-guardrails --group release", [], return_code)
-        return return_code
-    return 0
-
-
-def _report_failing_stage(stage: str, command: list[str], return_code: int) -> None:
-    """Print which stage failed and with what command.
-
-    Without this, a run whose guardrail groups all print "passed" and then exits
-    nonzero is not diagnosable from the log alone -- the exit code was the only
-    evidence of where the failure came from.
-    """
-    suffix = f" ({' '.join(command[1:])})" if command else ""
-    print(
-        f"pre-commit gate: stage={stage}{suffix} exit={return_code}",
-        file=sys.stderr,
-    )
+        _run_stage(
+            "repo-guardrails --group release",
+            lambda: run_repo_guardrails(groups=("release",), pending_container_version_gate=True),
+            failures,
+        )
+    # The C901 baseline belongs to the commit path too, not just the all-files
+    # pass: a new or grown hotspot is visible in the changed file long before the
+    # push, and the check costs under a second.
+    _run_stage("complexity-baseline", lambda: run_complexity_baseline(), failures)
+    return _report_summary(failures)
 
 
 def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
@@ -311,19 +357,21 @@ def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
     if files is not None and not files:
         print("No tracked files found for pre-commit; skipping.")
         return 0
+    failures: list[_StageFailure] = []
     for command in build_all_commands(files):
-        return_code = _run_precommit_command(command)
-        if return_code != 0:
-            _report_failing_stage("pre-commit", command, return_code)
-            return return_code
-    return_code = run_repo_guardrails()
-    if return_code != 0:
-        _report_failing_stage("repo-guardrails", [], return_code)
-        return return_code
-    return_code = run_complexity_baseline()
-    if return_code != 0:
-        _report_failing_stage("complexity-baseline", [], return_code)
-    return return_code
+        # One command per pre-push hook follows the file-scoped runs, so the log
+        # names the stage that actually failed rather than calling it all
+        # "pre-commit".
+        stage = "pre-commit --hook-stage pre-push" if "--hook-stage" in command else "pre-commit"
+        _run_stage(
+            stage,
+            lambda command=command: _run_precommit_command(command),
+            failures,
+            command=command,
+        )
+    _run_stage("repo-guardrails", lambda: run_repo_guardrails(), failures)
+    _run_stage("complexity-baseline", lambda: run_complexity_baseline(), failures)
+    return _report_summary(failures)
 
 
 def main() -> int:

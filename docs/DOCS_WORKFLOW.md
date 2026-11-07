@@ -237,12 +237,13 @@ nobody reading it.
 it can describe the version someone is about to install, which is the only job it
 can do well.
 
-Four rules keep this from quietly regrowing, all enforced by
+Five rules keep this from quietly regrowing, all enforced by
 [`tools/repo_health/release_docs_policy.py`](../tools/repo_health/release_docs_policy.py):
 
 | Rule | Guardrail |
 | --- | --- |
 | At most 5 released sections, plus `[Unreleased]` | `test_changelog_clamps_released_sections` |
+| Evicted sections move to `CHANGELOG-ARCHIVE.md` | `test_changelog_archive_holds_evicted_sections` |
 | A change is described by exactly one release section | `test_no_change_is_claimed_by_two_release_sections` |
 | No versioned section stranded below the last tagged release | `test_changelog_holds_no_unpublished_section_above_the_last_release_tag` |
 | `[Unreleased]` sits directly above the versioned rollup | `test_changelog_keeps_unreleased_above_versioned_rollup` |

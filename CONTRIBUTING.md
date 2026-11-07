@@ -25,6 +25,7 @@
 - Keep real local and release secrets out of tracked files; use `baluffo.config.local.json`, ignored packaged sync config files, environment variables, or GitHub encrypted secrets as appropriate
 - Dependency vulnerability findings fail CI unless an entry in `tools/security/pip-audit-allowlist.json` has an advisory id, package, reason, owner, and unexpired review date
 - Keep perf artifacts in repo-local paths such as `.tmp/` and `_out/`; avoid new workflows that depend on `%LOCALAPPDATA%\\Temp`
+- Set the commit template once per checkout: `git config commit.template "$(git rev-parse --show-toplevel)/docs/COMMIT_TEMPLATE.md"`. Its commented `Release-tag:` trailer explains when that line is valid.
 
 ## Docs reference
 

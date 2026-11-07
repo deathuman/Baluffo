@@ -764,6 +764,9 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     (data_dir / "migration-reports").mkdir(parents=True, exist_ok=True)
 
     _write_text(app_dir / "current.txt", f"{version}\n")
+    build_info_payload = json.dumps(_build_info_payload(), indent=2, ensure_ascii=False)
+    _write_text(app_dir / "build-info.json", build_info_payload)
+    _write_text(version_dir / "build-info.json", build_info_payload)
     _write_text(
         app_dir / "update-state.json",
         json.dumps(_state_payload(version), indent=2, ensure_ascii=False),
@@ -788,6 +791,28 @@ def build_bundle(output_dir: Path, version: str) -> Path:
         json.dumps(_manifest_payload(version, aggregate_digest), indent=2, ensure_ascii=False),
     )
     return output_dir
+
+
+def _git_commit() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return "unknown"
+    commit = completed.stdout.strip()
+    return commit if completed.returncode == 0 and commit else "unknown"
+
+
+def _build_info_payload() -> dict[str, str]:
+    return {
+        "commit": os.environ.get("BALUFFO_BUILD_COMMIT") or _git_commit(),
+        "builtAt": os.environ.get("BALUFFO_BUILT_AT")
+        or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
 
 
 def parse_args() -> argparse.Namespace:

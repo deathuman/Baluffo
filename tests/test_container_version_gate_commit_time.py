@@ -162,6 +162,9 @@ def test_commit_gate_runs_the_pending_check_for_unwatched_shipped_paths(
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
     monkeypatch.setattr(precommit_gate, "has_staged_changes", lambda: True)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
+    # The gate no longer stops at the first failing stage, so the complexity
+    # baseline runs after the guardrails; stub it rather than shelling out to ruff.
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
 
     assert precommit_gate.run_changed() == 1
     assert calls == [(("release",), True)]

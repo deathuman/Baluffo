@@ -80,7 +80,8 @@ def _read_response_body(response: Any, *, cap: int, timeout_s: float) -> bytes:
     trickles a byte before each read deadline can re-arm it indefinitely. A
     timer closes the response at the total deadline so the read cannot outlive
     the request, and the timeout is surfaced as ``TimeoutError`` rather than a
-    partial body.
+    partial body. A read that returns normally wins the race: the timer can fire
+    between that return and the timeout check, and the body is already complete.
     """
     timed_out = threading.Event()
 
@@ -103,8 +104,13 @@ def _read_response_body(response: Any, *, cap: int, timeout_s: float) -> bytes:
             if timed_out.is_set():
                 raise TimeoutError(f"request deadline exceeded ({timeout_s}s)") from exc
             raise
+        # A read that returned the response's remaining length is complete even
+        # when the timer fired between the read and this check. A partial body
+        # (or an unknown remaining length) was interrupted by the deadline.
         if timed_out.is_set():
-            raise TimeoutError(f"request deadline exceeded ({timeout_s}s)")
+            expected = getattr(response, "length", None)
+            if not isinstance(expected, int) or len(body) < min(expected, cap):
+                raise TimeoutError(f"request deadline exceeded ({timeout_s}s)")
         return body
     finally:
         timer.cancel()

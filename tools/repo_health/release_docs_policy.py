@@ -21,6 +21,15 @@ RELEASE_NOTE_BULLET_CHAR_BUDGET = 1200
 # history of every bump. `git log` is the source of truth for older entries.
 CHANGELOG_MAX_RELEASED_SECTIONS = 5
 
+# Versions that shipped by image tag without ever being git-tagged. An archived
+# section normally has to name a tagged release; these are the documented exceptions.
+UNTAGGED_SHIPPED_VERSIONS = frozenset({"0.3.018"})
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 # Advisory only. A jargon blocklist cannot be made false-positive-free, and a
 # gate that is always red gets ignored -- the same failure mode that let the
 # broken Playwright cache check look healthy. These patterns are the concrete
@@ -346,6 +355,62 @@ def test_changelog_clamps_released_sections(repo_root: Path) -> None:
     )
 
 
+def test_changelog_archive_holds_evicted_sections(repo_root: Path) -> None:
+    """An evicted section is archived, not deleted, and the archive stays older.
+
+    The clamp used to make the sixth released section a manual delete. The archive keeps
+    that text, stays strictly older than what CHANGELOG.md retains, and names releases
+    that actually reached a tag (or the documented untagged-shipped exception).
+    """
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    archive_path = repo_root / "docs" / "CHANGELOG-ARCHIVE.md"
+    assert archive_path.is_file(), (
+        "docs/CHANGELOG-ARCHIVE.md must exist so the clamp archives evicted sections "
+        "instead of deleting them."
+    )
+
+    changelog_versions = [
+        version for version, _ in _changelog_sections(changelog_path.read_text(encoding="utf-8"))
+    ]
+    archive_versions = [
+        version for version, _ in _changelog_sections(archive_path.read_text(encoding="utf-8"))
+    ]
+    released = [version for version in changelog_versions if version != "Unreleased"]
+    archived = [version for version in archive_versions if version != "Unreleased"]
+
+    assert set(archived).isdisjoint(released), (
+        "A version appears in both docs/CHANGELOG.md and docs/CHANGELOG-ARCHIVE.md: "
+        + ", ".join(sorted(set(archived) & set(released)))
+        + ". Keep the section in exactly one file."
+    )
+    if not archived:
+        return
+
+    oldest_kept = min(released, key=_version_key)
+    assert all(_version_key(version) < _version_key(oldest_kept) for version in archived), (
+        "docs/CHANGELOG-ARCHIVE.md holds a section that is not older than the oldest "
+        f"released section still in docs/CHANGELOG.md ({oldest_kept}): "
+        + ", ".join(
+            version for version in archived if _version_key(version) >= _version_key(oldest_kept)
+        )
+        + ". Append evicted sections in order instead of re-sorting the archive."
+    )
+
+    tags = _release_tags(repo_root)
+    if tags:
+        untagged = [
+            version
+            for version in archived
+            if f"v{version}" not in tags and version not in UNTAGGED_SHIPPED_VERSIONS
+        ]
+        assert not untagged, (
+            "docs/CHANGELOG-ARCHIVE.md names releases with no git tag: "
+            + ", ".join(untagged)
+            + ". Only a tagged release may be evicted, except the documented untagged "
+            "shipped versions in this module."
+        )
+
+
 @dataclass(frozen=True)
 class ChangelogRule:
     """One rule of the changelog's shape and the phrase that names it in each list.
@@ -397,6 +462,12 @@ CHANGELOG_RULES: tuple[ChangelogRule, ...] = (
         guardrail="test_changelog_keeps_unreleased_above_versioned_rollup",
         workflow_row="sits directly above the versioned rollup",
         changelog_bullet="sits above the versioned sections",
+    ),
+    ChangelogRule(
+        key="archive_evicted_sections",
+        guardrail="test_changelog_archive_holds_evicted_sections",
+        workflow_row="Evicted sections move to `CHANGELOG-ARCHIVE.md`",
+        changelog_bullet="oldest section is archived, not deleted",
     ),
 )
 
@@ -1274,8 +1345,17 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged:admin-active-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.admin-active-run.mjs --runtime-timeout 60 --playwright-timeout 180"
     )
+    # Each half is pinned exactly, not just the composed entry point: a lane that
+    # disappeared from a half would otherwise still satisfy a test that only reads
+    # `release:preflight`, which does not expand npm scripts here.
+    assert scripts["release:preflight:fast"] == (
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run security:js && npm run check:published-version"
+    )
+    assert scripts["release:preflight:packaged"] == (
+        "npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+    )
     assert scripts["release:preflight"] == (
-        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run security:js && npm run check:published-version && npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+        "npm run release:preflight:fast && npm run release:preflight:packaged"
     )
     assert (
         "_out/latest/build/portable/Baluffo.exe"

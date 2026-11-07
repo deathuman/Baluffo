@@ -18,6 +18,8 @@ from src.jobs.common.http import _read_response_body
 class _DripResponse:
     def __init__(self) -> None:
         self.closed = threading.Event()
+        # More bytes remain than the interrupted read returned.
+        self.length = 1024
 
     def read(self, _size: int = -1) -> bytes:
         self.closed.wait(5.0)
@@ -25,6 +27,29 @@ class _DripResponse:
 
     def close(self) -> None:
         self.closed.set()
+
+
+class _CloseThenReturnResponse:
+    """Returns a complete body as soon as the deadline timer closes it."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+        self.closed = threading.Event()
+        self.length = len(body)
+
+    def read(self, size: int = -1) -> bytes:
+        self.closed.wait(5.0)
+        return self.body if size < 0 else self.body[:size]
+
+    def close(self) -> None:
+        self.closed.set()
+
+
+def test_read_response_body_accepts_a_body_completed_at_the_deadline() -> None:
+    """A full read that finishes as the timer fires is a success, not a timeout."""
+    response = _CloseThenReturnResponse(b"complete")
+
+    assert _read_response_body(response, cap=1024, timeout_s=0.05) == b"complete"
 
 
 def test_read_response_body_aborts_a_trickling_response() -> None:

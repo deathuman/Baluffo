@@ -794,11 +794,13 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         else (True if not bool(deps.desktop_mode) else bool(owner_state.get("startedAt")))
     )
     app_version = str(getattr(deps, "app_version", "") or "")
+    from src.build_info import read_build_info
 
     return {
         "service": "baluffo-bridge",
         "desktopMode": bool(deps.desktop_mode),
         "appVersion": app_version,
+        "build": read_build_info(),
         "startupReady": bool(startup_ready),
         "generatedAt": deps.now_iso(),
         "desktopLastActivityAt": str(deps.desktop_last_activity_at or ""),

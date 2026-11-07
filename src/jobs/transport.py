@@ -711,21 +711,44 @@ class AsyncHttpTextFetcher:
     async def _fetch(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
         return await async_fetch_text_httpx(self._client, url, timeout_s, request=request)
 
+    async def _fetch_tracked(
+        self,
+        url: str,
+        timeout_s: int,
+        request: RequestConfig | None,
+        task_slot: dict[str, Any],
+    ) -> str:
+        """Expose the loop-side task so a timed-out caller can cancel it."""
+        task = asyncio.current_task()
+        if task is not None:
+            task_slot["task"] = task
+        return await self._fetch(url, timeout_s, request=request)
+
+    @staticmethod
+    def _cancel_fetch_task(task_slot: dict[str, Any], future: Any) -> None:
+        task = task_slot.get("task")
+        if task is not None:
+            task.cancel()
+        # A concurrent future chained to an already-running task rejects cancel();
+        # cancelling the task above is what actually stops the coroutine.
+        future.cancel()
+
     async def _aclose(self) -> None:
         await self._client.aclose()
 
     def fetch_text(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
         if self._closed:
             raise RuntimeError("Async HTTP fetcher is closed")
+        task_slot: dict[str, Any] = {}
         future = asyncio.run_coroutine_threadsafe(
-            self._fetch(url, timeout_s, request=request), self._loop
+            self._fetch_tracked(url, timeout_s, request, task_slot), self._loop
         )
         try:
             # httpx's read timeout re-arms on every chunk. The source deadline is a
             # wall-clock budget, so the future itself must have a total bound.
             return str(future.result(timeout=max(0.1, float(timeout_s or 1))))
         except FutureTimeoutError as exc:
-            future.cancel()
+            self._loop.call_soon_threadsafe(self._cancel_fetch_task, task_slot, future)
             raise TimeoutError(f"request deadline exceeded ({timeout_s}s)") from exc
 
     def close(self) -> None:

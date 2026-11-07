@@ -146,6 +146,43 @@ def bump_docker_compose(text: str, version: str) -> str:
     )
 
 
+CHANGELOG_MAX_RELEASED_SECTIONS = 5
+CHANGELOG_ARCHIVE_RELATIVE_PATH = "docs/CHANGELOG-ARCHIVE.md"
+_RELEASED_HEADING_RE = re.compile(r"^## \[\d+\.\d+\.\d+\]")
+_ARCHIVE_HEADER = """# Changelog archive
+
+Sections evicted from [`CHANGELOG.md`](CHANGELOG.md) by the five-released-section
+clamp live here, newest first. The clamp keeps the install-facing file short; this
+archive keeps the evicted text instead of deleting it.
+
+Do not edit a section after it lands here. New releases are added by
+`python scripts/bump_version.py <next>`, which appends the evicted section.
+"""
+
+
+def clamp_changelog(
+    text: str, *, keep: int = CHANGELOG_MAX_RELEASED_SECTIONS
+) -> tuple[str, list[str]]:
+    """Keep the newest ``keep`` released sections; return the evicted older text."""
+    lines = text.splitlines()
+    released = [index for index, line in enumerate(lines) if _RELEASED_HEADING_RE.match(line)]
+    if len(released) <= keep:
+        return text, []
+    cut = released[keep]
+    kept = "\n".join(lines[:cut]).rstrip() + "\n"
+    evicted = "\n".join(lines[cut:]).rstrip() + "\n"
+    return kept, [evicted]
+
+
+def append_evicted_sections(archive_text: str, sections: list[str]) -> str:
+    """Append evicted sections after the archive's existing (older is later)."""
+    base = archive_text.rstrip()
+    body = "\n\n".join(section.strip() for section in sections if section.strip())
+    if not body:
+        return archive_text
+    return f"{base}\n\n{body}\n"
+
+
 def bump_changelog(text: str, version: str, date: str) -> str:
     lines = text.splitlines()
     unreleased_idx = next(
@@ -235,10 +272,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: version is already {version}.", file=sys.stderr)
         return 2
 
+    new_changelog, evicted_sections = clamp_changelog(
+        bump_changelog(_read(changelog_path), version, args.date)
+    )
     targets = [
         (app_version_path, bump_app_version(_read(app_version_path), version)),
-        (changelog_path, bump_changelog(_read(changelog_path), version, args.date)),
+        (changelog_path, new_changelog),
     ]
+    if evicted_sections:
+        archive_path = ROOT / CHANGELOG_ARCHIVE_RELATIVE_PATH
+        archive_text = _read(archive_path) if archive_path.is_file() else _ARCHIVE_HEADER
+        targets.append((archive_path, append_evicted_sections(archive_text, evicted_sections)))
     if umbrel_app_path.is_file():
         targets.insert(1, (umbrel_app_path, bump_umbrel_app(_read(umbrel_app_path), version)))
     if compose_path.is_file():
@@ -257,7 +301,13 @@ def main(argv: list[str] | None = None) -> int:
             (umbrel_compose_path, bump_umbrel_compose(_read(umbrel_compose_path), version))
         )
 
-    changed = [(path, new_text) for path, new_text in targets if _read(path) != new_text]
+    # An evicted section can create docs/CHANGELOG-ARCHIVE.md, which has no
+    # previous content to compare against.
+    changed = [
+        (path, new_text)
+        for path, new_text in targets
+        if not path.is_file() or _read(path) != new_text
+    ]
     if not changed:
         print("nothing to change.")
         return 0

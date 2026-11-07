@@ -15,18 +15,19 @@ ids, dunder attributes) leaks in.
 
 ### This file is a release log, not a history
 
-It carries **the most recent 5 released versions plus `[Unreleased]`**, and nothing
-older. `v0.3.002` was the last published release, so the sections below it are the
-working record of what is queued for the next one.
+It carries **the most recent 5 released versions plus `[Unreleased]`**, and nothing older. Sections evicted by that clamp move to [`CHANGELOG-ARCHIVE.md`](CHANGELOG-ARCHIVE.md); the archive stays empty until a later bump evicts the oldest section.
 
 Older history is **not lost — `git log` is the source of truth** for it. Clamping
 this file exists because a 153-section changelog had become a version ledger nobody
 read, and because keeping it current meant restating past entries every time the
 version moved. A change is described once, in the release that actually shipped it.
 
-Four rules the guardrail enforces so this cannot quietly regress:
+Five rules the guardrail enforces so this cannot quietly regress:
 
 - **At most 5 versioned sections**, plus `[Unreleased]`.
+- **The oldest section is archived, not deleted.** When a bump pushes the file past
+  five sections, the evicted section moves to [`CHANGELOG-ARCHIVE.md`](CHANGELOG-ARCHIVE.md)
+  instead of disappearing, so the clamp keeps the text and still leaves the file short.
 - **No bullet appears in two sections.** A change is claimed by exactly one release,
   so a release can never claim to have fixed something an earlier one already fixed.
 - **A versioned section that never shipped may not queue below the last tagged release.**
@@ -46,6 +47,26 @@ Four rules the guardrail enforces so this cannot quietly regress:
 ---
 
 ## [Unreleased]
+
+## [0.3.040] - 2026-11-07
+
+### Added
+
+- Packaged desktop and container builds now record the commit and build time, and Ops Health and Admin show which build is running so an operator can confirm the deployed artifact without opening a shell.
+- Container upgrades can be checked end to end with the new promote command: it restarts the compose stack and waits until Ops Health reports the expected version and commit.
+
+### Fixed
+
+- A fetch that finished reading exactly as its deadline fired no longer reports a timeout; only a request whose body was actually interrupted is treated as failed.
+- A timed-out async fetch now cancels the request on its event loop instead of leaving it running after the caller has moved on.
+
+### Changed
+
+- Admin's first paint is now held to a hard 295 KiB budget. New first-paint weight must load on demand; the build fails instead of quietly growing the shell again.
+
+### Notes
+
+- Compatibility is unchanged across the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.3.039] - 2026-11-07
 

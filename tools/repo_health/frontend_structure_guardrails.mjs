@@ -212,6 +212,32 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
   }
 });
 
+test("cleanup structure: admin shell budget is a hard ceiling", () => {
+  const source = fs.readFileSync(repoPath("scripts", "build_desktop_frontend.mjs"), "utf8");
+  const ceiling = source.match(/ADMIN_SHELL_HARD_CEILING_BYTES\s*=\s*(\d+)\s*\*\s*1024/);
+  assert.equal(ceiling?.[1], "295", "the admin shell ceiling must stay at 295 KiB");
+  assert.match(
+    source,
+    /shellMaxBytes:\s*ADMIN_SHELL_HARD_CEILING_BYTES/,
+    "admin.shellMaxBytes must use the ceiling constant"
+  );
+  assert.match(
+    source,
+    /pageName === "admin" && maxBytes > ADMIN_SHELL_HARD_CEILING_BYTES/,
+    "a raised admin budget must fail the build"
+  );
+  assert.match(
+    source,
+    /module:\s*"frontend\/admin\/app\/ops\.js"/,
+    "the Ops surface must stay behind a dynamic import"
+  );
+  assert.match(
+    source,
+    /Largest shell inputs:/,
+    "an overflow must name the largest shell inputs from the metafile"
+  );
+});
+
 test("cleanup structure: runtime entrypoints stay within the current size budget", () => {
   const budgets = {
     jobs: 360,

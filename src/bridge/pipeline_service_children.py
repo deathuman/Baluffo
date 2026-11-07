@@ -23,6 +23,9 @@ FETCH_SOURCE_FAILURE_WARNING_KIND = "fetch_sources_failed"
 SNAPSHOT_SIZE_WARNING_KIND = "snapshot_size_warning"
 # A pipeline is not clean once a source fails; one failure is enough to make the
 # terminal flag visible without turning the whole run into an error.
+# Measured decision (2026-11-07): keep 1. Two real full runs failed 229/2544
+# (9.0%) and 428/2464 (17.4%) sources, so a 2% or 5% ratio rule would still
+# warn on them; raising the constant would only hide isolated failures.
 PIPELINE_FETCH_FAILURE_WARN_THRESHOLD = 1
 PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV = "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS"
 PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_ENV = (
