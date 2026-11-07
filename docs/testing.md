@@ -91,7 +91,7 @@ Run the Linux-compatible suite (skips `@pytest.mark.windows` tests):
 npm run test:py:linux
 ```
 
-This skips tests using Windows-only APIs (`ctypes.windll`, `winreg`, pefile). Use this on Linux, macOS, or CI. Tests marked `@pytest.mark.windows` are registered in `pytest.ini` and are automatically excluded by this lane.
+This skips tests using Windows-only APIs (`ctypes.windll`, `winreg`, pefile). Use this on Linux, macOS, or CI. Tests marked `@pytest.mark.windows` are registered in `pytest.ini` and are automatically excluded by this lane. The `Tests` workflow also runs `tests/jobs_static/test_static_trickle_deadline.py` as a dedicated unsharded Linux step before the full suite, so the real-socket deadline checks are gated on every pull request and main push.
 
 **Direct local filtering:** To reproduce the developer lane directly from pytest:
 
@@ -186,6 +186,10 @@ Output goes to `_out/perf-traces/`:
 To attach traces to a performance investigation, run `npm run test:frontend:perf`, collect the `.zip` traces from `_out/perf-traces/`, and open them in Chrome DevTools (Performance tab) or at `https://trace.playwright.dev`. Compare warm-vs-cold boot runs or before-vs-after a suspected performance regression change.
 
 The perf-trace spec lives at `tests/frontend/perf-trace.spec.js` with config at `playwright.perf.config.js`.
+
+### Container Jobs boot baseline
+
+The container Jobs boot gate has a tracked reference run in [`perf/container-jobs-boot-baseline.json`](perf/container-jobs-boot-baseline.json): image `baluffo-perf:local` (`705fdd64f901`), a 24-row seed, cold `209 ms`, warm `61 ms` with 5,000 IndexedDB rows, nav `129 / 46 ms`, CLS `0.0003`, and no long task. Compare a future run only against the same image and fixture; the per-run summaries under `_out/perf-traces/` remain scratch evidence.
 
 ## Python dependency security audit
 

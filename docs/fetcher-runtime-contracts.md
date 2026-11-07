@@ -5,13 +5,13 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-10-23
+> - **Last updated:** 2026-11-06
 
 ## CLI runtime options
 
-- `--max-workers` (default `12`): max concurrent source loaders.
-- `--max-per-domain` (default `3`): max concurrent requests per host across workers.
-- `--fetch-strategy` (default `auto`): transport preference (`auto`, `http`, `browser`).
+- `--max-workers` (default `16`): max concurrent source loaders.
+- `--max-per-domain` (default `3`): max concurrent requests per host for the regular fetch limiter. Static fetches use a separate fixed gate of `6` per host (`DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN`), so this flag does not narrow them.
+- `--fetch-strategy` (default `auto`): accepted transport preference (`auto`, `http`, `browser`); in this runtime `browser` still uses the HTTP path, with Playwright reached through the browser-fallback policy below.
 - `--adapter-http-concurrency` (default `48`): async HTTP client connection pool size.
 - `--static-detail-concurrency` (default `10`): static detail-page fetch concurrency per source before per-domain limiting.
 - `--skip-successful-sources`: incremental mode, skips sources recently successful within TTL.
@@ -40,7 +40,15 @@
 - Loaders are **submitted** longest-expected-work first, using the previous run's `lastDurationMs` plus `lastDetailPagesVisited * 25` from source state. **Results are appended** in the canonical selection order, which is what dedup first-wins sees; scheduling must never change which duplicate payload survives a merge.
 - The schedule is why a known-slow board starts at t=0 rather than after every static source: the 2026-10-23 full run spent its final 4.4 min on `workday_sources` (277 s) and `gracklehq` (250 s) with only 2–3 of 12 lanes busy, because they had been queued behind all 2,508 static sources.
 - A result that arrives out of canonical order is buffered until its turn. The buffer is capped at `max(256, maxWorkers * 16)`; past the cap the lowest buffered index is appended early, which is the only path where append order can deviate.
-- Static sources carry a per-source time budget (`static_source_time_budget_s`, 90 s by default). The budget is checked before each rendered-card detail verification; exceeding it ends that lane and records `time_budget_exceeded` instead of letting one board run multiple times its allowance.
+- Static sources carry a per-source time budget (`static_source_time_budget_s`, 90 s by default). The budget is checked before each listing page batch and each rendered-card detail verification; exceeding it ends that lane and records `time_budget_exceeded` instead of letting one board run multiple times its allowance. Discovered pagination can add a bounded extension to the deadline. The same absolute deadline is passed through retries and static page batches, and each HTTP request has a hard total timeout, so a socket that trickles data cannot re-arm its read timeout indefinitely. Every hard-deadline exit — request deadline, page-batch deadline, or the budget guard — records a deadline error in the source report: the canonical `time_budget_exceeded` token for the request/page-batch caps, and the existing `time budget exceeded (Ns)` message for the source budget. The additive `deadlineKind` field names the clock that fired (`request_cap`, `source_budget`, or `batch_deadline`), so the deadline stays attributable in a live run. A separate failure-only budget (`static_failure_budget_s`, 60 s by default) bounds failed attempts while the source has kept no jobs; it is not part of the source deadline and stops applying once the source has kept a job.
+
+### Redirect hops and the source budget
+
+- A static redirect continues the same source attempt; it does not start a new budget. The shared fetch request carries one absolute `source_deadline_monotonic`, and the ordinary hop chain and cookie-jar retry lane pass that clock into every hop and retry rather than resetting to the configured per-request timeout.
+- The ordinary chain is capped at four HTTP requests: the initial read plus at most three redirects. A loop or a further redirect is reported as a redirect-chain failure. The opt-in cookie-jar retry lane is separate and capped at six attempts.
+- A hop may start only while at least `1 s` remains. Its timeout is capped by the remaining source clock — the ordinary retry loop carries the exact fractional remainder, while the cookie-jar lane rounds the remainder up to a whole second — so time spent on a slow first hop leaves less for the redirect target. If the first hop leaves less than `1 s`, the target is refused before a request is made.
+- Redirect work therefore counts against the same source start, including redirect handling and the target read. A cached redirect target may still return without another request.
+- Deadline attribution is unchanged across hops: the source report keeps the canonical `time_budget_exceeded` token for request/page-batch caps (or `time budget exceeded (Ns)` for the source budget), while `deadlineKind` names the clock that fired. The real-socket coverage lives in `tests/jobs_static/test_static_trickle_deadline.py`.
 
 ## Admin presets (`/tasks/run-fetcher`)
 
@@ -105,6 +113,7 @@ Optional overrides:
   - `data/jobs-fetch-report-summary.json` is the bounded hot-summary sidecar for Admin active/final polling. It is written on phase changes that already update hot task state, once at terminal closeout, and once beside a promoted bootstrap report (so the start after a fresh-install bootstrap reads the sidecar instead of parsing the full report), and it must stay compact enough for `/ops/fetch-report?view=summary`, `/ops/fetch-report?view=live`, `/ops/task-live/fetch?view=summary`, and `/ops/task-state?view=summary` to avoid request-time parsing of a multi-MiB full report.
   - `runtime.phaseTimings` is an additive list of the child phases around the per-source stage timings: `setup`, `executing_sources`, `merging_results` (finalize and writes are not bracketed yet and are the remainder of the wall clock). Each entry carries `phase`, `durationMs`, and, where the platform reports process CPU, `cpuSeconds`. It exists to explain the wall clock the workers did not spend inside a source; per-source `stageTimingsMs` remains the attribution for the rest.
   - `runtime.setupTiming` is an additive compact diagnostic for the pre-source setup window. It includes `totalSetupMs`, `phaseTimingsMs`, `phaseOrder`, and bounded scalar `counts` such as seeded output rows, selected sources, exclusions, and setup elapsed time. It exists to explain fetch preparation latency without adding full diagnostics or extra polling.
+  - `runtime.browserFallbackHealth` is written only after a run saw an environment-level browser fallback failure. It carries the probe result (`ok`, stage, error type/error, duration, probe URL), last-failure metadata, and the raw launch/navigation error retained before breaker normalization. `jobs-fetch-report-summary.json` carries a bounded runtime projection of the same health object, which `/ops/fetch-kpis?view=summary` exposes as `kpis.browserFallbackHealth` for the Admin Action Center.
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
   - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json` and `lightJson`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag. CSV output was retired, so there is no CSV guardrail.
@@ -122,13 +131,13 @@ Optional overrides:
   - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)` or `jobs-unified-startup.json`). The desktop launcher quarantines stale supported/private JSON row artifacts from upgraded installs only when they do not look like newer runtime-generated feed files, and can restore a previously false-quarantined runtime feed from the cleanup backup. Retired CSV files are not runtime-managed.
 - Static HTTP fetch policy:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.
-  - one redirect hop is allowed for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.
-  - redirects without `Location`, redirect chains beyond one hop, credentialed targets, non-HTTP(S) schemes, unrelated cross-host targets, and HTTPS downgrades remain source diagnostics rather than silently followed traffic.
-  - static zero-extract rows with redirect/status evidence are diagnosed as `site_changed`; generic static/manual no-jobs rows without redirect evidence remain `js_required` for browser/static extraction follow-up.
+  - up to three redirects after the initial request are followed (four HTTP requests total) for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.
+  - redirects without `Location`, redirect loops, chains beyond that bound, credentialed targets, non-HTTP(S) schemes, unrelated cross-host targets, and HTTPS downgrades remain source diagnostics rather than silently followed traffic.
+  - static zero-extract rows with redirect or `404` evidence are diagnosed as `site_changed` unless a challenge or JS-shell signal takes precedence; generic static/manual no-jobs rows without redirect evidence remain `js_required` for browser/static extraction follow-up.
   - static plugins that need custom listing/detail handling receive the shared fetch helper from the static adapter surface; direct `fetch_text` usage is only acceptable for non-static-provider paths that intentionally bypass static report semantics.
 - Scoped anti-bot browser retry policy:
   - registry rows may opt into higher-cost browser retry with `antiBotBrowserRetry: true`.
-  - flagged static rows can retry listing fetches with Playwright for `HTTP 429` / "Too Many Requests"; non-flagged `429` rows keep the default HTTP failure behavior.
+  - static listing fetches retry `403` and timeout failures with Playwright whenever the fallback helper is enabled and source budget remains; `429` / "Too Many Requests" is retried only for rows with `antiBotBrowserRetry: true` (or LinkedIn throttle responses). Non-flagged `429` rows keep the default HTTP failure behavior.
   - flagged HTML-board provider rows for Breezy, JazzHR, and Ashby can retry `403`, `429`, and timeout failures with the guarded Playwright helper before emitting diagnostics.
   - retry exhaustion keeps source status semantics unchanged, but diagnostics should include `classification: "anti_bot_or_challenge"`, `failureBucket: "anti_bot_or_challenge"` where source-report shaping supports it, `browserFallbackRecommended: true`, and queue-compatible `sourceId` / `pages` evidence.
 - `data/jobs-source-state.json`

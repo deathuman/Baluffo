@@ -1023,6 +1023,7 @@ Two consequences that are easy to get wrong:
 
 - **The listing-level zero-kept classification runs on the source report, not the detail evidence.** Without the explicit projection, a rows-flow shape (rendered cards re-verified against their detail URLs, first detail 500 aborting the source before any counter landed) stamps a detail failure while the source-level bucket stays `js_required`. `_apply_static_detail_evidence_to_report` projects `candidateLinksFound` / `detailPagesVisited` / `detailFetchFailedCount` / `listingJobsFound` onto the source-level report, nonzero-only, and stamps `details_broken` when the signal fires.
 - **`listingJobsFound` must be stamped before the per-row verification loop.** An abort on row 1 means the post-return counters never see the live board's remaining cards.
+- **Static deadline exits stay attributable.** A static source/detail row stopped by a deadline carries an additive `deadlineKind`: `request_cap` for the per-request hard timeout, `source_budget` for the per-source clock (including pagination extensions), or `batch_deadline` for the whole-page-batch deadline. `error` keeps its existing deadline text (`time_budget_exceeded` for request/page-batch caps, `time budget exceeded (Ns)` for the source budget) for existing consumers; the kind is projected from the detail row onto the source report and preserved by fetch-report normalization.
 
 `details_broken` is in the zero-kept guard's broken-prior-bucket set: a details-broken prior read is not clean-zero evidence. Adapter-stamped classifications (`anti_bot`, `site_changed`, `timeout`, `parse`, `dead_listing`, `empty`, `ok_no_jobs`) keep their own buckets, and a strong classification takes precedence.
 
@@ -1593,7 +1594,12 @@ starts and refreshes a bounded heartbeat during long synchronous work; no finali
 ETA is inferred. A finalization exception writes a terminal `status="error"` report with
 `taskProgress.phaseKey="failed"`, a bounded stable `summary.errorCode`, available phase timings, and
 truthful `publishedOutputUnchanged` evidence; lifecycle cleanup's
-`owner_inactive_without_terminal_report` remains crash/corruption fallback only.
+`owner_inactive_without_terminal_report` remains crash/corruption fallback only. A finalization
+failure caused by the reconciliation lock deadline keeps its attribution: `summary.errorCode` is
+`reconciliation_lock_timeout`, `summary.errorReason` carries the full bounded timeout message
+(including the holder pid/cmdline and the lock path), and `summary.lockPath`,
+`summary.lockTimeoutSeconds`, `summary.lockHolderPid`, and `summary.lockHolderCommand` carry the
+same facts as scalars so they survive task-row compaction.
 
 | Field | Type | Description |
 |---|---|---|
