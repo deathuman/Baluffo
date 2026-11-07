@@ -1,7 +1,9 @@
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
 import path from "path";
 import { test, expect } from "@playwright/test";
+
+import { seedWarmState } from "../../scripts/measure_container_jobs_boot.mjs";
 
 function resolveBridgeRuntimeBase() {
   try {
@@ -35,6 +37,7 @@ function resolveDesktopRuntimeQuery() {
 
 const BRIDGE_RUNTIME_BASE = resolveBridgeRuntimeBase();
 const DESKTOP_RUNTIME_QUERY = resolveDesktopRuntimeQuery();
+const ACTION_CENTER_TEST_POLL_MS = 1000;
 const PLAYWRIGHT_BRIDGE_DATA_DIR = path.resolve(".tmp", "playwright", "admin-bridge-data");
 const SMOKE_JOBS_FEED = Array.from({ length: 24 }, (_, idx) => ({
   id: `smoke-job-${idx + 1}`,
@@ -175,11 +178,35 @@ async function expectTooltipText(page, target, expectedText) {
 }
 
 function writePlaywrightBridgeJson(relativeName, payload) {
-  writeFileSync(
-    path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, relativeName),
-    `${JSON.stringify(payload, null, 2)}\n`,
-    "utf8"
-  );
+  const targetPath = path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, relativeName);
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  // Rename so a bridge poll never parses a half-written sidecar.
+  renameSync(tempPath, targetPath);
+}
+
+const BROWSER_FALLBACK_SIDECAR = "jobs-fetch-report-summary.json";
+
+function writeBrowserFallbackSidecar(health, { sourceHealth = {} } = {}) {
+  writePlaywrightBridgeJson(BROWSER_FALLBACK_SIDECAR, {
+    ok: true,
+    summaryView: true,
+    runtime: { browserFallbackHealth: health },
+    sourceHealth
+  });
+}
+
+async function waitForBridgeBrowserFallback(request, lastFailureAt, timeout = 30000) {
+  let payload = null;
+  await expect.poll(
+    async () => {
+      const response = await request.get(`${BRIDGE_RUNTIME_BASE}/ops/fetch-kpis?view=summary`);
+      payload = await response.json();
+      return payload?.kpis?.browserFallbackHealth?.lastFailureAt || "";
+    },
+    { timeout }
+  ).toBe(lastFailureAt);
+  return payload;
 }
 
 function seedPlaywrightTaskRuntime(rows) {
@@ -209,6 +236,379 @@ test("index entry redirects to jobs", async ({ page }) => {
   await page.goto("/index.html");
   await page.waitForURL("**/jobs.html");
   await expect(page.locator("#jobs-list")).toBeVisible();
+});
+
+test("jobs smoke: warm seeder creates the app's IndexedDB schema", async ({ page }) => {
+  // A CSS document is enough: IndexedDB and dynamic imports are origin-scoped,
+  // and no Jobs boot code runs to race the seeded cache.
+  await page.goto("/styles/base.css");
+  const rows = [
+    { id: "warm-1", title: "Warm Cache Engineer", company: "Warm Studio" },
+    { id: "warm-2", title: "Warm Cache Designer", company: "Warm Studio" }
+  ];
+  expect(await seedWarmState(page, {
+    rows,
+    rowFloor: rows.length,
+    signalId: "warm-seed-schema-test"
+  })).toBe(rows.length);
+
+  const cacheSource = readFileSync(path.resolve("frontend/jobs/app/cache.js"), "utf8");
+  const state = await page.evaluate(async ({ source }) => {
+    const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    try {
+      const cache = await import(moduleUrl);
+      const db = await cache.openJobsCacheDb({
+        indexedDb: indexedDB,
+        dbName: "baluffo_jobs_cache",
+        dbVersion: 2,
+        cacheStore: "jobs_feed",
+        seenStore: "jobs_seen"
+      });
+      const stores = Array.from(db.objectStoreNames);
+      const seenIndexes = Array.from(
+        db.transaction("jobs_seen", "readonly").objectStore("jobs_seen").indexNames
+      );
+      const cached = await cache.readJobsCache({
+        openDb: async () => db,
+        cacheStore: "jobs_feed",
+        cacheKey: "latest"
+      });
+      await cache.markSeenJob("warm-profile", "warm-1", {
+        openDb: async () => db,
+        seenStore: "jobs_seen"
+      });
+      const seenKeys = Array.from(await cache.loadSeenJobKeys("warm-profile", {
+        openDb: async () => db,
+        seenStore: "jobs_seen"
+      }));
+      db.close();
+      return {
+        version: db.version,
+        stores,
+        seenIndexes,
+        seenKeys,
+        cachedCount: cached?.jobs?.length || 0,
+        cachedSavedAt: cached?.savedAt || 0,
+        signal: JSON.parse(localStorage.getItem("baluffo_jobs_auto_refresh_signal") || "null"),
+        applied: localStorage.getItem("baluffo_jobs_auto_refresh_applied")
+      };
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
+  }, { source: cacheSource });
+
+  expect(state.version).toBe(2);
+  expect(state.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+  expect(state.seenIndexes).toContain("profileId");
+  expect(state.cachedCount).toBe(rows.length);
+  expect(state.cachedSavedAt).toBeGreaterThan(0);
+  expect(state.seenKeys).toEqual(["warm-1"]);
+  expect(state.signal).toMatchObject({
+    id: "warm-seed-schema-test",
+    source: "admin_fetcher"
+  });
+  expect(state.signal.finishedAt).toEqual(expect.any(String));
+  expect(state.applied).toBeNull();
+});
+
+test("jobs smoke: app repairs a v2 cache missing the profileId index", async ({ page }) => {
+  await page.goto("/styles/base.css");
+  const cacheSource = readFileSync(path.resolve("frontend/jobs/app/cache.js"), "utf8");
+  const state = await page.evaluate(async ({ source }) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("baluffo_jobs_cache", 2);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("jobs_feed", { keyPath: "id" });
+        request.result.createObjectStore("jobs_seen", { keyPath: "pk" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    // The repair delete must preserve seen-state, not just the schema.
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("jobs_seen", "readwrite");
+      tx.objectStore("jobs_seen").put({
+        pk: "warm-profile::warm-kept-1",
+        profileId: "warm-profile",
+        jobKey: "warm-kept-1",
+        seenAt: 1720000000000
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+
+    const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    try {
+      const cache = await import(moduleUrl);
+      const repaired = await cache.openJobsCacheDb({
+        indexedDb: indexedDB,
+        dbName: "baluffo_jobs_cache",
+        dbVersion: 2,
+        cacheStore: "jobs_feed",
+        seenStore: "jobs_seen"
+      });
+      const seenRows = await new Promise((resolve, reject) => {
+        const request = repaired
+          .transaction("jobs_seen", "readonly")
+          .objectStore("jobs_seen")
+          .getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const seenIndexes = await new Promise((resolve, reject) => {
+        const store = repaired
+          .transaction("jobs_seen", "readonly")
+          .objectStore("jobs_seen");
+        const result = Array.from(store.indexNames);
+        const request = store.index("profileId").getAll("warm-profile");
+        request.onsuccess = () => resolve({ result, keys: request.result.map(row => row.jobKey) });
+        request.onerror = () => reject(request.error);
+      });
+      const result = {
+        version: repaired.version,
+        stores: Array.from(repaired.objectStoreNames),
+        seenIndexes: seenIndexes.result,
+        seenRows,
+        seenKeys: seenIndexes.keys
+      };
+      repaired.close();
+      return result;
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
+  }, { source: cacheSource });
+
+  expect(state.version).toBe(2);
+  expect(state.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+  expect(state.seenIndexes).toContain("profileId");
+  expect(state.seenRows).toEqual([
+    {
+      pk: "warm-profile::warm-kept-1",
+      profileId: "warm-profile",
+      jobKey: "warm-kept-1",
+      seenAt: 1720000000000
+    }
+  ]);
+  expect(state.seenKeys).toEqual(["warm-kept-1"]);
+});
+
+test("jobs smoke: app reports a blocked repair instead of hanging or wiping", async ({ page }) => {
+  await page.goto("/styles/base.css");
+  const cacheSource = readFileSync(path.resolve("frontend/jobs/app/cache.js"), "utf8");
+  const state = await page.evaluate(async ({ source }) => {
+    const options = {
+      indexedDb: indexedDB,
+      dbName: "baluffo_jobs_cache",
+      dbVersion: 2,
+      cacheStore: "jobs_feed",
+      seenStore: "jobs_seen"
+    };
+    const seed = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(options.dbName, options.dbVersion);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("jobs_feed", { keyPath: "id" });
+        request.result.createObjectStore("jobs_seen", { keyPath: "pk" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = seed.transaction("jobs_seen", "readwrite");
+      tx.objectStore("jobs_seen").put({
+        pk: "blocked-profile::blocked-1",
+        profileId: "blocked-profile",
+        jobKey: "blocked-1",
+        seenAt: 1720000000000
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    // A peer tab that never handles versionchange keeps the database open, so
+    // deleteDatabase must report `blocked` rather than wait forever.
+    const peer = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(options.dbName, options.dbVersion);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    seed.close();
+
+    const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    try {
+      const cache = await import(moduleUrl);
+      let blockedMessage = "";
+      try {
+        const db = await cache.openJobsCacheDb(options);
+        db.close();
+      } catch (error) {
+        blockedMessage = String(error?.message || error);
+      }
+      const keptRows = await new Promise((resolve, reject) => {
+        const request = peer
+          .transaction("jobs_seen", "readonly")
+          .objectStore("jobs_seen")
+          .getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      peer.close();
+
+      // The blocked delete is still queued and drains once the peer leaves, so
+      // the next open must repair the schema instead of staying wedged.
+      const recovered = await cache.openJobsCacheDb(options);
+      const result = {
+        blockedMessage,
+        keptRows,
+        version: recovered.version,
+        stores: Array.from(recovered.objectStoreNames),
+        seenIndexes: Array.from(
+          recovered.transaction("jobs_seen", "readonly").objectStore("jobs_seen").indexNames
+        )
+      };
+      recovered.close();
+      return result;
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
+  }, { source: cacheSource });
+
+  expect(state.blockedMessage).toContain("blocked by another connection");
+  // The refused delete must leave the peer's data intact, not half-wiped.
+  expect(state.keptRows).toHaveLength(1);
+  expect(state.keptRows[0]).toMatchObject({
+    pk: "blocked-profile::blocked-1",
+    profileId: "blocked-profile",
+    jobKey: "blocked-1",
+    seenAt: 1720000000000
+  });
+  expect(state.version).toBe(2);
+  expect(state.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+  expect(state.seenIndexes).toContain("profileId");
+});
+
+test("jobs smoke: app reports a blocked cache open instead of hanging", async ({ page }) => {
+  await page.goto("/styles/base.css");
+  const cacheSource = readFileSync(path.resolve("frontend/jobs/app/cache.js"), "utf8");
+  const state = await page.evaluate(async ({ source }) => {
+    const options = {
+      indexedDb: indexedDB,
+      dbName: "baluffo_jobs_cache",
+      dbVersion: 2,
+      cacheStore: "jobs_feed",
+      seenStore: "jobs_seen"
+    };
+    // A version-1 peer with no versionchange handler keeps the upgrade open,
+    // so the app's version-2 open must report `blocked` rather than wait.
+    const peer = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(options.dbName, 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const peerVersion = peer.version;
+
+    const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    try {
+      const cache = await import(moduleUrl);
+      const outcome = await Promise.race([
+        cache.openJobsCacheDb(options).then(
+          db => {
+            db.close();
+            return { status: "resolved" };
+          },
+          error => ({ status: "rejected", message: String(error?.message || error) })
+        ),
+        new Promise(resolve => setTimeout(() => resolve({ status: "pending" }), 1500))
+      ]);
+
+      // Closing the peer drains the queued upgrade; the rejected open's late
+      // success must close its connection so this second open can proceed.
+      peer.close();
+      const recovered = await cache.openJobsCacheDb(options);
+      const result = {
+        outcome,
+        peerVersion,
+        version: recovered.version,
+        stores: Array.from(recovered.objectStoreNames)
+      };
+      recovered.close();
+      return result;
+    } finally {
+      peer.close();
+      URL.revokeObjectURL(moduleUrl);
+    }
+  }, { source: cacheSource });
+
+  expect(state.outcome.status).toBe("rejected");
+  expect(state.outcome.message).toContain("blocked by another connection");
+  expect(state.peerVersion).toBe(1);
+  expect(state.version).toBe(2);
+  expect(state.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+});
+
+test("jobs smoke: warm seeder repairs a v2 cache missing the profileId index", async ({ page }) => {
+  await page.goto("/styles/base.css");
+  const rows = [
+    { id: "repair-1", title: "Repair Engineer", company: "Warm Studio" },
+    { id: "repair-2", title: "Repair Designer", company: "Warm Studio" }
+  ];
+
+  const before = await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("baluffo_jobs_cache", 2);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("jobs_feed", { keyPath: "id" });
+        request.result.createObjectStore("jobs_seen", { keyPath: "pk" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const tx = db.transaction("jobs_seen", "readonly");
+    const state = {
+      version: db.version,
+      stores: Array.from(db.objectStoreNames),
+      seenIndexes: Array.from(tx.objectStore("jobs_seen").indexNames)
+    };
+    await new Promise(resolve => { tx.oncomplete = resolve; tx.onerror = resolve; tx.onabort = resolve; });
+    db.close();
+    return state;
+  });
+  expect(before.version).toBe(2);
+  expect(before.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+  expect(before.seenIndexes).not.toContain("profileId");
+
+  expect(await seedWarmState(page, {
+    rows,
+    rowFloor: rows.length,
+    signalId: "warm-seed-repair-test"
+  })).toBe(rows.length);
+
+  const after = await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("baluffo_jobs_cache", 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const seenTx = db.transaction("jobs_seen", "readonly");
+    const seenIndexes = Array.from(seenTx.objectStore("jobs_seen").indexNames);
+    const feedTx = db.transaction("jobs_feed", "readonly");
+    const cached = await new Promise((resolve, reject) => {
+      const request = feedTx.objectStore("jobs_feed").get("latest");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const state = {
+      version: db.version,
+      stores: Array.from(db.objectStoreNames),
+      seenIndexes,
+      cachedCount: cached?.jobs?.length || 0
+    };
+    db.close();
+    return state;
+  });
+  expect(after.version).toBe(2);
+  expect(after.stores).toEqual(expect.arrayContaining(["jobs_feed", "jobs_seen"]));
+  expect(after.seenIndexes).toContain("profileId");
+  expect(after.cachedCount).toBe(rows.length);
 });
 
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
@@ -416,20 +816,195 @@ test("admin smoke: direct admin load works without auth gating", async ({ page }
   await expect(page.locator("#admin-source-status")).toContainText(/Loading|Loaded|users|Could not|Admin overview/i);
 });
 
-test("admin smoke: direct admin load shows bucketed fetch failure summary", async ({ page }) => {
+test("admin smoke: Action Center shows a failed browser fallback probe", async ({ page, request }) => {
+  test.setTimeout(90000);
   await seedBridgeRuntimeBase(page);
+  const lastFailureAt = new Date(Date.now() - (3 * 60 * 60 * 1000) - (60 * 1000)).toISOString();
+  const expectedFailureAt = `${lastFailureAt.slice(0, 19).replace("T", " ")} UTC`;
+  const sourceHealth = {
+    browserFallbackRecommendedSources: 206,
+    browserFallbackAttemptedSources: 35
+  };
+  const failedHealth = {
+    ok: false,
+    stage: "launch",
+    errorType: "executable_does_not_exist",
+    error: "browserType.launch: Executable doesn't exist at /ms-playwright/chromium-1200\n  at openBrowser",
+    durationMs: 281,
+    lastFailureAt
+  };
+
+  try {
+    writeBrowserFallbackSidecar(failedHealth, { sourceHealth });
+    const seededKpis = await waitForBridgeBrowserFallback(request, lastFailureAt);
+    expect(seededKpis.kpis.browserFallbackHealth).toMatchObject({
+      stage: "launch",
+      errorType: "executable_does_not_exist",
+      lastFailureAt
+    });
+    expect(seededKpis.kpis.browserFallbackHealth.error).toContain("browserType.launch");
+    expect(seededKpis.kpis.sourceOutcomeSummary).toMatchObject(sourceHealth);
+
+    await page.goto("/admin.html");
+    await expect(page.locator("#admin-content")).toBeVisible();
+
+    const actionCenter = page.locator("#admin-action-center");
+    const signal = actionCenter.locator('.action-center-signal[data-signal="browser_fallback_health"]');
+    await expect(actionCenter).toBeVisible();
+    await expect(signal).toBeVisible({ timeout: 20000 });
+    await expect(signal).toContainText("Browser fallback health needs attention");
+    await expect(signal).toContainText("Probe failed at launch (executable_does_not_exist): browserType.launch");
+    await expect(signal).toContainText("206 sources need browser fallback");
+    await expect(signal).toContainText(`last failure ${expectedFailureAt} (3h ago)`);
+    await expect(signal).toContainText("Copy diagnostics");
+  } finally {
+    rmSync(path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, BROWSER_FALLBACK_SIDECAR), { force: true });
+  }
+});
+
+test("admin smoke: a passing browser fallback probe clears the Action Center signal", async ({ page, request }) => {
+  test.setTimeout(120000);
+  await seedBridgeRuntimeBase(page);
+  const lastFailureAt = new Date(Date.now() - (2 * 60 * 60 * 1000)).toISOString();
+  const sourceHealth = {
+    browserFallbackRecommendedSources: 206,
+    browserFallbackAttemptedSources: 35
+  };
+  const failedHealth = {
+    ok: false,
+    stage: "launch",
+    errorType: "executable_does_not_exist",
+    error: "browserType.launch: Executable doesn't exist at /ms-playwright/chromium-1200",
+    durationMs: 281,
+    lastFailureAt
+  };
+  const passingHealth = { ok: true, stage: "navigation", durationMs: 42 };
+
+  try {
+    // Seed the real sidecar the bridge projects into `/ops/fetch-kpis`, then wait
+    // out its 15 s payload cache so a preceding test cannot mask the failure.
+    writeBrowserFallbackSidecar(failedHealth, { sourceHealth });
+    const seededKpis = await waitForBridgeBrowserFallback(request, lastFailureAt);
+    expect(seededKpis.kpis.browserFallbackHealth).toMatchObject({
+      stage: "launch",
+      errorType: "executable_does_not_exist",
+      lastFailureAt
+    });
+    expect(seededKpis.kpis.sourceOutcomeSummary).toMatchObject(sourceHealth);
+
+    // Navigate while that failure payload is cached, so the initial Action
+    // Center render is fed by the real bridge rather than an intercepted route.
+    await page.goto(`/admin.html?actionCenterPollMs=${ACTION_CENTER_TEST_POLL_MS}`);
+    await expect(page.locator("#admin-content")).toBeVisible();
+
+    const actionCenter = page.locator("#admin-action-center");
+    const actionCenterItems = page.locator("#admin-action-center-items");
+    const signal = actionCenter.locator('.action-center-signal[data-signal="browser_fallback_health"]');
+    await expect(actionCenter).toBeVisible();
+    await expect(signal).toBeVisible({ timeout: 20000 });
+    await expect(signal).toContainText("Browser fallback health needs attention");
+    await expect(signal).toContainText("Probe failed at launch (executable_does_not_exist): browserType.launch");
+    await expect(signal).toContainText("206 sources need browser fallback");
+    const initialPollSequence = Number(await actionCenterItems.getAttribute("data-poll-sequence") || 0);
+
+    // The probe recovers on disk. The next poll (sped up by the test-only
+    // interval override) must replace the panel from the rewritten sidecar, so
+    // the stale failure row disappears without a reload.
+    const passingPoll = page.waitForResponse(
+      async response => {
+        if (
+          response.status() !== 200 ||
+          !/\/ops\/fetch-kpis\?view=summary(?:&|$)/.test(response.url())
+        ) {
+          return false;
+        }
+        const payload = await response.json().catch(() => null);
+        return payload?.kpis?.browserFallbackHealth?.ok === true;
+      },
+      { timeout: 50000 }
+    );
+    writeBrowserFallbackSidecar(passingHealth, { sourceHealth });
+    const passingResponse = await passingPoll;
+    expect((await passingResponse.json()).kpis.browserFallbackHealth).toMatchObject(passingHealth);
+    // Wait for the Action Center to complete its own poll, not for a wall-clock
+    // duration. The timeout only guards a poll that never finishes.
+    await page.waitForFunction(
+      previous => Number(
+        document.querySelector("#admin-action-center-items")?.dataset.pollSequence || 0
+      ) > previous,
+      initialPollSequence,
+      { timeout: 45000, polling: 250 }
+    );
+    await expect(signal).toBeHidden();
+    await expect(actionCenter).not.toContainText("Browser fallback health");
+  } finally {
+    rmSync(path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, BROWSER_FALLBACK_SIDECAR), { force: true });
+  }
+});
+
+test("admin smoke: direct admin load shows bucketed fetch failure summary", async ({ page }) => {
+  test.setTimeout(60000);
+  await seedBridgeRuntimeBase(page);
+  const fetcherMetricsRoute = /\/ops\/fetcher-metrics\?windowRuns=80(?:&|$)/;
+  let fetcherMetricsRequestCount = 0;
+  await page.route(fetcherMetricsRoute, async route => {
+    fetcherMetricsRequestCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        latestRun: {
+          browserFallbackHealth: {
+            ok: false,
+            stage: "launch",
+            error: "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium-1200",
+            errorType: "Error",
+            durationMs: 281
+          }
+        },
+        history: {}
+      })
+    });
+  });
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
   await expectTooltipText(page, page.locator("#admin-sync-test-btn"), "Verify GitHub App access");
   await expect(page.locator("#admin-refresh-btn")).toHaveCount(0);
 
-  // Manual diagnostics remain available, but direct Admin boot must not auto-load them.
-  await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(
-    "Fetcher diagnostics"
-  );
-  await page.click("#admin-refresh-report-btn");
+  // Diagnostics stay collapsed until requested, then load their own payload.
   const metrics = page.locator("#admin-ops-fetcher-metrics");
+  const fetcherDiagnostics = page.locator("#admin-ops-fetcher-diagnostics");
+  const fetcherDiagnosticsSummary = fetcherDiagnostics.locator("summary").first();
+  await expect(fetcherDiagnostics).toBeVisible();
+  await expect(fetcherDiagnostics).not.toHaveAttribute("open");
+  await expect(metrics).not.toContainText("Browser fallback health");
+  expect(fetcherMetricsRequestCount).toBe(0);
+  await fetcherDiagnosticsSummary.click();
+  await expect(fetcherDiagnostics).toHaveAttribute("open");
+  await expect(metrics).toContainText("Browser fallback health", { timeout: 15000 });
+  await expect(metrics).toContainText("Executable doesn't exist at /ms-playwright/chromium-1200");
+  expect(fetcherMetricsRequestCount).toBeGreaterThan(0);
+  const fetcherMetricsRequestsAfterOpen = fetcherMetricsRequestCount;
+
+  // A normal idle health poll must leave the collapsed panel closed. Then reopen
+  // from the cached payload; the on-demand loader must not issue a second
+  // fetcher-metrics request for the same panel.
+  await fetcherDiagnosticsSummary.click();
+  await expect(fetcherDiagnostics).not.toHaveAttribute("open");
+  await page.waitForResponse(
+    response => response.url().includes("/ops/dashboard-health?view=summary"),
+    { timeout: 20000 }
+  );
+  await page.waitForTimeout(300);
+  await expect(fetcherDiagnostics).not.toHaveAttribute("open");
+  await fetcherDiagnosticsSummary.click();
+  await expect(fetcherDiagnostics).toHaveAttribute("open");
+  await expect(metrics).toContainText("Browser fallback health");
+  expect(fetcherMetricsRequestCount).toBe(fetcherMetricsRequestsAfterOpen);
+
+  await page.unroute(fetcherMetricsRoute);
+  await page.click("#admin-refresh-report-btn");
   const overviewTab = page.getByRole("tab", { name: "Overview" });
   const discoveryTab = page.getByRole("tab", { name: "Discovery Review" });
   const sourcePolicyTab = page.getByRole("tab", { name: "Source Policy Review" });
@@ -446,8 +1021,6 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-ops-tab-source-policy-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-registry-conflicts-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-dedup-btn .admin-ops-tab-badge")).toBeVisible();
-  await expect(metrics).not.toContainText("Fetcher diagnostics", { timeout: 15000 });
-
   await discoveryTab.click();
   await expect(discoveryTab).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#admin-ops-tab-discovery")).toBeVisible();
