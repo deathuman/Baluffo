@@ -51,7 +51,7 @@ Four rules the guardrail enforces so this cannot quietly regress:
 
 ### Added
 
-- The Admin Action Center now reports a failed browser-fallback probe, naming the stage, error type, sources waiting for fallback, and when the failure last happened. The item can be dismissed or copied into diagnostics.
+- The Admin Action Center now reports a failed browser-fallback probe, naming the stage, error type, sources needing browser fallback, and when the failure last happened. The item can be dismissed or copied into diagnostics.
 - Ops fetcher diagnostics load only when their disclosure is opened, and reuse the same metrics request as the Dedup tab. An opened panel shows browser-fallback health and static deadline cuts.
 - A completed Jobs pipeline now reports fetch-source failures and oversized sync snapshots as warnings instead of a clean run. The Jobs page says how many sources failed without treating the run as an error.
 
@@ -65,6 +65,7 @@ Four rules the guardrail enforces so this cannot quietly regress:
 - A run that cannot acquire the feed reconciliation lock now records the lock path, holder process, and wait limit in its failed report, so the timeout remains diagnosable after the live process is gone.
 - A cached Ops summary refreshes when its browser-health, probe, or page-fetch sidecar changes, instead of serving the stale receipt until the cache expires.
 - The Source Policy Review panel no longer times out or flips the bridge status to Reconnecting while its recommendations load on a large registry.
+- Closing the desktop window now finishes cleanup within the five-second packaged target. The app waits two seconds for the bridge to settle, then stops even if the browser wrapper is still exiting, instead of waiting up to 20 seconds for a startup handoff after the window has closed.
 
 ### Notes
 

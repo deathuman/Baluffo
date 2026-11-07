@@ -19,9 +19,10 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  The Ops tab no longer re-reads the task history twice per poll, so it stays
-  responsive with a long task ledger. Registry conflicts refresh faster and show
-  which job evidence they used, and the Jobs page rebuilds its startup snapshot
-  without parsing the whole feed. Existing jobs, saved jobs and notes are kept.
+  Jobs diagnostics now show browser-fallback health, fetch-source failures, and
+  static deadline cuts in Admin and Ops. Static fetches honor one shared deadline
+  across retries and redirects, the Jobs cache repairs its schema without losing
+  seen-job history, and closing the desktop window now completes cleanup within
+  the packaged target. Existing jobs, saved jobs and notes are kept.
 storage:
   dataRoot: data
