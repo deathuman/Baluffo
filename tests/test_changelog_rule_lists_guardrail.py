@@ -62,8 +62,8 @@ def test_rule_list_audit_rejects_lists_that_disagree_on_the_rule_count(tmp_path:
     _mutate(
         repo,
         "docs/CHANGELOG.md",
+        "Five rules the guardrail enforces",
         "Four rules the guardrail enforces",
-        "Three rules the guardrail enforces",
     )
 
     with pytest.raises(AssertionError, match="disagree about how many rules"):
@@ -193,7 +193,7 @@ def test_rule_list_audit_rejects_a_positional_reference_past_the_list(tmp_path: 
         repo,
         "docs/DOCS_WORKFLOW.md",
         "The third rule is what caught nothing",
-        "The fifth rule is what caught nothing",
+        "The sixth rule is what caught nothing",
     )
 
     with pytest.raises(AssertionError, match="explains a rule by position"):
