@@ -116,6 +116,41 @@ test("action center startPolling runs first lightweight poll immediately", async
   }
 });
 
+test("action center honors a poll interval override", async () => {
+  const { refs, controller } = createFixture({ pollIntervalMs: 1200 });
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const previousSetInterval = global.setInterval;
+  const previousClearInterval = global.clearInterval;
+  const scheduledTimeouts = [];
+  const scheduledIntervals = [];
+  try {
+    global.setTimeout = (callback, delayMs) => {
+      scheduledTimeouts.push({ callback, delayMs });
+      return scheduledTimeouts.length;
+    };
+    global.clearTimeout = () => {};
+    global.setInterval = (callback, delayMs) => {
+      scheduledIntervals.push({ callback, delayMs });
+      return scheduledIntervals.length;
+    };
+    global.clearInterval = () => {};
+
+    controller.startPolling();
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(scheduledTimeouts[0]?.delayMs, 1200);
+    assert.equal(scheduledIntervals[0]?.delayMs, 1200);
+    assert.match(refs.actionCenterItemsEl.innerHTML, /Storage check pending/);
+  } finally {
+    controller.stopPolling();
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+    global.setInterval = previousSetInterval;
+    global.clearInterval = previousClearInterval;
+  }
+});
+
 test("action center defers its first poll to the injected startup lane", async () => {
   // The first poll reads the health route, which is startup-heavy: the bridge has one
   // gateway, so the poll must queue on the serial lane instead of racing the bootstrap

@@ -75,6 +75,7 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
     performanceProfile,
     frontendPerfSummary,
     slowestSummary,
+    browserFallbackHealthSummary,
     slowestStageSummary,
     highCostSummary,
     attentionSummary,
@@ -125,9 +126,14 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
     reviewQueueSummary,
     providerStaticDisagreementSummary,
     providerStaticTitleCompanyCollisionSummary,
-    bucketSummaryHtml
+    bucketSummaryHtml,
+    deadlineSummary,
+    deadlineRowsHtml
   } = viewModel;
 
+    const browserFallbackHealthHtml = browserFallbackHealthSummary
+      ? `<div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback health</strong>: ${escapeHtml(browserFallbackHealthSummary)}</div>`
+      : "";
     const runtimeSecondaryHtml = `
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
@@ -180,6 +186,8 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
     const failuresSectionHtml = `
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
+      <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static deadline cuts</strong>: ${escapeHtml(deadlineSummary)}</div>
+      ${deadlineRowsHtml}
       ${formatOpsMetricsDetails("Failure bucket details", failureBucketDetailsHtml, "admin-ops-failures-details")}
     `;
 
@@ -282,11 +290,11 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
       </details>
     `;
     const sectionHtml = includeDebugDiagnostics
-      ? `${taskLaneHtml}${buildOpsFetcherMetricSections(
+      ? `${taskLaneHtml}${browserFallbackHealthHtml}${buildOpsFetcherMetricSections(
         sectionHtmlByKey,
         diagnosticsByKey
       ).map(formatOpsFetcherMetricSection).join("")}`
-      : `${taskLaneHtml}${debugDiagnosticsHtml}`;
+      : `${taskLaneHtml}${browserFallbackHealthHtml}${debugDiagnosticsHtml}`;
 
   return { sectionHtml, diagnosticsByKey };
 }

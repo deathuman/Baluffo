@@ -100,6 +100,16 @@ export function bindAdminRuntimeEvents({
     }, true);
   }
 
+  if (refs.adminOpsFetcherMetricsEl) {
+    refs.adminOpsFetcherMetricsEl.addEventListener("toggle", event => {
+      const target = event?.target;
+      if (!target?.matches?.(".admin-ops-fetcher-diagnostics")) return;
+      state.opsFetcherDiagnosticsOpen = Boolean(target.open);
+      if (!target.open) return;
+      opsController.loadFetcherDiagnosticsData?.().catch(() => {});
+    }, true);
+  }
+
   bindWindowResize(() => {
     onSyncDiscoveryLogDisclosure();
   });

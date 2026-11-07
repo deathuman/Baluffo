@@ -170,6 +170,7 @@ test("the facade exposes every method the shell wires into other controllers", (
   const wired = [
     "applyBootstrapPayload",
     "loadActiveOpsSummaryData",
+    "loadFetcherDiagnosticsData",
     "loadIdleOpsHeavyHydration",
     "loadOpsHealthData",
     "loadOpsHistoryData",

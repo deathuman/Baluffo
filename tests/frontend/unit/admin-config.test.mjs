@@ -151,6 +151,21 @@ test("AdminConfig lets explicit runtime cold-start false override stale URL flag
   delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
 });
 
+test("AdminConfig accepts the test-only Action Center poll interval override", async () => {
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+  global.window = {
+    location: { href: "http://127.0.0.1:8080/admin.html?actionCenterPollMs=1000" },
+    sessionStorage: buildSessionStorage()
+  };
+
+  const { AdminConfig } = await importFresh(
+    "../../../frontend/shared/config/admin-config.js",
+    { relativeTo: import.meta.url }
+  );
+
+  assert.equal(AdminConfig.ACTION_CENTER_POLL_INTERVAL_MS, 1000);
+});
+
 test("AdminConfig overwrites stale cached bridge base with active desktop runtime config", async () => {
   globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
     bridge: {

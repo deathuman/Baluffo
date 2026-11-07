@@ -135,7 +135,7 @@ export function createOpsRenderHub({
     if (refs.adminSourcePolicyReviewEl) {
       refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
     }
-    if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
+    renderAdminOpsFetcherMetricsImpl(refs.adminOpsFetcherMetricsEl, null);
     if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = message;
     renderOpsTabBadges(refs, {
@@ -152,7 +152,7 @@ export function createOpsRenderHub({
     if (refs.adminOpsKpisEl) refs.adminOpsKpisEl.innerHTML = "";
     renderPipelineScheduleModel();
     if (refs.adminSourcePolicyReviewEl) refs.adminSourcePolicyReviewEl.innerHTML = "";
-    if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
+    renderAdminOpsFetcherMetricsImpl(refs.adminOpsFetcherMetricsEl, null);
     if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) {
       refs.adminOpsTrendsEl.textContent = "No run trend data yet.";
@@ -196,6 +196,7 @@ export function createOpsRenderHub({
       onLoadDebugDiagnostics: handleLoadDebugDiagnostics,
       includeDebugDiagnostics: Boolean(state.opsDebugDiagnosticsLoaded),
       debugDiagnosticsLoading: Boolean(state.opsDebugDiagnosticsLoading),
+      fetcherDiagnosticsOpen: Boolean(state.opsFetcherDiagnosticsOpen),
       runModel
     };
   }

@@ -44,6 +44,7 @@ const QUEUE_WHILE_LOADING = [
 const DELEGATED = [
   "loadActiveOpsSummaryData",
   "loadIdleOpsHeavyHydration",
+  "loadFetcherDiagnosticsData",
   "loadOpsHealthData",
   "loadOpsHistoryData",
   "loadOpsOverviewDetailData",

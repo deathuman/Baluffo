@@ -10,6 +10,7 @@
 import { escapeHtml } from "../../shared/ui/index.js";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
+  formatDateTime,
   formatDuration,
   sanitizeSlowSourceName
 } from "./ops-shared.js";
@@ -36,6 +37,50 @@ import {
   formatStaticSuppressionPolicyRows
 } from "./ops-summary-source-policy.js";
 
+const DEADLINE_KIND_LABELS = {
+  request_cap: "request cap",
+  source_budget: "source budget",
+  batch_deadline: "page-batch deadline"
+};
+
+function formatDeadlineKind(kind) {
+  const value = String(kind || "").trim();
+  return DEADLINE_KIND_LABELS[value] || value.replaceAll("_", " ") || "unknown";
+}
+
+/**
+ * Render the run-level browser health probe as one diagnosable line.
+ *
+ * The probe runs only after an environment-level browser failure, so an empty
+ * object means no probe happened and renders nothing. A failed probe keeps the
+ * raw Playwright launch/navigation error: the breaker's normalized token says
+ * fallback is unavailable, but only the raw text says whether the browser
+ * binary, its dependencies, or one page failed.
+ */
+function formatBrowserFallbackHealth(value) {
+  const health = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  if (!Object.keys(health).length) return "";
+  const stage = String(health.stage || "").trim() || "unknown";
+  const errorType = String(health.errorType || "").trim();
+  const parts = [
+    health.ok === true
+      ? "ready"
+      : `failed at ${stage}${errorType ? ` (${errorType})` : ""}`,
+    formatDuration(Number(health.durationMs || 0))
+  ];
+  const failureAt = String(health.lastFailureAt || "").trim();
+  if (failureAt) parts.push(`last failure ${formatDateTime(failureAt)}`);
+  const error = String(health.error || "").trim();
+  const launchError = String(health.lastLaunchError || "").trim();
+  const navigationError = String(health.lastNavigationError || "").trim();
+  if (error) parts.push(error);
+  if (launchError && launchError !== error) parts.push(`last launch: ${launchError}`);
+  if (navigationError && navigationError !== error) {
+    parts.push(`last navigation: ${navigationError}`);
+  }
+  return parts.join(", ");
+}
+
 /**
  * Derive every scalar, summary string, and row list the fetcher-metrics
  * sections render, returning one flat view model.
@@ -50,6 +95,7 @@ function buildOpsFetcherMetricsViewModel({ latest, metrics, options, summary }) 
     const outputYieldRate = Math.max(0, Number(latest?.outputYieldRate || 0));
     const failureRate = Math.max(0, Number(latest?.sourceFailureRate || 0));
     const slowest = Array.isArray(latest?.slowestSources) ? latest.slowestSources : [];
+    const browserFallbackHealthSummary = formatBrowserFallbackHealth(latest?.browserFallbackHealth);
     const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
     const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
     const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
@@ -99,6 +145,32 @@ function buildOpsFetcherMetricsViewModel({ latest, metrics, options, summary }) 
         .join(" | ")
       : "No high-cost low-yield sources.";
     const bucketRows = Array.isArray(summary?.buckets) ? summary.buckets : [];
+    const deadlineRows = Array.isArray(summary?.deadlineRows) ? summary.deadlineRows : [];
+    const deadlineKindCounts = new Map();
+    deadlineRows.forEach(row => {
+      const kind = String(row?.kind || "").trim();
+      if (!kind) return;
+      deadlineKindCounts.set(kind, Number(deadlineKindCounts.get(kind) || 0) + 1);
+    });
+    const deadlineKindSummary = Array.from(deadlineKindCounts.entries())
+      .map(([kind, count]) => `${formatDeadlineKind(kind)} ${Number(count).toLocaleString()}`)
+      .join(", ");
+    const deadlineSummary = deadlineRows.length
+      ? `${deadlineRows.length.toLocaleString()} static source${deadlineRows.length === 1 ? "" : "s"} cut by ${deadlineKindSummary}.`
+      : "No static source hit a hard deadline.";
+    const deadlineRowsHtml = deadlineRows.length
+      ? `
+        <div class="admin-table-shell admin-ops-full-row">
+          <table class="admin-table admin-ops-static-deadline-table">
+            <thead><tr><th>Source</th><th>Deadline clock</th><th>Error</th></tr></thead>
+            <tbody>${deadlineRows.map(row => {
+              const kind = String(row?.kind || "").trim();
+              return `<tr><td>${escapeHtml(String(row?.name || "unknown"))}</td><td title="${escapeHtml(kind)}">${escapeHtml(formatDeadlineKind(kind))}</td><td>${escapeHtml(String(row?.error || "—"))}</td></tr>`;
+            }).join("")}</tbody>
+          </table>
+        </div>
+      `
+      : "";
     const attentionSummary = formatSourceHealthRows(
       sourceHealth?.sourcesNeedingAttention,
       "No sources need attention.",
@@ -319,9 +391,13 @@ function buildOpsFetcherMetricsViewModel({ latest, metrics, options, summary }) 
     frontendPerfCounterRows,
     frontendPerfSummary,
     slowestSummary,
+    browserFallbackHealthSummary,
     slowestStageSummary,
     highCostSummary,
     bucketRows,
+    deadlineRows,
+    deadlineSummary,
+    deadlineRowsHtml,
     attentionSummary,
     zeroReviewSummary,
     browserSummary,

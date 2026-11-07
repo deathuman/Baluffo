@@ -32,6 +32,8 @@ export function createOverviewHydration({
 }) {
   let opsOverviewDetailLoad = null;
   let opsOverviewDetailLoadToken = 0;
+  let fetcherMetricsDetailLoad = null;
+  let fetcherDiagnosticsLoad = null;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
@@ -49,6 +51,16 @@ export function createOverviewHydration({
   const REGISTRY_CONFLICTS_STALE_REFRESH_MS = 5000;
   const REGISTRY_CONFLICTS_STALE_MAX_REFRESHES = 12;
 
+  // Dedup, the diagnostics disclosure, and debug hydration all read the same
+  // route; share one request while it is in flight.
+  function loadFetcherMetricsDetail() {
+    if (fetcherMetricsDetailLoad) return fetcherMetricsDetailLoad;
+    fetcherMetricsDetailLoad = getBridge(OPS_FETCHER_METRICS_DETAIL_PATH).finally(() => {
+      fetcherMetricsDetailLoad = null;
+    });
+    return fetcherMetricsDetailLoad;
+  }
+
   function loadOpsOverviewDetailData(renderToken = currentRenderToken()) {
     if (opsOverviewDetailLoad && opsOverviewDetailLoadToken === renderToken) return opsOverviewDetailLoad;
     state.opsDebugDiagnosticsLoading = true;
@@ -63,7 +75,7 @@ export function createOverviewHydration({
         performanceProfileResult
       ] = await Promise.allSettled([
         getBridge(OPS_HISTORY_DETAIL_PATH),
-        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
+        loadFetcherMetricsDetail(),
         getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
         getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
         getBridge(OPS_PERFORMANCE_PROFILE_PATH)
@@ -88,6 +100,7 @@ export function createOverviewHydration({
         && !Array.isArray(fetcherMetricsResult.value)
       ) {
         state.latestOpsFetcherMetricsPayload = fetcherMetricsResult.value;
+        state.opsFetcherDiagnosticsLoaded = true;
         changed = true;
       }
       if (
@@ -131,6 +144,45 @@ export function createOverviewHydration({
     });
     opsOverviewDetailLoad = detailLoad;
     return opsOverviewDetailLoad;
+  }
+
+  function setFetcherDiagnosticsStatus(message) {
+    const body = refs?.adminOpsFetcherMetricsEl?.querySelector?.(".admin-ops-fetcher-diagnostics-body");
+    if (!body) return;
+    body.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
+  }
+
+  function loadFetcherDiagnosticsData() {
+    if (state.opsFetcherDiagnosticsLoaded) {
+      renderDeferredOverviewDetails(currentRenderToken());
+      return Promise.resolve(state.latestOpsFetcherMetricsPayload || null);
+    }
+    if (fetcherDiagnosticsLoad) return fetcherDiagnosticsLoad;
+    const renderToken = currentRenderToken();
+    state.opsFetcherDiagnosticsLoading = true;
+    setFetcherDiagnosticsStatus("Loading fetcher diagnostics...");
+    fetcherDiagnosticsLoad = (async () => {
+      try {
+        const payload = await loadFetcherMetricsDetail();
+        if (isStaleRenderToken(renderToken)) return null;
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+          throw new Error("fetcher metrics payload was not an object");
+        }
+        state.latestOpsFetcherMetricsPayload = payload;
+        state.opsFetcherDiagnosticsLoaded = true;
+        renderDeferredOverviewDetails(renderToken);
+        return payload;
+      } catch (err) {
+        if (!isStaleRenderToken(renderToken)) {
+          setFetcherDiagnosticsStatus(`Could not load fetcher diagnostics: ${getErrorMessage(err)}`);
+        }
+        return null;
+      } finally {
+        state.opsFetcherDiagnosticsLoading = false;
+        fetcherDiagnosticsLoad = null;
+      }
+    })();
+    return fetcherDiagnosticsLoad;
   }
 
   function handleLoadDebugDiagnostics() {
@@ -317,11 +369,12 @@ export function createOverviewHydration({
     }
     dedupListsDetailLoad = (async () => {
       try {
-        const payload = await getBridge(OPS_FETCHER_METRICS_DETAIL_PATH);
+        const payload = await loadFetcherMetricsDetail();
         const fetcherMetricsPayload = payload && typeof payload === "object" && !Array.isArray(payload)
           ? payload
           : { latestRun: {} };
         state.latestOpsFetcherMetricsPayload = fetcherMetricsPayload;
+        state.opsFetcherDiagnosticsLoaded = true;
         renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, buildFetcherMetricsPayload(), {
           onDedupReviewAction: handleDedupReviewAction
         });
@@ -349,6 +402,7 @@ export function createOverviewHydration({
 
   return {
     loadOpsOverviewDetailData,
+    loadFetcherDiagnosticsData,
     handleLoadDebugDiagnostics,
     scheduleOpsOverviewDetailData,
     loadSourcePolicyDetail,

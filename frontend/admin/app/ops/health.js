@@ -152,7 +152,8 @@ export function createOpsHealthController({
       return {};
     }
   },
-  renderScheduler
+  renderScheduler,
+  fetchKpisSummaryFeed = null
 }) {
   let opsRenderToken = 0;
 
@@ -423,7 +424,8 @@ export function createOpsHealthController({
     measuredGetBridge,
     currentRenderToken,
     isStaleRenderToken,
-    OPS_FETCH_KPIS_SUMMARY_PATH
+    OPS_FETCH_KPIS_SUMMARY_PATH,
+    fetchKpisSummaryFeed
   });
 
   const dashboardHealthHydration = createDashboardHealthHydration({
@@ -696,6 +698,7 @@ export function createOpsHealthController({
 
   const {
     loadOpsOverviewDetailData,
+    loadFetcherDiagnosticsData,
     loadSourcePolicyDetail,
     loadRegistryConflictsMore,
     loadActiveOpsTabDetail
@@ -782,6 +785,7 @@ export function createOpsHealthController({
     loadOpsHealthData,
     loadIdleOpsHeavyHydration: options => loadIdleOpsHeavyHydration(currentRenderToken(), options || {}),
     loadOpsHistoryData,
+    loadFetcherDiagnosticsData,
     loadOpsOverviewDetailData,
     loadRegistrySyncDiagnosticsData,
     selectOpsTab: tabs.selectOpsTab

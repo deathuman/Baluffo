@@ -134,16 +134,92 @@ test("zero-kept review is not hidden behind a zero failure ratio", async () => {
   assert.doesNotMatch(html, /Retry failed/);
 });
 
-test("action center renders every reachable signal and no unreachable overflow row", async () => {
-  // Three is the ceiling: `stale_fetch` needs a fetch age above 12h and
-  // `failed_sources` needs one at or below 12h, so they are mutually exclusive. The
-  // reachable maximum is storage_health + sync_status + failed_sources, and all
-  // three must render. The "View all" row that used to follow them could never
-  // appear and has been removed.
+test("browser fallback probe failure is visible in the action center", async () => {
+  const lastFailureAt = new Date(Date.now() - (3 * 60 * 60 * 1000) - (5 * 60 * 1000)).toISOString();
+  const expectedLastFailureAt = `${lastFailureAt.slice(0, 19).replace("T", " ")} UTC`;
   const { refs, controller } = createFixture({
     getBridge: async path => {
       if (path === "/ops/fetch-kpis?view=summary") {
-        return { alerts: [], kpis: { lastSuccessfulFetchAge: "1h", failedSourceRatioLatest: 0.5 } };
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0,
+            sourceOutcomeSummary: {
+              browserFallbackRecommendedSources: 206
+            },
+            browserFallbackHealth: {
+              ok: false,
+              stage: "launch",
+              errorType: "executable_does_not_exist",
+              error: "browserType.launch: Executable doesn't exist\n  at /snap/chromium",
+              durationMs: 120,
+              lastFailureAt
+            }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: false });
+
+  const html = refs.actionCenterItemsEl.innerHTML;
+  assert.match(html, /data-signal="browser_fallback_health"/);
+  assert.match(html, /Browser fallback health needs attention/);
+  assert.match(html, /Probe failed at launch \(executable_does_not_exist\): browserType\.launch/);
+  assert.match(html, /206 sources need browser fallback/);
+  assert.ok(
+    html.includes(`last failure ${expectedLastFailureAt} (3h ago)`),
+    "the signal must show when the last probe failed and how old that failure is"
+  );
+  assert.match(html, /Copy diagnostics/);
+  assert.doesNotMatch(html, /\n {2}at \/snap\/chromium/, "multi-line probe errors must collapse to one row");
+});
+
+test("a passing browser fallback probe adds no action center signal", async () => {
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0,
+            browserFallbackHealth: { ok: true, stage: "navigation", durationMs: 40 }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: false });
+
+  assert.doesNotMatch(refs.actionCenterItemsEl.innerHTML, /browser_fallback_health/);
+  assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals/);
+});
+
+test("action center renders every reachable signal and no unreachable overflow row", async () => {
+  // Four is the ceiling: `stale_fetch` needs a fetch age above 12h and
+  // `failed_sources` needs one at or below 12h, so they are mutually exclusive. The
+  // reachable maximum is storage_health + one fetch signal + sync_status +
+  // browser_fallback_health, and all four must render. The "View all" row that used
+  // to follow them could never appear and has been removed.
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0.5,
+            browserFallbackHealth: { ok: false, stage: "launch", errorType: "executable_does_not_exist" }
+          }
+        };
       }
       if (path === "/sync/status?view=summary") {
         return {
@@ -161,17 +237,18 @@ test("action center renders every reachable signal and no unreachable overflow r
   await controller.pollActionCenter({ includeStorage: true });
 
   const html = refs.actionCenterItemsEl.innerHTML;
-  for (const id of ["storage_health", "sync_status", "failed_sources"]) {
+  for (const id of ["storage_health", "sync_status", "failed_sources", "browser_fallback_health"]) {
     assert.match(html, new RegExp(`data-signal="${id}"`), `${id} must render`);
   }
-  assert.equal((html.match(/class="action-center-signal /g) || []).length, 3);
+  assert.equal((html.match(/class="action-center-signal /g) || []).length, 4);
   assert.doesNotMatch(html, /view-all/);
 });
 
 test("stale_fetch and failed_sources are mutually exclusive in the live signal set", async () => {
-  // This is the invariant that makes the display cap unreachable. If a future change
-  // lets both fire together, the signal count reaches four, the cap binds, and the
-  // removed overflow row becomes necessary again — so this test is the tripwire.
+  // This is the invariant that keeps the display cap unreachable in practice. If a
+  // future change lets both fire while storage, sync, and browser health also report
+  // issues, the signal count reaches five, the cap binds, and the removed overflow
+  // row becomes necessary again — so this test is the tripwire.
   const at = async (age, alerts, ratio) => {
     const { refs, controller } = createFixture({
       getBridge: async path => {

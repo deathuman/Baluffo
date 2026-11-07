@@ -370,8 +370,27 @@ function classifyFetcherFailureBucket(row) {
 export function deriveFetcherFailureSummary(report) {
   const groups = Array.isArray(report?.sources) ? report.sources : [];
   const buckets = new Map();
+  const deadlineRows = [];
+  const seenDeadlineRows = new Set();
   let topLevelFailedSources = 0;
   let detailFailureCount = 0;
+
+  function pushDeadlineRow(row, fallbackAdapter = "") {
+    if (!row || typeof row !== "object") return;
+    const adapter = String(row.adapter || fallbackAdapter || "").trim().toLowerCase();
+    if (adapter !== "static") return;
+    const kind = String(row.deadlineKind || "").trim();
+    if (!kind) return;
+    const name = String(row.name || row.studio || "unknown").trim() || "unknown";
+    const key = `${name.toLowerCase()}|${kind}`;
+    if (seenDeadlineRows.has(key)) return;
+    seenDeadlineRows.add(key);
+    deadlineRows.push({
+      name,
+      kind,
+      error: String(row.error || "").trim()
+    });
+  }
 
   function pushBucketRow(bucketKey, row) {
     const existing = buckets.get(bucketKey) || {
@@ -395,6 +414,12 @@ export function deriveFetcherFailureSummary(report) {
     const parsedDetails = (Array.isArray(group?.details) ? group.details : [])
       .map(coerceReportDetailRow)
       .filter(detail => detail && typeof detail === "object");
+    const deadlineDetails = parsedDetails.filter(detail => String(detail?.deadlineKind || "").trim());
+    if (deadlineDetails.length) {
+      deadlineDetails.forEach(detail => pushDeadlineRow(detail, group?.adapter));
+    } else {
+      pushDeadlineRow(group);
+    }
     const failingDetails = parsedDetails.filter(detail => hasReportFailureSignal(detail));
     if (failingDetails.length) {
       detailFailureCount += failingDetails.length;
@@ -424,6 +449,7 @@ export function deriveFetcherFailureSummary(report) {
   return {
     topLevelFailedSources,
     detailFailureCount,
+    deadlineRows,
     buckets: bucketOrder
       .map(key => buckets.get(key))
       .filter(Boolean)

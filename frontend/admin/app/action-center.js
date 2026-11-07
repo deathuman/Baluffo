@@ -1,4 +1,5 @@
 import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js";
+import { createFetchKpisSummaryFeed } from "./fetch-kpis-summary-feed.js";
 import {
   renderActionCenterBody,
   renderCheckedAt,
@@ -8,12 +9,12 @@ import {
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;
 const POLL_INTERVAL_MS = 30000;
-const INITIAL_FULL_POLL_DELAY_MS = POLL_INTERVAL_MS;
 const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
-const MAX_ITEMS = 3;
-// The Action Center reads exactly two things off the health payload:
-// `alerts` (for `fetch_never_run` / `stale_fetch`) and `kpis`
-// (`lastSuccessfulFetchAge`, `failedSourceRatioLatest`). It used to poll
+const MAX_ITEMS = 4;
+// The Action Center reads three things off the health payload:
+// `alerts` (for `fetch_never_run` / `stale_fetch`), `kpis`
+// (`lastSuccessfulFetchAge`, `failedSourceRatioLatest`), and the run-level
+// browser probe at `kpis.browserFallbackHealth`. It used to poll
 // `/ops/health?view=ready`, which is built by `compute_ops_health_ready()`
 // (src/bridge/ops_api_health.py) and contains *neither* key — that payload is a
 // deliberate lightweight-startup shape, pinned by
@@ -41,14 +42,16 @@ const SIGNAL_ORDER = [
   "storage_health",
   "stale_fetch",
   "sync_status",
-  "failed_sources"
+  "failed_sources",
+  "browser_fallback_health"
 ];
 
 const SIGNAL_LABELS = {
   storage_health: "Storage health issue detected",
   stale_fetch: "Jobs fetch is stale",
   sync_status: "Sync needs attention",
-  failed_sources: "Source outcomes need review"
+  failed_sources: "Source outcomes need review",
+  browser_fallback_health: "Browser fallback health needs attention"
 };
 
 function formatAge(hours) {
@@ -63,12 +66,29 @@ function formatAge(hours) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+function formatFailureTimestamp(ms) {
+  return `${new Date(ms).toISOString().slice(0, 19).replace("T", " ")} UTC`;
+}
+
+function formatElapsedAge(ms, nowMs = Date.now()) {
+  const elapsedMs = Math.max(0, nowMs - ms);
+  if (elapsedMs < 60_000) return `${Math.floor(elapsedMs / 1000)}s ago`;
+  return formatAge(elapsedMs / 3_600_000);
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
 
 function hasPayload(value) {
   return Boolean(value && typeof value === "object");
+}
+
+function normalizePollIntervalMs(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.max(1, Math.round(parsed))
+    : POLL_INTERVAL_MS;
 }
 
 function isoMs(value) {
@@ -292,6 +312,36 @@ function evaluateFailedSources(healthData) {
   };
 }
 
+function evaluateBrowserFallbackHealth(healthData) {
+  if (!healthData) return null;
+  const health = healthData.kpis?.browserFallbackHealth;
+  if (!health || typeof health !== "object" || Array.isArray(health) || health.ok === true) {
+    return null;
+  }
+
+  const stage = String(health.stage || "").trim() || "unknown";
+  const errorType = String(health.errorType || "").trim();
+  const error = [health.error, health.lastLaunchError, health.lastNavigationError]
+    .map(value => String(value || "").trim().replace(/\s+/g, " "))
+    .find(Boolean) || "";
+  const clipped = error.length > 240 ? `${error.slice(0, 237)}...` : error;
+  const failureMs = isoMs(health.lastFailureAt);
+  const failureCopy = failureMs
+    ? `; last failure ${formatFailureTimestamp(failureMs)} (${formatElapsedAge(failureMs)})`
+    : "";
+  const rawNeeded = healthData.kpis?.sourceOutcomeSummary?.browserFallbackRecommendedSources;
+  const needed = Math.max(0, Number(rawNeeded));
+  const neededCopy = rawNeeded != null && Number.isFinite(needed)
+    ? `; ${formatCount(needed)} source${needed === 1 ? " needs" : "s need"} browser fallback`
+    : "";
+  return {
+    id: "browser_fallback_health",
+    severity: "warning",
+    summary: `Probe failed at ${stage}${errorType ? ` (${errorType})` : ""}${clipped ? `: ${clipped}` : ""}${neededCopy}${failureCopy}`,
+    actions: ["review", "copy_diagnostics", "dismiss"]
+  };
+}
+
 export function createActionCenterController({
   refs,
   getBridge,
@@ -305,12 +355,20 @@ export function createActionCenterController({
   // tests/frontend/unit/admin-schedule-partial-hydration-smoke.test.mjs): the bridge has a
   // single gateway, so heavy GETs must not overlap at boot. The composition root injects the
   // serial startup lane here; without it (unit fixtures) the first poll stays immediate.
-  enqueueStartupTask = null
+  enqueueStartupTask = null,
+  fetchKpisSummaryFeed = null,
+  pollIntervalMs = POLL_INTERVAL_MS
 }) {
   let pollTimer = null;
   let fullPollTimer = null;
   let lastCheckedAtMs = 0;
   const pollCache = { health: null, sync: null, storage: null };
+  const healthFeed = fetchKpisSummaryFeed || createFetchKpisSummaryFeed();
+  let hasCompletedPoll = false;
+  let lastPollMeta = null;
+  let pollInFlight = false;
+  let pollHealthPayload = null;
+  let pollSequence = 0;
 
   // Critical first, then warnings, in SIGNAL_ORDER. Deliberately *not* capped here:
   // the cap is a display concern, and applying it before the `hasMore` comparison
@@ -337,6 +395,8 @@ export function createActionCenterController({
     if (sync) map.sync_status = sync;
     const failed = evaluateFailedSources(healthData);
     if (failed) map.failed_sources = failed;
+    const browserHealth = evaluateBrowserFallbackHealth(healthData);
+    if (browserHealth) map.browser_fallback_health = browserHealth;
     return map;
   }
 
@@ -370,11 +430,12 @@ export function createActionCenterController({
     clearAllDismissed(nowMs);
 
     // The cap never binds today: `stale_fetch` (age > 12h) and `failed_sources`
-    // (age <= 12h) are mutually exclusive, so at most three signals can be active
-    // and MAX_ITEMS is 3. It is kept as a display contract so the panel cannot grow
-    // unbounded if the signal set ever expands. The "View all" overflow row that
-    // used to sit behind it was unreachable by construction and has been removed —
-    // if a fifth signal is added, that row should come back with a working cap.
+    // (age <= 12h) are mutually exclusive, so at most four signals can be active:
+    // storage_health, one of the fetch signals, sync_status, and
+    // browser_fallback_health. MAX_ITEMS is 4. It is kept as a display contract so
+    // the panel cannot grow unbounded if the signal set ever expands. The "View all"
+    // overflow row that used to sit behind it was unreachable by construction and
+    // has been removed — if a sixth signal is added, that row should come back.
     const visible = allSignals.filter(s => !isDismissed(s.id, nowMs)).slice(0, MAX_ITEMS);
 
     const status = resolveStatusState(pollMeta);
@@ -400,6 +461,25 @@ export function createActionCenterController({
         : "";
     }
   }
+
+  const unsubscribeHealthFeed = healthFeed.subscribe(payload => {
+    if (!hasPayload(payload)) return;
+    pollCache.health = payload;
+    if (pollInFlight) {
+      // The current poll is still waiting on sync/storage; let it render this
+      // newer health payload instead of painting twice.
+      pollHealthPayload = payload;
+      return;
+    }
+    if (!hasCompletedPoll || shouldDeferCoreSignals()) return;
+    const pollMeta = {
+      ...(lastPollMeta || {}),
+      anyChecked: true,
+      activeWorkDeferred: false
+    };
+    lastPollMeta = pollMeta;
+    renderSignals(evaluateAll(payload, pollCache.sync, pollCache.storage), pollMeta);
+  });
 
   async function handleAction(action, signalId, preset) {
     if (action === "retry") {
@@ -497,6 +577,8 @@ export function createActionCenterController({
   }
 
   async function pollActionCenter(options = {}) {
+    pollInFlight = true;
+    pollHealthPayload = null;
     try {
       const deferCore = Boolean(shouldDeferCoreSignals());
       const includeStorage = options?.includeStorage !== false
@@ -505,7 +587,10 @@ export function createActionCenterController({
       const [health, sync, storage] = deferCore
         ? [pollCache.health || null, pollCache.sync || null, pollCache.storage || null]
         : await Promise.all([
-          getBridge(HEALTH_ROUTE, { timeoutMs: 5000 }).catch(() => null),
+          healthFeed.load(
+            () => getBridge(HEALTH_ROUTE, { timeoutMs: 5000 }).catch(() => null),
+            { maxAgeMs: 5000 }
+          ),
           getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
           includeStorage
             // Diagnostic-only: a slow storage read must not report the bridge as
@@ -515,13 +600,15 @@ export function createActionCenterController({
             : Promise.resolve(pollCache.storage || null)
         ]);
       const storagePayload = includeStorage ? storage : pollCache.storage || null;
-      if (!deferCore || hasPayload(health)) pollCache.health = health;
+      if (pollHealthPayload) pollCache.health = pollHealthPayload;
+      else if (!deferCore || hasPayload(health)) pollCache.health = health;
       if (!deferCore || hasPayload(sync)) pollCache.sync = sync;
       pollCache.storage = storagePayload;
       if (!deferCore && hasPayload(sync) && typeof onSyncStatus === "function") {
         onSyncStatus(sync);
       }
-      const healthChecked = hasPayload(health);
+      const resolvedHealth = pollHealthPayload || health;
+      const healthChecked = hasPayload(resolvedHealth);
       const syncChecked = hasPayload(sync);
       const storageChecked = hasPayload(storagePayload);
       const pollMeta = {
@@ -531,11 +618,23 @@ export function createActionCenterController({
         activeWorkDeferred: deferCore,
         allRequiredChecked: healthChecked && syncChecked && storageChecked
       };
-      const signals = evaluateAll(health, sync, storagePayload);
+      const signals = evaluateAll(resolvedHealth, sync, storagePayload);
+      lastPollMeta = pollMeta;
+      hasCompletedPoll = true;
       renderSignals(signals, pollMeta);
+      // Shared-feed renders do not increment this: it proves the Action Center
+      // completed a poll of its own, independent of the 30 s wall clock.
+      pollSequence += 1;
+      if (refs.actionCenterItemsEl) {
+        const sequence = String(pollSequence);
+        if (refs.actionCenterItemsEl.dataset) refs.actionCenterItemsEl.dataset.pollSequence = sequence;
+        else refs.actionCenterItemsEl.setAttribute?.("data-poll-sequence", sequence);
+      }
     } catch (err) {
       if (logAdminError) logAdminError("action_center_poll", err);
       renderSignals({}, { anyChecked: false });
+    } finally {
+      pollInFlight = false;
     }
   }
 
@@ -579,14 +678,15 @@ export function createActionCenterController({
     } else {
       runInitialPoll();
     }
-    const fullPollDelayMs = Math.max(0, Number(options?.fullPollDelayMs) || INITIAL_FULL_POLL_DELAY_MS);
+    const intervalMs = normalizePollIntervalMs(options?.pollIntervalMs ?? pollIntervalMs);
+    const fullPollDelayMs = Math.max(0, Number(options?.fullPollDelayMs ?? intervalMs) || intervalMs);
     fullPollTimer = setTimeout(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
       fullPollTimer = null;
     }, fullPollDelayMs);
     pollTimer = createVisibilityPausedInterval(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
-    }, POLL_INTERVAL_MS);
+    }, intervalMs);
   }
 
   function stopPolling() {
@@ -602,6 +702,7 @@ export function createActionCenterController({
 
   function dispose() {
     stopPolling();
+    unsubscribeHealthFeed();
   }
 
   return {

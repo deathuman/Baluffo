@@ -34,6 +34,18 @@ export { renderAdminOpsSchedule } from "./ops-summary-schedule.js";
 
 /** @typedef {import("../../shared/types.js").FetcherMetricsPayload} FetcherMetricsPayload */
 
+function buildFetcherDiagnosticsPlaceholderHtml({ open = false } = {}) {
+  return `
+    <h4 class="admin-section-title">Fetcher Diagnostics</h4>
+    <details id="admin-ops-fetcher-diagnostics" class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row"${open ? " open" : ""}>
+      <summary>Fetcher diagnostics</summary>
+      <div class="admin-ops-metrics-details-body admin-ops-fetcher-diagnostics-body">
+        <div class="muted">Open to load browser fallback health and fetcher diagnostics.</div>
+      </div>
+    </details>
+  `;
+}
+
 /**
  * @param {HTMLElement|null|undefined} dedupEl
  * @param {Object|null|undefined} metrics
@@ -65,7 +77,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   if (!metricsEl) return;
   const hasMetricsPayload = metrics && typeof metrics === "object" && !Array.isArray(metrics);
   if (!hasMetricsPayload) {
-    metricsEl.innerHTML = "";
+    metricsEl.innerHTML = buildFetcherDiagnosticsPlaceholderHtml({
+      open: Boolean(options?.fetcherDiagnosticsOpen)
+    });
     if (metricsEl.dataset) delete metricsEl.dataset.opsFetcherMetricsSig;
     return;
   }
@@ -93,6 +107,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       averageDurationMs: Number(history?.averageDurationMs || 0)
     },
     slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
+    browserFallbackHealth: latest?.browserFallbackHealth || {},
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
     sourceHealth: latest?.sourceHealth || {},
     dedupEvidence: latest?.dedupEvidence || {},
@@ -111,6 +126,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     runModel: options?.runModel || {},
     includeDebugDiagnostics: options?.includeDebugDiagnostics !== false,
     debugDiagnosticsLoading: Boolean(options?.debugDiagnosticsLoading),
+    fetcherDiagnosticsOpen: Boolean(options?.fetcherDiagnosticsOpen),
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -125,7 +141,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   }
   metricsEl.innerHTML = `
     <h4 class="admin-section-title">Fetcher Diagnostics</h4>
-    <details class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row">
+    <details id="admin-ops-fetcher-diagnostics" class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row"${options?.fetcherDiagnosticsOpen ? " open" : ""}>
       <summary>Fetcher diagnostics</summary>
       <div class="admin-ops-metrics-details-body admin-ops-fetcher-diagnostics-body">
         ${sectionHtml}

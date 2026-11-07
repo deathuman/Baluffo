@@ -29,6 +29,7 @@ import { createAdminRegistryController } from "../registry.js";
 import { createAdminSyncController } from "../sync.js";
 import { createAdminOverviewController } from "./overview.js";
 import { createActionCenterController } from "../action-center.js";
+import { createFetchKpisSummaryFeed } from "../fetch-kpis-summary-feed.js";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 import {
@@ -65,6 +66,7 @@ export function composeAdminControllers({
   bridgeStatusPollIntervalMs,
   opsPollIdleIntervalMs,
   opsPollLiveIntervalMs,
+  actionCenterPollIntervalMs = 30000,
   jobsAutoRefreshSignalKey,
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
@@ -87,6 +89,9 @@ export function composeAdminControllers({
   let discoveryController;
   let registryController;
   state.adminStartupBridgeHydrationInFlight = true;
+  // Ops and the Action Center read the same cached summary route; one feed keeps
+  // their refreshes from becoming two independent polls.
+  const fetchKpisSummaryFeed = createFetchKpisSummaryFeed();
 
   const overviewController = createAdminOverviewController({
     refs,
@@ -137,7 +142,8 @@ export function composeAdminControllers({
         bridgeStatusPollIntervalMs,
         idlePollIntervalMs: opsPollIdleIntervalMs,
         markAdminStep,
-        measureAdminStep
+        measureAdminStep,
+        fetchKpisSummaryFeed
       });
     }
   });
@@ -261,7 +267,9 @@ export function composeAdminControllers({
     // The first core poll reads HEALTH_ROUTE, which is a startup-heavy route: the bridge
     // serves one gateway, so it must queue behind the bootstrap heavy loads instead of
     // racing them. Enqueueing keeps the serial startup lane as the single owner of heavy GETs.
-    enqueueStartupTask: enqueueAdminStartupBridgeTask
+    enqueueStartupTask: enqueueAdminStartupBridgeTask,
+    fetchKpisSummaryFeed,
+    pollIntervalMs: actionCenterPollIntervalMs
   });
 
   const inspectorController = createAdminInspectorController({

@@ -155,11 +155,14 @@ test("admin render: fetcher metrics render failure buckets and examples", () => 
   assert.match(metricsEl.innerHTML, /High-cost low-yield/i);
 });
 
-test("admin render: empty fetcher metrics render no orphan heading", () => {
+test("admin render: empty fetcher metrics render the on-demand diagnostics disclosure", () => {
   const metricsEl = makeEl();
   renderAdminOpsFetcherMetrics(metricsEl, null);
 
-  assert.equal(metricsEl.innerHTML, "");
+  assert.match(metricsEl.innerHTML, /Fetcher Diagnostics/i);
+  assert.match(metricsEl.innerHTML, /Fetcher diagnostics/i);
+  assert.match(metricsEl.innerHTML, /Open to load browser fallback health/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Browser fallback health:/i);
 });
 
 test("admin render: signature patching skips redundant alerts/kpis/schedule rewrites", () => {

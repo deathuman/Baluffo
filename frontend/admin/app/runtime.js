@@ -64,6 +64,7 @@ const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fe
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
 const ADMIN_BRIDGE_BASE = resolveAdminBridgeBase(adminConfig);
 const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
+const ACTION_CENTER_POLL_INTERVAL_MS = adminConfig.ACTION_CENTER_POLL_INTERVAL_MS;
 const OPS_POLL_IDLE_INTERVAL_MS = 10000;
 const OPS_POLL_LIVE_INTERVAL_MS = 2000;
 const ACTIVE_TASK_POLL_INTERVAL_MS = 500;
@@ -285,6 +286,7 @@ function bootAdminPage() {
     bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
     opsPollIdleIntervalMs: OPS_POLL_IDLE_INTERVAL_MS,
     opsPollLiveIntervalMs: OPS_POLL_LIVE_INTERVAL_MS,
+    actionCenterPollIntervalMs: ACTION_CENTER_POLL_INTERVAL_MS,
     jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
     jobsFetcherCommand: JOBS_FETCHER_COMMAND,
     jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,

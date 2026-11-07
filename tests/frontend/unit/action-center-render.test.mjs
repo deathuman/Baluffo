@@ -157,13 +157,18 @@ test("the checked-at stamp ages and stays empty before the first poll", () => {
 
 test("every active signal renders, with no unreachable overflow row", () => {
   // `stale_fetch` (age > 12h) and `failed_sources` (age <= 12h) are mutually
-  // exclusive, so at most three signals can be active at once and the display cap is
-  // three. The "View all" overflow row that used to sit behind that cap could never
+  // exclusive, so at most four signals can be active at once and the display cap is
+  // four. The "View all" overflow row that used to sit behind that cap could never
   // render and was removed rather than left as dead UI.
-  const three = [signal(), signal({ id: "sync_status" }), signal({ id: "failed_sources" })];
-  const html = renderActionCenterBody({ state: "healthy", signals: three });
+  const four = [
+    signal(),
+    signal({ id: "sync_status" }),
+    signal({ id: "failed_sources" }),
+    signal({ id: "browser_fallback_health" }),
+  ];
+  const html = renderActionCenterBody({ state: "healthy", signals: four });
 
-  assert.equal((html.match(/class="action-center-signal /g) || []).length, 3);
+  assert.equal((html.match(/class="action-center-signal /g) || []).length, 4);
   assert.doesNotMatch(html, /view-all/);
   assert.doesNotMatch(html, /View all/);
 });

@@ -107,7 +107,10 @@ const MODULE_SCRIPT_RE = /<script\s+type="module"\s+src="[^"]+"\s*><\/script>/g;
 // review instead of arriving as a quieter first paint.
 export const PAGE_BUDGETS = {
   admin: {
-    shellMaxBytes: 293 * 1024,
+    // The Action Center's browser-fallback health signal and its subscription to
+    // the shared fetch-kpis feed are first-poll shell code, so they stay on the
+    // first paint and the budget carries their bytes.
+    shellMaxBytes: 295 * 1024,
     lazySurfaces: [{ name: "Ops surface", module: "frontend/admin/app/ops.js" }]
   },
   jobs: {

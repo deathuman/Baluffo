@@ -397,6 +397,11 @@ export function buildOpsFetcherDiagnosticsSections({
       ...baseDiagnostics("failures", "Failures", generatedAt),
       topLevelFailedSources: toNumber(failures?.topLevelFailedSources),
       detailFailureCount: toNumber(failures?.detailFailureCount),
+      deadlineRows: boundedList(failures?.deadlineRows, row => ({
+        name: truncateString(row?.name || "unknown"),
+        kind: truncateString(row?.kind || ""),
+        error: truncateString(row?.error || "")
+      }), 20),
       buckets: boundedList(failures?.buckets, row => ({
         key: truncateString(row?.key || "unknown"),
         count: toNumber(row?.count),

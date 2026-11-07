@@ -155,9 +155,9 @@ export function renderCheckedAt(checkedAtMs, nowMs = Date.now()) {
 // A "View all → Ops Health" overflow row lived here. It was unreachable by
 // construction, not by mistake in the comparison: `stale_fetch` requires a fetch
 // age above 12h and `failed_sources` requires one at or below 12h, so those two can
-// never be active together and the signal space tops out at three — exactly the
+// never be active together and the signal space tops out at four — exactly the
 // display cap. Removed rather than left as an affordance that can never appear; if a
-// fifth signal is ever added, the overflow row should come back with it.
+// sixth signal is ever added, the overflow row should come back with it.
 export function renderActionCenterBody({ state, signals = [], summary = "", detail = "" }) {
   const list = Array.isArray(signals) ? signals : [];
   if (list.length === 0) return renderStatusLine({ state, summary, detail });

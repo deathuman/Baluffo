@@ -25,6 +25,8 @@ export function createActionCenterFixture({
   shouldDeferCoreSignals,
   enqueueStartupTask,
   showToast,
+  fetchKpisSummaryFeed,
+  pollIntervalMs,
   includeHeaderRefs = true
 } = {}) {
   const refs = {
@@ -63,7 +65,9 @@ export function createActionCenterFixture({
     onSyncStatus,
     shouldDeferCoreSignals,
     shouldDeferStorageHealth,
-    enqueueStartupTask
+    enqueueStartupTask,
+    fetchKpisSummaryFeed,
+    pollIntervalMs
   });
   return { refs, calls, toasts, controller };
 }

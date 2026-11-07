@@ -98,6 +98,18 @@ function resolveDesktopJobsColdStart() {
   return queryJobsColdStartFlag();
 }
 
+// Test-only override used by the Playwright clearing smoke to reach the next
+// Action Center poll without waiting 30 s. Normal page loads keep the cadence.
+function resolveActionCenterPollIntervalMs() {
+  try {
+    const value = +new URL(window.location.href).searchParams.get("actionCenterPollMs");
+    if (value >= 250 && value < 3e5) return value;
+  } catch {
+    // Ignore URL parsing failures and use the production cadence.
+  }
+  return 30000;
+}
+
 export const AdminConfig = {
   JOBS_LAST_URL_KEY: "baluffo_jobs_last_url",
   JOBS_FETCHER_COMMAND: "python -m src.jobs_fetcher",
@@ -108,5 +120,6 @@ export const AdminConfig = {
   FETCH_REPORT_POLL_TIMEOUT_MS: 10 * 60 * 1000,
   ADMIN_BRIDGE_BASE: resolveRuntimeBridgeBase(),
   BRIDGE_STATUS_POLL_INTERVAL_MS: 10000,
+  ACTION_CENTER_POLL_INTERVAL_MS: resolveActionCenterPollIntervalMs(),
   DESKTOP_JOBS_COLD_START: resolveDesktopJobsColdStart()
 };

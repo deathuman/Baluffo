@@ -41,7 +41,8 @@ export function createAdminOpsController({
   markAdminStep,
   measureAdminStep,
   activeHydrationPolicy = "protected",
-  renderScheduler = scheduleAdminRender
+  renderScheduler = scheduleAdminRender,
+  fetchKpisSummaryFeed = null
 }) {
   const bridgeStatusController = createOpsBridgeStatusController({
     state,
@@ -96,7 +97,8 @@ export function createAdminOpsController({
     markAdminStep,
     measureAdminStep,
     activeHydrationPolicy,
-    renderScheduler
+    renderScheduler,
+    fetchKpisSummaryFeed
   });
 
   return {
@@ -112,6 +114,7 @@ export function createAdminOpsController({
     loadOpsHealthData: healthController.loadOpsHealthData,
     loadIdleOpsHeavyHydration: healthController.loadIdleOpsHeavyHydration,
     loadOpsHistoryData: healthController.loadOpsHistoryData,
+    loadFetcherDiagnosticsData: healthController.loadFetcherDiagnosticsData,
     loadOpsOverviewDetailData: healthController.loadOpsOverviewDetailData,
     loadRegistrySyncDiagnosticsData: healthController.loadRegistrySyncDiagnosticsData,
     setBridgeStatusBadge: bridgeStatusController.setBridgeStatusBadge,
