@@ -31,6 +31,30 @@ const IDLE_TASK_STATE_RECHECK_MS = 5000;
 // during heavy fetch writes.
 const ACTIVE_TASK_STATE_MIN_GAP_MS = 15000;
 
+// ``completedWithWarnings`` also covers fetch-source failures, while
+// ``syncWarning`` is the source-sync-specific object. An empty object is the
+// bridge's "no sync warning" value, so a truthiness check would mislabel a
+// fetch warning as a sync problem.
+function hasSyncWarningPayload(value) {
+  if (typeof value === "string") return Boolean(value.trim());
+  if (value && typeof value === "object") return Object.keys(value).length > 0;
+  return Boolean(value);
+}
+
+function completedWithWarningsMessage(payload) {
+  const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+  const fetchWarning = warnings.find(row => (
+    String(row?.kind || "").trim().toLowerCase() === "fetch_sources_failed"
+    && Number(row?.failedSources) > 0
+  ));
+  const failedSources = Math.trunc(Number(fetchWarning?.failedSources || 0));
+  if (!Number.isFinite(failedSources) || failedSources <= 0) {
+    return JOBS_UPDATE_COPY.completedWithWarnings;
+  }
+  const noun = failedSources === 1 ? "source" : "sources";
+  return `${JOBS_UPDATE_COPY.completedWithWarnings} ${failedSources.toLocaleString("en-US")} failed ${noun}.`;
+}
+
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
  * @returns {Array<import("../../../shared/types.js").TaskStateRow>}
@@ -687,14 +711,21 @@ export function createJobsPipelineController({
     if (userAbortCompletion) {
       return;
     }
-    const syncWarning = Boolean(payload?.completedWithWarnings || payload?.syncWarning);
-    if (syncWarning) {
+    const sourceSyncWarning = hasSyncWarningPayload(payload?.syncWarning);
+    const completedWithWarnings = Boolean(payload?.completedWithWarnings);
+    if (hasError) {
+      if (payload?.error) {
+        showToast(`Job update failed: ${String(payload.error)}`, "error");
+      }
+    } else if (sourceSyncWarning) {
       showToast(
         updatesFound
           ? `${JOBS_UPDATE_COPY.completedWithUpdates} Source sync needs attention.`
           : JOBS_UPDATE_COPY.completedWithSyncWarning,
         "warn"
       );
+    } else if (completedWithWarnings) {
+      showToast(completedWithWarningsMessage(payload), "warn");
     } else if (updatesFound) {
       showToast(JOBS_UPDATE_COPY.completedWithUpdates, "success");
     } else if (payload?.error) {
