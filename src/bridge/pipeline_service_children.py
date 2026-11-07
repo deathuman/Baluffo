@@ -399,7 +399,7 @@ class _PipelineServiceChildCoordinationMixin(PipelineServiceState):
             from src.source_sync import SNAPSHOT_SIZE_WARN_BYTES
 
             threshold_bytes = max(0, int(SNAPSHOT_SIZE_WARN_BYTES))
-        except (ImportError, TypeError, ValueError):
+        except (ImportError, TypeError, ValueError, OverflowError):
             threshold_bytes = 0
         message = (
             f"Snapshot size ({size_bytes} bytes) exceeds the "
