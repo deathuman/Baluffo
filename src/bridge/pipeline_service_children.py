@@ -19,6 +19,11 @@ from .pipeline_service_types import PipelineAbortRequested, PipelineServiceState
 
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
+FETCH_SOURCE_FAILURE_WARNING_KIND = "fetch_sources_failed"
+SNAPSHOT_SIZE_WARNING_KIND = "snapshot_size_warning"
+# A pipeline is not clean once a source fails; one failure is enough to make the
+# terminal flag visible without turning the whole run into an error.
+PIPELINE_FETCH_FAILURE_WARN_THRESHOLD = 1
 PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV = "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS"
 PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_ENV = (
     "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS"
@@ -347,4 +352,68 @@ class _PipelineServiceChildCoordinationMixin(PipelineServiceState):
             "recommendedAction": "Review the Sync tab, pull the latest remote state, then retry sync.",
             "blocking": False,
             "clearedBy": "successful sync pull/push or a later pipeline sync stage",
+        }
+
+    @staticmethod
+    def _fetch_failure_warning(report: dict[str, Any]) -> dict[str, Any] | None:
+        summary_value = report.get("summary")
+        summary = summary_value if isinstance(summary_value, dict) else {}
+        try:
+            failed_sources = max(0, int(summary.get("failedSources") or 0))
+        except (TypeError, ValueError, OverflowError):
+            failed_sources = 0
+        if failed_sources < PIPELINE_FETCH_FAILURE_WARN_THRESHOLD:
+            return None
+        try:
+            source_count = max(0, int(summary.get("sourceCount") or 0))
+        except (TypeError, ValueError, OverflowError):
+            source_count = 0
+        source_scope = (
+            f"{failed_sources} of {source_count} sources"
+            if source_count > 0
+            else f"{failed_sources} source" + ("s" if failed_sources != 1 else "")
+        )
+        return {
+            "kind": FETCH_SOURCE_FAILURE_WARNING_KIND,
+            "stage": "fetch",
+            "message": f"{source_scope} failed during fetch.",
+            "failedSources": failed_sources,
+            "sourceCount": source_count,
+            "threshold": PIPELINE_FETCH_FAILURE_WARN_THRESHOLD,
+            "recommendedAction": "Review the failed sources in the fetch report before the next run.",
+            "blocking": False,
+            "clearedBy": "a later pipeline fetch below the failed-source warning threshold",
+        }
+
+    @staticmethod
+    def _sync_size_warning(row: dict[str, Any]) -> dict[str, Any] | None:
+        summary_value = row.get("summary")
+        summary = summary_value if isinstance(summary_value, dict) else row
+        if not bool(summary.get("sizeWarning") or row.get("sizeWarning")):
+            return None
+        try:
+            size_bytes = max(0, int(summary.get("sizeBytes") or row.get("sizeBytes") or 0))
+        except (TypeError, ValueError, OverflowError):
+            size_bytes = 0
+        try:
+            from src.source_sync import SNAPSHOT_SIZE_WARN_BYTES
+
+            threshold_bytes = max(0, int(SNAPSHOT_SIZE_WARN_BYTES))
+        except (ImportError, TypeError, ValueError):
+            threshold_bytes = 0
+        message = (
+            f"Snapshot size ({size_bytes} bytes) exceeds the "
+            f"{threshold_bytes}-byte warning threshold."
+            if threshold_bytes > 0
+            else "Snapshot size exceeds the warning threshold."
+        )
+        return {
+            "kind": SNAPSHOT_SIZE_WARNING_KIND,
+            "stage": "sync_push",
+            "message": message,
+            "sizeBytes": size_bytes,
+            "thresholdBytes": threshold_bytes,
+            "recommendedAction": "Review snapshot growth; sync completed, but the snapshot is larger than expected.",
+            "blocking": False,
+            "clearedBy": "a later sync push below the snapshot size warning threshold",
         }

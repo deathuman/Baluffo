@@ -146,7 +146,7 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                 )
             time.sleep(1.0)
 
-    def _run_fetch_stage(self, run_id: str) -> None:
+    def _run_fetch_stage(self, run_id: str) -> dict[str, Any] | None:
         self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
         fetch_result = self._start_fetch_child()
         fetch_attached = self._is_duplicate_task_response(fetch_result)
@@ -162,7 +162,7 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         )
         if fetch_attached:
             self._log_attached_child(run_id=run_id, task_type="fetch", child_run_id=fetch_run_id)
-        self._wait_for_child_report(
+        report = self._wait_for_child_report(
             phase="fetch_wait",
             report_path=self._fetch_report_path,
             started_at=fetch_started_at,
@@ -173,6 +173,7 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             task_type="fetch",
             task_run_id=fetch_run_id,
         )
+        return self._fetch_failure_warning(report)
 
     def _run_registry_conflict_adjudication_stage(self, run_id: str) -> None:
         if not callable(self._run_registry_conflict_adjudication):
@@ -262,6 +263,17 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                 error=sync_error,
             )
             return warning
+        size_warning = self._sync_size_warning(sync_row)
+        if size_warning:
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_sync_size_warning",
+                runId=run_id,
+                childRunId=sync_run_id,
+                warningKind=size_warning["kind"],
+                sizeBytes=size_warning["sizeBytes"],
+            )
+            return size_warning
         return None
 
     def wait_for_report_completion(
@@ -409,18 +421,19 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             self._check_abort(run_id)
             self._run_discovery_stage(run_id)
             self._check_abort(run_id)
-            self._run_fetch_stage(run_id)
+            fetch_warning = self._run_fetch_stage(run_id)
             self._check_abort(run_id)
             self._run_registry_conflict_adjudication_stage(run_id)
             self._check_abort(run_id)
             sync_warning = self._run_sync_push_stage(run_id)
             self._check_abort(run_id)
             final_output_count = self._current_fetch_output_count()
-            if sync_warning:
+            warnings = [warning for warning in (fetch_warning, sync_warning) if warning is not None]
+            if warnings:
                 self._set_completed(
                     status="warning",
                     final_output_count=final_output_count,
-                    warnings=[sync_warning],
+                    warnings=warnings,
                     sync_warning=sync_warning,
                 )
             else:

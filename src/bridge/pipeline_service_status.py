@@ -264,6 +264,15 @@ class _PipelineServiceStatusMixin(PipelineServiceState):
                 sync_warning=warning,
             )
             return
+        size_warning = self._sync_size_warning(summary)
+        if size_warning:
+            self._set_completed(
+                status="warning",
+                final_output_count=self._current_fetch_output_count(),
+                warnings=[size_warning],
+                sync_warning=size_warning,
+            )
+            return
         run_id = ""
         with self._lock:
             run_id = str(self._status.get("runId") or "")

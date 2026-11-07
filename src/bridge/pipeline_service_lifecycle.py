@@ -222,9 +222,11 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
             compare_base = max(baseline, loaded)
             updates_found = int(final_output_count or 0) > compare_base
             canceled = status == "canceled"
-            completed_with_warnings = status == "warning"
             clean_warnings = [dict(item) for item in (warnings or []) if isinstance(item, dict)]
             clean_sync_warning = dict(sync_warning or {}) if isinstance(sync_warning, dict) else {}
+            completed_with_warnings = status == "warning" or (
+                status == "ok" and bool(clean_warnings or clean_sync_warning)
+            )
             self._status.update(
                 {
                     "active": False,

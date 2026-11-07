@@ -213,6 +213,14 @@ class PipelineServiceState:
     def _sync_warning_payload(message: str) -> dict[str, Any]:
         raise NotImplementedError
 
+    @staticmethod
+    def _fetch_failure_warning(report: dict[str, Any]) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @staticmethod
+    def _sync_size_warning(row: dict[str, Any]) -> dict[str, Any] | None:
+        raise NotImplementedError
+
     def _refresh_child_lifecycle_evidence(
         self,
         task_type: str,
@@ -311,7 +319,7 @@ class PipelineServiceState:
     def _wait_for_discovery_auto_approval(self, report: dict[str, Any]) -> None:
         raise NotImplementedError
 
-    def _run_fetch_stage(self, run_id: str) -> None:
+    def _run_fetch_stage(self, run_id: str) -> dict[str, Any] | None:
         raise NotImplementedError
 
     def _run_registry_conflict_adjudication_stage(self, run_id: str) -> None:

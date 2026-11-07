@@ -16,6 +16,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .pipeline_service_children import (
+    FETCH_SOURCE_FAILURE_WARNING_KIND as FETCH_SOURCE_FAILURE_WARNING_KIND,
+)
+from .pipeline_service_children import (
+    PIPELINE_FETCH_FAILURE_WARN_THRESHOLD as PIPELINE_FETCH_FAILURE_WARN_THRESHOLD,
+)
+from .pipeline_service_children import (
+    SNAPSHOT_SIZE_WARNING_KIND as SNAPSHOT_SIZE_WARNING_KIND,
+)
 from .pipeline_service_children import _PipelineServiceChildCoordinationMixin
 from .pipeline_service_control import _PipelineServiceControlMixin
 from .pipeline_service_lifecycle import _PipelineServiceLifecycleMixin
