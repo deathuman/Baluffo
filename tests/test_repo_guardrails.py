@@ -511,3 +511,202 @@ def test_loc_group_reports_budget_failures(monkeypatch) -> None:
     assert repo_guardrails.run_loc_group() == [
         repo_guardrails.GuardFailure("loc", "check_loc_budget", "growth: src is 11 lines")
     ]
+
+
+def _fetcher_default_sources() -> set[str]:
+    paths: set[str] = set()
+    for entry in repo_guardrails.DOCUMENTED_FETCHER_DEFAULTS:
+        paths.add(entry.doc_path)
+        if entry.constant_path:
+            paths.add(entry.constant_path)
+        if entry.argparse_path:
+            paths.add(entry.argparse_path)
+    return paths
+
+
+def _copy_fetcher_default_sources(target: Path) -> None:
+    source_root = Path(__file__).resolve().parents[1]
+    for rel_path in sorted(_fetcher_default_sources()):
+        destination = target / rel_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            (source_root / rel_path).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+
+def test_documented_fetcher_defaults_match_the_constants(tmp_path: Path) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+
+    assert repo_guardrails.check_documented_fetcher_defaults(tmp_path) == []
+
+
+def test_documented_fetcher_defaults_report_a_changed_constant(tmp_path: Path) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+    config = tmp_path / "src/jobs/common/config.py"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "DEFAULT_FETCH_MAX_WORKERS = 16", "DEFAULT_FETCH_MAX_WORKERS = 24"
+        ),
+        encoding="utf-8",
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "`--max-workers`" in failures[0]
+    assert "`24`" in failures[0]
+
+
+def test_documented_fetcher_defaults_map_flags_to_shared_constants() -> None:
+    entries = repo_guardrails.DOCUMENTED_FETCHER_DEFAULTS
+    assert {
+        "--source-ttl-minutes": "DEFAULT_SOURCE_TTL_MINUTES",
+        "--circuit-breaker-failures": "DEFAULT_CIRCUIT_BREAKER_FAILURES",
+        "--circuit-breaker-zero-kept": "DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT",
+        "--circuit-breaker-cooldown-minutes": "DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES",
+        "--browser-fallback-cooldown-minutes": "DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES",
+        "--hot-source-cadence-minutes": "DEFAULT_HOT_SOURCE_CADENCE_MINUTES",
+        "--cold-source-cadence-minutes": "DEFAULT_COLD_SOURCE_CADENCE_MINUTES",
+    }.items() <= {
+        entry.label: entry.constant_name for entry in entries if entry.constant_path
+    }.items()
+
+
+def _write_synthetic_argparse_default_repo(target: Path, *, default_expression: str) -> None:
+    (target / "docs").mkdir(parents=True)
+    (target / "docs" / "fetcher-runtime-contracts.md").write_text(
+        "- `--browser-fallback-cooldown-minutes` (default `30`)\n", encoding="utf-8"
+    )
+    parser = target / "src" / "jobs" / "pipeline.py"
+    parser.parent.mkdir(parents=True)
+    parser.write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument("
+        '"--browser-fallback-cooldown-minutes", type=int, '
+        f"default={default_expression})\n",
+        encoding="utf-8",
+    )
+
+
+def _synthetic_argparse_default_entry() -> repo_guardrails.DocumentedFetcherDefault:
+    return repo_guardrails.DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--browser-fallback-cooldown-minutes",
+        r"`--browser-fallback-cooldown-minutes` \(default `(\d+)`\)",
+        argparse_path="src/jobs/pipeline.py",
+        argparse_flag="--browser-fallback-cooldown-minutes",
+    )
+
+
+def test_documented_fetcher_defaults_report_a_changed_argparse_literal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_synthetic_argparse_default_repo(tmp_path, default_expression="45")
+    monkeypatch.setattr(
+        repo_guardrails, "DOCUMENTED_FETCHER_DEFAULTS", (_synthetic_argparse_default_entry(),)
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "`--browser-fallback-cooldown-minutes`" in failures[0]
+    assert "`45`" in failures[0]
+
+
+def test_documented_fetcher_defaults_report_a_changed_argparse_doc_claim(
+    tmp_path: Path,
+) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+    contracts = tmp_path / "docs/fetcher-runtime-contracts.md"
+    contracts.write_text(
+        contracts.read_text(encoding="utf-8").replace(
+            "`--circuit-breaker-failures` (default `3`)",
+            "`--circuit-breaker-failures` (default `4`)",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "documents `--circuit-breaker-failures` as `4`" in failures[0]
+
+
+def test_documented_fetcher_defaults_fail_when_an_argparse_default_is_not_literal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_synthetic_argparse_default_repo(tmp_path, default_expression="SHARED_DEFAULT")
+    monkeypatch.setattr(
+        repo_guardrails, "DOCUMENTED_FETCHER_DEFAULTS", (_synthetic_argparse_default_entry(),)
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "`--browser-fallback-cooldown-minutes`" in failures[0]
+    assert "argparse literal does not exist" in failures[0]
+
+
+def test_documented_fetcher_defaults_report_a_changed_doc_claim(tmp_path: Path) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+    contracts = tmp_path / "docs/fetcher-runtime-contracts.md"
+    contracts.write_text(
+        contracts.read_text(encoding="utf-8").replace(
+            "`--max-workers` (default `16`)", "`--max-workers` (default `24`)"
+        ),
+        encoding="utf-8",
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "documents `--max-workers` as `24`" in failures[0]
+
+
+def test_documented_fetcher_defaults_fail_when_a_claim_disappears(tmp_path: Path) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+    contracts = tmp_path / "docs/fetcher-runtime-contracts.md"
+    contracts.write_text(
+        contracts.read_text(encoding="utf-8").replace(
+            "`--max-workers` (default `16`)", "`--max-workers` (default 16)"
+        ),
+        encoding="utf-8",
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 1
+    assert "states the `--max-workers` default 0 times" in failures[0]
+
+
+def test_documented_fetcher_defaults_report_word_number_drift(tmp_path: Path) -> None:
+    _copy_fetcher_default_sources(tmp_path)
+    runtime_support = tmp_path / "src/jobs/adapters/static_runtime_support.py"
+    runtime_support.write_text(
+        runtime_support.read_text(encoding="utf-8").replace(
+            "_MAX_STATIC_REDIRECT_HOPS = 4", "_MAX_STATIC_REDIRECT_HOPS = 5"
+        ),
+        encoding="utf-8",
+    )
+
+    failures = repo_guardrails.check_documented_fetcher_defaults(tmp_path)
+
+    assert len(failures) == 2
+    assert all("_MAX_STATIC_REDIRECT_HOPS" in failure for failure in failures)
+
+
+def test_docs_group_reports_documented_fetcher_default_failures(monkeypatch) -> None:
+    monkeypatch.setattr(repo_guardrails, "_run_python_checks", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(repo_guardrails, "check_markdown_links", lambda: [])
+    monkeypatch.setattr(
+        repo_guardrails,
+        "check_documented_fetcher_defaults",
+        lambda *_args, **_kwargs: ["documented default drift"],
+    )
+
+    assert repo_guardrails.run_docs_group() == [
+        repo_guardrails.GuardFailure(
+            "docs", "check_documented_fetcher_defaults", "documented default drift"
+        )
+    ]

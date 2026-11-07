@@ -124,6 +124,173 @@ _PENDING_CONTAINER_VERSION_GATE = False
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
 
+# Documented fetcher defaults are claims about code, and the two drift quietly: a flag's
+# default changes while the runtime-contract page keeps advertising the old number. Each
+# entry names the one sentence that states a default and the literal that owns it, so the
+# docs group fails when either side changes alone. A pattern that stops matching fails too --
+# deleting the sentence that advertises a default is how it stops being checked. The owning
+# literal is either a module-level constant or an argparse ``default=`` value.
+@dataclass(frozen=True)
+class DocumentedFetcherDefault:
+    doc_path: str
+    label: str
+    pattern: str
+    constant_path: str = ""
+    constant_name: str = ""
+    argparse_path: str = ""
+    argparse_flag: str = ""
+
+
+DOCUMENTED_FETCHER_DEFAULTS: tuple[DocumentedFetcherDefault, ...] = (
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--max-workers",
+        r"`--max-workers` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_FETCH_MAX_WORKERS",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--max-per-domain",
+        r"`--max-per-domain` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_FETCH_MAX_PER_DOMAIN",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "static per-host gate",
+        r"separate fixed gate of `(\d+)` per host",
+        "src/jobs/common/config.py",
+        "DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--fetch-strategy",
+        r"`--fetch-strategy` \(default `([^`]+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_FETCH_STRATEGY",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--adapter-http-concurrency",
+        r"`--adapter-http-concurrency` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_ADAPTER_HTTP_CONCURRENCY",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--static-detail-concurrency",
+        r"`--static-detail-concurrency` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_STATIC_DETAIL_CONCURRENCY",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--source-ttl-minutes",
+        r"`--source-ttl-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_SOURCE_TTL_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--circuit-breaker-failures",
+        r"`--circuit-breaker-failures` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_CIRCUIT_BREAKER_FAILURES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--circuit-breaker-zero-kept",
+        r"`--circuit-breaker-zero-kept` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--circuit-breaker-cooldown-minutes",
+        r"`--circuit-breaker-cooldown-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--browser-fallback-cooldown-minutes",
+        r"`--browser-fallback-cooldown-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--hot-source-cadence-minutes",
+        r"`--hot-source-cadence-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_HOT_SOURCE_CADENCE_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--cold-source-cadence-minutes",
+        r"`--cold-source-cadence-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_COLD_SOURCE_CADENCE_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "--social-lookback-minutes",
+        r"`--social-lookback-minutes` \(default `(\d+)`\)",
+        "src/jobs/common/config.py",
+        "DEFAULT_SOCIAL_LOOKBACK_MINUTES",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "static_source_time_budget_s",
+        r"`static_source_time_budget_s`, (\d+) s by default",
+        "src/jobs/adapters/static_runtime_support.py",
+        "STATIC_SOURCE_TIME_BUDGET_DEFAULT_S",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "static_failure_budget_s",
+        r"`static_failure_budget_s`, (\d+) s by default",
+        "src/jobs/adapters/static_runtime_support.py",
+        "STATIC_FAILURE_BUDGET_DEFAULT_S",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "ordinary redirect chain",
+        r"ordinary chain is capped at (four|[\d,]+) HTTP requests",
+        "src/jobs/adapters/static_runtime_support.py",
+        "_MAX_STATIC_REDIRECT_HOPS",
+    ),
+    DocumentedFetcherDefault(
+        "docs/fetcher-runtime-contracts.md",
+        "cookie-jar retry lane",
+        r"cookie-jar retry lane is separate and capped at (six|[\d,]+) attempts",
+        "src/jobs/adapters/static_cookie_retry.py",
+        "COOKIE_RETRY_MAX_HOPS",
+    ),
+    DocumentedFetcherDefault(
+        "docs/scraping-pipeline.md",
+        "static redirect hops",
+        r"at most (four|[\d,]+) HTTP requests",
+        "src/jobs/adapters/static_runtime_support.py",
+        "_MAX_STATIC_REDIRECT_HOPS",
+    ),
+)
+
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
 @dataclass(frozen=True)
 class GuardFailure:
     group: str
@@ -245,6 +412,141 @@ def check_markdown_links() -> list[str]:
             if not resolved.exists():
                 missing.append(f"{doc_path.relative_to(ROOT)} -> {target}")
     return missing
+
+
+def _module_literal_constants(path: Path) -> dict[str, int | str]:
+    """Module-level literal constants, read from source so the audit needs no imports."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return {}
+    values: dict[str, int | str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or not isinstance(value, ast.Constant):
+            continue
+        literal = value.value
+        if isinstance(literal, (int, str)) and not isinstance(literal, bool):
+            values[target.id] = literal
+    return values
+
+
+def _argparse_literal_defaults(path: Path) -> dict[str, int | str]:
+    """Literal defaults declared by ``add_argument("--flag", default=...)`` calls."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return {}
+    values: dict[str, int | str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if not (isinstance(function, ast.Attribute) and function.attr == "add_argument"):
+            continue
+        if not node.args:
+            continue
+        flag = node.args[0]
+        if not isinstance(flag, ast.Constant) or not isinstance(flag.value, str):
+            continue
+        if not flag.value.startswith("--"):
+            continue
+        default = next(
+            (keyword.value for keyword in node.keywords if keyword.arg == "default"), None
+        )
+        if (
+            isinstance(default, ast.Constant)
+            and isinstance(default.value, (int, str))
+            and not isinstance(default.value, bool)
+        ):
+            values[flag.value] = default.value
+    return values
+
+
+def _documented_default_value(raw: str) -> int | str:
+    """Read a documented default as the type the constants table uses."""
+    text = raw.strip().strip("`").replace(",", "").strip()
+    if text.isdigit():
+        return int(text)
+    return _NUMBER_WORDS.get(text.lower(), text)
+
+
+def check_documented_fetcher_defaults(repo_root: Path = ROOT) -> list[str]:
+    """Every documented fetcher default must equal the literal that owns it.
+
+    The expected value is read from source rather than imported: the guardrail must run in
+    the lint lane, where importing `src.jobs` can drag in the composition root. A shared
+    default is read as its module-level literal constant; an inline argparse default is read
+    from ``add_argument(default=...)`` and must stay a literal.
+    """
+    failures: list[str] = []
+    constants_by_file: dict[str, dict[str, int | str]] = {}
+    argparse_by_file: dict[str, dict[str, int | str]] = {}
+    docs: dict[str, str | None] = {}
+    for entry in DOCUMENTED_FETCHER_DEFAULTS:
+        if entry.doc_path not in docs:
+            try:
+                docs[entry.doc_path] = (repo_root / entry.doc_path).read_text(encoding="utf-8")
+            except OSError:
+                docs[entry.doc_path] = None
+        text = docs[entry.doc_path]
+        if text is None:
+            failures.append(
+                f"{entry.doc_path} is missing, so the documented `{entry.label}` default "
+                "cannot be checked."
+            )
+            continue
+        has_constant = bool(entry.constant_path and entry.constant_name)
+        has_argparse = bool(entry.argparse_path and entry.argparse_flag)
+        if has_constant == has_argparse:
+            failures.append(
+                f"DOCUMENTED_FETCHER_DEFAULTS entry for `{entry.label}` must name exactly "
+                "one source: a module constant or an argparse literal."
+            )
+            continue
+        if has_argparse:
+            if entry.argparse_path not in argparse_by_file:
+                argparse_by_file[entry.argparse_path] = _argparse_literal_defaults(
+                    repo_root / entry.argparse_path
+                )
+            expected = argparse_by_file[entry.argparse_path].get(entry.argparse_flag)
+            source = f"{entry.argparse_path}::`{entry.argparse_flag}`"
+        else:
+            if entry.constant_path not in constants_by_file:
+                constants_by_file[entry.constant_path] = _module_literal_constants(
+                    repo_root / entry.constant_path
+                )
+            expected = constants_by_file[entry.constant_path].get(entry.constant_name)
+            source = f"{entry.constant_path}::{entry.constant_name}"
+        if expected is None:
+            failures.append(
+                f"{entry.doc_path} checks `{entry.label}` against {source}, but that "
+                f"{'argparse literal' if has_argparse else 'module-level literal constant'} "
+                "does not exist."
+            )
+            continue
+        matches = re.findall(entry.pattern, text)
+        if len(matches) != 1:
+            failures.append(
+                f"{entry.doc_path} states the `{entry.label}` default {len(matches)} times "
+                f"(expected exactly one match for `{entry.pattern}`). Restore the claim, or "
+                "remove its entry from DOCUMENTED_FETCHER_DEFAULTS."
+            )
+            continue
+        documented = _documented_default_value(matches[0])
+        if documented != expected:
+            failures.append(
+                f"{entry.doc_path} documents `{entry.label}` as `{matches[0]}`, but "
+                f"{source} is `{expected}`. Update the doc, or change the "
+                f"{'argparse default' if has_argparse else 'constant'} if the new default "
+                "is intended."
+            )
+    return failures
 
 
 def check_repo_root_structure() -> list[str]:
@@ -776,6 +1078,13 @@ def run_docs_group() -> list[GuardFailure]:
     )
     if markdown_failure:
         failures.append(markdown_failure)
+    fetcher_defaults_failure = _failure_from_messages(
+        "docs",
+        "check_documented_fetcher_defaults",
+        check_documented_fetcher_defaults(),
+    )
+    if fetcher_defaults_failure:
+        failures.append(fetcher_defaults_failure)
     return failures
 
 
