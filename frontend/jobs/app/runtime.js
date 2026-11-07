@@ -40,6 +40,11 @@ import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
 import { openFirstRunJobsNotice } from "./first-run-notice.js";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js";
 import {
+  JOBS_CACHE_DB,
+  JOBS_CACHE_DB_VERSION,
+  JOBS_CACHE_KEY,
+  JOBS_CACHE_STORE,
+  JOBS_SEEN_STORE,
   buildSeenRowKey,
   openJobsCacheDb as openJobsCacheDbFromModule,
   readJobsCache,
@@ -92,11 +97,6 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   sort: "relevance"
 };
 
-const JOBS_CACHE_DB = "baluffo_jobs_cache";
-const JOBS_CACHE_DB_VERSION = 2;
-const JOBS_CACHE_STORE = "jobs_feed";
-const JOBS_SEEN_STORE = "jobs_seen";
-const JOBS_CACHE_KEY = "latest";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const JOBS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
