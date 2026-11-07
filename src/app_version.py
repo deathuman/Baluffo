@@ -1,4 +1,4 @@
-"""Shared Baluffo app version source of truth."""
+"""Shared Baluffo app version and release identity source of truth."""
 
 from __future__ import annotations
 
