@@ -699,6 +699,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_process=bridge_process,
                 browser_process=browser_process,
                 browser_pid=int(browser_pid or 0),
+                desktop_session_id=desktop_session_id,
                 launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
                 require_window=(not config.no_browser)
                 and launch_mode not in {"browser-launch-recovery", "active-work-browser-recovery"},

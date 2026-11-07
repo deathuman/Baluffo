@@ -26,6 +26,16 @@ from .config import (
     DesktopRuntimeConfig,
 )
 
+_DESKTOP_CLOSE_REQUEST_EVENTS = {
+    "desktop_regular_close_shutdown_requested",
+    "desktop_confirmed_active_work_shutdown_requested",
+}
+_DESKTOP_CLOSE_LIFECYCLE_EVENTS = _DESKTOP_CLOSE_REQUEST_EVENTS | {
+    "desktop_regular_close_shutdown_cancelled",
+    "desktop_active_work_close_attempt_requested",
+    "desktop_active_work_close_attempt_cleared",
+}
+
 
 def _attempt_active_work_browser_relaunch(
     *,
@@ -191,6 +201,24 @@ def _legacy_update_success_marker_paths(config: DesktopRuntimeConfig):
     return None
 
 
+def _desktop_close_requested_for_session(data_dir: Path, desktop_session_id: str) -> bool:
+    api = desktop_api()
+    expected_session_id = str(desktop_session_id or "").strip()
+    if not expected_session_id:
+        return False
+    for row in reversed(api.read_startup_metrics(data_dir, limit=1000)):
+        event_name = str(row.get("event") or "")
+        if event_name not in _DESKTOP_CLOSE_LIFECYCLE_EVENTS:
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+        details = payload or fields
+        if str(details.get("sessionId") or "").strip() != expected_session_id:
+            continue
+        return event_name in _DESKTOP_CLOSE_REQUEST_EVENTS
+    return False
+
+
 def watch_browser_session(
     data_dir: Path,
     started_mono: float,
@@ -199,6 +227,7 @@ def watch_browser_session(
     bridge_process: subprocess.Popen[str] | None = None,
     browser_process: subprocess.Popen[str] | None = None,
     browser_pid: int = 0,
+    desktop_session_id: str = "",
     browser_name: str = "",
     browser_path: str = "",
     browser_profile_dir_hash: str = "",
@@ -305,6 +334,14 @@ def watch_browser_session(
                     browserPid=int(browser_pid or 0),
                     browserProfileDirHash=str(browser_profile_dir_hash or ""),
                 )
+                if _desktop_close_requested_for_session(data_dir, desktop_session_id):
+                    api._append_startup_trace(
+                        data_dir,
+                        "desktop_browser_watchdog_shutdown_requested",
+                        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                        mode="bridge_authoritative",
+                    )
+                    return "shutdown_requested"
                 api._append_startup_trace(
                     data_dir,
                     "desktop_browser_watchdog_handoff_candidate",
