@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from threading import BoundedSemaphore
 from typing import Any
 
+from src.jobs.common import config as common_config
 from src.jobs.common.config import SOURCE_DIAGNOSTICS as _SOURCE_DIAGNOSTICS
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -166,7 +167,7 @@ class SourceExecutionStageConfig:
     show_progress: bool
     force_refresh_all: bool
     browser_fallback_cooldown_minutes: int
-    browser_fallback_max_workers: int = -1
+    browser_fallback_max_workers: int = common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS
 
 
 run_source_execution_stage = pipeline_source_loop_mod.run_source_execution_stage

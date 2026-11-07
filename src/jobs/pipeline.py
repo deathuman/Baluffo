@@ -20,14 +20,13 @@ from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
 from src.jobs.interfaces import SourceLoader
-from src.jobs.text_utils import clean_text
 from src.jobs.transport import build_redirect_resolver as transport_build_redirect_resolver
 from src.jobs.transport import default_fetch_text
-from src.pipeline_io import read_existing_output
 
 from . import pipeline_cli as pipeline_cli_pkg
 from . import pipeline_execution_flow as pipeline_execution_flow_mod
 from . import pipeline_finalize as pipeline_finalize_pkg
+from . import pipeline_row_segments as pipeline_row_segments_mod
 from . import pipeline_run_setup as pipeline_run_setup_mod
 from . import pipeline_timing as pipeline_timing_mod
 from .common import social as common_social
@@ -46,6 +45,10 @@ DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = (
 DEFAULT_STATIC_DETAIL_CONCURRENCY = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
+DEFAULT_SOURCE_TTL_MINUTES = common_config.DEFAULT_SOURCE_TTL_MINUTES
+DEFAULT_CIRCUIT_BREAKER_FAILURES = common_config.DEFAULT_CIRCUIT_BREAKER_FAILURES
+DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT = common_config.DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT
+DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES = common_config.DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES
 DEFAULT_SOCIAL_CONFIG_PATH = common_config.DEFAULT_SOCIAL_CONFIG_PATH
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 
@@ -88,56 +91,9 @@ def default_source_loaders(
         return adapters_default_source_loaders()
 
 
-def _hydrate_row_segments(setup: Any) -> list:
-    """Rehydrate [seeded, fetched] row segments from their sidecars.
-
-    ponytail: owning scope — the returned list is a local of THIS function,
-    not of run_pipeline, so finalize's dead-ref trim can actually free it.
-    """
-    from src.jobs.models import CanonicalJob as _CJ
-    from src.jobs.pipeline_run_setup import canonicalize_existing_output_row
-    from src.pipeline_io import (
-        cleanup_fetched_rows_sidecar,
-        read_fetched_rows_sidecar,
-    )
-
-    rows: list = []
-    if setup.effective_seed_from_existing_output:
-        try:
-            seeded = read_existing_output(
-                setup.paths.json_path,
-                setup.started_at,
-                canonicalize_job=canonicalize_existing_output_row,
-                clean_text=clean_text,
-                canonical_job_cls=_CJ,
-            )
-            rows.extend(seeded)
-            setup.seeded_row_count = len(seeded)
-            del seeded
-        except Exception:
-            pass
-    fetched_writer = getattr(setup, "fetched_rows_writer", None)
-    if fetched_writer is not None and int(getattr(fetched_writer, "count", 0) or 0) > 0:
-        try:
-            buf: list = []
-            for job in read_fetched_rows_sidecar(setup.paths.output_dir, canonical_job_cls=_CJ):
-                buf.append(job)
-                if len(buf) >= 5000:
-                    rows.extend(buf)
-                    buf = []
-            if buf:
-                rows.extend(buf)
-        except Exception:
-            pass
-        try:
-            cleanup_fetched_rows_sidecar(setup.paths.output_dir)
-        except Exception:
-            pass
-        try:
-            object.__setattr__(setup, "fetched_rows_writer", None)
-        except Exception:
-            pass
-    return rows
+def _resolve_default[T](value: T | None, fallback: T) -> T:
+    """Resolve a late-bound default without treating falsy values as missing."""
+    return fallback if value is None else value
 
 
 def run_pipeline(
@@ -145,9 +101,9 @@ def run_pipeline(
     output_dir: Path,
     run_id: str = "",
     started_at_override: str = "",
-    timeout_s: int = DEFAULT_TIMEOUT_S,
-    retries: int = DEFAULT_RETRIES,
-    backoff_s: float = DEFAULT_BACKOFF_S,
+    timeout_s: int | None = None,
+    retries: int | None = None,
+    backoff_s: float | None = None,
     preserve_previous_on_empty: bool = True,
     fetch_text=default_fetch_text,
     source_loaders: list[tuple[str, SourceLoader]] | None = None,
@@ -155,28 +111,67 @@ def run_pipeline(
     source_ttl_minutes: int = 0,
     max_workers: int = 1,
     max_per_domain: int = 2,
-    fetch_strategy: str = DEFAULT_FETCH_STRATEGY,
-    adapter_http_concurrency: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY,
-    google_sheets_redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    fetch_strategy: str | None = None,
+    adapter_http_concurrency: int | None = None,
+    google_sheets_redirect_concurrency: int | None = None,
     respect_source_cadence: bool = False,
-    hot_source_cadence_minutes: int = DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
-    cold_source_cadence_minutes: int = DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
-    circuit_breaker_failures: int = 3,
-    circuit_breaker_cooldown_minutes: int = 180,
-    browser_fallback_cooldown_minutes: int = 30,
-    browser_fallback_max_workers: int = -1,
-    circuit_breaker_zero_kept: int = 3,
+    hot_source_cadence_minutes: int | None = None,
+    cold_source_cadence_minutes: int | None = None,
+    circuit_breaker_failures: int | None = None,
+    circuit_breaker_cooldown_minutes: int | None = None,
+    browser_fallback_cooldown_minutes: int | None = None,
+    browser_fallback_max_workers: int | None = None,
+    circuit_breaker_zero_kept: int | None = None,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
     social_config_path: Path | None = None,
-    social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
-    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    social_lookback_minutes: int | None = None,
+    static_detail_concurrency: int | None = None,
     show_progress: bool = True,
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
     include_linked_static_validation: bool = False,
     include_pending_provider_migration: bool = False,
 ) -> dict[str, Any]:
+    timeout_s = _resolve_default(timeout_s, common_config.DEFAULT_TIMEOUT_S)
+    retries = _resolve_default(retries, common_config.DEFAULT_RETRIES)
+    backoff_s = _resolve_default(backoff_s, common_config.DEFAULT_BACKOFF_S)
+    fetch_strategy = _resolve_default(fetch_strategy, common_config.DEFAULT_FETCH_STRATEGY)
+    adapter_http_concurrency = _resolve_default(
+        adapter_http_concurrency, common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+    )
+    google_sheets_redirect_concurrency = _resolve_default(
+        google_sheets_redirect_concurrency,
+        community_adapter.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    )
+    hot_source_cadence_minutes = _resolve_default(
+        hot_source_cadence_minutes, common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
+    )
+    cold_source_cadence_minutes = _resolve_default(
+        cold_source_cadence_minutes, common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
+    )
+    circuit_breaker_failures = _resolve_default(
+        circuit_breaker_failures, common_config.DEFAULT_CIRCUIT_BREAKER_FAILURES
+    )
+    circuit_breaker_cooldown_minutes = _resolve_default(
+        circuit_breaker_cooldown_minutes, common_config.DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES
+    )
+    browser_fallback_cooldown_minutes = _resolve_default(
+        browser_fallback_cooldown_minutes,
+        common_config.DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES,
+    )
+    browser_fallback_max_workers = _resolve_default(
+        browser_fallback_max_workers, common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS
+    )
+    circuit_breaker_zero_kept = _resolve_default(
+        circuit_breaker_zero_kept, common_config.DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT
+    )
+    social_lookback_minutes = _resolve_default(
+        social_lookback_minutes, common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
+    )
+    static_detail_concurrency = _resolve_default(
+        static_detail_concurrency, common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
+    )
     run_started_mono = time.perf_counter()
     phase_clock = pipeline_timing_mod.PipelinePhaseClock(
         run_started_mono, pipeline_timing_mod.process_cpu_seconds()
@@ -242,10 +237,10 @@ def run_pipeline(
         phase_clock.close("merging_results")
         phase_clock.publish(setup.runtime_payload)
         hydrate_started = time.perf_counter()
-        # ponytail: both row segments are rehydrated INSIDE _hydrate_row_segments,
+        # ponytail: both row segments are rehydrated INSIDE pipeline_row_segments,
         # keeping them out of run_pipeline's frame entirely — no caller-side pin
         # means finalize's dead-ref trim actually frees the objects.
-        canonical_rows_for_finalize = _hydrate_row_segments(setup)
+        canonical_rows_for_finalize = pipeline_row_segments_mod.hydrate_row_segments(setup)
         print(
             f"[jobs_fetcher] INFO hydrated rows={len(canonical_rows_for_finalize)} "
             f"seeded={int(getattr(setup, 'seeded_row_count', 0) or 0)} "
@@ -396,7 +391,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-ttl-minutes",
         type=int,
-        default=360,
+        # Read through the config module at parser-build time so the shared
+        # constant stays the one source of truth (and is patchable in tests).
+        default=common_config.DEFAULT_SOURCE_TTL_MINUTES,
         help="Freshness window for --skip-successful-sources. Recently successful sources are skipped until TTL expires.",
     )
     parser.add_argument(
@@ -427,43 +424,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hot-source-cadence-minutes",
         type=int,
-        default=DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
+        default=common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
         help="Cadence for recently changed sources when --respect-source-cadence is enabled.",
     )
     parser.add_argument(
         "--cold-source-cadence-minutes",
         type=int,
-        default=DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
+        default=common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
         help="Cadence for stable sources when --respect-source-cadence is enabled.",
     )
     parser.add_argument(
         "--circuit-breaker-failures",
         type=int,
-        default=3,
+        default=common_config.DEFAULT_CIRCUIT_BREAKER_FAILURES,
         help="Consecutive failures required before a source is temporarily quarantined.",
     )
     parser.add_argument(
         "--circuit-breaker-cooldown-minutes",
         type=int,
-        default=180,
+        default=common_config.DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES,
         help="Minutes to quarantine a source after it trips the circuit breaker.",
     )
     parser.add_argument(
         "--browser-fallback-cooldown-minutes",
         type=int,
-        default=30,
+        default=common_config.DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES,
         help="Minutes to disable browser fallback after an environment-level Playwright failure.",
     )
     parser.add_argument(
         "--browser-fallback-max-workers",
         type=int,
-        default=-1,
+        default=common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
         help="Optional max concurrent browser fallback workers; defaults to --max-workers when omitted.",
     )
     parser.add_argument(
         "--circuit-breaker-zero-kept",
         type=int,
-        default=3,
+        default=common_config.DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT,
         help="Consecutive zero-kept runs required before a source is temporarily quarantined.",
     )
     parser.add_argument(

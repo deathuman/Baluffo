@@ -14,6 +14,7 @@ from src.jobs.adapters.static_detail_heuristics import (
     source_detail_limit_for,
     source_detail_retries_for,
 )
+from src.jobs.common import config as jobs_common_config
 
 
 def test_jobs_fetcher_keeps_parser_compatibility_exports() -> None:
@@ -186,6 +187,136 @@ def test_parse_args_uses_updated_pipeline_concurrency_defaults() -> None:
     assert float(args.backoff or 0) == 1.2
     assert int(args.adapter_http_concurrency or 0) == 48
     assert int(args.static_detail_concurrency or 0) == 10
+    assert int(args.source_ttl_minutes or 0) == jobs_common_config.DEFAULT_SOURCE_TTL_MINUTES
+    assert int(args.circuit_breaker_failures or 0) == (
+        jobs_common_config.DEFAULT_CIRCUIT_BREAKER_FAILURES
+    )
+    assert int(args.circuit_breaker_zero_kept or 0) == (
+        jobs_common_config.DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT
+    )
+    assert int(args.circuit_breaker_cooldown_minutes or 0) == (
+        jobs_common_config.DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES
+    )
+
+
+def test_shared_fetch_defaults_propagate_to_cli_and_bridge(monkeypatch) -> None:
+    """Both consumers must read the shared constants, not a copied literal.
+
+    Patching only the config module is what makes this meaningful: an
+    import-time alias or a hand-copied default would keep answering the old
+    numbers on one of the two paths.
+    """
+    from src.bridge.task_launch_fetcher_args import build_fetcher_args_from_payload
+    from src.jobs import pipeline
+    from src.shared.utils import int_or_default
+
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_SOURCE_TTL_MINUTES", 47)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_FAILURES", 6)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT", 4)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES", 23)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_HOT_SOURCE_CADENCE_MINUTES", 31)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_COLD_SOURCE_CADENCE_MINUTES", 71)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES", 19)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_BROWSER_FALLBACK_MAX_WORKERS", -3)
+    monkeypatch.setattr(sys, "argv", ["jobs_fetcher.py"])
+
+    cli_args = pipeline.parse_args()
+    assert cli_args.source_ttl_minutes == 47
+    assert cli_args.circuit_breaker_failures == 6
+    assert cli_args.circuit_breaker_zero_kept == 4
+    assert cli_args.circuit_breaker_cooldown_minutes == 23
+    assert cli_args.hot_source_cadence_minutes == 31
+    assert cli_args.cold_source_cadence_minutes == 71
+    assert cli_args.browser_fallback_cooldown_minutes == 19
+    assert cli_args.browser_fallback_max_workers == -3
+
+    bridge_args, _preset = build_fetcher_args_from_payload(
+        {"skipSuccessfulSources": True, "socialEnabled": False},
+        safe_int=lambda value, default, minimum, maximum: max(
+            minimum, min(maximum, int_or_default(value, default))
+        ),
+        default_source_loaders=lambda: [],
+        failed_source_names_from_latest_report=lambda _names: [],
+    )
+
+    def value_after(flag: str) -> str:
+        return bridge_args[bridge_args.index(flag) + 1]
+
+    assert value_after("--source-ttl-minutes") == "47"
+    assert value_after("--circuit-breaker-failures") == "6"
+    assert value_after("--circuit-breaker-cooldown-minutes") == "23"
+    assert value_after("--hot-source-cadence-minutes") == "31"
+    assert value_after("--cold-source-cadence-minutes") == "71"
+    assert value_after("--browser-fallback-cooldown-minutes") == "19"
+
+
+def test_run_pipeline_resolves_shared_defaults_at_call_time(tmp_path: Path, monkeypatch) -> None:
+    """run_pipeline must read config when called, not when the module is imported."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from src.jobs import pipeline
+
+    prepared: dict[str, object] = {}
+    finalized: dict[str, object] = {}
+
+    def fake_prepare(**kwargs: object) -> object:
+        prepared.update(kwargs)
+        setup = MagicMock()
+        setup.effective_seed_from_existing_output = False
+        setup.fetched_rows_writer = None
+        setup.seeded_row_count = 0
+        setup.progress_phase = {}
+        setup.runtime_payload = {}
+        setup.paths = SimpleNamespace(output_dir=tmp_path, json_path=tmp_path / "jobs.json")
+        return setup
+
+    def fake_finalize(**kwargs: object) -> dict[str, object]:
+        finalized.update(kwargs)
+        return {}
+
+    def no_execute(_setup: object) -> None:
+        return None
+
+    monkeypatch.setattr(pipeline.pipeline_run_setup_mod, "prepare_pipeline_run", fake_prepare)
+    monkeypatch.setattr(
+        pipeline.pipeline_execution_flow_mod, "execute_pipeline_sources", no_execute
+    )
+    monkeypatch.setattr(pipeline.pipeline_finalize_pkg, "finalize_pipeline_run", fake_finalize)
+
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_TIMEOUT_S", 41)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_RETRIES", 7)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_BACKOFF_S", 2.5)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_FETCH_STRATEGY", "http")
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_ADAPTER_HTTP_CONCURRENCY", 43)
+    monkeypatch.setattr(pipeline.community_adapter, "DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY", 9)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_HOT_SOURCE_CADENCE_MINUTES", 31)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_COLD_SOURCE_CADENCE_MINUTES", 71)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_FAILURES", 6)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES", 23)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES", 19)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_BROWSER_FALLBACK_MAX_WORKERS", -3)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_CIRCUIT_BREAKER_ZERO_KEPT", 4)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_SOCIAL_LOOKBACK_MINUTES", 37)
+    monkeypatch.setattr(jobs_common_config, "DEFAULT_STATIC_DETAIL_CONCURRENCY", 11)
+
+    assert pipeline.run_pipeline(output_dir=tmp_path) == {}
+
+    assert prepared["timeout_s"] == 41
+    assert prepared["retries"] == 7
+    assert prepared["backoff_s"] == 2.5
+    assert prepared["fetch_strategy"] == "http"
+    assert prepared["adapter_http_concurrency"] == 43
+    assert prepared["google_sheets_redirect_concurrency"] == 9
+    assert prepared["hot_source_cadence_minutes"] == 31
+    assert prepared["cold_source_cadence_minutes"] == 71
+    assert prepared["circuit_breaker_failures"] == 6
+    assert prepared["circuit_breaker_cooldown_minutes"] == 23
+    assert prepared["browser_fallback_cooldown_minutes"] == 19
+    assert prepared["browser_fallback_max_workers"] == -3
+    assert prepared["social_lookback_minutes"] == 37
+    assert prepared["static_detail_concurrency"] == 11
+    assert finalized["circuit_breaker_zero_kept"] == 4
 
 
 def test_parse_args_accepts_pending_provider_migration_fetch_flag() -> None:

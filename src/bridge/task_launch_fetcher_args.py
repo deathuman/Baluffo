@@ -251,7 +251,9 @@ def build_fetcher_args_from_payload(
     ) = _fetcher_runtime_defaults(container_mode)
     max_workers = safe_int(data.get("maxWorkers"), default_max_workers, 1, 16)
     max_per_domain = safe_int(data.get("maxPerDomain"), default_max_per_domain, 1, 6)
-    fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
+    fetch_strategy = (
+        str(data.get("fetchStrategy") or jobs_common_config.DEFAULT_FETCH_STRATEGY).strip().lower()
+    )
     if fetch_strategy not in {"auto", "http", "browser"}:
         fetch_strategy = "auto"
     adapter_http_concurrency = safe_int(
@@ -265,12 +267,42 @@ def build_fetcher_args_from_payload(
         safe_int=safe_int,
         container_mode=container_mode,
     )
-    source_ttl = safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
-    hot_cadence = safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
-    cold_cadence = safe_int(data.get("coldSourceCadenceMinutes"), 60, 1, 1440)
-    circuit_failures = safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
-    circuit_cooldown = safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
-    browser_fallback_cooldown = safe_int(data.get("browserFallbackCooldownMinutes"), 30, 0, 24 * 60)
+    source_ttl = safe_int(
+        data.get("sourceTtlMinutes"),
+        jobs_common_config.DEFAULT_SOURCE_TTL_MINUTES,
+        0,
+        1440,
+    )
+    hot_cadence = safe_int(
+        data.get("hotSourceCadenceMinutes"),
+        jobs_common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
+        1,
+        240,
+    )
+    cold_cadence = safe_int(
+        data.get("coldSourceCadenceMinutes"),
+        jobs_common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
+        1,
+        1440,
+    )
+    circuit_failures = safe_int(
+        data.get("circuitBreakerFailures"),
+        jobs_common_config.DEFAULT_CIRCUIT_BREAKER_FAILURES,
+        0,
+        20,
+    )
+    circuit_cooldown = safe_int(
+        data.get("circuitBreakerCooldownMinutes"),
+        jobs_common_config.DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MINUTES,
+        0,
+        24 * 60,
+    )
+    browser_fallback_cooldown = safe_int(
+        data.get("browserFallbackCooldownMinutes"),
+        jobs_common_config.DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES,
+        0,
+        24 * 60,
+    )
     browser_fallback_max_workers = (
         safe_int(data.get("browserFallbackMaxWorkers"), 0, 0, 16)
         if "browserFallbackMaxWorkers" in data
