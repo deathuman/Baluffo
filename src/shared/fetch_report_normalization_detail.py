@@ -123,6 +123,9 @@ def normalize_jobs_fetch_report_detail_item(
         "classification": clean_text_func(item.get("classification")) or "",
         "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
     }
+    deadline_kind = clean_text_func(item.get("deadlineKind"))
+    if deadline_kind:
+        clean_item["deadlineKind"] = deadline_kind
     enrich_fetch_report_source_row_metadata(
         clean_item,
         item,
@@ -253,4 +256,7 @@ def normalize_bridge_fetch_report_source_row(row: Any) -> dict[str, Any] | None:
             "details": normalized_details,
         }
     )
+    deadline_kind = _clean_text(row.get("deadlineKind"))
+    if deadline_kind:
+        normalized_row["deadlineKind"] = deadline_kind
     return normalized_row

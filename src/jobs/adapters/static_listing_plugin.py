@@ -29,6 +29,10 @@ from src.jobs.adapters.static_listing_state import (
     _complete_source_without_generic_flow,
     _is_provisional_static_artifact_row,
 )
+from src.jobs.adapters.static_runtime_support import (
+    stamp_static_deadline_kind,
+    static_deadline_error_token,
+)
 from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
 from src.jobs.page_gating import (
     classify_job_page,
@@ -291,6 +295,9 @@ def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
     ctx.entry_report["status"] = "error"
     if not ctx.entry_report.get("error"):
         ctx.entry_report["error"] = "no jobs extracted from source pages"
+    final_error = clean_text(ctx.entry_report.get("error"))
+    stamp_static_deadline_kind(ctx.entry_report, final_error)
+    ctx.entry_report["error"] = static_deadline_error_token(final_error)
     if browser_recommended:
         warn_page = clean_text(ctx.pages[0]) if ctx.pages else ""
         ctx.warnings.append(

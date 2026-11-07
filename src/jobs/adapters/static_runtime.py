@@ -31,7 +31,10 @@ from .static_runtime_support import (
     is_fetchable_http_url,
     pagination_budget_extension_s,
     remaining_static_source_budget_s,
+    remember_static_deadline_kind,
     safe_url_for_error,
+    stamp_static_deadline_kind,
+    static_deadline_error_token,
 )
 
 
@@ -166,6 +169,7 @@ class StaticSourceContext:
                 source_started=self.source_started,
                 source_budget_s=self.pagination_budget_floor_s,
             )
+        self._sync_html_fetcher_deadline()
         if not self.kept_before:
             self.kept_before = len(self.jobs)
 
@@ -272,6 +276,13 @@ class StaticSourceContext:
             source_started=self.source_started,
             source_budget_s=self.pagination_budget_floor_s,
         ) + float(max(0, int(self.pagination_budget_extension_s)))
+        self._sync_html_fetcher_deadline()
+
+    def _sync_html_fetcher_deadline(self) -> None:
+        """Keep the shared fetcher's hard deadline aligned with this source context."""
+        setter = getattr(self.html_fetcher, "set_source_deadline", None)
+        if callable(setter):
+            setter(self.source_deadline)
 
     def remaining_budget_s(self) -> float:
         return remaining_static_source_budget_s(deadline_monotonic=float(self.source_deadline))
@@ -294,7 +305,7 @@ class StaticSourceContext:
         )
 
     def record_static_fetch_failure(self, *, target_url: str, exc: Exception | str) -> None:
-        msg = str(exc)
+        raw_msg = str(exc)
         if target_url and not is_fetchable_http_url(target_url):
             self.stats["non_fetchable_url_errors_skipped"] = (
                 int(self.stats.get("non_fetchable_url_errors_skipped") or 0) + 1
@@ -304,12 +315,24 @@ class StaticSourceContext:
                 "skipped non-fetchable URL"
             )
             return
+        deadline_kind = remember_static_deadline_kind(self.entry_report, raw_msg)
+        msg = static_deadline_error_token(raw_msg)
         target = safe_url_for_error(target_url)
         classification, browser_recommended = classify_static_fetch_exception(
             exc,
             anti_bot_retry=bool(self.source.get("antiBotBrowserRetry")),
             target_url=target_url,
         )
+        if deadline_kind:
+            # A hard deadline is a timeout even though its text ("request deadline
+            # exceeded") does not contain the classifier's timeout tokens. Keep
+            # the same partial-source policy as budget exhaustion: record the
+            # error and clock, but only finalization makes a zero-kept source
+            # fail. A source that kept jobs stays an ok row with the cut visible.
+            self.entry_report["classification"] = "timeout"
+            self.entry_report["error"] = msg
+            self.warnings.append(f"static:{self.source_name}:{target}: {msg}")
+            return
         if "Unsafe static redirect" in msg:
             self.entry_report["status"] = "error"
             self.entry_report["error"] = msg
@@ -329,7 +352,7 @@ class StaticSourceContext:
             self.entry_report["error"] = msg
             self.warnings.append(f"static:{self.source_name}:{target}: {msg}")
             return
-        self.errors.append(f"static:{self.source_name}:{target}: {exc}")
+        self.errors.append(f"static:{self.source_name}:{target}: {msg}")
 
     def record_failed_attempt(self, seconds: float) -> None:
         self.failure_elapsed_s += max(0.0, float(seconds))
@@ -378,6 +401,7 @@ class StaticSourceContext:
         # Truthful budget: include the pagination extension so operators see
         # the budget the run actually had, not the base config number.
         self.entry_report["error"] = f"time budget exceeded ({self.effective_source_budget_s()}s)"
+        stamp_static_deadline_kind(self.entry_report, str(self.entry_report["error"]))
         if self.current_source_kept_count() <= 0:
             self.entry_report["status"] = "error"
         self.warnings.append(f"static:{self.source_name}:{target_url}: time_budget_exceeded")

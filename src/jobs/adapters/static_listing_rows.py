@@ -46,7 +46,9 @@ from src.jobs.adapters.static_listing_state import (
 )
 from src.jobs.adapters.static_runtime_support import (
     is_fetchable_http_url,
+    remember_static_deadline_kind,
     safe_url_for_error,
+    static_deadline_error_token,
 )
 from src.jobs.common.config import (
     GUEST_JUNK_GUARD_ENABLED,
@@ -312,7 +314,12 @@ def _fetch_rendered_detail_rows(
         # abort-on-first-failure semantics are unchanged.
         ctx.stats["detail_pages_visited"] += 1
         ctx.stats["detail_fetch_failed"] += 1
-        ctx.errors.append(f"static:{ctx.source_name}:{safe_url_for_error(link)}: {exc}")
+        raw_error = str(exc)
+        remember_static_deadline_kind(ctx.entry_report, raw_error)
+        ctx.errors.append(
+            f"static:{ctx.source_name}:{safe_url_for_error(link)}: "
+            f"{static_deadline_error_token(raw_error)}"
+        )
         raise
     ctx.stats["detail_pages_visited"] += 1
     ctx.emit_source_progress(
@@ -673,6 +680,7 @@ class _InlineDetailPrefetcher:
                 sync_fetch=_fetch,
                 total_concurrency=len(planned),
                 per_host_concurrency=len(planned),
+                deadline_monotonic=float(ctx.source_deadline),
             )
         except Exception:
             # A shape the batch refuses is the serial lane's to raise, at the row that reaches it.

@@ -598,6 +598,7 @@ class StaticFetchRunner:
             total_concurrency=max(1, len(listing_batch_jobs)),
             per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
             progress_callback=self._on_listing_batch_progress,
+            deadline_monotonic=float(self.ctx.source_deadline),
         )
         self._note_batch_outcome(listing_results, batch_started)
         # All fetches in the batch have completed, so every capture is settled:

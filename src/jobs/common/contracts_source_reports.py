@@ -76,6 +76,9 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         clean_text_func=clean_text,
         normalize_text_func=norm_text,
     )
+    deadline_kind = clean_text(src.get("deadlineKind"))
+    if deadline_kind:
+        normalized["deadlineKind"] = deadline_kind
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)
 

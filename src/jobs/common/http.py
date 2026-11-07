@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -72,6 +73,43 @@ class HttpStatusError(RuntimeError):
         super().__init__(f"HTTP {self.code} for {self.url}")
 
 
+def _read_response_body(response: Any, *, cap: int, timeout_s: float) -> bytes:
+    """Read a response body under a hard wall-clock limit.
+
+    ``urlopen(timeout=...)`` is a per-socket-operation budget, and a peer that
+    trickles a byte before each read deadline can re-arm it indefinitely. A
+    timer closes the response at the total deadline so the read cannot outlive
+    the request, and the timeout is surfaced as ``TimeoutError`` rather than a
+    partial body.
+    """
+    timed_out = threading.Event()
+
+    def _abort() -> None:
+        timed_out.set()
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    timer = threading.Timer(max(0.001, float(timeout_s)), _abort)
+    timer.daemon = True
+    timer.start()
+    try:
+        try:
+            body: bytes = response.read(cap + 1)[:cap]
+        except Exception as exc:
+            if timed_out.is_set():
+                raise TimeoutError(f"request deadline exceeded ({timeout_s}s)") from exc
+            raise
+        if timed_out.is_set():
+            raise TimeoutError(f"request deadline exceeded ({timeout_s}s)")
+        return body
+    finally:
+        timer.cancel()
+
+
 def _headers_to_dict(headers: Any) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     try:
@@ -105,8 +143,8 @@ def default_fetch_text_with_response_headers(
         with urlopen(request, timeout=timeout_s, context=verified_ssl_context()) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             cap = fetch_max_bytes_for_url(url)
-            text = str(response.read(cap + 1)[:cap].decode(charset, errors="replace"))
-            return text, _headers_to_dict(response.headers)
+            body = _read_response_body(response, cap=cap, timeout_s=timeout_s)
+            return str(body.decode(charset, errors="replace")), _headers_to_dict(response.headers)
     except HTTPError as exc:
         location = str(exc.headers.get("Location") or "") if exc.headers else ""
         raise HttpStatusError(
@@ -134,7 +172,8 @@ def default_fetch_text(url: str, timeout_s: int, *, headers: dict[str, str]) -> 
             # listing simply parses fewer rows next run. Heavy hosts get a stricter
             # 2 MiB cap (603 MiB outlier observed on en.moonton.com).
             cap = fetch_max_bytes_for_url(url)
-            return str(response.read(cap + 1)[:cap].decode(charset, errors="replace"))
+            body = _read_response_body(response, cap=cap, timeout_s=timeout_s)
+            return str(body.decode(charset, errors="replace"))
     except HTTPError as exc:
         location = str(exc.headers.get("Location") or "") if exc.headers else ""
         raise HttpStatusError(int(exc.code), url, location=location) from exc

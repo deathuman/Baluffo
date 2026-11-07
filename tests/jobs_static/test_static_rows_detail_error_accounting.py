@@ -13,14 +13,22 @@ from typing import Any
 
 import pytest
 
-from src.jobs.adapters import static_listing, static_listing_rows
+from src.jobs.adapters import static_listing, static_listing_rows, static_listing_traversal
+from src.jobs.adapters.static_listing_flow import _finish_generic_source
+from src.jobs.adapters.static_listing_state import StaticListingStageState
+from src.jobs.adapters.static_listing_traversal import (
+    StaticDetailTraversalPlan,
+    _StaticDetailTraversalState,
+)
 from src.jobs.adapters.static_runtime import StaticRunDeps, StaticSourceContext
 from src.jobs.adapters.static_runtime_support import (
     StaticHtmlFetcher,
     StaticSourceRuntimeConfig,
     build_static_entry_report,
+    static_deadline_kind,
     update_source_detail_taxonomy,
 )
+from src.jobs.common.contracts_source_reports import normalize_source_report_row
 from src.jobs.pipeline_source_results import _apply_static_detail_evidence_to_report
 from src.shared.fetch_report_normalization import normalize_jobs_fetch_report_detail_item
 
@@ -342,3 +350,209 @@ def test_rows_flow_stops_verifying_once_the_source_budget_is_spent(
     assert ctx.stats["detail_pages_visited"] == 0
     assert "time budget exceeded" in str(ctx.entry_report.get("error") or "")
     assert any("time_budget_exceeded" in warning for warning in ctx.warnings)
+
+
+@pytest.mark.parametrize(
+    "detail",
+    ["request deadline exceeded (15s)", "total batch deadline exceeded (2s)"],
+)
+def test_hard_deadline_failure_is_recorded_as_time_budget_exceeded(detail: str) -> None:
+    """Lanterns 2026-10-23: the 20 s arm filed the request deadline text while
+    the 8 s arm filed ``time_budget_exceeded``, so the same truncated board
+    carried a different error depending on which deadline fired first.
+    """
+
+    ctx = _make_static_context()
+    ctx.record_static_fetch_failure(
+        target_url="https://mundfish.com/en/careers",
+        exc=detail,
+    )
+
+    recorded = " | ".join(
+        [
+            str(ctx.entry_report.get("error") or ""),
+            *map(str, ctx.errors),
+            *map(str, ctx.warnings),
+        ]
+    )
+    assert "time_budget_exceeded" in recorded
+    assert "deadline exceeded" not in recorded
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_kind"),
+    [
+        ("request deadline exceeded (15s)", "request_cap"),
+        ("total batch deadline exceeded (2s)", "batch_deadline"),
+    ],
+)
+def test_hard_deadline_kind_survives_the_real_source_recording_path(
+    detail: str, expected_kind: str
+) -> None:
+    """Recording a listing failure must keep the clock, not just the token.
+
+    The recorder normalizes the raw exception before finalization, which used
+    to make both hard deadlines indistinguishable from the source budget.
+    """
+
+    ctx = _make_static_context()
+    ctx.record_static_fetch_failure(
+        target_url="https://mundfish.com/en/careers",
+        exc=detail,
+    )
+
+    _finish_generic_source(ctx, StaticListingStageState())
+
+    report = ctx.details[-1]
+    assert report["error"] == "time_budget_exceeded"
+    assert report["deadlineKind"] == expected_kind
+    assert report["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_kind"),
+    [
+        ("request deadline exceeded (15s)", "request_cap"),
+        ("total batch deadline exceeded (2s)", "batch_deadline"),
+    ],
+)
+def test_partial_source_kept_jobs_stays_ok_when_a_hard_deadline_cuts_listing(
+    detail: str, expected_kind: str
+) -> None:
+    """A listing deadline after a kept job records the cut without failing the source.
+
+    The source-budget path deliberately keeps partial boards ``ok``; a request or
+    batch deadline on the listing lane must not promote them to top-level failures.
+    """
+
+    ctx = _make_static_context()
+    ctx.jobs.append(
+        {
+            "title": "Senior Game Designer",
+            "company": "Mundfish",
+            "jobLink": "https://mundfish.com/careers/senior-game-designer",
+        }
+    )
+    ctx.record_static_fetch_failure(
+        target_url="https://mundfish.com/en/careers",
+        exc=detail,
+    )
+
+    _finish_generic_source(ctx, StaticListingStageState())
+
+    report = ctx.details[-1]
+    assert report["status"] == "ok"
+    assert report["keptCount"] == 1
+    assert report["classification"] == "timeout"
+    assert report["error"] == "time_budget_exceeded"
+    assert report["deadlineKind"] == expected_kind
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_kind"),
+    [
+        ("request deadline exceeded (15s)", "request_cap"),
+        ("total batch deadline exceeded (2s)", "batch_deadline"),
+    ],
+)
+def test_hard_deadline_kind_survives_the_real_detail_recording_path(
+    detail: str, expected_kind: str
+) -> None:
+    """The detail recorder follows the same normalize-then-finalize flow."""
+
+    ctx = _make_static_context()
+    plan = StaticDetailTraversalPlan(
+        page_url="https://mundfish.com/en/careers",
+        detail_links=[],
+        detail_concurrency=1,
+        detail_retries=0,
+        source_budget_s=30,
+    )
+    static_listing_traversal._record_detail_fetch_error(
+        ctx,
+        plan,
+        _StaticDetailTraversalState(),
+        detail="https://mundfish.com/careers/technical-game-designer",
+        msg=detail,
+    )
+
+    _finish_generic_source(ctx, StaticListingStageState())
+
+    report = ctx.details[-1]
+    assert report["error"] == "time_budget_exceeded"
+    assert report["deadlineKind"] == expected_kind
+    assert report["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_kind", "expected_error"),
+    [
+        ("request deadline exceeded (15s)", "request_cap", "time_budget_exceeded"),
+        ("total batch deadline exceeded (2s)", "batch_deadline", "time_budget_exceeded"),
+        ("time budget exceeded (90s)", "source_budget", "time budget exceeded (90s)"),
+    ],
+)
+def test_final_source_report_collapses_a_hard_deadline_error(
+    detail: str, expected_kind: str, expected_error: str
+) -> None:
+    ctx = _make_static_context()
+    ctx.entry_report["status"] = "error"
+    ctx.entry_report["classification"] = "timeout"
+    ctx.entry_report["error"] = detail
+
+    _finish_generic_source(ctx, StaticListingStageState())
+
+    assert ctx.details[-1]["error"] == expected_error
+    assert ctx.details[-1]["deadlineKind"] == expected_kind
+
+
+def test_static_deadline_kind_names_the_clock_that_fired() -> None:
+    assert static_deadline_kind("request deadline exceeded (15s)") == "request_cap"
+    assert static_deadline_kind("total batch deadline exceeded (2s)") == "batch_deadline"
+    assert static_deadline_kind("time_budget_exceeded") == "source_budget"
+    assert static_deadline_kind("time budget exceeded (90s)") == "source_budget"
+    assert static_deadline_kind("failure budget exceeded (60s)") == ""
+    assert static_deadline_kind("HTTP 500 for https://example.com") == ""
+
+
+def test_source_budget_exhaustion_stamps_source_budget_kind() -> None:
+    ctx = _make_static_context()
+    ctx.stop_for_budget_exhaustion(target_url="https://mundfish.com/en/careers")
+
+    _finish_generic_source(ctx, StaticListingStageState())
+
+    assert "time budget exceeded" in ctx.details[-1]["error"]
+    assert ctx.details[-1]["deadlineKind"] == "source_budget"
+
+
+def test_deadline_kind_survives_normalization_and_source_projection() -> None:
+    detail = {
+        "name": "Slow Board",
+        "adapter": "static",
+        "status": "error",
+        "keptCount": 0,
+        "error": "time_budget_exceeded",
+        "deadlineKind": "batch_deadline",
+    }
+    normalized_detail = normalize_jobs_fetch_report_detail_item(detail)
+    assert normalized_detail["deadlineKind"] == "batch_deadline"
+
+    report = {
+        "name": "Slow Board",
+        "adapter": "static",
+        "status": "error",
+        "keptCount": 0,
+        "error": "time_budget_exceeded",
+    }
+    _apply_static_detail_evidence_to_report(report=report, detail_rows=[detail])
+    assert report["deadlineKind"] == "batch_deadline"
+
+    normalized_report = normalize_source_report_row(report)
+    assert normalized_report["deadlineKind"] == "batch_deadline"
+
+
+def test_healthy_source_report_has_no_deadline_kind() -> None:
+    report = normalize_source_report_row(
+        {"name": "Healthy", "adapter": "static", "status": "ok", "keptCount": 7}
+    )
+    assert "deadlineKind" not in report

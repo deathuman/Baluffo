@@ -15,6 +15,7 @@ replaced the configured lane count with the machine's. See `_fetch_pages_batched
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
@@ -70,6 +71,7 @@ async def _fetch_pages_batched_async(
     progress_callback: PageProgressCallback | None,
     receipt: Any | None = None,
     page_fetch_lifecycle: PageFetchLifecycle | None = None,
+    deadline_monotonic: float | None = None,
 ) -> list[dict[str, Any]]:
     if not jobs:
         if page_fetch_lifecycle is not None:
@@ -264,6 +266,11 @@ async def _fetch_pages_batched_async(
     per_row_s = max(1.0, float(timeout_s))
     effective_concurrency = max(1, min(int(total_concurrency), max(1, len(jobs))))
     total_deadline_s = per_row_s * (len(jobs) / effective_concurrency) + per_row_s
+    if deadline_monotonic is not None:
+        remaining_s = max(0.0, float(deadline_monotonic) - float(time.perf_counter()))
+        # A source deadline can be sooner than the batch's own estimate. Cap it
+        # here so a batch of blocked sync workers cannot outlive the source.
+        total_deadline_s = min(total_deadline_s, max(0.1, remaining_s))
     # ponytail: the sync path gets its own pool, sized to this batch. `asyncio.to_thread` submits
     # to the event loop's SHARED default executor, whose size is `min(32, cpu_count + 4)` -- 20 on
     # the 16-core box these runs use. A caller asking for 32 lanes therefore got 20, with no error
@@ -379,6 +386,7 @@ def fetch_pages_batched(
     progress_callback: PageProgressCallback | None = None,
     receipt: Any | None = None,
     page_fetch_lifecycle: PageFetchLifecycle | None = None,
+    deadline_monotonic: float | None = None,
 ) -> list[dict[str, Any]]:
     try:
         asyncio.get_running_loop()
@@ -394,6 +402,7 @@ def fetch_pages_batched(
                 progress_callback=progress_callback,
                 receipt=receipt,
                 page_fetch_lifecycle=page_fetch_lifecycle,
+                deadline_monotonic=deadline_monotonic,
             )
         )
     raise RuntimeError("fetch_pages_batched cannot run inside an active event loop")

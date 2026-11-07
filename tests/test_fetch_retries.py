@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from src.jobs.common.fetch import fetch_with_retries
@@ -19,6 +21,77 @@ def test_fetch_with_retries_does_not_retry_terminal_404() -> None:
         fetch_with_retries("https://example.com/missing", fetch_text, 5, retries=2, backoff_s=0)
 
     assert attempts == 1
+
+
+def test_fetch_with_retries_does_not_start_after_the_deadline() -> None:
+    calls = 0
+
+    def fetch_text(_url: str, _timeout_s: int) -> str:
+        nonlocal calls
+        calls += 1
+        return "too late"
+
+    with pytest.raises(TimeoutError, match="time_budget_exceeded"):
+        fetch_with_retries(
+            "https://example.com/jobs",
+            fetch_text,
+            5,
+            retries=2,
+            backoff_s=0,
+            deadline_monotonic=0.0,
+        )
+
+    assert calls == 0
+
+
+def test_fetch_with_retries_bounds_backoff_by_the_deadline() -> None:
+    calls = 0
+
+    def fetch_text(_url: str, _timeout_s: int) -> str:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("temporary network wobble")
+
+    started = time.perf_counter()
+    with pytest.raises(TimeoutError, match="time_budget_exceeded"):
+        fetch_with_retries(
+            "https://example.com/jobs",
+            fetch_text,
+            5,
+            retries=3,
+            backoff_s=10,
+            deadline_monotonic=time.perf_counter() + 1.1,
+        )
+
+    assert calls == 1
+    assert (
+        time.perf_counter() - started < 2.0
+    )  # timing-ok: deadline must beat the 10 s retry backoff
+
+
+def test_fetch_with_retries_does_not_round_a_deadline_capped_attempt_past_the_clock() -> None:
+    seen_timeouts: list[float] = []
+
+    def fetch_text(_url: str, timeout_s: float) -> str:
+        seen_timeouts.append(timeout_s)
+        return "ok"
+
+    assert (
+        fetch_with_retries(
+            "https://example.com/jobs",
+            fetch_text,
+            10,
+            retries=0,
+            backoff_s=0,
+            deadline_monotonic=time.perf_counter() + 2.4,
+        )
+        == "ok"
+    )
+
+    # Ceiling would hand the request 3 s against 2.4 s of source clock;
+    # flooring would fire the request cap before the source clock.
+    assert len(seen_timeouts) == 1
+    assert 1.5 < seen_timeouts[0] < 2.5
 
 
 def test_fetch_with_retries_still_retries_transient_errors() -> None:

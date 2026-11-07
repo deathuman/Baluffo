@@ -30,7 +30,9 @@ from src.jobs.adapters.static_listing_state import (
 from src.jobs.adapters.static_runtime_support import (
     is_fetchable_http_url,
     remaining_static_source_budget_s,
+    remember_static_deadline_kind,
     safe_url_for_error,
+    static_deadline_error_token,
     static_source_budget_exhausted,
 )
 from src.jobs.common.origin_junk import is_junk_provenance_row
@@ -196,6 +198,8 @@ def _record_detail_fetch_error(
             f"static:{ctx.source_name}:{safe_url_for_error(detail)}: skipped non-fetchable URL"
         )
         return
+    deadline_kind = remember_static_deadline_kind(ctx.entry_report, msg)
+    msg = static_deadline_error_token(msg)
     if "Unsafe static redirect" in msg:
         ctx.entry_report["status"] = "error"
         ctx.entry_report["error"] = msg
@@ -208,7 +212,11 @@ def _record_detail_fetch_error(
         state.redirect_loop_count += 1
     if detail_host and page_host and detail_host != page_host:
         state.off_domain_failure_count += 1
-    if "HTTP 403" in msg or (
+    if deadline_kind:
+        ctx.entry_report["classification"] = "timeout"
+        ctx.entry_report["error"] = msg
+        ctx.warnings.append(f"static:{ctx.source_name}:{safe_detail}: {msg}")
+    elif "HTTP 403" in msg or (
         linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
     ):
         ctx.entry_report["classification"] = "blocked_or_challenge"
@@ -500,6 +508,7 @@ def _run_detail_batch(
             completed,
             total,
         ),
+        deadline_monotonic=float(ctx.source_deadline),
     )
     _note_detail_batch_outcome(ctx, detail_results, batch_started)
     for detail_result_row in detail_results:

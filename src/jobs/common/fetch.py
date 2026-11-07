@@ -60,9 +60,20 @@ def fetch_with_retries(
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None = None,
     capture_headers: dict[str, str] | None = None,
+    deadline_monotonic: float | None = None,
 ) -> str:
+    """Fetch with bounded retries, optionally bounded by an absolute deadline.
+
+    ``deadline_monotonic`` is a ``time.perf_counter`` value. When present, no attempt
+    may start with less than one second left, the per-attempt timeout is capped to the
+    remaining clock, and retry backoff is truncated to it. The HTTP layer still owns
+    the hard per-request timeout; this stops the retry loop from spending the source's
+    remaining wall clock after a request has returned.
+    """
     attempts = max(0, int(retries or 0)) + 1
-    effective_fetch = (
+    # The public fetch seam is typed with integer timeouts, but a deadline-capped
+    # attempt needs its fractional remainder; the HTTP layer accepts either.
+    effective_fetch: Callable[..., str] = (
         _capture_response_headers(fetch_text, capture_headers)
         if capture_headers is not None
         else fetch_text
@@ -71,8 +82,16 @@ def fetch_with_retries(
     for attempt in range(attempts):
         if heartbeat_callback:
             heartbeat_callback()
+        attempt_timeout_s: float = max(1, int(timeout_s or 1))
+        if deadline_monotonic is not None:
+            remaining_s = float(deadline_monotonic) - float(time.perf_counter())
+            if remaining_s < 1.0:
+                raise TimeoutError("time_budget_exceeded") from last_error
+            # Carry the exact remainder, not a rounded-up second: a 2.4 s
+            # source clock may not fund a 3 s attempt that outlives it.
+            attempt_timeout_s = min(float(attempt_timeout_s), remaining_s)
         try:
-            return effective_fetch(url, int(timeout_s or 1))
+            return effective_fetch(url, attempt_timeout_s)
         except (OSError, RuntimeError, ValueError) as exc:
             last_error = exc
             if _is_non_retriable_http_error(exc):
@@ -84,9 +103,17 @@ def fetch_with_retries(
                 # Special-case rate limiting. Async fetcher raises RuntimeError("HTTP 429 for <url>").
                 if "HTTP 429" in message:
                     # Back off more aggressively so we don't hammer the provider.
-                    time.sleep(max(float(backoff_s) * float(2**attempt), 8.0 * float(attempt + 1)))
+                    sleep_s = max(float(backoff_s) * float(2**attempt), 8.0 * float(attempt + 1))
                 else:
-                    time.sleep(float(backoff_s) * float(2**attempt))
+                    sleep_s = float(backoff_s) * float(2**attempt)
+                if deadline_monotonic is not None:
+                    remaining_s = float(deadline_monotonic) - float(time.perf_counter())
+                    if remaining_s < 1.0:
+                        break
+                    sleep_s = min(sleep_s, remaining_s)
+                time.sleep(max(0.0, sleep_s))
+    if deadline_monotonic is not None and float(time.perf_counter()) >= float(deadline_monotonic):
+        raise TimeoutError("time_budget_exceeded") from last_error
     if isinstance(last_error, RuntimeError):
         raise last_error
     raise RuntimeError(str(last_error) if last_error else f"Unknown fetch error for {url}")

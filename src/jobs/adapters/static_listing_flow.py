@@ -17,6 +17,9 @@ from src.jobs.adapters.static_listing_state import (
     _complete_source_without_generic_flow,
 )
 from src.jobs.adapters.static_runtime_support import (
+    TIME_BUDGET_EXCEEDED_ERROR,
+    stamp_static_deadline_kind,
+    static_deadline_error_token,
     update_source_detail_taxonomy,
 )
 from src.jobs.adapters.static_zero_kept_guard import promote_clean_zero_kept
@@ -136,6 +139,17 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
             f"{'' if int(ctx.entry_report.get('keptCount') or 0) == 1 else 's'}."
         ),
     )
+    final_error = clean_text(ctx.entry_report.get("error"))
+    if (
+        int(ctx.entry_report.get("keptCount") or 0) <= 0
+        and final_error == TIME_BUDGET_EXCEEDED_ERROR
+        and clean_text(ctx.entry_report.get("deadlineKind"))
+    ):
+        # A detail-only deadline records its kind and token but does not set the
+        # source status; zero kept rows still make that source a failure.
+        ctx.entry_report["status"] = "error"
+    stamp_static_deadline_kind(ctx.entry_report, final_error)
+    ctx.entry_report["error"] = static_deadline_error_token(final_error)
     ctx.details.append(ctx.entry_report)
 
 

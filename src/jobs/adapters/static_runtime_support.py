@@ -207,6 +207,9 @@ class StaticHtmlFetchRequest:
     fetch_url: str
     timeout_s: int
     retries: int
+    # Absolute ``time.perf_counter`` deadline for the whole source, so redirect
+    # hops and retries stop together instead of each getting a fresh timeout.
+    source_deadline_monotonic: float | None = None
 
 
 def _static_redirect_error(source_url: str, target_url: str) -> str:
@@ -260,6 +263,13 @@ class StaticHtmlFetcher:
         self._backoff_s = float(backoff_s)
         self._fetch_cache: dict[str, str] = {}
         self._fetch_cache_lock = threading.Lock()
+        self._source_deadline_monotonic: float | None = None
+
+    def set_source_deadline(self, deadline_monotonic: float | None) -> None:
+        """Attach the source's absolute wall-clock deadline to every fetch it makes."""
+        self._source_deadline_monotonic = (
+            float(deadline_monotonic) if deadline_monotonic is not None else None
+        )
 
     def build_request(
         self,
@@ -306,6 +316,7 @@ class StaticHtmlFetcher:
             fetch_url=fetch_url,
             timeout_s=effective_timeout_s,
             retries=effective_retries,
+            source_deadline_monotonic=self._source_deadline_monotonic,
         )
 
     def _safe_redirect_url(self, source_url: str, location: str) -> str:
@@ -358,6 +369,7 @@ class StaticHtmlFetcher:
                     request.retries,
                     self._backoff_s,
                     capture_headers=hop_capture,
+                    deadline_monotonic=request.source_deadline_monotonic,
                 )
                 if capture_headers is not None and hop_capture:
                     capture_headers.update(hop_capture)
@@ -395,9 +407,18 @@ class StaticHtmlFetcher:
             cookie_header = jar.cookie_header(current_url)
             if cookie_header:
                 headers["Cookie"] = cookie_header
+            hop_timeout_s = request.timeout_s
+            if request.source_deadline_monotonic is not None:
+                remaining_s = float(request.source_deadline_monotonic) - float(time.perf_counter())
+                if remaining_s < 1.0:
+                    raise TimeoutError("time_budget_exceeded")
+                hop_timeout_s = effective_timeout_for_remaining_budget(
+                    timeout_s=request.timeout_s,
+                    remaining_budget_s=remaining_s,
+                )
             try:
                 text, response_headers = default_fetch_text_with_response_headers(
-                    current_url, request.timeout_s, headers=headers
+                    current_url, hop_timeout_s, headers=headers
                 )
                 return text, visited, False
             except HttpStatusError as exc:
@@ -620,6 +641,98 @@ def static_source_budget_exhausted(*, deadline_monotonic: float, reserve_s: floa
     return remaining_static_source_budget_s(deadline_monotonic=deadline_monotonic) <= max(
         0.0, float(reserve_s)
     )
+
+
+TIME_BUDGET_EXCEEDED_ERROR = "time_budget_exceeded"
+_HARD_DEADLINE_ERROR_TOKENS = ("request deadline exceeded", "total batch deadline exceeded")
+
+STATIC_DEADLINE_REQUEST_CAP = "request_cap"
+STATIC_DEADLINE_SOURCE_BUDGET = "source_budget"
+STATIC_DEADLINE_BATCH_DEADLINE = "batch_deadline"
+
+
+def static_deadline_kind(text: str) -> str:
+    """Name the clock that stopped a static fetch, in report-attribution terms.
+
+    The source row's ``error`` stays the canonical ``time_budget_exceeded`` so
+    every existing consumer keeps keying on one token. This separates the three
+    clocks that can produce it -- the per-request cap, the source budget, and
+    the page-batch deadline -- for the additive ``deadlineKind`` field, so a
+    live run is attributable without parsing free-text errors.
+    """
+
+    lowered = str(text or "").lower()
+    if "total batch deadline exceeded" in lowered:
+        return STATIC_DEADLINE_BATCH_DEADLINE
+    if "request deadline exceeded" in lowered:
+        return STATIC_DEADLINE_REQUEST_CAP
+    if TIME_BUDGET_EXCEEDED_ERROR in lowered or "time budget exceeded" in lowered:
+        return STATIC_DEADLINE_SOURCE_BUDGET
+    return ""
+
+
+def remember_static_deadline_kind(report: dict[str, Any], text: str) -> str:
+    """Keep a deadline kind observed before the error text is normalized.
+
+    ``static_deadline_error_token`` collapses both hard deadlines into
+    ``time_budget_exceeded``, which no longer says which clock fired. Recorders
+    call this with the raw exception text so finalization can attribute it to
+    the request cap or the page-batch deadline instead of defaulting to the
+    source budget.
+    """
+
+    kind = static_deadline_kind(text)
+    if kind:
+        report["deadlineKind"] = kind
+    return kind
+
+
+def stamp_static_deadline_kind(report: dict[str, Any], text: str) -> str:
+    """Attach the deadline kind to a report, or clear a stale kind.
+
+    Finalization may run after a source recovered from an earlier deadline
+    failure; clearing keeps ``deadlineKind`` describing the clock, if any, that
+    actually ended the source. A bare ``time_budget_exceeded`` token is
+    ambiguous because normalization erased the raw clock text, so a kind already
+    remembered by the recorder wins over that token.
+    """
+
+    observed_kind = clean_text(report.get("deadlineKind"))
+    kind = static_deadline_kind(text)
+    if (
+        observed_kind
+        and str(text or "").strip() == TIME_BUDGET_EXCEEDED_ERROR
+        and kind == STATIC_DEADLINE_SOURCE_BUDGET
+    ):
+        kind = observed_kind
+    if kind:
+        report["deadlineKind"] = kind
+    else:
+        report.pop("deadlineKind", None)
+    return kind
+
+
+def static_deadline_error_token(text: str) -> str:
+    """Collapse a hard-deadline abort into the static report's canonical token.
+
+    The source clock already reports ``time_budget_exceeded`` when a fetch is
+    refused at the budget boundary. The request deadline and the page-batch
+    deadline are the same wall clock firing from inside a fetch instead, and
+    they used to leak ``request deadline exceeded (15s)`` /
+    ``total batch deadline exceeded (2s)`` into the final source report, so the
+    same truncated board was filed under three different errors. The precise
+    deadline is carried in the additive ``deadlineKind`` field by
+    ``static_deadline_kind``; the source row keeps the one error token every
+    consumer keys on. Other failures keep their original text.
+    """
+
+    message = str(text or "")
+    lowered = message.lower()
+    if TIME_BUDGET_EXCEEDED_ERROR in lowered:
+        return message
+    if any(token in lowered for token in _HARD_DEADLINE_ERROR_TOKENS):
+        return TIME_BUDGET_EXCEEDED_ERROR
+    return message
 
 
 def effective_timeout_for_remaining_budget(

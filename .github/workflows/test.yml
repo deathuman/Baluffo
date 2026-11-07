@@ -30,6 +30,12 @@ jobs:
           python -m pip install -r requirements-lock.txt
           python -m pip install pytest pytest-cov pytest-xdist
 
+      # Real-socket timing checks: keep this unsharded so the deadline gate does
+      # not depend on xdist scheduling load in the full suite.
+      - name: Run static trickle-deadline tests
+        timeout-minutes: 5
+        run: python -m pytest tests/jobs_static/test_static_trickle_deadline.py -q --color=no
+
       - name: Run Python tests with coverage
         run: python -m pytest tests -q -m "not slow" -n auto --dist=loadfile --cov=src --cov-report=term-missing --color=no
 

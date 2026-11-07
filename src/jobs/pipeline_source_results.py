@@ -716,6 +716,9 @@ def _apply_static_detail_evidence_to_report(
     if norm_text(report.get("adapter")) != "static" or not detail_rows:
         return
     detail = detail_rows[0]
+    deadline_kind = clean_text(detail.get("deadlineKind"))
+    if deadline_kind:
+        report["deadlineKind"] = deadline_kind
     stats = as_json_object(detail.get("stats"))
     for key, value in (
         ("candidateLinksFound", stats.get("candidate_links_found")),

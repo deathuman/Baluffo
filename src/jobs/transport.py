@@ -720,7 +720,13 @@ class AsyncHttpTextFetcher:
         future = asyncio.run_coroutine_threadsafe(
             self._fetch(url, timeout_s, request=request), self._loop
         )
-        return str(future.result())
+        try:
+            # httpx's read timeout re-arms on every chunk. The source deadline is a
+            # wall-clock budget, so the future itself must have a total bound.
+            return str(future.result(timeout=max(0.1, float(timeout_s or 1))))
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"request deadline exceeded ({timeout_s}s)") from exc
 
     def close(self) -> None:
         if self._closed:
@@ -754,11 +760,19 @@ def fetch_with_retries(
     timeout_s: int = DEFAULT_TIMEOUT_S,
     retries: int = DEFAULT_RETRIES,
     backoff_s: float = DEFAULT_BACKOFF_S,
+    deadline_monotonic: float | None = None,
 ) -> str:
     effective_fetch = fetch_text
     if request is not None:
         effective_fetch = make_fetch_text(fetch_text, request=request)
-    return common_fetch_with_retries(url, effective_fetch, timeout_s, retries, backoff_s)
+    return common_fetch_with_retries(
+        url,
+        effective_fetch,
+        timeout_s,
+        retries,
+        backoff_s,
+        deadline_monotonic=deadline_monotonic,
+    )
 
 
 def make_fetch_text(

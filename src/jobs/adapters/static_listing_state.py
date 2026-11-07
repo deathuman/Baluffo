@@ -20,6 +20,7 @@ from src.jobs.adapters.static_detail_heuristics import (
 )
 from src.jobs.adapters.static_listing_common import StaticDetailCandidate
 from src.jobs.adapters.static_runtime_support import (
+    stamp_static_deadline_kind,
     update_source_detail_taxonomy,
 )
 from src.jobs.common.config import GUEST_JUNK_GUARD_ENABLED, STATIC_ASSET_URL_FILTER_ENABLED
@@ -207,6 +208,7 @@ def _apply_one_man_studio_cleanup(
 # mutation — registry-facing artifact update
 def _complete_source_without_generic_flow(ctx: StaticSourceContext) -> None:
     update_source_detail_taxonomy(ctx.entry_report)
+    stamp_static_deadline_kind(ctx.entry_report, clean_text(ctx.entry_report.get("error")))
     ctx.details.append(ctx.entry_report)
 
 
