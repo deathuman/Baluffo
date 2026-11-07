@@ -21,6 +21,7 @@ from src.bridge.discovery_audit_artifacts import (
 from src.bridge.fetch_report_summary import fetch_report_summary_path
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
+from src.shared.hashing import sha256_file
 
 # ponytail: idle-device Pi measurements put the uncached summary chains at
 # 0.5-1.6s per poll (registry scans + alert-state rewrite), and the container
@@ -134,8 +135,33 @@ def _summary_with_cache(
         return payload
 
 
-def _fetch_kpis_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[int, int] | None:
-    """Stat identity for the browser-fallback sidecar feeding the KPI payload.
+_SIDECAR_SIGNATURE_HASH_MAX_BYTES = 1024 * 1024
+
+
+def _sidecar_signature(path: Path) -> tuple[int, int, str] | None:
+    """Content identity for a small sidecar whose bytes drive a cached payload.
+
+    Size and mtime alone are not enough: Windows file timestamps advance in
+    coarse ticks, so a same-size republish can land with an identical stat and
+    leave the TTL cache serving the previous receipt. Hash the bounded sidecar
+    content so the cache key changes with the bytes.
+    """
+    try:
+        stat = path.stat()
+    except (OSError, TypeError, ValueError):
+        return None
+    size = int(stat.st_size)
+    digest = ""
+    if size <= _SIDECAR_SIGNATURE_HASH_MAX_BYTES:
+        try:
+            digest = sha256_file(path)
+        except OSError:
+            return None
+    return (int(stat.st_mtime_ns), size, digest)
+
+
+def _fetch_kpis_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[int, int, str] | None:
+    """Content identity for the browser-fallback sidecar feeding the KPI payload.
 
     The KPI route's TTL cache must not hide a changed sidecar until expiry; the
     Admin Action Center reads browser fallback health from this payload.
@@ -143,15 +169,11 @@ def _fetch_kpis_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[int, int] | 
     report_path = getattr(api, "JOBS_FETCH_REPORT_PATH", None)
     if not report_path:
         return None
-    try:
-        stat = fetch_report_summary_path(report_path).stat()
-    except (OSError, TypeError, ValueError):
-        return None
-    return (int(stat.st_mtime_ns), int(stat.st_size))
+    return _sidecar_signature(fetch_report_summary_path(report_path))
 
 
 def _dashboard_health_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[Any, ...] | None:
-    """Stat identity for the two receipts the dashboard summary payload embeds.
+    """Content identity for the two receipts the dashboard summary payload embeds.
 
     `compute_ops_dashboard_health_summary` reads the probe-wave receipt and the
     page-fetch lifecycle sidecar beside the discovery report on every compute,
@@ -162,14 +184,9 @@ def _dashboard_health_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[Any, .
     if not discovery_report:
         return None
     data_dir = Path(discovery_report).parent
-    signatures: list[tuple[int, int] | None] = []
+    signatures: list[tuple[int, int, str] | None] = []
     for filename in (PROBE_LIFECYCLE_RECEIPT_FILENAME, PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME):
-        try:
-            stat = (data_dir / filename).stat()
-        except OSError:
-            signatures.append(None)
-            continue
-        signatures.append((int(stat.st_mtime_ns), int(stat.st_size)))
+        signatures.append(_sidecar_signature(data_dir / filename))
     return tuple(signatures)
 
 
