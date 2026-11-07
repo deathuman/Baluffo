@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "kind": "container-jobs-boot-baseline",
+  "capturedAt": "2026-11-06T14:58:57.963Z",
+  "gateCommand": "node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode cold && node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode warm && node scripts/measure_container_jobs_boot.mjs --base-url http://127.0.0.1:8877 --mode nav",
+  "seedCommand": "node scripts/build_boot_perf_seed.mjs .tmp/boot-perf-seed",
+  "result": "pass",
+  "image": {
+    "tag": "baluffo-perf:local",
+    "id": "sha256:705fdd64f9014c87cefd5fd6cc86c662806ae63d39c0aaa108cd8cb623887b50",
+    "shortId": "705fdd64f901",
+    "createdAt": "2026-11-06T14:57:08.075800254Z",
+    "os": "linux",
+    "architecture": "amd64",
+    "sizeBytes": 2408934726,
+    "pythonVersion": "3.13.18"
+  },
+  "environment": {
+    "baseUrl": "http://127.0.0.1:8877",
+    "seedPath": ".tmp/boot-perf-seed",
+    "feedRowCount": 24,
+    "warmSeedRowCount": 5000,
+    "browser": "Playwright Chromium"
+  },
+  "thresholds": {
+    "interactiveMs": 5000,
+    "clsTotal": 0.1,
+    "maxLongTaskMs": 200
+  },
+  "modes": {
+    "cold": {
+      "capturedAt": "2026-11-06T14:58:45.880Z",
+      "seededRowCount": 0,
+      "interactiveMs": 209,
+      "clsTotal": 0.0003,
+      "maxLongTaskMs": 0,
+      "rowSampleCount": 1,
+      "lcpMs": 584,
+      "feedFetchMs": 35,
+      "renderMs": 9,
+      "preInteractiveLightFeed": true,
+      "forbiddenInBoot": [],
+      "consoleLogCount": 0,
+      "sourceStatus": "Loaded 24 jobs from Unified JSON light (local data).",
+      "gateChecks": {
+        "passed": 10,
+        "failed": 0
+      }
+    },
+    "warm": {
+      "capturedAt": "2026-11-06T14:58:51.482Z",
+      "seededRowCount": 5000,
+      "interactiveMs": 61,
+      "clsTotal": 0.0003,
+      "maxLongTaskMs": 0,
+      "rowSampleCount": 1,
+      "lcpMs": 48,
+      "feedFetchMs": 12,
+      "renderMs": 1,
+      "preInteractiveLightFeed": true,
+      "renderedFromCache": false,
+      "forbiddenInBoot": [],
+      "consoleLogCount": 0,
+      "sourceStatus": "Loaded 24 jobs from Unified JSON light (local data).",
+      "gateChecks": {
+        "passed": 11,
+        "failed": 0
+      }
+    },
+    "nav": {
+      "capturedAt": "2026-11-06T14:58:57.963Z",
+      "legs": [
+        {
+          "leg": "admin-to-jobs",
+          "interactiveMs": 129,
+          "clsTotal": 0.0003,
+          "maxLongTaskMs": 0,
+          "forbiddenInBoot": []
+        },
+        {
+          "leg": "jobs-to-admin-and-back",
+          "interactiveMs": 46,
+          "clsTotal": 0.0003,
+          "maxLongTaskMs": 0,
+          "forbiddenInBoot": []
+        }
+      ],
+      "gateChecks": {
+        "passed": 6,
+        "failed": 0
+      }
+    }
+  },
+  "artifacts": [
+    "_out/perf-traces/container-jobs-cold-1793977125882.json",
+    "_out/perf-traces/container-jobs-warm-1793977131483.json",
+    "_out/perf-traces/container-jobs-nav-1793977137963.json",
+    "_out/container-perf/gate-run.log",
+    "_out/container-perf/docker-build.log"
+  ]
+}

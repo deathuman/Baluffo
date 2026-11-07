@@ -1,7 +1,15 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import {
+  JOBS_CACHE_DB,
+  JOBS_CACHE_DB_VERSION,
+  JOBS_CACHE_KEY,
+  JOBS_CACHE_STORE,
+  JOBS_SEEN_STORE
+} from "../frontend/jobs/app/cache.js";
 
 // ponytail: single-purpose measurement driver; promote into perf_complete only
 // if container Jobs boot needs recurring benchmarking beyond acceptance runs.
@@ -145,8 +153,24 @@ async function collectMetrics(page) {
   });
 }
 
-async function seedWarmState(page) {
-  return page.evaluate(async ({ signalId, rowFloor }) => {
+export async function seedWarmState(page, {
+  signalId = "perf-warm-signal-1",
+  rowFloor = SEED_ROW_FLOOR,
+  feedUrl = "data/jobs-unified-light.json",
+  rows: suppliedRows = null
+} = {}) {
+  const cacheSource = readFileSync(
+    new URL("../frontend/jobs/app/cache.js", import.meta.url),
+    "utf8"
+  );
+  return page.evaluate(async ({
+    signalId,
+    rowFloor,
+    feedUrl,
+    suppliedRows,
+    cacheSource,
+    cacheSchema
+  }) => {
     localStorage.removeItem("baluffo_jobs_auto_refresh_applied");
     localStorage.setItem("baluffo_jobs_auto_refresh_signal", JSON.stringify({
       id: signalId,
@@ -154,9 +178,14 @@ async function seedWarmState(page) {
       finishedAt: new Date().toISOString()
     }));
 
-    const response = await fetch("data/jobs-unified-light.json");
-    const payload = await response.json();
-    let rows = Array.isArray(payload) ? payload : Array.isArray(payload?.jobs) ? payload.jobs : [];
+    let rows;
+    if (Array.isArray(suppliedRows)) {
+      rows = suppliedRows;
+    } else {
+      const response = await fetch(feedUrl);
+      const payload = await response.json();
+      rows = Array.isArray(payload) ? payload : Array.isArray(payload?.jobs) ? payload.jobs : [];
+    }
     if (rows.length < rowFloor) {
       const expanded = [];
       while (expanded.length < rowFloor) {
@@ -167,29 +196,54 @@ async function seedWarmState(page) {
       rows = expanded.slice(0, rowFloor);
     }
 
-    await new Promise((resolve, reject) => {
-      const openRequest = indexedDB.open("baluffo_jobs_cache", 2);
-      openRequest.onupgradeneeded = event => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("jobs_feed")) db.createObjectStore("jobs_feed");
-        if (!db.objectStoreNames.contains("jobs_seen")) db.createObjectStore("jobs_seen");
-      };
-      openRequest.onsuccess = event => {
-        const db = event.target.result;
-        try {
-          const tx = db.transaction("jobs_feed", "readwrite");
-          tx.objectStore("jobs_feed").put({ jobs: rows, savedAt: Date.now() }, "latest");
-          tx.oncomplete = () => { db.close(); resolve(rows.length); };
-          tx.onerror = () => { db.close(); reject(tx.error); };
-        } catch (error) {
-          db.close();
-          reject(error);
+    // Use the app's own cache module so seeding, repair, and seen-row
+    // preservation run the same path the Jobs page runs at boot.
+    const moduleUrl = URL.createObjectURL(new Blob([cacheSource], { type: "text/javascript" }));
+    try {
+      const cache = await import(moduleUrl);
+      const db = await cache.openJobsCacheDb({
+        indexedDb: indexedDB,
+        dbName: cacheSchema.dbName,
+        dbVersion: cacheSchema.dbVersion,
+        cacheStore: cacheSchema.cacheStore,
+        seenStore: cacheSchema.seenStore
+      });
+      try {
+        await cache.writeJobsCache(rows, {
+          openDb: async () => db,
+          cacheStore: cacheSchema.cacheStore,
+          cacheKey: cacheSchema.cacheKey
+        });
+        const cached = await cache.readJobsCache({
+          openDb: async () => db,
+          cacheStore: cacheSchema.cacheStore,
+          cacheKey: cacheSchema.cacheKey
+        });
+        const cachedRowCount = Array.isArray(cached?.jobs) ? cached.jobs.length : 0;
+        if (cachedRowCount !== rows.length) {
+          throw new Error(`Jobs cache persisted ${cachedRowCount} of ${rows.length} rows.`);
         }
-      };
-      openRequest.onerror = () => reject(openRequest.error);
-    });
+      } finally {
+        db.close();
+      }
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
     return rows.length;
-  }, { signalId: "perf-warm-signal-1", rowFloor: SEED_ROW_FLOOR });
+  }, {
+    signalId,
+    rowFloor,
+    feedUrl,
+    suppliedRows,
+    cacheSource,
+    cacheSchema: {
+      dbName: JOBS_CACHE_DB,
+      dbVersion: JOBS_CACHE_DB_VERSION,
+      cacheStore: JOBS_CACHE_STORE,
+      seenStore: JOBS_SEEN_STORE,
+      cacheKey: JOBS_CACHE_KEY
+    }
+  });
 }
 
 function reportChecks(checks) {
@@ -331,15 +385,27 @@ async function runNavMode(browser, args) {
   return failed;
 }
 
-const args = parseArgs(process.argv.slice(2));
-console.log(`[measure] mode=${args.mode} base=${args.baseUrl}`);
-const browser = await chromium.launch();
-try {
-  const failures = args.mode === "nav"
-    ? await runNavMode(browser, args)
-    : await runBootMode(browser, args);
-  console.log(failures === 0 ? "[result] ALL CHECKS PASSED" : `[result] ${failures} CHECK(S) FAILED`);
-  process.exitCode = failures === 0 ? 0 : 1;
-} finally {
-  await browser.close();
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  console.log(`[measure] mode=${args.mode} base=${args.baseUrl}`);
+  const browser = await chromium.launch();
+  try {
+    const failures = args.mode === "nav"
+      ? await runNavMode(browser, args)
+      : await runBootMode(browser, args);
+    console.log(failures === 0 ? "[result] ALL CHECKS PASSED" : `[result] ${failures} CHECK(S) FAILED`);
+    process.exitCode = failures === 0 ? 0 : 1;
+  } finally {
+    await browser.close();
+  }
+}
+
+// Imported by the warm-seeder regression test; only a direct run measures.
+const invokedDirectly = Boolean(process.argv[1])
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
 }
