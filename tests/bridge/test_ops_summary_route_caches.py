@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, cast
 
 import src.bridge.ops_health as ops_health
+from src.bridge.fetch_report_summary import (
+    compact_browser_fallback_health,
+    fetch_report_summary_path,
+    load_fetch_report_summary_artifact,
+)
 from src.bridge.routes.get_ops_status import (
     OPS_DASHBOARD_SUMMARY_CACHE_TTL_S,
     OPS_FETCH_KPIS_CACHE_TTL_S,
     handle_ops_status_routes,
 )
-from tests.helpers.bridge_api import FakeHandler
+from tests.helpers.bridge_api import (
+    FakeDesktopLocalDataStore,
+    FakeHandler,
+    make_stub_bridge_api,
+)
 
 
 class CountingSummaryApi:
@@ -73,10 +84,26 @@ class RawPipelineStatusApi(CountingSummaryApi):
         return dict(self.active)
 
 
-def _drive(api: CountingSummaryApi, path: str, view: str) -> dict[str, Any]:
+def _drive(api: Any, path: str, view: str) -> dict[str, Any]:
     handler = FakeHandler()
     assert handle_ops_status_routes(handler, api=api, path=path, query={"view": [view]}) is True
     return cast(dict[str, Any], handler.sent[-1]["payload"])
+
+
+def _write_browser_health(sidecar_path: Path, health: dict[str, Any]) -> None:
+    sidecar_path.write_text(
+        json.dumps({"runtime": {"browserFallbackHealth": health}}),
+        encoding="utf-8",
+    )
+
+
+def _browser_health_kpis(api: Any) -> dict[str, Any]:
+    artifact = load_fetch_report_summary_artifact(api.JOBS_FETCH_REPORT_PATH)
+    runtime = artifact.get("runtime")
+    health = compact_browser_fallback_health(
+        runtime.get("browserFallbackHealth") if isinstance(runtime, dict) else None
+    )
+    return {"ok": True, "summaryView": True, "kpis": {"browserFallbackHealth": health}}
 
 
 def test_dashboard_health_summary_serves_cache_within_ttl(monkeypatch) -> None:
@@ -117,6 +144,139 @@ def test_fetch_kpis_summary_serves_cache_within_ttl(monkeypatch) -> None:
     second = _drive(api, "/ops/fetch-kpis", "summary")
     assert api.kpis_calls == 1
     assert second["kpis"]["call"] == 1
+
+
+def test_fetch_kpis_summary_refreshes_browser_health_when_sidecar_changes(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    sidecar_path = fetch_report_summary_path(api.JOBS_FETCH_REPORT_PATH)
+
+    api.compute_ops_fetch_kpis_summary = lambda: _browser_health_kpis(api)
+    _write_browser_health(
+        sidecar_path,
+        {
+            "ok": False,
+            "stage": "launch",
+            "errorType": "executable_does_not_exist",
+            "error": "Executable doesn't exist at /ms-playwright/chromium-1200",
+            "durationMs": 120,
+        },
+    )
+    first = _drive(api, "/ops/fetch-kpis", "summary")
+    assert first["kpis"]["browserFallbackHealth"] == {
+        "ok": False,
+        "durationMs": 120,
+        "stage": "launch",
+        "errorType": "executable_does_not_exist",
+        "error": "Executable doesn't exist at /ms-playwright/chromium-1200",
+    }
+
+    # Both calls are inside the 15s TTL; the changed sidecar stat must invalidate.
+    _write_browser_health(sidecar_path, {"ok": True, "stage": "navigation", "durationMs": 42})
+    second = _drive(api, "/ops/fetch-kpis", "summary")
+    assert second["kpis"]["browserFallbackHealth"] == {
+        "ok": True,
+        "durationMs": 42,
+        "stage": "navigation",
+    }
+
+
+def test_fetch_kpis_summary_refreshes_after_sidecar_delete_and_recreate(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    sidecar_path = fetch_report_summary_path(api.JOBS_FETCH_REPORT_PATH)
+    api.compute_ops_fetch_kpis_summary = lambda: _browser_health_kpis(api)
+
+    _write_browser_health(
+        sidecar_path,
+        {
+            "ok": False,
+            "stage": "launch",
+            "errorType": "executable_does_not_exist",
+            "durationMs": 120,
+        },
+    )
+    first = _drive(api, "/ops/fetch-kpis", "summary")
+    assert first["kpis"]["browserFallbackHealth"]["ok"] is False
+
+    # A missing sidecar has no stat key; the cached payload must not survive.
+    sidecar_path.unlink()
+    missing = _drive(api, "/ops/fetch-kpis", "summary")
+    assert missing["kpis"]["browserFallbackHealth"] == {}
+
+    # Recreating the sidecar changes the key again, even inside the TTL.
+    _write_browser_health(sidecar_path, {"ok": True, "stage": "navigation", "durationMs": 42})
+    recreated = _drive(api, "/ops/fetch-kpis", "summary")
+    assert recreated["kpis"]["browserFallbackHealth"] == {
+        "ok": True,
+        "durationMs": 42,
+        "stage": "navigation",
+    }
+
+
+def _dashboard_from_sidecars(api: Any) -> dict[str, Any]:
+    """The two receipts the real dashboard summary embeds, read from their sidecars."""
+    data_dir = Path(api.DISCOVERY_REPORT_PATH).parent
+
+    def _read(filename: str) -> Any:
+        try:
+            return json.loads((data_dir / filename).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    return {
+        "ok": True,
+        "summaryView": True,
+        "probeLifecycle": _read("gamedevmap-audit-receipt.json"),
+        "pageFetchLifecycle": _read("page-fetch-lifecycle.v1.json"),
+    }
+
+
+def test_dashboard_health_summary_refreshes_when_sidecar_changes(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.compute_ops_dashboard_health_summary = lambda: _dashboard_from_sidecars(api)
+    data_dir = Path(api.DISCOVERY_REPORT_PATH).parent
+    probe_receipt = data_dir / "gamedevmap-audit-receipt.json"
+    page_fetch_sidecar = data_dir / "page-fetch-lifecycle.v1.json"
+
+    probe_receipt.write_text(
+        json.dumps({"runId": "probe-1", "finishedAt": "2026-11-06T10:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    first = _drive(api, "/ops/dashboard-health", "summary")
+    assert first["probeLifecycle"]["runId"] == "probe-1"
+    assert first["pageFetchLifecycle"] == {}
+
+    # Both calls are inside the 10s TTL; the republished receipt must invalidate.
+    probe_receipt.write_text(
+        json.dumps({"runId": "probe-2", "finishedAt": "2026-11-06T10:05:00+00:00"}),
+        encoding="utf-8",
+    )
+    second = _drive(api, "/ops/dashboard-health", "summary")
+    assert second["probeLifecycle"]["runId"] == "probe-2"
+
+    # The page-fetch sidecar is the other embedded receipt and must key too.
+    page_fetch_sidecar.write_text(
+        json.dumps({"runId": "page-fetch-1", "sources": {"greenhouse": {"failureCount": 1}}}),
+        encoding="utf-8",
+    )
+    third = _drive(api, "/ops/dashboard-health", "summary")
+    assert third["pageFetchLifecycle"]["runId"] == "page-fetch-1"
+
+    # A deleted receipt has no stat; the old payload must not survive.
+    probe_receipt.unlink()
+    missing = _drive(api, "/ops/dashboard-health", "summary")
+    assert missing["probeLifecycle"] == {}
+
+    # Recreating it changes the key again, even inside the TTL.
+    probe_receipt.write_text(
+        json.dumps({"runId": "probe-3", "finishedAt": "2026-11-06T10:10:00+00:00"}),
+        encoding="utf-8",
+    )
+    recreated = _drive(api, "/ops/dashboard-health", "summary")
+    assert recreated["probeLifecycle"]["runId"] == "probe-3"
 
 
 def test_active_run_bypasses_caches_and_is_never_served_idle() -> None:

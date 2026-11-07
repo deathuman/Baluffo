@@ -16,6 +16,10 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
+from src.bridge.discovery_audit_artifacts import (
+    PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME,
+    PROBE_LIFECYCLE_RECEIPT_FILENAME,
+)
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.get_registry_conflicts import (
     registry_conflicts_badge_from_exact_summary,
@@ -228,17 +232,22 @@ def _ops_tab_counts_cache_key(api: _AdminOpsTabCountsRouteApi) -> list[list[Any]
     """mtime_ns for every stable file the badge computation reads.
 
     Files that don't exist contribute `None`, which is fine — an absent file
-    is also a stable signal. Overview badge depends on `compute_ops_dashboard_health_summary`
-    which has no single backing file to mtime-check; the TTL bound absorbs that.
+    is also a stable signal. The overview badge embeds
+    `compute_ops_dashboard_health_summary`, which reads the probe receipt and the
+    page-fetch lifecycle sidecar beside the discovery report; both are keyed so a
+    republished or removed receipt refreshes the strip inside the TTL.
     jobs-source-state.json is size-keyed only (see below): mtime invalidation
     fired on every heartbeat rewrite during runs, exactly while Admin was open.
     """
+    discovery_report_path = Path(api.DISCOVERY_REPORT_PATH)
     paths = (
-        Path(api.DISCOVERY_REPORT_PATH),
+        discovery_report_path,
         Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH),
         Path(api.SOURCE_POLICY_REVIEW_STATE_PATH),
         Path(api.JOBS_FETCH_REPORT_PATH).with_name("registry-conflict-adjudication.json"),
         Path(api.JOBS_FETCH_REPORT_PATH),
+        discovery_report_path.with_name(PROBE_LIFECYCLE_RECEIPT_FILENAME),
+        discovery_report_path.with_name(PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME),
     )
     signature: list[list[Any]] = []
     for path in paths:

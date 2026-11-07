@@ -11,15 +11,23 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src.bridge.discovery_audit_artifacts import (
+    PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME,
+    PROBE_LIFECYCLE_RECEIPT_FILENAME,
+)
+from src.bridge.fetch_report_summary import fetch_report_summary_path
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
 
 # ponytail: idle-device Pi measurements put the uncached summary chains at
 # 0.5-1.6s per poll (registry scans + alert-state rewrite), and the container
 # gateway cuts dashboard-health?view=summary off at 0.75s -> degraded-stub
-# flapping. TTL-only in-memory caches bound staleness to one poll interval.
+# flapping. TTL in-memory caches bound staleness to one poll interval; both
+# caches also key on the sidecar stats their payloads embed, so a republished
+# browser-fallback, probe or page-fetch receipt does not wait out the TTL.
 # Ceiling: last-writer-wins across threads, benign for read-only summaries.
 OPS_DASHBOARD_SUMMARY_CACHE_TTL_S = 10.0
 OPS_FETCH_KPIS_CACHE_TTL_S = 15.0
@@ -92,8 +100,10 @@ def _summary_with_cache(
     cache_attr: str,
     ttl_s: float,
     compute: Callable[[], dict[str, Any]],
+    *,
+    cache_key: tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
-    """Single-flight TTL cache; entries are (expiresAt, payload, computedWhileActive).
+    """Single-flight TTL cache; entries are (expiresAt, payload, active, cacheKey).
 
     ponytail: one lock per cache serializes fill and read. Polls are 10s apart,
     so contention is nil and this prevents duplicate expensive computes plus
@@ -103,14 +113,15 @@ def _summary_with_cache(
         if _active_pipeline_or_fetch(api):
             # Active runs always recompute so stage transitions surface at once.
             payload = compute()
-            setattr(api, cache_attr, (time.monotonic() + ttl_s, payload, True))
+            setattr(api, cache_attr, (time.monotonic() + ttl_s, payload, True, cache_key))
             return payload
         cached = getattr(api, cache_attr, None)
         if (
             isinstance(cached, tuple)
-            and len(cached) == 3
+            and len(cached) == 4
             and isinstance(cached[1], dict)
             and isinstance(cached[2], bool)
+            and cached[3] == cache_key
             and cached[0] > time.monotonic()
             and cached[2] is False
         ):
@@ -119,8 +130,47 @@ def _summary_with_cache(
             return cached[1]
         payload = compute()
         # Expiry measured after completion so slow computes don't shorten TTL.
-        setattr(api, cache_attr, (time.monotonic() + ttl_s, payload, False))
+        setattr(api, cache_attr, (time.monotonic() + ttl_s, payload, False, cache_key))
         return payload
+
+
+def _fetch_kpis_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[int, int] | None:
+    """Stat identity for the browser-fallback sidecar feeding the KPI payload.
+
+    The KPI route's TTL cache must not hide a changed sidecar until expiry; the
+    Admin Action Center reads browser fallback health from this payload.
+    """
+    report_path = getattr(api, "JOBS_FETCH_REPORT_PATH", None)
+    if not report_path:
+        return None
+    try:
+        stat = fetch_report_summary_path(report_path).stat()
+    except (OSError, TypeError, ValueError):
+        return None
+    return (int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _dashboard_health_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[Any, ...] | None:
+    """Stat identity for the two receipts the dashboard summary payload embeds.
+
+    `compute_ops_dashboard_health_summary` reads the probe-wave receipt and the
+    page-fetch lifecycle sidecar beside the discovery report on every compute,
+    so a republished, removed or recreated receipt must invalidate the TTL entry
+    instead of waiting out the window.
+    """
+    discovery_report = getattr(api, "DISCOVERY_REPORT_PATH", None)
+    if not discovery_report:
+        return None
+    data_dir = Path(discovery_report).parent
+    signatures: list[tuple[int, int] | None] = []
+    for filename in (PROBE_LIFECYCLE_RECEIPT_FILENAME, PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME):
+        try:
+            stat = (data_dir / filename).stat()
+        except OSError:
+            signatures.append(None)
+            continue
+        signatures.append((int(stat.st_mtime_ns), int(stat.st_size)))
+    return tuple(signatures)
 
 
 def _handle_ops_health_route(
@@ -176,6 +226,7 @@ def _handle_ops_dashboard_health_route(
                 "_ops_dashboard_summary_cache",
                 OPS_DASHBOARD_SUMMARY_CACHE_TTL_S,
                 dashboard_health_fn,
+                cache_key=_dashboard_health_sidecar_cache_key(api),
             )
         else:
             payload = (
@@ -204,6 +255,7 @@ def _handle_ops_fetch_kpis_route(
             "_ops_fetch_kpis_cache",
             OPS_FETCH_KPIS_CACHE_TTL_S,
             api.compute_ops_fetch_kpis_summary,
+            cache_key=_fetch_kpis_sidecar_cache_key(api),
         )
     handler.send_json(payload)
     return True

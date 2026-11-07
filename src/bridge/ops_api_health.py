@@ -22,6 +22,7 @@ from src.bridge.discovery_audit_artifacts import (
     load_probe_lifecycle_receipt as load_probe_lifecycle_receipt,
 )
 from src.bridge.fetch_report_summary import (
+    compact_browser_fallback_health,
     compact_source_health_summary,
     load_fetch_report_summary_artifact,
 )
@@ -395,6 +396,12 @@ class OpsApiHealthMixin(OpsApiState):
             source_outcome = compact_source_health_summary(source_artifact.get("sourceHealth"))
             if source_outcome:
                 kpis["sourceOutcomeSummary"] = source_outcome
+            source_runtime = as_json_object(source_artifact.get("runtime"))
+            browser_health = compact_browser_fallback_health(
+                source_runtime.get("browserFallbackHealth")
+            )
+            if browser_health:
+                kpis["browserFallbackHealth"] = browser_health
             if "pendingCount" in registry_summary:
                 pending_sources_count = int(registry_summary.get("pendingCount") or 0)
                 kpis["pendingSourcesCount"] = pending_sources_count

@@ -184,6 +184,41 @@ def test_admin_ops_tab_counts_recomputes_when_inputs_move(tmp_path: Path) -> Non
     assert second_payload["badges"]["discovery"]["count"] == 7
 
 
+def _drive_tab_counts(api: MinimalAdminOpsTabCountsRouteApi) -> dict[str, Any]:
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    return dict(handler.sent[-1]["payload"])
+
+
+def test_admin_ops_tab_counts_recomputes_when_lifecycle_receipts_move(
+    tmp_path: Path,
+) -> None:
+    api, first_handler = _open_counts_for(tmp_path)
+    assert "cachedResponse" not in first_handler.sent[-1]["payload"]
+
+    discovery_report = Path(api.DISCOVERY_REPORT_PATH)
+    probe_receipt = discovery_report.with_name("gamedevmap-audit-receipt.json")
+    page_fetch_sidecar = discovery_report.with_name("page-fetch-lifecycle.v1.json")
+
+    # The overview badge embeds the dashboard-health summary, which reads both.
+    _write_json(probe_receipt, {"summary": {"probeLifecycle": {"fetchCount": 1}}})
+    assert "cachedResponse" not in _drive_tab_counts(api)
+
+    _write_json(page_fetch_sidecar, {"sources": {"greenhouse": {"failureCount": 1}}})
+    assert "cachedResponse" not in _drive_tab_counts(api)
+
+    # Unchanged inputs are cacheable again, so the miss above was the receipt.
+    assert _drive_tab_counts(api).get("cachedResponse") is True
+
+
 def test_admin_ops_tab_counts_drops_stale_envelope_after_ttl(tmp_path: Path) -> None:
     api, _ = _open_counts_for(tmp_path)
 
