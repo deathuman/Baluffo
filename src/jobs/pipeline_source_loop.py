@@ -19,6 +19,7 @@ from typing import Any, Protocol, cast
 from src.jobs import pipeline_root
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
+from src.jobs.common import config as common_config
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text
 from src.shared.profile_utils import run_profiled, run_profiled_alloc
@@ -181,7 +182,11 @@ def run_source_execution_stage(
             source_state_rows,
             cooldown_minutes=config.browser_fallback_cooldown_minutes,
             max_workers=config.max_workers,
-            browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
+            browser_fallback_max_workers=getattr(
+                config,
+                "browser_fallback_max_workers",
+                common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
+            ),
             pool=pool,
         )
         _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
@@ -189,7 +194,11 @@ def run_source_execution_stage(
             root_mod,
             browser_fallback_guard,
             max_workers=config.max_workers,
-            browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
+            browser_fallback_max_workers=getattr(
+                config,
+                "browser_fallback_max_workers",
+                common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
+            ),
             pool=pool,
         )
 
@@ -233,6 +242,9 @@ def run_source_execution_stage(
                 f"startupMs={metrics['pool_startup_ms']} "
                 f"relaunchCount={metrics['pool_relaunch_count']}"
             )
+        browser_health = _browser_health_probe(pool, browser_fallback_guard)
+        if browser_health is not None and runtime_payload is not None:
+            runtime_payload["browserFallbackHealth"] = browser_health
         if runtime_payload is not None and browser_fallback_guard is not None:
             # Saturation visibility (2026-09-15): stamp the per-run fallback
             # demand accounting into the runtime payload so the fetch report
@@ -260,6 +272,53 @@ def run_source_execution_stage(
         if pool is not None:
             pool.close()
     root_mod.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
+
+
+def _browser_health_probe(
+    pool: BrowserFallbackPool | None,
+    guard: BrowserFallbackCircuitBreaker | None,
+) -> dict[str, Any] | None:
+    """Probe the browser once a run has seen an environment-level failure.
+
+    The breaker's ``last_error`` is the normalized token the fallback policy
+    needs, not the error that caused it. A launch/navigation probe after the run
+    preserves that original finding and says whether a fresh browser can still
+    launch and render, which is the difference between a broken environment and
+    one bad page.
+    """
+    if pool is None or guard is None:
+        return None
+    has_environment_failure = int(guard.demand_served_empty_environment or 0) > 0
+    if not has_environment_failure and not clean_text(guard.last_error):
+        return None
+    try:
+        health = pool.health_probe()
+    except (OSError, RuntimeError, ValueError) as exc:
+        health = {
+            "ok": False,
+            "stage": "probe",
+            "error": str(exc),
+            "errorType": type(exc).__name__,
+            "durationMs": 0,
+        }
+    status = "ok=true" if bool(health.get("ok")) else "ok=false"
+    stage = clean_text(health.get("stage")) or "unknown"
+    error = clean_text(health.get("error"))
+    last_stage = clean_text(health.get("lastFailureStage"))
+    original_error = clean_text(health.get("lastNavigationError")) or clean_text(
+        health.get("lastLaunchError")
+    )
+    original_error = " ".join(original_error.split())[:500]
+    retained = [f"lastFailureStage={last_stage}"] if last_stage else []
+    if original_error:
+        retained.append(f"lastFailure={original_error!r}")
+    emit_progress_line(
+        f"[jobs_fetcher] INFO browserHealth {status} stage={stage} "
+        f"durationMs={int(health.get('durationMs') or 0)}"
+        + (f" error={error!r}" if error else "")
+        + (" " + " ".join(retained) if retained else "")
+    )
+    return dict(health)
 
 
 def _stamp_browser_fallback_cause(
@@ -312,7 +371,7 @@ def _browser_fallback_runtime(
     *,
     cooldown_minutes: int,
     max_workers: int,
-    browser_fallback_max_workers: int = -1,
+    browser_fallback_max_workers: int = common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
     pool: BrowserFallbackPool | None = None,
 ) -> tuple[BrowserFallbackCircuitBreaker, Callable[[str, int], tuple[str, str]] | None]:
     try_playwright = root_mod.resolve_fetch_browser_fallback_helper()
@@ -340,7 +399,7 @@ def _browser_fallback_capture_runtime(
     browser_fallback_guard: BrowserFallbackCircuitBreaker,
     *,
     max_workers: int,
-    browser_fallback_max_workers: int = -1,
+    browser_fallback_max_workers: int = common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
     pool: BrowserFallbackPool | None = None,
 ) -> Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None:
     """The guarded capture callable the rendered-JSON lane uses, or ``None``.
@@ -381,7 +440,13 @@ def _emit_browser_fallback_status(
     if not show_progress:
         return
     if guarded_try_playwright is not None:
-        fallback_cap = int(getattr(config, "browser_fallback_max_workers", -1))
+        fallback_cap = int(
+            getattr(
+                config,
+                "browser_fallback_max_workers",
+                common_config.DEFAULT_BROWSER_FALLBACK_MAX_WORKERS,
+            )
+        )
         if fallback_cap < 0:
             fallback_cap = int(config.max_workers or 1)
         emit_progress_line(

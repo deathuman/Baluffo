@@ -98,6 +98,39 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert metrics["history"]["medianDurationMs"] == 2000
 
 
+def test_build_metrics_carries_browser_fallback_health_and_demand() -> None:
+    report = {
+        "startedAt": "2026-11-06T10:53:00+00:00",
+        "finishedAt": "2026-11-06T10:53:05+00:00",
+        "runtime": {
+            "browserFallbackHealth": {
+                "ok": False,
+                "stage": "launch",
+                "error": "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium-1200",
+                "errorType": "Error",
+                "durationMs": 281,
+                "lastLaunchError": "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium-1200",
+                "lastNavigationError": "",
+            },
+            "browserFallbackDemand": {
+                "attempts": 1,
+                "servedEmpty": 1,
+                "servedEmptyEnvironment": 1,
+                "servedEmptyPage": 0,
+            },
+        },
+        "summary": {},
+        "sources": [],
+    }
+
+    latest = fm.build_metrics(report, [], window=5)["latestRun"]
+
+    assert latest["browserFallbackHealth"]["stage"] == "launch"
+    assert "Executable doesn't exist" in latest["browserFallbackHealth"]["lastLaunchError"]
+    assert latest["browserFallbackDemand"]["servedEmptyEnvironment"] == 1
+    assert latest["browserFallbackDemand"]["servedEmptyPage"] == 0
+
+
 def test_build_metrics_reports_wall_clock_when_the_stage_sum_clamps_at_a_day() -> None:
     report = {
         "startedAt": "2026-10-22T00:12:49+00:00",

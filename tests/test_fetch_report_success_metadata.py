@@ -292,3 +292,42 @@ def test_compact_summary_projects_only_source_health_counts() -> None:
     }
     assert "topFailureBuckets" not in compact["sourceHealth"]
     assert "sourcesNeedingAttention" not in compact["sourceHealth"]
+
+
+def test_compact_summary_preserves_bounded_browser_fallback_health() -> None:
+    raw_error = "browser launch failed " * 200
+    compact = compact_fetch_report_summary_payload(
+        {
+            "runtime": {
+                "browserFallbackHealth": {
+                    "ok": False,
+                    "stage": "launch",
+                    "errorType": "executable_does_not_exist",
+                    "error": raw_error,
+                    "durationMs": -5,
+                    "lastFailureAt": "2026-01-01T00:00:00Z",
+                    "lastLaunchError": "Executable doesn't exist",
+                    "lastNavigationError": "net::ERR_FAILED",
+                }
+            }
+        },
+        detail_level="summary",
+    )
+
+    health = compact["runtime"]["browserFallbackHealth"]
+    assert health["ok"] is False
+    assert health["stage"] == "launch"
+    assert health["errorType"] == "executable_does_not_exist"
+    assert health["error"] == raw_error[:2000]
+    assert health["durationMs"] == 0
+    assert health["lastLaunchError"] == "Executable doesn't exist"
+    assert health["lastNavigationError"] == "net::ERR_FAILED"
+
+
+def test_compact_summary_omits_absent_browser_fallback_health() -> None:
+    compact = compact_fetch_report_summary_payload(
+        {"runtime": {"setupTiming": {"browserMs": 12}}},
+        detail_level="summary",
+    )
+
+    assert "browserFallbackHealth" not in compact["runtime"]

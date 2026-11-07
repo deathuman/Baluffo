@@ -74,6 +74,21 @@ _SOURCE_HEALTH_SUMMARY_KEYS = (
     "providerChildFailureCount",
 )
 
+# The run-level browser probe is only meaningful when it carries the normalized
+# stage/error fields. Keep the Action Center's poll payload to the same bounded
+# shape the runtime contract already enforces on the full report.
+_BROWSER_FALLBACK_HEALTH_TEXT_LIMITS = {
+    "stage": 32,
+    "error": 2000,
+    "errorType": 160,
+    "lastFailureStage": 32,
+    "lastFailureAt": 64,
+    "lastLaunchError": 2000,
+    "lastLaunchErrorType": 160,
+    "lastNavigationError": 2000,
+    "lastNavigationErrorType": 160,
+}
+
 
 def fetch_report_summary_path(report_path: Path | str) -> Path:
     return Path(report_path).with_name(FETCH_REPORT_SUMMARY_FILE_NAME)
@@ -93,6 +108,22 @@ def compact_source_health_summary(source_health: Any) -> dict[str, int]:
         if key in src:
             summary[key] = max(0, _safe_int(src.get(key), 0))
     return summary
+
+
+def compact_browser_fallback_health(value: Any) -> dict[str, Any]:
+    """The bounded run-level browser probe safe to carry on the poll path."""
+    src = _as_dict(value)
+    if not src:
+        return {}
+    health: dict[str, Any] = {
+        "ok": bool(src.get("ok")),
+        "durationMs": max(0, _safe_int(src.get("durationMs"), 0)),
+    }
+    for key, limit in _BROWSER_FALLBACK_HEALTH_TEXT_LIMITS.items():
+        text = _clean_text(src.get(key))[:limit]
+        if text:
+            health[key] = text
+    return health
 
 
 def _source_health_summary(payload: dict[str, Any]) -> dict[str, int]:
@@ -146,11 +177,14 @@ def compact_fetch_report_summary_payload(
         "updatedAt": _clean_text(progress_src.get("updatedAt")),
     }
     runtime = _as_dict(report.get("runtime"))
-    runtime_payload = {
+    runtime_payload: dict[str, Any] = {
         key: runtime.get(key)
         for key in ("setupTiming", "timingSummary", "finalizationTiming", "lifecycle")
         if key in runtime
     }
+    browser_health = compact_browser_fallback_health(runtime.get("browserFallbackHealth"))
+    if browser_health:
+        runtime_payload["browserFallbackHealth"] = browser_health
     result: dict[str, Any] = {
         "ok": bool(report.get("ok", True)),
         "summaryView": True,

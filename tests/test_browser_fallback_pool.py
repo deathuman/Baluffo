@@ -115,6 +115,33 @@ def test_pool_concurrent_fetches_from_worker_threads(http_server) -> None:
 
 
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
+def test_pool_health_probe_reports_ready_with_real_chromium() -> None:
+    """The probe's success path against a real Chromium launch.
+
+    The fast tests cover the launch/navigation failure shapes; this one proves
+    `stage=ready` only after a real browser launched and rendered the local
+    data-URL marker, with no stale failure diagnostics attached.
+    """
+    pool = BrowserFallbackPool()
+    try:
+        health = pool.health_probe(timeout_s=15)
+        metrics = pool.metrics.snapshot()
+    finally:
+        pool.close()
+
+    assert health["ok"] is True
+    assert health["stage"] == "ready"
+    assert health["error"] == ""
+    assert health["errorType"] == ""
+    assert health["probeUrl"].startswith("data:text/html")
+    assert int(health["durationMs"]) > 0
+    assert health["lastLaunchError"] == ""
+    assert health["lastNavigationError"] == ""
+    assert metrics["pool_health_probes"] == 1
+    assert metrics["last_health_probe"]["ok"] is True
+
+
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_context_isolation_no_cookie_bleed(http_server) -> None:
     pool = BrowserFallbackPool()
     try:

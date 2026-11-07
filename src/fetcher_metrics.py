@@ -192,6 +192,12 @@ def build_metrics(
             "dedupReviewStateReadWarning": str(report.get("dedupReviewStateReadWarning") or ""),
             "dedupReviewStateExport": copy_json_object(report.get("dedupReviewStateExport")),
             "dedupReviewStateSummary": copy_json_object(report.get("dedupReviewStateSummary")),
+            # Browser diagnostics are run-level evidence, not per-source rows: the health
+            # probe answers whether Chromium can launch and render at all, and the demand
+            # counters split a broken environment from an empty page. Carried here so the
+            # Admin Ops view does not need the full jobs-fetch-report.json.
+            "browserFallbackHealth": copy_json_object(runtime.get("browserFallbackHealth")),
+            "browserFallbackDemand": copy_json_object(runtime.get("browserFallbackDemand")),
             "providerCoverage": provider_coverage,
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,

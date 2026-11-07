@@ -34,6 +34,7 @@ import time
 from typing import Any
 
 from src.bridge.source_check_http import normalize_browser_fallback_error
+from src.shared.utils import now_iso
 
 _BROWSER_POOL_DISABLE_VALUES = {"0", "false", "no", "off"}
 _POOL_THREAD_NAME = "baluffo-browser-pool"
@@ -44,6 +45,15 @@ _POOL_THREAD_JOIN_TIMEOUT_S = 5.0
 # acquisitions (relaunch ≈560 ms vs 90–215 s legacy launch-per-call).
 _BROWSER_POOL_RECYCLE_ENV = "BALUFFO_BROWSER_POOL_RECYCLE_ACQUISITIONS"
 _BROWSER_POOL_RECYCLE_DEFAULT = 20
+
+# A health probe must be cheap and must not depend on a real board. A data URL
+# exercises the browser's page/navigation path without network access; the
+# marker lets the probe verify that the document actually rendered.
+BROWSER_HEALTH_PROBE_URL = (
+    "data:text/html,<html><body><div id='baluffo-browser-health'>"
+    "baluffo-browser-health</div></body></html>"
+)
+BROWSER_HEALTH_PROBE_TIMEOUT_S = 5
 
 # Capture limits for the rendered-JSON lane: a page's own data responses are small and few,
 # and a cap keeps one pathological app from pinning the renderer's memory.
@@ -59,11 +69,21 @@ class _PoolMetrics:
             "pool_startup_ms": 0,
             "pool_acquisitions": 0,
             "pool_relaunch_count": 0,
+            "last_failure_stage": "",
+            "last_failure_at": "",
+            "last_launch_error": "",
+            "last_launch_error_type": "",
+            "last_navigation_error": "",
+            "last_navigation_error_type": "",
         }
 
     def incr(self, key: str, delta: int = 1) -> None:
         with self._lock:
             self.values[key] = int(self.values.get(key) or 0) + delta
+
+    def set(self, key: str, value: Any) -> None:
+        with self._lock:
+            self.values[key] = value
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -96,6 +116,13 @@ class BrowserFallbackPool:
         self._browser: Any = None
         self._available = True
         self._start_lock = threading.Lock()
+        self._diagnostics_lock = threading.Lock()
+        self._last_launch_error = ""
+        self._last_launch_error_type = ""
+        self._last_navigation_error = ""
+        self._last_navigation_error_type = ""
+        self._last_failure_stage = ""
+        self._last_failure_at = ""
         self.metrics = _PoolMetrics()
         self._recycle_after = browser_pool_recycle_acquisitions()
         self._acquisitions_since_launch = 0
@@ -103,6 +130,8 @@ class BrowserFallbackPool:
 
     def _ensure_started(self) -> None:
         if not self._available:
+            # This is a pool-lifecycle error, not a Playwright launch error; recording it
+            # here would overwrite the real launch/navigation failure that closed the pool.
             raise RuntimeError("browser fallback unavailable (browser has been closed)")
         if self._browser is not None and self._loop is not None:
             return
@@ -122,7 +151,8 @@ class BrowserFallbackPool:
                 future = asyncio.run_coroutine_threadsafe(self._start_browser(), loop)
                 try:
                     future.result(timeout=120)
-                except BaseException:
+                except BaseException as exc:
+                    self._record_failure("launch", exc)
                     self._hard_close_locked()
                     raise
                 self.metrics.incr("pool_startup_ms", int((time.monotonic() - t0) * 1000))
@@ -131,7 +161,8 @@ class BrowserFallbackPool:
                 future = asyncio.run_coroutine_threadsafe(self._start_browser(), self._loop)
                 try:
                     future.result(timeout=120)
-                except BaseException:
+                except BaseException as exc:
+                    self._record_failure("launch", exc)
                     self._hard_close_locked()
                     raise
 
@@ -194,6 +225,7 @@ class BrowserFallbackPool:
                         timeout=max(1, int(timeout_s)) * 1000,
                     )
                 except BaseException as exc:
+                    self._record_failure("navigation", exc)
                     if self._browser_death_marker(exc):
                         self._mark_unavailable()
                     raise
@@ -239,6 +271,132 @@ class BrowserFallbackPool:
         with self._start_lock:
             if self._available:
                 self._available = False
+
+    def _record_failure(self, stage: str, exc: BaseException) -> None:
+        """Keep the original Playwright error before the breaker normalizes it.
+
+        ``normalize_browser_fallback_error`` intentionally collapses transport
+        failures to one stable token, which is right for circuit-breaker policy
+        but erases whether Chromium failed to launch or the page failed to
+        navigate. The raw message and type are retained here for the health
+        probe/run report; they never replace the normalized fallback contract.
+        """
+        message = str(exc).strip() or type(exc).__name__
+        error_type = type(exc).__name__
+        stamp = now_iso()
+        with self._diagnostics_lock:
+            self._last_failure_stage = stage
+            self._last_failure_at = stamp
+            if stage == "launch":
+                self._last_launch_error = message
+                self._last_launch_error_type = error_type
+            elif stage == "navigation":
+                self._last_navigation_error = message
+                self._last_navigation_error_type = error_type
+        self.metrics.set("last_failure_stage", stage)
+        self.metrics.set("last_failure_at", stamp)
+        if stage == "launch":
+            self.metrics.set("last_launch_error", message)
+            self.metrics.set("last_launch_error_type", error_type)
+        elif stage == "navigation":
+            self.metrics.set("last_navigation_error", message)
+            self.metrics.set("last_navigation_error_type", error_type)
+
+    def _failure_snapshot(self) -> dict[str, Any]:
+        with self._diagnostics_lock:
+            return {
+                "lastFailureStage": self._last_failure_stage,
+                "lastFailureAt": self._last_failure_at,
+                "lastLaunchError": self._last_launch_error,
+                "lastLaunchErrorType": self._last_launch_error_type,
+                "lastNavigationError": self._last_navigation_error,
+                "lastNavigationErrorType": self._last_navigation_error_type,
+            }
+
+    async def _probe_page(self, timeout_s: int) -> None:
+        """Render a local marker page on the live browser (no network)."""
+        browser = self._browser
+        if browser is None:
+            raise RuntimeError("browser is not started")
+        context = await browser.new_context()
+        try:
+            page = await context.new_page()
+            try:
+                await page.goto(
+                    BROWSER_HEALTH_PROBE_URL,
+                    wait_until="domcontentloaded",
+                    timeout=max(1, int(timeout_s)) * 1000,
+                )
+                rendered = await page.text_content("#baluffo-browser-health") or ""
+                if "baluffo-browser-health" not in rendered:
+                    raise RuntimeError("browser health probe rendered no marker")
+            finally:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+        finally:
+            try:
+                await context.close()
+            except Exception:
+                pass
+
+    def _health_result(
+        self,
+        *,
+        ok: bool,
+        stage: str,
+        started: float,
+        exc: BaseException | None = None,
+    ) -> dict[str, Any]:
+        result = {
+            "ok": bool(ok),
+            "stage": stage,
+            "error": "" if ok else (str(exc).strip() if exc is not None else ""),
+            "errorType": "" if ok else (type(exc).__name__ if exc is not None else ""),
+            "durationMs": max(0, int((time.monotonic() - started) * 1000)),
+            "probeUrl": BROWSER_HEALTH_PROBE_URL,
+            **self._failure_snapshot(),
+        }
+        self.metrics.set("last_health_probe", dict(result))
+        return result
+
+    def health_probe(self, timeout_s: int = BROWSER_HEALTH_PROBE_TIMEOUT_S) -> dict[str, Any]:
+        """Check whether Chromium can launch and navigate, and preserve either error.
+
+        The probe is deliberately independent of any board URL so a failed
+        fallback can distinguish a broken browser environment from a page that
+        merely failed to load. It re-launches after a browser-death marker,
+        because reporting the marker itself would not answer whether the
+        environment is still usable.
+        """
+        started = time.monotonic()
+        effective_timeout_s = max(1, min(int(timeout_s or BROWSER_HEALTH_PROBE_TIMEOUT_S), 30))
+        self.metrics.incr("pool_health_probes")
+        if not self._available:
+            # _hard_close_locked assumes _start_lock. Re-check under the lock so a
+            # concurrent close/restart is not torn down by a stale availability read.
+            with self._start_lock:
+                if not self._available:
+                    self._hard_close_locked()
+        try:
+            self._ensure_started()
+        except BaseException as exc:
+            return self._health_result(ok=False, stage="launch", started=started, exc=exc)
+        loop = self._loop
+        if loop is None:
+            loop_exc = RuntimeError("browser pool event loop not started")
+            self._record_failure("launch", loop_exc)
+            return self._health_result(ok=False, stage="launch", started=started, exc=loop_exc)
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._probe_page(effective_timeout_s), loop)
+            future.result(timeout=effective_timeout_s + 5)
+        except BaseException as exc:
+            self._record_failure("navigation", exc)
+            if self._browser_death_marker(exc):
+                self._mark_unavailable()
+            return self._health_result(ok=False, stage="navigation", started=started, exc=exc)
+        return self._health_result(ok=True, stage="ready", started=started)
 
     async def _capture_json_response(self, response: Any, captured: list[tuple[str, str]]) -> None:
         """Record one JSON response worth keeping. A failed sub-request is not a failure.
@@ -355,6 +513,9 @@ class BrowserFallbackPool:
         self._maybe_recycle_browser()
         try:
             self._ensure_started()
+        except BaseException as exc:
+            return "", normalize_browser_fallback_error(str(exc)), []
+        try:
             loop = self._loop
             if loop is None:
                 raise RuntimeError("browser pool event loop not started")
@@ -363,6 +524,7 @@ class BrowserFallbackPool:
             )
             html, captured = future.result(timeout=max(1, int(timeout_s)) + 30)
         except BaseException as exc:
+            self._record_failure("navigation", exc)
             return "", normalize_browser_fallback_error(str(exc)), []
         self.metrics.incr("pool_acquisitions")
         with self._start_lock:

@@ -352,6 +352,22 @@ def normalize_runtime_payload(
         "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
         "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
     }
+    health = as_json_object(src.get("browserFallbackHealth"))
+    if health:
+        payload["browserFallbackHealth"] = {
+            "ok": bool(health.get("ok")),
+            "stage": clean_text(health.get("stage"))[:32],
+            "error": clean_text(health.get("error"))[:2000],
+            "errorType": clean_text(health.get("errorType"))[:160],
+            "durationMs": _clamped_int(health.get("durationMs"), 0, 0),
+            "probeUrl": clean_text(health.get("probeUrl"))[:4096],
+            "lastFailureStage": clean_text(health.get("lastFailureStage"))[:32],
+            "lastFailureAt": clean_text(health.get("lastFailureAt"))[:64],
+            "lastLaunchError": clean_text(health.get("lastLaunchError"))[:2000],
+            "lastLaunchErrorType": clean_text(health.get("lastLaunchErrorType"))[:160],
+            "lastNavigationError": clean_text(health.get("lastNavigationError"))[:2000],
+            "lastNavigationErrorType": clean_text(health.get("lastNavigationErrorType"))[:160],
+        }
     if lifecycle:
         payload["lifecycle"] = {
             "owner": clean_text(lifecycle.get("owner")),
