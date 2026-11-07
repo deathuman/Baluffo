@@ -22,6 +22,7 @@ from .config import (
     DETACHED_WINDOW_IDLE_TIMEOUT_S,
     HEARTBEAT_IDLE_TIMEOUT_S,
     HEARTBEAT_STARTUP_TIMEOUT_S,
+    REGULAR_DESKTOP_CLOSE_SETTLE_GRACE_S,
     STARTUP_HANDOFF_GRACE_TIMEOUT_S,
     DesktopRuntimeConfig,
 )
@@ -213,11 +214,11 @@ def _note_window_missing_once(data_dir: Path, *, started_mono: float, already_lo
     return True
 
 
-def _desktop_close_requested_for_session(data_dir: Path, desktop_session_id: str) -> bool:
+def _desktop_close_requested_at(data_dir: Path, desktop_session_id: str) -> float:
     api = desktop_api()
     expected_session_id = str(desktop_session_id or "").strip()
     if not expected_session_id:
-        return False
+        return 0.0
     for row in reversed(api.read_startup_metrics(data_dir, limit=1000)):
         event_name = str(row.get("event") or "")
         if event_name not in _DESKTOP_CLOSE_LIFECYCLE_EVENTS:
@@ -227,8 +228,10 @@ def _desktop_close_requested_for_session(data_dir: Path, desktop_session_id: str
         details = payload or fields
         if str(details.get("sessionId") or "").strip() != expected_session_id:
             continue
-        return event_name in _DESKTOP_CLOSE_REQUEST_EVENTS
-    return False
+        if event_name not in _DESKTOP_CLOSE_REQUEST_EVENTS:
+            return 0.0
+        return float(api._parse_metric_ts(row.get("ts")) or 0.0)
+    return 0.0
 
 
 def watch_browser_session(
@@ -328,6 +331,18 @@ def watch_browser_session(
         while True:
             if api.updater_install_requested(data_dir):
                 return "update_install_requested"
+            close_requested_at = _desktop_close_requested_at(data_dir, desktop_session_id)
+            if close_requested_at and (
+                time.time() - close_requested_at >= REGULAR_DESKTOP_CLOSE_SETTLE_GRACE_S
+                or (browser_process is not None and browser_process.poll() is not None)
+            ):
+                api._append_startup_trace(
+                    data_dir,
+                    "desktop_browser_watchdog_shutdown_requested",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    mode="bridge_authoritative",
+                )
+                return "shutdown_requested"
             if bridge_process.poll() is not None:
                 return "bridge_exit"
             if browser_process is not None and browser_process.poll() is not None:
@@ -343,14 +358,6 @@ def watch_browser_session(
                     browserPid=int(browser_pid or 0),
                     browserProfileDirHash=str(browser_profile_dir_hash or ""),
                 )
-                if _desktop_close_requested_for_session(data_dir, desktop_session_id):
-                    api._append_startup_trace(
-                        data_dir,
-                        "desktop_browser_watchdog_shutdown_requested",
-                        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                        mode="bridge_authoritative",
-                    )
-                    return "shutdown_requested"
                 api._append_startup_trace(
                     data_dir,
                     "desktop_browser_watchdog_handoff_candidate",
