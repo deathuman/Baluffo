@@ -140,6 +140,24 @@ class BrowserFallbackCircuitBreaker:
                 self.disabled_until_at = (now_dt + timedelta(minutes=cooldown_minutes)).isoformat()
             self.demand_served_empty_environment += 1
 
+    def record_health_probe_success(self) -> None:
+        """Reopen the breaker after a fresh browser proves it can render again.
+
+        The probe is the only evidence that separates a closed browser lane from a
+        board that merely failed to navigate. Keeping a stale cooldown after that
+        success would refuse the next run for a failure that is already gone. The
+        health report keeps the original error, so clearing it here loses no
+        diagnostics.
+        """
+        with self._lock:
+            self.disabled_until_at = ""
+            self.failure_count = 0
+            self.last_failure_at = ""
+            self.last_error = ""
+            self.last_refused_at = ""
+            self.last_refusal_reason = ""
+            self.last_success_at = now_iso()
+
     def wrap(self, try_playwright: TryPlaywrightFn) -> TryPlaywrightFn:
         def _wrapped(url: str, timeout_s: int) -> tuple[str, str]:
             now_dt = datetime.now(UTC)

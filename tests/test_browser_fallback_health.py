@@ -15,6 +15,7 @@ import pytest
 
 import src.jobs.browser_fallback_pool as pool_mod
 from src.jobs import pipeline_source_loop
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.browser_fallback_pool import BrowserFallbackPool
 from src.jobs.common.contracts_runtime import normalize_runtime_payload
 
@@ -253,3 +254,48 @@ def test_browser_health_probe_runs_only_after_environment_failure(
     assert "lastFailureStage=launch" in messages[0]
     assert "lastFailure=" in messages[0]
     assert "/ms-playwright/chromium-1200" in messages[0]
+
+
+def test_successful_health_probe_reopens_a_stale_browser_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pipeline_source_loop, "emit_progress_line", lambda _message: None)
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=30)
+    breaker.wrap(lambda _url, _timeout: ("", "browser fallback unavailable (spawn EPERM)"))(
+        "https://board.example/careers", 5
+    )
+    assert not breaker.is_available()
+
+    class HealthyPool:
+        def health_probe(self) -> dict[str, Any]:
+            return {"ok": True, "stage": "ready", "durationMs": 3}
+
+    health = pipeline_source_loop._browser_health_probe(cast(Any, HealthyPool()), breaker)
+
+    assert health is not None
+    assert health["ok"] is True
+    assert breaker.is_available()
+    assert breaker.disabled_until_at == ""
+    assert breaker.failure_count == 0
+    assert breaker.last_error == ""
+    assert breaker.last_success_at
+
+
+def test_failed_health_probe_keeps_the_browser_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pipeline_source_loop, "emit_progress_line", lambda _message: None)
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=30)
+    breaker.wrap(lambda _url, _timeout: ("", "browser fallback unavailable (spawn EPERM)"))(
+        "https://board.example/careers", 5
+    )
+    cooldown = breaker.disabled_until_at
+
+    class BrokenPool:
+        def health_probe(self) -> dict[str, Any]:
+            return {"ok": False, "stage": "launch", "error": "still broken", "durationMs": 2}
+
+    health = pipeline_source_loop._browser_health_probe(cast(Any, BrokenPool()), breaker)
+
+    assert health is not None
+    assert health["ok"] is False
+    assert not breaker.is_available()
+    assert breaker.disabled_until_at == cooldown

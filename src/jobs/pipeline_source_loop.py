@@ -17,7 +17,7 @@ from threading import Lock
 from typing import Any, Protocol, cast
 
 from src.jobs import pipeline_root
-from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
+from src.jobs.browser_fallback import REFUSAL_ERROR_TEXT, BrowserFallbackCircuitBreaker
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.common import config as common_config
 from src.jobs.models import CanonicalJob
@@ -32,6 +32,13 @@ from .pipeline_source_progress import (
     mark_task_started,
 )
 from .pipeline_source_results import execute_loader
+
+# A refused fallback call is evidence the breaker is closed, not evidence it must stay
+# closed for the rest of the run. The mid-run probe answers "can a fresh browser render
+# now?" within a minute of the failure instead of after the 30-minute cooldown -- but no
+# more than once a minute, so a browser that is genuinely gone is not relaunched for
+# every source that asks for fallback.
+_MIDRUN_BROWSER_PROBE_INTERVAL_SECONDS = 60
 
 
 class _RootLike(Protocol):
@@ -201,6 +208,12 @@ def run_source_execution_stage(
             ),
             pool=pool,
         )
+        guarded_try_playwright, guarded_try_playwright_json = _wire_mid_run_browser_recovery(
+            pool,
+            browser_fallback_guard,
+            guarded_try_playwright,
+            guarded_try_playwright_json,
+        )
 
         def execute_started(source_name, loader):
             return _execute_loader_started(
@@ -277,20 +290,28 @@ def run_source_execution_stage(
 def _browser_health_probe(
     pool: BrowserFallbackPool | None,
     guard: BrowserFallbackCircuitBreaker | None,
+    *,
+    force: bool = False,
 ) -> dict[str, Any] | None:
-    """Probe the browser once a run has seen an environment-level failure.
+    """Probe the browser after an environment-level failure.
 
     The breaker's ``last_error`` is the normalized token the fallback policy
     needs, not the error that caused it. A launch/navigation probe after the run
     preserves that original finding and says whether a fresh browser can still
     launch and render, which is the difference between a broken environment and
     one bad page.
+
+    ``force`` is for a probe triggered by an actual refusal. A cooldown resumed from
+    source state can carry no ``last_error`` (legacy rows), and there the refusal itself
+    is the evidence that the breaker is closed. The end-of-run probe keeps the evidence
+    gate, so a healthy run never launches a browser just to check on it.
     """
     if pool is None or guard is None:
         return None
-    has_environment_failure = int(guard.demand_served_empty_environment or 0) > 0
-    if not has_environment_failure and not clean_text(guard.last_error):
-        return None
+    if not force:
+        has_environment_failure = int(guard.demand_served_empty_environment or 0) > 0
+        if not has_environment_failure and not clean_text(guard.last_error):
+            return None
     try:
         health = pool.health_probe()
     except (OSError, RuntimeError, ValueError) as exc:
@@ -301,6 +322,10 @@ def _browser_health_probe(
             "errorType": type(exc).__name__,
             "durationMs": 0,
         }
+    if bool(health.get("ok")):
+        record_recovered = getattr(guard, "record_health_probe_success", None)
+        if callable(record_recovered):
+            record_recovered()
     status = "ok=true" if bool(health.get("ok")) else "ok=false"
     stage = clean_text(health.get("stage")) or "unknown"
     error = clean_text(health.get("error"))
@@ -319,6 +344,138 @@ def _browser_health_probe(
         + (" " + " ".join(retained) if retained else "")
     )
     return dict(health)
+
+
+class _MidRunBrowserProbe:
+    """Reopen a closed breaker mid-run when a fresh browser proves it can render.
+
+    The end-of-run probe helps the *next* run: a long fetch that loses the browser in
+    its first minutes refuses every fallback call until the 30-minute cooldown expires,
+    even when the failure was a transient launch error. This check is demand-triggered
+    -- a refused call asks for it -- and rate-limited, because a probe is a browser
+    launch, not a cheap HTTP request.
+    """
+
+    def __init__(
+        self,
+        pool: BrowserFallbackPool | None,
+        guard: BrowserFallbackCircuitBreaker | None,
+        *,
+        interval_seconds: float = _MIDRUN_BROWSER_PROBE_INTERVAL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._pool = pool
+        self._guard = guard
+        self._interval_seconds = max(0.0, float(interval_seconds))
+        self._clock = clock
+        self._lock = Lock()
+        self._last_probe_at: float | None = None
+        self.probe_count = 0
+        self.last_health: dict[str, Any] | None = None
+
+    def maybe_recover(self) -> bool:
+        """Probe at most once per interval; return whether a retry can proceed.
+
+        The lock is held across the probe on purpose: concurrent loaders can be refused
+        in the same second and one successful launch is evidence for all of them, so
+        they queue behind a single probe instead of launching a browser each. A failed
+        probe leaves the cooldown untouched, which is what keeps a broken environment
+        from costing one launch per refused source.
+        """
+        with self._lock:
+            now = self._clock()
+            if self._last_probe_at is not None:
+                elapsed = now - self._last_probe_at
+                if elapsed < self._interval_seconds:
+                    return False
+            self._last_probe_at = now
+            self.probe_count += 1
+            try:
+                health = _browser_health_probe(self._pool, self._guard, force=True)
+            except Exception:
+                # A recovery check must never turn a refused call into a source error;
+                # the refusal is already handled as an empty fallback result.
+                return False
+            self.last_health = health if isinstance(health, dict) else None
+            recovered = bool(health and health.get("ok"))
+            if recovered:
+                emit_progress_line(
+                    f"[jobs_fetcher] INFO browserMidRunRecovery ok=true probes={self.probe_count}"
+                )
+            return recovered
+
+
+def _is_browser_fallback_refusal(error: str) -> bool:
+    """Whether a fallback result is the breaker refusing the call, not a page failure."""
+    return clean_text(error) == REFUSAL_ERROR_TEXT
+
+
+def _with_mid_run_recovery(
+    try_playwright: Callable[[str, int], tuple[str, str]],
+    probe: _MidRunBrowserProbe,
+) -> Callable[[str, int], tuple[str, str]]:
+    """Retry a cooldown refusal once, and only after the browser proved it works.
+
+    Only a refusal carries the cooldown marker; a page that failed on its own is
+    returned unchanged. Retrying is what turns a successful probe into work -- without
+    it the breaker would open but the call that discovered the recovery would still
+    come back empty.
+    """
+
+    def _wrapped(url: str, timeout_s: int) -> tuple[str, str]:
+        html, error = try_playwright(url, timeout_s)
+        if not _is_browser_fallback_refusal(error) or not probe.maybe_recover():
+            return html, error
+        return try_playwright(url, timeout_s)
+
+    return _wrapped
+
+
+def _with_mid_run_recovery_capture(
+    try_capture: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]],
+    probe: _MidRunBrowserProbe,
+) -> Callable[[str, int], tuple[str, str, list[tuple[str, str]]]]:
+    """The capture lane's half of :func:`_with_mid_run_recovery`.
+
+    The capture lane shares the breaker with the HTML lane, so it shares the recovery
+    too: a run whose boards only need rendered JSON must not stay refused while the
+    HTML lane's probe would already have opened the breaker.
+    """
+
+    def _wrapped(url: str, timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+        html, error, payloads = try_capture(url, timeout_s)
+        if not _is_browser_fallback_refusal(error) or not probe.maybe_recover():
+            return html, error, payloads
+        return try_capture(url, timeout_s)
+
+    return _wrapped
+
+
+def _wire_mid_run_browser_recovery(
+    pool: BrowserFallbackPool | None,
+    guard: BrowserFallbackCircuitBreaker | None,
+    guarded_try_playwright: Callable[[str, int], tuple[str, str]] | None,
+    guarded_try_playwright_json: Callable[[str, int], tuple[str, str, list[tuple[str, str]]]]
+    | None,
+) -> tuple[
+    Callable[[str, int], tuple[str, str]] | None,
+    Callable[[str, int], tuple[str, str, list[tuple[str, str]]]] | None,
+]:
+    """Attach the shared recovery check to both fallback lanes.
+
+    One probe object, one interval: the two lanes are the same browser and the same
+    breaker, so a probe spent by either lane is evidence for both.
+    """
+    if pool is None or guard is None:
+        return guarded_try_playwright, guarded_try_playwright_json
+    probe = _MidRunBrowserProbe(pool, guard)
+    if guarded_try_playwright is not None:
+        guarded_try_playwright = _with_mid_run_recovery(guarded_try_playwright, probe)
+    if guarded_try_playwright_json is not None:
+        guarded_try_playwright_json = _with_mid_run_recovery_capture(
+            guarded_try_playwright_json, probe
+        )
+    return guarded_try_playwright, guarded_try_playwright_json
 
 
 def _stamp_browser_fallback_cause(

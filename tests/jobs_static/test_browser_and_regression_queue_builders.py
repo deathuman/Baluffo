@@ -233,6 +233,250 @@ def test_browser_fallback_queue_skips_needs_review_sources() -> None:
         assert queue_rows == []
 
 
+def test_browser_fallback_queue_excludes_non_browser_fixable_failures() -> None:
+    rows = jobs_reporting.build_browser_fallback_queue(
+        [
+            {
+                "details": [
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "DNS Failure",
+                        "name": "DNS Failure",
+                        "classification": "timeout",
+                        "browserFallbackRecommended": True,
+                        "error": "Network error for https://dns.example/careers: "
+                        "[Errno 11001] getaddrinfo failed",
+                        "sourceId": "static:dns",
+                        "pages": ["https://dns.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "TLS Failure",
+                        "name": "TLS Failure",
+                        "classification": "ssl_certificate_error",
+                        "browserFallbackRecommended": True,
+                        "error": "certificate has expired",
+                        "sourceId": "static:tls",
+                        "pages": ["https://tls.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Budget Failure",
+                        "name": "Budget Failure",
+                        "classification": "timeout",
+                        "browserFallbackRecommended": True,
+                        "error": "time budget exceeded (90s)",
+                        "sourceId": "static:budget",
+                        "pages": ["https://budget.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Challenge Studio",
+                        "name": "Challenge Studio",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:challenge",
+                        "pages": ["https://challenge.example/careers"],
+                    },
+                ]
+            }
+        ],
+        generated_at="2026-11-08T00:00:00+00:00",
+    )
+
+    assert [row["name"] for row in rows] == ["Challenge Studio"]
+
+
+def test_browser_fallback_queue_excludes_parse_error_rows() -> None:
+    """parse_error is not in the documented static browser-queue allowlist."""
+    rows = jobs_reporting.build_browser_fallback_queue(
+        [
+            {
+                "details": [
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Parse Error Studio",
+                        "name": "Parse Error Studio",
+                        "classification": "parse_error",
+                        "browserFallbackRecommended": True,
+                        "error": "crawl failed",
+                        "sourceId": "scrapy:parse-error",
+                        "pages": ["https://parse-error.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Timeout Studio",
+                        "name": "Timeout Studio",
+                        "classification": "timeout",
+                        "browserFallbackRecommended": True,
+                        "error": "Network error for https://timeout.example/careers",
+                        "sourceId": "static:timeout",
+                        "pages": ["https://timeout.example/careers"],
+                    },
+                ]
+            }
+        ],
+        generated_at="2026-11-08T00:00:00+00:00",
+    )
+
+    assert [row["name"] for row in rows] == ["Timeout Studio"]
+
+
+def test_browser_fallback_queue_dedupes_by_canonical_page_across_source_ids() -> None:
+    """The canonical page is the queue identity even when source IDs differ."""
+    page = "https://same-board.example/careers"
+    rows = jobs_reporting.build_browser_fallback_queue(
+        [
+            {
+                "details": [
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Same Board",
+                        "name": "Same Board (Sheet)",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:sheet",
+                        "pages": [page],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Same Board",
+                        "name": "Same Board (GameDevMap)",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:gamedevmap",
+                        "pages": [page],
+                    },
+                ]
+            }
+        ],
+        generated_at="2026-11-08T00:00:00+00:00",
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["page"] == page
+    assert rows[0]["sourceId"] == "static:sheet"
+    expected_key = hashlib.sha1(f"scrapy_static|{page}".encode()).hexdigest()
+    assert rows[0]["dedupeKey"] == expected_key
+
+
+def test_browser_fallback_queue_records_row_provenance_and_keeps_run_stamp_separate() -> None:
+    rows = jobs_reporting.build_browser_fallback_queue(
+        [
+            {
+                "browserFallbackRunRefusalReason": "cooldown_active",
+                "browserFallbackRunLastError": "browser health probe failed",
+                "details": [
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Attempted Used",
+                        "name": "Attempted Used",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "browserFallbackAttempted": True,
+                        "browserFallbackUsed": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:attempted-used",
+                        "pages": ["https://attempted-used.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Attempted Not Used",
+                        "name": "Attempted Not Used",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "browserFallbackAttempted": True,
+                        "browserFallbackUsed": False,
+                        "browserFallbackAttemptError": "HTTP 403 after browser render",
+                        "error": "HTTP 403",
+                        "sourceId": "static:attempted-not-used",
+                        "pages": ["https://attempted-not-used.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Helper Unavailable",
+                        "name": "Helper Unavailable",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "browserFallbackSkippedReason": "browser_helper_unavailable",
+                        "error": "HTTP 403",
+                        "sourceId": "static:helper-unavailable",
+                        "pages": ["https://helper-unavailable.example/careers"],
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Run Cooldown",
+                        "name": "Run Cooldown",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:run-cooldown",
+                        "pages": ["https://run-cooldown.example/careers"],
+                    },
+                ],
+            }
+        ],
+        generated_at="2026-11-08T00:00:00+00:00",
+    )
+
+    by_name = {row["name"]: row for row in rows}
+    assert by_name["Attempted Used"]["browserFallbackProvenance"] == "attempted_used"
+    assert by_name["Attempted Used"]["browserFallbackAttempted"] is True
+    assert by_name["Attempted Used"]["browserFallbackUsed"] is True
+    assert by_name["Attempted Used"]["browserFallbackNotAttemptedReason"] == ""
+
+    assert by_name["Attempted Not Used"]["browserFallbackProvenance"] == "attempted_not_used"
+    assert by_name["Attempted Not Used"]["browserFallbackUsed"] is False
+    assert (
+        by_name["Attempted Not Used"]["browserFallbackAttemptError"]
+        == "HTTP 403 after browser render"
+    )
+    assert by_name["Attempted Not Used"]["browserFallbackNotAttemptedReason"] == ""
+
+    assert by_name["Helper Unavailable"]["browserFallbackProvenance"] == "not_attempted"
+    assert (
+        by_name["Helper Unavailable"]["browserFallbackNotAttemptedReason"]
+        == "browser_helper_unavailable"
+    )
+
+    assert by_name["Run Cooldown"]["browserFallbackProvenance"] == "not_attempted"
+    assert by_name["Run Cooldown"]["browserFallbackNotAttemptedReason"] == "run_cooldown_active"
+    assert all(
+        row["browserFallbackRunRefusalReason"] == "cooldown_active"
+        and row["browserFallbackRunLastError"] == "browser health probe failed"
+        for row in rows
+    )
+
+
+def test_browser_fallback_queue_not_attempted_reason_without_run_stamp_is_not_recorded() -> None:
+    rows = jobs_reporting.build_browser_fallback_queue(
+        [
+            {
+                "details": [
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "No Evidence",
+                        "name": "No Evidence",
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "error": "HTTP 403",
+                        "sourceId": "static:no-evidence",
+                        "pages": ["https://no-evidence.example/careers"],
+                    }
+                ]
+            }
+        ],
+        generated_at="2026-11-08T00:00:00+00:00",
+    )
+
+    assert rows[0]["browserFallbackProvenance"] == "not_attempted"
+    assert rows[0]["browserFallbackNotAttemptedReason"] == "not_recorded"
+    assert rows[0]["browserFallbackRunRefusalReason"] == ""
+
+
 def test_build_parser_regression_queue_does_not_use_error_text_without_provider_url() -> None:
     rows = jobs_reporting.build_parser_regression_queue(
         [

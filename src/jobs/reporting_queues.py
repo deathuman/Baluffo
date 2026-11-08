@@ -12,9 +12,52 @@ import hashlib
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from src.jobs.common.browser_fallback_policy import is_browser_fallback_queue_eligible
 from src.jobs.text_utils import clean_text, norm_text
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 from src.shared.json_shapes import as_json_list, json_object_rows
+
+
+def _browser_fallback_provenance_fields(
+    report: dict[str, Any], item: dict[str, Any]
+) -> dict[str, Any]:
+    """Describe why a queue row did or did not use browser fallback.
+
+    The run-level refusal and breaker error belong to the report, not to the row. They are
+    copied under their own names and are never substituted for a row-level skip reason, so a
+    run-wide cooldown cannot make every queued source look individually refused.
+    """
+    attempted = bool(item.get("browserFallbackAttempted"))
+    used = bool(item.get("browserFallbackUsed"))
+    skipped_reason = clean_text(item.get("browserFallbackSkippedReason"))
+    run_refusal_reason = clean_text(report.get("browserFallbackRunRefusalReason"))
+    run_last_error = clean_text(report.get("browserFallbackRunLastError"))
+    if used:
+        provenance = "attempted_used" if attempted else "used_without_attempt"
+    elif attempted:
+        provenance = "attempted_not_used"
+    else:
+        provenance = "not_attempted"
+    not_attempted_reason = ""
+    if provenance == "not_attempted":
+        if skipped_reason:
+            not_attempted_reason = skipped_reason
+        elif run_refusal_reason:
+            not_attempted_reason = f"run_{run_refusal_reason}"
+        elif run_last_error:
+            not_attempted_reason = "run_browser_fallback_error"
+        else:
+            not_attempted_reason = "not_recorded"
+    return {
+        "browserFallbackAttempted": attempted,
+        "browserFallbackUsed": used,
+        "browserFallbackProvenance": provenance,
+        "browserFallbackAttemptError": clean_text(item.get("browserFallbackAttemptError")),
+        "browserFallbackSkippedReason": skipped_reason,
+        "browserFallbackNotAttemptedReason": not_attempted_reason,
+        "browserFallbackRunRefusalReason": run_refusal_reason,
+        "browserFallbackRunLastError": run_last_error,
+    }
 
 
 def build_browser_fallback_queue(
@@ -29,6 +72,11 @@ def build_browser_fallback_queue(
             if not bool(item.get("browserFallbackRecommended")):
                 continue
             classification = norm_text(item.get("classification"))
+            if not is_browser_fallback_queue_eligible(
+                classification=classification,
+                error=item.get("error"),
+            ):
+                continue
             source_id = clean_text(item.get("sourceId"))
             name = clean_text(item.get("name"))
             studio = clean_text(item.get("studio"))
@@ -41,8 +89,11 @@ def build_browser_fallback_queue(
             profile = domain_profile_for_url(canonical)
             if clean_text(profile.get("job_provider")):
                 continue
+            # The canonical page, not the source id, is the queue identity: the
+            # same board can arrive from a sheet row and a directory row with
+            # different source IDs and should be retried once.
             dedupe_key = hashlib.sha1(
-                "|".join(["scrapy_static", source_id or name, canonical]).encode("utf-8")
+                "|".join(["scrapy_static", canonical]).encode("utf-8")
             ).hexdigest()
             if dedupe_key in seen:
                 continue
@@ -57,6 +108,7 @@ def build_browser_fallback_queue(
                     "page": canonical,
                     "classification": classification,
                     "reason": clean_text(item.get("error")) or classification,
+                    **_browser_fallback_provenance_fields(report, item),
                     "generatedAt": clean_text(generated_at),
                 }
             )

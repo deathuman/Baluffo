@@ -428,3 +428,94 @@ def test_scrapy_static_registry_from_browser_queue_collapses_by_source_id() -> N
         assert len(rows) == 1
         assert rows[0].get("pages") == ["https://supercell.com/en/careers/"]
         assert rows[0].get("id") == "static:supercell"
+
+
+def test_scrapy_static_registry_dedupes_legacy_queue_by_canonical_page() -> None:
+    """Legacy queues can repeat one page under different source IDs."""
+    page = "https://same-board.example/careers"
+    with workspace_tmpdir("jobs-fetcher-registry-page-dedupe") as tmp:
+        queue_path = Path(tmp) / "jobs-browser-fallback-queue.json"
+        queue_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "static:sheet",
+                        "name": "Same Board (Sheet)",
+                        "studio": "Same Board",
+                        "page": page,
+                        "classification": "blocked_or_challenge",
+                        "reason": "HTTP 403",
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "static:gamedevmap",
+                        "name": "Same Board (GameDevMap)",
+                        "studio": "Same Board",
+                        "page": page,
+                        "classification": "blocked_or_challenge",
+                        "reason": "HTTP 403",
+                    },
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        with mock.patch.object(jobs_common_registry, "SCRAPY_BROWSER_QUEUE_PATH", queue_path):
+            rows = jobs_registry.registry_entries("scrapy_static", enabled_only=True)
+        assert len(rows) == 1
+        assert rows[0].get("pages") == [page]
+        assert rows[0].get("id") == "static:sheet"
+
+
+def test_scrapy_static_registry_skips_legacy_non_browser_fixable_queue_rows() -> None:
+    """A queue written before the policy fix must not replay DNS/TLS/budget/parse rows."""
+    with workspace_tmpdir("jobs-fetcher-registry-skip-non-browser") as tmp:
+        queue_path = Path(tmp) / "jobs-browser-fallback-queue.json"
+        queue_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "static:dns",
+                        "name": "DNS Failure",
+                        "studio": "DNS Failure",
+                        "page": "https://dns.example/careers",
+                        "classification": "timeout",
+                        "reason": "[Errno 11001] getaddrinfo failed",
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "static:budget",
+                        "name": "Budget Failure",
+                        "studio": "Budget Failure",
+                        "page": "https://budget.example/careers",
+                        "classification": "timeout",
+                        "reason": "time budget exceeded (90s)",
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "scrapy:parse-error",
+                        "name": "Parse Error",
+                        "studio": "Parse Error",
+                        "page": "https://parse-error.example/careers",
+                        "classification": "parse_error",
+                        "reason": "crawl failed",
+                    },
+                    {
+                        "adapter": "scrapy_static",
+                        "sourceId": "static:challenge",
+                        "name": "Challenge Studio",
+                        "studio": "Challenge Studio",
+                        "page": "https://challenge.example/careers",
+                        "classification": "blocked_or_challenge",
+                        "reason": "HTTP 403",
+                    },
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        with mock.patch.object(jobs_common_registry, "SCRAPY_BROWSER_QUEUE_PATH", queue_path):
+            rows = jobs_registry.registry_entries("scrapy_static", enabled_only=True)
+        assert [row.get("id") for row in rows] == ["static:challenge"]

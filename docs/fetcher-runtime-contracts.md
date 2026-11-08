@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-11-06
+> - **Last updated:** 2026-11-08
 
 ## CLI runtime options
 
@@ -28,7 +28,7 @@
 - `--circuit-breaker-zero-kept` (default `3`): consecutive zero-kept runs required before a source is temporarily quarantined.
 - `--browser-fallback-max-workers`: max concurrent browser fallback workers; defaults to `--max-workers` when omitted, and `0` disables the Playwright browser fallback pool entirely.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
-- `--browser-fallback-cooldown-minutes` (default `30`): short-lived cooldown applied after an environment-level Playwright/browser failure.
+- `--browser-fallback-cooldown-minutes` (default `30`): short-lived cooldown applied after an environment-level Playwright/browser failure. The cooldown is not necessarily final for the run: a refused fallback call triggers a browser health probe at most once every `60s`, and a probe that renders clears the cooldown so that same call is retried. A browser that stays broken is therefore relaunched at most once a minute, and the end-of-run probe still runs and writes `runtime.browserFallbackHealth`.
 - `--ignore-circuit-breaker`: force run quarantined sources.
 - `--social-enabled`: include social-source loaders (Reddit/X/Mastodon) in this run.
 - `--social-config-path`: path to social source config JSON.

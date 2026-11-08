@@ -8,6 +8,7 @@ from fnmatch import fnmatch
 from typing import Any
 from urllib.parse import urlparse
 
+from src.jobs.common.browser_fallback_policy import is_browser_fallback_queue_eligible
 from src.jobs.common.config import SCRAPY_BROWSER_QUEUE_PATH
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
@@ -78,7 +79,23 @@ def _read_scrapy_browser_queue() -> list[dict[str, Any]]:
             return []
     except (OSError, json.JSONDecodeError):
         return []
-    return [row for row in payload if isinstance(row, dict)]
+    rows: list[dict[str, Any]] = []
+    seen_pages: set[str] = set()
+    for row in payload:
+        if not isinstance(row, dict) or not is_browser_fallback_queue_eligible(
+            classification=row.get("classification"),
+            error=row.get("reason"),
+        ):
+            continue
+        # Legacy queues may still carry the same canonical page under more than
+        # one source ID; the page is the retry identity.
+        page = clean_text(row.get("page"))
+        if page and page in seen_pages:
+            continue
+        if page:
+            seen_pages.add(page)
+        rows.append(row)
+    return rows
 
 
 def _scrapy_queue_source_id(row: dict[str, Any]) -> str:
