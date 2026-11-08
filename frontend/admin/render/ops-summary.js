@@ -122,6 +122,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     frontendPerfCounters: metrics?.frontendPerfCounters || {},
     discoveryAuditArtifacts: metrics?.discoveryAuditArtifacts || {},
     taskFailureAttempts: metrics?.taskFailureAttempts || {},
+    browserFallbackQueue: metrics?.browserFallbackQueue || {},
     performanceProfile: metrics?.performanceProfile || {},
     runModel: options?.runModel || {},
     includeDebugDiagnostics: options?.includeDebugDiagnostics !== false,

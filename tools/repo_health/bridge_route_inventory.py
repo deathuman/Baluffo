@@ -457,6 +457,13 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "GET",
+        "/ops/browser-fallback-queue",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+    ),
+    _route(
+        "GET",
         "/ops/fetch-report",
         EXACT,
         GET_FETCH_REPORT_HANDLER,

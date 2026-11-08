@@ -63,6 +63,7 @@ const OPS_AUTHORITY_RETRY_MAX_MS = 30000;
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
+const OPS_BROWSER_FALLBACK_QUEUE_PATH = "/ops/browser-fallback-queue";
 const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
@@ -333,6 +334,7 @@ export function createOpsHealthController({
     getCachedRegistryConflictsPayload,
     getCachedDiscoveryAuditArtifactsPayload,
     getCachedTaskFailureAttemptsPayload,
+    getCachedBrowserFallbackQueuePayload,
     getCachedPerformanceProfilePayload,
     hasActiveRows,
     hasPendingOpsAbort,
@@ -551,6 +553,7 @@ export function createOpsHealthController({
     handleCopyRunDiagnostics,
     handleRefreshAuditArtifacts,
     handleRefreshTaskFailureAttempts,
+    handleRefreshBrowserFallbackQueue,
     handleRefreshPerformanceProfile,
     handleAbortRun,
     renderRegistryConflictsQueue,
@@ -641,6 +644,7 @@ export function createOpsHealthController({
     getCachedRegistryConflictsPayload,
     getCachedDiscoveryAuditArtifactsPayload,
     getCachedTaskFailureAttemptsPayload,
+    getCachedBrowserFallbackQueuePayload,
     getCachedPerformanceProfilePayload,
     hasActiveRows,
     hasActivePipelineOrFetchRows,
@@ -658,6 +662,7 @@ export function createOpsHealthController({
     handleCopyRunDiagnostics,
     handleRefreshAuditArtifacts,
     handleRefreshTaskFailureAttempts,
+    handleRefreshBrowserFallbackQueue,
     handleRefreshPerformanceProfile,
     handleAbortRun,
     handleLoadDebugDiagnostics: (...args) => overviewHydration.handleLoadDebugDiagnostics(...args)
@@ -691,6 +696,7 @@ export function createOpsHealthController({
     OPS_FETCHER_METRICS_DETAIL_PATH,
     OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH,
     OPS_TASK_FAILURE_ATTEMPTS_PATH,
+    OPS_BROWSER_FALLBACK_QUEUE_PATH,
     OPS_PERFORMANCE_PROFILE_PATH,
     SOURCE_POLICY_DETAIL_PATH,
     REGISTRY_CONFLICTS_DETAIL_PATH

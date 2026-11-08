@@ -48,6 +48,10 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+### Added
+
+- Ops can now inspect a legacy browser-fallback queue before it is read: a new diagnostic reports pages listed more than once, which copy will be kept, and parser-error rows that are not eligible for browser retry. It is read-only and never changes the queue.
+
 ### Changed
 
 - Browser fallback queue entries now say whether fallback was attempted, whether it supplied content, and why it was not attempted. A run-wide cooldown is recorded separately, so one breaker refusal is no longer mistaken for a refusal of every queued source.

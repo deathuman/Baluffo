@@ -26,6 +26,7 @@ export function createOverviewHydration({
   OPS_FETCHER_METRICS_DETAIL_PATH,
   OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH,
   OPS_TASK_FAILURE_ATTEMPTS_PATH,
+  OPS_BROWSER_FALLBACK_QUEUE_PATH,
   OPS_PERFORMANCE_PROFILE_PATH,
   SOURCE_POLICY_DETAIL_PATH,
   REGISTRY_CONFLICTS_DETAIL_PATH
@@ -72,12 +73,14 @@ export function createOverviewHydration({
         fetcherMetricsResult,
         auditArtifactsResult,
         taskFailureAttemptsResult,
+        browserFallbackQueueResult,
         performanceProfileResult
       ] = await Promise.allSettled([
         getBridge(OPS_HISTORY_DETAIL_PATH),
         loadFetcherMetricsDetail(),
         getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
         getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
+        getBridge(OPS_BROWSER_FALLBACK_QUEUE_PATH),
         getBridge(OPS_PERFORMANCE_PROFILE_PATH)
       ]);
       if (isStaleRenderToken(renderToken)) return;
@@ -122,6 +125,15 @@ export function createOverviewHydration({
         changed = true;
       }
       if (
+        browserFallbackQueueResult.status === "fulfilled"
+        && browserFallbackQueueResult.value
+        && typeof browserFallbackQueueResult.value === "object"
+        && !Array.isArray(browserFallbackQueueResult.value)
+      ) {
+        state.latestBrowserFallbackQueuePayload = browserFallbackQueueResult.value;
+        changed = true;
+      }
+      if (
         performanceProfileResult.status === "fulfilled"
         && performanceProfileResult.value
         && typeof performanceProfileResult.value === "object"
@@ -163,12 +175,22 @@ export function createOverviewHydration({
     setFetcherDiagnosticsStatus("Loading fetcher diagnostics...");
     fetcherDiagnosticsLoad = (async () => {
       try {
-        const payload = await loadFetcherMetricsDetail();
+        const [payload, browserFallbackQueue] = await Promise.all([
+          loadFetcherMetricsDetail(),
+          getBridge(OPS_BROWSER_FALLBACK_QUEUE_PATH).catch(() => null)
+        ]);
         if (isStaleRenderToken(renderToken)) return null;
         if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
           throw new Error("fetcher metrics payload was not an object");
         }
         state.latestOpsFetcherMetricsPayload = payload;
+        if (
+          browserFallbackQueue
+          && typeof browserFallbackQueue === "object"
+          && !Array.isArray(browserFallbackQueue)
+        ) {
+          state.latestBrowserFallbackQueuePayload = browserFallbackQueue;
+        }
         state.opsFetcherDiagnosticsLoaded = true;
         renderDeferredOverviewDetails(renderToken);
         return payload;

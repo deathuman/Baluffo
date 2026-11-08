@@ -246,7 +246,7 @@ test("admin ops controller loads fetcher diagnostics on demand", async () => {
   const loaded = await controller.loadFetcherDiagnosticsData();
   renderScheduler.flush();
 
-  assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80"]);
+  assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80", "/ops/browser-fallback-queue"]);
   assert.equal(loaded, payload);
   assert.equal(state.opsFetcherDiagnosticsLoaded, true);
   assert.equal(state.opsFetcherDiagnosticsLoading, false);

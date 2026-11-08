@@ -76,6 +76,14 @@ export function createOpsRunState({
       : { ok: true, fetch: {}, discovery: {}, warnings: [] };
   }
 
+  function getCachedBrowserFallbackQueuePayload() {
+    return state.latestBrowserFallbackQueuePayload
+      && typeof state.latestBrowserFallbackQueuePayload === "object"
+      && !Array.isArray(state.latestBrowserFallbackQueuePayload)
+      ? state.latestBrowserFallbackQueuePayload
+      : {};
+  }
+
   function getCachedPerformanceProfilePayload() {
     return state.latestOpsPerformanceProfilePayload
       && typeof state.latestOpsPerformanceProfilePayload === "object"
@@ -318,6 +326,7 @@ export function createOpsRunState({
     getCachedRegistryConflictsPayload,
     getCachedDiscoveryAuditArtifactsPayload,
     getCachedTaskFailureAttemptsPayload,
+    getCachedBrowserFallbackQueuePayload,
     getCachedPerformanceProfilePayload,
     hasActiveRows,
     hasPendingOpsAbort,

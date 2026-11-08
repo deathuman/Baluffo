@@ -215,6 +215,16 @@ export function createOpsActions({
     }
   }
 
+  async function handleRefreshBrowserFallbackQueue() {
+    state.latestBrowserFallbackQueuePayload = {};
+    try {
+      await loadOpsOverviewDetailData(currentRenderToken());
+      showToast("Browser fallback queue diagnostics refreshed.", "success");
+    } catch (err) {
+      showToast(`Could not refresh browser fallback queue diagnostics: ${getErrorMessage(err)}`, "warn");
+    }
+  }
+
   async function handleRefreshPerformanceProfile() {
     state.latestOpsPerformanceProfilePayload = { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
     try {
@@ -473,6 +483,7 @@ export function createOpsActions({
     handleCopyRunDiagnostics,
     handleRefreshAuditArtifacts,
     handleRefreshTaskFailureAttempts,
+    handleRefreshBrowserFallbackQueue,
     handleRefreshPerformanceProfile,
     handleAbortRun,
     handleMigrationLinkAction,

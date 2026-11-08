@@ -72,6 +72,13 @@ function wireOpsFetcherMetricsInteractions(
         });
       });
     }
+    if (typeof options?.onRefreshBrowserFallbackQueue === "function") {
+      metricsEl.querySelectorAll('[data-action="refresh-browser-fallback-queue"]').forEach(button => {
+        button.addEventListener("click", () => {
+          options.onRefreshBrowserFallbackQueue();
+        });
+      });
+    }
     if (typeof options?.onRefreshPerformanceProfile === "function") {
       metricsEl.querySelectorAll('[data-action="refresh-performance-profile"]').forEach(button => {
         button.addEventListener("click", () => {

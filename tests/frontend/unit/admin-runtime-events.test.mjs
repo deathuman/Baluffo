@@ -191,6 +191,9 @@ test("opening fetcher diagnostics reuses the dedup tab's in-flight metrics reque
       },
       getBridge: async path => {
         calls.push(path);
+        if (path === "/ops/browser-fallback-queue") {
+          return { ok: true, exists: false, duplicatePages: [], parseErrorRows: [], warnings: ["missing"] };
+        }
         return deferred.promise;
       },
       postBridge: async () => ({}),
@@ -251,14 +254,14 @@ test("opening fetcher diagnostics reuses the dedup tab's in-flight metrics reque
 
     assert.equal(state.opsFetcherDiagnosticsOpen, true);
     assert.equal(state.opsFetcherDiagnosticsLoading, true);
-    assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80"]);
+    assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80", "/ops/browser-fallback-queue"]);
 
     deferred.resolve(payload);
     await dedupLoad;
     await flushMicrotasks(20);
     renderScheduler.flush();
 
-    assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80"]);
+    assert.deepEqual(calls, ["/ops/fetcher-metrics?windowRuns=80", "/ops/browser-fallback-queue"]);
     assert.equal(state.opsFetcherDiagnosticsLoading, false);
     assert.match(metricsEl.innerHTML, /<details[^>]*admin-ops-fetcher-diagnostics[^>]* open/i);
     assert.match(metricsEl.innerHTML, /Browser fallback health/);

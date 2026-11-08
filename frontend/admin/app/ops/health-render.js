@@ -37,6 +37,7 @@ export function createOpsRenderHub({
   getCachedRegistryConflictsPayload,
   getCachedDiscoveryAuditArtifactsPayload,
   getCachedTaskFailureAttemptsPayload,
+  getCachedBrowserFallbackQueuePayload,
   getCachedPerformanceProfilePayload,
   hasActiveRows,
   hasActivePipelineOrFetchRows,
@@ -54,6 +55,7 @@ export function createOpsRenderHub({
   handleCopyRunDiagnostics,
   handleRefreshAuditArtifacts,
   handleRefreshTaskFailureAttempts,
+  handleRefreshBrowserFallbackQueue,
   handleRefreshPerformanceProfile,
   handleAbortRun,
   handleLoadDebugDiagnostics
@@ -73,6 +75,7 @@ export function createOpsRenderHub({
       ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
       discoveryAuditArtifacts: getCachedDiscoveryAuditArtifactsPayload(),
       taskFailureAttempts: getCachedTaskFailureAttemptsPayload(),
+      browserFallbackQueue: getCachedBrowserFallbackQueuePayload(),
       performanceProfile: getCachedPerformanceProfilePayload(),
       frontendPerfCounters: (
         frontendPerfCounters
@@ -192,6 +195,7 @@ export function createOpsRenderHub({
       onCopySectionDiagnostics: handleCopySectionDiagnostics,
       onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
       onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
+      onRefreshBrowserFallbackQueue: handleRefreshBrowserFallbackQueue,
       onRefreshPerformanceProfile: handleRefreshPerformanceProfile,
       onLoadDebugDiagnostics: handleLoadDebugDiagnostics,
       includeDebugDiagnostics: Boolean(state.opsDebugDiagnosticsLoaded),
@@ -315,7 +319,6 @@ export function createOpsRenderHub({
       {
         fetchKpiPendingLabel,
         fetchKpiPendingLabels,
-        appVersion: health?.appVersion,
         buildCommit: health?.build?.commit,
         buildAt: health?.build?.builtAt
       }

@@ -1085,6 +1085,29 @@ or an explicit no-openings extractor hint. A source with fetched/raw rows that a
 during canonicalization, for example because every row is missing `jobLink`, remains
 `needs_review` instead of being treated as a legitimate empty/no-openings source.
 
+### Browser fallback queue provenance
+
+The browser fallback queue (`jobs-browser-fallback-queue.json`) carries additive per-row
+provenance alongside its existing source, page, classification, and reason fields.
+`browserFallbackAttempted` and `browserFallbackUsed` are the actual per-row outcomes;
+`browserFallbackProvenance` is `attempted_used`, `attempted_not_used`, `not_attempted`, or
+`used_without_attempt`. `browserFallbackAttemptError` and `browserFallbackSkippedReason` copy the
+row's recorded evidence. For a row with no attempt, `browserFallbackNotAttemptedReason` is the
+row's skip reason when present, otherwise `run_<reason>` for a run-level refusal (for example
+`run_cooldown_active`), `run_browser_fallback_error`, or `not_recorded` when no evidence exists.
+`browserFallbackRunRefusalReason` and `browserFallbackRunLastError` are copied from the report-level
+run stamps: they describe the run and are not per-row refusals.
+
+A legacy queue can also repeat one canonical page under more than one source ID, and can
+carry `parse_error` rows the static queue allowlist does not name. The queue reader collapses
+both silently — the first eligible row per page wins and non-allowlisted rows are skipped — so
+`/ops/browser-fallback-queue` reports the unfiltered artifact shape. `duplicatePageCount` and
+`duplicateRowCount` count every repeated page; `eligibleDuplicatePageCount` and
+`readerCollapsedRowCount` count only the collapse that changes what the next run retries, so a
+`parse_error` + `timeout` pair is visible without being mistaken for a double retry.
+`readerKeptSourceId` names the copy the reader keeps, and `parseErrorRowCount` counts the
+non-allowlisted parser rows. The diagnostic is read-only and never rewrites the queue.
+
 ### Provider coverage validation
 
 Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may

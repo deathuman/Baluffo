@@ -17,6 +17,10 @@ from src.bridge.performance_profile import snapshot_performance_profile
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_storage_metrics import storage_metrics_data_dir
 from src.bridge.task_failure_attempts import get_task_failure_attempts_payload
+from src.jobs.common.browser_fallback_queue_diagnostics import (
+    LEGACY_BROWSER_FALLBACK_QUEUE_FILENAME,
+    build_browser_fallback_queue_diagnostics,
+)
 from src.shared.timing_counters import snapshot_counters
 from src.storage_metrics import snapshot_storage_metrics
 
@@ -98,6 +102,14 @@ def handle_ops_diagnostic_routes(
 
     if path == "/ops/task-failure-attempts":
         handler.send_json(get_task_failure_attempts_payload(api))
+        return True
+
+    if path == "/ops/browser-fallback-queue":
+        handler.send_json(
+            build_browser_fallback_queue_diagnostics(
+                storage_metrics_data_dir(api) / LEGACY_BROWSER_FALLBACK_QUEUE_FILENAME
+            )
+        )
         return True
 
     return False

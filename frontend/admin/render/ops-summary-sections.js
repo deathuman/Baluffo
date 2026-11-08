@@ -168,6 +168,121 @@ function formatTaskFailureAttempts(payload = {}) {
   `;
 }
 
+function formatBrowserFallbackQueue(payload = {}) {
+  const queue = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const refreshButton = `<button type="button" class="btn clear-filters-btn" data-action="refresh-browser-fallback-queue">Refresh queue</button>`;
+  if (!Object.keys(queue).length) {
+    return `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Browser fallback queue</strong>: diagnostics not loaded. ${refreshButton}
+      </div>
+    `;
+  }
+  const warnings = Array.isArray(queue?.warnings) ? queue.warnings : [];
+  const warningText = warnings.length
+    ? ` Warnings: ${warnings.slice(0, 4).map(value => escapeHtml(value)).join(", ")}.`
+    : "";
+  const pathText = String(queue?.pathDisplay || queue?.queueFile || "").trim();
+  const modifiedAt = String(queue?.modifiedAt || "").trim();
+  const queueLocation = pathText
+    ? ` Artifact ${escapeHtml(pathText)}${modifiedAt ? `, modified ${escapeHtml(formatDateTime(modifiedAt))}` : ""}.`
+    : "";
+  if (queue?.exists !== true) {
+    return `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Browser fallback queue</strong>: no queue artifact found.${queueLocation}${warningText} ${refreshButton}
+      </div>
+    `;
+  }
+  if (queue?.readable !== true) {
+    return `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Browser fallback queue</strong>: the queue artifact could not be read.${queueLocation}${warningText} ${refreshButton}
+      </div>
+    `;
+  }
+  const duplicatePages = Array.isArray(queue?.duplicatePages) ? queue.duplicatePages : [];
+  const parseErrorRows = Array.isArray(queue?.parseErrorRows) ? queue.parseErrorRows : [];
+  const duplicatePageCount = Number(queue?.duplicatePageCount ?? duplicatePages.length);
+  const parseErrorRowCount = Number(queue?.parseErrorRowCount ?? parseErrorRows.length);
+  const collapsedRowCount = Number(queue?.readerCollapsedRowCount || 0);
+  const issueCount = Number(queue?.issueCount ?? (duplicatePageCount + parseErrorRowCount));
+  const summary = [
+    `${Number(queue?.rowCount || 0).toLocaleString()} rows`,
+    `${duplicatePageCount.toLocaleString()} duplicate page${duplicatePageCount === 1 ? "" : "s"}`,
+    `${collapsedRowCount.toLocaleString()} reader-collapsed row${collapsedRowCount === 1 ? "" : "s"}`,
+    `${parseErrorRowCount.toLocaleString()} non-allowlisted parser row${parseErrorRowCount === 1 ? "" : "s"}`
+  ].join(", ");
+  const cleanText = queue?.clean === true
+    ? " Queue is clean."
+    : ` ${issueCount.toLocaleString()} issue${issueCount === 1 ? "" : "s"} need review.`;
+  const truncated = queue?.truncated && typeof queue.truncated === "object" ? queue.truncated : {};
+  const truncatedText = truncated?.duplicatePages || truncated?.parseErrorRows
+    ? " Row lists are capped at 50 entries."
+    : "";
+  const duplicateRowsHtml = duplicatePages.length
+    ? duplicatePages.map(entry => {
+      const sourceIds = Array.isArray(entry?.sourceIds)
+        ? entry.sourceIds.map(value => String(value || "").trim()).filter(Boolean)
+        : [];
+      const keptSourceId = String(entry?.readerKeptSourceId || "").trim();
+      const otherSourceIds = sourceIds.filter(sourceId => sourceId !== keptSourceId);
+      const classifications = Array.isArray(entry?.classifications)
+        ? entry.classifications.map(value => String(value || "").replaceAll("_", " ")).filter(Boolean)
+        : [];
+      return `
+        <tr>
+          <td title="${escapeHtml(String(entry?.page || ""))}">${escapeHtml(String(entry?.page || "unknown page"))}</td>
+          <td>${Number(entry?.rowCount || 0).toLocaleString()}</td>
+          <td>${escapeHtml(keptSourceId || "-")}</td>
+          <td>${escapeHtml(otherSourceIds.join(", ") || "-")}</td>
+          <td>${Number(entry?.readerCollapsedRowCount || 0).toLocaleString()}</td>
+          <td>${escapeHtml(classifications.join(", ") || "-")}</td>
+        </tr>
+      `;
+    }).join("")
+    : `<tr><td colspan="6">No duplicate canonical pages.</td></tr>`;
+  const parseErrorRowsHtml = parseErrorRows.length
+    ? parseErrorRows.map(entry => `
+      <tr>
+        <td title="${escapeHtml(String(entry?.page || ""))}">${escapeHtml(String(entry?.page || "unknown page"))}</td>
+        <td>${escapeHtml(String(entry?.sourceId || "-"))}</td>
+        <td>${escapeHtml(String(entry?.name || "-"))}</td>
+        <td>${escapeHtml(String(entry?.classification || "parse_error").replaceAll("_", " "))}</td>
+        <td>${escapeHtml(String(entry?.reason || "-"))}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="5">No non-allowlisted parser rows.</td></tr>`;
+  return `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Browser fallback queue</strong>: ${escapeHtml(summary)}.${cleanText}${warningText}${truncatedText}${queueLocation}
+      ${refreshButton}
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Duplicate canonical pages and the source each retry keeps</strong>.
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-browser-fallback-queue-duplicates-table">
+        <thead>
+          <tr><th>Page</th><th>Rows</th><th>Kept source</th><th>Other sources</th><th>Collapsed</th><th>Classifications</th></tr>
+        </thead>
+        <tbody>${duplicateRowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Non-allowlisted parser rows</strong>.
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-browser-fallback-queue-parser-table">
+        <thead>
+          <tr><th>Page</th><th>Source</th><th>Name</th><th>Classification</th><th>Reason</th></tr>
+        </thead>
+        <tbody>${parseErrorRowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function formatPerformanceTimingRows(rows = []) {
   const timingRows = Array.isArray(rows) ? rows : [];
   if (!timingRows.length) {
@@ -257,6 +372,7 @@ export {
   formatOpsFetcherMetricSection,
   formatDiscoveryAuditArtifacts,
   formatTaskFailureAttempts,
+  formatBrowserFallbackQueue,
   formatPerformanceProfile,
   formatOpsTaskLane
 };

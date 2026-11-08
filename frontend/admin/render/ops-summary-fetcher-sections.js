@@ -42,6 +42,7 @@ import {
 } from "./ops-summary-provider-static.js";
 import { formatDedupSourceClasses } from "./ops-summary-source-policy.js";
 import {
+  formatBrowserFallbackQueue,
   formatDiscoveryAuditArtifacts,
   formatOpsFetcherMetricSection,
   formatOpsTaskLane,
@@ -134,6 +135,13 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
     const browserFallbackHealthHtml = browserFallbackHealthSummary
       ? `<div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback health</strong>: ${escapeHtml(browserFallbackHealthSummary)}</div>`
       : "";
+    const browserFallbackQueueSectionHtml = formatOpsFetcherMetricSection({
+      key: "browserFallbackQueue",
+      title: "Browser fallback queue",
+      description: "Duplicate canonical pages, the source each retry keeps, and parser rows outside the queue allowlist.",
+      diagnostics: false,
+      html: formatBrowserFallbackQueue(metrics?.browserFallbackQueue || {})
+    });
     const runtimeSecondaryHtml = `
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
       <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
@@ -290,11 +298,11 @@ function buildOpsFetcherSections({ latest, history, metrics, options, summary },
       </details>
     `;
     const sectionHtml = includeDebugDiagnostics
-      ? `${taskLaneHtml}${browserFallbackHealthHtml}${buildOpsFetcherMetricSections(
+      ? `${taskLaneHtml}${browserFallbackHealthHtml}${browserFallbackQueueSectionHtml}${buildOpsFetcherMetricSections(
         sectionHtmlByKey,
         diagnosticsByKey
       ).map(formatOpsFetcherMetricSection).join("")}`
-      : `${taskLaneHtml}${browserFallbackHealthHtml}${debugDiagnosticsHtml}`;
+      : `${taskLaneHtml}${browserFallbackHealthHtml}${browserFallbackQueueSectionHtml}${debugDiagnosticsHtml}`;
 
   return { sectionHtml, diagnosticsByKey };
 }
