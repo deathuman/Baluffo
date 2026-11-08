@@ -46,6 +46,11 @@ GAME_KEYWORDS = {
 # Business and support roles are deliberately absent. A games studio hires project managers,
 # producers and finance business partners, and admitting those turns a games-jobs feed into a
 # jobs board -- which is why this was measured for what it admits as well as what it recovers.
+#
+# The lighting, QA/test and writer variants come from the zero-kept board probe: Housemarque's
+# lighting artists, KRAFTON/2kvegas/Scape/JustPlay QA and test roles, and Beamdog's "Senior
+# Writer". Writer is matched as title variants, not as the bare token, because "Technical
+# Writer", "Content Writer" and "Copywriter" are corporate roles the feed must keep rejecting.
 GAME_ROLE_KEYWORDS = {
     "2d artist",
     "3d artist",
@@ -60,6 +65,7 @@ GAME_ROLE_KEYWORDS = {
     "hard surface artist",
     "environmental artist",
     "illustrator",
+    "lighting artist",
     "animator",
     "animation",
     "ui/ux",
@@ -72,8 +78,18 @@ GAME_ROLE_KEYWORDS = {
     "combat designer",
     "systems designer",
     "narrative designer",
+    "game writer",
+    "lead writer",
+    "narrative writer",
+    "senior writer",
+    "story writer",
     "sound designer",
+    "publishing qa",
     "qa analyst",
+    "qa chapter lead",
+    "qa tester",
+    "technical test analyst",
+    "technical test lead",
     "tools programmer",
     # Non-English listings. An ASCII substring test cannot see these at all: Japanese studios
     # publish titles in Japanese (Marvelous's ゲームデザイナー, Bandai Namco's

@@ -20,6 +20,7 @@ from src.jobs.adapters.plugins.provider_api.json_feed import (
     _build_json_feed_url,
     _fetch_json_feed_payload,
     _merge_json_feed_page,
+    _parse_json_feed_payload,
     _with_query,
 )
 
@@ -145,3 +146,55 @@ def test_list_payloads_merge_as_lists() -> None:
 def test_the_endpoint_still_builds_from_company_id() -> None:
     url = _build_json_feed_url({"company_id": "ubisoft2"}, _SPEC)
     assert url == "https://api.smartrecruiters.com/v1/companies/ubisoft2/postings"
+
+
+def test_a_registry_id_supplies_the_missing_smartrecruiters_company_id() -> None:
+    """The seed rows carry only `id`; its suffix is the company slug."""
+    row: dict[str, object] = {
+        "id": "smartrecruiters:company_id:giantssoftwaregmbh",
+        "adapter": "smartrecruiters",
+        "name": "Giants Software (Sheet)",
+        "registryState": "active",
+    }
+    assert _build_json_feed_url(row, _SPEC) == (
+        "https://api.smartrecruiters.com/v1/companies/giantssoftwaregmbh/postings"
+    )
+
+
+def test_an_explicit_locator_still_wins_over_the_registry_id() -> None:
+    row: dict[str, object] = {
+        "id": "smartrecruiters:company_id:giantssoftwaregmbh",
+        "company_id": "GIANTSSoftwareGmbH",
+    }
+    assert _build_json_feed_url(row, _SPEC).endswith("/GIANTSSoftwareGmbH/postings")
+    api_url = "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings"
+    assert _build_json_feed_url({**row, "api_url": api_url}, _SPEC) == api_url
+
+
+def test_an_unrelated_or_malformed_registry_id_does_not_build_a_url() -> None:
+    for source_id in (
+        "",
+        "greenhouse:slug:giantssoftwaregmbh",
+        "smartrecruiters:company_id:",
+        "smartrecruiters:company_id:giants:extra",
+    ):
+        assert _build_json_feed_url({"id": source_id}, _SPEC) == "", source_id
+
+
+def test_the_registry_id_also_reaches_the_parser_for_job_identity() -> None:
+    """A fallback that only fixes the request would still emit tenantless links."""
+    row: dict[str, object] = {"id": "smartrecruiters:company_id:giantssoftwaregmbh"}
+    payload = {
+        "content": [
+            {
+                "id": "744000148216169",
+                "name": "Game Tester",
+                "location": {"city": "Brno", "country": "CZ"},
+            }
+        ]
+    }
+    jobs = _parse_json_feed_payload(row, payload, "Giants Software", _SPEC)
+    assert jobs[0]["sourceJobId"] == ("smartrecruiters:giantssoftwaregmbh:744000148216169")
+    assert jobs[0]["jobLink"] == (
+        "https://jobs.smartrecruiters.com/giantssoftwaregmbh/744000148216169"
+    )

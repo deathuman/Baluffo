@@ -69,6 +69,10 @@ class JsonFeedSpec:
     page_total_key: str = ""
     page_size: int = 100
     max_pages: int = 1
+    # A seed row that carries only its compact identity still knows its tenant: the
+    # suffix of `smartrecruiters:company_id:<slug>` is the API's company id. Only an
+    # exact prefix match is used, so an unrelated id cannot invent a URL.
+    id_fallback_prefix: str = ""
 
 
 def _with_query(url: str, **params: object) -> str:
@@ -155,6 +159,24 @@ def _fetch_json_feed_payload(
     return payload
 
 
+def _source_value_from_registry_id(source: dict[str, object], spec: JsonFeedSpec) -> str:
+    prefix = spec.id_fallback_prefix
+    source_id = clean_text(source.get("id"))
+    if not prefix or not source_id:
+        return ""
+    if not source_id.casefold().startswith(prefix.casefold()):
+        return ""
+    value = clean_text(source_id[len(prefix) :])
+    if not value or ":" in value:
+        return ""
+    return value
+
+
+def _source_value(source: dict[str, object], spec: JsonFeedSpec) -> str:
+    value = clean_text(source.get(spec.source_key))
+    return value or _source_value_from_registry_id(source, spec)
+
+
 def _build_json_feed_url(source: dict[str, object], spec: JsonFeedSpec) -> str:
     if spec.source_key == "board_url":
         # Ashby: the slug lives in the board URL's path, so the posting-API URL is
@@ -164,7 +186,7 @@ def _build_json_feed_url(source: dict[str, object], spec: JsonFeedSpec) -> str:
     api_url = clean_text(source.get("api_url"))
     if api_url:
         return api_url
-    source_value = clean_text(source.get(spec.source_key))
+    source_value = _source_value(source, spec)
     if not source_value:
         return ""
     if spec.dotted_url_template and "." in source_value:
@@ -175,7 +197,7 @@ def _build_json_feed_url(source: dict[str, object], spec: JsonFeedSpec) -> str:
 def _parse_json_feed_payload(
     source: dict[str, object], payload: Any, studio: str, spec: JsonFeedSpec
 ) -> list[RawJob]:
-    return spec.parser(payload, clean_text(source.get(spec.source_key)), studio)
+    return spec.parser(payload, _source_value(source, spec), studio)
 
 
 def _json_feed_payload_count(payload: Any, parsed: list[RawJob], spec: JsonFeedSpec) -> int:
@@ -198,6 +220,7 @@ JSON_FEED_SPECS: dict[str, JsonFeedSpec] = {
         page_total_key="totalFound",
         page_size=100,
         max_pages=20,
+        id_fallback_prefix="smartrecruiters:company_id:",
     ),
     "workable": JsonFeedSpec(
         default_error="missing account/api_url",

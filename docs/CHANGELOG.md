@@ -61,6 +61,16 @@ Five rules the guardrail enforces so this cannot quietly regress:
 - Browser fallback queue rows now deduplicate by canonical page across source IDs, and `parse_error` rows outside the documented static-queue classification allowlist are excluded from new writes and legacy queue reads.
 - Browser fallback can now reopen during a long fetch. When the cooldown refuses a fallback request, the app checks whether a browser can render again and, if it can, retries that request immediately instead of leaving every later source refused until the 30-minute window ends. The check runs at most once a minute, so a browser that is still broken is not relaunched for every source that asks for fallback.
 
+- Static fetch diagnostics no longer count sources excluded before evaluation as zero-kept
+  review entries. A targeted `--only-sources` run had reported every unselected loader as
+  blank residue, turning one evaluated source into more than 1,600 phantom reviews.
+- Game-role detection now keeps lighting artists, QA/test roles and narrative writer titles
+  that were previously dropped, recovering roles from Housemarque, KRAFTON India, 2K Vegas,
+  Scape, JustPlay, Beamdog, 2K and Cloud Chamber while still rejecting technical, content and
+  marketing writers.
+- SmartRecruiters boards that were registered with only a compact source identifier now fetch
+  correctly, and their postings link back to the right company.
+
 ## [0.3.042] - 2026-11-08
 
 ### Fixed

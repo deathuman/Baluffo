@@ -1,3 +1,8 @@
+from src.jobs.reporting_breakdowns import (
+    build_blank_residue_breakdown,
+    build_needs_review_breakdown,
+    build_unknown_static_breakdown,
+)
 from tests.helpers import jobs_reporting
 
 
@@ -93,3 +98,44 @@ def test_pipeline_summary_reports_output_size_guardrails() -> None:
         "json": {"bytes": 80_000_001, "limitBytes": 80_000_000, "exceeded": True},
         "lightJson": {"bytes": 60_000_001, "limitBytes": 60_000_000, "exceeded": True},
     }
+
+
+def test_breakdowns_ignore_sources_excluded_before_evaluation() -> None:
+    """Only pre-evaluation exclusions are skipped; genuine findings still count."""
+    excluded = {
+        "name": "static_source::static:listing_url:https://example.com/never-fetched",
+        "adapter": "static",
+        "studio": "Never Fetched",
+        "status": "excluded",
+        "exclusionReason": "only_sources_filter",
+        "error": "only_sources_filter",
+        "keptCount": 0,
+        "durationMs": 0,
+    }
+    disabled = {
+        "name": "static_source::static:listing_url:https://example.com/disabled",
+        "adapter": "static",
+        "studio": "Disabled",
+        "status": "excluded",
+        "exclusionReason": "disabled_by_default:no_game_scope",
+        "error": "disabled_by_default:no_game_scope",
+        "keptCount": 0,
+        "durationMs": 0,
+    }
+    genuine = {
+        "name": "static_source::static:listing_url:https://example.com/genuine",
+        "adapter": "static",
+        "studio": "Genuine",
+        "status": "error",
+        "keptCount": 0,
+        "durationMs": 12,
+    }
+
+    reviewed = build_needs_review_breakdown([excluded, disabled, genuine])
+    unknown = build_unknown_static_breakdown([excluded, disabled, genuine])
+    blank = build_blank_residue_breakdown([excluded, disabled, genuine])
+
+    assert reviewed["includedCount"] == 1
+    assert reviewed["byShape"]["blank_residue"]["count"] == 1
+    assert unknown["byShape"]["other_static"]["count"] == 1
+    assert blank["byShape"]["blank_residue"]["count"] == 1

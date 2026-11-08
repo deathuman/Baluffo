@@ -970,7 +970,7 @@ Scheduled pipeline launches reuse the normal pipeline lifecycle with `taskType: 
 
 ## 9. Fetch report diagnostic breakdowns
 
-`summary.needsReviewBreakdown` is the shaped zero-kept static diagnostic view. It does not promise to equal every raw `needs_review` marker in `sources`.
+`summary.needsReviewBreakdown` is the shaped zero-kept static diagnostic view. It does not promise to equal every raw `needs_review` marker in `sources`. Rows excluded before evaluation (`status: "excluded"`, including `only_sources_filter` and `disabled_by_default:*`) are never counted as zero-kept findings: an excluded row was not fetched.
 
 `summary.okCleanSources` and `summary.okWithWarningSources` are additive counters over source-report rows whose `status` remains `ok`. They distinguish clean successful sources from successful sources carrying warning/error diagnostic text without changing source status semantics.
 

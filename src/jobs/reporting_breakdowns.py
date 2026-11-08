@@ -132,6 +132,20 @@ def _classify_blank_residue_shape(report: dict[str, Any]) -> str:
     return _classify_needs_review_shape(report)
 
 
+def _is_excluded_report(report: dict[str, Any]) -> bool:
+    """True when the row was excluded before evaluation, so it is not a finding.
+
+    A targeted ``--only-sources`` run reports every unselected loader as
+    ``status: excluded`` with ``error: only_sources_filter``. Those rows were never
+    fetched, and counting them as zero-kept static rows turned one evaluated source
+    into more than 1,600 phantom review entries in a real run.
+    """
+    if clean_text(report.get("status")) == "excluded":
+        return True
+    reason = clean_text(report.get("exclusionReason") or report.get("error"))
+    return reason == "only_sources_filter" or reason.startswith("disabled_by_default:")
+
+
 def _has_needs_review_marker(report: dict[str, Any]) -> bool:
     return (
         norm_text(report.get("classification")) == "needs_review"
@@ -162,6 +176,8 @@ def _build_breakdown(
         if not isinstance(report, dict):
             continue
         if clean_text(report.get("adapter")) != "static":
+            continue
+        if _is_excluded_report(report):
             continue
         if not include_report(report):
             continue
@@ -263,8 +279,7 @@ def build_blank_residue_breakdown(
         source_reports,
         shapes=NEEDS_REVIEW_BREAKDOWN_SHAPES,
         include_report=lambda report: (
-            clean_text(report.get("status")) != "excluded"
-            and int(report.get("keptCount") or 0) == 0
+            int(report.get("keptCount") or 0) == 0
             and not (
                 norm_text(report.get("failureBucket"))
                 and norm_text(report.get("zeroKeptClassification"))
