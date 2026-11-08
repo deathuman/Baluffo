@@ -71,6 +71,13 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 - The same-origin Linux container deployment, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility remain supported.
 
+## [0.3.041] - 2026-11-08
+
+### Fixed
+
+- Browser fallback no longer queues static fetch failures a browser cannot repair, including DNS resolution, certificate/TLS validation, and exhausted time or failure budgets. Existing fallback queues are filtered when read, so those rows stop running after updating.
+- Ops no longer repeats the app version in the health header; the header shows the running build separately.
+
 ## [0.3.040] - 2026-11-07
 
 ### Added

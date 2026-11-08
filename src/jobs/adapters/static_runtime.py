@@ -330,6 +330,8 @@ class StaticSourceContext:
             # error and clock, but only finalization makes a zero-kept source
             # fail. A source that kept jobs stays an ok row with the cut visible.
             self.entry_report["classification"] = "timeout"
+            # A hard deadline is a clock cut, not browser evidence.
+            self.entry_report["browserFallbackRecommended"] = False
             self.entry_report["error"] = msg
             self.warnings.append(f"static:{self.source_name}:{target}: {msg}")
             return
@@ -387,6 +389,7 @@ class StaticSourceContext:
         # clock, the other that it spent its clock failing, and only the second says
         # retries were the cost. Consumers keying on the old string are unaffected.
         self.entry_report["classification"] = "timeout"
+        self.entry_report["browserFallbackRecommended"] = False
         self.entry_report["status"] = "error"
         self.entry_report["error"] = f"failure budget exceeded ({self.failure_budget_s()}s)"
         self.warnings.append(f"static:{self.source_name}:{target_url}: failure_budget_exceeded")

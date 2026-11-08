@@ -612,3 +612,19 @@ test("admin render: recovery failures do not turn a settled page lifecycle into 
   assert.match(html, /Failure stages: 204 recovery guesses/i);
   assert.doesNotMatch(html, /page attention/i);
 });
+
+test("admin render: build identity omits the footer app version", () => {
+  const versionOnlyEl = makeEl();
+  renderAdminOpsKpis(versionOnlyEl, {}, "healthy", { appVersion: "0.3.040" });
+  assert.doesNotMatch(versionOnlyEl.innerHTML, /0\.3\.040/);
+  assert.doesNotMatch(versionOnlyEl.innerHTML, /Running 0\.3\.040/);
+
+  const buildEl = makeEl();
+  renderAdminOpsKpis(buildEl, {}, "healthy", {
+    appVersion: "0.3.040",
+    buildCommit: "d0b055f00ce12823c9a971d3b02ebb927b67d49f",
+    buildAt: "2026-11-07T20:40:13.165Z"
+  });
+  assert.match(buildEl.innerHTML, /Build d0b055f0, 2026-11-07T20:40:13\.165Z/);
+  assert.doesNotMatch(buildEl.innerHTML, /0\.3\.040/);
+});

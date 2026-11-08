@@ -51,6 +51,29 @@ def test_plain_network_errors_still_classify_as_timeout() -> None:
     )
 
 
+def test_dns_resolution_failure_is_not_a_browser_fallback_candidate() -> None:
+    url = "https://missing.example/careers"
+    exc = RuntimeError(f"Network error for {url}: [Errno 11001] getaddrinfo failed")
+
+    assert classify_static_fetch_exception(exc, target_url=url) == (
+        "timeout",
+        False,
+    ), "a browser cannot repair a DNS resolution failure"
+
+
+def test_expired_certificate_is_not_a_browser_fallback_candidate() -> None:
+    url = "https://expired.example/careers"
+    exc = RuntimeError(
+        f"Network error for {url}: [SSL: CERTIFICATE_VERIFY_FAILED] "
+        "certificate has expired (_ssl.c:1032)"
+    )
+
+    assert classify_static_fetch_exception(exc, target_url=url) == (
+        "ssl_certificate_error",
+        False,
+    )
+
+
 def test_static_fetch_fallback_predicate_keeps_unexpected_runtime_errors_visible() -> None:
     assert is_static_fetch_fallback_exception(RuntimeError("HTTP 429 Too Many Requests"))
     assert is_static_fetch_fallback_exception(RuntimeError("Network error for https://example.com"))

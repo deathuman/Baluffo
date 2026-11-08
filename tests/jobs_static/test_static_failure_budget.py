@@ -115,6 +115,13 @@ def test_stop_records_a_distinct_reason() -> None:
     assert ctx.warnings[-1].endswith("failure_budget_exceeded")
 
 
+def test_failure_budget_stop_does_not_queue_browser_fallback() -> None:
+    ctx = _ctx()
+    ctx.entry_report["browserFallbackRecommended"] = True
+    ctx.stop_for_failure_budget(target_url=_BASE)
+    assert ctx.entry_report["browserFallbackRecommended"] is False
+
+
 def test_time_budget_exhaustion_does_not_queue_browser_fallback() -> None:
     """A clock timeout is not evidence that a browser would render the board.
 

@@ -90,13 +90,12 @@ function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
 }
 
 function formatBuildInfo(options = {}) {
-  const appVersion = String(options?.appVersion || "").trim();
-  if (!appVersion) return "";
   const commit = String(options?.buildCommit || "").trim();
   const builtAt = String(options?.buildAt || "").trim();
   const detail = [commit ? commit.slice(0, 8) : "", builtAt].filter(Boolean).join(", ");
+  if (!detail) return "";
   return `
-    <div class="muted admin-ops-build-info admin-ops-full-row">Running ${escapeHtml(appVersion)}${detail ? ` (${escapeHtml(detail)})` : ""}</div>
+    <div class="muted admin-ops-build-info admin-ops-full-row">Build ${escapeHtml(detail)}</div>
   `;
 }
 
@@ -121,7 +120,9 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     providerCoverage: kpis?.providerCoverage || {},
     dedupReviewState: kpis?.dedupReviewState || {},
     probeLifecycle: kpis?.probeLifecycle || {},
-    pageFetchLifecycle: kpis?.pageFetchLifecycle || {}
+    pageFetchLifecycle: kpis?.pageFetchLifecycle || {},
+    buildCommit: String(options?.buildCommit || ""),
+    buildAt: String(options?.buildAt || "")
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;

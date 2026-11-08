@@ -379,6 +379,17 @@ def test_hard_deadline_failure_is_recorded_as_time_budget_exceeded(detail: str) 
     assert "deadline exceeded" not in recorded
 
 
+def test_hard_deadline_does_not_queue_browser_fallback() -> None:
+    ctx = _make_static_context()
+    ctx.entry_report["browserFallbackRecommended"] = True
+    ctx.record_static_fetch_failure(
+        target_url="https://mundfish.com/en/careers",
+        exc="request deadline exceeded (15s)",
+    )
+
+    assert ctx.entry_report["browserFallbackRecommended"] is False
+
+
 @pytest.mark.parametrize(
     ("detail", "expected_kind"),
     [

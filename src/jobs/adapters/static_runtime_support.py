@@ -32,6 +32,7 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
 
 from ..common import config as common_config
+from ..common.browser_fallback_policy import is_non_browser_fixable_failure
 from .static_cookie_retry import (
     COOKIE_RETRY_MAX_HOPS,
     StaticCookieJar,
@@ -145,7 +146,10 @@ def classify_static_fetch_exception(
         classification = "ssl_certificate_error"
     elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
         classification = "timeout"
-    return classification, classification in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
+    return classification, (
+        classification in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
+        and not is_non_browser_fixable_failure(classification=classification, error=msg)
+    )
 
 
 def is_static_fetch_fallback_exception(exc: Exception) -> bool:
@@ -851,8 +855,21 @@ def update_source_detail_taxonomy(
         ) and original_classification != "dead_listing_page"
         if should_migrate:
             source_detail["classification"] = assessment.diagnosis.value
-            source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
+            source_detail["browserFallbackRecommended"] = (
+                assessment.browser_fallback_recommended
+                and not is_non_browser_fixable_failure(
+                    classification=source_detail.get("classification"),
+                    error=source_detail.get("error"),
+                )
+            )
             context = classification_context_from_source_detail(source_detail)
+    if is_non_browser_fixable_failure(
+        classification=source_detail.get("classification"),
+        error=source_detail.get("error"),
+    ):
+        source_detail["browserFallbackRecommended"] = False
+        if "browserEscalationEligible" in source_detail:
+            source_detail["browserEscalationEligible"] = False
     source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
     return source_detail
 
