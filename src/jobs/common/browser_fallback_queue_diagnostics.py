@@ -8,6 +8,7 @@ queue shape instead of the filtered one, and never rewrites the queue.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +29,12 @@ def _iso_from_timestamp(timestamp: float) -> str:
 
 
 def _path_display(path: Path) -> str:
-    return f"/data/{path.name}" if str(path.parent) == "/data" else f"data/{path.name}"
+    """Container-relative label, matching the other ops artifact diagnostics.
+
+    The real data dir is absolute on the desktop and varies per deployment, so the
+    display path is a stable artifact label rather than a host path.
+    """
+    return f"/data/{path.name}"
 
 
 def _row_eligible(row: dict[str, Any], classification: str) -> bool:
@@ -36,6 +42,22 @@ def _row_eligible(row: dict[str, Any], classification: str) -> bool:
         classification=classification,
         error=row.get("reason"),
     )
+
+
+def _reader_source_id(row: dict[str, Any], page: str) -> str:
+    """The identity the queue reader uses for a kept row.
+
+    Mirrors ``common.registry._scrapy_queue_source_id``: a legacy row with no
+    ``sourceId`` is still identified by its page, so reporting the raw blank
+    would leave the answer this diagnostic exists to give unreadable.
+    """
+    source_id = clean_text(row.get("sourceId"))
+    if source_id or not page:
+        return source_id
+    if clean_text(row.get("adapter")) != "scrapy_static":
+        return ""
+    digest = hashlib.sha1(page.encode("utf-8")).hexdigest()[:12]
+    return f"scrapy_static:{digest}"
 
 
 def _duplicate_page_entry(page: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -50,6 +72,7 @@ def _duplicate_page_entry(page: str, rows: list[dict[str, Any]]) -> dict[str, An
     classifications: list[str] = []
     kept_source_id = ""
     eligible_row_count = 0
+    kept_source_taken = False
     for row in rows:
         source_id = clean_text(row.get("sourceId"))
         if source_id and source_id not in source_ids:
@@ -59,8 +82,9 @@ def _duplicate_page_entry(page: str, rows: list[dict[str, Any]]) -> dict[str, An
             classifications.append(classification)
         if _row_eligible(row, classification):
             eligible_row_count += 1
-            if not kept_source_id:
-                kept_source_id = source_id
+            if not kept_source_taken:
+                kept_source_taken = True
+                kept_source_id = _reader_source_id(row, page)
     return {
         "page": page,
         "rowCount": len(rows),
@@ -194,6 +218,14 @@ def build_browser_fallback_queue_diagnostics(path: str | Path) -> dict[str, Any]
     eligible_duplicate_pages = [
         entry for entry in duplicate_pages if int(entry["readerCollapsedRowCount"]) > 0
     ]
+    # A parser row on a page already reported as repeated is the same finding, so
+    # counting it again would report one page as two issues.
+    duplicate_page_keys = {entry["page"] for entry in duplicate_pages}
+    standalone_parse_error_count = sum(
+        1
+        for entry in parse_error_rows
+        if not entry["page"] or entry["page"] not in duplicate_page_keys
+    )
     payload.update(
         {
             "invalidRowCount": invalid_row_count,
@@ -207,7 +239,7 @@ def build_browser_fallback_queue_diagnostics(path: str | Path) -> dict[str, Any]
                 int(entry["readerCollapsedRowCount"]) for entry in eligible_duplicate_pages
             ),
             "parseErrorRowCount": len(parse_error_rows),
-            "issueCount": len(duplicate_pages) + len(parse_error_rows),
+            "issueCount": len(duplicate_pages) + standalone_parse_error_count,
             "clean": not duplicate_pages and not parse_error_rows,
             "duplicatePages": duplicate_pages[:MAX_DIAGNOSTIC_ROWS],
             "parseErrorRows": parse_error_rows[:MAX_DIAGNOSTIC_ROWS],

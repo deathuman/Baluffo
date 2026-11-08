@@ -461,6 +461,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         EXACT,
         GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
+        caller_files=ADMIN_OPS_CALLERS,
     ),
     _route(
         "GET",

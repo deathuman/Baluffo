@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,6 +52,7 @@ def test_diagnostics_flag_duplicate_pages_and_reader_collapse(tmp_path: Path) ->
     assert payload["ok"] is True
     assert payload["readable"] is True
     assert payload["rowCount"] == 2
+    assert payload["pathDisplay"] == f"/data/{LEGACY_BROWSER_FALLBACK_QUEUE_FILENAME}"
     assert payload["eligibleRowCount"] == 2
     assert payload["eligibleUniquePageCount"] == 1
     assert payload["duplicatePageCount"] == 1
@@ -87,6 +89,8 @@ def test_ineligible_duplicate_page_is_reported_without_reader_collapse(tmp_path:
     entry = payload["duplicatePages"][0]
     assert entry["eligibleRowCount"] == 1
     assert entry["readerKeptSourceId"] == "static:timeout"
+    # One page, one finding: the parser row is already part of the repeated page.
+    assert payload["issueCount"] == 1
 
 
 def test_diagnostics_flag_non_allowlisted_parse_error_rows(tmp_path: Path) -> None:
@@ -184,6 +188,39 @@ def test_diagnostics_bound_the_row_lists(tmp_path: Path, monkeypatch: Any) -> No
     assert payload["parseErrorRowCount"] == 2
     assert len(payload["parseErrorRows"]) == 1
     assert payload["truncated"]["parseErrorRows"] is True
+
+
+def test_diagnostics_count_a_parser_row_outside_a_duplicate_page(tmp_path: Path) -> None:
+    parser_row = _queue_row("static:parser", classification="parse_error")
+    parser_row["page"] = "https://parser.example/careers"
+    queue = _write_queue(
+        tmp_path,
+        [_queue_row("static:sheet"), _queue_row("static:map"), parser_row],
+    )
+
+    payload = build_browser_fallback_queue_diagnostics(queue)
+
+    assert payload["duplicatePageCount"] == 1
+    assert payload["parseErrorRowCount"] == 1
+    assert payload["issueCount"] == 2
+
+
+def test_diagnostics_report_the_reader_derived_source_id_for_legacy_rows(tmp_path: Path) -> None:
+    queue = _write_queue(
+        tmp_path,
+        [
+            {"adapter": "scrapy_static", "page": PAGE, "classification": "blocked_or_challenge"},
+            {"adapter": "scrapy_static", "page": PAGE, "classification": "blocked_or_challenge"},
+        ],
+    )
+
+    payload = build_browser_fallback_queue_diagnostics(queue)
+
+    expected_source_id = f"scrapy_static:{hashlib.sha1(PAGE.encode('utf-8')).hexdigest()[:12]}"
+    entry = payload["duplicatePages"][0]
+    assert entry["sourceIds"] == []
+    assert entry["readerKeptSourceId"] == expected_source_id
+    assert payload["issueCount"] == 1
 
 
 def test_ops_route_serves_browser_fallback_queue_diagnostics(tmp_path: Path) -> None:

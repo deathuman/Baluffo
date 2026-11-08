@@ -1105,8 +1105,11 @@ both silently — the first eligible row per page wins and non-allowlisted rows 
 `duplicateRowCount` count every repeated page; `eligibleDuplicatePageCount` and
 `readerCollapsedRowCount` count only the collapse that changes what the next run retries, so a
 `parse_error` + `timeout` pair is visible without being mistaken for a double retry.
-`readerKeptSourceId` names the copy the reader keeps, and `parseErrorRowCount` counts the
-non-allowlisted parser rows. The diagnostic is read-only and never rewrites the queue.
+`readerKeptSourceId` names the copy the reader keeps — the row's `sourceId`, or the
+`scrapy_static:<sha1(page)[:12]>` identity the reader derives when a legacy row carries none —
+and `parseErrorRowCount` counts the non-allowlisted parser rows. `issueCount` counts each repeated
+page once and each parser row outside a repeated page once, so one page is never reported as two
+issues. The diagnostic is read-only and never rewrites the queue.
 
 ### Provider coverage validation
 

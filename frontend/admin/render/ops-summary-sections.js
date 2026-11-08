@@ -174,7 +174,7 @@ function formatBrowserFallbackQueue(payload = {}) {
   if (!Object.keys(queue).length) {
     return `
       <div class="admin-ops-schedule-item admin-ops-full-row">
-        <strong>Browser fallback queue</strong>: diagnostics not loaded. ${refreshButton}
+        Diagnostics not loaded. ${refreshButton}
       </div>
     `;
   }
@@ -190,14 +190,14 @@ function formatBrowserFallbackQueue(payload = {}) {
   if (queue?.exists !== true) {
     return `
       <div class="admin-ops-schedule-item admin-ops-full-row">
-        <strong>Browser fallback queue</strong>: no queue artifact found.${queueLocation}${warningText} ${refreshButton}
+        No queue artifact found.${queueLocation}${warningText} ${refreshButton}
       </div>
     `;
   }
   if (queue?.readable !== true) {
     return `
       <div class="admin-ops-schedule-item admin-ops-full-row">
-        <strong>Browser fallback queue</strong>: the queue artifact could not be read.${queueLocation}${warningText} ${refreshButton}
+        The queue artifact could not be read.${queueLocation}${warningText} ${refreshButton}
       </div>
     `;
   }
@@ -255,7 +255,7 @@ function formatBrowserFallbackQueue(payload = {}) {
     : `<tr><td colspan="5">No non-allowlisted parser rows.</td></tr>`;
   return `
     <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Browser fallback queue</strong>: ${escapeHtml(summary)}.${cleanText}${warningText}${truncatedText}${queueLocation}
+      ${escapeHtml(summary)}.${cleanText}${warningText}${truncatedText}${queueLocation}
       ${refreshButton}
     </div>
     <div class="admin-ops-schedule-item admin-ops-full-row">

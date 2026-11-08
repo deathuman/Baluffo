@@ -323,6 +323,13 @@ Container ship checklist:
 8. Deploy the published image to a host and verify the live app before declaring
    shipped. For Umbrel, update or reinstall Baluffo through the private app store
    and verify the proxied LAN app on port `8877`.
+9. Prove the host is running the published image rather than the previous one with
+   `npm run release:promote:container -- --expected-version <version> --expected-commit <sha>`
+   (add `--dry-run` to print the compose commands first). It pulls and recreates the
+   Compose project, then polls `/ops/health` until `appVersion` and `build.commit`
+   match, and exits non-zero on timeout with the last health payload. A host can sit
+   one image behind while every local check is green, so "the UI loads" is not
+   evidence that the deployed image is the one just published.
 
 If a live deployment smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
 

@@ -53,7 +53,7 @@ Run the balanced developer Python lane:
 npm run test:py
 ```
 
-This wrapper now uses the repo-local pytest temp root under `.tmp/pytest` (with `--basetemp=.tmp/pytest/basetemp`) and configures pytest cache under `.tmp/pytest/cache`. The repo disables pytest's cacheprovider by default because this Windows environment can leave unreadable `pytest-cache-files-*` temp directories behind. It excludes `slow`, `packaging`, and `release` tests so the default local loop stays focused on day-to-day development.
+This wrapper keeps the pytest temp root under `.tmp/pytest` and configures pytest cache under `.tmp/pytest/cache`. The `--basetemp=.tmp/pytest/basetemp` flag is still passed, but pytest 9.1.1 does not derive `tmp_path` from it: each session gets `.tmp/pytest/pytest-tmp-<uuid>`, so what actually makes concurrent runs safe is the exclusive session lock documented under the temp directory note below, not the basetemp. The repo disables pytest's cacheprovider by default because this Windows environment can leave unreadable `pytest-cache-files-*` temp directories behind. It excludes `slow`, `packaging`, and `release` tests so the default local loop stays focused on day-to-day development.
 
 Run the full Python suite when you need release-level confidence:
 

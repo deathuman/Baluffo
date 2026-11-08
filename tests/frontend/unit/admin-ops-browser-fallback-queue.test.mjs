@@ -21,7 +21,7 @@ test("admin render: browser fallback queue health shows duplicates, kept sources
       exists: true,
       readable: true,
       queueFile: "jobs-browser-fallback-queue.json",
-      pathDisplay: "data/jobs-browser-fallback-queue.json",
+      pathDisplay: "/data/jobs-browser-fallback-queue.json",
       modifiedAt: "2026-11-08T12:00:00Z",
       rowCount: 4,
       duplicatePageCount: 1,
