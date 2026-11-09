@@ -69,6 +69,10 @@ class JobsFeedReconciliationSnapshot:
     mode: str
     generation: str
     artifacts: dict[Path, str | None]
+    # Projections that a generation rollback would re-export although they did
+    # not exist before the transition. Their absence is restored afterwards
+    # without copying the large projections into the snapshot itself.
+    absent_artifacts: tuple[Path, ...] = ()
 
 
 def _artifact_snapshot_paths(path: Path) -> tuple[Path, ...]:
@@ -399,6 +403,16 @@ def _reconcile_jobs_feed_availability_locked(
                 if mode == "sqlite"
                 else _snapshot_artifacts(artifact_paths)
             ),
+            absent_artifacts=(
+                tuple(
+                    candidate
+                    for projection in artifact_paths[:3]
+                    for candidate in _artifact_snapshot_paths(projection)
+                    if not candidate.exists()
+                )
+                if mode == "sqlite"
+                else ()
+            ),
         )
         previous_generation = ""
         if runtime_store is not None and mode == "sqlite":
@@ -528,6 +542,8 @@ def rollback_jobs_feed_reconciliation(
                 path.unlink(missing_ok=True)
             else:
                 write_atomic_if_changed(path, content)
+        for path in snapshot.absent_artifacts:
+            path.unlink(missing_ok=True)
 
 
 # ── public mirror entry ────────────────────────────────────────────

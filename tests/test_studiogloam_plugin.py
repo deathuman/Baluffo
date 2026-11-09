@@ -229,10 +229,10 @@ def test_full_static_source_flow_keeps_both_verified_openings() -> None:
     }
 
 
-def test_unrelated_static_plugin_still_filters_senior_lighting_artist(
+def test_unrelated_static_plugin_still_filters_non_game_roles(
     monkeypatch: Any,
 ) -> None:
-    """The Studio Gloam exception must not broaden the shared role vocabulary."""
+    """The Studio Gloam plugin-name exception must not exempt other plugins."""
     from src.jobs.adapters import static as static_adapter
     from src.jobs.adapters.plugins import default_registry
     from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
@@ -245,10 +245,10 @@ def test_unrelated_static_plugin_still_filters_senior_lighting_artist(
         can_handle_fn=lambda ctx: ctx.source_identity == source_host,
         run_fn=lambda **_kwargs: [
             {
-                "title": "Senior Lighting Artist",
+                "title": "Senior Recruiter",
                 "company": "Unrelated Studio",
-                "jobLink": f"https://{source_host}/careers/lighting-artist",
-                "sourceJobId": "lighting-artist",
+                "jobLink": f"https://{source_host}/careers/senior-recruiter",
+                "sourceJobId": "senior-recruiter",
             }
         ],
     )
