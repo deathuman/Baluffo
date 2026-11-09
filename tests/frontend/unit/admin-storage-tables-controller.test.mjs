@@ -73,6 +73,22 @@ test("storage breakdown loads once with a bounded non-reachability read", async 
   assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated");
 });
 
+test("storage breakdown forwards the startup-lane allowance to the defer predicate", async () => {
+  const seen = [];
+  const f = fixture({
+    shouldDefer: options => {
+      seen.push(options);
+      return !options?.allowStartupBridgeLane;
+    }
+  });
+
+  await f.controller.load({ allowStartupBridgeLane: true });
+
+  assert.deepEqual(seen, [{ allowStartupBridgeLane: true }]);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated");
+});
+
 test("refresh click reloads the breakdown", async () => {
   const f = fixture();
   f.controller.init();

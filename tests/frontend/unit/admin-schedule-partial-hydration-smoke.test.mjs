@@ -372,7 +372,15 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       1,
       evidence(harness.events, harness.metrics)
     );
-    assert.deepEqual(harness.requests.filter(request => /GET \/ops\/storage-health/.test(request)), []);
+    // One read after the startup lane drains, never skipped or racing a heavy route.
+    const storageReads = harness.events.filter(row => row.path.startsWith("/ops/storage-health"));
+    assert.equal(storageReads.length, 1, `Expected one startup storage-health read.\n${evidence(harness.events, harness.metrics)}`);
+    const storageRead = storageReads[0];
+    const storageRace = harness.events.find(row => (
+      row.method === "GET" && STARTUP_HEAVY_ROUTES.some(route => row.path.startsWith(route))
+      && storageRead.startedAt < row.finishedAt && row.startedAt < storageRead.finishedAt
+    ));
+    assert.equal(storageRace, undefined, `Storage-health read raced ${storageRace?.path}\n${evidence(harness.events, harness.metrics)}`);
     assert.deepEqual(harness.requests.filter(request => /GET \/registry\/summary/.test(request)), []);
     assertNoStartupHeavyOverlap(harness.events);
     assert.deepEqual(harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_fetch_done" && row?.payload?.ok === false), []);

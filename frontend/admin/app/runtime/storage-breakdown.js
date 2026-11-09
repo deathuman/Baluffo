@@ -8,6 +8,10 @@ const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
  * storage-health poll during active work. The Action Center already fetches the
  * same route on its own cadence and hands the payload in through
  * `acceptStorageHealth`, so the panel stays current without a second poll.
+ *
+ * `load(options)` forwards its options to `shouldDefer` so the startup read can
+ * join the serial startup bridge lane (`allowStartupBridgeLane: true`) instead of
+ * being deferred by it. Active work still defers unconditionally.
  */
 export function createStorageBreakdownController({
   refs,
@@ -56,9 +60,9 @@ export function createStorageBreakdownController({
     return tableSizes;
   }
 
-  async function load() {
+  async function load(options = {}) {
     if (inFlight) return null;
-    if (shouldDefer()) {
+    if (shouldDefer(options)) {
       setStatus("Deferred", "warning");
       renderMessage(
         "Storage breakdown is deferred while an active run is using the bridge. Use Refresh when it finishes."

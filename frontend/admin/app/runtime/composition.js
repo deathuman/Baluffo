@@ -240,9 +240,9 @@ export function composeAdminControllers({
     getErrorMessage
   });
 
-  function shouldDeferStorageHealth() {
+  function shouldDeferStorageHealth(options = {}) {
     return Boolean(
-      state.adminStartupBridgeHydrationInFlight
+      (!options?.allowStartupBridgeLane && state.adminStartupBridgeHydrationInFlight)
       || state.adminBusyState?.discoveryLoad
       || state.opsActiveAdminWorkLastActive
       || state.opsActivePipelineOrFetchLastActive
@@ -591,9 +591,13 @@ export function composeAdminControllers({
     // earlier put a 273 KB chunk's parse back inside the boot it was split out of.
     opsController.start?.();
     // One bounded read after startup; the panel never polls storage health.
-    // When active work holds the gate, this renders the deferred state and the
-    // Action Center's next storage poll fills the panel instead.
-    storageBreakdownController.load().catch(err => {
+    // It joins the serial startup lane rather than deferring on it, so an idle
+    // load fills the panel as soon as the lane drains instead of waiting for the
+    // Action Center's next (30 s) storage poll. When active work holds the gate,
+    // this still renders the deferred state and the Action Center fills it later.
+    enqueueAdminStartupBridgeTask(() => storageBreakdownController.load({
+      allowStartupBridgeLane: true
+    })).catch(err => {
       logAdminError("Admin storage table breakdown delayed.", err);
     });
     return {
