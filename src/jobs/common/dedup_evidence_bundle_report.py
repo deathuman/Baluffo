@@ -60,6 +60,10 @@ from src.jobs.common.dedup_evidence_review_queue import (
     _recommended_review_action,
     _should_include_review_queue_row,
 )
+from src.jobs.common.source_bundle_reconciliation import (
+    plan_source_bundle_reconciliation,
+    source_bundle_mismatch_examples,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import json_object_rows
@@ -89,6 +93,7 @@ def build_dedup_evidence(
 ) -> DedupEvidencePayload:
     """Build compact diagnostics without changing dedup decisions."""
     rows = [_payload(row) for row in canonical_rows]
+    source_bundle_reconciliation = plan_source_bundle_reconciliation(rows)
     composition: Counter[str] = Counter()
     risk_reason_counts: Counter[str] = Counter()
     outlier_reason_counts: Counter[str] = Counter()
@@ -470,6 +475,13 @@ def build_dedup_evidence(
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
+        "carriedSourceBundleProvenanceMismatchCount": (source_bundle_reconciliation.mismatch_count),
+        "carriedSourceBundleProvenanceMismatchMovableCount": len(
+            source_bundle_reconciliation.moves
+        ),
+        "carriedSourceBundleProvenanceMismatchAmbiguousCount": len(
+            source_bundle_reconciliation.ambiguous
+        ),
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
         "currentRunBlockingReviewQueueCount": current_run_blocking_review_queue_count,
@@ -579,12 +591,19 @@ def build_dedup_evidence(
             )
         ),
         "carriedBundleExamples": carried_bundle_rows[: max(0, int(risky_limit))],
+        "carriedSourceBundleProvenanceMismatchExamples": source_bundle_mismatch_examples(
+            rows, source_bundle_reconciliation, limit=risky_limit
+        ),
         "carriedBundleReconciliationRecommendation": {
             "recommendedAction": "rebuild_carried_source_bundle_metadata",
             "destructiveActionAllowed": False,
             "requiresExplicitMaintenanceRun": True,
+            "sourceBundleProvenanceMismatchCount": (source_bundle_reconciliation.mismatch_count),
+            "sourceBundleProvenanceMismatchAmbiguousCount": len(
+                source_bundle_reconciliation.ambiguous
+            ),
         }
-        if carried_source_bundle_collision_count
+        if carried_source_bundle_collision_count or source_bundle_reconciliation.mismatch_count
         else {},
         "topMergedJobs": top_rows[: max(0, int(top_limit))],
         "topSourceBundleOutliers": top_rows[: max(0, int(top_limit))],

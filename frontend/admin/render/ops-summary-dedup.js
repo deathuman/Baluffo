@@ -431,7 +431,8 @@ function fallbackDedupGateDetails(auditGate, keys, type) {
     carried_provider_static_reviewed_safe_present: "Carried provider/static reviewed-safe rows",
     carried_high_risk_review_queue_causes_present: "Carried high-risk review queue",
     monitor_review_queue_diagnostics_present: "Monitor-only review diagnostics",
-    carried_source_bundle_collisions_present: "Carried source-bundle collisions"
+    carried_source_bundle_collisions_present: "Carried source-bundle collisions",
+    carried_source_bundle_provenance_mismatch_present: "Carried source-bundle provenance mismatches"
   };
   const countsByKey = {
     current_run_non_primary_merges_need_review: Number(auditGate?.currentRunNonPrimaryMergeCounts?.blocking || 0),
@@ -440,7 +441,8 @@ function fallbackDedupGateDetails(auditGate, keys, type) {
     current_run_primary_url_merges_present: Number(auditGate?.currentRunMergedCount || 0),
     carried_high_risk_review_queue_causes_present: Number(auditGate?.carriedBlockingReviewQueueCount || 0),
     monitor_review_queue_diagnostics_present: Number(auditGate?.monitorReviewQueueCount || 0),
-    carried_source_bundle_collisions_present: Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0)
+    carried_source_bundle_collisions_present: Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0),
+    carried_source_bundle_provenance_mismatch_present: Number(auditGate?.carriedSourceBundleProvenanceMismatchCount || 0)
   };
   return keys.map(key => ({
     key,
@@ -552,6 +554,7 @@ function formatDedupAuditGateCard(gate) {
     "current-run merges": auditGate?.currentRunMergedCount,
     "current-run collisions": auditGate?.currentRunSourceBundleCollisionCount,
     "carried collisions": auditGate?.carriedSourceBundleCollisionCount ?? auditGate?.sourceBundleCollisionCount,
+    "bundle provenance mismatches": auditGate?.carriedSourceBundleProvenanceMismatchCount,
     "historical-like": auditGate?.carriedCollisionLikelyHistoricalCount,
     "raw high-risk diagnostics": auditGate?.highRiskReviewQueueCount,
     "current high-risk": auditGate?.currentRunHighRiskReviewQueueCount,

@@ -206,7 +206,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `carriedBlockingReviewQueueCauseCounts` | `Object` | Carried blocker-family review queue counts by suspected root cause; these warn instead of blocking lifecycle UX by themselves. |
 | `currentRunMonitorReviewQueueCauseCounts` | `Object` | Current-run monitor-only review queue counts by suspected root cause. |
 | `carriedMonitorReviewQueueCauseCounts` | `Object` | Carried monitor-only review queue counts by suspected root cause. |
-| `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
+| `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions and provenance mismatches, review queue causes, provider/static disagreement, and Google Sheets guard status. |
 | `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
 | `providerStaticDisagreementGateCounts` | `Object` | Dedicated blocker-vs-warning counts for provider/static disagreement rows after carried-safe URL-variant downgrades, carried location-pollution/location-variant downgrades, and local dedup review-state overrides. |
 | `providerStaticDisagreementClassificationCounts` | `Object` | Dedicated provider/static disagreement counts by review classification. |
@@ -215,6 +215,10 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `providerStaticTitleCompanyCollisionAuditCounts` | `Object` | Dedicated audit counts for carried title/company collision rows: `carried_location_pollution`, `carried_location_variant`, `carried_provider_identity_location_conflict`, `possible_real_multi_location_conflict`, `not_carried`, and `unknown`. |
 | `providerStaticTitleCompanyCollisionExamples` | `Array<Object>` | Stable capped sample of title/company collision rows independent of the general provider/static disagreement cap. |
 | `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
+| `carriedSourceBundleProvenanceMismatchCount` | `number` | Count of carried `sourceBundle` entries whose normalized `jobLink` belongs to a different surviving row. |
+| `carriedSourceBundleProvenanceMismatchMovableCount` | `number` | Subset of provenance mismatches with exactly one surviving target row; these are the entries `--apply` moves. |
+| `carriedSourceBundleProvenanceMismatchAmbiguousCount` | `number` | Subset of provenance mismatches whose normalized link matches more than one surviving row; reported, never auto-moved. |
+| `carriedSourceBundleProvenanceMismatchExamples` | `Array<Object>` | Stable capped sample of provenance mismatches with source/target row identity, entry evidence, and ambiguous candidates. |
 | `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
@@ -328,7 +332,13 @@ mirror pattern; this is not a generic secondary-key relaxation. This gate is adv
 does not add lifecycle labels or change dedup behavior.
 When `carriedBundleReconciliationRecommendation.recommendedAction` is
 `rebuild_carried_source_bundle_metadata`, it is a report-only recommendation for a separate
-explicit maintenance run; this fetch report does not rewrite historical bundle metadata. Carried
+explicit maintenance run; this fetch report does not rewrite historical bundle metadata. Use
+`python tools/source_bundle_reconcile.py --feed <feed>` to preview and `--apply` to move carried
+entries whose normalized job link belongs to another surviving row; the command is dry-run by
+default and preserves row order and IDs. The post-dedupe `dedupEvidence` pass uses the same
+planner: a nonzero `carriedSourceBundleProvenanceMismatchCount` emits a warning-only
+`carried_source_bundle_provenance_mismatch_present` audit-gate entry and also keeps the
+recommendation report-only. Carried
 provider/static title/company collisions audited as `carried_location_pollution` or
 `carried_location_variant` or `carried_provider_identity_location_conflict` may warn without
 blocking, while current-run disagreement and carried unresolved provider/static conflict continue

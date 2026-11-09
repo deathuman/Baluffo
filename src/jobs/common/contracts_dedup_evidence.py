@@ -170,6 +170,8 @@ class DedupAuditGatePayload(TypedDict, total=False):
     sourceBundleCollisionCount: int
     currentRunSourceBundleCollisionCount: int
     carriedSourceBundleCollisionCount: int
+    carriedSourceBundleProvenanceMismatchCount: int
+    carriedSourceBundleProvenanceMismatchAmbiguousCount: int
     highRiskReviewQueueCount: int
     currentRunHighRiskReviewQueueCount: int
     carriedHighRiskReviewQueueCount: int
@@ -212,6 +214,10 @@ class DedupEvidencePayload(TypedDict, total=False):
     sourceBundleCollisionCount: int
     currentRunSourceBundleCollisionCount: int
     carriedSourceBundleCollisionCount: int
+    carriedSourceBundleProvenanceMismatchCount: int
+    carriedSourceBundleProvenanceMismatchMovableCount: int
+    carriedSourceBundleProvenanceMismatchAmbiguousCount: int
+    carriedSourceBundleProvenanceMismatchExamples: list[JsonObject]
     currentRunHighRiskReviewQueueCount: int
     carriedHighRiskReviewQueueCount: int
     currentRunBlockingReviewQueueCount: int
@@ -254,6 +260,7 @@ class DedupEvidencePayload(TypedDict, total=False):
     currentRunMergeExamplesByReason: MergeExampleMap
     currentRunBlockingMergeExamplesByReason: MergeExampleMap
     carriedBundleExamples: list[DedupReviewQueueRow]
+    carriedBundleReconciliationRecommendation: JsonObject
     topMergedJobs: list[JsonObject]
     topSourceBundleOutliers: list[JsonObject]
     locationDivergenceExamples: list[JsonObject]

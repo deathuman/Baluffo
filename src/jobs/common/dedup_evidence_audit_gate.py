@@ -140,6 +140,29 @@ def _audit_gate_carried_bundle_examples(
     return examples
 
 
+def _audit_gate_source_bundle_mismatch_examples(
+    dedup_evidence: Mapping[str, Any],
+) -> list[DedupReviewQueueRow]:
+    examples: list[DedupReviewQueueRow] = []
+    for row in json_object_rows(
+        dedup_evidence.get("carriedSourceBundleProvenanceMismatchExamples")
+    ):
+        examples.append(
+            {
+                "title": clean_text(row.get("sourceTitle")),
+                "company": clean_text(row.get("sourceCompany")),
+                "recommendedReviewAction": "review_carried_source_bundle_provenance",
+                "suspectedCause": "source_bundle_provenance_mismatch",
+                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
+                "identityQuality": clean_text(row.get("status")),
+                "bundleEvidenceOrigin": "carried_from_existing_output",
+            }
+        )
+        if len(examples) >= DEDUP_AUDIT_GATE_DETAIL_LIMIT:
+            break
+    return examples
+
+
 def _audit_gate_detail(
     *,
     key: str,
@@ -184,6 +207,8 @@ def _build_audit_gate_details(
     provider_static_reviewed_safe_warning_count: int,
     provider_static_disagreement_gate_counts: Mapping[str, Any],
     carried_collision_likely_historical_count: int,
+    carried_source_bundle_provenance_mismatch_count: int,
+    carried_source_bundle_provenance_mismatch_ambiguous_count: int,
 ) -> tuple[list[DedupAuditGateDetail], list[DedupAuditGateDetail]]:
     blocker_details: list[DedupAuditGateDetail] = []
     warning_details: list[DedupAuditGateDetail] = []
@@ -377,6 +402,29 @@ def _build_audit_gate_details(
             )
         )
 
+    if "carried_source_bundle_provenance_mismatch_present" in warning_set:
+        warning_details.append(
+            _audit_gate_detail(
+                key="carried_source_bundle_provenance_mismatch_present",
+                label="Carried source-bundle provenance mismatches",
+                count=carried_source_bundle_provenance_mismatch_count,
+                why_blocked=(
+                    "A carried sourceBundle entry points at a job that survives on another row, "
+                    "so the bundle no longer describes its source row."
+                ),
+                next_action=(
+                    "Preview with `python tools/source_bundle_reconcile.py --feed <feed>` and "
+                    "run `--apply` only in an explicit maintenance run; normal fetches do not "
+                    "rewrite carried metadata."
+                ),
+                counts={
+                    "mismatches": carried_source_bundle_provenance_mismatch_count,
+                    "ambiguous": carried_source_bundle_provenance_mismatch_ambiguous_count,
+                },
+                examples=_audit_gate_source_bundle_mismatch_examples(dedup_evidence),
+            )
+        )
+
     return blocker_details, warning_details
 
 
@@ -440,6 +488,7 @@ def _audit_gate_blockers_and_warnings(
     current_run_monitor_review_queue_count: int,
     carried_monitor_review_queue_count: int,
     carried_collision_likely_historical_count: int,
+    carried_source_bundle_provenance_mismatch_count: int,
     blocking_review_queue_count: int,
 ) -> tuple[list[str], list[str]]:
     blockers: list[str] = []
@@ -471,6 +520,8 @@ def _audit_gate_blockers_and_warnings(
         warnings.append("monitor_review_queue_diagnostics_present")
     if carried_collision_likely_historical_count > 0:
         warnings.append("carried_source_bundle_collisions_present")
+    if carried_source_bundle_provenance_mismatch_count > 0:
+        warnings.append("carried_source_bundle_provenance_mismatch_present")
     return blockers, warnings
 
 

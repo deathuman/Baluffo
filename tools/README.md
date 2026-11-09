@@ -375,6 +375,23 @@ refused probe is reported, never failed, because a rejected HEAD says nothing ab
 python tools/provider_revalidation_smoke.py --adapter lever --all
 ```
 
+### Jobs source-bundle reconciliation
+`tools/source_bundle_reconcile.py` handles carried provenance mismatches: a row's
+`sourceBundle` entry can point at a job that survived as a separate row after a dedupe guard
+rejected the pair. The command fingerprints each bundle entry's `jobLink` against every row's
+primary `jobLink`, reports movable and ambiguous entries, and only writes with `--apply`. Apply
+backs up the feed, updates `sourceBundleCount` on both rows, and preserves row order and IDs.
+It supports JSON, gzip JSON, JSONL, and gzip JSONL; dry-run is the default.
+
+```bash
+python tools/source_bundle_reconcile.py --feed <feed>
+python tools/source_bundle_reconcile.py --feed <feed> --apply
+```
+
+Exit 0 means clean or fully applied, 1 means a dry run found movable mismatches, and 2 means
+invalid input, a live-data refusal, or ambiguous target rows. A feed under `data/` needs
+`--allow-live-data` before `--apply` will rewrite it.
+
 ### Release verification
 `tools/verify_release.py` runs the public closeout checks for one tag in one command: the GitHub
 release is published rather than draft or prerelease; every asset the contract requires is
@@ -427,6 +444,7 @@ is typically gitignored - do not commit generated files here.
 | Adjudicate the shipped pool claim | `python tools/measurements/corpus/adjudicate.py --epoch <epoch-dir>` |
 | Price a candidate change before committing it | `tools/measurements/corpus/probes/row_dict/sitecustomize.py` via `ab.py run --arm-b-env` |
 | Test whether a wider audit lane count changes which boards are validated | `python tools/measurements/discovery/lane_parity.py study --study <dir>` |
+| Reconcile carried source-bundle provenance | `python tools/source_bundle_reconcile.py --feed <feed> [--apply]` |
 | Verify a published release (assets, signed manifests, GHCR) | `python tools/verify_release.py [--tag v<version>]` |
 | Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |
 | Sweep an adapter for feeds that ignore If-None-Match | `python tools/provider_revalidation_smoke.py --adapter <adapter> --all` |

@@ -44,6 +44,12 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> DedupAuditGateP
     carried_source_bundle_collision_count = max(
         0, int(dedup_evidence.get("carriedSourceBundleCollisionCount") or 0)
     )
+    carried_source_bundle_provenance_mismatch_count = max(
+        0, int(dedup_evidence.get("carriedSourceBundleProvenanceMismatchCount") or 0)
+    )
+    carried_source_bundle_provenance_mismatch_ambiguous_count = max(
+        0, int(dedup_evidence.get("carriedSourceBundleProvenanceMismatchAmbiguousCount") or 0)
+    )
     current_run_high_risk_review_queue_count = max(
         0, int(dedup_evidence.get("currentRunHighRiskReviewQueueCount") or 0)
     )
@@ -189,6 +195,9 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> DedupAuditGateP
         current_run_monitor_review_queue_count=current_run_monitor_review_queue_count,
         carried_monitor_review_queue_count=carried_monitor_review_queue_count,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
+        carried_source_bundle_provenance_mismatch_count=(
+            carried_source_bundle_provenance_mismatch_count
+        ),
         blocking_review_queue_count=blocking_review_queue_count,
     )
     blocker_details, warning_details = _build_audit_gate_details(
@@ -219,6 +228,12 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> DedupAuditGateP
         provider_static_reviewed_safe_warning_count=provider_static_reviewed_safe_warning_count,
         provider_static_disagreement_gate_counts=provider_static_disagreement_gate_counts,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
+        carried_source_bundle_provenance_mismatch_count=(
+            carried_source_bundle_provenance_mismatch_count
+        ),
+        carried_source_bundle_provenance_mismatch_ambiguous_count=(
+            carried_source_bundle_provenance_mismatch_ambiguous_count
+        ),
     )
 
     status = "blocked" if blockers else "warning" if warnings else "pass"
@@ -243,6 +258,12 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> DedupAuditGateP
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
+        "carriedSourceBundleProvenanceMismatchCount": (
+            carried_source_bundle_provenance_mismatch_count
+        ),
+        "carriedSourceBundleProvenanceMismatchAmbiguousCount": (
+            carried_source_bundle_provenance_mismatch_ambiguous_count
+        ),
         "highRiskReviewQueueCount": high_risk_review_queue_count,
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
