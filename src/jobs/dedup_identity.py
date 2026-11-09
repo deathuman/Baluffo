@@ -11,6 +11,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup tests.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -159,6 +160,14 @@ _COMPANY_SUFFIX_TOKENS = {
     "game",
     "interactive",
 }
+_COMPANY_IDENTITY_ALIASES = {
+    "eidos montreal": "eidos montreal",
+    "eidos-montreal": "eidos montreal",
+    "kojima productions": "kojima productions",
+    "kojimaproductions": "kojima productions",
+    "raven software": "activision",
+}
+_BILINGUAL_TITLE_SEPARATOR = re.compile(r"\s+/\s+")
 _TITLE_SUFFIX_NOISE_TOKENS = {
     "art",
     "creative",
@@ -210,14 +219,52 @@ def _normalize_company_identity(value: Any) -> str:
     company = norm_text(clean_text(value))
     if not company:
         return ""
+    aliased = _COMPANY_IDENTITY_ALIASES.get(company)
+    if aliased:
+        return aliased
     tokens = company.split()
     while tokens and tokens[-1] in _COMPANY_SUFFIX_TOKENS:
         tokens.pop()
-    return " ".join(tokens) or company
+    company = " ".join(tokens) or company
+    return _COMPANY_IDENTITY_ALIASES.get(company, company)
+
+
+def _contains_cjk_letter(value: str) -> bool:
+    return any(
+        "\u3041" <= char <= "\u3096"
+        or "\u30a1" <= char <= "\u30fa"
+        or "\u30fd" <= char <= "\u30ff"
+        or "\u3400" <= char <= "\u4dbf"
+        or "\u4e00" <= char <= "\u9fff"
+        or "\uf900" <= char <= "\ufaff"
+        for char in value
+    )
+
+
+def _contains_latin_letter(value: str) -> bool:
+    return any("a" <= char.lower() <= "z" for char in value)
+
+
+def _bilingual_title_variant(value: Any) -> str:
+    """Return the English side of a Japanese/English ``A / B`` title, when plain."""
+    parts = _BILINGUAL_TITLE_SEPARATOR.split(clean_text(value))
+    if len(parts) != 2:
+        return ""
+    left = parts[0].strip()
+    right = parts[1].strip()
+    if not left or not right:
+        return ""
+    left_is_cjk = _contains_cjk_letter(left)
+    right_is_cjk = _contains_cjk_letter(right)
+    if left_is_cjk and not right_is_cjk and _contains_latin_letter(right):
+        return right
+    if right_is_cjk and not left_is_cjk and _contains_latin_letter(left):
+        return left
+    return ""
 
 
 def _normalize_title_identity(value: Any) -> str:
-    title = clean_text(value)
+    title = _bilingual_title_variant(value) or clean_text(value)
     if not title:
         return ""
     tokens = title.split()
@@ -369,13 +416,27 @@ def _sparse_identity_key(job: CanonicalJob | Mapping[str, Any]) -> str:
     return "|".join([company, title])
 
 
+def _normalize_location_identity(value: Any) -> str:
+    text = norm_text(value)
+    if not text:
+        return ""
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
+    )
+
+
 def dedup_secondary_key(job: CanonicalJob | Mapping[str, Any]) -> str:
     payload = row_payload(job)
+    company = norm_text(payload.get("company"))
+    # Only explicit aliases here. Stripping company suffixes would merge labels the
+    # SmartRecruiters title-alias guard deliberately keeps apart (People Can Fly vs
+    # People Can Fly Studio) before that guard can decide.
+    company = _COMPANY_IDENTITY_ALIASES.get(company, company)
     return "|".join(
         [
-            norm_text(payload.get("company")),
+            company,
             norm_text(payload.get("title")),
-            norm_text(payload.get("city")),
+            _normalize_location_identity(payload.get("city")),
             norm_text(payload.get("country")),
         ]
     )

@@ -70,6 +70,8 @@ Five rules the guardrail enforces so this cannot quietly regress:
   marketing writers.
 - SmartRecruiters boards that were registered with only a compact source identifier now fetch
   correctly, and their postings link back to the right company.
+- Kojima Productions, Raven Software/Activision and Eidos Montreal cross-postings now merge into
+  one entry with both source links, instead of showing the same opening twice.
 
 ## [0.3.042] - 2026-11-08
 
