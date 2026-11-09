@@ -144,7 +144,8 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   (600 s). The required window is size-aware like the ratio: databases at or above
   `vacuum_large_database_bytes` must be quiet for `vacuum_large_database_idle_s`
   (120 s) instead, because a bursty fetch can leave a 30 s gap between sources
-  while it is still writing. Giving up records
+  while it is still writing. Past the same size boundary the rebuild is the
+  compact-copy rewrite described below, not an in-place VACUUM. Giving up records
   `compaction.status == "skipped-busy"` with `idleForS`, the applied window
   (`effectiveIdleGateS`, alongside the configured `idleGateS`), and the sizes that
   asked for it, and runs no VACUUM; the next write schedules it again, so a busy
@@ -176,6 +177,22 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   The status is reported in `health()["runtimeRetention"]`; a pass held by an
   active task is re-scheduled when the hold is released.
 - `close()` still checkpoints passively, because shutdown is a controlled point.
+- **Post-retention shrink uses a compact copy, not an in-place VACUUM.** Freeing
+  pages is not shrinking the file: after a retention pass deletes rows, the
+  database keeps its size until it is rebuilt. Above
+  `vacuum_large_database_bytes` the store therefore rewrites it with `VACUUM INTO`
+  into a sibling staging file while writers keep running, validates the copy with
+  `quick_check`, and swaps it in under the write and read locks. The step is
+  bounded twice: it refuses to start when the free space cannot hold the live
+  bytes plus a 64 MiB margin (`status == "skipped-no-space"` with
+  `freeBytes`/`requiredBytes`), and a `compaction_budget_s`
+  (`BALUFFO_STORAGE_COMPACTION_BUDGET_S`, default 900 s; `0` disables the deadline)
+  timer interrupts the copy (`status == "budget-exceeded"`). A copy that a committed write superseded is
+  discarded instead of installed (`status == "superseded"`), because installing
+  it would drop that write. The record carries `method == "vacuum-into"`,
+  `beforeBytes`, `afterBytes`, `reclaimedBytes`, and `budgetMs`; the original file
+  stays in place until the copy validates, so a bounded-out or failed run costs
+  the staging file only.
 
 Why this exists: a 1.44 GB runtime database with a 1.16 GB freelist and a 392 MB
 WAL started a VACUUM and a TRUNCATE checkpoint the moment the desktop bridge

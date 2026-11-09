@@ -22,6 +22,7 @@ from src.storage.baluffo_store import (
     DEFAULT_BUSY_RETRY_BASE_MS,
     DEFAULT_BUSY_RETRY_MAX_MS,
     DEFAULT_BUSY_TIMEOUT_MS,
+    DEFAULT_COMPACTION_BUDGET_S,
     DEFAULT_DB_NAME,
     DEFAULT_WRITE_LOCK_TIMEOUT_MS,
 )
@@ -69,6 +70,14 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = str(os.getenv(name) or "").strip()
+    try:
+        return max(0.0, float(raw)) if raw else float(default)
+    except ValueError:
+        return float(default)
+
+
 def _storage_busy_config() -> dict[str, Any]:
     return {
         "busy_timeout_ms": _env_int("BALUFFO_STORAGE_BUSY_TIMEOUT_MS", DEFAULT_BUSY_TIMEOUT_MS),
@@ -83,6 +92,9 @@ def _storage_busy_config() -> dict[str, Any]:
         ),
         "write_lock_timeout_ms": _env_int(
             "BALUFFO_STORAGE_WRITE_LOCK_TIMEOUT_MS", DEFAULT_WRITE_LOCK_TIMEOUT_MS
+        ),
+        "compaction_budget_s": _env_float(
+            "BALUFFO_STORAGE_COMPACTION_BUDGET_S", DEFAULT_COMPACTION_BUDGET_S
         ),
     }
 

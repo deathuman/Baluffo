@@ -27,7 +27,7 @@ def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
     raw = str(os.getenv(name) or "").strip()
     try:
         value = int(raw) if raw else int(default)
-    except ValueError:
+    except (ValueError, OverflowError):
         value = int(default)
     return max(minimum, value)
 

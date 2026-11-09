@@ -9,10 +9,13 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused storage runtime 
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import sqlite3
 import threading
 import time
 import traceback
+import uuid
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,6 +75,15 @@ DEFAULT_HEALTH_LOCK_TIMEOUT_MS = 250
 # Per-table space estimates come from a bounded sample, so they are cached:
 # `/ops/storage-health` is polled on a timer and must not re-sample every poll.
 DEFAULT_TABLE_SIZE_CACHE_S = 600.0
+# An in-place VACUUM holds the store write lock for the whole rebuild, which on a
+# multi-gigabyte runtime database is an unbounded hold -- the same shape that
+# starved fetch finalization behind the jobs-feed reconciliation lock. A
+# post-retention shrink therefore rewrites the database into a compact copy with
+# VACUUM INTO while writers keep running, then swaps it in under both locks. The
+# run is bounded by a wall-clock budget and by free disk space, and the original
+# file stays in place until the copy validates.
+DEFAULT_COMPACTION_BUDGET_S = 900.0
+DEFAULT_COMPACTION_FREE_SPACE_MARGIN_BYTES = 64 * 1024 * 1024
 SLOW_WRITE_STACK_LIMIT = 12
 MAINTENANCE_STATUS_DEFERRED = "deferred"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
@@ -143,6 +155,7 @@ class BaluffoStore:
         vacuum_large_database_idle_s: float = DEFAULT_VACUUM_LARGE_DATABASE_IDLE_S,
         vacuum_idle_max_wait_s: float = DEFAULT_VACUUM_IDLE_MAX_WAIT_S,
         vacuum_idle_poll_s: float = DEFAULT_VACUUM_IDLE_POLL_S,
+        compaction_budget_s: float = DEFAULT_COMPACTION_BUDGET_S,
         defer_maintenance: bool = False,
         compaction_hold: bool = False,
         slow_write_warn_ms: int = DEFAULT_SLOW_WRITE_WARN_MS,
@@ -173,6 +186,7 @@ class BaluffoStore:
         )
         self.vacuum_idle_max_wait_s = max(0.0, float(vacuum_idle_max_wait_s))
         self.vacuum_idle_poll_s = max(0.05, float(vacuum_idle_poll_s))
+        self.compaction_budget_s = max(0.0, float(compaction_budget_s))
         self._last_write_monotonic = time.monotonic()
         self._last_write_error = ""
         self._busy_count = 0
@@ -895,6 +909,14 @@ class BaluffoStore:
             }
             if self._retention_thread is threading.current_thread():
                 self._retention_thread = None
+        deleted_rows = sum(
+            int(status.get(key) or 0)
+            for key in ("deletedRowCount", "deletedEventCount", "deletedSyncRunCount")
+        )
+        if deleted_rows > 0:
+            # Deleted rows only become free pages; the rewrite is what returns
+            # them to the filesystem, so the pass that made them schedules it.
+            self.schedule_compaction_if_needed(reason=f"{reason}:retention")
         return True
 
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
@@ -973,6 +995,14 @@ class BaluffoStore:
             self._last_checkpoint = status
 
     def vacuum(self, *, reason: str = "") -> dict[str, Any]:
+        """Rebuild the database to return free pages to the filesystem.
+
+        An in-place VACUUM holds the write lock for its whole run, which is
+        unbounded on a large database, so past `vacuum_large_database_bytes` this
+        delegates to the bounded compact-copy rewrite.
+        """
+        if self._path_size(self.db_path) >= self.vacuum_large_database_bytes:
+            return self.compact_database(reason=reason)
         started = time.perf_counter()
         before_bytes = self._path_size(self.db_path)
         last_busy_error: sqlite3.OperationalError | None = None
@@ -992,6 +1022,7 @@ class BaluffoStore:
                 reclaimed = max(0, before_bytes - after_bytes)
                 status = {
                     "status": "ok",
+                    "method": "vacuum",
                     "reason": str(reason or ""),
                     "durationMs": int(round((time.perf_counter() - started) * 1000)),
                     "beforeBytes": before_bytes,
@@ -1018,6 +1049,7 @@ class BaluffoStore:
         LOGGER.error(message)
         status = {
             "status": "failed",
+            "method": "vacuum",
             "reason": str(reason or ""),
             "durationMs": int(round((time.perf_counter() - started) * 1000)),
             "beforeBytes": before_bytes,
@@ -1028,6 +1060,213 @@ class BaluffoStore:
         with self._maintenance_lock:
             self._last_vacuum = status
         raise BaluffoStoreError(message)
+
+    def compact_database(self, *, reason: str = "") -> dict[str, Any]:
+        """Shrink the file by rewriting it into a compact copy and swapping it in.
+
+        Post-retention deletes free pages; only a rewrite returns them to the
+        filesystem. An in-place VACUUM would hold the store write lock for the
+        whole rebuild -- unbounded on a multi-gigabyte database -- so this builds
+        the compact copy through `VACUUM INTO` on its own read snapshot while
+        writers keep running, then swaps it in under both locks. The run is
+        bounded by `compaction_budget_s` and by free disk space, and the original
+        file stays in place until the copy validates.
+        """
+        started = time.monotonic()
+        before = self.file_sizes()
+        database_bytes = int(before.get("databaseBytes") or 0)
+        freelist_bytes = int(before.get("freelistBytes") or 0)
+        budget_ms = int(round(self.compaction_budget_s * 1000))
+        staging = self.db_path.with_name(
+            f"{self.db_path.name}.compact-{os.getpid()}-{uuid.uuid4().hex[:8]}.tmp"
+        )
+        # The copy needs room for the live pages, not for the current file: a
+        # bloated freelist is exactly the case this exists to reclaim.
+        live_bytes = max(0, database_bytes - freelist_bytes)
+        required_free = live_bytes + DEFAULT_COMPACTION_FREE_SPACE_MARGIN_BYTES
+        try:
+            free_bytes = int(self._free_disk_bytes())
+        except OSError as exc:
+            return self._record_rewrite(
+                self._rewrite_status(
+                    "failed",
+                    reason,
+                    started,
+                    budget_ms,
+                    database_bytes,
+                    freelist_bytes,
+                    error=f"free-space probe failed: {exc}",
+                )
+            )
+        if free_bytes < required_free:
+            return self._record_rewrite(
+                self._rewrite_status(
+                    "skipped-no-space",
+                    reason,
+                    started,
+                    budget_ms,
+                    database_bytes,
+                    freelist_bytes,
+                    freeBytes=free_bytes,
+                    requiredBytes=required_free,
+                )
+            )
+        transactions_before = self._write_transactions
+        try:
+            self._vacuum_into_copy(staging)
+            # A copy taken before a committed write would drop that write on
+            # swap, so the swap checks the counter again while it holds the lock.
+            installed = self._swap_in_compact_copy(
+                staging, expected_transactions=transactions_before
+            )
+        except sqlite3.OperationalError as exc:
+            staging.unlink(missing_ok=True)
+            interrupted = "interrupt" in str(exc).lower()
+            return self._record_rewrite(
+                self._rewrite_status(
+                    "budget-exceeded" if interrupted else "failed",
+                    reason,
+                    started,
+                    budget_ms,
+                    database_bytes,
+                    freelist_bytes,
+                    error=str(exc),
+                )
+            )
+        except (BaluffoStoreError, OSError, ValueError) as exc:
+            staging.unlink(missing_ok=True)
+            return self._record_rewrite(
+                self._rewrite_status(
+                    "failed",
+                    reason,
+                    started,
+                    budget_ms,
+                    database_bytes,
+                    freelist_bytes,
+                    error=str(exc),
+                )
+            )
+        if not installed:
+            staging.unlink(missing_ok=True)
+            return self._record_rewrite(
+                self._rewrite_status(
+                    "superseded",
+                    reason,
+                    started,
+                    budget_ms,
+                    database_bytes,
+                    freelist_bytes,
+                    writesDuringCopy=self._write_transactions - transactions_before,
+                )
+            )
+        after = self.file_sizes()
+        after_bytes = int(after.get("databaseBytes") or 0)
+        return self._record_rewrite(
+            self._rewrite_status(
+                "ok",
+                reason,
+                started,
+                budget_ms,
+                database_bytes,
+                freelist_bytes,
+                databaseBytes=after_bytes,
+                freelistBytes=int(after.get("freelistBytes") or 0),
+                afterBytes=after_bytes,
+                reclaimedBytes=max(0, database_bytes - after_bytes),
+            )
+        )
+
+    def _free_disk_bytes(self) -> int:
+        return int(shutil.disk_usage(self.data_dir).free)
+
+    def _rewrite_status(
+        self,
+        status: str,
+        reason: str,
+        started: float,
+        budget_ms: int,
+        database_bytes: int,
+        freelist_bytes: int,
+        **fields: Any,
+    ) -> dict[str, Any]:
+        return {
+            "status": status,
+            "method": "vacuum-into",
+            "reason": str(reason or ""),
+            "durationMs": int(round((time.monotonic() - started) * 1000)),
+            "budgetMs": budget_ms,
+            "beforeBytes": database_bytes,
+            "databaseBytes": database_bytes,
+            "freelistBytes": freelist_bytes,
+            "reclaimedBytes": 0,
+            "error": "",
+            **fields,
+        }
+
+    def _record_rewrite(self, status: dict[str, Any]) -> dict[str, Any]:
+        with self._maintenance_lock:
+            self._last_vacuum = status
+        return status
+
+    def _vacuum_into_copy(self, staging: Path) -> None:
+        """Build a compact copy of the database at ``staging``.
+
+        The copy runs on its own read-only connection, so it takes a read
+        snapshot instead of the store write lock and writers keep running. A
+        timer interrupts it when the budget expires: an interrupted `VACUUM INTO`
+        leaves a partial staging file that the caller removes.
+        """
+        staging.unlink(missing_ok=True)
+        conn = sqlite3.connect(
+            f"{self.db_path.as_uri()}?mode=ro",
+            uri=True,
+            timeout=self.busy_timeout_ms / 1000.0,
+        )
+        timer: threading.Timer | None = None
+        try:
+            if self.compaction_budget_s > 0.0:
+                timer = threading.Timer(self.compaction_budget_s, conn.interrupt)
+                timer.daemon = True
+                timer.start()
+            conn.execute("VACUUM INTO ?", (str(staging),))
+        finally:
+            if timer is not None:
+                timer.cancel()
+            conn.close()
+
+    def _swap_in_compact_copy(self, staging: Path, *, expected_transactions: int) -> bool:
+        """Install a validated compact copy, unless a write landed since it began.
+
+        Both locks are held for the swap, so no reader resolves a half-swapped
+        path and no writer commits against the file being replaced. A write
+        committed after the copy's snapshot is not in the copy, so the swap is
+        abandoned instead of dropping it. The stale WAL/SHM files go with the old
+        file; the copy already carries the state its snapshot saw.
+        """
+        with self._write_lock, self._read_lock:
+            if self._write_transactions != expected_transactions:
+                return False
+            self._validate_database_file(staging)
+            if self._reader is not None:
+                self._reader.close()
+                self._reader = None
+            self._writer.close()
+            replaced = False
+            try:
+                os.replace(staging, self.db_path)
+                replaced = True
+                for suffix in ("-wal", "-shm"):
+                    self.db_path.with_name(f"{self.db_path.name}{suffix}").unlink(missing_ok=True)
+                self._writer = self._connect()
+                self._initialize_writer()
+            except BaseException:
+                if replaced:
+                    self._healthy = False
+                    self._last_write_error = "compact copy installed but reopen failed"
+                else:
+                    self._writer = self._connect()
+                raise
+            return True
 
     def compaction_status(self) -> dict[str, Any]:
         with self._maintenance_lock:
@@ -1042,6 +1281,7 @@ class BaluffoStore:
                 "largeDatabaseIdleS": self.vacuum_large_database_idle_s,
                 "idleGateS": self.vacuum_idle_s,
                 "idleMaxWaitS": self.vacuum_idle_max_wait_s,
+                "compactionBudgetMs": int(round(self.compaction_budget_s * 1000)),
                 "heldByActiveTask": self._compaction_hold,
                 "lastWriteAgoS": round(max(0.0, time.monotonic() - self._last_write_monotonic), 3),
             }

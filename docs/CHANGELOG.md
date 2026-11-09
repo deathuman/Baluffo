@@ -48,17 +48,22 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.043] - 2026-11-09
+
 ### Added
 
 - Ops can now inspect a legacy browser-fallback queue before it is read: a new diagnostic reports pages listed more than once, which copy will be kept, and parser-error rows that are not eligible for browser retry. It is read-only and never changes the queue.
+- Admin now shows a per-table breakdown of the runtime database, so where a growing store spends its space is visible without opening a shell.
 
 ### Changed
 
 - Browser fallback queue entries now say whether fallback was attempted, whether it supplied content, and why it was not attempted. A run-wide cooldown is recorded separately, so one breaker refusal is no longer mistaken for a refusal of every queued source.
+- The runtime database now keeps only the newest 30 fetch runs and 30 days of per-source fetch detail, and compacts itself after pruning, so a long-lived install no longer accumulates every fetch report it has ever written. The compaction is bounded by time and free disk space and reports its outcome in storage health.
 
 ### Fixed
 
 - Browser fallback queue rows now deduplicate by canonical page across source IDs, and `parse_error` rows outside the documented static-queue classification allowlist are excluded from new writes and legacy queue reads.
+- Admin's runtime storage panel now loads once when startup hydration finishes instead of firing a second read, so it no longer stalls the panel when the bridge is still finishing startup work.
 - Browser fallback can now reopen during a long fetch. When the cooldown refuses a fallback request, the app checks whether a browser can render again and, if it can, retries that request immediately instead of leaving every later source refused until the 30-minute window ends. The check runs at most once a minute, so a browser that is still broken is not relaunched for every source that asks for fallback.
 
 - Static fetch diagnostics no longer count sources excluded before evaluation as zero-kept
@@ -76,6 +81,10 @@ Five rules the guardrail enforces so this cannot quietly regress:
   longer collapse into one entry.
 - Epic job links and Greenhouse job-detail links now count as provider identity, so distinct
   provider job IDs cannot merge solely on title and location.
+
+### Notes
+
+- Distribution compatibility is unchanged: the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility remain supported.
 
 ## [0.3.042] - 2026-11-08
 
@@ -139,50 +148,3 @@ Five rules the guardrail enforces so this cannot quietly regress:
 - Distribution compatibility is unchanged: the same-origin Linux container,
   GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
   desktop localhost bridge compatibility continue to work as before.
-
-## [0.3.038] - 2026-11-05
-
-> This is a desktop rollup: it combines the changes that shipped to the container
-> channel as 0.3.035, 0.3.036, and 0.3.037 with the performance work below, so a
-> desktop install upgrading from 0.3.033 receives the whole set in one step.
-
-### Fixed
-
-- The Jobs page no longer waits on a full jobs-feed parse when its startup
-  snapshot has to be rebuilt; the bridge reads only the rows that snapshot
-  needs.
-- Jobs sources that need a browser fallback now keep the rendered page instead of
-  falling back to the original static shell, so dynamic boards can recover rather
-  than reporting an empty or failed source.
-- Opening the Ops tab no longer re-parses the task-lifecycle ledger twice per
-  poll; the JSON read is cached against the artifact's file signature and
-  refreshed by the bridge's own writes. The health response also hands its
-  already-loaded task rows to the schedule summary instead of reading the ledger
-  again, and a cached poll skips the stale-task repair scan.
-- The registry-conflicts background refresh no longer parses the whole jobs
-  feed. With the feed in SQLite it reads only the conflict sources through the
-  `job_sources` index; otherwise it reads at most the first 10,000 rows of the
-  JSON artifact. A truncated prefix is dropped and the conflicts are kept for
-  review rather than suppressing boards on an incomplete job set. The Registry
-  conflicts tab shows which path the refresh used, the rows read, and whether
-  a prefix was discarded. A SQLite generation older than the newest source-state
-  run raises a `sqlite_jobs_feed_stale` warning so stale job evidence is not
-  mistaken for a completed suppression check.
-- Availability changes written back to the jobs feed no longer read that feed
-  twice.
-- Source Policy review actions and the panel refresh no longer time out on a large registry.
-  Review-only actions skip loading the full registry, and the conflict list is reused while the
-  underlying registry and source data have not changed.
-- Registry Conflicts no longer times out when its saved list is out of date. The panel shows the
-  last saved list, or a short "building" message when there is none, while a fresh copy is
-  assembled in the background, then updates itself.
-- Closing the desktop window while a new page is still loading no longer shuts the app down
-  mid-navigation; the pending close is cancelled when the replacement page boots.
-- The Admin action center no longer raises its attention chip for a source probe that used its
-  full time budget but settled, and reports page failures as outcome counts instead.
-
-### Notes
-
-- Distribution behavior is unchanged: the same-origin Linux container,
-  GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
-  desktop localhost bridge compatibility all work as before.
