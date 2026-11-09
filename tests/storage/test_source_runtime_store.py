@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -83,6 +85,58 @@ def test_source_runtime_parity_read_can_cross_live_row_cap() -> None:
 
             assert len(parity_rows) == 501
             assert parity_rows[-1]["name"] == "Studio 500"
+
+
+def test_source_runtime_prunes_old_runs_but_keeps_recent_and_active_runs() -> None:
+    with workspace_tmpdir("source-runtime-retention") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-01-01T00:00:00+00:00",
+                batch_size=10,
+            )
+            run_stamps = {
+                "fetch_old": "2026-01-01T00:00:00+00:00",
+                "fetch_active": "2026-01-02T00:00:00+00:00",
+                "fetch_keep_older": "2026-03-09T00:00:00+00:00",
+                "fetch_keep_newer": "2026-03-10T00:00:00+00:00",
+            }
+            for run_id in run_stamps:
+                runtime.upsert_source_runs(
+                    run_id=run_id,
+                    rows=[{"name": run_id, "status": "ok", "keptCount": 1}],
+                )
+
+                def stamp_run(conn: sqlite3.Connection, run_id: str = run_id) -> None:
+                    conn.execute(
+                        "UPDATE source_runs SET updated_at = ? WHERE run_id = ?",
+                        (run_stamps[run_id], run_id),
+                    )
+
+                store.write(stamp_run)
+            store.write(
+                lambda conn: conn.execute(
+                    """
+                    INSERT INTO task_runs(run_id, task_type, status, started_at)
+                    VALUES ('fetch_active', 'fetch', 'running', '2026-01-02T00:00:00+00:00')
+                    """
+                )
+            )
+
+            result = runtime.prune_old_runs(
+                retention_days=30,
+                keep_runs=2,
+                max_runs=10,
+                now=datetime(2026, 3, 15, tzinfo=UTC),
+            )
+
+            assert result["deletedRunCount"] == 1
+            assert result["deletedRowCount"] == 1
+            assert result["retainedRunCount"] == 3
+            assert runtime.source_run_summary(run_id="fetch_old")["rowCount"] == 0
+            assert runtime.source_run_summary(run_id="fetch_active")["rowCount"] == 1
+            assert runtime.source_run_summary(run_id="fetch_keep_older")["rowCount"] == 1
+            assert runtime.source_run_summary(run_id="fetch_keep_newer")["rowCount"] == 1
 
 
 def test_evidence_archive_store_writes_manifest_and_enforces_budget() -> None:

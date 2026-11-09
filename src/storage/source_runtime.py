@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.shared.coerce import as_dict as _coerce_as_dict
@@ -18,10 +19,15 @@ from src.shared.json_io import json_dumps, loads_object
 from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import coerce_non_negative_int as _coerce_int
 from src.shared.utils import now_iso as _shared_now_iso
+from src.shared.utils import parse_iso as _parse_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 
 SOURCE_RUN_SCHEMA_VERSION = 1
 DEFAULT_SOURCE_RUN_LIMIT = 500
+DEFAULT_RUNTIME_RETENTION_DAYS = 30
+DEFAULT_RUNTIME_RETENTION_KEEP_RUNS = 30
+DEFAULT_RUNTIME_RETENTION_MAX_RUNS = 200
+DEFAULT_RUNTIME_RETENTION_BATCH_RUNS = 10
 
 
 def _now_iso() -> str:
@@ -340,4 +346,134 @@ class SourceRuntimeStore:
             "successfulSources": counts.get("ok", 0),
             "failedSources": counts.get("error", 0),
             "excludedSources": counts.get("excluded", 0),
+        }
+
+    def prune_old_runs(
+        self,
+        *,
+        retention_days: int = DEFAULT_RUNTIME_RETENTION_DAYS,
+        keep_runs: int = DEFAULT_RUNTIME_RETENTION_KEEP_RUNS,
+        max_runs: int = DEFAULT_RUNTIME_RETENTION_MAX_RUNS,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Delete old terminal source-run payloads in bounded batches.
+
+        ``source_runs`` is append-only and stores the full per-source report
+        payload for every fetch. A mature runtime database therefore grows by
+        hundreds of megabytes per fetch even though only the latest runs are
+        read by the UI. Keep the newest ``keep_runs`` runs and every run that is
+        still active; delete older runs whose last row is beyond the retention
+        cutoff. Deletion is deliberately bounded by ``max_runs`` so one startup
+        pass cannot monopolize the write lock.
+        """
+        normalized_days = max(0, int(retention_days or 0))
+        normalized_keep = max(1, int(keep_runs or 1))
+        normalized_max = max(0, int(max_runs or 0))
+        if normalized_days <= 0 or normalized_max <= 0:
+            return {
+                "status": "disabled",
+                "retentionDays": normalized_days,
+                "keepRuns": normalized_keep,
+                "deletedRunCount": 0,
+                "deletedRowCount": 0,
+            }
+
+        now_dt = now or datetime.now(UTC)
+        cutoff = now_dt - timedelta(days=normalized_days)
+        active_rows = self.store.execute_read(
+            "SELECT run_id FROM task_runs WHERE status IN ('queued', 'running')"
+        )
+        active_run_ids = {
+            _clean_text(row.get("run_id")) for row in active_rows if _clean_text(row.get("run_id"))
+        }
+        run_rows = self.store.execute_read(
+            """
+            SELECT run_id,
+                   MAX(COALESCE(NULLIF(updated_at, ''), NULLIF(finished_at, ''), started_at))
+                       AS ended_at
+            FROM source_runs
+            GROUP BY run_id
+            """
+        )
+        parsed_runs: list[tuple[str, datetime]] = []
+        for row in run_rows:
+            run_id = _clean_text(row.get("run_id"))
+            ended_at = _parse_iso(row.get("ended_at"))
+            if run_id and ended_at is not None:
+                parsed_runs.append((run_id, ended_at))
+        parsed_runs.sort(key=lambda item: item[1], reverse=True)
+        keep_run_ids = {run_id for run_id, _ended_at in parsed_runs[:normalized_keep]}
+        candidates = [
+            (run_id, ended_at)
+            for run_id, ended_at in parsed_runs
+            if ended_at < cutoff and run_id not in keep_run_ids and run_id not in active_run_ids
+        ]
+        candidates.sort(key=lambda item: item[1])
+        selected = candidates[:normalized_max]
+
+        deleted_run_count = 0
+        deleted_row_count = 0
+        for start in range(0, len(selected), DEFAULT_RUNTIME_RETENTION_BATCH_RUNS):
+            batch = selected[start : start + DEFAULT_RUNTIME_RETENTION_BATCH_RUNS]
+            batch_ids = [run_id for run_id, _ended_at in batch]
+
+            def delete_batch(conn: Any, run_ids: list[str] = batch_ids) -> int:
+                deleted = 0
+                for run_id in run_ids:
+                    cursor = conn.execute("DELETE FROM source_runs WHERE run_id = ?", (run_id,))
+                    deleted += max(0, int(cursor.rowcount or 0))
+                return deleted
+
+            deleted_row_count += int(self.store.write(delete_batch) or 0)
+            deleted_run_count += len(batch)
+
+        cutoff_text = cutoff.isoformat()
+        event_row_count, sync_row_count = self.store.write(
+            lambda conn: (
+                max(
+                    0,
+                    int(
+                        conn.execute(
+                            """
+                            DELETE FROM task_events
+                            WHERE created_at <> '' AND created_at < ?
+                              AND run_id NOT IN (
+                                  SELECT run_id FROM task_runs
+                                  WHERE status IN ('queued', 'running')
+                              )
+                            """,
+                            (cutoff_text,),
+                        ).rowcount
+                        or 0
+                    ),
+                ),
+                max(
+                    0,
+                    int(
+                        conn.execute(
+                            """
+                            DELETE FROM sync_runs
+                            WHERE started_at <> '' AND started_at < ?
+                              AND status NOT IN ('queued', 'running')
+                            """,
+                            (cutoff_text,),
+                        ).rowcount
+                        or 0
+                    ),
+                ),
+            )
+        )
+        return {
+            "status": "ok" if selected or event_row_count or sync_row_count else "nothing-to-prune",
+            "retentionDays": normalized_days,
+            "keepRuns": normalized_keep,
+            "maxRuns": normalized_max,
+            "cutoff": cutoff_text,
+            "candidateRunCount": len(candidates),
+            "deletedRunCount": deleted_run_count,
+            "deletedRowCount": deleted_row_count,
+            "deletedEventCount": event_row_count,
+            "deletedSyncRunCount": sync_row_count,
+            "retainedRunCount": max(0, len(parsed_runs) - deleted_run_count),
+            "truncated": len(candidates) > len(selected),
         }

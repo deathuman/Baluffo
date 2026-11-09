@@ -190,6 +190,16 @@ class BaluffoStore:
             "reclaimedBytes": 0,
             "error": "",
         }
+        self._last_retention: dict[str, Any] = {
+            "status": "not-run",
+            "reason": "",
+            "durationMs": 0,
+            "deletedRunCount": 0,
+            "deletedRowCount": 0,
+            "error": "",
+        }
+        self._runtime_retention_done = False
+        self._retention_thread: threading.Thread | None = None
         self._maintenance_thread: threading.Thread | None = None
         self._write_lock = threading.RLock()
         self._read_lock = threading.RLock()
@@ -706,6 +716,7 @@ class BaluffoStore:
             self._compaction_hold = bool(held)
         if not changed or self._compaction_hold:
             return False
+        self.schedule_runtime_retention(reason="compaction-hold-released")
         return self.schedule_compaction_if_needed(reason="compaction-hold-released")
 
     def set_maintenance_deferred(self, deferred: bool) -> None:
@@ -767,6 +778,7 @@ class BaluffoStore:
         if grace_s > 0.0:
             time.sleep(grace_s)
         try:
+            self._run_runtime_retention(reason=reason)
             with self._maintenance_lock:
                 if self._last_checkpoint.get("status") == MAINTENANCE_STATUS_DEFERRED:
                     self._last_checkpoint = {
@@ -794,6 +806,90 @@ class BaluffoStore:
             with self._maintenance_lock:
                 if self._maintenance_thread is threading.current_thread():
                     self._maintenance_thread = None
+
+    def runtime_retention_status(self) -> dict[str, Any]:
+        with self._maintenance_lock:
+            return {
+                **self._last_retention,
+                "done": bool(self._runtime_retention_done),
+                "running": bool(
+                    self._retention_thread is not None and self._retention_thread.is_alive()
+                ),
+            }
+
+    def schedule_runtime_retention(self, *, reason: str = "") -> bool:
+        """Start one bounded runtime-retention pass in the background.
+
+        Retention deletes old source-run payloads and event history. It is
+        scheduled after serving and after the compaction hold is released, so
+        it never competes with an active fetch on the startup path.
+        """
+        with self._maintenance_lock:
+            if self._runtime_retention_done:
+                return False
+            if self._retention_thread is not None and self._retention_thread.is_alive():
+                return False
+            if self._compaction_hold:
+                self._last_retention = {
+                    "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+                    "reason": str(reason or ""),
+                    "durationMs": 0,
+                    "deletedRunCount": 0,
+                    "deletedRowCount": 0,
+                    "error": "",
+                }
+                return False
+            thread = threading.Thread(
+                target=self._run_runtime_retention,
+                kwargs={"reason": str(reason or "")},
+                name="baluffo-sqlite-runtime-retention",
+                daemon=True,
+            )
+            self._retention_thread = thread
+            thread.start()
+            return True
+
+    def _run_runtime_retention(self, *, reason: str) -> bool:
+        with self._maintenance_lock:
+            if self._runtime_retention_done:
+                return False
+            if self._compaction_hold:
+                self._last_retention = {
+                    "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+                    "reason": str(reason or ""),
+                    "durationMs": 0,
+                    "deletedRunCount": 0,
+                    "deletedRowCount": 0,
+                    "error": "",
+                }
+                return False
+        started = time.monotonic()
+        try:
+            from src.storage.runtime_retention import run_runtime_retention
+
+            status = run_runtime_retention(self, reason=reason)
+        except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
+            status = {
+                "status": "failed",
+                "reason": str(reason or ""),
+                "error": str(exc),
+                "deletedRunCount": 0,
+                "deletedRowCount": 0,
+            }
+            LOGGER.warning("SQLite runtime retention failed: %s", exc)
+        status = {
+            **status,
+            "durationMs": int(round((time.monotonic() - started) * 1000)),
+        }
+        with self._maintenance_lock:
+            self._last_retention = status
+            self._runtime_retention_done = str(status.get("status") or "") not in {
+                "failed",
+                MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+            }
+            if self._retention_thread is threading.current_thread():
+                self._retention_thread = None
+        return True
 
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
         sizes = self.file_sizes()
@@ -1184,5 +1280,6 @@ class BaluffoStore:
             "writeTransactions": self._write_transactions,
             "walMaintenance": self.wal_maintenance_status(),
             "compaction": self.compaction_status(),
+            "runtimeRetention": self.runtime_retention_status(),
             "authorityModes": self.get_authority_modes(),
         }

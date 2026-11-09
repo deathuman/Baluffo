@@ -45,7 +45,7 @@ Availability runtime artifacts remain bounded filesystem compatibility/evidence 
 | Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state?view=summary` hot-path projection; `/ops/task-state` full diagnostic projection | JSON lifecycle files remain compatibility exports and rollback fallback. |
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
 | Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Includes sync size and shard metrics. |
-| Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. |
+| Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. Older terminal runs are pruned by bounded runtime retention. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
 | Source registry | SQLite `source_registry_rows`, `source_registry_tombstones`, and `source_registry_state` after M6 cutover | Active/pending/rejected/tombstone JSON exports plus sharded source-sync export | Route payloads remain shape-compatible; rollback returns reads to JSON while retaining SQLite for diagnosis. |
@@ -166,6 +166,15 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   queued behind a VACUUM. Later writes schedule maintenance normally.
 - A store that is asked to resume with nothing over threshold records
   `"not-needed"`.
+- **Runtime retention runs after serving.** Each store runs one bounded
+  `source_runs` retention pass through the post-serve maintenance thread. The
+  newest `BALUFFO_RUNTIME_RETENTION_KEEP_RUNS` fetch runs (default `30`) and all
+  active runs are retained; terminal runs whose last source row is older than
+  `BALUFFO_RUNTIME_RETENTION_DAYS` (default `30`) are deleted in batches, capped
+  at `BALUFFO_RUNTIME_RETENTION_MAX_RUNS` per pass (default `200`). Old
+  `task_events` and terminal `sync_runs` rows also expire at the same cutoff.
+  The status is reported in `health()["runtimeRetention"]`; a pass held by an
+  active task is re-scheduled when the hold is released.
 - `close()` still checkpoints passively, because shutdown is a controlled point.
 
 Why this exists: a 1.44 GB runtime database with a 1.16 GB freelist and a 392 MB
