@@ -49,6 +49,8 @@ def _install_terminal_harness(
     redirect_cache: dict[str, str] | None = None,
     updated_source_state_rows: dict[str, dict[str, Any]] | None = None,
     provider_static_overlap_summary: Any | None = None,
+    quality_reports: Any | None = None,
+    applied_lifecycle: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     calls: dict[str, Any] = {
         "progress_reports": [],
@@ -78,7 +80,7 @@ def _install_terminal_harness(
         "_apply_lifecycle_state",
         lambda **kwargs: (
             kwargs["deduped_rows"],
-            {"job-1": {"state": "active"}},
+            applied_lifecycle if applied_lifecycle is not None else {"job-1": {"state": "active"}},
             {"2026": [{"id": "job-1"}]},
             {"active": 1},
         ),
@@ -91,11 +93,14 @@ def _install_terminal_harness(
     monkeypatch.setattr(
         pipeline_finalize,
         "_quality_reports",
-        lambda _rows: (
-            {"location": "ok"},
-            {"sector": "ok"},
-            {"contamination": "ok"},
-            {"city": "ok"},
+        quality_reports
+        or (
+            lambda _rows: (
+                {"location": "ok"},
+                {"sector": "ok"},
+                {"contamination": "ok"},
+                {"city": "ok"},
+            )
         ),
     )
     monkeypatch.setattr(

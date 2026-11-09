@@ -10,11 +10,13 @@ changed, while still re-reading if an external writer touched the file.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.pipeline_finalize import _serialize_jobs_feed_reconciliation
 from src.jobs.state_lifecycle import (
     lifecycle_state_fingerprint,
@@ -125,6 +127,29 @@ def test_missing_fingerprint_triggers_reread(tmp_path: Path) -> None:
         )
     assert len(spy_calls) == 1
     assert result["lifecycle_keys"] == ["job1"]
+
+
+def test_decorator_releases_lock_before_finalize_compute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S", "1")
+    paths = _make_paths(tmp_path)
+    acquired = threading.Event()
+
+    def fake_finalize(**_kwargs):
+        def acquire_elsewhere() -> None:
+            with jobs_feed_reconciliation_lock(tmp_path):
+                acquired.set()
+
+        worker = threading.Thread(target=acquire_elsewhere)
+        worker.start()
+        worker.join(timeout=2.0)
+        return {"acquired": acquired.is_set()}
+
+    wrapped = _serialize_jobs_feed_reconciliation(fake_finalize)
+    result = wrapped(paths=paths, lifecycle_rows={}, canonical_rows=[], source_reports=[])
+
+    assert result["acquired"] is True
 
 
 @pytest.mark.parametrize("use_gz", [True, False])

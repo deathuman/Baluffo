@@ -20,7 +20,6 @@ from typing import Any
 
 from src.bridge.fetch_report_summary import load_fetch_report_summary_artifact
 from src.jobs.availability_schedule import build_availability_sweep_plan
-from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_run_setup import canonicalize_existing_output_row
 from src.jobs.state_lifecycle import (
@@ -221,6 +220,99 @@ def _merge_concurrent_direct_live_rows(
     return merged
 
 
+def _merge_latest_lifecycle_availability(
+    computed: dict[str, dict[str, Any]],
+    latest: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Preserve availability evidence written while finalize was computing.
+
+    Finalize owns lifecycle status/removal transitions, but direct availability
+    checks may update the availability fields during the unlocked compute phase.
+    Merge those fields back only when the latest check is newer than the value
+    finalize computed; do not resurrect rows finalize intentionally removed.
+    """
+    merged = dict(computed)
+    for key, latest_entry in latest.items():
+        current = merged.get(key)
+        if not isinstance(current, dict) or not isinstance(latest_entry, dict):
+            continue
+        latest_checked_at = clean_text(latest_entry.get("availabilityCheckedAt"))
+        current_checked_at = clean_text(current.get("availabilityCheckedAt"))
+        if not latest_checked_at or latest_checked_at <= current_checked_at:
+            continue
+        availability_fields = {
+            field: value
+            for field, value in latest_entry.items()
+            if field.startswith("availability")
+        }
+        if availability_fields:
+            merged[key] = {**current, **availability_fields}
+    return merged
+
+
+def _refresh_commit_rows(
+    *,
+    paths: Any,
+    lifecycle_rows: dict[str, dict[str, Any]],
+    canonical_rows: list[CanonicalJob],
+    payload_rows: list[dict[str, Any]],
+    lifecycle_fingerprint_at_setup: tuple[int, int] | None,
+) -> tuple[dict[str, dict[str, Any]], list[CanonicalJob], list[dict[str, Any]]]:
+    """Refresh the lifecycle and merge direct-live rows at commit time.
+
+    This is the only expensive read that belongs to the authoritative commit;
+    the preceding dedupe, lifecycle application, audits, and report shaping run
+    without the cross-process reconciliation lock.
+    """
+    from src.jobs import pipeline_finalize as _pf
+
+    latest_lifecycle = lifecycle_rows
+    if existing_json_candidate(paths.lifecycle_state_path) is not None:
+        current_fingerprint = lifecycle_state_fingerprint(paths.lifecycle_state_path)
+        if (
+            lifecycle_fingerprint_at_setup is None
+            or current_fingerprint != lifecycle_fingerprint_at_setup
+        ):
+            latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
+    lifecycle_rows = _merge_latest_lifecycle_availability(lifecycle_rows, latest_lifecycle)
+
+    current_rows = read_existing_output(
+        paths.json_path,
+        _pf.now_iso(),
+        canonicalize_job=canonicalize_existing_output_row,
+        clean_text=clean_text,
+        canonical_job_cls=CanonicalJob,
+        row_predicate=_direct_live_row_predicate(lifecycle_rows),
+    )
+    merged_rows = list(canonical_rows)
+    if current_rows:
+        merged_rows = _merge_concurrent_direct_live_rows(merged_rows, current_rows, lifecycle_rows)
+
+    payload_availability_ids = {
+        clean_text(row.get("availabilityId")) for row in payload_rows if isinstance(row, dict)
+    }
+    lifecycle_by_id = {
+        clean_text(entry.get("availabilityId")): entry
+        for entry in lifecycle_rows.values()
+        if isinstance(entry, dict) and clean_text(entry.get("availabilityId"))
+    }
+    for row in merged_rows:
+        availability_id = clean_text(getattr(row, "availabilityId", ""))
+        if not availability_id or availability_id in payload_availability_ids:
+            continue
+        payload_rows.append(row.to_dict())
+        payload_availability_ids.add(availability_id)
+
+    for payload_row in payload_rows:
+        entry = lifecycle_by_id.get(clean_text(payload_row.get("availabilityId")))
+        if not isinstance(entry, dict):
+            continue
+        for field, value in entry.items():
+            if field.startswith("availability"):
+                payload_row[field] = value
+    return lifecycle_rows, merged_rows, payload_rows
+
+
 def _direct_live_row_predicate(
     lifecycle_rows: dict[str, dict[str, Any]],
 ) -> Callable[[dict[str, Any]], bool]:
@@ -253,6 +345,13 @@ def _direct_live_row_predicate(
 
 
 def _serialize_jobs_feed_reconciliation(func):
+    """Refresh lifecycle/direct-live rows before finalize computes.
+
+    This used to hold the cross-process reconciliation lock for the whole
+    finalize call. It is now a lock-free advisory refresh: the authoritative
+    commit re-reads and re-merges under the lock.
+    """
+
     @wraps(func)
     def wrapped(*args, **kwargs):
         from src.jobs import pipeline_finalize as _pf
@@ -260,45 +359,38 @@ def _serialize_jobs_feed_reconciliation(func):
         paths = kwargs.get("paths")
         if paths is None or not hasattr(paths, "output_dir"):
             raise TypeError("finalize_pipeline_run requires paths with an output_dir")
-        # Announce the wait before it starts: the lock acquire blocks ahead of
-        # finalize's own phase announcement, so a contended lock used to leave
-        # the log ending on the last fetch source with no finalize phase at all.
-        print("[jobs_fetcher] INFO phase_enter waiting_reconciliation_lock", flush=True)
-        with jobs_feed_reconciliation_lock(paths.output_dir):
-            if existing_json_candidate(paths.lifecycle_state_path) is not None:
-                kwargs = dict(kwargs)
-                # ponytail: skip the 300+ MB re-parse of jobs-lifecycle-state.json
-                # when the file hasn't changed since setup loaded it. mtime+size
-                # is the cheapest change signal that still catches an external
-                # writer between setup and finalize.
-                fingerprint_at_setup = kwargs.get("lifecycle_state_fingerprint")
-                current_fingerprint = lifecycle_state_fingerprint(paths.lifecycle_state_path)
-                rows_arg = kwargs.get("lifecycle_rows")
-                if rows_arg is None:
-                    # ponytail: deferred lifecycle tree — setup dropped the parsed
-                    # rows to keep fetch-window RSS flat, so finalize owns the only
-                    # parse; reload from the file even when the fingerprint matches.
-                    latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
-                elif (
-                    fingerprint_at_setup is not None and current_fingerprint == fingerprint_at_setup
-                ):
-                    latest_lifecycle = rows_arg or {}
-                else:
-                    latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
-                kwargs["lifecycle_rows"] = latest_lifecycle
-                # ponytail: only convert direct-live rows to CanonicalJob; skip
-                # the 40k+ pre-existing rows that will be filtered out anyway.
-                current_rows = read_existing_output(
-                    paths.json_path,
-                    clean_text(kwargs.get("started_at")) or _pf.now_iso(),
-                    canonicalize_job=canonicalize_existing_output_row,
-                    clean_text=clean_text,
-                    canonical_job_cls=CanonicalJob,
-                    row_predicate=_direct_live_row_predicate(latest_lifecycle),
-                )
-                kwargs["canonical_rows"] = _merge_concurrent_direct_live_rows(
-                    list(kwargs.get("canonical_rows") or []), current_rows, latest_lifecycle
-                )
-            return func(*args, **kwargs)
+        if existing_json_candidate(paths.lifecycle_state_path) is not None:
+            kwargs = dict(kwargs)
+            # ponytail: skip the 300+ MB re-parse of jobs-lifecycle-state.json
+            # when the file hasn't changed since setup loaded it. mtime+size
+            # is the cheapest change signal that still catches an external
+            # writer between setup and finalize.
+            fingerprint_at_setup = kwargs.get("lifecycle_state_fingerprint")
+            current_fingerprint = lifecycle_state_fingerprint(paths.lifecycle_state_path)
+            rows_arg = kwargs.get("lifecycle_rows")
+            if rows_arg is None:
+                # ponytail: deferred lifecycle tree — setup dropped the parsed
+                # rows to keep fetch-window RSS flat, so finalize owns the only
+                # parse; reload from the file even when the fingerprint matches.
+                latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
+            elif fingerprint_at_setup is not None and current_fingerprint == fingerprint_at_setup:
+                latest_lifecycle = rows_arg or {}
+            else:
+                latest_lifecycle = _pf.read_job_lifecycle_state(paths.lifecycle_state_path)
+            kwargs["lifecycle_rows"] = latest_lifecycle
+            # ponytail: only convert direct-live rows to CanonicalJob; skip
+            # the 40k+ pre-existing rows that will be filtered out anyway.
+            current_rows = read_existing_output(
+                paths.json_path,
+                clean_text(kwargs.get("started_at")) or _pf.now_iso(),
+                canonicalize_job=canonicalize_existing_output_row,
+                clean_text=clean_text,
+                canonical_job_cls=CanonicalJob,
+                row_predicate=_direct_live_row_predicate(latest_lifecycle),
+            )
+            kwargs["canonical_rows"] = _merge_concurrent_direct_live_rows(
+                list(kwargs.get("canonical_rows") or []), current_rows, latest_lifecycle
+            )
+        return func(*args, **kwargs)
 
     return wrapped

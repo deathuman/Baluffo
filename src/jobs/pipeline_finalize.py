@@ -65,6 +65,7 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_static_suppression_policy import (
     refresh_static_suppression_policy_with_current_evidence,
 )
+from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import snapshot_task_rows, update_fetch_runtime_phase
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
@@ -113,6 +114,7 @@ from .finalize_availability import (
 from .finalize_availability import (
     _previous_availability_health as _previous_availability_health,
 )
+from .finalize_availability import _refresh_commit_rows as _refresh_commit_rows
 from .finalize_availability import (
     _serialize_jobs_feed_reconciliation as _serialize_jobs_feed_reconciliation,
 )
@@ -494,18 +496,6 @@ def finalize_pipeline_run(
             flush=True,
         )
         tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
-        tombstones = reconcile_availability_tombstones(
-            read_availability_tombstones(tombstone_path),
-            before_rows=pre_lifecycle_rows,
-            after_rows=deduped_payload_rows,
-            lifecycle_rows=lifecycle_rows,
-        )
-        # ponytail: pre_lifecycle_rows is a reference, not a copy — drop it
-        # after tombstones to free the deduped CanonicalJob objects that
-        # writing_outputs no longer needs.
-        del pre_lifecycle_rows
-        write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
-        _log_rss("after tombstones")
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
         quarantine_stats: dict[str, int] = {}
         identity_quarantine = reconcile_identity_quarantine(
@@ -517,17 +507,46 @@ def finalize_pipeline_run(
         identity_preparation.summary["quarantineTruncatedCount"] = int(
             quarantine_stats.get("quarantineTruncatedCount") or 0
         )
-        write_identity_quarantine(
-            quarantine_path,
-            identity_quarantine,
-            updated_at=lifecycle_finished_at,
-            truncated_count=int(quarantine_stats.get("quarantineTruncatedCount") or 0),
-        )
-        wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+
+        # Authoritative commit: refresh concurrent lifecycle/direct-live rows,
+        # then write the feed, availability projections, and lifecycle state
+        # under one cross-process lock. Dedupe, audits, and report construction
+        # run outside this block.
+        with jobs_feed_reconciliation_lock(paths.output_dir):
+            lifecycle_rows, deduped_rows, deduped_payload_rows = _refresh_commit_rows(
+                paths=paths,
+                lifecycle_rows=lifecycle_rows,
+                canonical_rows=deduped_rows,
+                payload_rows=deduped_payload_rows,
+                lifecycle_fingerprint_at_setup=lifecycle_state_fingerprint,
+            )
+            dedup_stats["outputCount"] = len(deduped_payload_rows)
+            tombstones = reconcile_availability_tombstones(
+                read_availability_tombstones(tombstone_path),
+                before_rows=pre_lifecycle_rows,
+                after_rows=deduped_payload_rows,
+                lifecycle_rows=lifecycle_rows,
+            )
+            write_availability_tombstones(
+                tombstone_path, tombstones, updated_at=lifecycle_finished_at
+            )
+            write_identity_quarantine(
+                quarantine_path,
+                identity_quarantine,
+                updated_at=lifecycle_finished_at,
+                truncated_count=int(quarantine_stats.get("quarantineTruncatedCount") or 0),
+            )
+            wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+            availability = _write_availability_artifacts(
+                paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
+            )
+            write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
+            _write_lifecycle_archive_rows(
+                lifecycle_state_path=paths.lifecycle_state_path,
+                archive_rows_by_year=lifecycle_archive_rows_by_year,
+            )
+        del pre_lifecycle_rows
         _log_rss("after output rows")
-        availability = _write_availability_artifacts(
-            paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
-        )
         availability_sweep_plan = availability["sweep"]
         source_direct_conflicts = availability["conflicts"]
         shadow_classifier_counts = availability["shadowCounts"]
@@ -791,11 +810,5 @@ def finalize_pipeline_run(
         )
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
-    write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
-    _log_rss("after lifecycle state write")
-    _write_lifecycle_archive_rows(
-        lifecycle_state_path=paths.lifecycle_state_path,
-        archive_rows_by_year=lifecycle_archive_rows_by_year,
-    )
     _log_rss("finalize done")
     return report_payload

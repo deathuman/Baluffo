@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from collections.abc import Callable, Iterator
@@ -14,6 +15,8 @@ from src.jobs.common.datetime_utils import parse_datetime
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
 from src.shared.utils import now_iso
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.bridge.task_launch_jobs_feed import (
@@ -691,12 +694,6 @@ class JobAvailabilityService:
             if self._evidence_is_stale(current_entry, evidence):
                 return current_entry, False
             next_entry = apply_direct_availability_evidence(current_entry, evidence)
-            previous_lifecycle = dict(latest)
-            previous_history = (
-                self.history_path.read_text(encoding="utf-8")
-                if scope == "canonical" and self.history_path.exists()
-                else None
-            )
             feed_reconciliation = None
             try:
                 if scope == "canonical":
@@ -705,24 +702,33 @@ class JobAvailabilityService:
                     )
                 latest[lifecycle_key] = next_entry
                 write_job_lifecycle_state(state_path, latest)
-                if scope == "canonical":
-                    history = build_availability_history_payload(latest, finished_at=completed_at)
-                    write_atomic_if_changed(
-                        self.history_path,
-                        json.dumps(history, ensure_ascii=False, separators=(",", ":")),
-                    )
             except (OSError, RuntimeError, TypeError, ValueError):
-                try:
-                    if feed_reconciliation is not None:
-                        rollback_jobs_feed_reconciliation(*feed_reconciliation)
-                finally:
-                    write_job_lifecycle_state(state_path, previous_lifecycle)
-                    if scope == "canonical":
-                        if previous_history is None:
-                            self.history_path.unlink(missing_ok=True)
-                        else:
-                            write_atomic_if_changed(self.history_path, previous_history)
+                if feed_reconciliation is not None:
+                    rollback_jobs_feed_reconciliation(*feed_reconciliation)
                 raise
+
+        # The lifecycle write is the authoritative commit. History is a derived
+        # projection and used to be rebuilt and rewritten while the cross-process
+        # feed lock was held; on a large runtime database that work could keep
+        # fetch finalization waiting for the lock. Refresh it after the commit
+        # and never turn a derived-history failure into a transition rollback.
+        if scope == "canonical":
+            try:
+                history = build_availability_history_payload(latest, finished_at=completed_at)
+                write_atomic_if_changed(
+                    self.history_path,
+                    json.dumps(history, ensure_ascii=False, separators=(",", ":")),
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                LOGGER.warning("availability history refresh failed: %s", exc)
+        if (
+            feed_reconciliation is not None
+            and feed_reconciliation[0] is not None
+            and str(getattr(feed_reconciliation[1], "mode", "")) == "sqlite"
+        ):
+            from src.bridge.task_launch_jobs_feed import cleanup_jobs_feed_generations
+
+            cleanup_jobs_feed_generations(feed_reconciliation[0], keep_generations=2)
         return next_entry, True
 
     def _apply_checked_evidence(

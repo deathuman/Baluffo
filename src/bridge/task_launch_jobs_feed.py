@@ -32,7 +32,11 @@ from src.shared.json_io import (
     read_json,
     read_json_text,
 )
-from src.storage.job_runtime import JobRuntimeStore, jobs_feed_rows_hash
+from src.storage.job_runtime import (
+    DEFAULT_GENERATION_DELETE_CAP,
+    JobRuntimeStore,
+    jobs_feed_rows_hash,
+)
 
 STARTUP_FEED_EXPORT_LIMIT = 10
 
@@ -356,10 +360,10 @@ def _write_json_feed_exports(ctx: JobsFeedContext, rows: list[dict[str, Any]]) -
     )
 
 
-def reconcile_jobs_feed_availability(
+def _reconcile_jobs_feed_availability_locked(
     ctx: JobsFeedContext, *, availability_id: str, entry: dict[str, Any]
 ) -> JobsFeedReconciliationSnapshot | None:
-    """Publish one availability transition through the current jobs-feed authority."""
+    """Publish one availability transition while the feed lock is held."""
     from src.jobs.availability_tombstones import (
         read_availability_tombstones,
         write_availability_tombstones,
@@ -377,6 +381,12 @@ def reconcile_jobs_feed_availability(
             _jobs_feed_startup_path(ctx.jobs_fetch_report),
             _jobs_feed_tombstone_path(ctx.jobs_fetch_report),
         )
+        # SQLite rollback is generation-based: ``publish_generation`` restores
+        # the exact prior rows and the projections are re-exported from that
+        # generation. Copying the full feed here only duplicates a potentially
+        # hundred-megabyte projection under the cross-process lock, so retain
+        # only the small tombstone artifact that is not derived from SQLite.
+        tombstone_path = _jobs_feed_tombstone_path(ctx.jobs_fetch_report)
         snapshot = JobsFeedReconciliationSnapshot(
             mode=mode,
             generation=(
@@ -384,7 +394,11 @@ def reconcile_jobs_feed_availability(
                 if runtime_store is not None and mode == "sqlite"
                 else ""
             ),
-            artifacts=_snapshot_artifacts(artifact_paths),
+            artifacts=(
+                _snapshot_artifacts((tombstone_path,))
+                if mode == "sqlite"
+                else _snapshot_artifacts(artifact_paths)
+            ),
         )
         previous_generation = ""
         if runtime_store is not None and mode == "sqlite":
@@ -393,7 +407,6 @@ def reconcile_jobs_feed_availability(
                 if not previous_generation:
                     raise RuntimeError("SQLite jobs feed authority has no published generation")
                 rows = runtime_store.current_rows()
-                tombstone_path = _jobs_feed_tombstone_path(ctx.jobs_fetch_report)
                 tombstones = read_availability_tombstones(tombstone_path)
                 next_rows, next_tombstones = _availability_updated_rows(
                     rows, safe_id, entry, tombstones
@@ -411,10 +424,6 @@ def reconcile_jobs_feed_availability(
                 write_availability_tombstones(
                     tombstone_path, next_tombstones, updated_at=ctx.now_iso()
                 )
-                try:
-                    runtime_store.cleanup_old_generations(keep_generations=2, delete_cap=None)
-                except (OSError, RuntimeError, sqlite3.Error):
-                    pass
                 return snapshot
             except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
                 rollback_jobs_feed_reconciliation(ctx, snapshot)
@@ -454,6 +463,45 @@ def reconcile_jobs_feed_availability(
             return None
 
 
+def reconcile_jobs_feed_availability(
+    ctx: JobsFeedContext, *, availability_id: str, entry: dict[str, Any]
+) -> JobsFeedReconciliationSnapshot | None:
+    """Publish one availability transition through the current authority."""
+    return _reconcile_jobs_feed_availability_locked(
+        ctx, availability_id=availability_id, entry=entry
+    )
+
+
+def cleanup_jobs_feed_generations(ctx: JobsFeedContext, *, keep_generations: int = 2) -> int:
+    """Delete at most one bounded batch of old feed generations.
+
+    Callers must invoke this after releasing the reconciliation transaction.
+    Generation deletion is maintenance, not part of a feed commit; doing it
+    under the lock made fetch finalization wait behind a large runtime
+    database cleanup.
+    """
+    runtime_store = _open_job_runtime_store(ctx)
+    if runtime_store is None:
+        return 0
+    try:
+        return int(
+            runtime_store.cleanup_old_generations(
+                keep_generations=max(1, int(keep_generations or 1)),
+                delete_cap=DEFAULT_GENERATION_DELETE_CAP,
+            )
+            or 0
+        )
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        _record_jobs_feed_diagnostic(
+            ctx,
+            code="jobs_feed_generation_cleanup_failed",
+            ok=False,
+            message=str(exc),
+            details={"keepGenerations": int(keep_generations or 1)},
+        )
+        return 0
+
+
 def rollback_jobs_feed_reconciliation(
     ctx: JobsFeedContext, snapshot: JobsFeedReconciliationSnapshot
 ) -> None:
@@ -466,6 +514,15 @@ def rollback_jobs_feed_reconciliation(
             runtime_store.store.set_authority_mode(
                 "jobsFeed", "sqlite", reason="availability-reconciliation-rollback"
             )
+            if not export_jobs_feed_from_sqlite(
+                ctx, runtime_store, jobs_fetch_report=ctx.jobs_fetch_report
+            ):
+                _record_jobs_feed_diagnostic(
+                    ctx,
+                    code="jobs_feed_rollback_export_failed",
+                    ok=False,
+                    message="SQLite rollback could not regenerate jobs feed projections",
+                )
         for path, content in snapshot.artifacts.items():
             if content is None:
                 path.unlink(missing_ok=True)
@@ -476,25 +533,23 @@ def rollback_jobs_feed_reconciliation(
 # ── public mirror entry ────────────────────────────────────────────
 
 
-def mirror_jobs_feed_rows(
+def _mirror_jobs_feed_rows_locked(
     ctx: JobsFeedContext,
     report: dict[str, Any],
-    *,
-    cleanup_old_generations: bool = True,
-) -> bool:
+) -> tuple[bool, JobRuntimeStore | None]:
     with jobs_feed_reconciliation_transaction(ctx.data_dir):
         run_id = str(report.get("runId") or "").strip()
         if not run_id:
-            return False
+            return False, None
         rows = _read_jobs_feed_rows(ctx.jobs_fetch_report)
         if rows is None:
-            return False
+            return False, None
         runtime_store = _open_job_runtime_store(ctx)
         if runtime_store is None:
-            return False
+            return False, None
         mode = _jobs_feed_mode(ctx, runtime_store)
         if mode not in {"shadow", "sqlite"}:
-            return False
+            return False, runtime_store
         try:
             expected_hash = jobs_feed_rows_hash(rows)
             staged = runtime_store.stage_feed(run_id=run_id, rows=rows)
@@ -510,7 +565,7 @@ def mirror_jobs_feed_rows(
                         "sqliteCount": len(staged_rows),
                     },
                 )
-                return False
+                return False, runtime_store
             runtime_store.publish_generation(
                 staged.generation,
                 expected_row_count=len(rows),
@@ -519,9 +574,7 @@ def mirror_jobs_feed_rows(
             if mode == "sqlite" and not export_jobs_feed_from_sqlite(
                 ctx, runtime_store, jobs_fetch_report=ctx.jobs_fetch_report
             ):
-                return False
-            if cleanup_old_generations:
-                runtime_store.cleanup_old_generations(keep_generations=1, delete_cap=None)
+                return False, runtime_store
             _record_jobs_feed_diagnostic(
                 ctx,
                 code="jobs_feed_projection_match",
@@ -532,7 +585,7 @@ def mirror_jobs_feed_rows(
                     "mode": mode,
                 },
             )
-            return True
+            return True, runtime_store
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             _rollback_jobs_feed_to_json(
                 ctx,
@@ -540,7 +593,38 @@ def mirror_jobs_feed_rows(
                 code="jobs_feed_shadow_write_failed",
                 message=str(exc),
             )
-            return False
+            return False, runtime_store
+
+
+def mirror_jobs_feed_rows(
+    ctx: JobsFeedContext,
+    report: dict[str, Any],
+    *,
+    cleanup_old_generations: bool = True,
+) -> bool:
+    """Mirror the feed, then delete old generations outside the lock.
+
+    Fetch finalization writes the largest generation of the run. Doing an
+    unbounded cleanup under the reconciliation lock made every other writer
+    (including direct availability checks) wait behind it. The cleanup is now
+    capped and runs after the publish lock is released.
+    """
+    ok, runtime_store = _mirror_jobs_feed_rows_locked(ctx, report)
+    if not ok or not cleanup_old_generations or runtime_store is None:
+        return ok
+    try:
+        runtime_store.cleanup_old_generations(
+            keep_generations=1, delete_cap=DEFAULT_GENERATION_DELETE_CAP
+        )
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        _record_jobs_feed_diagnostic(
+            ctx,
+            code="jobs_feed_generation_cleanup_failed",
+            ok=False,
+            message=str(exc),
+            details={"runId": str(report.get("runId") or "")},
+        )
+    return ok
 
 
 # ── re-exports ──────────────────────────────────────────────────────
@@ -553,6 +637,7 @@ __all__ = [
     "_rollback_jobs_feed_to_json",
     "_jobs_feed_mode",
     "export_jobs_feed_from_sqlite",
+    "cleanup_jobs_feed_generations",
     "jobs_feed_reconciliation_transaction",
     "reconcile_jobs_feed_availability",
     "rollback_jobs_feed_reconciliation",
