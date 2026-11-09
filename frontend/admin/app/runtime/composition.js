@@ -16,6 +16,7 @@ import {
   renderUsersEmptyHtml,
   renderUsersTableHtml
 } from "../../render/overview.js";
+import { renderStorageTablesHtml, renderStorageTablesMessageHtml } from "../../render/storage-tables.js";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js";
 import { createAdminDiscoveryController } from "../discovery.js";
@@ -28,6 +29,7 @@ import { createLazyAdminOpsController } from "../ops/lazy.js";
 import { createAdminRegistryController } from "../registry.js";
 import { createAdminSyncController } from "../sync.js";
 import { createAdminOverviewController } from "./overview.js";
+import { createStorageBreakdownController } from "./storage-breakdown.js";
 import { createActionCenterController } from "../action-center.js";
 import { createFetchKpisSummaryFeed } from "../fetch-kpis-summary-feed.js";
 import { createAdminInspectorController } from "../inspector.js";
@@ -238,6 +240,27 @@ export function composeAdminControllers({
     getErrorMessage
   });
 
+  function shouldDeferStorageHealth() {
+    return Boolean(
+      state.adminStartupBridgeHydrationInFlight
+      || state.adminBusyState?.discoveryLoad
+      || state.opsActiveAdminWorkLastActive
+      || state.opsActivePipelineOrFetchLastActive
+      || state.adminBusyState?.livePipelineRunning
+      || state.adminBusyState?.liveFetchRunning
+      || state.adminBusyState?.liveDiscoveryRunning
+    );
+  }
+
+  const storageBreakdownController = createStorageBreakdownController({
+    refs,
+    getBridge,
+    formatBytes,
+    renderStorageTablesHtml,
+    renderStorageTablesMessageHtml,
+    shouldDefer: shouldDeferStorageHealth
+  });
+
   const actionCenterController = createActionCenterController({
     refs,
     getBridge,
@@ -251,15 +274,8 @@ export function composeAdminControllers({
       || state.adminBusyState?.liveFetchRunning
       || state.adminBusyState?.liveDiscoveryRunning
     ),
-    shouldDeferStorageHealth: () => Boolean(
-      state.adminStartupBridgeHydrationInFlight
-      || state.adminBusyState?.discoveryLoad
-      || state.opsActiveAdminWorkLastActive
-      || state.opsActivePipelineOrFetchLastActive
-      || state.adminBusyState?.livePipelineRunning
-      || state.adminBusyState?.liveFetchRunning
-      || state.adminBusyState?.liveDiscoveryRunning
-    ),
+    shouldDeferStorageHealth,
+    onStorageHealth: payload => storageBreakdownController.acceptStorageHealth(payload),
     onSyncStatus: payload => {
       state.latestSyncStatusCache = payload || null;
       syncController.renderSyncStatus(payload || {});
@@ -574,6 +590,12 @@ export function composeAdminControllers({
     // The shell is up: only now fetch and parse the Ops surface. Starting it any
     // earlier put a 273 KB chunk's parse back inside the boot it was split out of.
     opsController.start?.();
+    // One bounded read after startup; the panel never polls storage health.
+    // When active work holds the gate, this renders the deferred state and the
+    // Action Center's next storage poll fills the panel instead.
+    storageBreakdownController.load().catch(err => {
+      logAdminError("Admin storage table breakdown delayed.", err);
+    });
     return {
       ...(payload || {}),
       // Consumed by the auth controller to decide the badge, and by the
@@ -631,6 +653,7 @@ export function composeAdminControllers({
     discoveryController,
     registryController,
     overviewController,
+    storageBreakdownController,
     actionCenterController,
     inspectorController,
     restoreActiveRunWatches

@@ -88,6 +88,21 @@
       <div id="admin-totals" data-ui="admin-totals" class="admin-totals"></div>
       <div id="admin-users-list" data-ui="admin-users-list" class="jobs-list"></div>
 
+      <details id="admin-storage-tables" data-ui="admin-storage-tables" class="admin-storage-tables" open>
+        <summary>
+          <span>Runtime Database Storage</span>
+          <span id="admin-storage-tables-status" data-ui="admin-storage-tables-status" class="admin-storage-tables-status">Waiting for startup</span>
+        </summary>
+        <div class="admin-storage-tables-body">
+          <div class="admin-storage-tables-toolbar">
+            <button id="admin-storage-tables-refresh-btn" data-ui="admin-storage-tables-refresh-btn" class="btn clear-filters-btn" type="button" data-tooltip="Reload the runtime database table-size breakdown.">Refresh</button>
+          </div>
+          <div id="admin-storage-tables-body" data-ui="admin-storage-tables-body">
+            <div class="admin-storage-tables-empty">Runtime database table sizes load once after startup.</div>
+          </div>
+        </div>
+      </details>
+
       <section id="admin-ops-section" class="admin-fetcher-panel admin-ops-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Operations Health</h3>

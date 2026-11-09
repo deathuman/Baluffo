@@ -75,6 +75,7 @@ export function wireAdminBoot({
   // re-applied now that the banner owns the presentation.
   state.bridgeReconnectBanner?.sync();
   controllers.actionCenterController.startPolling();
+  controllers.storageBreakdownController?.init?.();
   controllers.inspectorController.init();
   revealDeferredSections({
     onReveal: () => {

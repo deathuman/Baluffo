@@ -120,6 +120,129 @@ h2.admin-section-title {
   font-weight: 700;
 }
 
+.admin-storage-tables {
+  margin: 0 0 0.9rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 55%, transparent);
+}
+
+.admin-storage-tables > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0.55rem 0.7rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.admin-storage-tables > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-storage-tables > summary::after {
+  content: " +";
+}
+
+.admin-storage-tables[open] > summary::after {
+  content: " -";
+}
+
+.admin-storage-tables-status {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.admin-storage-tables-status[data-tone="warning"] {
+  color: var(--warn);
+}
+
+.admin-storage-tables-body {
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
+  padding: 0.55rem 0.7rem 0.65rem;
+}
+
+.admin-storage-tables-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.35rem;
+}
+
+.admin-storage-tables-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.admin-storage-tables-grid {
+  display: grid;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-storage-tables-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(80px, 0.7fr) 76px minmax(80px, 0.7fr);
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.34rem 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
+  font-size: 0.78rem;
+}
+
+.admin-storage-tables-head {
+  border-top: 0;
+  background: color-mix(in srgb, var(--surface-5) 44%, transparent);
+  color: var(--text-subtle);
+  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.admin-storage-tables-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-storage-tables-other {
+  color: var(--text-muted);
+}
+
+.admin-storage-tables-partial {
+  color: var(--warn);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.admin-storage-tables-note,
+.admin-storage-tables-empty {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+  .admin-storage-tables-row {
+    grid-template-columns: minmax(0, 1.4fr) minmax(70px, 0.7fr) 64px;
+  }
+
+  .admin-storage-tables-rows {
+    display: none;
+  }
+}
+
 /* The eight-column user table is desktop-only. Keeping the tracks, gap and
    padding out of the unguarded base rules is deliberate: as `.admin-row-header,
    .admin-user-row` (0,1,0) these tied the shared stacked-card rules in

@@ -349,6 +349,7 @@ export function createActionCenterController({
   showToast,
   logAdminError,
   onSyncStatus,
+  onStorageHealth,
   shouldDeferCoreSignals = () => false,
   shouldDeferStorageHealth = () => false,
   // HEALTH_ROUTE is a startup-heavy route (see STARTUP_HEAVY_ROUTES in
@@ -604,6 +605,9 @@ export function createActionCenterController({
       else if (!deferCore || hasPayload(health)) pollCache.health = health;
       if (!deferCore || hasPayload(sync)) pollCache.sync = sync;
       pollCache.storage = storagePayload;
+      if (includeStorage && storagePayload && typeof onStorageHealth === "function") {
+        onStorageHealth(storagePayload);
+      }
       if (!deferCore && hasPayload(sync) && typeof onSyncStatus === "function") {
         onSyncStatus(sync);
       }
