@@ -72,6 +72,10 @@ Five rules the guardrail enforces so this cannot quietly regress:
   correctly, and their postings link back to the right company.
 - Kojima Productions, Raven Software/Activision and Eidos Montreal cross-postings now merge into
   one entry with both source links, instead of showing the same opening twice.
+- Distinct Epic, Riot and Scopely postings with different requisitions or work arrangements no
+  longer collapse into one entry.
+- Epic job links and Greenhouse job-detail links now count as provider identity, so distinct
+  provider job IDs cannot merge solely on title and location.
 
 ## [0.3.042] - 2026-11-08
 

@@ -30,6 +30,7 @@ from src.jobs.text_utils import sanitize_location_text
 from .common import config as common_config
 from .common import social as common_social
 from .common import url as common_url
+from .common.greenhouse_identity import greenhouse_job_identity_from_url
 
 fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
@@ -168,19 +169,19 @@ _COMPANY_IDENTITY_ALIASES = {
     "raven software": "activision",
 }
 _BILINGUAL_TITLE_SEPARATOR = re.compile(r"\s+/\s+")
+# Role-family suffixes stay in the title identity: stripping "gameplay" or "tools"
+# collapsed Staff Software Engineer specialisms into the same sparse key.
 _TITLE_SUFFIX_NOISE_TOKENS = {
     "art",
     "creative",
     "design",
     "development",
     "engineering",
-    "gameplay",
     "programming",
     "production",
     "systems",
     "technical",
     "tech",
-    "tools",
 }
 _GRACKLEHQ_SOURCE_NAME = "gracklehq"
 _GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE = (
@@ -544,6 +545,40 @@ def _merge_source_class(payload: Mapping[str, Any]) -> str:
     if adapter == "static" or source.startswith(("static_source::", "static:listing_url:")):
         return "static"
     return "other"
+
+
+_EPIC_JOB_PATH_RE = re.compile(r"(?:^|/)careers/jobs/(\d+)(?:/|$)")
+_EPIC_JOB_HOST_SUFFIX = ".epicgames.com"
+
+
+def _epic_job_identity_from_url(url: Any) -> str:
+    """The job identity encoded in an Epic careers detail link, if present."""
+    normalized = normalize_url(url)
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host != "epicgames.com" and not host.endswith(_EPIC_JOB_HOST_SUFFIX):
+        return ""
+    match = _EPIC_JOB_PATH_RE.search(parsed.path or "")
+    return f"epic:{match.group(1)}" if match else ""
+
+
+def _provider_job_identities(payload: Mapping[str, Any]) -> frozenset[str]:
+    """Provider requisition identities carried by a row's IDs or job-detail links."""
+    identities: set[str] = set()
+    source_job_id = norm_text(payload.get("sourceJobId"))
+    if source_job_id.startswith(("epic:", "greenhouse:")):
+        identities.add(source_job_id)
+    epic_identity = _epic_job_identity_from_url(payload.get("jobLink"))
+    if epic_identity:
+        identities.add(epic_identity)
+    greenhouse_identity = greenhouse_job_identity_from_url(
+        payload.get("jobLink"), include_eu_hosts=True
+    )
+    if greenhouse_identity:
+        identities.add(greenhouse_identity)
+    return frozenset(identities)
 
 
 def _is_gracklehq_redirect_identity(payload: Mapping[str, Any]) -> bool:

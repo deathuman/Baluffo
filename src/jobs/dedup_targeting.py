@@ -31,6 +31,7 @@ from src.jobs.dedup_identity import (
     _is_google_sheets_row,
     _is_provider_gracklehq_redirect_alias,
     _merge_source_class,
+    _provider_job_identities,
     fingerprint_url,
 )
 from src.jobs.dedup_record_merge import _is_gracklehq_gamesjobsdirect_known_mirror_pair
@@ -51,6 +52,52 @@ from .common.smartrecruiters_identity import (
 
 def _has_provider_identity(payload: Mapping[str, Any]) -> bool:
     return _merge_source_class(payload) == "provider"
+
+
+_WORK_ARRANGEMENT_FIELDS = ("workType", "contractType")
+_WORK_ARRANGEMENT_UNKNOWN_VALUES = frozenset({"", "unknown", "n/a", "na", "none"})
+
+
+def _blocks_distinct_strong_secondary_merge(
+    *, current: CanonicalJob, target: CanonicalJob, current_primary: str
+) -> bool:
+    """Block distinct Epic/Greenhouse job IDs sharing a title and location."""
+    current_payload = row_payload(current)
+    target_payload = row_payload(target)
+    current_identities = _provider_job_identities(current_payload)
+    target_identities = _provider_job_identities(target_payload)
+    if not (current_identities and target_identities):
+        return False
+    if _is_provider_gracklehq_redirect_alias(existing=target, payload=current_payload):
+        return False
+    if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, target):
+        return False
+    target_primary = fingerprint_url(target_payload.get("jobLink"))
+    if current_primary and target_primary and current_primary == target_primary:
+        return False
+    return current_identities.isdisjoint(target_identities)
+
+
+def _blocks_work_arrangement_conflict(*, current: CanonicalJob, target: CanonicalJob) -> bool:
+    """Block a non-primary merge when two known work arrangements disagree."""
+    current_payload = row_payload(current)
+    target_payload = row_payload(target)
+    if _is_provider_gracklehq_redirect_alias(existing=target, payload=current_payload):
+        return False
+    if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, target):
+        return False
+    for field in _WORK_ARRANGEMENT_FIELDS:
+        current_value = norm_text(current_payload.get(field))
+        target_value = norm_text(target_payload.get(field))
+        if (
+            current_value
+            and target_value
+            and current_value not in _WORK_ARRANGEMENT_UNKNOWN_VALUES
+            and target_value not in _WORK_ARRANGEMENT_UNKNOWN_VALUES
+            and current_value != target_value
+        ):
+            return True
+    return False
 
 
 def _blocks_trusted_distinct_non_primary_merge(
@@ -343,6 +390,14 @@ def _find_secondary_merge_target(
         return None, "", False
     if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, target):
         return target_idx, "known_mirror_pair", False
+    if _blocks_work_arrangement_conflict(current=current, target=target):
+        return None, "", True
+    if _blocks_distinct_strong_secondary_merge(
+        current=current,
+        target=target,
+        current_primary=primary,
+    ):
+        return None, "", True
     if _blocks_trusted_distinct_non_primary_merge(
         current=current,
         target=target,
@@ -383,6 +438,8 @@ def _find_sparse_merge_target(
             return None, "", True
     if _has_meaningful_locations(target) and current_has_meaningful_locations:
         return None, "", False
+    if _blocks_work_arrangement_conflict(current=current, target=target):
+        return None, "", True
     if _blocks_trusted_distinct_non_primary_merge(
         current=current,
         target=target,
