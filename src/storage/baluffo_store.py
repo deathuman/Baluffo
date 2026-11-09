@@ -69,6 +69,9 @@ DEFAULT_WRITE_LOCK_TIMEOUT_MS = 300_000
 # a gateway timeout and then into a "bridge offline" badge. The read falls back to
 # the last value taken while the writer was idle, and says so.
 DEFAULT_HEALTH_LOCK_TIMEOUT_MS = 250
+# Per-table space estimates come from a bounded sample, so they are cached:
+# `/ops/storage-health` is polled on a timer and must not re-sample every poll.
+DEFAULT_TABLE_SIZE_CACHE_S = 600.0
 SLOW_WRITE_STACK_LIMIT = 12
 MAINTENANCE_STATUS_DEFERRED = "deferred"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
@@ -200,6 +203,9 @@ class BaluffoStore:
         }
         self._runtime_retention_done = False
         self._retention_thread: threading.Thread | None = None
+        self._table_sizes_lock = threading.Lock()
+        self._table_sizes_snapshot: dict[str, Any] | None = None
+        self._table_sizes_captured_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
         self._write_lock = threading.RLock()
         self._read_lock = threading.RLock()
@@ -1238,6 +1244,31 @@ class BaluffoStore:
         if result != "ok":
             raise BaluffoStoreError(f"SQLite quick_check failed for {path}: {result}")
 
+    def table_sizes(self) -> dict[str, Any]:
+        """Bounded per-table space breakdown, cached between health reads.
+
+        The measurement samples rowids rather than traversing the database, so a
+        multi-hundred-gigabyte runtime store answers in bounded time. The payload
+        states how it was obtained (`method`, `estimated`, `complete`, `budgetMs`),
+        so an estimate is never presented as an exact measurement.
+        """
+        now = time.monotonic()
+        with self._table_sizes_lock:
+            snapshot = self._table_sizes_snapshot
+            if (
+                snapshot is not None
+                and now - self._table_sizes_captured_monotonic < DEFAULT_TABLE_SIZE_CACHE_S
+            ):
+                return snapshot
+            # Imported here because the storage package re-exports BaluffoStore:
+            # a module-level import would close the package cycle.
+            from src.storage.db_table_sizes import measure_table_sizes
+
+            snapshot = measure_table_sizes(self.db_path)
+            self._table_sizes_snapshot = snapshot
+            self._table_sizes_captured_monotonic = time.monotonic()
+            return snapshot
+
     def health(self) -> dict[str, Any]:
         health_started = time.perf_counter()
         quick_check, quick_check_deferred = self.quick_check_for_health()
@@ -1281,5 +1312,6 @@ class BaluffoStore:
             "walMaintenance": self.wal_maintenance_status(),
             "compaction": self.compaction_status(),
             "runtimeRetention": self.runtime_retention_status(),
+            "tableSizes": self.table_sizes(),
             "authorityModes": self.get_authority_modes(),
         }

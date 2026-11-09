@@ -65,6 +65,11 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     assert storage["authorityModes"]["jobsFeed"] == "sqlite"
     assert Path(str(storage["databasePath"])).parent == tmp_path.resolve()
     assert (tmp_path / "baluffo-runtime.db").exists()
+    table_sizes = storage["tableSizes"]
+    assert table_sizes["status"] in {"ok", "partial"}
+    assert table_sizes["method"] in {"dbstat", "rowid-sample"}
+    assert isinstance(table_sizes["tables"], list)
+    assert table_sizes["durationMs"] >= 0
 
 
 def test_storage_health_failure_payload_includes_runtime_db_file_sizes(
