@@ -32,6 +32,10 @@
 - Epic job links and Greenhouse job-detail links now count as provider identity, so distinct
   provider job IDs cannot merge solely on title and location.
 
+- After a browser health probe confirms Chromium can launch and render, browser fallback reopens for the next run instead of keeping a stale cooldown from one failed page navigation.
+- Browser fallback no longer queues static fetch failures a browser cannot repair, including DNS resolution, certificate/TLS validation, and exhausted time or failure budgets. Existing fallback queues are filtered when read, so those rows stop running after updating.
+- Ops no longer repeats the app version in the health header; the header shows the running build separately.
+
 ### Notes
 
 - Distribution compatibility is unchanged: the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility remain supported.
