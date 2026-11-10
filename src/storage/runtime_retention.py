@@ -13,9 +13,13 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from src.storage.source_runtime import (
+    DEFAULT_ARCHIVE_COMPACT_ROWS,
+    DEFAULT_ARCHIVE_COMPACT_RUNS,
     DEFAULT_RUNTIME_RETENTION_DAYS,
     DEFAULT_RUNTIME_RETENTION_KEEP_RUNS,
+    DEFAULT_RUNTIME_RETENTION_MAX_EVENT_ROWS,
     DEFAULT_RUNTIME_RETENTION_MAX_RUNS,
+    DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS,
     SourceRuntimeStore,
 )
 
@@ -53,15 +57,49 @@ def runtime_retention_policy() -> dict[str, int]:
             DEFAULT_RUNTIME_RETENTION_MAX_RUNS,
             minimum=1,
         ),
+        "max_event_rows": _env_int(
+            "BALUFFO_RUNTIME_RETENTION_MAX_EVENT_ROWS",
+            DEFAULT_RUNTIME_RETENTION_MAX_EVENT_ROWS,
+            minimum=1,
+        ),
+        "max_sync_runs": _env_int(
+            "BALUFFO_RUNTIME_RETENTION_MAX_SYNC_RUNS",
+            DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS,
+            minimum=1,
+        ),
+        "compact_runs": _env_int(
+            "BALUFFO_RUNTIME_RETENTION_COMPACT_RUNS",
+            DEFAULT_ARCHIVE_COMPACT_RUNS,
+            minimum=1,
+        ),
+        "compact_rows": _env_int(
+            "BALUFFO_RUNTIME_RETENTION_COMPACT_ROWS",
+            DEFAULT_ARCHIVE_COMPACT_ROWS,
+            minimum=1,
+        ),
     }
 
 
 def run_runtime_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, Any]:
     """Run one bounded retention pass against the runtime store."""
     policy = runtime_retention_policy()
-    result = SourceRuntimeStore(store).prune_old_runs(
+    runtime = SourceRuntimeStore(store)
+    result = runtime.prune_old_runs(
         retention_days=policy["retention_days"],
         keep_runs=policy["keep_runs"],
         max_runs=policy["max_runs"],
+        max_event_rows=policy["max_event_rows"],
+        max_sync_runs=policy["max_sync_runs"],
     )
-    return {"reason": str(reason or ""), **result}
+    compacted = runtime.compact_archived_payloads(
+        max_runs=policy["compact_runs"],
+        max_rows=policy["compact_rows"],
+    )
+    statuses = {str(result.get("status") or ""), str(compacted.get("status") or "")}
+    return {
+        "reason": str(reason or ""),
+        **result,
+        **compacted,
+        "status": "ok" if "ok" in statuses else sorted(statuses)[0] or "nothing-to-prune",
+        "truncated": bool(result.get("truncated") or compacted.get("truncated")),
+    }

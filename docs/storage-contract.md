@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-11-09
+> - **Last updated:** 2026-11-10
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -45,7 +45,7 @@ Availability runtime artifacts remain bounded filesystem compatibility/evidence 
 | Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state?view=summary` hot-path projection; `/ops/task-state` full diagnostic projection | JSON lifecycle files remain compatibility exports and rollback fallback. |
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
 | Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Includes sync size and shard metrics. |
-| Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. Older terminal runs are pruned by bounded runtime retention. |
+| Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | SQLite keeps compact source rows; full source details are archive-owned and hydrated for the full fetch-report view. Older terminal runs are pruned by bounded, repeating runtime retention. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
 | Source registry | SQLite `source_registry_rows`, `source_registry_tombstones`, and `source_registry_state` after M6 cutover | Active/pending/rejected/tombstone JSON exports plus sharded source-sync export | Route payloads remain shape-compatible; rollback returns reads to JSON while retaining SQLite for diagnosis. |
@@ -167,15 +167,35 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   queued behind a VACUUM. Later writes schedule maintenance normally.
 - A store that is asked to resume with nothing over threshold records
   `"not-needed"`.
-- **Runtime retention runs after serving.** Each store runs one bounded
-  `source_runs` retention pass through the post-serve maintenance thread. The
-  newest `BALUFFO_RUNTIME_RETENTION_KEEP_RUNS` fetch runs (default `30`) and all
-  active runs are retained; terminal runs whose last source row is older than
-  `BALUFFO_RUNTIME_RETENTION_DAYS` (default `30`) are deleted in batches, capped
-  at `BALUFFO_RUNTIME_RETENTION_MAX_RUNS` per pass (default `200`). Old
-  `task_events` and terminal `sync_runs` rows also expire at the same cutoff.
-  The status is reported in `health()["runtimeRetention"]`; a pass held by an
+- **Runtime retention repeats after serving.** Each store runs a bounded
+  `source_runs` retention pass through the post-serve maintenance thread, then
+  schedules the next pass (`DEFAULT_RUNTIME_RETENTION_INTERVAL_S`, 6 hours). A
+  pass that reports `truncated` is followed up after
+  `DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S` (30 seconds) until the backlog drains,
+  so a long-running container keeps cleaning instead of stopping after one
+  startup pass. The newest `BALUFFO_RUNTIME_RETENTION_KEEP_RUNS` fetch runs
+  (default `30`) and all active runs are retained; every older terminal run is
+  deleted in batches, including a recent run beyond the count cap, so growth is
+  bounded even when fetches arrive faster than the age cutoff. The age cutoff
+  `BALUFFO_RUNTIME_RETENTION_DAYS` (default `30`) still governs old
+  `task_events` and terminal `sync_runs`, and deletion is capped at
+  `BALUFFO_RUNTIME_RETENTION_MAX_RUNS` per pass (default `200`), with separate
+  bounded row caps
+  (`BALUFFO_RUNTIME_RETENTION_MAX_EVENT_ROWS` / `_MAX_SYNC_RUNS`).
+  `BALUFFO_RUNTIME_RETENTION_COMPACT_ROWS` bounds the archive-payload
+  compaction pass. The status is reported in `health()["runtimeRetention"]`,
+  including `truncated`, `timerScheduled`, and `nextRunInS`; a pass held by an
   active task is re-scheduled when the hold is released.
+- **Full source details are written once.** The fetch closeout writes the
+  per-source `details` to `artifacts/fetch/<run>/source-details.json.gz` and
+  stores only the compact row in SQLite. The full `/ops/fetch-report` view
+  rehydrates details from that archive; summary/live views stay compact. A
+  retention compaction pass strips legacy duplicated `details` from SQLite only
+  when the row's `evidenceRefs` names a `sourceDetailsArchive`, so it cannot
+  discard the only copy. Compaction starts only after the retention backlog is
+  drained, avoiding a repeated `skipped-busy` loop. A drained pass retries a due
+  rebuild even when it deleted nothing, so a rebuild previously skipped for free
+  space or a busy writer is not stranded until the next fetch.
 - `close()` still checkpoints passively, because shutdown is a controlled point.
 - **Post-retention shrink uses a compact copy, not an in-place VACUUM.** Freeing
   pages is not shrinking the file: after a retention pass deletes rows, the
@@ -206,7 +226,7 @@ database.
 
 `GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
 
-The read is bounded, because a diagnostic must answer while maintenance holds the write lock: the writer-only pragmas use a short lock timeout and fall back to the values captured while the writer was idle (`walModeSource`/`foreignKeysSource` = `cached-busy`, `healthLockBusy: true`), and the payload is cached per data dir for a few seconds (`healthSource`, `healthCacheAgeMs`) with `healthTiming` reporting the cost. A read that cannot run at all reports `healthStalled: true` and `healthSource: "unavailable"` while leaving `healthy` at its last known value: a diagnostic that did not run is not evidence of corruption and must not raise the Admin storage alert. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log. Admin renders `tableSizes` in a Runtime Database Storage panel beside Stored Profiles Overview; it reads the route once after startup by joining the serial startup bridge lane, so the read waits behind the bootstrap heavy loads instead of racing them or waiting for the Action Center's next poll; it refreshes only on an explicit Refresh click, and defers while the active-work gate is held, so the panel adds no storage-health polling.
+The read is bounded, because a diagnostic must answer while maintenance holds the write lock: the writer-only pragmas use a short lock timeout and fall back to the values captured while the writer was idle (`walModeSource`/`foreignKeysSource` = `cached-busy`, `healthLockBusy: true`), and the payload is cached per data dir for a few seconds (`healthSource`, `healthCacheAgeMs`) with `healthTiming` reporting the cost. Table-size sampling installs a SQLite progress handler and reads column lengths instead of materializing large payloads, so one oversized row cannot hold the single-flight read past its budget; an interrupted sample is returned as `tableSizes.status == "partial"` rather than as an unavailable panel. Partial table-size snapshots use a short cache and are retried on the next health poll. A read that cannot run at all reports `healthStalled: true` and `healthSource: "unavailable"` while leaving `healthy` at its last known value: a diagnostic that did not run is not evidence of corruption and must not raise the Admin storage alert. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log. Admin renders `tableSizes` in a Runtime Database Storage panel beside Stored Profiles Overview; it reads the route once after startup by joining the serial startup bridge lane, so the read waits behind the bootstrap heavy loads instead of racing them or waiting for the Action Center's next poll; it refreshes only on an explicit Refresh click, and defers while the active-work gate is held, so the panel adds no storage-health polling.
 
 ## Migration Safety
 

@@ -150,6 +150,57 @@ def _rollback_source_runs_to_json(
 # ── archive / compact ───────────────────────────────────────────────
 
 
+def _compact_source_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep SQLite rows compact; the archive owns the full source details."""
+    return [{key: value for key, value in row.items() if key != "details"} for row in source_rows]
+
+
+def _write_source_details_archive(
+    ctx: SourceRunContext,
+    *,
+    run_id: str,
+    source_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return EvidenceArchiveStore(ctx.data_dir).write_archive(
+        run_id=run_id,
+        kind="source-details",
+        payload={
+            "schemaVersion": 1,
+            "runId": run_id,
+            "sources": source_rows,
+        },
+    )
+
+
+def _save_compact_fetch_report(
+    ctx: SourceRunContext,
+    report: dict[str, Any],
+    *,
+    source_rows: list[dict[str, Any]],
+    archive_entry: dict[str, Any],
+) -> None:
+    compact_report = {
+        **dict(report),
+        "sources": _compact_source_rows(source_rows),
+        "sourceRuns": {
+            "format": "sqlite",
+            "rowCount": len(source_rows),
+            "sourceDetailsArchive": archive_entry,
+        },
+    }
+    ctx.save_json_atomic(ctx.jobs_fetch_report, compact_report)
+    _record_source_run_diagnostic(
+        ctx,
+        code="fetch_report_compacted",
+        ok=True,
+        details={
+            "rowCount": len(source_rows),
+            "archivePath": str(archive_entry.get("path") or ""),
+            "archiveSizeBytes": int(archive_entry.get("sizeBytes") or 0),
+        },
+    )
+
+
 def _archive_and_compact_fetch_report(
     ctx: SourceRunContext,
     report: dict[str, Any],
@@ -161,43 +212,17 @@ def _archive_and_compact_fetch_report(
         return
     run_id = str(report.get("runId") or "").strip()
     try:
-        archive = EvidenceArchiveStore(ctx.data_dir)
-        archive_entry = archive.write_archive(
-            run_id=run_id,
-            kind="source-details",
-            payload={
-                "schemaVersion": 1,
-                "runId": run_id,
-                "sources": source_rows,
-            },
-        )
+        archive_entry = _write_source_details_archive(ctx, run_id=run_id, source_rows=source_rows)
         runtime_store.upsert_source_runs(
             run_id=run_id,
-            rows=source_rows,
+            rows=_compact_source_rows(source_rows),
             evidence_ref={"sourceDetailsArchive": archive_entry},
         )
-        compact_sources = [
-            {key: value for key, value in row.items() if key != "details"} for row in source_rows
-        ]
-        compact_report = {
-            **dict(report),
-            "sources": compact_sources,
-            "sourceRuns": {
-                "format": "sqlite",
-                "rowCount": len(source_rows),
-                "sourceDetailsArchive": archive_entry,
-            },
-        }
-        ctx.save_json_atomic(ctx.jobs_fetch_report, compact_report)
-        _record_source_run_diagnostic(
+        _save_compact_fetch_report(
             ctx,
-            code="fetch_report_compacted",
-            ok=True,
-            details={
-                "rowCount": len(source_rows),
-                "archivePath": str(archive_entry.get("path") or ""),
-                "archiveSizeBytes": int(archive_entry.get("sizeBytes") or 0),
-            },
+            report,
+            source_rows=source_rows,
+            archive_entry=archive_entry,
         )
     except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
         _record_source_run_diagnostic(
@@ -222,25 +247,49 @@ def mirror_fetch_source_runs(ctx: SourceRunContext, report: dict[str, Any]) -> b
     mode = _source_runs_mode(ctx, runtime_store)
     if mode not in {"shadow", "sqlite"}:
         return False
+    has_details = any(
+        isinstance(row.get("details"), list) and row.get("details") for row in source_rows
+    )
+    rows_for_sqlite = source_rows
+    evidence_ref: dict[str, Any] = {"reportPath": str(ctx.jobs_fetch_report)}
+    archive_entry: dict[str, Any] = {}
+    if mode == "sqlite" and has_details:
+        try:
+            archive_entry = _write_source_details_archive(
+                ctx, run_id=run_id, source_rows=source_rows
+            )
+            rows_for_sqlite = _compact_source_rows(source_rows)
+            evidence_ref = {"sourceDetailsArchive": archive_entry}
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            # Keep the full rows if the archive could not be written: never make
+            # the SQLite copy compact by silently discarding its evidence.
+            _record_source_run_diagnostic(
+                ctx,
+                code="source_details_archive_failed",
+                ok=False,
+                message=str(exc),
+            )
     try:
         runtime_store.upsert_source_runs(
             run_id=run_id,
-            rows=source_rows,
-            evidence_ref={"reportPath": str(ctx.jobs_fetch_report)},
+            rows=rows_for_sqlite,
+            evidence_ref=evidence_ref,
         )
         parity_reader = getattr(runtime_store, "source_runs_for_parity", None)
         if callable(parity_reader):
-            sqlite_rows = parity_reader(run_id=run_id, expected_count=len(source_rows))
+            sqlite_rows = parity_reader(run_id=run_id, expected_count=len(rows_for_sqlite))
         else:
-            sqlite_rows = runtime_store.source_runs(run_id=run_id, limit=max(1, len(source_rows)))
-        if _source_parity_rows(sqlite_rows) != _source_parity_rows(source_rows):
+            sqlite_rows = runtime_store.source_runs(
+                run_id=run_id, limit=max(1, len(rows_for_sqlite))
+            )
+        if _source_parity_rows(sqlite_rows) != _source_parity_rows(rows_for_sqlite):
             _rollback_source_runs_to_json(
                 ctx,
                 runtime_store,
                 code="source_runs_projection_mismatch",
                 message="SQLite source_runs projection did not match fetch report JSON",
                 details={
-                    "jsonCount": len(source_rows),
+                    "jsonCount": len(rows_for_sqlite),
                     "sqliteCount": len(sqlite_rows),
                 },
             )
@@ -249,14 +298,14 @@ def mirror_fetch_source_runs(ctx: SourceRunContext, report: dict[str, Any]) -> b
             ctx,
             code="source_runs_projection_match",
             ok=True,
-            details={"rowCount": len(source_rows)},
+            details={"rowCount": len(rows_for_sqlite)},
         )
-        if mode == "sqlite":
-            _archive_and_compact_fetch_report(
+        if mode == "sqlite" and archive_entry:
+            _save_compact_fetch_report(
                 ctx,
                 report,
-                runtime_store=runtime_store,
                 source_rows=source_rows,
+                archive_entry=archive_entry,
             )
         return mode == "sqlite"
     except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:

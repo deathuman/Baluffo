@@ -11,7 +11,7 @@ from src.bridge.task_launch_api import (
     TaskLaunchRuntime,
 )
 from src.shared.json_io import read_json
-from src.storage import BaluffoStore, JobRuntimeStore, SourceRuntimeStore
+from src.storage import BaluffoStore, EvidenceArchiveStore, JobRuntimeStore, SourceRuntimeStore
 from tests.helpers.mutation import append_and_return
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -323,6 +323,9 @@ def test_fetch_lifecycle_close_compacts_report_when_source_runs_are_authoritativ
             assert (data_dir / "evidence-archive-manifest.json").exists()
             stored_row = runtime.source_runs(run_id="fetch_compact_1")[0]
             assert stored_row["evidenceRefs"]["sourceDetailsArchive"]["path"] == archive_ref["path"]
+            assert "details" not in stored_row
+            archived = EvidenceArchiveStore(data_dir).read_archive(archive_ref)
+            assert archived["sources"][0]["details"][0]["url"] == "https://example.com/job/1"
             assert diagnostics[-1]["code"] == "fetch_report_compacted"
 
 
@@ -380,8 +383,13 @@ def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: An
             archive_ref = compact_report["sourceRuns"]["sourceDetailsArchive"]
             assert archive_ref["path"].endswith("source-details.json.gz")
             stored_row = runtime.source_runs(run_id=str(result["runId"]))[0]
-            assert stored_row["details"][0]["url"] == "https://example.com/jobs/packaged-smoke"
+            assert "details" not in stored_row
             assert stored_row["evidenceRefs"]["sourceDetailsArchive"]["path"] == archive_ref["path"]
+            archived = EvidenceArchiveStore(data_dir).read_archive(archive_ref)
+            assert (
+                archived["sources"][0]["details"][0]["url"]
+                == "https://example.com/jobs/packaged-smoke"
+            )
             assert store.get_authority_modes()["jobsFeed"] == "sqlite"
             assert jobs_runtime.current_rows()[0]["title"] == "Packaged Smoke Job"
             light_rows = read_json(data_dir / "jobs-unified-light.json", [])

@@ -139,6 +139,39 @@ def test_source_runtime_prunes_old_runs_but_keeps_recent_and_active_runs() -> No
             assert runtime.source_run_summary(run_id="fetch_keep_newer")["rowCount"] == 1
 
 
+def test_source_runtime_prunes_recent_runs_beyond_keep_count() -> None:
+    with workspace_tmpdir("source-runtime-count-retention") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(store)
+            for index in range(4):
+                runtime.upsert_source_runs(
+                    run_id=f"fetch_recent_{index}",
+                    rows=[{"name": f"Studio {index}", "status": "ok"}],
+                )
+
+                def stamp_run(conn: sqlite3.Connection, run_index: int = index) -> None:
+                    conn.execute(
+                        "UPDATE source_runs SET updated_at = ? WHERE run_id = ?",
+                        (f"2026-03-{14 + run_index:02d}T00:00:00Z", f"fetch_recent_{run_index}"),
+                    )
+
+                store.write(stamp_run)
+
+            result = runtime.prune_old_runs(
+                retention_days=30,
+                keep_runs=2,
+                max_runs=10,
+                now=datetime(2026, 3, 20, tzinfo=UTC),
+            )
+
+            assert result["deletedRunCount"] == 2
+            assert result["retainedRunCount"] == 2
+            assert runtime.source_run_summary(run_id="fetch_recent_0")["rowCount"] == 0
+            assert runtime.source_run_summary(run_id="fetch_recent_1")["rowCount"] == 0
+            assert runtime.source_run_summary(run_id="fetch_recent_2")["rowCount"] == 1
+            assert runtime.source_run_summary(run_id="fetch_recent_3")["rowCount"] == 1
+
+
 def test_evidence_archive_store_writes_manifest_and_enforces_budget() -> None:
     with workspace_tmpdir("evidence-archive-store") as data_dir:
         archive = EvidenceArchiveStore(
@@ -302,3 +335,60 @@ def test_evidence_archive_manifest_fallback_active_retention_and_path_safety() -
             archive._resolve_archive_path(Path(data_dir / "absolute.json.gz"))
         with pytest.raises(ValueError, match="escapes data dir"):
             archive._resolve_archive_path(Path("..") / "escape.json.gz")
+
+
+def test_source_runtime_compacts_only_rows_with_archive_evidence() -> None:
+    with workspace_tmpdir("source-runtime-compact-payloads") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            )
+            archive = EvidenceArchiveStore(
+                data_dir,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            )
+            entry = archive.write_archive(
+                run_id="fetch_archived",
+                kind="source-details",
+                payload={"sources": [{"name": "Studio A", "details": [{"url": "a"}]}]},
+            )
+            details = [{"url": "https://example.com/job/1"}]
+            runtime.upsert_source_runs(
+                run_id="fetch_archived",
+                rows=[{"name": "Studio A", "status": "ok", "details": details}],
+                evidence_ref={"sourceDetailsArchive": entry},
+            )
+            runtime.upsert_source_runs(
+                run_id="fetch_plain",
+                rows=[{"name": "Studio B", "status": "ok", "details": details}],
+                evidence_ref={"reportPath": "jobs-fetch-report.json"},
+            )
+
+            result = runtime.compact_archived_payloads(max_runs=10, max_rows=10)
+
+            assert result["compactedPayloadCount"] == 1
+            assert result["compactedPayloadBytes"] > 0
+            assert "details" not in runtime.source_runs(run_id="fetch_archived")[0]
+            assert runtime.source_runs(run_id="fetch_plain")[0]["details"] == details
+
+
+def test_source_runtime_keeps_details_when_archive_file_is_missing() -> None:
+    with workspace_tmpdir("source-runtime-missing-archive") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(store)
+            details = [{"url": "https://example.com/job/2"}]
+            runtime.upsert_source_runs(
+                run_id="fetch_missing_archive",
+                rows=[{"name": "Studio C", "status": "ok", "details": details}],
+                evidence_ref={
+                    "sourceDetailsArchive": {
+                        "path": "artifacts/fetch/fetch_missing_archive/source-details.json.gz"
+                    }
+                },
+            )
+
+            result = runtime.compact_archived_payloads(max_runs=10, max_rows=10)
+
+            assert result["compactedPayloadCount"] == 0
+            assert runtime.source_runs(run_id="fetch_missing_archive")[0]["details"] == details

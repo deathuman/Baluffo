@@ -20,7 +20,6 @@ from __future__ import annotations
 import random
 import sqlite3
 import time
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -41,21 +40,21 @@ def _quoted(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
 
-def _row_stored_bytes(row: Sequence[Any]) -> int:
-    """Approximate stored bytes for one row, including overflow payload text."""
-    total = _ROW_OVERHEAD_BYTES
-    for value in row:
-        if value is None:
-            total += 1
-        elif isinstance(value, bytes):
-            total += len(value) + 3
-        elif isinstance(value, str):
-            total += len(value.encode("utf-8", "replace")) + 2
-        elif isinstance(value, (int, float)):
-            total += 8
-        else:
-            total += len(str(value)) + 2
-    return total
+def _table_columns(conn: sqlite3.Connection, name: str) -> list[str]:
+    """Return quoted column names so a sample never transfers the row payload."""
+    rows = conn.execute(f"PRAGMA table_info({_quoted(name)})").fetchall()
+    return [_quoted(str(row[1])) for row in rows if len(row) > 1 and row[1]]
+
+
+def _row_lengths(conn: sqlite3.Connection, table: str, columns: list[str], rowid: int) -> int:
+    """Measure one row from its stored lengths, without materializing large values."""
+    if not columns:
+        return _ROW_OVERHEAD_BYTES
+    expression = ", ".join(f"length(CAST({column} AS BLOB))" for column in columns)
+    row = conn.execute(f"SELECT {expression} FROM {table} WHERE rowid = ?", (rowid,)).fetchone()
+    if row is None:
+        return 0
+    return _ROW_OVERHEAD_BYTES + sum(1 if value is None else int(value) + 2 for value in row)
 
 
 def _table_names(conn: sqlite3.Connection) -> list[str]:
@@ -100,6 +99,7 @@ def _estimate_table(
     """Estimate one table; None means the table has no rowid (WITHOUT ROWID)."""
     table = _quoted(name)
     try:
+        columns = _table_columns(conn, name)
         bounds = conn.execute(f"SELECT MIN(rowid), MAX(rowid) FROM {table}").fetchone()
     except sqlite3.OperationalError:
         return None, False
@@ -117,14 +117,12 @@ def _estimate_table(
                 return None, True
             timed_out = True
             break
-        row = conn.execute(
-            f"SELECT * FROM {table} WHERE rowid = ?", (rng.randint(low, high),)
-        ).fetchone()
+        stored_bytes = _row_lengths(conn, table, columns, rng.randint(low, high))
         attempted += 1
-        if row is None:
+        if stored_bytes <= 0:
             continue
         hits += 1
-        sampled_bytes += _row_stored_bytes(row)
+        sampled_bytes += stored_bytes
     if hits == 0 or attempted == 0:
         return {"name": name, "rowCount": 0, "bytes": 0, "sampledRows": 0}, timed_out
     row_count = int(round(span * hits / attempted))
@@ -246,6 +244,10 @@ def measure_table_sizes(
         stats = _database_stats(conn, database_bytes)
         result.update(stats)
         names = _table_names(conn)
+        # A row can contain a multi-gigabyte JSON payload. The sampler must stop
+        # inside SQLite at the deadline, not only between sample queries, or the
+        # health worker keeps the single-flight lock held for minutes.
+        conn.set_progress_handler(lambda: 1 if time.monotonic() >= deadline else 0, 1000)
         exact: dict[str, int] | None = None
         if database_bytes <= max(0, int(exact_max_bytes)) and time.monotonic() < deadline:
             exact = _measure_exact(conn, names)
@@ -277,7 +279,11 @@ def measure_table_sizes(
         result["otherBytes"] = other_bytes
         result["truncated"] = truncated
     except sqlite3.Error as exc:
-        result["status"] = "unavailable"
+        interrupted = "interrupt" in str(exc).lower()
+        result["status"] = "partial" if interrupted else "unavailable"
+        result["method"] = "rowid-sample" if interrupted else ""
+        result["estimated"] = True
+        result["complete"] = False
         result["error"] = str(exc)
     finally:
         if conn is not None:

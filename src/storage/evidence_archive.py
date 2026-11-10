@@ -162,6 +162,26 @@ class EvidenceArchiveStore:
         self.enforce_retention(active_run_ids=active_run_ids)
         return entry
 
+    def read_archive(self, entry: Mapping[str, Any]) -> dict[str, Any]:
+        """Read one archived evidence payload, rejecting paths outside the data dir."""
+        relative_path = _clean_text(entry.get("path"))
+        if not relative_path:
+            raise ValueError("archive entry requires a path")
+        path = self._resolve_archive_path(Path(relative_path))
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if isinstance(payload, dict) else {}
+
+    def archive_exists(self, entry: Mapping[str, Any]) -> bool:
+        """Return whether a path-safe archive entry still has its file."""
+        relative_path = _clean_text(entry.get("path"))
+        if not relative_path:
+            return False
+        try:
+            return self._resolve_archive_path(Path(relative_path)).is_file()
+        except (OSError, ValueError):
+            return False
+
     def enforce_retention(self, *, active_run_ids: Iterable[str] = ()) -> dict[str, Any]:
         manifest = self.load_manifest()
         active_ids = {_clean_text(run_id) for run_id in active_run_ids if _clean_text(run_id)}

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 
-from src.storage import BaluffoStore
+from src.storage import BaluffoStore, SourceRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -115,3 +116,119 @@ def test_retention_deletions_schedule_a_compaction(
             assert store._run_runtime_retention(reason="post-serve") is True
 
             assert scheduled == ["post-serve:retention"]
+
+
+def test_retention_pass_without_deletions_retries_due_compaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scheduled: list[str] = []
+
+    def fake_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, object]:
+        return {
+            "status": "nothing-to-prune",
+            "reason": reason,
+            "deletedRunCount": 0,
+            "deletedRowCount": 0,
+        }
+
+    monkeypatch.setattr("src.storage.runtime_retention.run_runtime_retention", fake_retention)
+
+    with workspace_tmpdir("baluffo-store-retention-retry-compaction") as data_dir:
+        with BaluffoStore(data_dir) as store:
+
+            def record_compaction(*, reason: str = "") -> bool:
+                scheduled.append(reason)
+                return False
+
+            monkeypatch.setattr(store, "schedule_compaction_if_needed", record_compaction)
+
+            assert store._run_runtime_retention(reason="post-serve") is True
+
+            assert scheduled == ["post-serve:retention"]
+
+
+def test_truncated_retention_schedules_followup_before_compaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scheduled: list[str] = []
+
+    def fake_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, object]:
+        return {
+            "status": "ok",
+            "reason": reason,
+            "deletedRunCount": 2,
+            "deletedRowCount": 40,
+            "truncated": True,
+        }
+
+    monkeypatch.setattr("src.storage.runtime_retention.run_runtime_retention", fake_retention)
+
+    with workspace_tmpdir("baluffo-store-retention-followup") as data_dir:
+        with BaluffoStore(data_dir) as store:
+
+            def record_compaction(*, reason: str = "") -> bool:
+                scheduled.append(reason)
+                return False
+
+            monkeypatch.setattr(store, "schedule_compaction_if_needed", record_compaction)
+
+            assert store._run_runtime_retention(reason="post-serve") is True
+            status = store.runtime_retention_status()
+
+            assert scheduled == []
+            assert status["timerScheduled"] is True
+            assert 0 < status["nextRunInS"] <= 30
+            assert status["done"] is False
+
+
+def test_runtime_retention_bounds_event_and_sync_deletes() -> None:
+    with workspace_tmpdir("source-runtime-bounded-events") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            old = "2026-01-01T00:00:00Z"
+            store.write(
+                lambda conn: conn.execute(
+                    """
+                    INSERT INTO task_runs(run_id, task_type, status, started_at)
+                    VALUES ('old_run', 'fetch', 'finished', ?)
+                    """,
+                    (old,),
+                )
+            )
+            store.write(
+                lambda conn: conn.executemany(
+                    "INSERT INTO task_events(run_id, event, created_at) VALUES (?, 'old', ?)",
+                    [("old_run", old) for _ in range(3)],
+                )
+            )
+            store.write(
+                lambda conn: conn.executemany(
+                    "INSERT INTO sync_runs(run_id, status, started_at) VALUES (?, 'ok', ?)",
+                    [(f"sync_{index}", old) for index in range(3)],
+                )
+            )
+            runtime = SourceRuntimeStore(store)
+            now = datetime(2026, 3, 15, tzinfo=UTC)
+
+            first = runtime.prune_old_runs(
+                retention_days=30,
+                keep_runs=1,
+                max_runs=10,
+                max_event_rows=2,
+                max_sync_runs=2,
+                now=now,
+            )
+            second = runtime.prune_old_runs(
+                retention_days=30,
+                keep_runs=1,
+                max_runs=10,
+                max_event_rows=2,
+                max_sync_runs=2,
+                now=now,
+            )
+
+            assert first["deletedEventCount"] == 2
+            assert first["deletedSyncRunCount"] == 2
+            assert first["truncated"] is True
+            assert second["deletedEventCount"] == 1
+            assert second["deletedSyncRunCount"] == 1
+            assert second["truncated"] is False

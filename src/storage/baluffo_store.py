@@ -56,6 +56,13 @@ DEFAULT_VACUUM_LARGE_DATABASE_IDLE_S = 120.0
 DEFAULT_VACUUM_IDLE_MAX_WAIT_S = 600.0
 DEFAULT_VACUUM_IDLE_POLL_S = 5.0
 DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S = 5.0
+# Retention is a maintenance cycle, not a one-shot startup task. A long-running
+# container must keep pruning old source payloads as new fetch runs arrive.
+DEFAULT_RUNTIME_RETENTION_INTERVAL_S = 6 * 60 * 60
+# A bounded pass may leave more work than its cap. Continue soon while the
+# backlog is being drained, then fall back to the normal interval.
+DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S = 30.0
+DEFAULT_RUNTIME_RETENTION_RETRY_S = 300.0
 # One SQLite write transaction should take tens of milliseconds. A write that
 # waits longer than this to take the store write lock, or holds it longer, is
 # recorded with its thread and stack: that is the only evidence that attributes a
@@ -75,6 +82,9 @@ DEFAULT_HEALTH_LOCK_TIMEOUT_MS = 250
 # Per-table space estimates come from a bounded sample, so they are cached:
 # `/ops/storage-health` is polled on a timer and must not re-sample every poll.
 DEFAULT_TABLE_SIZE_CACHE_S = 600.0
+# A partial sample is useful immediately but must not freeze the panel for the
+# full cache window: retry it on the next health poll instead.
+DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S = 5.0
 # An in-place VACUUM holds the store write lock for the whole rebuild, which on a
 # multi-gigabyte runtime database is an unbounded hold -- the same shape that
 # starved fetch finalization behind the jobs-feed reconciliation lock. A
@@ -217,9 +227,12 @@ class BaluffoStore:
         }
         self._runtime_retention_done = False
         self._retention_thread: threading.Thread | None = None
+        self._retention_timer: threading.Timer | None = None
+        self._retention_next_run_monotonic = 0.0
+        self._closed = False
         self._table_sizes_lock = threading.Lock()
         self._table_sizes_snapshot: dict[str, Any] | None = None
-        self._table_sizes_captured_monotonic = 0.0
+        self._table_sizes_cache_until_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
         self._write_lock = threading.RLock()
         self._read_lock = threading.RLock()
@@ -249,6 +262,20 @@ class BaluffoStore:
         self.schedule_wal_maintenance_if_needed(reason="startup")
 
     def close(self) -> None:
+        self._closed = True
+        with self._maintenance_lock:
+            timer = self._retention_timer
+            self._retention_timer = None
+            self._retention_next_run_monotonic = 0.0
+        if timer is not None:
+            timer.cancel()
+        with self._maintenance_lock:
+            retention_thread = self._retention_thread
+        if retention_thread is not None and retention_thread is not threading.current_thread():
+            # A retention pass holds a SQLite connection. Closing the store
+            # underneath that thread is a use-after-close on Windows, so wait
+            # for the bounded pass before closing the database.
+            retention_thread.join()
         self._checkpoint_if_needed(reason="close", mode="PASSIVE")
         with self._read_lock:
             if self._reader is not None:
@@ -736,7 +763,7 @@ class BaluffoStore:
             self._compaction_hold = bool(held)
         if not changed or self._compaction_hold:
             return False
-        self.schedule_runtime_retention(reason="compaction-hold-released")
+        self.schedule_runtime_retention(reason="compaction-hold-released", force=True)
         return self.schedule_compaction_if_needed(reason="compaction-hold-released")
 
     def set_maintenance_deferred(self, deferred: bool) -> None:
@@ -829,15 +856,20 @@ class BaluffoStore:
 
     def runtime_retention_status(self) -> dict[str, Any]:
         with self._maintenance_lock:
+            next_run_in_s = 0.0
+            if self._retention_timer is not None:
+                next_run_in_s = max(0.0, self._retention_next_run_monotonic - time.monotonic())
             return {
                 **self._last_retention,
                 "done": bool(self._runtime_retention_done),
                 "running": bool(
                     self._retention_thread is not None and self._retention_thread.is_alive()
                 ),
+                "timerScheduled": bool(self._retention_timer is not None),
+                "nextRunInS": round(next_run_in_s, 1),
             }
 
-    def schedule_runtime_retention(self, *, reason: str = "") -> bool:
+    def schedule_runtime_retention(self, *, reason: str = "", force: bool = False) -> bool:
         """Start one bounded runtime-retention pass in the background.
 
         Retention deletes old source-run payloads and event history. It is
@@ -845,10 +877,16 @@ class BaluffoStore:
         it never competes with an active fetch on the startup path.
         """
         with self._maintenance_lock:
-            if self._runtime_retention_done:
+            if self._closed:
+                return False
+            if self._runtime_retention_done and not force:
                 return False
             if self._retention_thread is not None and self._retention_thread.is_alive():
                 return False
+            if self._retention_timer is not None:
+                self._retention_timer.cancel()
+                self._retention_timer = None
+                self._retention_next_run_monotonic = 0.0
             if self._compaction_hold:
                 self._last_retention = {
                     "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
@@ -859,6 +897,8 @@ class BaluffoStore:
                     "error": "",
                 }
                 return False
+            if force:
+                self._runtime_retention_done = False
             thread = threading.Thread(
                 target=self._run_runtime_retention,
                 kwargs={"reason": str(reason or "")},
@@ -901,25 +941,63 @@ class BaluffoStore:
             **status,
             "durationMs": int(round((time.monotonic() - started) * 1000)),
         }
+        needs_more = bool(status.get("truncated"))
         with self._maintenance_lock:
             self._last_retention = status
-            self._runtime_retention_done = str(status.get("status") or "") not in {
-                "failed",
-                MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
-            }
+            self._runtime_retention_done = (
+                str(status.get("status") or "")
+                not in {
+                    "failed",
+                    MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+                }
+                and not needs_more
+            )
+        if not needs_more and str(status.get("status") or "") not in {
+            "failed",
+            MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+        }:
+            # Deleted rows only become free pages; the rewrite is what returns
+            # them to the filesystem. Retry on every drained pass, not only on a
+            # pass that deleted something: a compaction skipped for space or a
+            # busy writer must not wait for the next fetch to become eligible.
+            # Wait for the backlog to drain first, because a rebuild that starts
+            # while another retention batch is still writing only skips as busy.
+            self.schedule_compaction_if_needed(reason=f"{reason}:retention")
+        if needs_more:
+            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S)
+        elif str(status.get("status") or "") == "failed":
+            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_RETRY_S)
+        elif str(status.get("status") or "") != MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
+            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_INTERVAL_S)
+        with self._maintenance_lock:
             if self._retention_thread is threading.current_thread():
                 self._retention_thread = None
-        deleted_rows = sum(
-            int(status.get(key) or 0)
-            for key in ("deletedRowCount", "deletedEventCount", "deletedSyncRunCount")
-        )
-        if deleted_rows > 0:
-            # Deleted rows only become free pages; the rewrite is what returns
-            # them to the filesystem, so the pass that made them schedules it.
-            self.schedule_compaction_if_needed(reason=f"{reason}:retention")
         return True
 
+    def _schedule_retention_followup(self, delay_s: float) -> None:
+        delay = max(0.1, float(delay_s))
+        with self._maintenance_lock:
+            if self._closed:
+                return
+            if self._retention_timer is not None:
+                return
+            timer = threading.Timer(delay, self._retention_timer_fired)
+            timer.daemon = True
+            timer.name = "baluffo-sqlite-retention-timer"
+            self._retention_timer = timer
+            self._retention_next_run_monotonic = time.monotonic() + delay
+            timer.start()
+
+    def _retention_timer_fired(self) -> None:
+        with self._maintenance_lock:
+            self._retention_timer = None
+            self._retention_next_run_monotonic = 0.0
+            self._runtime_retention_done = False
+        self.schedule_runtime_retention(reason="retention-timer")
+
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
+        if self._closed:
+            return False
         sizes = self.file_sizes()
         wal_bytes = int(sizes.get("walBytes") or 0)
         if wal_bytes < self.wal_checkpoint_threshold_bytes:
@@ -1310,6 +1388,8 @@ class BaluffoStore:
         )
 
     def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
+        if self._closed:
+            return False
         sizes = self.file_sizes()
         if not self._compaction_needed(sizes):
             return False
@@ -1495,10 +1575,7 @@ class BaluffoStore:
         now = time.monotonic()
         with self._table_sizes_lock:
             snapshot = self._table_sizes_snapshot
-            if (
-                snapshot is not None
-                and now - self._table_sizes_captured_monotonic < DEFAULT_TABLE_SIZE_CACHE_S
-            ):
+            if snapshot is not None and now < self._table_sizes_cache_until_monotonic:
                 return snapshot
             # Imported here because the storage package re-exports BaluffoStore:
             # a module-level import would close the package cycle.
@@ -1506,7 +1583,12 @@ class BaluffoStore:
 
             snapshot = measure_table_sizes(self.db_path)
             self._table_sizes_snapshot = snapshot
-            self._table_sizes_captured_monotonic = time.monotonic()
+            cache_s = (
+                DEFAULT_TABLE_SIZE_CACHE_S
+                if snapshot.get("complete") is True
+                else DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S
+            )
+            self._table_sizes_cache_until_monotonic = time.monotonic() + cache_s
             return snapshot
 
     def health(self) -> dict[str, Any]:

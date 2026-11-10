@@ -21,6 +21,7 @@ from src.shared.utils import coerce_non_negative_int as _coerce_int
 from src.shared.utils import now_iso as _shared_now_iso
 from src.shared.utils import parse_iso as _parse_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
+from src.storage.evidence_archive import EvidenceArchiveStore
 
 SOURCE_RUN_SCHEMA_VERSION = 1
 DEFAULT_SOURCE_RUN_LIMIT = 500
@@ -28,6 +29,11 @@ DEFAULT_RUNTIME_RETENTION_DAYS = 30
 DEFAULT_RUNTIME_RETENTION_KEEP_RUNS = 30
 DEFAULT_RUNTIME_RETENTION_MAX_RUNS = 200
 DEFAULT_RUNTIME_RETENTION_BATCH_RUNS = 10
+DEFAULT_RUNTIME_RETENTION_MAX_EVENT_ROWS = 5_000
+DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS = 500
+DEFAULT_ARCHIVE_COMPACT_RUNS = 30
+DEFAULT_ARCHIVE_COMPACT_ROWS = 200
+DEFAULT_ARCHIVE_COMPACT_BYTES = 32 * 1024 * 1024
 
 
 def _now_iso() -> str:
@@ -354,17 +360,20 @@ class SourceRuntimeStore:
         retention_days: int = DEFAULT_RUNTIME_RETENTION_DAYS,
         keep_runs: int = DEFAULT_RUNTIME_RETENTION_KEEP_RUNS,
         max_runs: int = DEFAULT_RUNTIME_RETENTION_MAX_RUNS,
+        max_event_rows: int = DEFAULT_RUNTIME_RETENTION_MAX_EVENT_ROWS,
+        max_sync_runs: int = DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Delete old terminal source-run payloads in bounded batches.
 
-        ``source_runs`` is append-only and stores the full per-source report
-        payload for every fetch. A mature runtime database therefore grows by
-        hundreds of megabytes per fetch even though only the latest runs are
-        read by the UI. Keep the newest ``keep_runs`` runs and every run that is
-        still active; delete older runs whose last row is beyond the retention
-        cutoff. Deletion is deliberately bounded by ``max_runs`` so one startup
-        pass cannot monopolize the write lock.
+        ``source_runs`` keeps a compact per-source report payload for every
+        fetch. Keep the newest ``keep_runs`` runs and every run that is still
+        active; delete every older terminal run, including recent runs beyond the
+        count cap, so growth is bounded even when fetches arrive faster than the
+        age cutoff. Deletion is deliberately bounded by ``max_runs`` so one
+        startup pass cannot monopolize the write lock; event and sync deletions
+        are bounded separately so a huge history cannot become one giant
+        transaction.
         """
         normalized_days = max(0, int(retention_days or 0))
         normalized_keep = max(1, int(keep_runs or 1))
@@ -406,7 +415,7 @@ class SourceRuntimeStore:
         candidates = [
             (run_id, ended_at)
             for run_id, ended_at in parsed_runs
-            if ended_at < cutoff and run_id not in keep_run_ids and run_id not in active_run_ids
+            if run_id not in keep_run_ids and run_id not in active_run_ids
         ]
         candidates.sort(key=lambda item: item[1])
         selected = candidates[:normalized_max]
@@ -427,47 +436,68 @@ class SourceRuntimeStore:
             deleted_row_count += int(self.store.write(delete_batch) or 0)
             deleted_run_count += len(batch)
 
-        cutoff_text = cutoff.isoformat()
-        event_row_count, sync_row_count = self.store.write(
-            lambda conn: (
-                max(
+        cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
+        event_limit = max(0, int(max_event_rows or 0))
+        sync_limit = max(0, int(max_sync_runs or 0))
+
+        def delete_bounded_rows(conn: Any) -> tuple[int, int]:
+            event_count = 0
+            sync_count = 0
+            if event_limit > 0:
+                event_count = max(
                     0,
                     int(
                         conn.execute(
                             """
                             DELETE FROM task_events
-                            WHERE created_at <> '' AND created_at < ?
-                              AND run_id NOT IN (
-                                  SELECT run_id FROM task_runs
-                                  WHERE status IN ('queued', 'running')
-                              )
+                            WHERE id IN (
+                                SELECT id FROM task_events
+                                WHERE created_at <> '' AND created_at < ?
+                                  AND run_id NOT IN (
+                                      SELECT run_id FROM task_runs
+                                      WHERE status IN ('queued', 'running')
+                                  )
+                                ORDER BY created_at ASC, id ASC
+                                LIMIT ?
+                            )
                             """,
-                            (cutoff_text,),
+                            (cutoff_text, event_limit),
                         ).rowcount
                         or 0
                     ),
-                ),
-                max(
+                )
+            if sync_limit > 0:
+                sync_count = max(
                     0,
                     int(
                         conn.execute(
                             """
                             DELETE FROM sync_runs
-                            WHERE started_at <> '' AND started_at < ?
-                              AND status NOT IN ('queued', 'running')
+                            WHERE run_id IN (
+                                SELECT run_id FROM sync_runs
+                                WHERE started_at <> '' AND started_at < ?
+                                  AND status NOT IN ('queued', 'running')
+                                ORDER BY started_at ASC
+                                LIMIT ?
+                            )
                             """,
-                            (cutoff_text,),
+                            (cutoff_text, sync_limit),
                         ).rowcount
                         or 0
                     ),
-                ),
-            )
-        )
+                )
+            return event_count, sync_count
+
+        event_row_count, sync_row_count = self.store.write(delete_bounded_rows)
+        event_truncated = event_limit > 0 and event_row_count >= event_limit
+        sync_truncated = sync_limit > 0 and sync_row_count >= sync_limit
         return {
             "status": "ok" if selected or event_row_count or sync_row_count else "nothing-to-prune",
             "retentionDays": normalized_days,
             "keepRuns": normalized_keep,
             "maxRuns": normalized_max,
+            "maxEventRows": event_limit,
+            "maxSyncRuns": sync_limit,
             "cutoff": cutoff_text,
             "candidateRunCount": len(candidates),
             "deletedRunCount": deleted_run_count,
@@ -475,5 +505,109 @@ class SourceRuntimeStore:
             "deletedEventCount": event_row_count,
             "deletedSyncRunCount": sync_row_count,
             "retainedRunCount": max(0, len(parsed_runs) - deleted_run_count),
-            "truncated": len(candidates) > len(selected),
+            "truncated": len(candidates) > len(selected) or event_truncated or sync_truncated,
+        }
+
+    def compact_archived_payloads(
+        self,
+        *,
+        max_runs: int = DEFAULT_ARCHIVE_COMPACT_RUNS,
+        max_rows: int = DEFAULT_ARCHIVE_COMPACT_ROWS,
+        max_bytes: int = DEFAULT_ARCHIVE_COMPACT_BYTES,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Remove full source details from SQLite when the gzip archive owns them.
+
+        Older builds wrote the complete per-source `details` payload to
+        `source_runs.payload_json` *and* to the evidence archive. That duplication
+        is what turned the runtime database into hundreds of gigabytes. This pass
+        only touches rows whose evidence reference names a source-details archive,
+        so a row without a durable copy of its details is never stripped.
+        """
+        del now  # Kept in the signature for parity with prune_old_runs.
+        normalized_max_runs = max(1, int(max_runs or 1))
+        normalized_max_rows = max(1, int(max_rows or 1))
+        normalized_max_bytes = max(1, int(max_bytes or 1))
+        run_rows = self.store.execute_read(
+            """
+            SELECT run_id
+            FROM source_runs
+            WHERE run_id <> ''
+            GROUP BY run_id
+            ORDER BY MAX(COALESCE(NULLIF(updated_at, ''), NULLIF(finished_at, ''), started_at)) DESC
+            LIMIT ?
+            """,
+            (normalized_max_runs,),
+        )
+        run_ids = [
+            _clean_text(row.get("run_id")) for row in run_rows if _clean_text(row.get("run_id"))
+        ]
+        if not run_ids:
+            return {
+                "status": "nothing-to-compact",
+                "candidateRowCount": 0,
+                "compactedPayloadCount": 0,
+                "compactedPayloadBytes": 0,
+                "truncated": False,
+            }
+        placeholders = ",".join("?" for _ in run_ids)
+        rows = self.store.execute_read(
+            f"""
+            SELECT run_id, source_id, payload_json, evidence_ref_json
+            FROM source_runs
+            WHERE run_id IN ({placeholders})
+              AND payload_json LIKE '%\"details\"%'
+              AND evidence_ref_json LIKE '%sourceDetailsArchive%'
+            LIMIT ?
+            """,
+            (*run_ids, normalized_max_rows + 1),
+        )
+        truncated = len(rows) > normalized_max_rows
+        archive_store = EvidenceArchiveStore(self.store.data_dir)
+        updates: list[tuple[str, str, str]] = []
+        compacted_bytes = 0
+        processed_bytes = 0
+        for row in rows[:normalized_max_rows]:
+            raw = str(row.get("payload_json") or "")
+            raw_bytes = len(raw.encode("utf-8"))
+            if updates and processed_bytes + raw_bytes > normalized_max_bytes:
+                truncated = True
+                break
+            evidence = _json_loads_object(row.get("evidence_ref_json"))
+            archive = _json_object(evidence.get("sourceDetailsArchive"))
+            if not archive_store.archive_exists(archive):
+                continue
+            payload = _json_loads_object(raw)
+            if not payload or "details" not in payload:
+                continue
+            compact = {key: value for key, value in payload.items() if key != "details"}
+            compact_text = _json_dumps(compact)
+            if len(compact_text) >= len(raw):
+                continue
+            updates.append(
+                (
+                    compact_text,
+                    _clean_text(row.get("run_id")),
+                    _clean_text(row.get("source_id")),
+                )
+            )
+            processed_bytes += raw_bytes
+            compacted_bytes += raw_bytes - len(compact_text.encode("utf-8"))
+        if updates:
+            self.store.write(
+                lambda conn: conn.executemany(
+                    """
+                    UPDATE source_runs
+                    SET payload_json = ?
+                    WHERE run_id = ? AND source_id = ?
+                    """,
+                    updates,
+                )
+            )
+        return {
+            "status": "ok" if updates else "nothing-to-compact",
+            "candidateRowCount": len(rows),
+            "compactedPayloadCount": len(updates),
+            "compactedPayloadBytes": compacted_bytes,
+            "truncated": truncated,
         }

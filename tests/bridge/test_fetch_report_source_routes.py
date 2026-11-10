@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.storage_health import close_storage_stores, get_storage_store
-from src.storage import SourceRuntimeStore
+from src.storage import EvidenceArchiveStore, SourceRuntimeStore
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
 
@@ -96,5 +96,73 @@ def test_ops_fetch_report_sqlite_mismatch_rolls_source_runs_back_to_json(
         payload = handler.sent[-1]["payload"]
         assert [row["name"] for row in payload["sources"]] == ["studio_a", "studio_b"]
         assert runtime_store.get_authority_modes()["sourceRuns"] == "json"
+    finally:
+        close_storage_stores()
+
+
+def test_ops_fetch_report_hydrates_source_details_from_evidence_archive(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    archive_entry = EvidenceArchiveStore(
+        tmp_path,
+        now_iso=lambda: "2026-05-12T12:00:00+00:00",
+    ).write_archive(
+        run_id="fetch_archive_1",
+        kind="source-details",
+        payload={
+            "schemaVersion": 1,
+            "runId": "fetch_archive_1",
+            "sources": [
+                {
+                    "name": "studio_a",
+                    "status": "ok",
+                    "details": [{"url": "https://example.com/archived-job"}],
+                }
+            ],
+        },
+    )
+    report = {
+        "runId": "fetch_archive_1",
+        "summary": {"sourceCount": 1},
+        "sourceRuns": {
+            "format": "sqlite",
+            "sourceDetailsArchive": archive_entry,
+        },
+        "sources": [
+            {
+                "name": "studio_a",
+                "status": "ok",
+                "adapter": "static",
+                "fetchedCount": 1,
+                "keptCount": 1,
+            }
+        ],
+    }
+    (tmp_path / "jobs-fetch-report.json").write_text(json.dumps(report), encoding="utf-8")
+    try:
+        runtime_store = get_storage_store(tmp_path)
+        runtime_store.set_authority_mode("sourceRuns", "sqlite", reason="test")
+        SourceRuntimeStore(runtime_store).upsert_source_runs(
+            run_id="fetch_archive_1",
+            rows=[
+                {
+                    "name": "studio_a",
+                    "status": "ok",
+                    "adapter": "static",
+                    "fetchedCount": 1,
+                    "keptCount": 1,
+                }
+            ],
+            evidence_ref={"sourceDetailsArchive": archive_entry},
+        )
+
+        handler = FakeHandler()
+        result = handle_get(handler, api=api, path="/ops/fetch-report", query={})
+
+        assert result is True
+        payload = handler.sent[-1]["payload"]
+        assert payload["sources"][0]["details"] == [{"url": "https://example.com/archived-job"}]
     finally:
         close_storage_stores()

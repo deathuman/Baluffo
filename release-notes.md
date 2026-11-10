@@ -1,31 +1,11 @@
-## [0.3.048] - 2026-11-10
-
-> This desktop rollup includes the fixes published to the container channel as
-> 0.3.044 through 0.3.047, plus the desktop and Admin changes below.
-
-### Changed
-
-- Admin now uses the active fetch's live report while work is running, so progress and
-  failure details update instead of showing the last published report.
-- Admin loads its storage details only when they are used, and the storage read is bounded.
-  The panel stays responsive while a fetch is running and shows the last good sizes when the
-  disk is slow.
-- Source maintenance now recognizes career boards served by supported ATS providers and can
-  refresh or retire changed static sources only after the evidence and a working control pass.
+## [0.3.049] - 2026-11-10
 
 ### Fixed
 
-- Finalizing a fetch preserves lock priority and finished rows if reconciliation is briefly
-  busy, so a lock timeout no longer discards completed work.
-- A failed availability update restores the same startup feed files that existed before the
-  attempt, instead of leaving a new file behind.
-- Linux browser fallback keeps Chromium's GPU work in-process, so browser fallback can render
-  on hosts that block the GPU helper.
-- Packaged desktop builds no longer exceed the startup size limit after the storage-panel
-  change.
+- The runtime database now keeps only the newest 30 fetch runs and removes older terminal source history in bounded, repeating passes, so a long-lived install can reclaim space instead of growing forever. Full source details remain in compressed evidence archives.
+- A database compaction that cannot run when first due is retried after the retention backlog drains, so a temporary busy period or low-disk condition does not strand cleanup indefinitely.
+- The Admin Runtime Database Storage panel now receives table sizes while a large database is being cleaned. Table sampling has a hard deadline and no longer loads oversized source payloads before returning a partial estimate.
 
 ### Notes
 
-- Existing jobs, saved jobs and notes are kept. The same-origin Linux container,
-  GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
-  desktop localhost bridge compatibility all continue to work.
+- Existing jobs, saved jobs, and notes are kept. Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.

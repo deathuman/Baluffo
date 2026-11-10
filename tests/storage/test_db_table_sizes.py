@@ -83,3 +83,38 @@ def test_table_sizes_reports_a_missing_database(tmp_path: Path) -> None:
     assert "not found" in result["error"]
     assert result["tables"] == []
     assert result["durationMs"] >= 0
+
+
+def test_table_sizes_measures_large_payloads_without_materializing_them(tmp_path: Path) -> None:
+    path = tmp_path / "large-row.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE payloads (id INTEGER PRIMARY KEY, payload TEXT)")
+    con.execute("INSERT INTO payloads(payload) VALUES (?)", ("x" * (5 * 1024 * 1024),))
+    con.commit()
+    con.close()
+
+    result = measure_table_sizes(path, sample_rows=4, budget_ms=5_000, exact_max_bytes=0)
+
+    assert result["status"] == "ok"
+    assert result["method"] == "rowid-sample"
+    assert result["tables"][0]["name"] == "payloads"
+    assert result["tables"][0]["bytes"] >= 5 * 1024 * 1024
+
+
+def test_table_sizes_returns_partial_when_sampling_is_interrupted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "probe.db"
+    _seed_database(path)
+
+    def interrupted(*_args, **_kwargs):
+        raise sqlite3.OperationalError("interrupted")
+
+    monkeypatch.setattr("src.storage.db_table_sizes._sample_rows", interrupted)
+
+    result = measure_table_sizes(path, sample_rows=8, budget_ms=5_000, exact_max_bytes=0)
+
+    assert result["status"] == "partial"
+    assert result["method"] == "rowid-sample"
+    assert result["complete"] is False
+    assert result["tables"] == []

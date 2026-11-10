@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.048"
+version: "0.3.049"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,9 +19,9 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Desktop rollup release 0.3.048 adds live fetch progress and more resilient
-  finalization in Admin, keeps storage details responsive during a fetch, and
-  includes Linux browser fallback and source-maintenance fixes. Existing jobs,
-  saved jobs and notes are kept.
+  Release 0.3.049 keeps the runtime database bounded by retaining the newest
+  30 fetch runs, retries cleanup compaction after the backlog drains, and lets
+  Admin load storage table sizes while a large database is being cleaned.
+  Existing jobs, saved jobs and notes are kept.
 storage:
   dataRoot: data
