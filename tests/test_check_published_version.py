@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError
 
 import pytest
+import yaml
 
 from scripts import check_published_version as cpv
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _FakeResponse:
@@ -137,3 +142,35 @@ def test_absent_and_unauthorized_tags_both_read_as_unpublished(monkeypatch, code
 
     assert state.published is False
     assert "not published yet" in state.detail
+
+
+def _build_workflow_steps() -> list[dict[str, object]]:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "build-container.yml").read_text(encoding="utf-8")
+    )
+    return cast(list[dict[str, object]], workflow["jobs"]["build"]["steps"])
+
+
+def test_build_workflow_refuses_to_republish_a_published_version() -> None:
+    """The online check must run before the image build on a branch push.
+
+    Umbrel compares version strings, so republishing a tag with newer code leaves
+    every install pinned to that version with no reason to update. The offline
+    guardrail deliberately treats only a git tag as released, and a container
+    release is published by version string whether or not it is ever tagged
+    (0.3.045 and 0.3.046 both went live on GHCR untagged). This wiring is the
+    automated home for that question; without it the check only runs by hand.
+    """
+    steps = _build_workflow_steps()
+    gate = next(
+        (step for step in steps if "check_published_version.py" in str(step.get("run") or "")),
+        None,
+    )
+    assert gate is not None, "build-container.yml must run the published-version check"
+    assert "--strict" in str(gate["run"])
+    condition = str(gate.get("if") or "")
+    assert "github.event_name == 'push'" in condition
+    assert "startsWith(github.ref, 'refs/heads/')" in condition
+
+    names = [str(step.get("name") or "") for step in steps]
+    assert names.index(str(gate["name"])) < names.index("Build and publish (main / tags)")

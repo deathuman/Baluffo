@@ -568,6 +568,10 @@ told an existing install to update. That gate is fixed; see below.
 - **Shipped code is not landable on `main` while the current version tag is published**, unless the same
   commit bumps the version. Either bump `src/app_version.py` in that commit, or keep the change on a branch
   and release it by tagging. Non-shipped work (`.github/`, `tools/`, `tests/`, `docs/`) is always safe.
+- **The build itself refuses an already-published version.** `build-container.yml` runs
+  `python scripts/check_published_version.py --strict` on branch pushes before QEMU/Buildx, so a shipped
+  push under an unchanged, already-published version fails instead of overwriting the tag — including a
+  version that was never tagged locally, which is the case the offline gate cannot see.
 - **Check the digest after pushing shipped code**, not only before a release:
   `python scripts/check_published_version.py --version <current>`. Run before the push it is a pre-flight
   warning; run after, it is a report about a fact that already exists.
@@ -595,12 +599,13 @@ Two deliberate limits:
 - **The git tag is the release marker, not a GHCR query.** That keeps the gate offline and deterministic in
   pre-commit and pre-push, where a network call would add two round-trips and fail without a registry — and
   because `AGENTS.md` bans `--no-verify`, a flaky gate means stuck commits rather than a bypass. The cost is
-  that a version that reached GHCR without ever being tagged reads as unreleased; that is the inert window
-  anyway, since nothing can hold the version string.
-- **Pre-release republishing is still allowed.** Between a bump and its tag, any shipped push republishes the
-  not-yet-released version. Nothing can install that string and an install only updates when the version
-  string moves, so the churn is unreachable by users and blocking it would cost a release-window fix for
-  nothing.
+  that a version that reached GHCR without ever being tagged reads as unreleased to this offline gate.
+  `build-container.yml` closes that case with the online strict check on branch pushes, so the image still
+  cannot be republished under a version an install may already run.
+- **Republishing is allowed only until GHCR has the version.** The offline gate stays permissive inside a
+  bump-to-tag window; the online strict check in `build-container.yml` is what ends it. Once the image is on
+  GHCR the version string is installable and an install only updates when that string moves, so a further
+  shipped push must bump instead of overwriting the tag.
 
 `package.json` and `package-lock.json` are both in `NON_SHIPPED_PATTERNS` for the related reason that a
 dev-dependency bump should not rebuild a published image at all — see `NON_SHIPPED_PATTERNS` in
@@ -706,16 +711,16 @@ Do not read "preflight passed" as "all gates passed"; the tag-push workflows run
 | --- | --- | --- | --- |
 | `npm run lint:precommit` (all-files gate) | yes | no | `lint.yml` runs `lint:precommit:ci`; the pre-push hook runs it on `main` and `v*` tags |
 | `npm run security:js` | yes | no | `lint.yml` |
-| `npm run check:published-version` | yes | no | **nowhere — manual lanes only** |
+| `npm run check:published-version` | yes | no | `build-container.yml` runs it with `--strict` on branch pushes, before the image is built |
 | Portable prepare (`--skip-zip`) | yes | yes | — |
 | `test:frontend:unit`, `test:py:extended` | yes | yes | `test.yml` also runs both |
 | Packaged smoke + rehearsal lanes (17 commands) | yes | yes | **nowhere else — tag-time only, by decision** |
 | `npm run probe:desktop:startup:jobs:cold` | yes | yes | — |
 | `npm run typecheck:py`, `lint:deadcode:js` | no | no | `lint.yml`, plus the commit hook and the pre-push hook on `main` and `v*` tags |
 
-Two rows deserve to be read as decisions, not gaps:
+Two rows deserve a note:
 
-- **`check:published-version` has no automated home.** It is the one lane that exists only in the manual preflight. It is warn-only by design and cannot meaningfully gate an automated run, so this is intentional — but it means the "is this version already published?" question is asked by a human, before tagging, and nowhere else.
+- **`check:published-version` now has an automated home.** The manual preflight keeps it warn-only, but `build-container.yml` runs it with `--strict` on branch pushes, before QEMU, Buildx or the image build. A container-affecting push under a version GHCR already serves therefore fails the build instead of overwriting the tag: `deathuman-baluffo/umbrel-app.yml` still names the version an existing install already runs, so nothing would tell that install to update. Tag pushes and manual dispatches are exempt because they are the deliberate release and recovery paths, and a registry outage still degrades to a skip rather than blocking every build.
 - **The 17 packaged desktop lanes run only at tag time.** This is a deliberate trade-off, not an oversight: they are the slowest and most environment-sensitive lanes (measured `Run release gates` at 17m26s in CI), and the cost of running them on every push was judged higher than the benefit. The accepted consequence is that a regression in packaged desktop behaviour can reach `main` and is only caught by the next tag's release gate. If a packaged regression ever ships, that is where to look first.
 
 The Windows release runner needs **both** Playwright runtimes installed, because the frontend unit lane imports `@playwright/test` while the portable builder imports Python Playwright, and each resolves a different browser revision. `build-portable-exe.yml` installs both and fails fast naming a missing cache entry; a workflow that installs only one will hang the unit lane rather than fail it.

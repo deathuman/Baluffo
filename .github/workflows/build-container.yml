@@ -101,6 +101,20 @@ jobs:
           print(f"version={APP_VERSION}")
           PY
 
+      # Umbrel compares version strings to decide whether an update exists. The
+      # offline version gate treats only a git tag as released, but container
+      # releases are published by version string and are often never tagged
+      # (0.3.045 and 0.3.046 were both live on GHCR without a tag). This is the
+      # online check that closes that hole: a container-affecting push that
+      # leaves the version unchanged would overwrite the tag every install is
+      # pinned to, without moving the string that tells it to update. Tags and
+      # manual dispatches are exempt because they are the deliberate release and
+      # recovery paths, and the script degrades to a skip on a registry outage
+      # rather than blocking every build.
+      - name: Refuse to republish an already-published version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+        run: python scripts/check_published_version.py --strict
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 

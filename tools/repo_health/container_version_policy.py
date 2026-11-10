@@ -313,9 +313,9 @@ def _version_is_released(repo_root: Path, version: str) -> bool:
     rather than a bypass.
 
     Known limit: a version that reached GHCR without ever being tagged (bumped,
-    pushed, never released) reads as unreleased here. That is the inert window
-    anyway -- nothing can hold the version string, so the republish costs
-    nothing. ``docs/RELEASE.md`` records the same limit.
+    pushed, never released) reads as unreleased here. The online strict check in
+    ``build-container.yml`` covers that case for the build, so a shipped change
+    still cannot republish a version GHCR already serves.
     """
     if not version:
         return False
