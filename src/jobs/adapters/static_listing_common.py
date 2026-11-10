@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from src.jobs.adapters.ats_signature_routing import ATS_SIGNATURES
 from src.jobs.adapters.static_runtime_support import (
     effective_timeout_for_remaining_budget,
     is_static_fetch_fallback_exception,
@@ -26,18 +27,9 @@ _EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
 _PLUGIN_STATIC_ARTIFACT_NESTED_DETAIL_LIMIT = 12
 _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS = (HttpStatusError, OSError, RuntimeError)
 
-# (adapter_name, html_substring) pairs for diagnostic warnings
-# when a static source's page HTML contains an ATS signature.
-_ATS_SIGNATURE_HINTS: list[tuple[str, str]] = [
-    ("teamtailor", "teamtailor"),
-    ("dover", "app.dover.com"),
-    ("greenhouse", "greenhouse.io"),
-    ("bamboohr", "bamboohr"),
-    ("workday", "myworkdayjobs"),
-    ("smartrecruiters", "smartrecruiters"),
-    ("lever", "lever.co"),
-    ("workable", "workable"),
-]
+# Compatibility alias for diagnostics/tests; the table lives in the routing leaf so
+# the signature the runner reports and the signature the sweep routes cannot drift.
+_ATS_SIGNATURE_HINTS: list[tuple[str, str]] = list(ATS_SIGNATURES)
 
 _CAREERS_LANDING_TOKENS = (
     "careers",

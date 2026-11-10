@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from src.jobs.adapters.ats_signature_routing import detect_ats_signature, extract_ats_route
 from src.jobs.adapters.plugins.static._heuristics import (
     detect_cookie_challenge_shell,
     detect_js_shell,
@@ -31,7 +32,6 @@ from src.jobs.adapters.static_detail_heuristics import (
     source_detail_retries_for,
 )
 from src.jobs.adapters.static_listing_common import (
-    _ATS_SIGNATURE_HINTS,
     _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS,
     _EXTERNAL_DETAIL_FANOUT_LINK_CAP,
     StaticDetailCandidate,
@@ -874,15 +874,27 @@ class StaticFetchRunner:
             bool(html and "/jobs" in listing_path),
         )
         if html:
-            html_lower = html.lower()
-            for _adapter, _sig in _ATS_SIGNATURE_HINTS:
-                if _sig in html_lower:
-                    self.ctx.warnings.append(
-                        f"static:{self.source_name}:{page_url}: "
-                        f"HTML contains {_adapter} signature — "
-                        f"consider adapter reclassification"
+            signature = detect_ats_signature(html)
+            if signature is not None:
+                route = self.entry_report.get("atsRoute")
+                if not isinstance(route, dict):
+                    route = extract_ats_route(
+                        html,
+                        page_url,
+                        expected_adapter=signature.adapter,
                     )
-                    break
+                    if route is not None:
+                        self.entry_report["atsRoute"] = route
+                route_hint = (
+                    f"; native route {route.get('adapter')}:{route.get('boardUrl')}"
+                    if isinstance(route, dict)
+                    else ""
+                )
+                self.ctx.warnings.append(
+                    f"static:{self.source_name}:{page_url}: "
+                    f"HTML contains {signature.adapter} signature — "
+                    f"consider adapter reclassification{route_hint}"
+                )
         html = self._try_playwright_fallback(
             html,
             page_url,
