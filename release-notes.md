@@ -1,13 +1,9 @@
-## [0.3.045] - 2026-11-10
+## [0.3.046] - 2026-11-10
 
 ### Changed
 
-- The Admin page now loads its database storage breakdown and its details drawer only when they are used, so the page has much less code to load before the first screen appears. Both still appear in the same place, and the storage table sizes still refresh on the same schedule.
-
-### Fixed
-
-- Portable Windows and Linux AppImage builds pass their startup size limit again after the storage panel was added, so packaged desktop builds can be produced from this release.
+- The container image is rebuilt and published under a new version so container and Umbrel installs can update. The app itself behaves the same as the previous release.
 
 ### Notes
 
-- Existing jobs, saved jobs and notes are kept. Deployment compatibility is unchanged: the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all behave as before.
+- No jobs data is migrated or dropped: saved jobs, notes and the current feed stay as they are. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all continue to work.
