@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
+import threading
+import time
 
 import pytest
 
@@ -10,7 +13,12 @@ import src.jobs.feed_reconciliation_lock as lock_module
 from src.jobs.feed_reconciliation_lock import (
     ReconciliationLockTimeout,
     _lock_holder_summary,
+    clear_finalize_pending,
+    finalize_pending_path,
     jobs_feed_reconciliation_lock,
+    mark_finalize_pending,
+    read_finalize_pending,
+    wait_for_finalize_pending_clear,
 )
 
 _POSIX_ONLY = pytest.mark.skipif(
@@ -98,3 +106,70 @@ def test_timeout_env_zero_waits_forever(monkeypatch):
 def test_timeout_env_invalid_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S", "not-a-number")
     assert lock_module._lock_timeout_s() == lock_module._DEFAULT_LOCK_TIMEOUT_S
+
+
+@_POSIX_ONLY
+def test_timeout_names_the_holder_operation(tmp_path, monkeypatch):
+    """The timeout must name what the bridge was doing, not only its pid."""
+    monkeypatch.setenv("BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S", "0.4")
+    monkeypatch.setattr(lock_module, "_LOCK_RETRY_DELAY_S", 0.01)
+    holder_started = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        with jobs_feed_reconciliation_lock(tmp_path, operation="availability_commit"):
+            holder_started.set()
+            assert release.wait(2.0)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    try:
+        assert holder_started.wait(1.0)
+        with pytest.raises(ReconciliationLockTimeout) as excinfo:
+            with jobs_feed_reconciliation_lock(tmp_path):
+                pytest.fail("lock should not have been acquired")
+    finally:
+        release.set()
+        thread.join(timeout=2.0)
+
+    timeout = excinfo.value
+    assert timeout.holder_operation == "availability_commit"
+    assert timeout.holder_thread
+    assert timeout.holder_acquired_at
+    assert "op=availability_commit" in str(timeout)
+    assert "op=availability_commit" in timeout.holder
+
+
+def test_finalize_pending_marker_round_trip(tmp_path):
+    assert read_finalize_pending(tmp_path) is None
+
+    path = mark_finalize_pending(tmp_path, run_id="pipeline_1")
+
+    assert path == finalize_pending_path(tmp_path)
+    assert path.exists()
+    pending = read_finalize_pending(tmp_path)
+    assert pending is not None
+    assert pending["runId"] == "pipeline_1"
+    assert wait_for_finalize_pending_clear(tmp_path, timeout_s=0.01, poll_s=0.01) is False
+
+    clear_finalize_pending(tmp_path)
+
+    assert read_finalize_pending(tmp_path) is None
+    assert wait_for_finalize_pending_clear(tmp_path, timeout_s=0.01, poll_s=0.01) is True
+
+
+def test_stale_finalize_pending_marker_is_ignored(tmp_path):
+    path = finalize_pending_path(tmp_path)
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "capturedAtEpoch": time.time() - 10,
+                "staleAfterS": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert read_finalize_pending(tmp_path) is None
+    assert not path.exists()

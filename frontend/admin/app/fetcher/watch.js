@@ -173,6 +173,7 @@ export function createAdminFetcherWatchController({
 
     if (meaningfulLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
       if (liveFinishedMs <= 0) {
+        state.latestFetcherSummaryCache = { ...meaningfulLivePayload, live: true };
         appendFetcherProgressFromReport(meaningfulLivePayload, now);
         updateFetcherProgressFromReport(meaningfulLivePayload, { running: true });
       }

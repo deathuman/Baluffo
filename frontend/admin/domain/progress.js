@@ -368,7 +368,22 @@ function classifyFetcherFailureBucket(row) {
 }
 
 export function deriveFetcherFailureSummary(report) {
-  const groups = Array.isArray(report?.sources) ? report.sources : [];
+  const sourceGroups = Array.isArray(report?.sources) ? report.sources : [];
+  const workItemGroups = Array.isArray(report?.workItems)
+    ? report.workItems
+      .filter(item => item && typeof item === "object")
+      .map(item => ({
+        ...item,
+        name: item?.name || item?.id || "unknown",
+        adapter: item?.adapter || item?.progress?.targetLabel || ""
+      }))
+    : [];
+  const groups = sourceGroups.length ? sourceGroups : workItemGroups;
+  const summaryFailedSources = Math.max(
+    0,
+    Number(report?.summary?.failedSources || 0),
+    Number(report?.taskProgress?.counts?.failedSources || 0)
+  );
   const buckets = new Map();
   const deadlineRows = [];
   const seenDeadlineRows = new Set();
@@ -447,7 +462,7 @@ export function deriveFetcherFailureSummary(report) {
   ];
 
   return {
-    topLevelFailedSources,
+    topLevelFailedSources: Math.max(topLevelFailedSources, summaryFailedSources),
     detailFailureCount,
     deadlineRows,
     buckets: bucketOrder

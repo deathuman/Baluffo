@@ -12,8 +12,10 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _call_route(tmp_path: Path) -> dict:
+def _call_route(tmp_path: Path, *, live_payload: dict | None = None) -> dict:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    if live_payload is not None:
+        api.get_task_live_payload = lambda task_type, *, summary=False: live_payload
     handler = FakeHandler()
     assert handle_get(
         handler,
@@ -113,6 +115,62 @@ def test_task_failure_attempts_route_reports_fetch_hard_failures(tmp_path: Path)
     assert fetch["hardFailureCount"] == 1
     assert fetch["failureBuckets"] == [{"key": "timeout", "count": 1}]
     assert fetch["hardFailures"][0]["name"] == "broken_provider"
+    assert "https://secret.invalid" not in json.dumps(payload)
+
+
+def test_task_failure_attempts_route_uses_active_fetch_task_instead_of_stale_report(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "jobs-fetch-report.json",
+        {
+            "runId": "fetch_published_old",
+            "finishedAt": "2026-06-04T07:10:00Z",
+            "summary": {"outputCount": 0, "sourceCount": 4, "failedSources": 9},
+            "sources": [{"name": "stale_provider", "status": "error", "failureBucket": "timeout"}],
+        },
+    )
+    live_payload = {
+        "taskType": "fetch",
+        "active": True,
+        "status": "running",
+        "runId": "fetch_live",
+        "startedAt": "2026-06-04T08:00:00Z",
+        "taskProgress": {
+            "active": True,
+            "phaseKey": "executing_sources",
+            "phaseLabel": "Executing sources",
+            "counts": {
+                "sourceCount": 12,
+                "resolvedSources": 3,
+                "failedSources": 1,
+                "outputCount": 42,
+            },
+        },
+        "summary": {"sourceCount": 12, "failedSources": 9, "outputCount": 999},
+        "workItems": [
+            {
+                "id": "live_broken",
+                "name": "Live broken provider",
+                "status": "error",
+                "error": "timed out while calling https://secret.invalid/jobs",
+                "progress": {"counts": {"keptCount": 0}},
+            },
+            {"id": "live_running", "name": "Live running provider", "status": "running"},
+        ],
+    }
+
+    payload = _call_route(tmp_path, live_payload=live_payload)
+    fetch = payload["fetch"]
+
+    assert fetch["live"] is True
+    assert fetch["runId"] == "fetch_live"
+    assert fetch["active"] is True
+    assert fetch["failedSources"] == 1
+    assert fetch["hardFailureCount"] == 1
+    assert fetch["hardFailures"][0]["name"] == "Live broken provider"
+    assert fetch["outputCount"] == 42
+    assert fetch["sourceCount"] == 12
     assert "https://secret.invalid" not in json.dumps(payload)
 
 

@@ -69,6 +69,14 @@ export function createOpsRenderHub({
       };
   }
 
+  function getFetcherFailureReport() {
+    const liveSummary = state.latestFetcherSummaryCache;
+    if (liveSummary?.live && !String(liveSummary.finishedAt || "").trim()) {
+      return liveSummary;
+    }
+    return state.latestFetcherReportCache || liveSummary || {};
+  }
+
   function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
     const frontendPerfCounters = getFrontendPerfCounters();
     return {
@@ -224,7 +232,7 @@ export function createOpsRenderHub({
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetricsPayload,
-        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+        deriveFetcherFailureSummary(getFetcherFailureReport()),
         fetcherMetricsRenderOptions(runModel)
       );
       renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
@@ -351,7 +359,7 @@ export function createOpsRenderHub({
         renderAdminOpsFetcherMetricsImpl(
           refs.adminOpsFetcherMetricsEl,
           fetcherMetricsPayload,
-          deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+          deriveFetcherFailureSummary(getFetcherFailureReport()),
           fetcherMetricsRenderOptions(deferredContext.runModel)
         );
         renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {

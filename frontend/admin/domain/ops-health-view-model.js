@@ -295,6 +295,7 @@ function compactTaskFailureAttempts(payload) {
     generatedAt: truncateString(payload?.generatedAt || ""),
     fetch: {
       runId: truncateString(fetch?.runId || ""),
+      live: Boolean(fetch?.live),
       hardFailureCount: toNumber(fetch?.hardFailureCount),
       partialWarningCount: toNumber(fetch?.partialWarningCount),
       expectedExclusionCount: toNumber(fetch?.expectedExclusionCount),

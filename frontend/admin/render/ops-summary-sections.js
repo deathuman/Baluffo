@@ -125,6 +125,7 @@ function formatTaskFailureAttempts(payload = {}) {
   const warningText = warnings.length
     ? ` warnings: ${warnings.slice(0, 4).map(value => escapeHtml(value)).join(", ")}`
     : "";
+  const fetchLiveLabel = fetch?.live ? " (live run)" : "";
   const fetchBucketText = fetchBuckets.length
     ? fetchBuckets
       .slice(0, 4)
@@ -146,7 +147,7 @@ function formatTaskFailureAttempts(payload = {}) {
     `;
   return `
     <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Task failure attempts</strong>: fetch hard ${Number(fetch?.hardFailureCount || 0).toLocaleString()},
+      <strong>Task failure attempts${fetchLiveLabel}</strong>: fetch hard ${Number(fetch?.hardFailureCount || 0).toLocaleString()},
       partial ${Number(fetch?.partialWarningCount || 0).toLocaleString()},
       expected cache exclusions ${Number(fetch?.expectedExclusionCount || 0).toLocaleString()};
       discovery diagnostics ${Number(discovery?.actionableDiagnosticCount || 0).toLocaleString()},

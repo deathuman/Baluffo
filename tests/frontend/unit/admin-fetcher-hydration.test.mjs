@@ -55,6 +55,51 @@ test("admin fetcher controller hydrates progress from the report without replayi
   }
 });
 
+test("admin fetcher summary prefers task-live failures during an active run", async () => {
+  const fixture = createFetcherControllerFixture({
+    state: {
+      fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
+      adminBusyState: { liveFetchRunning: true }
+    }
+  });
+  fixture.options.getBridge = async path => {
+    if (path === "/ops/task-live/fetch?view=summary") {
+      return {
+        taskType: "fetch",
+        active: true,
+        runId: "fetch_live_summary",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "",
+        taskProgress: {
+          active: true,
+          mode: "determinate",
+          ratio: 0.75,
+          counts: { resolvedSources: 9, sourceCount: 12, failedSources: 7, outputCount: 33 }
+        },
+        summary: { failedSources: 7, outputCount: 33, sourceCount: 12 }
+      };
+    }
+    if (path === "/ops/fetch-report?view=summary") {
+      return {
+        runId: "fetch_published_old",
+        finishedAt: "2026-03-08T09:00:00.000Z",
+        summary: { failedSources: 0, outputCount: 0, sourceCount: 12 }
+      };
+    }
+    return {};
+  };
+
+  const controller = createAdminFetcherController(fixture.options);
+  const payload = await controller.loadLatestFetcherSummary({ silent: true });
+
+  assert.equal(payload.runId, "fetch_live_summary");
+  assert.equal(payload.live, true);
+  assert.equal(fixture.state.latestFetcherSummaryCache.runId, "fetch_live_summary");
+  assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /9\/12 sources resolved/i);
+  assert.ok(!fixture.calls.includes("/ops/fetch-report?view=summary"));
+  controller.stopFetcherCompletionWatch();
+});
+
 test("admin fetcher controller only emits generic active heartbeat after sustained idle time", async () => {
   const logs = [];
   const scheduled = [];

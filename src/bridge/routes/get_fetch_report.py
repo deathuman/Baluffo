@@ -18,6 +18,7 @@ from src.bridge.fetch_report_summary import (
     load_fetch_report_summary_artifact,
     load_fetch_task_summary_artifact,
 )
+from src.bridge.live_fetch_report import build_live_fetch_report, load_active_fetch_task
 from src.bridge.routes.get_fetch_report_sources import (
     FetchReportRouteApi,
     hydrate_fetch_report_sources_from_sqlite,
@@ -59,6 +60,8 @@ _FETCH_REPORT_TERMINAL_STATUSES = {
 
 class _FetchReportRouteApi(FetchReportRouteApi, Protocol):
     FETCHER_LOG_PATH: Path
+
+    def get_task_live_payload(self, task_type: str, *, summary: bool = False) -> dict[str, Any]: ...
 
 
 def _summary_payload_is_active(payload: dict[str, Any]) -> bool:
@@ -295,6 +298,18 @@ def _fetch_report_live_payload_from_file(path: Any) -> dict[str, Any]:
     return result
 
 
+def _active_live_fetch_payload(api: _FetchReportRouteApi, *, summary: bool) -> dict[str, Any]:
+    live_task = load_active_fetch_task(api, summary=summary)
+    if not live_task:
+        return {}
+    return compact_fetch_report_summary_payload(
+        build_live_fetch_report(live_task),
+        detail_level="summary" if summary else "live",
+        source="active-task-live",
+        include_sources=not summary,
+    ) | {"live": True}
+
+
 def _handle_fetch_report_route(
     handler: BridgeResponseWriter,
     *,
@@ -306,7 +321,10 @@ def _handle_fetch_report_route(
         started_at = time.perf_counter()
         failed = True
         try:
-            handler.send_json(_fetch_report_summary_payload_from_file(api.JOBS_FETCH_REPORT_PATH))
+            handler.send_json(
+                _active_live_fetch_payload(api, summary=True)
+                or _fetch_report_summary_payload_from_file(api.JOBS_FETCH_REPORT_PATH)
+            )
             failed = False
         finally:
             record_storage_read_metric(
@@ -323,7 +341,10 @@ def _handle_fetch_report_route(
         started_at = time.perf_counter()
         failed = True
         try:
-            handler.send_json(_fetch_report_live_payload_from_file(api.JOBS_FETCH_REPORT_PATH))
+            handler.send_json(
+                _active_live_fetch_payload(api, summary=False)
+                or _fetch_report_live_payload_from_file(api.JOBS_FETCH_REPORT_PATH)
+            )
             failed = False
         finally:
             record_storage_read_metric(

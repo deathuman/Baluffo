@@ -32,9 +32,9 @@ def test_jobs_bootstrap_promotion_waits_for_availability_transaction(
         real_transaction = jobs_feed_reconciliation_transaction
 
         @contextmanager
-        def observed_transaction(target: Path):
+        def observed_transaction(target: Path, **kwargs):
             attempting_lock.set()
-            with real_transaction(target):
+            with real_transaction(target, **kwargs):
                 yield
 
         monkeypatch.setattr(

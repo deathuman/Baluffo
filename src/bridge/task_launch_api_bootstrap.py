@@ -630,7 +630,9 @@ class TaskLaunchApiBootstrapMixin(TaskLaunchApiState):
                 fail_lifecycle_run=fail_lifecycle_run,
             )
             return True
-        with _tla.jobs_feed_reconciliation_transaction(self._runtime.data_dir):
+        with _tla.jobs_feed_reconciliation_transaction(
+            self._runtime.data_dir, operation="bootstrap_promotion"
+        ):
             snapshot = self._snapshot_bootstrap_transaction_targets()
             storage_snapshot: dict[str, Any] = {}
             try:

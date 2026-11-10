@@ -42,10 +42,12 @@ STARTUP_FEED_EXPORT_LIMIT = 10
 
 
 @contextmanager
-def jobs_feed_reconciliation_transaction(data_dir: Path) -> Iterator[None]:
+def jobs_feed_reconciliation_transaction(
+    data_dir: Path, *, operation: str = "", timeout_s: float | None = None
+) -> Iterator[None]:
     """Serialize a complete feed reconciliation across writers."""
 
-    with jobs_feed_reconciliation_lock(data_dir):
+    with jobs_feed_reconciliation_lock(data_dir, operation=operation, timeout_s=timeout_s):
         yield
 
 
@@ -376,7 +378,7 @@ def _reconcile_jobs_feed_availability_locked(
     safe_id = str(availability_id or "").strip()
     if not safe_id:
         return None
-    with jobs_feed_reconciliation_transaction(ctx.data_dir):
+    with jobs_feed_reconciliation_transaction(ctx.data_dir, operation="availability_feed_rewrite"):
         runtime_store = _open_job_runtime_store(ctx)
         mode = _jobs_feed_mode(ctx, runtime_store) if runtime_store is not None else "json"
         artifact_paths = (
@@ -521,7 +523,7 @@ def rollback_jobs_feed_reconciliation(
 ) -> None:
     """Restore the exact authority generation and projections from a snapshot."""
 
-    with jobs_feed_reconciliation_transaction(ctx.data_dir):
+    with jobs_feed_reconciliation_transaction(ctx.data_dir, operation="availability_rollback"):
         runtime_store = _open_job_runtime_store(ctx)
         if snapshot.mode == "sqlite" and snapshot.generation and runtime_store is not None:
             runtime_store.publish_generation(snapshot.generation)
@@ -553,7 +555,7 @@ def _mirror_jobs_feed_rows_locked(
     ctx: JobsFeedContext,
     report: dict[str, Any],
 ) -> tuple[bool, JobRuntimeStore | None]:
-    with jobs_feed_reconciliation_transaction(ctx.data_dir):
+    with jobs_feed_reconciliation_transaction(ctx.data_dir, operation="fetch_feed_mirror"):
         run_id = str(report.get("runId") or "").strip()
         if not run_id:
             return False, None

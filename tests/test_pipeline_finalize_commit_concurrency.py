@@ -31,9 +31,9 @@ def test_finalize_pipeline_run_acquires_lock_for_authoritative_commit(
     real_lock = pipeline_finalize.jobs_feed_reconciliation_lock
 
     @contextmanager
-    def commit_lock_spy(path: Path):
+    def commit_lock_spy(path: Path, **kwargs):
         seen_paths.append(Path(path))
-        with real_lock(path):
+        with real_lock(path, **kwargs):
             yield
 
     monkeypatch.setattr(pipeline_finalize, "jobs_feed_reconciliation_lock", commit_lock_spy)

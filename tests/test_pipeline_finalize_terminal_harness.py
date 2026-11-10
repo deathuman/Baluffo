@@ -548,7 +548,12 @@ def test_failed_finalization_persists_lock_holder_and_full_timeout_message(
         holder=holder,
         holder_pid=4242,
         holder_command="python src/jobs_fetcher.py --preset all",
+        holder_operation="availability_commit",
+        holder_thread="baluffo-availability-sweep",
+        holder_acquired_at="2026-07-17T08:10:00Z",
     )
+    timeout_error.candidate_artifact = str(tmp_path / "data" / "jobs-fetch-candidate.json")
+    timeout_error.candidate_count = 3
 
     report = pipeline_finalize.write_failed_pipeline_report(
         paths=paths,
@@ -570,6 +575,13 @@ def test_failed_finalization_persists_lock_holder_and_full_timeout_message(
     assert summary["lockTimeoutSeconds"] == 1200.0
     assert summary["lockHolderPid"] == 4242
     assert summary["lockHolderCommand"] == "python src/jobs_fetcher.py --preset all"
+    assert summary["lockHolderOperation"] == "availability_commit"
+    assert summary["lockHolderThread"] == "baluffo-availability-sweep"
+    assert summary["lockHolderAcquiredAt"] == "2026-07-17T08:10:00Z"
+    assert summary["candidateArtifact"] == str(tmp_path / "data" / "jobs-fetch-candidate.json")
+    assert summary["candidateCount"] == 3
+    assert summary["publicationPending"] is True
+    assert summary["publishedOutputUnchanged"] is True
     assert report["status"] == "error"
     assert report["taskProgress"]["phaseKey"] == "failed"
     assert json.loads(paths.report_path.read_text(encoding="utf-8")) == report

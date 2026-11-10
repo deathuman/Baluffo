@@ -3,8 +3,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
+import { deriveFetcherFailureSummary } from "../../../frontend/admin/domain.js";
 
 import { createClassList, createElement } from "./helpers/admin-controller-test-helpers.mjs";
+
+test("admin domain derives live fetch failure summary from task-live work items", () => {
+  const summary = deriveFetcherFailureSummary({
+    workItems: [
+      { id: "live_broken", name: "Live broken provider", status: "error", error: "timed out" },
+      { id: "live_running", name: "Live running provider", status: "running" }
+    ],
+    summary: { failedSources: 2 }
+  });
+
+  assert.equal(summary.topLevelFailedSources, 2);
+  assert.equal(summary.buckets.find(bucket => bucket.key === "timeout")?.count, 1);
+  assert.ok(summary.buckets.some(bucket => bucket.examples.includes("Live broken provider")));
+});
 
 test("admin fetcher controller renders progress from the shared task progress contract", async () => {
   const logs = [];

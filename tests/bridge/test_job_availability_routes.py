@@ -14,6 +14,7 @@ from src.jobs.availability_tombstones import (
     read_availability_tombstones,
     write_availability_tombstones,
 )
+from src.jobs.feed_reconciliation_lock import mark_finalize_pending
 from src.jobs.state_lifecycle import read_job_lifecycle_state, write_job_lifecycle_state
 from src.shared.json_io import read_json
 from src.storage import BaluffoStore, JobRuntimeStore
@@ -54,6 +55,28 @@ def test_scheduled_sweep_drains_the_full_bounded_plan(
     assert result["started"] == 4
     assert result["queued"] == 26
     assert len(started_ids) == 30
+
+
+def test_scheduled_sweep_defers_while_finalize_is_pending(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    rows = [
+        {"availabilityId": f"availability_{index}", "jobLink": f"https://e{index}.test/job"}
+        for index in range(3)
+    ]
+    (data_dir / "jobs-availability-sweep-plan.json").write_text(
+        json.dumps({"rows": rows}), encoding="utf-8"
+    )
+    mark_finalize_pending(data_dir, run_id="pipeline_1")
+    service = JobAvailabilityService(data_dir=data_dir, local_store_factory=lambda: None)
+
+    result = service.start_sweep_from_plan(max_concurrent=4)
+
+    assert result["deferred"] is True
+    assert result["reason"] == "finalize_pending"
+    assert result["started"] == 0
+    assert result["queued"] == 0
+    assert result["planned"] == 3
 
 
 def test_job_availability_public_routes(tmp_path: Path) -> None:

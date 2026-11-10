@@ -253,6 +253,16 @@ def _lock_timeout_failure_fields(exc: ReconciliationLockTimeout) -> dict[str, An
         fields["lockHolderPid"] = int(exc.holder_pid)
     if exc.holder_command:
         fields["lockHolderCommand"] = _bounded_failure_reason(exc.holder_command)
+    if exc.holder_operation:
+        fields["lockHolderOperation"] = _bounded_failure_reason(exc.holder_operation)
+    if exc.holder_thread:
+        fields["lockHolderThread"] = _bounded_failure_reason(exc.holder_thread)
+    if exc.holder_acquired_at:
+        fields["lockHolderAcquiredAt"] = _bounded_failure_reason(exc.holder_acquired_at)
+    if exc.candidate_artifact:
+        fields["candidateArtifact"] = _bounded_failure_reason(exc.candidate_artifact)
+    if exc.candidate_count:
+        fields["candidateCount"] = int(exc.candidate_count)
     return fields
 
 
@@ -316,6 +326,9 @@ def write_failed_pipeline_report(
     successful_sources = sum(
         1 for row in source_rows if clean_text(row.get("status")).lower() == "ok"
     )
+    lock_timeout = isinstance(error, ReconciliationLockTimeout)
+    candidate_artifact = str(getattr(error, "candidate_artifact", "") or "")
+    candidate_count = int(getattr(error, "candidate_count", 0) or len(canonical_rows))
     failed_sources = sum(
         1 for row in source_rows if clean_text(row.get("status")).lower() == "error"
     )
@@ -327,14 +340,18 @@ def write_failed_pipeline_report(
         "successfulSources": successful_sources,
         "failedSources": failed_sources,
         "excludedSources": excluded_sources,
-        "candidateCount": len(canonical_rows),
+        "candidateCount": candidate_count,
         "outputCount": 0,
+        # A lock timeout happens before the authoritative commit starts, so
+        # the published feed is untouched even when the run did complete.
         "publishedOutputUnchanged": (
-            clean_text(getattr(task_runtime, "finalization_phase_key", "")) != "writing_outputs"
+            lock_timeout
+            or clean_text(getattr(task_runtime, "finalization_phase_key", "")) != "writing_outputs"
         ),
         "error": error_code,
         "errorCode": error_code,
         "errorReason": error_reason,
+        **({"publicationPending": True} if candidate_artifact else {}),
         **failure_fields,
     }
     update_fetch_runtime_phase(
@@ -382,6 +399,7 @@ def write_failed_pipeline_report(
                     "sourceCount": len(source_rows),
                     "resolvedSources": successful_sources + failed_sources + excluded_sources,
                     "outputCount": 0,
+                    "candidateCount": candidate_count,
                     "failedSources": failed_sources,
                     "excludedSources": excluded_sources,
                     "errorCode": error_code,

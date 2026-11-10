@@ -1635,7 +1635,7 @@ failure caused by the reconciliation lock deadline keeps its attribution: `summa
 `reconciliation_lock_timeout`, `summary.errorReason` carries the full bounded timeout message
 (including the holder pid/cmdline and the lock path), and `summary.lockPath`,
 `summary.lockTimeoutSeconds`, `summary.lockHolderPid`, and `summary.lockHolderCommand` carry the
-same facts as scalars so they survive task-row compaction.
+same facts as scalars so they survive task-row compaction. The holder operation, thread, and acquisition time are additive `summary.lockHolderOperation`, `summary.lockHolderThread`, and `summary.lockHolderAcquiredAt`. Finalization announces a publication-priority marker before waiting for the lock, retries one default 600-second acquisition (the configured lock-timeout env override is honored), and preserves the finished rows in `jobs-fetch-candidate.json` if both attempts lose; that failure adds `summary.candidateArtifact`, `summary.candidateCount`, and `summary.publicationPending=true` instead of silently discarding the run.
 
 | Field | Type | Description |
 |---|---|---|

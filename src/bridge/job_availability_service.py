@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.jobs.common.datetime_utils import parse_datetime
+from src.jobs.feed_reconciliation_lock import (
+    read_finalize_pending,
+    wait_for_finalize_pending_clear,
+)
 from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
 from src.shared.utils import now_iso
@@ -51,12 +55,14 @@ def build_availability_history_payload(
 
 
 @contextmanager
-def jobs_feed_reconciliation_transaction(data_dir: Path) -> Iterator[Any]:
+def jobs_feed_reconciliation_transaction(
+    data_dir: Path, *, operation: str = "", timeout_s: float | None = None
+) -> Iterator[Any]:
     from src.bridge.task_launch_jobs_feed import (
         jobs_feed_reconciliation_transaction as implementation,
     )
 
-    with implementation(data_dir):
+    with implementation(data_dir, operation=operation, timeout_s=timeout_s):
         yield
 
 
@@ -259,7 +265,9 @@ class JobAvailabilityService:
         else:
             existing = read_json(self.priority_manifest_path, {})
             payload = existing if isinstance(existing, dict) else {"schemaVersion": 2, "rows": []}
-        with jobs_feed_reconciliation_transaction(self.data_dir):
+        with jobs_feed_reconciliation_transaction(
+            self.data_dir, operation="availability_priority_manifest"
+        ):
             write_atomic_if_changed(
                 self.priority_manifest_path,
                 json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
@@ -299,12 +307,23 @@ class JobAvailabilityService:
                 started += 1
         return {"eligible": len(candidates), "started": started, "limit": int(limit)}
 
+    def _wait_for_finalize_priority(self) -> None:
+        """Let a finalized fetch publish before this advisory check commits."""
+        if read_finalize_pending(self.data_dir) is None:
+            return
+        LOGGER.info("availability check yielding to pending fetch finalize")
+        wait_for_finalize_pending_clear(self.data_dir, timeout_s=900.0)
+
     def _drain_sweep(
         self, rows: list[dict[str, Any]], active_run_ids: set[str], *, max_concurrent: int
     ) -> None:
         pending = list(rows)
         try:
             while pending or active_run_ids:
+                if pending and read_finalize_pending(self.data_dir) is not None:
+                    self._sweep_wakeup.wait(0.2)
+                    self._sweep_wakeup.clear()
+                    continue
                 while pending and len(active_run_ids) < max_concurrent:
                     row = pending.pop(0)
                     result = self.start({"availabilityId": row.get("availabilityId")})
@@ -332,6 +351,15 @@ class JobAvailabilityService:
         rows = plan_raw.get("rows") or []
         safe_rows = [dict(row) for row in rows if isinstance(row, dict)]
         safe_limit = len(safe_rows) if limit is None else max(0, min(1000, int(limit)))
+        if read_finalize_pending(self.data_dir) is not None:
+            return {
+                "planned": len(safe_rows),
+                "started": 0,
+                "queued": 0,
+                "limit": safe_limit,
+                "deferred": True,
+                "reason": "finalize_pending",
+            }
         selected = safe_rows[:safe_limit]
         concurrency = max(1, min(8, int(max_concurrent)))
         with self._sweep_lock:
@@ -451,7 +479,9 @@ class JobAvailabilityService:
     ) -> None:
         path = self.data_dir / "jobs-availability-direct-checkpoints.json"
         checked_at = str(evidence.get("checkedAt") or completed_at)
-        with jobs_feed_reconciliation_transaction(self.data_dir):
+        with jobs_feed_reconciliation_transaction(
+            self.data_dir, operation="availability_checkpoint"
+        ):
             payload = read_json(path, {})
             rows = (payload.get("rows") or []) if isinstance(payload, dict) else []
             by_id = {
@@ -683,7 +713,7 @@ class JobAvailabilityService:
         evidence: dict[str, Any],
     ) -> tuple[dict[str, Any], bool]:
         completed_at = now_iso()
-        with jobs_feed_reconciliation_transaction(self.data_dir):
+        with jobs_feed_reconciliation_transaction(self.data_dir, operation="availability_commit"):
             if scope == "custom_saved" and not self._custom_manifest_entry(
                 read_json(self.priority_manifest_path, {}),
                 str(fallback_entry.get("availabilityId") or ""),
@@ -740,6 +770,7 @@ class JobAvailabilityService:
         current_entry: dict[str, Any],
         evidence: dict[str, Any],
     ) -> tuple[dict[str, Any], bool]:
+        self._wait_for_finalize_priority()
         stale_evidence = self._evidence_is_stale(current_entry, evidence)
         self._record_direct_checkpoint(
             str(current_entry.get("availabilityId") or ""), evidence, now_iso()

@@ -7,11 +7,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.bridge.live_fetch_report import build_live_fetch_report, load_active_fetch_task
 from src.shared.coerce import as_dict as _as_dict
 from src.shared.coerce import as_list as _as_list
 
 MAX_COUNTER_ROWS = 12
 MAX_EXAMPLE_ROWS = 5
+NON_TERMINAL_SOURCE_STATUSES = {
+    "active",
+    "pending",
+    "queued",
+    "running",
+    "started",
+    "starting",
+}
 HIGH_PRIORITY_MIN_COUNT = 50
 HIGH_PRIORITY_MIN_RATIO = 0.20
 URLISH_RE = re.compile(
@@ -194,6 +203,8 @@ def _build_fetch_attempts(report: dict[str, Any]) -> dict[str, Any]:
         status_counts[status] += 1
         if status == "excluded":
             excluded_reasons[_fetch_exclusion_reason(row)] += 1
+            continue
+        if status in NON_TERMINAL_SOURCE_STATUSES:
             continue
         if status != "ok":
             hard_failures.append(row)
@@ -416,12 +427,19 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
 
 def get_task_failure_attempts_payload(api: Any) -> dict[str, Any]:
     warnings: list[str] = []
-    fetch_report = _load_report(
-        api,
-        Path(getattr(api, "JOBS_FETCH_REPORT_PATH", "data/jobs-fetch-report.json")),
-        warnings,
-        "fetch_report",
-    )
+    live_fetch = load_active_fetch_task(api)
+    if live_fetch:
+        fetch_attempts = _build_fetch_attempts(build_live_fetch_report(live_fetch))
+        fetch_attempts["live"] = True
+    else:
+        fetch_report = _load_report(
+            api,
+            Path(getattr(api, "JOBS_FETCH_REPORT_PATH", "data/jobs-fetch-report.json")),
+            warnings,
+            "fetch_report",
+        )
+        fetch_attempts = _build_fetch_attempts(fetch_report)
+        fetch_attempts["live"] = False
     discovery_report = _load_report(
         api,
         Path(getattr(api, "DISCOVERY_REPORT_PATH", "data/source-discovery-report.json")),
@@ -431,7 +449,7 @@ def get_task_failure_attempts_payload(api: Any) -> dict[str, Any]:
     return {
         "ok": True,
         "generatedAt": _now_iso(),
-        "fetch": _build_fetch_attempts(fetch_report),
+        "fetch": fetch_attempts,
         "discovery": _build_discovery_attempts(discovery_report),
         "warnings": warnings,
     }

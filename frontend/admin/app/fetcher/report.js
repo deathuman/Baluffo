@@ -1,6 +1,7 @@
 import {
   appendLiveTaskActivity,
-  buildTaskWorkItemActivitySignature
+  buildTaskWorkItemActivitySignature,
+  loadTaskLivePayload
 } from "../live-task.js";
 import { formatScrapyStaticSourcesTailBadge } from "../../../shared/task-progress.js";
 import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
@@ -63,10 +64,30 @@ export function createAdminFetcherReportController({
   async function loadLatestFetcherSummary(options = {}) {
     if (typeof getBridge !== "function") return null;
     const silent = Boolean(options.silent);
+    const running = Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning);
     try {
-      const payload = await getBridge("/ops/fetch-report?view=summary", { timeoutMs: 5000 });
+      let payload = null;
+      if (running) {
+        const livePayload = await loadTaskLivePayload({
+          getBridge,
+          taskType: "fetch",
+          view: "summary",
+          requestOptions: { timeoutMs: 5000 }
+        }).catch(() => null);
+        const liveIdentity = Boolean(
+          livePayload?.active
+          || livePayload?.runId
+          || livePayload?.startedAt
+          || livePayload?.taskProgress
+        );
+        if (livePayload && liveIdentity && !String(livePayload.finishedAt || "").trim()) {
+          payload = { ...livePayload, live: true };
+        }
+      }
+      if (!payload) {
+        payload = await getBridge("/ops/fetch-report?view=summary", { timeoutMs: 5000 });
+      }
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-      const running = Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning);
       updateFetcherProgressFromReport(payload, { running });
       state.latestFetcherSummaryCache = payload;
       if (!silent) {

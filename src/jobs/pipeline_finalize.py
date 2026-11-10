@@ -15,13 +15,15 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline finaliz
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
 import traceback
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
@@ -65,7 +67,12 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_static_suppression_policy import (
     refresh_static_suppression_policy_with_current_evidence,
 )
-from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
+from src.jobs.feed_reconciliation_lock import (
+    ReconciliationLockTimeout,
+    clear_finalize_pending,
+    jobs_feed_reconciliation_lock,
+    mark_finalize_pending,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import snapshot_task_rows, update_fetch_runtime_phase
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
@@ -103,7 +110,7 @@ from src.pipeline_io import (
 from src.pipeline_io import (
     write_atomic_if_changed as write_atomic_if_changed,
 )
-from src.pipeline_io import write_hot_text_if_changed
+from src.pipeline_io import write_hot_text_if_changed, write_streamed_text_if_changed
 from src.shared.utils import now_iso
 
 from .common import health as health_module
@@ -176,6 +183,25 @@ from .finalize_reports import (
 
 FINALIZE_PHASE_STALL_WARN_S = 600.0
 FINALIZE_STALL_POLL_S = 15.0
+# Finalization must lose neither the run nor the uploaded work when the bridge
+# is still holding the reconciliation lock. Announce priority, retry a bounded
+# acquisition once, and preserve the finished rows if both attempts lose.
+FINALIZE_LOCK_TIMEOUT_S = 600.0
+FINALIZE_LOCK_ATTEMPTS = 2
+FINALIZE_LOCK_RETRY_DELAY_S = 5.0
+FINALIZE_CANDIDATE_FILENAME = "jobs-fetch-candidate.json"
+
+
+def _finalize_lock_timeout_s() -> float:
+    """Keep the documented lock-timeout escape hatch working for finalize."""
+    raw = str(os.environ.get("BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S", "") or "").strip()
+    if not raw:
+        return FINALIZE_LOCK_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return FINALIZE_LOCK_TIMEOUT_S
+    return value if value > 0 else 0.0
 
 
 def _dump_thread_stacks(marker: str) -> None:
@@ -326,6 +352,113 @@ def _apply_sector_gate(
     if dropped:
         _record_sector_gate_loss(source_reports, non_game_by_source)
     return game_rows, dropped
+
+
+def _preserve_finalize_candidate(
+    *,
+    output_dir: Path,
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+    candidate_rows: list[dict[str, Any]],
+) -> Path | None:
+    """Write the finalized rows before a lock timeout can discard them.
+
+    This is the recovery copy, not a publication: the feed and lifecycle state
+    remain untouched until the authoritative commit acquires the lock.
+    """
+    path = Path(output_dir) / FINALIZE_CANDIDATE_FILENAME
+    metadata = {
+        "schemaVersion": SCHEMA_VERSION,
+        "runId": run_id,
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "capturedAt": now_iso(),
+        "reason": "reconciliation_lock_timeout",
+        "candidateCount": len(candidate_rows),
+    }
+    prefix = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))[:-1]
+
+    def _stream(handle) -> None:
+        handle.write(prefix)
+        handle.write(',"rows":[')
+        for index, row in enumerate(candidate_rows):
+            if index:
+                handle.write(",")
+            json.dump(row, handle, ensure_ascii=False, separators=(",", ":"))
+        handle.write("]}")
+
+    try:
+        write_streamed_text_if_changed(path, _stream)
+        return path
+    except (OSError, TypeError, ValueError) as exc:
+        print(
+            f"[jobs_fetcher] ERROR could not preserve finalize candidate: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+
+
+@contextmanager
+def _finalize_lock_with_priority(
+    data_dir: Path,
+    *,
+    run_id: str,
+    candidate_rows: list[dict[str, Any]],
+    started_at: str,
+    finished_at: str,
+) -> Iterator[None]:
+    """Hold the feed lock with finalize priority and bounded retry.
+
+    The marker is visible to the availability sweep before the first
+    acquisition attempt, so an advisory check yields instead of taking the
+    lock ahead of the fetch publication. If the lock still cannot be taken,
+    the finished rows are written to a candidate artifact before the failure
+    propagates; they are never silently discarded.
+    """
+    mark_finalize_pending(data_dir, run_id=run_id)
+    published = False
+    try:
+        for attempt in range(1, FINALIZE_LOCK_ATTEMPTS + 1):
+            try:
+                with jobs_feed_reconciliation_lock(
+                    data_dir,
+                    operation="fetch_finalize",
+                    timeout_s=_finalize_lock_timeout_s(),
+                ):
+                    yield
+                published = True
+                return
+            except ReconciliationLockTimeout as exc:
+                if attempt >= FINALIZE_LOCK_ATTEMPTS:
+                    candidate_path = _preserve_finalize_candidate(
+                        output_dir=data_dir,
+                        run_id=run_id,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        candidate_rows=candidate_rows,
+                    )
+                    if candidate_path is not None:
+                        exc.candidate_artifact = str(candidate_path)
+                        exc.candidate_count = len(candidate_rows)
+                    raise
+                print(
+                    "[jobs_fetcher] WARN finalize lock busy "
+                    f"attempt={attempt} of {FINALIZE_LOCK_ATTEMPTS}; retrying",
+                    flush=True,
+                )
+                if FINALIZE_LOCK_RETRY_DELAY_S > 0:
+                    time.sleep(FINALIZE_LOCK_RETRY_DELAY_S)
+    finally:
+        clear_finalize_pending(data_dir)
+        if published:
+            # A successful publication supersedes a candidate kept by an
+            # earlier failed finalize.
+            try:
+                (Path(data_dir) / FINALIZE_CANDIDATE_FILENAME).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 @_serialize_jobs_feed_reconciliation
@@ -512,7 +645,13 @@ def finalize_pipeline_run(
         # then write the feed, availability projections, and lifecycle state
         # under one cross-process lock. Dedupe, audits, and report construction
         # run outside this block.
-        with jobs_feed_reconciliation_lock(paths.output_dir):
+        with _finalize_lock_with_priority(
+            paths.output_dir,
+            run_id=run_id,
+            candidate_rows=list(deduped_payload_rows),
+            started_at=started_at,
+            finished_at=lifecycle_finished_at,
+        ):
             lifecycle_rows, deduped_rows, deduped_payload_rows = _refresh_commit_rows(
                 paths=paths,
                 lifecycle_rows=lifecycle_rows,
