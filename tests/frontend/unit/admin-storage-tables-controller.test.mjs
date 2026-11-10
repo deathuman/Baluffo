@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createStorageBreakdownController } from "../../../frontend/admin/app/runtime/storage-breakdown.js";
+import { createStorageBreakdownController } from "../../../frontend/admin/app/storage-breakdown.js";
 import {
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml

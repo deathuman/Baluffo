@@ -97,12 +97,15 @@ test("each page's bundle carries the page's own boot module", async () => {
   }
 });
 
-test("the admin shell defers the ops surface to a lazy chunk the entry only imports on demand", async () => {
+test("the admin shell defers the ops, storage and inspector surfaces to lazy chunks the entry only imports on demand", async () => {
   const versionDir = await buildVersionDir();
   const payload = await bundle();
 
   const admin = pagePayload(payload, "admin");
-  assert.ok(admin.chunks.length >= 2, "admin should split into a shared chunk plus a lazy chunk");
+  assert.ok(
+    admin.chunks.length >= 4,
+    "admin should split into a shared chunk plus the ops, storage and inspector lazy chunks"
+  );
 
   const entry = await fs.readFile(path.join(versionDir, admin.asset), "utf8");
   // Every chunk the entry imports statically is part of the shell; a chunk it
@@ -118,7 +121,7 @@ test("the admin shell defers the ops surface to a lazy chunk the entry only impo
     const source = await fs.readFile(file, "utf8");
     if (!staticallyImported.has(path.basename(chunk.asset))) lazyChunks.push(source);
   }
-  assert.equal(lazyChunks.length, 1, "exactly one admin chunk should load lazily");
+  assert.equal(lazyChunks.length, 3, "exactly three admin chunks should load lazily");
   // The shell's statically imported chunk is a serialized round trip after the
   // entry parses unless the page preloads it alongside the entry.
   const html = await fs.readFile(path.join(versionDir, admin.html), "utf8");
@@ -129,11 +132,18 @@ test("the admin shell defers the ops surface to a lazy chunk the entry only impo
     preloads,
     [...staticallyImported].map(name => `frontend/admin/chunks/${name}`)
   );
-  assert.ok(!preloads.some(href => path.posix.basename(href) === path.basename(admin.chunks.find(chunk => !staticallyImported.has(path.posix.basename(chunk.asset))).asset)));
-  // The Ops hydration code owns this route, so its presence is proof the
-  // deferred half is the Ops surface rather than an arbitrary shared chunk.
-  assert.ok(lazyChunks[0].includes("/ops/task-failure-attempts"));
+  const lazyBases = admin.chunks
+    .map(chunk => path.posix.basename(chunk.asset))
+    .filter(name => !staticallyImported.has(name));
+  assert.ok(!preloads.some(href => lazyBases.includes(path.posix.basename(href))));
+  // The Ops hydration code owns this route and the storage panel owns its
+  // deferred copy, so each marker proves which surface the deferred half is.
+  assert.ok(lazyChunks.some(source => source.includes("/ops/task-failure-attempts")));
+  assert.ok(lazyChunks.some(source => source.includes("Storage breakdown is deferred")));
+  assert.ok(lazyChunks.some(source => source.includes("inspector-overlay-visible")));
   assert.ok(!entry.includes("/ops/task-failure-attempts"));
+  assert.ok(!entry.includes("Storage breakdown is deferred"));
+  assert.ok(!entry.includes("inspector-overlay-visible"));
 
   assert.deepEqual(pagePayload(payload, "saved").chunks, [], "saved should stay a single asset");
 });

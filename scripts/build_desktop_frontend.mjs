@@ -14,9 +14,10 @@
  * page the first paint needs) and the surfaces behind it are reached through a
  * dynamic `import()`, so esbuild emits them as separate chunks that the entry
  * fetches after the shell is up. Admin defers the Ops surface
- * (`frontend/admin/app/ops/lazy.js`); jobs defers the pipeline status watch and
- * the desktop update panel. Each page still loads exactly one module tag; the
- * chunks are an implementation detail of that asset.
+ * (`frontend/admin/app/ops/lazy.js`), the storage breakdown panel and the
+ * inspector drawer; jobs defers the pipeline status watch and the desktop update
+ * panel. Each page still loads exactly one module tag; the chunks are an
+ * implementation detail of that asset.
  *
  * Unlike the container build, the jobs page's classic `early-data.js` tag stays:
  * that file ships in the version tree, and its data requests still start at parse
@@ -117,7 +118,17 @@ export const PAGE_BUDGETS = {
     // the shared fetch-kpis feed are first-poll shell code, so they stay on the
     // first paint and the budget carries their bytes.
     shellMaxBytes: ADMIN_SHELL_HARD_CEILING_BYTES,
-    lazySurfaces: [{ name: "Ops surface", module: "frontend/admin/app/ops.js" }]
+    lazySurfaces: [
+      { name: "Ops surface", module: "frontend/admin/app/ops.js" },
+      {
+        name: "storage breakdown panel",
+        module: "frontend/admin/app/storage-breakdown.js"
+      },
+      {
+        name: "inspector drawer",
+        module: "frontend/admin/app/inspector.js"
+      }
+    ]
   },
   jobs: {
     shellMaxBytes: 235 * 1024,

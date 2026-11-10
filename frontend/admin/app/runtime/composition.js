@@ -16,7 +16,6 @@ import {
   renderUsersEmptyHtml,
   renderUsersTableHtml
 } from "../../render/overview.js";
-import { renderStorageTablesHtml, renderStorageTablesMessageHtml } from "../../render/storage-tables.js";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js";
 import { createAdminDiscoveryController } from "../discovery.js";
@@ -29,10 +28,8 @@ import { createLazyAdminOpsController } from "../ops/lazy.js";
 import { createAdminRegistryController } from "../registry.js";
 import { createAdminSyncController } from "../sync.js";
 import { createAdminOverviewController } from "./overview.js";
-import { createStorageBreakdownController } from "./storage-breakdown.js";
 import { createActionCenterController } from "../action-center.js";
 import { createFetchKpisSummaryFeed } from "../fetch-kpis-summary-feed.js";
-import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 import {
   bootstrapScheduleNeedsRefresh as bootstrapScheduleNeedsRefreshFromDomain
@@ -240,26 +237,46 @@ export function composeAdminControllers({
     getErrorMessage
   });
 
-  function shouldDeferStorageHealth(options = {}) {
-    return Boolean(
-      (!options?.allowStartupBridgeLane && state.adminStartupBridgeHydrationInFlight)
-      || state.adminBusyState?.discoveryLoad
-      || state.opsActiveAdminWorkLastActive
-      || state.opsActivePipelineOrFetchLastActive
-      || state.adminBusyState?.livePipelineRunning
-      || state.adminBusyState?.liveFetchRunning
-      || state.adminBusyState?.liveDiscoveryRunning
+  const shouldDeferCoreSignals = () => Boolean(
+    state.opsActiveAdminWorkLastActive
+    || state.opsActivePipelineOrFetchLastActive
+    || state.adminBusyState?.livePipelineRunning
+    || state.adminBusyState?.liveFetchRunning
+    || state.adminBusyState?.liveDiscoveryRunning
+  );
+
+  // The storage panel's controller, renderer and deferral predicate ship in the
+  // deferred admin chunk: it is a read-once aside, not first-paint chrome. Its
+  // startup read and the Action Center's payload share this one import.
+  let storageBreakdownControllerPromise = null;
+
+  function loadStorageBreakdownController() {
+    storageBreakdownControllerPromise ??= import("../storage-breakdown.js").then(
+      ({ createStorageBreakdownController }) => createStorageBreakdownController({
+        refs,
+        getBridge,
+        formatBytes,
+        state
+      })
     );
+    return storageBreakdownControllerPromise;
   }
 
-  const storageBreakdownController = createStorageBreakdownController({
-    refs,
-    getBridge,
-    formatBytes,
-    renderStorageTablesHtml,
-    renderStorageTablesMessageHtml,
-    shouldDefer: shouldDeferStorageHealth
-  });
+  const storageBreakdownController = {
+    init() {
+      loadStorageBreakdownController()
+        .then(controller => controller.init())
+        .catch(() => {});
+    },
+    load(options = {}) {
+      return loadStorageBreakdownController().then(controller => controller.load(options));
+    },
+    acceptStorageHealth(payload) {
+      return loadStorageBreakdownController().then(
+        controller => controller.acceptStorageHealth(payload)
+      );
+    }
+  };
 
   const actionCenterController = createActionCenterController({
     refs,
@@ -267,14 +284,8 @@ export function composeAdminControllers({
     postBridge,
     showToast,
     logAdminError,
-    shouldDeferCoreSignals: () => Boolean(
-      state.opsActiveAdminWorkLastActive
-      || state.opsActivePipelineOrFetchLastActive
-      || state.adminBusyState?.livePipelineRunning
-      || state.adminBusyState?.liveFetchRunning
-      || state.adminBusyState?.liveDiscoveryRunning
-    ),
-    shouldDeferStorageHealth,
+    shouldDeferCoreSignals,
+    shouldDeferStorageHealth: shouldDeferCoreSignals,
     onStorageHealth: payload => storageBreakdownController.acceptStorageHealth(payload),
     onSyncStatus: payload => {
       state.latestSyncStatusCache = payload || null;
@@ -288,13 +299,32 @@ export function composeAdminControllers({
     pollIntervalMs: actionCenterPollIntervalMs
   });
 
-  const inspectorController = createAdminInspectorController({
-    refs,
-    getBridge,
-    postBridge,
-    showToast,
-    logAdminError
-  });
+  // The inspector drawer is click-only and nothing before boot touches it, so it
+  // ships in its own deferred chunk. `init` binds its document click delegate;
+  // keeping that import out of the shell is what buys the storage panel's wiring
+  // back inside the hard ceiling.
+  let inspectorControllerPromise = null;
+
+  function loadInspectorController() {
+    inspectorControllerPromise ??= import("../inspector.js").then(
+      ({ createAdminInspectorController }) => createAdminInspectorController({
+        refs,
+        getBridge,
+        postBridge,
+        showToast,
+        logAdminError
+      })
+    );
+    return inspectorControllerPromise;
+  }
+
+  const inspectorController = {
+    init() {
+      loadInspectorController()
+        .then(controller => controller.init())
+        .catch(err => logAdminError("Admin inspector delayed.", err));
+    }
+  };
 
   async function loadPostInteractiveDiagnostics() {
     return null;

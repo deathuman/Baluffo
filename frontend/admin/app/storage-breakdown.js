@@ -1,5 +1,23 @@
+import {
+  renderStorageTablesHtml,
+  renderStorageTablesMessageHtml
+} from "../render/storage-tables.js";
+
 const STORAGE_HEALTH_ROUTE = "/ops/storage-health";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
+
+function stateShouldDefer(state, options = {}) {
+  const busy = state?.adminBusyState || {};
+  return Boolean(
+    (!options.allowStartupBridgeLane && state?.adminStartupBridgeHydrationInFlight)
+    || busy.discoveryLoad
+    || state?.opsActiveAdminWorkLastActive
+    || state?.opsActivePipelineOrFetchLastActive
+    || busy.livePipelineRunning
+    || busy.liveFetchRunning
+    || busy.liveDiscoveryRunning
+  );
+}
 
 /**
  * Owns the Runtime Database Storage panel beside Stored Profiles Overview.
@@ -13,13 +31,13 @@ const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
  * join the serial startup bridge lane (`allowStartupBridgeLane: true`) instead of
  * being deferred by it. Active work still defers unconditionally.
  */
+
 export function createStorageBreakdownController({
   refs,
   getBridge,
   formatBytes,
-  renderStorageTablesHtml,
-  renderStorageTablesMessageHtml,
-  shouldDefer = () => false,
+  state = {},
+  shouldDefer = options => stateShouldDefer(state, options),
   timeoutMs = DEFAULT_STORAGE_HEALTH_TIMEOUT_MS
 }) {
   let inFlight = false;
