@@ -1,7 +1,8 @@
 import {
   appendLiveTaskActivity,
   buildTaskWorkItemActivitySignature,
-  loadTaskLivePayload
+  loadTaskLivePayload,
+  pickMeaningfulTaskLivePayload
 } from "../live-task.js";
 import { formatScrapyStaticSourcesTailBadge } from "../../../shared/task-progress.js";
 import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
@@ -74,14 +75,9 @@ export function createAdminFetcherReportController({
           view: "summary",
           requestOptions: { timeoutMs: 5000 }
         }).catch(() => null);
-        const liveIdentity = Boolean(
-          livePayload?.active
-          || livePayload?.runId
-          || livePayload?.startedAt
-          || livePayload?.taskProgress
-        );
-        if (livePayload && liveIdentity && !String(livePayload.finishedAt || "").trim()) {
-          payload = { ...livePayload, live: true };
+        const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
+        if (meaningfulLivePayload && !String(meaningfulLivePayload.finishedAt || "").trim()) {
+          payload = { ...meaningfulLivePayload, live: true };
         }
       }
       if (!payload) {
