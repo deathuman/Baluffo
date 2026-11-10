@@ -118,19 +118,20 @@ def test_timeout_names_the_holder_operation(tmp_path, monkeypatch):
     holder_script = textwrap.dedent(
         """
         import sys
+        import time
         from pathlib import Path
 
         from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 
         with jobs_feed_reconciliation_lock(Path(sys.argv[1]), operation="availability_commit"):
             Path(sys.argv[2]).write_text("ready", encoding="utf-8")
-            sys.stdin.readline()
+            time.sleep(2.0)
         """
     )
     ready_path = tmp_path / "holder-ready"
     holder = subprocess.Popen(
         [sys.executable, "-c", holder_script, str(tmp_path), str(ready_path)],
-        stdin=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
@@ -146,19 +147,13 @@ def test_timeout_names_the_holder_operation(tmp_path, monkeypatch):
             with jobs_feed_reconciliation_lock(tmp_path):
                 pytest.fail("lock should not have been acquired")
     finally:
-        if holder.stdin is not None and holder.poll() is None:
-            try:
-                holder.stdin.write("\n")
-                holder.stdin.flush()
-            except OSError:
-                pass
         try:
-            holder.communicate(timeout=5.0)
+            _, stderr = holder.communicate(timeout=10.0)
         except subprocess.TimeoutExpired:
             holder.kill()
-            holder.communicate(timeout=5.0)
+            _, stderr = holder.communicate(timeout=5.0)
 
-    assert holder.returncode == 0
+    assert holder.returncode == 0, stderr
     timeout = excinfo.value
     assert not sys.platform.startswith("linux") or timeout.holder_pid == holder.pid
     assert timeout.holder_operation == "availability_commit"
