@@ -304,3 +304,85 @@ def test_storage_health_payload_reports_a_stalled_read_without_a_health_verdict(
     # A diagnostic that could not run must not raise the Admin storage alert.
     assert payload["storage"]["healthy"] is True
     assert payload["storage"]["databaseBytes"] == 0
+
+
+def test_storage_health_payload_answers_before_a_slow_read_finishes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A slow store read must not hold the route past the gateway proxy timeout.
+
+    A fetch writing on a slow disk can push quick_check and dbstat past 8s. The
+    caller now gets a stalled answer after a bounded wait, and the worker still
+    refreshes the cache for the next poll.
+    """
+    release = threading.Event()
+
+    class SlowStore:
+        def health(self):
+            release.wait(timeout=10)
+            return {"healthy": True, "walMode": "wal", "quickCheck": "ok"}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: SlowStore(),
+    )
+    monkeypatch.setattr("src.bridge.storage_health.HEALTH_COMPUTE_TIMEOUT_S", 0.1)
+
+    started = time.perf_counter()
+    payload = get_storage_health_payload(tmp_path)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 1.0  # timing-ok: a stalled read must return before the slow store finishes
+    assert payload["storage"]["healthStalled"] is True
+    assert payload["storage"]["healthSource"] == "unavailable"
+    assert "still running" in payload["storage"]["error"]
+
+    release.set()
+    deadline = time.monotonic() + 5
+    cached = payload
+    while time.monotonic() < deadline:
+        cached = get_storage_health_payload(tmp_path)
+        if cached["storage"].get("healthSource") == "cached":
+            break
+        time.sleep(0.02)
+    assert cached["storage"]["healthSource"] == "cached"
+    assert cached["storage"]["healthy"] is True
+    close_storage_stores()
+
+
+def test_storage_health_payload_does_not_queue_behind_an_inflight_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A second poll answers immediately while the first read is still running."""
+    release = threading.Event()
+    entered = threading.Event()
+
+    class SlowStore:
+        def health(self):
+            entered.set()
+            release.wait(timeout=10)
+            return {"healthy": True, "walMode": "wal", "quickCheck": "ok"}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: SlowStore(),
+    )
+    monkeypatch.setattr("src.bridge.storage_health.HEALTH_COMPUTE_TIMEOUT_S", 5.0)
+
+    results: list[dict] = []
+    first = threading.Thread(target=lambda: results.append(get_storage_health_payload(tmp_path)))
+    first.start()
+    try:
+        assert entered.wait(timeout=5)
+        started = time.perf_counter()
+        second = get_storage_health_payload(tmp_path)
+        elapsed = time.perf_counter() - started
+    finally:
+        release.set()
+        first.join(timeout=5)
+        close_storage_stores()
+
+    assert elapsed < 0.5  # timing-ok: a poll must not queue behind the in-flight read
+    assert second["storage"]["healthStalled"] is True
+    assert "still running" in second["storage"]["error"]
+    assert results and results[0]["storage"]["healthSource"] == "live"

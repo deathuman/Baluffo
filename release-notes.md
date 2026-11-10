@@ -1,9 +1,9 @@
-## [0.3.046] - 2026-11-10
+## [0.3.047] - 2026-11-10
 
-### Changed
+### Fixed
 
-- The container image is rebuilt and published under a new version so container and Umbrel installs can update. The app itself behaves the same as the previous release.
+- Admin's runtime storage panel now answers even while a fetch is running on a slow disk. The storage read is bounded, so the panel shows the last good table sizes (marked as such) or a clear "still reading" state instead of `Bridge request timed out`.
 
 ### Notes
 
-- No jobs data is migrated or dropped: saved jobs, notes and the current feed stay as they are. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all continue to work.
+- Existing jobs, saved jobs and notes are kept. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all continue to work.

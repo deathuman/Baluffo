@@ -40,6 +40,13 @@ _COMPACTION_HOLD = False
 # single stuck read parked one HTTP thread per poll and the route never answered.
 HEALTH_CACHE_TTL_S = 5.0
 HEALTH_STORE_OPEN_TIMEOUT_S = 2.0
+# The store reads behind this route (a limited quick_check below the size gate,
+# and an exact dbstat breakdown) scale with database size. On a slow disk under a
+# running fetch they can outlast the container gateway's 8s proxy timeout, so the
+# caller waits at most this long and then answers from the last good reading.
+HEALTH_COMPUTE_TIMEOUT_S = 3.0
+# Do not present an old reading as if it described the store now.
+HEALTH_STALE_TTL_S = 300.0
 _STORE_BUILD_LOCKS: dict[Path, threading.Lock] = {}
 _HEALTH_LOCKS: dict[Path, threading.Lock] = {}
 _HEALTH_CACHE: dict[Path, tuple[float, float, dict[str, Any]]] = {}
@@ -253,12 +260,16 @@ def _stalled_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
 
 
 def _cached_storage_payload(
-    resolved: Path, cached: dict[str, Any], *, age_ms: float
+    resolved: Path,
+    cached: dict[str, Any],
+    *,
+    age_ms: float,
+    source: str = "cached",
 ) -> dict[str, Any]:
     payload = copy.deepcopy(cached)
     storage = payload.get("storage")
     if isinstance(storage, dict):
-        storage["healthSource"] = "cached"
+        storage["healthSource"] = source
         storage["healthCacheAgeMs"] = max(0, int(round(age_ms)))
         storage["diagnostics"] = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
     return payload
@@ -286,22 +297,87 @@ def _compute_storage_health(resolved: Path) -> dict[str, Any]:
     return {"ok": bool(health.get("healthy")), "storage": health}
 
 
+def _read_cached_health(resolved: Path) -> tuple[float, float, dict[str, Any]] | None:
+    with _STORE_LOCK:
+        return _HEALTH_CACHE.get(resolved)
+
+
+def _cache_health_payload(resolved: Path, payload: dict[str, Any]) -> None:
+    now = time.monotonic()
+    with _STORE_LOCK:
+        _HEALTH_CACHE[resolved] = (now + HEALTH_CACHE_TTL_S, now, payload)
+
+
+def _fallback_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
+    """Answer now from the last good reading, or say the read is unavailable."""
+    cached = _read_cached_health(resolved)
+    if cached is not None:
+        age_s = max(0.0, time.monotonic() - cached[1])
+        if age_s <= HEALTH_STALE_TTL_S:
+            return _cached_storage_payload(
+                resolved,
+                cached[2],
+                age_ms=age_s * 1000.0,
+                source="cached-stale",
+            )
+    return _stalled_storage_payload(resolved, reason=reason)
+
+
 def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
+    """Return a storage reading within HEALTH_COMPUTE_TIMEOUT_S, always.
+
+    This route is polled while a fetch writes. The store reads it needs scale with
+    database size, so the compute runs in a daemon worker: the caller gets the
+    finished payload, the last good reading (marked stale), or a stalled payload,
+    but never an HTTP thread parked behind a slow read. The worker keeps going and
+    refreshes the cache for the next poll.
+    """
     resolved = _resolve_data_dir(data_dir)
-    # Single-flight per data dir: concurrent polls share one compute instead of
-    # stacking HTTP threads behind the same store read.
-    with _keyed_lock(_HEALTH_LOCKS, resolved):
-        cached = _HEALTH_CACHE.get(resolved)
-        now = time.monotonic()
-        if cached is not None and cached[0] > now:
-            return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
-        payload = _compute_storage_health(resolved)
-        if payload["storage"].get("healthStalled") and cached is not None:
-            # Never replace a real reading with a "could not read" answer.
-            return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
-        if not payload["storage"].get("healthStalled"):
-            _HEALTH_CACHE[resolved] = (now + HEALTH_CACHE_TTL_S, now, payload)
-        return payload
+    cached = _read_cached_health(resolved)
+    now = time.monotonic()
+    if cached is not None and cached[0] > now:
+        return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
+    health_lock = _keyed_lock(_HEALTH_LOCKS, resolved)
+    if not health_lock.acquire(blocking=False):
+        return _fallback_storage_payload(
+            resolved, reason="another storage-health read is still running"
+        )
+    result: dict[str, Any] = {}
+    done = threading.Event()
+
+    def _run() -> None:
+        try:
+            payload = _compute_storage_health(resolved)
+            result["payload"] = payload
+            if not payload["storage"].get("healthStalled"):
+                _cache_health_payload(resolved, payload)
+        except BaseException as exc:  # pragma: no cover - a worker must not die unheard
+            result["error"] = exc
+        finally:
+            done.set()
+            health_lock.release()
+
+    threading.Thread(
+        target=_run,
+        name="baluffo-storage-health",
+        daemon=True,
+    ).start()
+    if done.wait(HEALTH_COMPUTE_TIMEOUT_S):
+        payload = result.get("payload")
+        if isinstance(payload, dict):
+            if payload["storage"].get("healthStalled"):
+                return _fallback_storage_payload(
+                    resolved,
+                    reason=str(payload["storage"].get("error") or "storage health unavailable"),
+                )
+            return payload
+        return _fallback_storage_payload(
+            resolved, reason=f"storage health read failed: {result.get('error')}"
+        )
+    return _fallback_storage_payload(
+        resolved,
+        reason=f"storage health read still running after {HEALTH_COMPUTE_TIMEOUT_S:.1f}s",
+    )
 
 
 def record_storage_diagnostic(
