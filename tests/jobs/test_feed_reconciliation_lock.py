@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-import threading
+import subprocess
+import sys
+import textwrap
 import time
 
 import pytest
@@ -113,26 +115,52 @@ def test_timeout_names_the_holder_operation(tmp_path, monkeypatch):
     """The timeout must name what the bridge was doing, not only its pid."""
     monkeypatch.setenv("BALUFFO_RECONCILIATION_LOCK_TIMEOUT_S", "0.4")
     monkeypatch.setattr(lock_module, "_LOCK_RETRY_DELAY_S", 0.01)
-    holder_started = threading.Event()
-    release = threading.Event()
+    holder_script = textwrap.dedent(
+        """
+        import sys
+        from pathlib import Path
 
-    def hold() -> None:
-        with jobs_feed_reconciliation_lock(tmp_path, operation="availability_commit"):
-            holder_started.set()
-            assert release.wait(2.0)
+        from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 
-    thread = threading.Thread(target=hold)
-    thread.start()
+        with jobs_feed_reconciliation_lock(Path(sys.argv[1]), operation="availability_commit"):
+            Path(sys.argv[2]).write_text("ready", encoding="utf-8")
+            sys.stdin.readline()
+        """
+    )
+    ready_path = tmp_path / "holder-ready"
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_script, str(tmp_path), str(ready_path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
-        assert holder_started.wait(1.0)
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and not ready_path.exists():
+            if holder.poll() is not None:
+                break
+            time.sleep(0.01)
+        assert ready_path.exists(), "holder process did not acquire the lock"
         with pytest.raises(ReconciliationLockTimeout) as excinfo:
             with jobs_feed_reconciliation_lock(tmp_path):
                 pytest.fail("lock should not have been acquired")
     finally:
-        release.set()
-        thread.join(timeout=2.0)
+        if holder.stdin is not None and holder.poll() is None:
+            try:
+                holder.stdin.write("\n")
+                holder.stdin.flush()
+            except OSError:
+                pass
+        try:
+            holder.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            holder.communicate(timeout=5.0)
 
+    assert holder.returncode == 0
     timeout = excinfo.value
+    assert not sys.platform.startswith("linux") or timeout.holder_pid == holder.pid
     assert timeout.holder_operation == "availability_commit"
     assert timeout.holder_thread
     assert timeout.holder_acquired_at
