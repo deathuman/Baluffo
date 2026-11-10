@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from src.shared.browser_fallback_tokens import matches_browser_fallback_environment_error
+from src.shared.browser_launch_args import browser_fallback_chromium_args
 from src.shared.tls_https import verified_ssl_context
 from src.source_registry import normalize_source_url
 
@@ -29,7 +30,10 @@ def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
             browser = None
             page = None
             cleanup_error = ""
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=browser_fallback_chromium_args(),
+            )
             page = browser.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000)
             html = page.content() or ""

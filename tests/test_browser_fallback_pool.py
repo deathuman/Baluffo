@@ -24,6 +24,7 @@ from src.jobs.browser_fallback_pool import (
     BrowserFallbackPool,
     browser_pool_enabled,
 )
+from src.shared.browser_launch_args import browser_fallback_chromium_args
 
 
 class _FixtureServer(BaseHTTPRequestHandler):
@@ -75,6 +76,20 @@ def test_browser_pool_enabled_defaults_on_and_respects_kill_switch():
     assert not browser_pool_enabled({"BALUFFO_BROWSER_POOL": "0"})
     assert not browser_pool_enabled({"BALUFFO_BROWSER_POOL": "false"})
     assert browser_pool_enabled({"BALUFFO_BROWSER_POOL": "1"})
+
+
+def test_browser_fallback_chromium_args_keep_gpu_in_process_on_linux():
+    args = browser_fallback_chromium_args(platform="linux")
+    assert "--in-process-gpu" in args
+    assert "--disable-gpu" in args
+    assert "--disable-dev-shm-usage" in args
+    assert "--single-process" not in args
+
+
+def test_browser_fallback_chromium_args_leave_non_linux_gpu_path_unchanged():
+    args = browser_fallback_chromium_args(platform="win32")
+    assert "--in-process-gpu" not in args
+    assert "--disable-gpu" in args
 
 
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs

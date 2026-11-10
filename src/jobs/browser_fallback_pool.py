@@ -34,6 +34,7 @@ import time
 from typing import Any
 
 from src.bridge.source_check_http import normalize_browser_fallback_error
+from src.shared.browser_launch_args import browser_fallback_chromium_args
 from src.shared.utils import now_iso
 
 _BROWSER_POOL_DISABLE_VALUES = {"0", "false", "no", "off"}
@@ -203,14 +204,7 @@ class BrowserFallbackPool:
         # heavy SPA renders were pinning 2.5g seats during full-coverage fetch.
         self._browser = await self._playwright.chromium.launch(
             headless=True,
-            args=[
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--renderer-process-limit=2",
-                "--js-flags=--max-old-space-size=512",
-                "--disable-background-networking",
-                "--mute-audio",
-            ],
+            args=browser_fallback_chromium_args(),
         )
 
     async def _fetch(self, url: str, timeout_s: int) -> str:

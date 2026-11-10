@@ -48,7 +48,7 @@ def _install_fake_playwright(
     sync_api_mod = types.ModuleType("playwright.sync_api")
 
     class _Chromium:
-        def launch(self, *, headless: bool) -> object:
+        def launch(self, *, headless: bool, args: list[str] | None = None) -> object:
             assert headless is True
             if launch_error is not None:
                 raise launch_error
