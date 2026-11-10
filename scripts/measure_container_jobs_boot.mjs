@@ -153,6 +153,30 @@ async function collectMetrics(page) {
   });
 }
 
+const SEED_PAGE_PATH = "styles/base.css";
+
+function trimBaseUrl(baseUrl) {
+  return String(baseUrl || "").replace(/\/+$/, "");
+}
+
+export function resolveWarmSeedFeedUrl(baseUrl) {
+  return new URL("data/jobs-unified-light.json", `${trimBaseUrl(baseUrl)}/`).href;
+}
+
+// Warm seeding needs the HTTP cache primed by a real boot *and* a moment where
+// no Jobs code is running. A booted jobs.html writes the feed it fetched to the
+// same cache entry before first interactive, so seeding on top of it lets that
+// write land between the seed's put and its read-back -- the "persisted 24 of
+// 5000 rows" failure. Prime one boot, then seed from a same-origin document
+// that starts no app code.
+export async function prepareWarmState(page, { baseUrl, seed = seedWarmState } = {}) {
+  const origin = trimBaseUrl(baseUrl);
+  await page.goto(`${origin}/jobs.html`, { waitUntil: "domcontentloaded" });
+  await waitForJobsInteractive(page);
+  await page.goto(`${origin}/${SEED_PAGE_PATH}`);
+  return seed(page, { feedUrl: resolveWarmSeedFeedUrl(origin) });
+}
+
 export async function seedWarmState(page, {
   signalId = "perf-warm-signal-1",
   rowFloor = SEED_ROW_FLOOR,
@@ -185,6 +209,11 @@ export async function seedWarmState(page, {
       const response = await fetch(feedUrl);
       const payload = await response.json();
       rows = Array.isArray(payload) ? payload : Array.isArray(payload?.jobs) ? payload.jobs : [];
+    }
+    if (rows.length === 0) {
+      // Without a floor guard the expansion below never terminates, turning a
+      // missing fixture into a hung gate instead of a failed one.
+      throw new Error(`No rows to seed the Jobs cache from ${feedUrl}.`);
     }
     if (rows.length < rowFloor) {
       const expanded = [];
@@ -221,7 +250,10 @@ export async function seedWarmState(page, {
         });
         const cachedRowCount = Array.isArray(cached?.jobs) ? cached.jobs.length : 0;
         if (cachedRowCount !== rows.length) {
-          throw new Error(`Jobs cache persisted ${cachedRowCount} of ${rows.length} rows.`);
+          throw new Error(
+            `Jobs cache persisted ${cachedRowCount} of ${rows.length} rows after seeding`
+            + ` (savedAt=${Number(cached?.savedAt) || 0}); the entry changed after the seed wrote it.`
+          );
         }
       } finally {
         db.close();
@@ -269,8 +301,7 @@ async function runBootMode(browser, args) {
 
   let seededRowCount = 0;
   if (args.mode === "warm") {
-    await page.goto(`${args.baseUrl}/jobs.html`, { waitUntil: "domcontentloaded" });
-    seededRowCount = await seedWarmState(page);
+    seededRowCount = await prepareWarmState(page, { baseUrl: args.baseUrl });
     console.log(`[seed] IndexedDB cache rows: ${seededRowCount}; unapplied signal written`);
   }
 
