@@ -28,9 +28,12 @@ SCHEMA_VERSION = 1
 PROGRESS_HANDLER_OPS = 2_000
 PROGRESS_EMIT_INTERVAL_S = 0.5
 QUICK_GENERATION_LIMIT = 50
+QUICK_JOBS_TIMEOUT_S = 10.0
 QUICK_CHECK_WARNING = (
-    "Quick check counts rows by feed generation and reads page counters; "
-    "it does not measure table or index allocation."
+    "Quick check reads current feed counts and page counters and counts jobs by "
+    "generation within a bounded deadline; it does not count older job_sources "
+    "generations or measure table or index allocation. Use the exact diagnostic "
+    "for those totals."
 )
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -317,6 +320,69 @@ class _DiagnosticProgress:
         return 0
 
 
+def _current_generation_counts(
+    table: str,
+    generation: str,
+    row_count: int,
+) -> dict[str, Any]:
+    """Build the exact current-generation section from job_feed_state."""
+    current = str(generation or "")
+    count = max(0, int(row_count or 0))
+    by_generation: list[dict[str, Any]] = []
+    if current:
+        by_generation.append(
+            {
+                "generation": current,
+                "rowCount": count,
+                "isCurrent": True,
+                "isOrphan": False,
+            }
+        )
+    return {
+        "table": table,
+        "listedRowCount": count if current else 0,
+        "generationCount": 1 if current else 0,
+        "truncated": False,
+        "scope": "current",
+        "byGeneration": by_generation,
+    }
+
+
+def _bounded_generation_counts(
+    conn: sqlite3.Connection,
+    table: str,
+    current_generation: str,
+    *,
+    timeout_s: float = QUICK_JOBS_TIMEOUT_S,
+    progress: _DiagnosticProgress | None = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Count one generation-leading table, returning partial status on timeout."""
+    deadline = time.monotonic() + max(0.1, float(timeout_s))
+
+    def _bounded_progress() -> int:
+        if progress is not None:
+            if progress.was_cancelled():
+                return 1
+            progress.operation_count += PROGRESS_HANDLER_OPS
+            progress.emit()
+        return 1 if time.monotonic() >= deadline else 0
+
+    conn.set_progress_handler(_bounded_progress, PROGRESS_HANDLER_OPS)
+    try:
+        return _generation_counts(conn, table, current_generation), ""
+    except sqlite3.OperationalError as exc:
+        if progress is not None and progress.was_cancelled():
+            raise StorageDiagnosticCancelled("storage quick check cancelled") from exc
+        if "interrupt" in str(exc).lower():
+            return None, f"generation count exceeded {timeout_s:g} seconds"
+        raise
+    finally:
+        conn.set_progress_handler(
+            progress.sqlite_progress if progress is not None else None,
+            PROGRESS_HANDLER_OPS,
+        )
+
+
 def _open_readonly(path: Path, progress: _DiagnosticProgress) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -418,7 +484,7 @@ def measure_storage_quick_check(
     progress: ProgressCallback | None = None,
     cancel_requested: CancelCallback | None = None,
 ) -> dict[str, Any]:
-    """Count rows by feed generation without walking table pages with dbstat."""
+    """Return current feed counts and bounded job counts without dbstat."""
     started = time.monotonic()
     path = Path(db_path)
     tracker = _DiagnosticProgress(
@@ -438,11 +504,33 @@ def measure_storage_quick_check(
         tracker.set_phase("feed_state")
         feed_state = _feed_state(conn)
         tracker.check_cancelled()
-        tracker.set_phase("job_sources")
-        job_sources = _generation_counts(conn, "job_sources", feed_state["currentGeneration"])
+        current_generation = str(feed_state["currentGeneration"])
+        job_sources = _current_generation_counts(
+            "job_sources",
+            current_generation,
+            int(feed_state["currentSourceCount"] or 0),
+        )
         tracker.check_cancelled()
         tracker.set_phase("jobs")
-        jobs = _generation_counts(conn, "jobs", feed_state["currentGeneration"])
+        jobs, jobs_error = _bounded_generation_counts(
+            conn,
+            "jobs",
+            current_generation,
+            progress=tracker,
+        )
+        warnings = [QUICK_CHECK_WARNING]
+        if jobs is None:
+            jobs = _current_generation_counts(
+                "jobs",
+                current_generation,
+                int(feed_state["currentRowCount"] or 0),
+            )
+            jobs["status"] = "partial"
+            jobs["error"] = jobs_error
+            warnings.append(
+                f"Jobs by generation did not finish: {jobs_error}. "
+                "The current generation count is from job_feed_state."
+            )
         tracker.check_cancelled()
         tracker.set_phase("finalizing")
         return {
@@ -459,14 +547,14 @@ def measure_storage_quick_check(
             "pageCount": counters["pageCount"],
             "freelistBytes": counters["freelistBytes"],
             "allocatedBytes": counters["allocatedBytes"],
-            "exactContent": True,
+            "exactContent": not jobs_error,
             "exactAllocation": False,
             "tableSizes": None,
             "jobSources": None,
             "feedState": feed_state,
             "jobSourcesByGeneration": job_sources,
             "jobsByGeneration": jobs,
-            "warnings": [QUICK_CHECK_WARNING],
+            "warnings": warnings,
         }
     except sqlite3.OperationalError as exc:
         if tracker.was_cancelled():

@@ -79,6 +79,15 @@ const QUICK_DIAGNOSTIC = {
     currentPublishedAt: "2026-11-11T09:00:00.000Z"
   },
   jobSourcesByGeneration: {
+    listedRowCount: 2,
+    generationCount: 1,
+    truncated: false,
+    scope: "current",
+    byGeneration: [
+      { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }
+    ]
+  },
+  jobsByGeneration: {
     listedRowCount: 3,
     generationCount: 2,
     truncated: false,
@@ -86,12 +95,6 @@ const QUICK_DIAGNOSTIC = {
       { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
       { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
     ]
-  },
-  jobsByGeneration: {
-    listedRowCount: 2,
-    generationCount: 1,
-    truncated: false,
-    byGeneration: [{ generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }]
   }
 };
 
@@ -237,7 +240,7 @@ test("quick check starts with quick mode and renders generation counts", async (
   assert.equal(f.postCalls.length, 1);
   assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
   assert.deepEqual(f.postCalls[0].payload, { mode: "quick" });
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Quick check counts rows/i);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Quick check reads current feed counts/i);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-old/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /jobs by feed generation/i);
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check complete");

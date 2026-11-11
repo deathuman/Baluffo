@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.051"
+version: "0.3.052"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,11 +19,10 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.051 adds a Quick check to the Admin Runtime Database Storage
-  panel. It counts job and source rows by feed generation without walking
-  every database page, so a runaway runtime database can be identified in
-  seconds or minutes instead of hours. The exact diagnostic remains available
-  when table and index allocation is needed. Existing data and cleanup are
-  unchanged.
+  Release 0.3.052 fixes the Admin Quick check on very large runtime databases.
+  It now reports the current feed counters immediately and counts jobs by
+  generation within a short deadline instead of scanning every job_sources row.
+  Older source-row totals and table allocation remain available in the exact
+  diagnostic. Existing data is unchanged.
 storage:
   dataRoot: data

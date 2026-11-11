@@ -62,6 +62,11 @@ data/baluffo-runtime.db
 
 In the container runtime, this is `/data/baluffo-runtime.db`. It must not live under `_out/`, versioned app folders, or Docker image layers.
 
+The Admin quick storage check must stay bounded on large databases: current-generation
+`job_sources` counts come from `job_feed_state`, jobs are grouped under a short deadline,
+and the quick path must never group the full `job_sources` table. Full per-generation
+source-row and allocation counts belong to the explicit exact diagnostic.
+
 SQLite uses Python stdlib `sqlite3`. No new Python or Node dependency is allowed for the runtime store. Packaged builds must keep `sqlite3` in the main PyInstaller hidden imports.
 
 Connection initialization must apply and verify:

@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+import src.storage.db_storage_diagnostic as db_storage_diagnostic
 from src.storage.db_storage_diagnostic import (
     StorageDiagnosticCancelled,
     _dbstat_tables,
@@ -60,7 +61,7 @@ def _seed(path: Path) -> None:
     con.execute(
         """
         INSERT INTO job_feed_state VALUES
-            (1, 'gen-current', 'fetch_1', 2, 1, '2026-11-09T10:01:00Z', '2026-11-09T10:01:00Z')
+            (1, 'gen-current', 'fetch_1', 2, 2, '2026-11-09T10:01:00Z', '2026-11-09T10:01:00Z')
         """
     )
     con.commit()
@@ -120,7 +121,7 @@ def test_exact_diagnostic_is_cancellable_from_the_progress_handler(tmp_path: Pat
         measure_storage_diagnostic(path, cancel_requested=lambda: True)
 
 
-def test_quick_check_counts_generations_without_dbstat(tmp_path: Path) -> None:
+def test_quick_check_uses_current_source_counts_without_dbstat(tmp_path: Path) -> None:
     path = tmp_path / "runtime.db"
     _seed(path)
 
@@ -135,13 +136,65 @@ def test_quick_check_counts_generations_without_dbstat(tmp_path: Path) -> None:
     assert result["pageCount"] > 0
     assert result["freelistBytes"] >= 0
     assert result["feedState"]["currentGeneration"] == "gen-current"
+    assert result["jobSourcesByGeneration"]["scope"] == "current"
+    assert result["jobSourcesByGeneration"]["listedRowCount"] == 2
     sources = {row["generation"]: row for row in result["jobSourcesByGeneration"]["byGeneration"]}
     jobs = {row["generation"]: row for row in result["jobsByGeneration"]["byGeneration"]}
     assert sources["gen-current"]["rowCount"] == 2
     assert sources["gen-current"]["isCurrent"] is True
-    assert sources["gen-old"]["isOrphan"] is True
+    assert "gen-old" not in sources
     assert jobs["gen-current"]["rowCount"] == 2
     assert jobs["gen-old"]["rowCount"] == 1
+
+
+def test_quick_check_does_not_scan_job_sources_generations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "runtime.db"
+    _seed(path)
+    seen: list[str] = []
+    original = db_storage_diagnostic._generation_counts
+
+    def recording(conn, table, current_generation, **kwargs):
+        seen.append(table)
+        return original(conn, table, current_generation, **kwargs)
+
+    monkeypatch.setattr(db_storage_diagnostic, "_generation_counts", recording)
+
+    result = measure_storage_quick_check(path)
+
+    assert seen == ["jobs"]
+    assert result["jobSourcesByGeneration"]["scope"] == "current"
+    assert result["jobSourcesByGeneration"]["listedRowCount"] == 2
+
+
+def test_quick_check_falls_back_when_jobs_count_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "runtime.db"
+    _seed(path)
+    monkeypatch.setattr(
+        db_storage_diagnostic,
+        "_bounded_generation_counts",
+        lambda *_args, **_kwargs: (None, "generation count exceeded 10 seconds"),
+    )
+
+    result = measure_storage_quick_check(path)
+
+    jobs = result["jobsByGeneration"]
+    assert result["exactContent"] is False
+    assert jobs["scope"] == "current"
+    assert jobs["status"] == "partial"
+    assert jobs["listedRowCount"] == 2
+    assert jobs["byGeneration"] == [
+        {
+            "generation": "gen-current",
+            "rowCount": 2,
+            "isCurrent": True,
+            "isOrphan": False,
+        }
+    ]
+    assert any("did not finish" in warning for warning in result["warnings"])
 
 
 class _FakeCursor:

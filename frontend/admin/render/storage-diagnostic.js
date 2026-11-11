@@ -95,6 +95,15 @@ function renderQuickFeedState(feedState) {
 function renderQuickGenerations(title, section) {
   if (!section || typeof section !== "object") return "";
   const generations = Array.isArray(section.byGeneration) ? section.byGeneration : [];
+  const currentOnly = section.scope === "current";
+  const partial = section.status === "partial";
+  const heading = currentOnly ? `${title} — current generation` : title;
+  const notes = [
+    currentOnly
+      ? "Only the current generation is counted here. Older generations are left to the exact diagnostic."
+      : "",
+    partial ? String(section.error || "This generation count did not finish.") : ""
+  ].filter(Boolean);
   const rows = generations.map(row => {
     const current = row?.isCurrent
       ? ' <span class="admin-storage-diagnostic-current">current</span>'
@@ -108,12 +117,13 @@ function renderQuickGenerations(title, section) {
     </div>`;
   }).join("");
   return `<div class="admin-storage-diagnostic-section">
-    <h4>${escapeHtml(title)}</h4>
+    <h4>${escapeHtml(heading)}</h4>
     <div class="admin-storage-diagnostic-meta">
       <span>${formatCount(section.listedRowCount)} listed rows</span>
       <span>${formatCount(section.generationCount)} generations shown</span>
       ${section.truncated ? "<span>top generations only</span>" : ""}
     </div>
+    ${notes.map(note => `<p class="admin-storage-diagnostic-note">${escapeHtml(note)}</p>`).join("")}
     <div class="admin-storage-diagnostic-grid" role="table" aria-label="${escapeHtml(title)}">
       <div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row admin-storage-diagnostic-head" role="row">
         <span role="columnheader">Generation</span>
@@ -128,7 +138,10 @@ function renderQuickGenerations(title, section) {
 function renderQuickDiagnostic(diagnostic, formatBytes) {
   return `
     ${renderQuickMeta(diagnostic, formatBytes)}
-    <p class="admin-storage-diagnostic-note">Quick check counts rows by feed generation and reads page counters. It does not measure table or index allocation.</p>
+    <p class="admin-storage-diagnostic-note">Quick check reads current feed counts and counts jobs by generation. It does not count older job_sources generations or measure table or index allocation.</p>
+    ${Array.isArray(diagnostic.warnings) && diagnostic.warnings.length
+      ? `<p class="admin-storage-diagnostic-warning">${diagnostic.warnings.map(warning => escapeHtml(String(warning))).join(" ")}</p>`
+      : ""}
     ${renderQuickFeedState(diagnostic.feedState)}
     ${renderQuickGenerations("job_sources by feed generation", diagnostic.jobSourcesByGeneration)}
     ${renderQuickGenerations("jobs by feed generation", diagnostic.jobsByGeneration)}

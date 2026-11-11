@@ -174,21 +174,25 @@ test("renders quick generation counts without table allocation", () => {
       currentSourceCount: 3
     },
     jobSourcesByGeneration: {
+      listedRowCount: 2,
+      generationCount: 1,
+      scope: "current",
+      byGeneration: [
+        { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }
+      ]
+    },
+    jobsByGeneration: {
       listedRowCount: 3,
       generationCount: 2,
       byGeneration: [
         { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
         { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
       ]
-    },
-    jobsByGeneration: {
-      listedRowCount: 2,
-      generationCount: 1,
-      byGeneration: [{ generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }]
     }
   }, formatBytes);
 
-  assert.match(html, /Quick check counts rows/);
+  assert.match(html, /Quick check reads current feed counts/);
+  assert.match(html, /Only the current generation is counted here/);
   assert.match(html, /gen-current/);
   assert.match(html, /gen-old/);
   assert.match(html, /orphan/);
