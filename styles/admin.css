@@ -585,6 +585,52 @@ h2.admin-section-title {
   color: var(--text-secondary);
 }
 
+.admin-storage-maintenance-progress {
+  margin: -0.15rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.admin-storage-maintenance-progress[hidden] {
+  display: none;
+}
+
+.admin-storage-maintenance-progress.is-running {
+  border-color: var(--accent);
+}
+
+.admin-storage-maintenance-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.admin-storage-maintenance-progress-head strong {
+  color: var(--text-primary);
+}
+
+.admin-storage-maintenance-progress-head span,
+.admin-storage-maintenance-phase {
+  color: var(--text-subtle);
+}
+
+.admin-storage-maintenance-progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.admin-storage-maintenance-error {
+  color: var(--tint-warning);
+}
+
 .admin-storage-diagnostic {
   margin-top: 0.05rem;
   padding: 0.9rem;

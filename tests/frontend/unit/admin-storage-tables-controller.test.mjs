@@ -125,7 +125,6 @@ function fixture({
   payload = { storage: { tableSizes: TABLE_SIZES } },
   reject = null,
   postPayload = { started: true, storageDiagnostic: DIAGNOSTIC },
-  maintenancePayload = { ok: true, started: true, alreadyRunning: false },
   postReject = null,
   shouldDefer = () => false,
   downloadJson = null
@@ -147,12 +146,6 @@ function fixture({
         listeners.quickCheck = handler;
       }
     }),
-    adminStorageMaintenanceBtnEl: createElement({
-      addEventListener(type, handler) {
-        listeners.maintenance = handler;
-      }
-    }),
-    adminStorageMaintenanceStatusEl: createElement(),
     adminStorageDiagnosticBtnEl: createElement({
       addEventListener(type, handler) {
         listeners.diagnostic = handler;
@@ -182,7 +175,7 @@ function fixture({
     postBridge: async (path, payloadBody, options) => {
       postCalls.push({ path, payload: payloadBody, options });
       if (postReject) throw postReject;
-      return path === "/ops/storage-maintenance" ? maintenancePayload : postPayload;
+      return postPayload;
     },
     downloadJson: downloadJson || ((filename, content) => {
       downloads.push({ filename, content });
@@ -256,37 +249,6 @@ test("exact diagnostic starts in the background and renders its result", async (
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /data-generation-id="gen-current"/);
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Audit complete");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
-});
-
-test("maintenance button starts retention and reports the background handoff", async () => {
-  const f = fixture();
-  f.controller.init();
-
-  await f.listeners.maintenance();
-
-  assert.equal(f.postCalls.length, 1);
-  assert.equal(f.postCalls[0].path, "/ops/storage-maintenance");
-  assert.deepEqual(f.postCalls[0].payload, {});
-  assert.equal(f.postCalls[0].options.affectsReachability, false);
-  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /Maintenance started/);
-  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /database compacted/);
-});
-
-test("maintenance reports an active-task hold instead of claiming it started", async () => {
-  const f = fixture({
-    maintenancePayload: {
-      ok: true,
-      started: false,
-      alreadyRunning: false,
-      reason: "held-active-task"
-    }
-  });
-  f.controller.init();
-
-  await f.controller.startMaintenance();
-
-  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /active task/i);
-  assert.equal(f.refs.adminStorageMaintenanceStatusEl.attributes["data-tone"], "warning");
 });
 
 test("quick check starts with quick mode and renders generation counts", async () => {

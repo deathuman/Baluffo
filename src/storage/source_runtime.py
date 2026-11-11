@@ -74,6 +74,51 @@ def _source_id(source_key: str) -> str:
     return f"fetch:{source_key}"
 
 
+def _emit_progress(
+    on_progress: Callable[[dict[str, Any]], None] | None,
+    payload: dict[str, Any],
+) -> None:
+    if on_progress is not None:
+        on_progress(payload)
+
+
+def _delete_source_run_batches(
+    store: BaluffoStore,
+    selected: Sequence[tuple[str, datetime]],
+    *,
+    candidate_run_count: int,
+    on_progress: Callable[[dict[str, Any]], None] | None,
+) -> tuple[int, int]:
+    deleted_run_count = 0
+    deleted_row_count = 0
+    for start in range(0, len(selected), DEFAULT_RUNTIME_RETENTION_BATCH_RUNS):
+        batch = selected[start : start + DEFAULT_RUNTIME_RETENTION_BATCH_RUNS]
+        batch_ids = [run_id for run_id, _ended_at in batch]
+
+        def delete_batch(conn: Any, run_ids: list[str] = batch_ids) -> int:
+            deleted = 0
+            for run_id in run_ids:
+                cursor = conn.execute("DELETE FROM source_runs WHERE run_id = ?", (run_id,))
+                deleted += max(0, int(cursor.rowcount or 0))
+            return deleted
+
+        deleted_row_count += int(store.write(delete_batch) or 0)
+        deleted_run_count += len(batch)
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "prune-source-runs",
+                "stage": "deleting",
+                "candidateRunCount": candidate_run_count,
+                "processedRunCount": deleted_run_count,
+                "totalRunCount": len(selected),
+                "deletedRunCount": deleted_run_count,
+                "deletedRowCount": deleted_row_count,
+            },
+        )
+    return deleted_run_count, deleted_row_count
+
+
 def _source_run_record(
     run_id: str,
     row: Mapping[str, Any],
@@ -363,6 +408,7 @@ class SourceRuntimeStore:
         max_event_rows: int = DEFAULT_RUNTIME_RETENTION_MAX_EVENT_ROWS,
         max_sync_runs: int = DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS,
         now: datetime | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Delete old terminal source-run payloads in bounded batches.
 
@@ -389,6 +435,7 @@ class SourceRuntimeStore:
 
         now_dt = now or datetime.now(UTC)
         cutoff = now_dt - timedelta(days=normalized_days)
+        _emit_progress(on_progress, {"phase": "prune-source-runs", "stage": "scanning"})
         active_rows = self.store.execute_read(
             "SELECT run_id FROM task_runs WHERE status IN ('queued', 'running')"
         )
@@ -419,22 +466,25 @@ class SourceRuntimeStore:
         ]
         candidates.sort(key=lambda item: item[1])
         selected = candidates[:normalized_max]
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "prune-source-runs",
+                "stage": "deleting",
+                "candidateRunCount": len(candidates),
+                "processedRunCount": 0,
+                "totalRunCount": len(selected),
+                "deletedRunCount": 0,
+                "deletedRowCount": 0,
+            },
+        )
 
-        deleted_run_count = 0
-        deleted_row_count = 0
-        for start in range(0, len(selected), DEFAULT_RUNTIME_RETENTION_BATCH_RUNS):
-            batch = selected[start : start + DEFAULT_RUNTIME_RETENTION_BATCH_RUNS]
-            batch_ids = [run_id for run_id, _ended_at in batch]
-
-            def delete_batch(conn: Any, run_ids: list[str] = batch_ids) -> int:
-                deleted = 0
-                for run_id in run_ids:
-                    cursor = conn.execute("DELETE FROM source_runs WHERE run_id = ?", (run_id,))
-                    deleted += max(0, int(cursor.rowcount or 0))
-                return deleted
-
-            deleted_row_count += int(self.store.write(delete_batch) or 0)
-            deleted_run_count += len(batch)
+        deleted_run_count, deleted_row_count = _delete_source_run_batches(
+            self.store,
+            selected,
+            candidate_run_count=len(candidates),
+            on_progress=on_progress,
+        )
 
         cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
         event_limit = max(0, int(max_event_rows or 0))
@@ -488,9 +538,35 @@ class SourceRuntimeStore:
                 )
             return event_count, sync_count
 
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "prune-event-history",
+                "stage": "deleting",
+                "candidateRunCount": len(candidates),
+                "processedRunCount": deleted_run_count,
+                "totalRunCount": len(selected),
+                "deletedRunCount": deleted_run_count,
+                "deletedRowCount": deleted_row_count,
+            },
+        )
         event_row_count, sync_row_count = self.store.write(delete_bounded_rows)
         event_truncated = event_limit > 0 and event_row_count >= event_limit
         sync_truncated = sync_limit > 0 and sync_row_count >= sync_limit
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "prune-event-history",
+                "stage": "complete",
+                "candidateRunCount": len(candidates),
+                "processedRunCount": deleted_run_count,
+                "totalRunCount": len(selected),
+                "deletedRunCount": deleted_run_count,
+                "deletedRowCount": deleted_row_count,
+                "deletedEventCount": event_row_count,
+                "deletedSyncRunCount": sync_row_count,
+            },
+        )
         return {
             "status": "ok" if selected or event_row_count or sync_row_count else "nothing-to-prune",
             "retentionDays": normalized_days,
@@ -515,6 +591,7 @@ class SourceRuntimeStore:
         max_rows: int = DEFAULT_ARCHIVE_COMPACT_ROWS,
         max_bytes: int = DEFAULT_ARCHIVE_COMPACT_BYTES,
         now: datetime | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Remove full source details from SQLite when the gzip archive owns them.
 
@@ -542,6 +619,14 @@ class SourceRuntimeStore:
         run_ids = [
             _clean_text(row.get("run_id")) for row in run_rows if _clean_text(row.get("run_id"))
         ]
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "compact-archived-payloads",
+                "stage": "scanning",
+                "candidateRunCount": len(run_ids),
+            },
+        )
         if not run_ids:
             return {
                 "status": "nothing-to-compact",
@@ -563,6 +648,17 @@ class SourceRuntimeStore:
             (*run_ids, normalized_max_rows + 1),
         )
         truncated = len(rows) > normalized_max_rows
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "compact-archived-payloads",
+                "stage": "updating",
+                "candidateRunCount": len(run_ids),
+                "candidateRowCount": len(rows),
+                "compactedPayloadCount": 0,
+                "compactedPayloadBytes": 0,
+            },
+        )
         archive_store = EvidenceArchiveStore(self.store.data_dir)
         updates: list[tuple[str, str, str]] = []
         compacted_bytes = 0
@@ -604,6 +700,17 @@ class SourceRuntimeStore:
                     updates,
                 )
             )
+        _emit_progress(
+            on_progress,
+            {
+                "phase": "compact-archived-payloads",
+                "stage": "complete",
+                "candidateRunCount": len(run_ids),
+                "candidateRowCount": len(rows),
+                "compactedPayloadCount": len(updates),
+                "compactedPayloadBytes": compacted_bytes,
+            },
+        )
         return {
             "status": "ok" if updates else "nothing-to-compact",
             "candidateRowCount": len(rows),

@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.055"
+version: "0.3.056"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,10 +19,10 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.055 fixes a shutdown race in background runtime-database
-  maintenance and includes the storage cleanup first published in 0.3.054.
-  Admin's storage panel can run the bounded cleanup, which keeps the current
-  feed, saved jobs, notes, and compatibility exports while removing older
-  saved feed generations and compacting the database afterward.
+  Release 0.3.056 adds live progress to Admin's runtime-database maintenance,
+  including the active cleanup phase, elapsed time, processed runs, and removed
+  rows or older feed versions. The panel updates while cleanup runs and reports
+  completion or a scheduled follow-up. The current feed, saved jobs, notes, and
+  compatibility exports are preserved.
 storage:
   dataRoot: data

@@ -621,7 +621,8 @@ export function composeAdminControllers({
     // The shell is up: only now fetch and parse the Ops surface. Starting it any
     // earlier put a 273 KB chunk's parse back inside the boot it was split out of.
     opsController.start?.();
-    // One bounded read after startup; the panel never polls storage health.
+    // One bounded read after startup; later maintenance-only polling lives in
+    // the storage controller and is gated off while active work holds the gate.
     // It joins the serial startup lane rather than deferring on it, so an idle
     // load fills the panel as soon as the lane drains instead of waiting for the
     // Action Center's next (30 s) storage poll. When active work holds the gate,

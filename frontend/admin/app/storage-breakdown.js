@@ -1,6 +1,8 @@
 import {
+  renderStorageMaintenanceHtml,
   renderStorageTablesHtml,
-  renderStorageTablesMessageHtml
+  renderStorageTablesMessageHtml,
+  storageMaintenancePhaseLabel
 } from "../render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
 import {
@@ -14,6 +16,10 @@ const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
 const STORAGE_MAINTENANCE_ROUTE = "/ops/storage-maintenance";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
 const STORAGE_DIAGNOSTIC_POLL_MS = 2000;
+const MAINTENANCE_POLL_FAST_MS = 3000;
+const MAINTENANCE_POLL_SLOW_MS = 15000;
+const MAINTENANCE_POLL_FAST_WINDOW_MS = 120000;
+const MAINTENANCE_POLL_MAX_MS = 30 * 60 * 1000;
 
 function stateShouldDefer(state, options = {}) {
   const busy = state?.adminBusyState || {};
@@ -31,10 +37,12 @@ function stateShouldDefer(state, options = {}) {
 /**
  * Owns the Runtime Database Storage panel beside Stored Profiles Overview.
  *
- * The panel is deliberately read-once plus manual refresh: Admin must not add a
- * storage-health poll during active work. The Action Center already fetches the
- * same route on its own cadence and hands the payload in through
- * `acceptStorageHealth`, so the panel stays current without a second poll.
+ * The panel reads once, refreshes manually, and accepts the Action Center's
+ * storage payload. While an explicit maintenance pass is running it adds one
+ * bounded poll: fast for the first two minutes, slower after that, stopped when
+ * the pass ends or after 30 minutes, and never scheduled while the active-work
+ * gate is held. This keeps maintenance visible without adding a general
+ * storage-health poll during fetches or discovery.
  *
  * `load(options)` forwards its options to `shouldDefer` so the startup read can
  * join the serial startup bridge lane (`allowStartupBridgeLane: true`) instead of
@@ -57,6 +65,11 @@ export function createStorageBreakdownController({
   let diagnosticPollTimer = null;
   let diagnostic = null;
   let maintenanceInFlight = false;
+  let maintenanceStatus = null;
+  let maintenanceCompaction = null;
+  let maintenancePollTimer = null;
+  let maintenancePollStartedAt = 0;
+  let maintenanceStatusInFlight = false;
 
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
@@ -131,6 +144,120 @@ export function createStorageBreakdownController({
     if (!statusEl) return;
     statusEl.textContent = text;
     statusEl.setAttribute?.("data-tone", tone);
+  }
+
+  function maintenanceRunning(status) {
+    return Boolean(status && (status.running === true || status.status === "running"));
+  }
+
+  function maintenanceHeadline(status) {
+    if (!status) return { text: "", tone: "" };
+    if (maintenanceRunning(status)) {
+      return {
+        text: `Maintenance running — ${storageMaintenancePhaseLabel(status.phase)}`,
+        tone: ""
+      };
+    }
+    if (status.status === "failed") {
+      return { text: `Maintenance failed: ${status.error || "unknown error"}`, tone: "warning" };
+    }
+    if (status.status === "held-active-task") {
+      return { text: "Maintenance paused while an active task runs.", tone: "warning" };
+    }
+    if (status.status === "ok" && status.timerScheduled) {
+      return { text: "Maintenance batch complete; follow-up scheduled.", tone: "" };
+    }
+    if (status.status === "ok" || status.status === "nothing-to-prune") {
+      return { text: "Maintenance complete.", tone: "" };
+    }
+    return { text: "", tone: "" };
+  }
+
+  function renderMaintenanceProgress() {
+    const progressEl = refs.adminStorageMaintenanceProgressEl;
+    if (!progressEl) return;
+    const html = renderStorageMaintenanceHtml(
+      maintenanceStatus,
+      maintenanceCompaction,
+      formatBytes
+    );
+    progressEl.innerHTML = html;
+    progressEl.hidden = !html;
+  }
+
+  function stopMaintenancePoll() {
+    if (maintenancePollTimer !== null) {
+      clearTimeout(maintenancePollTimer);
+      maintenancePollTimer = null;
+    }
+    maintenancePollStartedAt = 0;
+  }
+
+  function scheduleMaintenancePoll() {
+    if (!maintenanceRunning(maintenanceStatus)) {
+      stopMaintenancePoll();
+      return;
+    }
+    if (maintenancePollTimer !== null) return;
+    if (shouldDefer()) {
+      setMaintenanceStatus(
+        "Maintenance is running. Live updates pause while an active task runs.",
+        "warning"
+      );
+      return;
+    }
+    if (!maintenancePollStartedAt) maintenancePollStartedAt = Date.now();
+    const elapsed = Date.now() - maintenancePollStartedAt;
+    if (elapsed >= MAINTENANCE_POLL_MAX_MS) {
+      setMaintenanceStatus(
+        "Maintenance is still running. Live updates paused; use Refresh to resume.",
+        "warning"
+      );
+      return;
+    }
+    const delay = elapsed < MAINTENANCE_POLL_FAST_WINDOW_MS
+      ? MAINTENANCE_POLL_FAST_MS
+      : MAINTENANCE_POLL_SLOW_MS;
+    maintenancePollTimer = setTimeout(() => {
+      maintenancePollTimer = null;
+      void refreshMaintenanceStatus();
+    }, delay);
+    maintenancePollTimer?.unref?.();
+  }
+
+  function acceptMaintenanceStatus(storage) {
+    if (storage?.runtimeRetention) maintenanceStatus = storage.runtimeRetention;
+    if (storage?.compaction) maintenanceCompaction = storage.compaction;
+    if (!maintenanceStatus) return;
+    const headline = maintenanceHeadline(maintenanceStatus);
+    if (headline.text) setMaintenanceStatus(headline.text, headline.tone);
+    renderMaintenanceProgress();
+    if (maintenanceRunning(maintenanceStatus)) scheduleMaintenancePoll();
+    else stopMaintenancePoll();
+  }
+
+  async function refreshMaintenanceStatus() {
+    if (maintenanceStatusInFlight) return null;
+    maintenanceStatusInFlight = true;
+    try {
+      const payload = await getBridge(STORAGE_HEALTH_ROUTE, {
+        timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+        affectsReachability: false
+      });
+      acceptStorageHealth(payload);
+      return payload?.storage?.runtimeRetention || null;
+    } catch (err) {
+      if (maintenanceRunning(maintenanceStatus)) {
+        setMaintenanceStatus(
+          `Maintenance status unavailable: ${err?.message || err || "unknown error"}. Retrying…`,
+          "warning"
+        );
+        scheduleMaintenancePoll();
+      }
+      return null;
+    } finally {
+      maintenanceStatusInFlight = false;
+    }
   }
 
   function renderDiagnostic() {
@@ -261,6 +388,7 @@ export function createStorageBreakdownController({
   async function startMaintenance() {
     if (maintenanceInFlight || typeof postBridge !== "function") return null;
     maintenanceInFlight = true;
+    maintenancePollStartedAt = 0;
     const button = refs.adminStorageMaintenanceBtnEl;
     if (button) button.disabled = true;
     setMaintenanceStatus("Starting maintenance…");
@@ -270,12 +398,26 @@ export function createStorageBreakdownController({
         {},
         { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
       );
+      const runtimeRetention = payload?.runtimeRetention || null;
+      if (runtimeRetention) {
+        acceptMaintenanceStatus({ runtimeRetention, compaction: payload?.compaction });
+      }
       if (payload?.started) {
-        setMaintenanceStatus(
-          "Maintenance started — older saved versions will be removed and the database compacted in the background."
-        );
+        if (!runtimeRetention) {
+          maintenanceStatus = { status: "running", running: true, phase: "starting", elapsedMs: 0 };
+          renderMaintenanceProgress();
+          setMaintenanceStatus(
+            "Maintenance started — older saved versions will be removed and the database compacted in the background."
+          );
+        }
+        scheduleMaintenancePoll();
       } else if (payload?.alreadyRunning) {
-        setMaintenanceStatus("Maintenance is already running.", "warning");
+        if (!runtimeRetention) {
+          maintenanceStatus = { status: "running", running: true, phase: "starting", elapsedMs: 0 };
+          renderMaintenanceProgress();
+          setMaintenanceStatus("Maintenance is already running.", "warning");
+        }
+        scheduleMaintenancePoll();
       } else if (payload?.reason === "held-active-task") {
         setMaintenanceStatus(
           "Deferred while an active task is running; try again when it finishes.",
@@ -316,7 +458,9 @@ export function createStorageBreakdownController({
   }
 
   function acceptStorageHealth(payload) {
-    const tableSizes = payload?.storage?.tableSizes || null;
+    const storage = payload?.storage || {};
+    acceptMaintenanceStatus(storage);
+    const tableSizes = storage.tableSizes || null;
     if (!tableSizes) return null;
     render(tableSizes);
     setStatus(
@@ -336,6 +480,7 @@ export function createStorageBreakdownController({
       return null;
     }
     inFlight = true;
+    maintenancePollStartedAt = 0;
     setStatus("Loading…");
     renderMessage("Loading database storage details…");
     try {
@@ -377,6 +522,8 @@ export function createStorageBreakdownController({
     init,
     load,
     acceptStorageHealth,
+    refreshMaintenanceStatus,
+    stopMaintenancePoll,
     refreshDiagnostic,
     startStorageDiagnostic,
     startMaintenance,

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  renderStorageMaintenanceHtml,
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml
 } from "../../../frontend/admin/render/storage-tables.js";
@@ -236,6 +237,32 @@ test("renders quick generation counts without table allocation", () => {
   assert.doesNotMatch(html, /dbstat exact/);
 });
 
+test("renders maintenance phase, elapsed time, counters, and compaction", () => {
+  const html = renderStorageMaintenanceHtml(
+    {
+      status: "running",
+      running: true,
+      phase: "prune-source-runs",
+      stage: "deleting",
+      elapsedMs: 65_000,
+      processedRunCount: 2,
+      totalRunCount: 10,
+      deletedRunCount: 2,
+      deletedRowCount: 20
+    },
+    { status: "ok", reclaimedBytes: 500 },
+    formatBytes
+  );
+
+  assert.match(html, /Maintenance running/);
+  assert.match(html, /Removing old fetch history/);
+  assert.match(html, /Elapsed 1m 5s/);
+  assert.match(html, /2 of 10 runs/);
+  assert.match(html, /2 runs \/ 20 rows/);
+  assert.match(html, /1 KB reclaimed/);
+  assert.match(html, /data-maintenance-phase="prune-source-runs"/);
+});
+
 test("admin shell places the runtime storage panel beside the profiles overview", () => {
   const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
   const usersIndex = adminHtml.indexOf('data-ui="admin-users-list"');
@@ -249,6 +276,7 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.match(adminHtml, /data-ui="admin-storage-quick-check-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-maintenance-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-maintenance-status"/);
+  assert.match(adminHtml, /data-ui="admin-storage-maintenance-progress"/);
   assert.match(adminHtml, /Database storage/);
   assert.match(adminHtml, /Full storage audit/);
   assert.match(adminHtml, /admin-storage-advanced/);

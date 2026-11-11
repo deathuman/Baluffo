@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import UTC, datetime
 
 import pytest
@@ -94,7 +95,7 @@ def test_retention_deletions_schedule_a_compaction(
 ) -> None:
     scheduled: list[str] = []
 
-    def fake_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, object]:
+    def fake_retention(store: BaluffoStore, *, reason: str = "", **_: object) -> dict[str, object]:
         return {
             "status": "ok",
             "reason": reason,
@@ -123,7 +124,7 @@ def test_retention_pass_without_deletions_retries_due_compaction(
 ) -> None:
     scheduled: list[str] = []
 
-    def fake_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, object]:
+    def fake_retention(store: BaluffoStore, *, reason: str = "", **_: object) -> dict[str, object]:
         return {
             "status": "nothing-to-prune",
             "reason": reason,
@@ -152,7 +153,7 @@ def test_truncated_retention_schedules_followup_before_compaction(
 ) -> None:
     scheduled: list[str] = []
 
-    def fake_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, object]:
+    def fake_retention(store: BaluffoStore, *, reason: str = "", **_: object) -> dict[str, object]:
         return {
             "status": "ok",
             "reason": reason,
@@ -179,6 +180,63 @@ def test_truncated_retention_schedules_followup_before_compaction(
             assert status["timerScheduled"] is True
             assert 0 < status["nextRunInS"] <= 30
             assert status["done"] is False
+
+
+def test_runtime_retention_status_reports_live_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_retention(store: BaluffoStore, *, reason: str = "", on_progress=None):
+        assert on_progress is not None
+        on_progress(
+            {
+                "phase": "prune-source-runs",
+                "stage": "deleting",
+                "processedRunCount": 2,
+                "totalRunCount": 10,
+                "deletedRunCount": 2,
+                "deletedRowCount": 20,
+            }
+        )
+        started.set()
+        assert release.wait(5)
+        return {
+            "status": "ok",
+            "reason": reason,
+            "deletedRunCount": 2,
+            "deletedRowCount": 20,
+        }
+
+    monkeypatch.setattr("src.storage.runtime_retention.run_runtime_retention", fake_retention)
+
+    with workspace_tmpdir("baluffo-store-retention-phase") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            monkeypatch.setattr(store, "schedule_compaction_if_needed", lambda **_: False)
+            worker = threading.Thread(
+                target=lambda: store._run_runtime_retention(reason="post-serve")
+            )
+            worker.start()
+            try:
+                assert started.wait(5)
+                live = store.runtime_retention_status()
+                assert live["running"] is True
+                assert live["done"] is False
+                assert live["status"] == "running"
+                assert live["phase"] == "prune-source-runs"
+                assert live["processedRunCount"] == 2
+                assert live["totalRunCount"] == 10
+                assert live["elapsedMs"] >= 0
+            finally:
+                release.set()
+                worker.join(5)
+
+            final = store.runtime_retention_status()
+            if store._retention_timer is not None:
+                store._retention_timer.cancel()
+            assert final["running"] is False
+            assert final["status"] == "ok"
+            assert final["phase"] == "complete"
+            assert final["durationMs"] >= 0
 
 
 def test_runtime_retention_bounds_event_and_sync_deletes() -> None:

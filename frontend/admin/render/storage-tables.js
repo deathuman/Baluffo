@@ -44,6 +44,103 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? text : date.toLocaleString();
 }
 
+function formatDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(toNumber(value) / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+export function storageMaintenancePhaseLabel(phase) {
+  const labels = {
+    starting: "Preparing maintenance",
+    "prune-source-runs": "Removing old fetch history",
+    "prune-event-history": "Pruning task and sync history",
+    "compact-archived-payloads": "Compacting archived payloads",
+    "prune-job-generations": "Removing older saved versions",
+    complete: "Complete",
+    failed: "Failed",
+    "held-active-task": "Waiting for active task",
+    "not-run": "Not started"
+  };
+  return labels[String(phase || "")] || String(phase || "Not started");
+}
+
+export function renderStorageMaintenanceHtml(
+  runtimeRetention,
+  compaction,
+  formatBytesFormatter
+) {
+  const status = runtimeRetention && typeof runtimeRetention === "object"
+    ? runtimeRetention
+    : null;
+  if (!status) return "";
+  const running = status.running === true || status.status === "running";
+  if (!running && String(status.status || "") === "not-run") return "";
+
+  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
+  const phase = String(status.phase || status.status || "");
+  const phaseLabel = storageMaintenancePhaseLabel(phase);
+  const elapsed = toNumber(status.elapsedMs ?? status.durationMs);
+  const totalRuns = toNumber(status.totalRunCount);
+  const processedRuns = toNumber(status.processedRunCount);
+  const deletedRuns = toNumber(status.deletedRunCount);
+  const deletedRows = toNumber(status.deletedRowCount);
+  const deletedEvents = toNumber(status.deletedEventCount);
+  const deletedSyncRuns = toNumber(status.deletedSyncRunCount);
+  const deletedGenerations = toNumber(status.deletedGenerationCount);
+  const details = [];
+
+  details.push(`<span class="admin-storage-maintenance-phase">${escapeHtml(phaseLabel)}</span>`);
+  if (elapsed > 0) details.push(`<span>Elapsed ${escapeHtml(formatDuration(elapsed))}</span>`);
+  if (totalRuns > 0) {
+    details.push(
+      `<span>${formatCount(processedRuns)} of ${formatCount(totalRuns)} runs</span>`
+    );
+  }
+  if (deletedRuns > 0 || deletedRows > 0) {
+    details.push(
+      `<span>Removed ${formatCount(deletedRuns)} runs / ${formatCount(deletedRows)} rows</span>`
+    );
+  }
+  if (deletedEvents > 0 || deletedSyncRuns > 0) {
+    details.push(
+      `<span>Task/sync rows ${formatCount(deletedEvents)} / ${formatCount(deletedSyncRuns)}</span>`
+    );
+  }
+  if (deletedGenerations > 0) {
+    details.push(`<span>Removed ${formatCount(deletedGenerations)} saved versions</span>`);
+  }
+  if (compaction && String(compaction.status || "") !== "not-run") {
+    const reclaimed = toNumber(compaction.reclaimedBytes);
+    const compactionText = reclaimed > 0
+      ? `${String(compaction.status)} · ${format(reclaimed)} reclaimed`
+      : String(compaction.status);
+    details.push(`<span>Compaction: ${escapeHtml(compactionText)}</span>`);
+  }
+  if (status.error) {
+    details.push(`<span class="admin-storage-maintenance-error">${escapeHtml(String(status.error))}</span>`);
+  }
+
+  const headline = running
+    ? "Maintenance running"
+    : status.status === "failed"
+      ? "Maintenance failed"
+      : status.status === "held-active-task"
+        ? "Maintenance paused"
+        : "Maintenance complete";
+  return `<div class="admin-storage-maintenance-progress${running ? " is-running" : ""}" data-maintenance-phase="${escapeHtml(phase)}" data-maintenance-running="${running ? "true" : "false"}">
+    <div class="admin-storage-maintenance-progress-head">
+      <strong>${escapeHtml(headline)}</strong>
+      <span>${escapeHtml(phaseLabel)}</span>
+    </div>
+    <div class="admin-storage-maintenance-progress-meta">${details.join("")}</div>
+  </div>`;
+}
+
 function tableLabel(name) {
   return TABLE_LABELS[name] || name || "Unknown table";
 }

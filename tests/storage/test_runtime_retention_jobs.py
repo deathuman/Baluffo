@@ -47,6 +47,29 @@ def test_runtime_retention_drains_old_jobs_generations_and_keeps_current() -> No
             assert JobRuntimeStore(store).current_generation() == generations[-1]
 
 
+def test_runtime_retention_reports_phase_progress() -> None:
+    with workspace_tmpdir("runtime-retention-jobs-progress") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _replace_generations(store, 2)
+            progress: list[dict[str, object]] = []
+
+            result = run_runtime_retention(
+                store,
+                reason="post-serve",
+                on_progress=progress.append,
+            )
+
+            phases = [str(item.get("phase") or "") for item in progress]
+            assert "prune-source-runs" in phases
+            assert "compact-archived-payloads" in phases
+            assert "prune-job-generations" in phases
+            assert any(
+                item.get("phase") == "prune-source-runs" and item.get("stage") == "deleting"
+                for item in progress
+            )
+            assert result["jobGenerations"]["deletedGenerationCount"] == 1
+
+
 def test_runtime_retention_marks_a_short_jobs_cleanup_as_drained() -> None:
     with workspace_tmpdir("runtime-retention-jobs-short") as data_dir:
         with BaluffoStore(data_dir) as store:

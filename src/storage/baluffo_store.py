@@ -219,12 +219,26 @@ class BaluffoStore:
         }
         self._last_retention: dict[str, Any] = {
             "status": "not-run",
+            "phase": "not-run",
+            "stage": "",
             "reason": "",
+            "startedAt": "",
+            "completedAt": "",
+            "updatedAt": "",
             "durationMs": 0,
+            "elapsedMs": 0,
             "deletedRunCount": 0,
             "deletedRowCount": 0,
+            "deletedEventCount": 0,
+            "deletedSyncRunCount": 0,
+            "deletedGenerationCount": 0,
+            "candidateRunCount": 0,
+            "processedRunCount": 0,
+            "totalRunCount": 0,
             "error": "",
         }
+        self._retention_started_monotonic = 0.0
+        self._retention_in_progress = False
         self._runtime_retention_done = False
         self._retention_thread: threading.Thread | None = None
         self._retention_timer: threading.Timer | None = None
@@ -857,19 +871,47 @@ class BaluffoStore:
                 if self._maintenance_thread is threading.current_thread():
                     self._maintenance_thread = None
 
+    def _set_retention_held(self, reason: str) -> None:
+        self._last_retention = {
+            "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+            "phase": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+            "stage": "held",
+            "reason": str(reason or ""),
+            "startedAt": "",
+            "completedAt": "",
+            "updatedAt": _now_iso(),
+            "durationMs": 0,
+            "elapsedMs": 0,
+            "deletedRunCount": 0,
+            "deletedRowCount": 0,
+            "deletedEventCount": 0,
+            "deletedSyncRunCount": 0,
+            "deletedGenerationCount": 0,
+            "candidateRunCount": 0,
+            "processedRunCount": 0,
+            "totalRunCount": 0,
+            "error": "",
+        }
+
     def runtime_retention_status(self) -> dict[str, Any]:
         with self._maintenance_lock:
             next_run_in_s = 0.0
             if self._retention_timer is not None:
                 next_run_in_s = max(0.0, self._retention_next_run_monotonic - time.monotonic())
+            running = bool(self._retention_in_progress)
+            elapsed_ms = int(self._last_retention.get("elapsedMs") or 0)
+            if running and self._retention_started_monotonic:
+                elapsed_ms = max(
+                    elapsed_ms,
+                    int(round((time.monotonic() - self._retention_started_monotonic) * 1000)),
+                )
             return {
                 **self._last_retention,
                 "done": bool(self._runtime_retention_done),
-                "running": bool(
-                    self._retention_thread is not None and self._retention_thread.is_alive()
-                ),
+                "running": running,
                 "timerScheduled": bool(self._retention_timer is not None),
                 "nextRunInS": round(next_run_in_s, 1),
+                "elapsedMs": elapsed_ms,
             }
 
     def schedule_runtime_retention(self, *, reason: str = "", force: bool = False) -> bool:
@@ -891,14 +933,7 @@ class BaluffoStore:
                 self._retention_timer = None
                 self._retention_next_run_monotonic = 0.0
             if self._compaction_hold:
-                self._last_retention = {
-                    "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
-                    "reason": str(reason or ""),
-                    "durationMs": 0,
-                    "deletedRunCount": 0,
-                    "deletedRowCount": 0,
-                    "error": "",
-                }
+                self._set_retention_held(reason)
                 return False
             if force:
                 self._runtime_retention_done = False
@@ -913,24 +948,53 @@ class BaluffoStore:
             return True
 
     def _run_runtime_retention(self, *, reason: str) -> bool:
+        started = time.monotonic()
+        started_at = _now_iso()
         with self._maintenance_lock:
             if self._runtime_retention_done:
                 return False
             if self._compaction_hold:
-                self._last_retention = {
-                    "status": MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
-                    "reason": str(reason or ""),
-                    "durationMs": 0,
-                    "deletedRunCount": 0,
-                    "deletedRowCount": 0,
-                    "error": "",
-                }
+                self._set_retention_held(reason)
                 return False
-        started = time.monotonic()
+            self._retention_started_monotonic = started
+            self._retention_in_progress = True
+            self._last_retention = {
+                **self._last_retention,
+                "status": "running",
+                "phase": "starting",
+                "stage": "starting",
+                "reason": str(reason or ""),
+                "startedAt": started_at,
+                "completedAt": "",
+                "updatedAt": started_at,
+                "durationMs": 0,
+                "elapsedMs": 0,
+                "deletedRunCount": 0,
+                "deletedRowCount": 0,
+                "deletedEventCount": 0,
+                "deletedSyncRunCount": 0,
+                "deletedGenerationCount": 0,
+                "candidateRunCount": 0,
+                "processedRunCount": 0,
+                "totalRunCount": 0,
+                "error": "",
+            }
+
+        def report_progress(progress: dict[str, Any]) -> None:
+            now = time.monotonic()
+            with self._maintenance_lock:
+                self._last_retention = {
+                    **self._last_retention,
+                    **progress,
+                    "status": "running",
+                    "updatedAt": _now_iso(),
+                    "elapsedMs": int(round((now - started) * 1000)),
+                }
+
         try:
             from src.storage.runtime_retention import run_runtime_retention
 
-            status = run_runtime_retention(self, reason=reason)
+            status = run_runtime_retention(self, reason=reason, on_progress=report_progress)
         except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
             status = {
                 "status": "failed",
@@ -940,13 +1004,23 @@ class BaluffoStore:
                 "deletedRowCount": 0,
             }
             LOGGER.warning("SQLite runtime retention failed: %s", exc)
+        elapsed_ms = int(round((time.monotonic() - started) * 1000))
+        failed = str(status.get("status") or "") == "failed"
         status = {
             **status,
-            "durationMs": int(round((time.monotonic() - started) * 1000)),
+            "phase": "failed" if failed else "complete",
+            "stage": "failed" if failed else "complete",
+            "startedAt": started_at,
+            "completedAt": _now_iso(),
+            "updatedAt": _now_iso(),
+            "durationMs": elapsed_ms,
+            "elapsedMs": elapsed_ms,
         }
         needs_more = bool(status.get("truncated"))
         with self._maintenance_lock:
             self._last_retention = status
+            self._retention_started_monotonic = 0.0
+            self._retention_in_progress = False
             self._runtime_retention_done = (
                 str(status.get("status") or "")
                 not in {

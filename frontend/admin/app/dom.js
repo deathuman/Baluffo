@@ -23,6 +23,7 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminStorageQuickCheckBtnEl: { token: "storageQuickCheckBtn" },
   adminStorageMaintenanceBtnEl: { token: "storageMaintenanceBtn" },
   adminStorageMaintenanceStatusEl: { token: "storageMaintenanceStatus" },
+  adminStorageMaintenanceProgressEl: { token: "storageMaintenanceProgress" },
   adminStorageDiagnosticBtnEl: { token: "storageDiagnosticBtn" },
   adminStorageDiagnosticCancelBtnEl: { token: "storageDiagnosticCancelBtn" },
   adminStorageDiagnosticExportBtnEl: { token: "storageDiagnosticExportBtn" },
