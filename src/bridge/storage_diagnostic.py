@@ -23,13 +23,14 @@ from src.storage.db_storage_diagnostic import (
     StorageDiagnosticCancelled,
     StorageDiagnosticError,
     measure_storage_diagnostic,
+    measure_storage_quick_check,
 )
 
 _JOBS_LOCK = threading.RLock()
 _JOBS_BY_DATA_DIR: dict[Path, StorageDiagnosticJob] = {}
 
 
-def _empty_state(data_dir: Path) -> dict[str, Any]:
+def _empty_state(data_dir: Path, *, mode: str = "") -> dict[str, Any]:
     db_path = data_dir / DEFAULT_DB_NAME
     try:
         database_bytes = max(0, int(db_path.stat().st_size))
@@ -41,6 +42,7 @@ def _empty_state(data_dir: Path) -> dict[str, Any]:
         wal_bytes = 0
     return {
         "schemaVersion": 1,
+        "mode": mode,
         "status": "idle",
         "runId": "",
         "phase": "idle",
@@ -51,10 +53,18 @@ def _empty_state(data_dir: Path) -> dict[str, Any]:
         "databasePath": str(db_path),
         "databaseBytes": database_bytes,
         "walBytes": wal_bytes,
+        "pageSize": 0,
+        "pageCount": 0,
+        "freelistBytes": 0,
+        "allocatedBytes": 0,
         "capturedAt": "",
         "durationMs": 0,
         "tableSizes": None,
         "jobSources": None,
+        "feedState": None,
+        "jobSourcesByGeneration": [],
+        "jobsByGeneration": [],
+        "warnings": [],
         "error": "",
     }
 
@@ -69,6 +79,7 @@ class StorageDiagnosticJob:
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._started_monotonic = 0.0
+        self.mode = "exact"
         self._state = _empty_state(data_dir)
 
     def _snapshot_locked(self) -> dict[str, Any]:
@@ -81,15 +92,17 @@ class StorageDiagnosticJob:
         with self._lock:
             return self._snapshot_locked()
 
-    def start(self) -> tuple[dict[str, Any], bool]:
+    def start(self, mode: str = "exact") -> tuple[dict[str, Any], bool]:
         with self._lock:
             if self._state["status"] in {"running", "cancelling"}:
                 return self._snapshot_locked(), False
+            requested_mode = "quick" if str(mode or "").strip().lower() == "quick" else "exact"
             self._cancel = threading.Event()
             self._started_monotonic = time.monotonic()
+            self.mode = requested_mode
             run_id = f"storage_diag_{uuid.uuid4().hex[:12]}"
             self._state = {
-                **_empty_state(self.data_dir),
+                **_empty_state(self.data_dir, mode=requested_mode),
                 "status": "running",
                 "runId": run_id,
                 "phase": "queued",
@@ -140,21 +153,20 @@ class StorageDiagnosticJob:
             self._state["elapsedMs"] = elapsed_ms
             self._state["error"] = error
             if result is not None:
-                for key in (
-                    "capturedAt",
-                    "durationMs",
-                    "databasePath",
-                    "databaseBytes",
-                    "walBytes",
-                    "tableSizes",
-                    "jobSources",
-                ):
-                    if key in result:
-                        self._state[key] = result[key]
+                self._state.update(
+                    {
+                        key: value
+                        for key, value in result.items()
+                        if key not in {"status", "elapsedMs", "finishedAt", "runId"}
+                    }
+                )
 
     def _run(self) -> None:
         try:
-            result = measure_storage_diagnostic(
+            measure = (
+                measure_storage_quick_check if self.mode == "quick" else measure_storage_diagnostic
+            )
+            result = measure(
                 self.db_path,
                 progress=self._on_progress,
                 cancel_requested=self._cancel.is_set,
@@ -188,9 +200,9 @@ def _job_for(data_dir: Path | str) -> StorageDiagnosticJob:
         return job
 
 
-def start_storage_diagnostic(data_dir: Path | str) -> dict[str, Any]:
+def start_storage_diagnostic(data_dir: Path | str, mode: str = "exact") -> dict[str, Any]:
     job = _job_for(data_dir)
-    diagnostic, started = job.start()
+    diagnostic, started = job.start(mode)
     return {
         "ok": True,
         "started": started,

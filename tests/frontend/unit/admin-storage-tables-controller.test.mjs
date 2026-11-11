@@ -61,6 +61,40 @@ const DIAGNOSTIC = {
   }
 };
 
+const QUICK_DIAGNOSTIC = {
+  mode: "quick",
+  status: "complete",
+  runId: "storage_diag_quick123",
+  databaseBytes: 10_000,
+  walBytes: 0,
+  pageSize: 4096,
+  pageCount: 2,
+  freelistBytes: 100,
+  capturedAt: "2026-11-11T10:00:00.000Z",
+  durationMs: 8,
+  feedState: {
+    currentGeneration: "gen-current",
+    currentRowCount: 2,
+    currentSourceCount: 3,
+    currentPublishedAt: "2026-11-11T09:00:00.000Z"
+  },
+  jobSourcesByGeneration: {
+    listedRowCount: 3,
+    generationCount: 2,
+    truncated: false,
+    byGeneration: [
+      { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
+      { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
+    ]
+  },
+  jobsByGeneration: {
+    listedRowCount: 2,
+    generationCount: 1,
+    truncated: false,
+    byGeneration: [{ generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }]
+  }
+};
+
 function fixture({
   payload = { storage: { tableSizes: TABLE_SIZES } },
   reject = null,
@@ -79,6 +113,11 @@ function fixture({
     adminStorageTablesRefreshBtnEl: createElement({
       addEventListener(type, handler) {
         listeners.refresh = handler;
+      }
+    }),
+    adminStorageQuickCheckBtnEl: createElement({
+      addEventListener(type, handler) {
+        listeners.quickCheck = handler;
       }
     }),
     adminStorageDiagnosticBtnEl: createElement({
@@ -184,6 +223,24 @@ test("exact diagnostic starts in the background and renders its result", async (
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-current/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /dbstat exact/);
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Complete");
+  assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
+});
+
+test("quick check starts with quick mode and renders generation counts", async () => {
+  const f = fixture({
+    postPayload: { started: true, storageDiagnostic: QUICK_DIAGNOSTIC }
+  });
+  f.controller.init();
+
+  await f.controller.startQuickCheck();
+
+  assert.equal(f.postCalls.length, 1);
+  assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
+  assert.deepEqual(f.postCalls[0].payload, { mode: "quick" });
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Quick check counts rows/i);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-old/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /jobs by feed generation/i);
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check complete");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
 });
 

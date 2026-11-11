@@ -20,13 +20,18 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.storage_metrics import file_size
 
 SCHEMA_VERSION = 1
 PROGRESS_HANDLER_OPS = 2_000
 PROGRESS_EMIT_INTERVAL_S = 0.5
+QUICK_GENERATION_LIMIT = 50
+QUICK_CHECK_WARNING = (
+    "Quick check counts rows by feed generation and reads page counters; "
+    "it does not measure table or index allocation."
+)
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 CancelCallback = Callable[[], bool]
@@ -163,19 +168,8 @@ def _job_sources(conn: sqlite3.Connection) -> dict[str, Any]:
         ORDER BY COUNT(*) DESC, feed_generation
         """
     ).fetchall()
-    current_row = conn.execute(
-        """
-        SELECT current_generation, row_count, source_count, updated_at, published_at, run_id
-        FROM job_feed_state
-        WHERE id = 1
-        """
-    ).fetchone()
-    current_generation = str(current_row[0] or "") if current_row is not None else ""
-    current_row_count = int(current_row[1] or 0) if current_row is not None else 0
-    current_source_count = int(current_row[2] or 0) if current_row is not None else 0
-    current_updated_at = str(current_row[3] or "") if current_row is not None else ""
-    current_published_at = str(current_row[4] or "") if current_row is not None else ""
-    current_run_id = str(current_row[5] or "") if current_row is not None else ""
+    feed_state = _feed_state(conn)
+    current_generation = str(feed_state["currentGeneration"])
 
     by_generation: list[dict[str, Any]] = []
     for generation, row_count, payload_bytes, content_bytes, first_updated, last_updated in rows:
@@ -201,12 +195,73 @@ def _job_sources(conn: sqlite3.Connection) -> dict[str, Any]:
         "payloadBytes": sum(int(row["payloadBytes"]) for row in by_generation),
         "contentBytes": sum(int(row["contentBytes"]) for row in by_generation),
         "generationCount": len(by_generation),
-        "currentGeneration": current_generation,
-        "currentRowCount": current_row_count,
-        "currentSourceCount": current_source_count,
-        "currentUpdatedAt": current_updated_at,
-        "currentPublishedAt": current_published_at,
-        "currentRunId": current_run_id,
+        **feed_state,
+        "byGeneration": by_generation,
+    }
+
+
+def _feed_state(conn: sqlite3.Connection) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT current_generation, row_count, source_count, updated_at, published_at, run_id
+        FROM job_feed_state
+        WHERE id = 1
+        """
+    ).fetchone()
+    if row is None:
+        return {
+            "currentGeneration": "",
+            "currentRowCount": 0,
+            "currentSourceCount": 0,
+            "currentUpdatedAt": "",
+            "currentPublishedAt": "",
+            "currentRunId": "",
+        }
+    return {
+        "currentGeneration": str(row[0] or ""),
+        "currentRowCount": int(row[1] or 0),
+        "currentSourceCount": int(row[2] or 0),
+        "currentUpdatedAt": str(row[3] or ""),
+        "currentPublishedAt": str(row[4] or ""),
+        "currentRunId": str(row[5] or ""),
+    }
+
+
+def _generation_counts(
+    conn: sqlite3.Connection,
+    table: str,
+    current_generation: str,
+    *,
+    limit: int = QUICK_GENERATION_LIMIT,
+) -> dict[str, Any]:
+    """Count rows by generation using the table's generation-leading index."""
+    bounded_limit = max(1, int(limit))
+    rows = conn.execute(
+        f"""
+        SELECT feed_generation, COUNT(*) AS row_count
+        FROM {_quoted(table)}
+        GROUP BY feed_generation
+        ORDER BY row_count DESC, feed_generation ASC
+        LIMIT ?
+        """,
+        (bounded_limit + 1,),
+    ).fetchall()
+    truncated = len(rows) > bounded_limit
+    rows = rows[:bounded_limit]
+    by_generation = [
+        {
+            "generation": str(generation or ""),
+            "rowCount": int(cast(Any, row_count) or 0),
+            "isCurrent": bool(generation and str(generation) == current_generation),
+            "isOrphan": bool(generation and str(generation) != current_generation),
+        }
+        for generation, row_count in rows
+    ]
+    return {
+        "table": table,
+        "listedRowCount": sum(cast(int, row["rowCount"]) for row in by_generation),
+        "generationCount": len(by_generation),
+        "truncated": truncated,
         "byGeneration": by_generation,
     }
 
@@ -339,6 +394,7 @@ def _completed_payload(
     )
     return {
         "schemaVersion": SCHEMA_VERSION,
+        "mode": "exact",
         "status": "complete",
         "capturedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "durationMs": int(round((time.monotonic() - started) * 1000)),
@@ -354,6 +410,72 @@ def _completed_payload(
         "tableSizes": table_sizes,
         "jobSources": job_sources,
     }
+
+
+def measure_storage_quick_check(
+    db_path: Path | str,
+    *,
+    progress: ProgressCallback | None = None,
+    cancel_requested: CancelCallback | None = None,
+) -> dict[str, Any]:
+    """Count rows by feed generation without walking table pages with dbstat."""
+    started = time.monotonic()
+    path = Path(db_path)
+    tracker = _DiagnosticProgress(
+        started=started, progress=progress, cancel_requested=cancel_requested
+    )
+    if not path.is_file():
+        raise StorageDiagnosticError("database file not found")
+    tracker.check_cancelled()
+    tracker.set_phase("counters")
+    database_bytes = file_size(path)
+    wal_bytes = file_size(path.with_name(f"{path.name}-wal"))
+    shm_bytes = file_size(path.with_name(f"{path.name}-shm"))
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_readonly(path, tracker)
+        counters = _database_counters(conn)
+        tracker.set_phase("feed_state")
+        feed_state = _feed_state(conn)
+        tracker.check_cancelled()
+        tracker.set_phase("job_sources")
+        job_sources = _generation_counts(conn, "job_sources", feed_state["currentGeneration"])
+        tracker.check_cancelled()
+        tracker.set_phase("jobs")
+        jobs = _generation_counts(conn, "jobs", feed_state["currentGeneration"])
+        tracker.check_cancelled()
+        tracker.set_phase("finalizing")
+        return {
+            "schemaVersion": SCHEMA_VERSION,
+            "mode": "quick",
+            "status": "complete",
+            "capturedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "durationMs": int(round((time.monotonic() - started) * 1000)),
+            "databasePath": str(path),
+            "databaseBytes": database_bytes,
+            "walBytes": wal_bytes,
+            "shmBytes": shm_bytes,
+            "pageSize": counters["pageSize"],
+            "pageCount": counters["pageCount"],
+            "freelistBytes": counters["freelistBytes"],
+            "allocatedBytes": counters["allocatedBytes"],
+            "exactContent": True,
+            "exactAllocation": False,
+            "tableSizes": None,
+            "jobSources": None,
+            "feedState": feed_state,
+            "jobSourcesByGeneration": job_sources,
+            "jobsByGeneration": jobs,
+            "warnings": [QUICK_CHECK_WARNING],
+        }
+    except sqlite3.OperationalError as exc:
+        if tracker.was_cancelled():
+            raise StorageDiagnosticCancelled("storage quick check cancelled") from exc
+        raise StorageDiagnosticError(str(exc)) from exc
+    finally:
+        if conn is not None:
+            conn.close()
+            tracker.emit(force=True)
 
 
 def measure_storage_diagnostic(

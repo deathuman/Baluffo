@@ -104,8 +104,8 @@ class MinimalAdminPostRouteApi:
     def start_fetcher_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
-    def start_storage_diagnostic(self) -> dict[str, Any]:
-        return {"started": True, "storageDiagnostic": {"status": "running"}}
+    def start_storage_diagnostic(self, mode: str = "exact") -> dict[str, Any]:
+        return {"started": True, "storageDiagnostic": {"status": "running", "mode": mode}}
 
     def cancel_storage_diagnostic(self) -> dict[str, Any]:
         return {"cancelling": True, "storageDiagnostic": {"status": "cancelling"}}
@@ -201,6 +201,9 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     storage_diagnostic = _post(api, "/ops/storage-diagnostic", {})
     assert storage_diagnostic.sent[-1]["status"] == 202
     assert storage_diagnostic.sent[-1]["payload"]["started"] is True
+
+    storage_quick = _post(api, "/ops/storage-diagnostic", {"mode": "quick"})
+    assert storage_quick.sent[-1]["payload"]["storageDiagnostic"]["mode"] == "quick"
 
     storage_diagnostic_cancel = _post(api, "/ops/storage-diagnostic/cancel", {})
     assert storage_diagnostic_cancel.sent[-1]["status"] == 202

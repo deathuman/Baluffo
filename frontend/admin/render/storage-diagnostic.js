@@ -20,8 +20,11 @@ function phaseLabel(phase) {
   const labels = {
     queued: "Queued",
     opening: "Opening database",
+    counters: "Reading page counters",
+    feed_state: "Reading current feed state",
     tables: "Measuring table allocation",
     job_sources: "Grouping job_sources by generation",
+    jobs: "Grouping jobs by generation",
     finalizing: "Finalizing",
     cancelling: "Cancelling"
   };
@@ -48,6 +51,7 @@ function renderMeta(diagnostic, formatBytes) {
 function renderProgress(diagnostic, formatBytes) {
   const progress = diagnostic.progress || {};
   const operations = toNumber(progress.operationCount);
+  const quick = diagnostic.mode === "quick";
   return `
     ${renderMeta(diagnostic, formatBytes)}
     <div class="admin-storage-diagnostic-progress">
@@ -55,7 +59,79 @@ function renderProgress(diagnostic, formatBytes) {
       <span>${formatCount(diagnostic.elapsedMs)} ms elapsed</span>
       ${operations > 0 ? `<span>${formatCount(operations)} SQLite operations</span>` : ""}
     </div>
-    <p class="admin-storage-diagnostic-note">This read-only scan is running in the bridge background. You can keep using Admin or cancel it.</p>
+    <p class="admin-storage-diagnostic-note">This read-only ${quick ? "quick generation check" : "scan"} is running in the bridge background. You can keep using Admin or cancel it.</p>
+  `;
+}
+
+function renderQuickMeta(diagnostic, formatBytes) {
+  const parts = [
+    `${escapeHtml(formatBytes(toNumber(diagnostic.databaseBytes)))} database`,
+    `${escapeHtml(formatBytes(toNumber(diagnostic.walBytes)))} WAL`,
+    `${formatCount(diagnostic.pageSize)} B pages`,
+    `${formatCount(diagnostic.pageCount)} pages`,
+    `${escapeHtml(formatBytes(toNumber(diagnostic.freelistBytes)))} free`,
+    diagnostic.capturedAt ? `captured ${escapeHtml(formatTime(diagnostic.capturedAt))}` : "",
+    diagnostic.durationMs === null || diagnostic.durationMs === undefined
+      ? ""
+      : `${formatCount(diagnostic.durationMs)} ms`,
+    diagnostic.runId ? `run ${escapeHtml(String(diagnostic.runId))}` : ""
+  ].filter(Boolean);
+  return `<div class="admin-storage-diagnostic-meta">${parts.map(part => `<span>${part}</span>`).join("")}</div>`;
+}
+
+function renderQuickFeedState(feedState) {
+  if (!feedState || typeof feedState !== "object") return "";
+  return `<div class="admin-storage-diagnostic-section">
+    <h4>Current feed</h4>
+    <div class="admin-storage-diagnostic-meta">
+      <span>${escapeHtml(generationLabel(feedState.currentGeneration))}</span>
+      <span>${formatCount(feedState.currentRowCount)} jobs</span>
+      <span>${formatCount(feedState.currentSourceCount)} source rows</span>
+      ${feedState.currentPublishedAt ? `<span>published ${escapeHtml(formatTime(feedState.currentPublishedAt))}</span>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderQuickGenerations(title, section) {
+  if (!section || typeof section !== "object") return "";
+  const generations = Array.isArray(section.byGeneration) ? section.byGeneration : [];
+  const rows = generations.map(row => {
+    const current = row?.isCurrent
+      ? ' <span class="admin-storage-diagnostic-current">current</span>'
+      : row?.isOrphan
+        ? ' <span class="admin-storage-diagnostic-orphan">orphan</span>'
+        : "";
+    return `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row" role="row">
+      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(generationLabel(row?.generation))}${current}</span>
+      <span role="cell">${formatCount(row?.rowCount)}</span>
+      <span role="cell">${row?.isOrphan ? "orphan" : row?.isCurrent ? "current" : "—"}</span>
+    </div>`;
+  }).join("");
+  return `<div class="admin-storage-diagnostic-section">
+    <h4>${escapeHtml(title)}</h4>
+    <div class="admin-storage-diagnostic-meta">
+      <span>${formatCount(section.listedRowCount)} listed rows</span>
+      <span>${formatCount(section.generationCount)} generations shown</span>
+      ${section.truncated ? "<span>top generations only</span>" : ""}
+    </div>
+    <div class="admin-storage-diagnostic-grid" role="table" aria-label="${escapeHtml(title)}">
+      <div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row admin-storage-diagnostic-head" role="row">
+        <span role="columnheader">Generation</span>
+        <span role="columnheader">Rows</span>
+        <span role="columnheader">State</span>
+      </div>
+      ${rows || '<div class="admin-storage-diagnostic-note">No rows were found.</div>'}
+    </div>
+  </div>`;
+}
+
+function renderQuickDiagnostic(diagnostic, formatBytes) {
+  return `
+    ${renderQuickMeta(diagnostic, formatBytes)}
+    <p class="admin-storage-diagnostic-note">Quick check counts rows by feed generation and reads page counters. It does not measure table or index allocation.</p>
+    ${renderQuickFeedState(diagnostic.feedState)}
+    ${renderQuickGenerations("job_sources by feed generation", diagnostic.jobSourcesByGeneration)}
+    ${renderQuickGenerations("jobs by feed generation", diagnostic.jobsByGeneration)}
   `;
 }
 
@@ -152,16 +228,19 @@ function renderJobSources(jobSources, formatBytes) {
 export function renderStorageDiagnosticHtml(diagnostic, formatBytes) {
   const format = typeof formatBytes === "function" ? formatBytes : value => String(value);
   if (!diagnostic || typeof diagnostic !== "object" || diagnostic.status === "idle") {
-    return '<div class="admin-storage-tables-empty">Run the exact diagnostic to measure table allocation and job_sources by feed generation.</div>';
+    return '<div class="admin-storage-tables-empty">Run Quick check for generation row counts, or Measure exact sizes for dbstat table allocation.</div>';
   }
   if (diagnostic.status === "failed") {
-    return `<div class="admin-storage-tables-empty">Exact diagnostic failed: ${escapeHtml(String(diagnostic.error || "unknown error"))}</div>`;
+    return `<div class="admin-storage-tables-empty">Storage diagnostic failed: ${escapeHtml(String(diagnostic.error || "unknown error"))}</div>`;
   }
   if (diagnostic.status === "cancelled") {
-    return `<div class="admin-storage-tables-empty">Exact diagnostic cancelled.</div>`;
+    return `<div class="admin-storage-tables-empty">Storage diagnostic cancelled.</div>`;
   }
   if (diagnostic.status === "running" || diagnostic.status === "cancelling") {
     return renderProgress(diagnostic, format);
+  }
+  if (diagnostic.mode === "quick") {
+    return renderQuickDiagnostic(diagnostic, format);
   }
   return `
     ${renderMeta(diagnostic, format)}

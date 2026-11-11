@@ -118,7 +118,7 @@ class _AdminPostRouteApi(Protocol):
 
     def start_fetcher_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
-    def start_storage_diagnostic(self) -> dict[str, Any]: ...
+    def start_storage_diagnostic(self, mode: str) -> dict[str, Any]: ...
 
     def cancel_storage_diagnostic(self) -> dict[str, Any]: ...
 
@@ -341,7 +341,8 @@ def _handle_ops_admin_post(
     data: dict[str, Any],
 ) -> bool:
     if path == "/ops/storage-diagnostic":
-        result = api.start_storage_diagnostic()
+        mode = "quick" if str(data.get("mode") or "").strip().lower() == "quick" else "exact"
+        result = api.start_storage_diagnostic(mode)
         handler.send_json(result, status=202 if bool(result.get("started")) else 200)
         return True
 

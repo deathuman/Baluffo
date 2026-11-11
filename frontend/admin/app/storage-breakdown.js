@@ -82,15 +82,24 @@ export function createStorageBreakdownController({
 
   function diagnosticStatusText(value) {
     if (!value) return { text: "Not run", tone: "" };
+    const quick = value.mode === "quick";
     if (value.status === "running" || value.status === "cancelling") {
-      return { text: value.status === "cancelling" ? "Cancelling…" : "Measuring…", tone: "" };
+      return {
+        text: value.status === "cancelling"
+          ? "Cancelling…"
+          : quick ? "Checking…" : "Measuring…",
+        tone: ""
+      };
     }
     if (value.status === "complete") {
+      if (quick) return { text: "Quick check complete", tone: "" };
       return value.tableSizes?.status === "unavailable"
         ? { text: "Complete — content only", tone: "warning" }
         : { text: "Complete", tone: "" };
     }
-    if (value.status === "failed") return { text: "Failed", tone: "warning" };
+    if (value.status === "failed") {
+      return { text: quick ? "Quick check failed" : "Failed", tone: "warning" };
+    }
     if (value.status === "cancelled") return { text: "Cancelled", tone: "warning" };
     return { text: "Not run", tone: "" };
   }
@@ -162,7 +171,7 @@ export function createStorageBreakdownController({
       setExportAvailable(false);
       if (refs.adminStorageDiagnosticBodyEl) {
         refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
-          `Could not load the exact diagnostic: ${err?.message || err || "unknown error"}`
+          `Could not load the storage diagnostic: ${err?.message || err || "unknown error"}`
         );
       }
       return null;
@@ -171,33 +180,44 @@ export function createStorageBreakdownController({
     }
   }
 
-  async function startExactDiagnostic() {
+  async function startStorageDiagnostic(mode = "exact") {
     if (typeof postBridge !== "function") return null;
+    const quick = mode === "quick";
     clearDiagnosticPoll();
     setExportAvailable(false);
-    setDiagnosticStatus("Starting…");
+    setDiagnosticStatus(quick ? "Starting quick check…" : "Starting…");
     if (refs.adminStorageDiagnosticBodyEl) {
       refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
-        "Starting the exact storage diagnostic…"
+        quick
+          ? "Starting the quick generation check…"
+          : "Starting the exact storage diagnostic…"
       );
     }
     try {
       const payload = await postBridge(
         STORAGE_DIAGNOSTIC_ROUTE,
-        {},
+        quick ? { mode: "quick" } : {},
         { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
       );
       return acceptDiagnostic(payload);
     } catch (err) {
       setExportAvailable(false);
-      setDiagnosticStatus("Failed", "warning");
+      setDiagnosticStatus(quick ? "Quick check failed" : "Failed", "warning");
       if (refs.adminStorageDiagnosticBodyEl) {
         refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
-          `Could not start the exact diagnostic: ${err?.message || err || "unknown error"}`
+          `Could not start the ${quick ? "quick check" : "exact diagnostic"}: ${err?.message || err || "unknown error"}`
         );
       }
       return null;
     }
+  }
+
+  function startExactDiagnostic() {
+    return startStorageDiagnostic("exact");
+  }
+
+  function startQuickCheck() {
+    return startStorageDiagnostic("quick");
   }
 
   async function cancelExactDiagnostic() {
@@ -283,6 +303,7 @@ export function createStorageBreakdownController({
     if (refreshBound) return;
     refreshBound = true;
     refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
+    refs.adminStorageQuickCheckBtnEl?.addEventListener?.("click", () => startQuickCheck());
     refs.adminStorageDiagnosticBtnEl?.addEventListener?.("click", () => startExactDiagnostic());
     refs.adminStorageDiagnosticCancelBtnEl?.addEventListener?.("click", () =>
       cancelExactDiagnostic()
@@ -297,6 +318,8 @@ export function createStorageBreakdownController({
     load,
     acceptStorageHealth,
     refreshDiagnostic,
+    startStorageDiagnostic,
+    startQuickCheck,
     startExactDiagnostic,
     cancelExactDiagnostic,
     exportExactDiagnostic

@@ -96,8 +96,8 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
             Path(config.data_dir).resolve()
         ),
-        start_storage_diagnostic=lambda: storage_diagnostic_mod.start_storage_diagnostic(
-            Path(config.data_dir).resolve()
+        start_storage_diagnostic=lambda mode: storage_diagnostic_mod.start_storage_diagnostic(
+            Path(config.data_dir).resolve(), mode=mode
         ),
         get_storage_diagnostic_payload=lambda: (
             storage_diagnostic_mod.get_storage_diagnostic_payload(Path(config.data_dir).resolve())

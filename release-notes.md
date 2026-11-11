@@ -1,9 +1,9 @@
-## [0.3.050] - 2026-11-11
+## [0.3.051] - 2026-11-11
 
 ### Added
 
-- Admin can now run an exact, read-only storage diagnostic while the runtime database is large. It reports table and index allocation, free pages, WAL overhead, and the rows and bytes held by each saved source-bundle generation, then lets the result be exported as JSON for an incident record.
+- Admin's Runtime Database Storage panel now has a **Quick check** that counts `job_sources` and `jobs` rows by feed generation without a full `dbstat` scan. It reports current feed counts, page and free-page totals, and the largest generations in seconds or minutes, so a runaway runtime database can be identified without waiting for an exact allocation walk.
 
 ### Notes
 
-- Existing saved data and database cleanup are unchanged. Compatibility remains intact for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+- The Quick check is read-only and adds no migration. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility remain unchanged.

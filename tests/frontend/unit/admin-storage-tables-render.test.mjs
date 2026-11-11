@@ -157,6 +157,45 @@ test("renders unavailable allocation without hiding exact job source totals", ()
   assert.match(html, /content counts, not sampled estimates/);
 });
 
+test("renders quick generation counts without table allocation", () => {
+  const html = renderStorageDiagnosticHtml({
+    mode: "quick",
+    status: "complete",
+    databaseBytes: 10_000,
+    walBytes: 100,
+    pageSize: 4096,
+    pageCount: 2,
+    freelistBytes: 100,
+    capturedAt: "2026-11-11T10:00:00Z",
+    durationMs: 8,
+    feedState: {
+      currentGeneration: "gen-current",
+      currentRowCount: 2,
+      currentSourceCount: 3
+    },
+    jobSourcesByGeneration: {
+      listedRowCount: 3,
+      generationCount: 2,
+      byGeneration: [
+        { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
+        { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
+      ]
+    },
+    jobsByGeneration: {
+      listedRowCount: 2,
+      generationCount: 1,
+      byGeneration: [{ generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }]
+    }
+  }, formatBytes);
+
+  assert.match(html, /Quick check counts rows/);
+  assert.match(html, /gen-current/);
+  assert.match(html, /gen-old/);
+  assert.match(html, /orphan/);
+  assert.match(html, /job_sources by feed generation/);
+  assert.doesNotMatch(html, /dbstat exact/);
+});
+
 test("admin shell places the runtime storage panel beside the profiles overview", () => {
   const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
   const usersIndex = adminHtml.indexOf('data-ui="admin-users-list"');
@@ -167,6 +206,7 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.ok(storageIndex > usersIndex);
   assert.ok(opsIndex > storageIndex);
   assert.match(adminHtml, /data-ui="admin-storage-tables-refresh-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-quick-check-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-tables-body"/);
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-cancel-btn"/);

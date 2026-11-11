@@ -314,6 +314,10 @@ h2.admin-section-title {
   grid-template-columns: minmax(0, 1.6fr) minmax(60px, 0.5fr) minmax(72px, 0.65fr) minmax(72px, 0.65fr) minmax(90px, 0.9fr);
 }
 
+.admin-storage-diagnostic-quick-row {
+  grid-template-columns: minmax(0, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.7fr);
+}
+
 .admin-storage-diagnostic-head {
   border-top: 0;
   background: color-mix(in srgb, var(--surface-5) 44%, transparent);
@@ -335,6 +339,13 @@ h2.admin-section-title {
 
 .admin-storage-diagnostic-current {
   color: var(--ok, var(--text-secondary));
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-storage-diagnostic-orphan {
+  color: var(--warn);
   font-size: 0.64rem;
   font-weight: 700;
   text-transform: uppercase;

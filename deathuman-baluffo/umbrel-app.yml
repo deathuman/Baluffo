@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.050"
+version: "0.3.051"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,10 +19,11 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.050 adds an on-demand exact storage diagnostic to Admin. It
-  reports table and index allocation, free pages, WAL overhead, and the rows
-  and bytes held by each saved source-bundle generation, and can export the
-  result as JSON for an incident record. Existing database cleanup behavior
-  and saved data are unchanged.
+  Release 0.3.051 adds a Quick check to the Admin Runtime Database Storage
+  panel. It counts job and source rows by feed generation without walking
+  every database page, so a runaway runtime database can be identified in
+  seconds or minutes instead of hours. The exact diagnostic remains available
+  when table and index allocation is needed. Existing data and cleanup are
+  unchanged.
 storage:
   dataRoot: data

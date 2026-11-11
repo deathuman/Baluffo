@@ -65,7 +65,7 @@ def build_bridge_api(
     compute_ops_health_ready: Callable[[], dict[str, Any]] | None,
     compute_ops_dashboard_health: Callable[[], dict[str, Any]],
     get_storage_health_payload: Callable[[], dict[str, Any]],
-    start_storage_diagnostic: Callable[[], dict[str, Any]] | None = None,
+    start_storage_diagnostic: Callable[[str], dict[str, Any]] | None = None,
     get_storage_diagnostic_payload: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_diagnostic: Callable[[], dict[str, Any]] | None = None,
     compute_fetcher_metrics: Callable[..., dict[str, Any]],
@@ -172,7 +172,7 @@ def build_bridge_api(
         ),
         get_storage_health_payload=get_storage_health_payload,
         start_storage_diagnostic=start_storage_diagnostic
-        or (lambda: {"started": False, "error": "not_implemented"}),
+        or (lambda _mode: {"started": False, "error": "not_implemented"}),
         get_storage_diagnostic_payload=get_storage_diagnostic_payload
         or (lambda: {"ok": True, "storageDiagnostic": None}),
         cancel_storage_diagnostic=cancel_storage_diagnostic

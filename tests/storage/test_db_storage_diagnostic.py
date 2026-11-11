@@ -10,6 +10,7 @@ from src.storage.db_storage_diagnostic import (
     StorageDiagnosticCancelled,
     _dbstat_tables,
     measure_storage_diagnostic,
+    measure_storage_quick_check,
 )
 
 
@@ -27,6 +28,11 @@ def _seed(path: Path) -> None:
         );
         CREATE INDEX idx_job_sources_generation
             ON job_sources(feed_generation);
+        CREATE TABLE jobs (
+            feed_generation TEXT NOT NULL,
+            job_key TEXT NOT NULL,
+            PRIMARY KEY (feed_generation, job_key)
+        );
         CREATE TABLE job_feed_state (
             id INTEGER PRIMARY KEY,
             current_generation TEXT NOT NULL,
@@ -46,6 +52,10 @@ def _seed(path: Path) -> None:
     con.executemany(
         "INSERT INTO job_sources VALUES (?, ?, ?, ?, ?)",
         rows,
+    )
+    con.executemany(
+        "INSERT INTO jobs VALUES (?, ?)",
+        [("gen-current", "job-a"), ("gen-current", "job-b"), ("gen-old", "job-c")],
     )
     con.execute(
         """
@@ -108,6 +118,30 @@ def test_exact_diagnostic_is_cancellable_from_the_progress_handler(tmp_path: Pat
 
     with pytest.raises(StorageDiagnosticCancelled):
         measure_storage_diagnostic(path, cancel_requested=lambda: True)
+
+
+def test_quick_check_counts_generations_without_dbstat(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.db"
+    _seed(path)
+
+    result = measure_storage_quick_check(path)
+
+    assert result["status"] == "complete"
+    assert result["mode"] == "quick"
+    assert result["exactContent"] is True
+    assert result["exactAllocation"] is False
+    assert result["tableSizes"] is None
+    assert result["pageSize"] > 0
+    assert result["pageCount"] > 0
+    assert result["freelistBytes"] >= 0
+    assert result["feedState"]["currentGeneration"] == "gen-current"
+    sources = {row["generation"]: row for row in result["jobSourcesByGeneration"]["byGeneration"]}
+    jobs = {row["generation"]: row for row in result["jobsByGeneration"]["byGeneration"]}
+    assert sources["gen-current"]["rowCount"] == 2
+    assert sources["gen-current"]["isCurrent"] is True
+    assert sources["gen-old"]["isOrphan"] is True
+    assert jobs["gen-current"]["rowCount"] == 2
+    assert jobs["gen-old"]["rowCount"] == 1
 
 
 class _FakeCursor:
