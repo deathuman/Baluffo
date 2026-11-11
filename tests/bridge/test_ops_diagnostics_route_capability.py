@@ -29,6 +29,9 @@ class MinimalOpsDiagnosticsRouteApi:
     def get_storage_health_payload(self) -> dict[str, Any]:
         return {"ok": True, "health": "ok"}
 
+    def get_storage_diagnostic_payload(self) -> dict[str, Any]:
+        return {"ok": True, "storageDiagnostic": {"status": "idle"}}
+
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]:
         target = Path(path)
         if not target.exists():
@@ -79,6 +82,18 @@ def test_ops_diagnostic_routes_accept_minimal_capability_object(tmp_path: Path) 
         is True
     )
     assert storage_handler.sent[-1]["payload"] == {"ok": True, "health": "ok"}
+
+    storage_diagnostic_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            storage_diagnostic_handler,
+            api=api,
+            path="/ops/storage-diagnostic",
+            query={},
+        )
+        is True
+    )
+    assert storage_diagnostic_handler.sent[-1]["payload"]["storageDiagnostic"] == {"status": "idle"}
 
     audit_handler = FakeHandler()
     assert (

@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any, Protocol
 
 from src.bridge import startup_work_budget
+from src.bridge.storage_diagnostic import close_storage_diagnostic_jobs
 from src.shared.http_server_capacity import (
     CapacityThreadingHTTPServer,
     snapshot_accept_metrics,
@@ -163,5 +164,6 @@ def run_http_server(
             api.bridge_log("info", "admin_bridge_shutdown_requested", signal="keyboard_interrupt")
     finally:
         server.server_close()
+        close_storage_diagnostic_jobs()
         api.bridge_log("info", "admin_bridge_stopped")
     return 0

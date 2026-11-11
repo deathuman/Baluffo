@@ -6,6 +6,7 @@ import {
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml
 } from "../../../frontend/admin/render/storage-tables.js";
+import { renderStorageDiagnosticHtml } from "../../../frontend/admin/render/storage-diagnostic.js";
 
 const formatBytes = value => `${Math.round(Number(value || 0) / 1000)} KB`;
 
@@ -83,6 +84,79 @@ test("renders a message when the payload is absent", () => {
   assert.match(renderStorageTablesHtml(null, formatBytes), /did not include/);
 });
 
+test("renders exact allocation and job source generations", () => {
+  const html = renderStorageDiagnosticHtml({
+    status: "complete",
+    databaseBytes: 10_000,
+    walBytes: 100,
+    capturedAt: "2026-11-11T10:00:00Z",
+    durationMs: 42,
+    tableSizes: {
+      status: "ok",
+      method: "dbstat",
+      allocatedBytes: 8_000,
+      freelistBytes: 100,
+      tables: [
+        {
+          name: "job_sources",
+          tableBytes: 5_000,
+          indexBytes: 1_000,
+          bytes: 6_000,
+          share: 0.75
+        }
+      ],
+      otherBytes: 2_000
+    },
+    jobSources: {
+      rowCount: 2,
+      generationCount: 1,
+      payloadBytes: 400,
+      contentBytes: 500,
+      tableBytes: 6_000,
+      byGeneration: [
+        {
+          generation: "gen-current",
+          rowCount: 2,
+          payloadBytes: 400,
+          contentBytes: 500,
+          isCurrent: true,
+          lastUpdatedAt: "2026-11-11T09:00:00Z"
+        }
+      ]
+    }
+  }, formatBytes);
+
+  assert.match(html, /dbstat exact/);
+  assert.match(html, /job_sources/);
+  assert.match(html, /gen-current/);
+  assert.match(html, /current/);
+  assert.match(html, /job_sources by feed generation/);
+});
+
+test("renders unavailable allocation without hiding exact job source totals", () => {
+  const html = renderStorageDiagnosticHtml({
+    status: "complete",
+    exactAllocation: false,
+    warnings: ["SQLite dbstat is unavailable; table allocation could not be measured exactly."],
+    tableSizes: {
+      status: "unavailable",
+      error: "This SQLite build does not include dbstat; job_sources generation totals are exact."
+    },
+    jobSources: {
+      rowCount: 2,
+      generationCount: 1,
+      payloadBytes: 400,
+      contentBytes: 500,
+      tableBytes: null,
+      byGeneration: [{ generation: "gen-current", rowCount: 2, payloadBytes: 400, contentBytes: 500 }]
+    }
+  }, formatBytes);
+
+  assert.match(html, /does not include dbstat/);
+  assert.match(html, /gen-current/);
+  assert.match(html, /content counts, not sampled estimates/);
+});
+
 test("admin shell places the runtime storage panel beside the profiles overview", () => {
   const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
   const usersIndex = adminHtml.indexOf('data-ui="admin-users-list"');
@@ -94,4 +168,8 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.ok(opsIndex > storageIndex);
   assert.match(adminHtml, /data-ui="admin-storage-tables-refresh-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-tables-body"/);
+  assert.match(adminHtml, /data-ui="admin-storage-diagnostic-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-diagnostic-cancel-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-diagnostic-export-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-diagnostic-body"/);
 });

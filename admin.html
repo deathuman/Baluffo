@@ -96,9 +96,21 @@
         <div class="admin-storage-tables-body">
           <div class="admin-storage-tables-toolbar">
             <button id="admin-storage-tables-refresh-btn" data-ui="admin-storage-tables-refresh-btn" class="btn clear-filters-btn" type="button" data-tooltip="Reload the runtime database table-size breakdown.">Refresh</button>
+            <button id="admin-storage-diagnostic-btn" data-ui="admin-storage-diagnostic-btn" class="btn clear-filters-btn" type="button" data-tooltip="Measure exact table allocation and job_sources generations in a background diagnostic.">Measure exact sizes</button>
+            <button id="admin-storage-diagnostic-cancel-btn" data-ui="admin-storage-diagnostic-cancel-btn" class="btn clear-filters-btn" type="button" hidden data-tooltip="Cancel the running exact storage diagnostic.">Cancel</button>
+            <button id="admin-storage-diagnostic-export-btn" data-ui="admin-storage-diagnostic-export-btn" class="btn clear-filters-btn" type="button" hidden data-tooltip="Download the completed exact diagnostic as JSON for an incident.">Export JSON</button>
           </div>
           <div id="admin-storage-tables-body" data-ui="admin-storage-tables-body">
             <div class="admin-storage-tables-empty">Runtime database table sizes load once after startup.</div>
+          </div>
+          <div class="admin-storage-diagnostic" data-ui="admin-storage-diagnostic">
+            <div class="admin-storage-diagnostic-heading">
+              <span class="admin-storage-diagnostic-title">Exact diagnostic</span>
+              <span id="admin-storage-diagnostic-status" data-ui="admin-storage-diagnostic-status" class="admin-storage-diagnostic-status">Not run</span>
+            </div>
+            <div id="admin-storage-diagnostic-body" data-ui="admin-storage-diagnostic-body" class="admin-storage-diagnostic-body">
+              <div class="admin-storage-tables-empty">Run the exact diagnostic to measure table allocation and job_sources by feed generation. It runs in the background and can take minutes on a large database.</div>
+            </div>
           </div>
         </div>
       </details>

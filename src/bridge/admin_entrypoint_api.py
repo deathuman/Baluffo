@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge import bootstrap as bridge_bootstrap
+from src.bridge import storage_diagnostic as storage_diagnostic_mod
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
 
@@ -93,6 +94,15 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         compute_ops_dashboard_health_summary=ops_api.compute_ops_dashboard_health_summary,
         compute_ops_fetch_kpis_summary=ops_api.compute_ops_fetch_kpis_summary,
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
+            Path(config.data_dir).resolve()
+        ),
+        start_storage_diagnostic=lambda: storage_diagnostic_mod.start_storage_diagnostic(
+            Path(config.data_dir).resolve()
+        ),
+        get_storage_diagnostic_payload=lambda: (
+            storage_diagnostic_mod.get_storage_diagnostic_payload(Path(config.data_dir).resolve())
+        ),
+        cancel_storage_diagnostic=lambda: storage_diagnostic_mod.cancel_storage_diagnostic(
             Path(config.data_dir).resolve()
         ),
         compute_fetcher_metrics=root_mod.compute_fetcher_metrics,

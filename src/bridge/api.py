@@ -139,6 +139,10 @@ def _not_started_result(_payload: JsonObject | None = None) -> JsonObject:
     }
 
 
+def _empty_storage_diagnostic_payload() -> JsonObject:
+    return {"ok": True, "storageDiagnostic": None}
+
+
 def _abort_not_available(_payload: JsonObject | None = None) -> tuple[int, JsonObject]:
     return 400, {"ok": False, "error": "task_abort_not_available"}
 
@@ -428,6 +432,9 @@ class BridgeApi:
     compute_ops_dashboard_health_summary: Callable[[], JsonObject] = _ok_payload
     compute_ops_fetch_kpis_summary: Callable[[], JsonObject] = _ok_payload
     get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
+    start_storage_diagnostic: Callable[[], JsonObject] = _not_started_noarg
+    get_storage_diagnostic_payload: Callable[[], JsonObject] = _empty_storage_diagnostic_payload
+    cancel_storage_diagnostic: Callable[[], JsonObject] = _not_started_noarg
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics

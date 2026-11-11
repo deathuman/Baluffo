@@ -602,7 +602,7 @@ def snapshot_storage_metrics(data_dir: Path | str | None = None) -> dict[str, An
         "eventCount": len(events),
         "metricsFile": {
             "path": str(metrics_file),
-            "byteSize": _file_size(metrics_file),
+            "byteSize": file_size(metrics_file),
             "maxBytes": MAX_METRICS_FILE_BYTES,
             "tailReadBytes": MAX_EVENT_READ_BYTES,
         },
@@ -614,7 +614,7 @@ def snapshot_storage_metrics(data_dir: Path | str | None = None) -> dict[str, An
     }
 
 
-def _file_size(path: Path) -> int:
+def file_size(path: Path) -> int:
     try:
         return max(0, int(path.stat().st_size))
     except OSError:

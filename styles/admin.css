@@ -169,8 +169,14 @@ h2.admin-section-title {
 
 .admin-storage-tables-toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 0.35rem;
   margin-bottom: 0.35rem;
+}
+
+.admin-storage-tables-toolbar [hidden] {
+  display: none !important;
 }
 
 .admin-storage-tables-meta {
@@ -233,12 +239,142 @@ h2.admin-section-title {
   line-height: 1.35;
 }
 
+.admin-storage-diagnostic {
+  margin-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
+  padding-top: 0.65rem;
+}
+
+.admin-storage-diagnostic-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.admin-storage-diagnostic-title {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-storage-diagnostic-status {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.admin-storage-diagnostic-status[data-tone="warning"] {
+  color: var(--warn);
+}
+
+.admin-storage-diagnostic-body {
+  min-width: 0;
+}
+
+.admin-storage-diagnostic-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.admin-storage-diagnostic-section {
+  margin-top: 0.65rem;
+}
+
+.admin-storage-diagnostic-section h4 {
+  margin: 0 0 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.admin-storage-diagnostic-grid {
+  display: grid;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-storage-diagnostic-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(70px, 0.7fr)) 64px;
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.32rem 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
+  font-size: 0.75rem;
+}
+
+.admin-storage-diagnostic-generation-row {
+  grid-template-columns: minmax(0, 1.6fr) minmax(60px, 0.5fr) minmax(72px, 0.65fr) minmax(72px, 0.65fr) minmax(90px, 0.9fr);
+}
+
+.admin-storage-diagnostic-head {
+  border-top: 0;
+  background: color-mix(in srgb, var(--surface-5) 44%, transparent);
+  color: var(--text-subtle);
+  font-size: 0.66rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.admin-storage-diagnostic-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-storage-diagnostic-row-other {
+  color: var(--text-muted);
+}
+
+.admin-storage-diagnostic-current {
+  color: var(--ok, var(--text-secondary));
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-storage-diagnostic-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.admin-storage-diagnostic-note,
+.admin-storage-diagnostic-warning {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
+.admin-storage-diagnostic-warning {
+  color: var(--warn);
+}
+
 @media (max-width: 700px) {
   .admin-storage-tables-row {
     grid-template-columns: minmax(0, 1.4fr) minmax(70px, 0.7fr) 64px;
   }
 
   .admin-storage-tables-rows {
+    display: none;
+  }
+
+  .admin-storage-diagnostic-row,
+  .admin-storage-diagnostic-generation-row {
+    grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(64px, 0.7fr));
+  }
+
+  .admin-storage-diagnostic-row > span:nth-child(n + 4) {
     display: none;
   }
 }

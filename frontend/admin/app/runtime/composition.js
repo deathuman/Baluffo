@@ -255,6 +255,7 @@ export function composeAdminControllers({
       ({ createStorageBreakdownController }) => createStorageBreakdownController({
         refs,
         getBridge,
+        postBridge,
         formatBytes,
         state
       })

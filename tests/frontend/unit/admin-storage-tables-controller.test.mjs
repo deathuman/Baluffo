@@ -19,21 +19,86 @@ const TABLE_SIZES = {
   otherBytes: 1_000
 };
 
+const DIAGNOSTIC = {
+  status: "complete",
+  runId: "storage_diag_abc123",
+  databaseBytes: 10_000,
+  walBytes: 0,
+  capturedAt: "2026-11-11T10:00:00.000Z",
+  durationMs: 12,
+  tableSizes: {
+    status: "ok",
+    method: "dbstat",
+    allocatedBytes: 8_000,
+    freelistBytes: 0,
+    tables: [
+      {
+        name: "job_sources",
+        tableBytes: 5_000,
+        indexBytes: 1_000,
+        bytes: 6_000,
+        share: 0.75
+      }
+    ],
+    otherBytes: 1_000
+  },
+  jobSources: {
+    rowCount: 2,
+    payloadBytes: 400,
+    contentBytes: 500,
+    generationCount: 1,
+    tableBytes: 6_000,
+    byGeneration: [
+      {
+        generation: "gen-current",
+        rowCount: 2,
+        payloadBytes: 400,
+        contentBytes: 500,
+        isCurrent: true,
+        lastUpdatedAt: "2026-11-11T09:00:00.000Z"
+      }
+    ]
+  }
+};
+
 function fixture({
   payload = { storage: { tableSizes: TABLE_SIZES } },
   reject = null,
-  shouldDefer = () => false
+  postPayload = { started: true, storageDiagnostic: DIAGNOSTIC },
+  postReject = null,
+  shouldDefer = () => false,
+  downloadJson = null
 } = {}) {
   const calls = [];
+  const postCalls = [];
+  const downloads = [];
   const listeners = {};
   const refs = {
     adminStorageTablesStatusEl: createElement(),
     adminStorageTablesBodyEl: createElement(),
     adminStorageTablesRefreshBtnEl: createElement({
       addEventListener(type, handler) {
-        listeners[type] = handler;
+        listeners.refresh = handler;
       }
-    })
+    }),
+    adminStorageDiagnosticBtnEl: createElement({
+      addEventListener(type, handler) {
+        listeners.diagnostic = handler;
+      }
+    }),
+    adminStorageDiagnosticCancelBtnEl: createElement({
+      addEventListener(type, handler) {
+        listeners.cancel = handler;
+      }
+    }),
+    adminStorageDiagnosticExportBtnEl: createElement({
+      hidden: true,
+      addEventListener(type, handler) {
+        listeners.export = handler;
+      }
+    }),
+    adminStorageDiagnosticStatusEl: createElement(),
+    adminStorageDiagnosticBodyEl: createElement()
   };
   const controller = createStorageBreakdownController({
     refs,
@@ -42,12 +107,20 @@ function fixture({
       if (reject) throw reject;
       return payload;
     },
+    postBridge: async (path, payloadBody, options) => {
+      postCalls.push({ path, payload: payloadBody, options });
+      if (postReject) throw postReject;
+      return postPayload;
+    },
+    downloadJson: downloadJson || ((filename, content) => {
+      downloads.push({ filename, content });
+    }),
     formatBytes: value => `${value} B`,
     renderStorageTablesHtml,
     renderStorageTablesMessageHtml,
     shouldDefer
   });
-  return { controller, refs, calls, listeners };
+  return { controller, refs, calls, postCalls, downloads, listeners };
 }
 
 test("storage breakdown defers without calling storage health", async () => {
@@ -93,9 +166,73 @@ test("refresh click reloads the breakdown", async () => {
   const f = fixture();
   f.controller.init();
 
-  await f.listeners.click();
+  await f.listeners.refresh();
 
   assert.equal(f.calls.length, 1);
+});
+
+test("exact diagnostic starts in the background and renders its result", async () => {
+  const f = fixture();
+  f.controller.init();
+
+  await f.controller.startExactDiagnostic();
+
+  assert.equal(f.postCalls.length, 1);
+  assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
+  assert.equal(f.postCalls[0].options.affectsReachability, false);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /job_sources by feed generation/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-current/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /dbstat exact/);
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Complete");
+  assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
+});
+
+test("exact diagnostic exports table and generation totals as JSON", async () => {
+  const f = fixture();
+  f.controller.init();
+
+  await f.controller.startExactDiagnostic();
+  f.listeners.export();
+
+  assert.equal(f.downloads.length, 1);
+  assert.equal(
+    f.downloads[0].filename,
+    "baluffo-storage-diagnostic-2026-11-11T10-00-00-000Z.json"
+  );
+  const payload = JSON.parse(f.downloads[0].content);
+  assert.equal(payload.kind, "baluffo.storage-diagnostic");
+  assert.equal(payload.schemaVersion, 1);
+  assert.ok(payload.exportedAt);
+  assert.equal(payload.storageDiagnostic.tableSizes.tables[0].name, "job_sources");
+  assert.equal(payload.storageDiagnostic.tableSizes.tables[0].bytes, 6_000);
+  assert.equal(payload.storageDiagnostic.jobSources.byGeneration[0].generation, "gen-current");
+  assert.equal(payload.storageDiagnostic.jobSources.byGeneration[0].contentBytes, 500);
+});
+
+test("exact diagnostic export stays unavailable before completion", () => {
+  const f = fixture();
+  f.controller.init();
+
+  assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, true);
+  f.listeners.export();
+
+  assert.equal(f.downloads.length, 0);
+});
+
+test("exact diagnostic cancel posts to the cancel route", async () => {
+  const f = fixture({
+    postPayload: {
+      cancelling: true,
+      storageDiagnostic: { ...DIAGNOSTIC, status: "cancelling" }
+    }
+  });
+
+  await f.controller.cancelExactDiagnostic();
+
+  assert.equal(f.postCalls.length, 1);
+  assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic/cancel");
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Cancelling…");
+  assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, true);
 });
 
 test("storage breakdown reports read failures", async () => {

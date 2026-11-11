@@ -104,6 +104,12 @@ class MinimalAdminPostRouteApi:
     def start_fetcher_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
+    def start_storage_diagnostic(self) -> dict[str, Any]:
+        return {"started": True, "storageDiagnostic": {"status": "running"}}
+
+    def cancel_storage_diagnostic(self) -> dict[str, Any]:
+        return {"cancelling": True, "storageDiagnostic": {"status": "cancelling"}}
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
@@ -191,6 +197,14 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
 
     abort = _post(api, "/tasks/abort", {"taskType": "fetch", "runId": "fetch-1"})
     assert abort.sent[-1]["status"] == 202
+
+    storage_diagnostic = _post(api, "/ops/storage-diagnostic", {})
+    assert storage_diagnostic.sent[-1]["status"] == 202
+    assert storage_diagnostic.sent[-1]["payload"]["started"] is True
+
+    storage_diagnostic_cancel = _post(api, "/ops/storage-diagnostic/cancel", {})
+    assert storage_diagnostic_cancel.sent[-1]["status"] == 202
+    assert storage_diagnostic_cancel.sent[-1]["payload"]["cancelling"] is True
 
     sync_task = _post(api, "/tasks/run-sync-pull", {})
     assert sync_task.sent[-1]["payload"]["action"] == "pull"

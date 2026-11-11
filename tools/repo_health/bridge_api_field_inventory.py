@@ -20,7 +20,7 @@ except ImportError:  # direct script execution puts this directory on sys.path
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE_API_PATH = Path("src/bridge/api.py")
-EXPECTED_BRIDGE_API_FIELD_COUNT = 97
+EXPECTED_BRIDGE_API_FIELD_COUNT = 100
 
 CATEGORIES = {
     "runtime-path",

@@ -118,6 +118,10 @@ class _AdminPostRouteApi(Protocol):
 
     def start_fetcher_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+    def start_storage_diagnostic(self) -> dict[str, Any]: ...
+
+    def cancel_storage_diagnostic(self) -> dict[str, Any]: ...
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def start_jobs_pipeline_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -329,12 +333,66 @@ def _handle_review_post(
     ) or _handle_registry_repair_post(handler, api=api, path=path, data=data)
 
 
+def _handle_ops_admin_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: _AdminPostRouteApi,
+    path: str,
+    data: dict[str, Any],
+) -> bool:
+    if path == "/ops/storage-diagnostic":
+        result = api.start_storage_diagnostic()
+        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
+        return True
+
+    if path == "/ops/storage-diagnostic/cancel":
+        result = api.cancel_storage_diagnostic()
+        handler.send_json(result, status=202 if bool(result.get("cancelling")) else 200)
+        return True
+
+    if path == "/ops/alerts/ack":
+        alert_id = str(data.get("id") or "").strip()
+        if not alert_id:
+            handler.send_json({"error": "Missing alert id"}, status=400)
+            return True
+        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
+        health = (
+            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
+        )
+        active_alert = next(
+            (
+                row
+                for row in json_object_rows(health.get("alerts"))
+                if str(row.get("id") or "").strip() == alert_id
+            ),
+            None,
+        )
+        if active_alert is not None and not bool(active_alert.get("dismissible", True)):
+            handler.send_json({"acked": alert_id, "ignored": True, "ok": True})
+            return True
+        # ponytail: serialize with the summary-poll alert cleanup (shared ops
+        # lock) so a concurrent poll can't overwrite this acknowledgement.
+        state_lock = getattr(api, "ops_state_lock", None)
+        with state_lock if state_lock is not None else nullcontext():
+            state_alert = api.load_alert_state()
+            acked = copy_json_object(state_alert.get("acked"))
+            acked[alert_id] = api.now_iso()
+            api.save_alert_state({"acked": acked})
+        handler.send_json({"acked": alert_id, "ok": True})
+        return True
+
+    return False
+
+
 def handle_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
     data = as_json_object(payload)
 
     if _handle_review_post(handler, api=api, path=path, data=data):
+        return True
+
+    if _handle_ops_admin_post(handler, api=api, path=path, data=data):
         return True
 
     if path == "/sources/manual":
@@ -701,37 +759,6 @@ def handle_post(
                 "savedConfig": api.get_discovery_config_payload().get("savedConfig", {}),
             },
         )
-        return True
-
-    if path == "/ops/alerts/ack":
-        alert_id = str(data.get("id") or "").strip()
-        if not alert_id:
-            handler.send_json({"error": "Missing alert id"}, status=400)
-            return True
-        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
-        health = (
-            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
-        )
-        active_alert = next(
-            (
-                row
-                for row in json_object_rows(health.get("alerts"))
-                if str(row.get("id") or "").strip() == alert_id
-            ),
-            None,
-        )
-        if active_alert is not None and not bool(active_alert.get("dismissible", True)):
-            handler.send_json({"acked": alert_id, "ignored": True, "ok": True})
-            return True
-        # ponytail: serialize with the summary-poll alert cleanup (shared ops
-        # lock) so a concurrent poll can't overwrite this acknowledgement.
-        state_lock = getattr(api, "ops_state_lock", None)
-        with state_lock if state_lock is not None else nullcontext():
-            state_alert = api.load_alert_state()
-            acked = copy_json_object(state_alert.get("acked"))
-            acked[alert_id] = api.now_iso()
-            api.save_alert_state({"acked": acked})
-        handler.send_json({"acked": alert_id, "ok": True})
         return True
 
     if path == "/sync/config":

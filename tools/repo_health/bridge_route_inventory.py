@@ -441,6 +441,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "GET",
+        "/ops/storage-diagnostic",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+        caller_files=("frontend/admin/app/storage-breakdown.js",),
+    ),
+    _route(
+        "GET",
         "/ops/discovery-audit-artifacts",
         EXACT,
         GET_OPS_DIAGNOSTICS_HANDLER,
@@ -703,6 +711,22 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         POST_ADMIN_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
+    ),
+    _route(
+        "POST",
+        "/ops/storage-diagnostic",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=("frontend/admin/app/storage-breakdown.js",),
+    ),
+    _route(
+        "POST",
+        "/ops/storage-diagnostic/cancel",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=("frontend/admin/app/storage-breakdown.js",),
     ),
     _route(
         "POST", "/sync/config", EXACT, POST_ADMIN_HANDLER, "public", caller_files=ADMIN_SYNC_CALLERS

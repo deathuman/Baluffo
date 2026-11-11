@@ -2,9 +2,17 @@ import {
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml
 } from "../render/storage-tables.js";
+import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
+import {
+  downloadStorageDiagnosticJson,
+  serializeStorageDiagnosticExport,
+  storageDiagnosticExportFilename
+} from "./storage-diagnostic-export.js";
 
 const STORAGE_HEALTH_ROUTE = "/ops/storage-health";
+const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
+const STORAGE_DIAGNOSTIC_POLL_MS = 2000;
 
 function stateShouldDefer(state, options = {}) {
   const busy = state?.adminBusyState || {};
@@ -35,13 +43,18 @@ function stateShouldDefer(state, options = {}) {
 export function createStorageBreakdownController({
   refs,
   getBridge,
+  postBridge,
   formatBytes,
   state = {},
   shouldDefer = options => stateShouldDefer(state, options),
-  timeoutMs = DEFAULT_STORAGE_HEALTH_TIMEOUT_MS
+  timeoutMs = DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+  downloadJson = downloadStorageDiagnosticJson
 }) {
   let inFlight = false;
   let refreshBound = false;
+  let diagnosticInFlight = false;
+  let diagnosticPollTimer = null;
+  let diagnostic = null;
 
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
@@ -65,6 +78,162 @@ export function createStorageBreakdownController({
   function render(tableSizes) {
     if (!refs.adminStorageTablesBodyEl) return;
     refs.adminStorageTablesBodyEl.innerHTML = renderStorageTablesHtml(tableSizes, formatBytes);
+  }
+
+  function diagnosticStatusText(value) {
+    if (!value) return { text: "Not run", tone: "" };
+    if (value.status === "running" || value.status === "cancelling") {
+      return { text: value.status === "cancelling" ? "Cancelling…" : "Measuring…", tone: "" };
+    }
+    if (value.status === "complete") {
+      return value.tableSizes?.status === "unavailable"
+        ? { text: "Complete — content only", tone: "warning" }
+        : { text: "Complete", tone: "" };
+    }
+    if (value.status === "failed") return { text: "Failed", tone: "warning" };
+    if (value.status === "cancelled") return { text: "Cancelled", tone: "warning" };
+    return { text: "Not run", tone: "" };
+  }
+
+  function setDiagnosticStatus(text, tone = "") {
+    const statusEl = refs.adminStorageDiagnosticStatusEl;
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.setAttribute?.("data-tone", tone);
+  }
+
+  function setExportAvailable(available) {
+    const button = refs.adminStorageDiagnosticExportBtnEl;
+    if (button) button.hidden = !available;
+  }
+
+  function renderDiagnostic() {
+    const status = diagnosticStatusText(diagnostic);
+    setDiagnosticStatus(status.text, status.tone);
+    setExportAvailable(diagnostic?.status === "complete");
+    if (refs.adminStorageDiagnosticCancelBtnEl) {
+      refs.adminStorageDiagnosticCancelBtnEl.hidden = !(
+        diagnostic?.status === "running" || diagnostic?.status === "cancelling"
+      );
+    }
+    if (refs.adminStorageDiagnosticBodyEl) {
+      refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageDiagnosticHtml(
+        diagnostic,
+        formatBytes
+      );
+    }
+  }
+
+  function clearDiagnosticPoll() {
+    if (diagnosticPollTimer !== null) {
+      clearTimeout(diagnosticPollTimer);
+      diagnosticPollTimer = null;
+    }
+  }
+
+  function scheduleDiagnosticPoll() {
+    clearDiagnosticPoll();
+    if (diagnostic?.status !== "running" && diagnostic?.status !== "cancelling") return;
+    diagnosticPollTimer = setTimeout(() => {
+      diagnosticPollTimer = null;
+      void refreshDiagnostic();
+    }, STORAGE_DIAGNOSTIC_POLL_MS);
+  }
+
+  function acceptDiagnostic(payload) {
+    diagnostic = payload?.storageDiagnostic || null;
+    renderDiagnostic();
+    scheduleDiagnosticPoll();
+    return diagnostic;
+  }
+
+  async function refreshDiagnostic() {
+    if (diagnosticInFlight) return null;
+    diagnosticInFlight = true;
+    try {
+      const payload = await getBridge(STORAGE_DIAGNOSTIC_ROUTE, {
+        timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+        affectsReachability: false
+      });
+      return acceptDiagnostic(payload);
+    } catch (err) {
+      clearDiagnosticPoll();
+      setDiagnosticStatus("Unavailable", "warning");
+      setExportAvailable(false);
+      if (refs.adminStorageDiagnosticBodyEl) {
+        refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
+          `Could not load the exact diagnostic: ${err?.message || err || "unknown error"}`
+        );
+      }
+      return null;
+    } finally {
+      diagnosticInFlight = false;
+    }
+  }
+
+  async function startExactDiagnostic() {
+    if (typeof postBridge !== "function") return null;
+    clearDiagnosticPoll();
+    setExportAvailable(false);
+    setDiagnosticStatus("Starting…");
+    if (refs.adminStorageDiagnosticBodyEl) {
+      refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
+        "Starting the exact storage diagnostic…"
+      );
+    }
+    try {
+      const payload = await postBridge(
+        STORAGE_DIAGNOSTIC_ROUTE,
+        {},
+        { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
+      );
+      return acceptDiagnostic(payload);
+    } catch (err) {
+      setExportAvailable(false);
+      setDiagnosticStatus("Failed", "warning");
+      if (refs.adminStorageDiagnosticBodyEl) {
+        refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
+          `Could not start the exact diagnostic: ${err?.message || err || "unknown error"}`
+        );
+      }
+      return null;
+    }
+  }
+
+  async function cancelExactDiagnostic() {
+    if (typeof postBridge !== "function") return null;
+    try {
+      const payload = await postBridge(
+        `${STORAGE_DIAGNOSTIC_ROUTE}/cancel`,
+        {},
+        { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
+      );
+      return acceptDiagnostic(payload);
+    } catch (err) {
+      setExportAvailable(false);
+      setDiagnosticStatus("Unavailable", "warning");
+      if (refs.adminStorageDiagnosticBodyEl) {
+        refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
+          `Could not cancel the exact diagnostic: ${err?.message || err || "unknown error"}`
+        );
+      }
+      return null;
+    }
+  }
+
+  function exportExactDiagnostic() {
+    if (diagnostic?.status !== "complete") return null;
+    const exportedAt = new Date();
+    const filename = storageDiagnosticExportFilename(diagnostic, exportedAt);
+    const content = serializeStorageDiagnosticExport(diagnostic, exportedAt);
+    try {
+      downloadJson(filename, content);
+    } catch (err) {
+      setDiagnosticStatus("Export failed", "warning");
+      console.error("Exact storage diagnostic export failed:", err);
+      return null;
+    }
+    return { filename, content };
   }
 
   function acceptStorageHealth(payload) {
@@ -114,11 +283,22 @@ export function createStorageBreakdownController({
     if (refreshBound) return;
     refreshBound = true;
     refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
+    refs.adminStorageDiagnosticBtnEl?.addEventListener?.("click", () => startExactDiagnostic());
+    refs.adminStorageDiagnosticCancelBtnEl?.addEventListener?.("click", () =>
+      cancelExactDiagnostic()
+    );
+    refs.adminStorageDiagnosticExportBtnEl?.addEventListener?.("click", () =>
+      exportExactDiagnostic()
+    );
   }
 
   return {
     init,
     load,
-    acceptStorageHealth
+    acceptStorageHealth,
+    refreshDiagnostic,
+    startExactDiagnostic,
+    cancelExactDiagnostic,
+    exportExactDiagnostic
   };
 }

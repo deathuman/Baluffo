@@ -36,6 +36,8 @@ class _OpsDiagnosticsRouteApi(Protocol):
 
     def get_storage_health_payload(self) -> dict[str, Any]: ...
 
+    def get_storage_diagnostic_payload(self) -> dict[str, Any]: ...
+
     def load_json_object(self, path: Path, default: Any) -> dict[str, Any]: ...
 
 
@@ -53,6 +55,18 @@ def _performance_profile_runtime(api: _OpsDiagnosticsRouteApi) -> dict[str, Any]
         "runtimeMode": runtime_mode,
         "ownerMode": owner_mode,
     }
+
+
+def _handle_storage_get_routes(
+    handler: BridgeResponseWriter, *, api: _OpsDiagnosticsRouteApi, path: str
+) -> bool:
+    if path == "/ops/storage-health":
+        handler.send_json(api.get_storage_health_payload())
+        return True
+    if path == "/ops/storage-diagnostic":
+        handler.send_json(api.get_storage_diagnostic_payload())
+        return True
+    return False
 
 
 def handle_ops_diagnostic_routes(
@@ -92,8 +106,7 @@ def handle_ops_diagnostic_routes(
         )
         return True
 
-    if path == "/ops/storage-health":
-        handler.send_json(api.get_storage_health_payload())
+    if _handle_storage_get_routes(handler, api=api, path=path):
         return True
 
     if path == "/ops/discovery-audit-artifacts":
