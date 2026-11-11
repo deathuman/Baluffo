@@ -262,20 +262,21 @@ class BaluffoStore:
         self.schedule_wal_maintenance_if_needed(reason="startup")
 
     def close(self) -> None:
-        self._closed = True
         with self._maintenance_lock:
+            self._closed = True
             timer = self._retention_timer
             self._retention_timer = None
             self._retention_next_run_monotonic = 0.0
+            retention_thread = self._retention_thread
+            maintenance_thread = self._maintenance_thread
         if timer is not None:
             timer.cancel()
-        with self._maintenance_lock:
-            retention_thread = self._retention_thread
-        if retention_thread is not None and retention_thread is not threading.current_thread():
-            # A retention pass holds a SQLite connection. Closing the store
-            # underneath that thread is a use-after-close on Windows, so wait
-            # for the bounded pass before closing the database.
-            retention_thread.join()
+        for thread in (retention_thread, maintenance_thread):
+            if thread is not None and thread is not threading.current_thread():
+                # Retention, WAL, and compaction passes all hold a SQLite
+                # connection. Closing underneath one is a use-after-close, so
+                # wait for the bounded pass before releasing the database.
+                thread.join()
         self._checkpoint_if_needed(reason="close", mode="PASSIVE")
         with self._read_lock:
             if self._reader is not None:
@@ -804,6 +805,8 @@ class BaluffoStore:
         per store instance; later writes schedule maintenance as before.
         """
         with self._maintenance_lock:
+            if self._closed:
+                return False
             if self._post_serve_maintenance_started:
                 return False
             self._post_serve_maintenance_started = True

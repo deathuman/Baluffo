@@ -219,6 +219,32 @@ def test_storage_maintenance_deferral_covers_stores_created_later(tmp_path: Path
         close_storage_stores()
 
 
+def test_close_storage_stores_waits_for_post_serve_maintenance(tmp_path: Path, monkeypatch) -> None:
+    store = get_storage_store(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_maintenance(*, reason: str, grace_s: float) -> None:
+        started.set()
+        assert release.wait(5.0)
+
+    monkeypatch.setattr(store, "_run_post_serve_maintenance", blocked_maintenance)
+    closer: threading.Thread | None = None
+    try:
+        assert store.resume_maintenance_after_serving(reason="test-serve", grace_s=0.0) is True
+        assert started.wait(2.0)
+
+        closer = threading.Thread(target=close_storage_stores)
+        closer.start()
+        closer.join(0.2)
+        assert closer.is_alive()
+    finally:
+        release.set()
+        if closer is not None:
+            closer.join(5.0)
+        close_storage_stores()
+
+
 def test_storage_compaction_hold_covers_stores_created_later(tmp_path: Path) -> None:
     try:
         existing = get_storage_store(tmp_path)
