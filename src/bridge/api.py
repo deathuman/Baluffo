@@ -439,6 +439,7 @@ class BridgeApi:
     start_storage_diagnostic: Callable[[str], JsonObject] = _not_started_mode
     get_storage_diagnostic_payload: Callable[[], JsonObject] = _empty_storage_diagnostic_payload
     cancel_storage_diagnostic: Callable[[], JsonObject] = _not_started_noarg
+    start_storage_maintenance: Callable[[], JsonObject] = _not_started_noarg
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics

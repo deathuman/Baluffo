@@ -105,6 +105,9 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         cancel_storage_diagnostic=lambda: storage_diagnostic_mod.cancel_storage_diagnostic(
             Path(config.data_dir).resolve()
         ),
+        start_storage_maintenance=lambda: storage_health_mod.start_storage_maintenance(
+            Path(config.data_dir).resolve()
+        ),
         compute_fetcher_metrics=root_mod.compute_fetcher_metrics,
         get_projected_run_history=ops_api.get_projected_run_history,
         get_lifecycle_run_history_rows=ops_api.get_lifecycle_run_history_rows,

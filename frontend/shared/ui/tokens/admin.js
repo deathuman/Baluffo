@@ -27,6 +27,8 @@ export const ADMIN_TOKENS = Object.freeze({
   storageTablesBody: "admin-storage-tables-body",
   storageTablesRefreshBtn: "admin-storage-tables-refresh-btn",
   storageQuickCheckBtn: "admin-storage-quick-check-btn",
+  storageMaintenanceBtn: "admin-storage-maintenance-btn",
+  storageMaintenanceStatus: "admin-storage-maintenance-status",
   storageDiagnosticBtn: "admin-storage-diagnostic-btn",
   storageDiagnosticCancelBtn: "admin-storage-diagnostic-cancel-btn",
   storageDiagnosticExportBtn: "admin-storage-diagnostic-export-btn",

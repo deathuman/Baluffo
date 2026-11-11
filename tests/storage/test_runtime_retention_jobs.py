@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from src.storage import BaluffoStore, JobRuntimeStore
+from src.storage.runtime_retention import run_runtime_retention
+from tests.helpers.temp_paths import workspace_tmpdir
+
+
+def _row(index: int) -> dict[str, object]:
+    return {
+        "id": index,
+        "title": f"Job {index}",
+        "company": "Studio",
+        "city": "Amsterdam",
+        "country": "Netherlands",
+        "jobLink": f"https://example.test/jobs/{index}",
+        "source": "Example",
+        "sourceJobId": f"job-{index}",
+        "status": "active",
+        "firstSeenAt": "2026-11-11T10:00:00Z",
+        "lastSeenAt": "2026-11-11T10:00:00Z",
+        "sourceBundle": [],
+    }
+
+
+def _replace_generations(store: BaluffoStore, count: int) -> list[str]:
+    runtime = JobRuntimeStore(store, now_iso=lambda: "2026-11-11T10:00:00Z")
+    return [
+        runtime.replace_feed(run_id=f"fetch_{index}", rows=[_row(index)]).generation
+        for index in range(count)
+    ]
+
+
+def test_runtime_retention_drains_old_jobs_generations_and_keeps_current() -> None:
+    with workspace_tmpdir("runtime-retention-jobs-drain") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            generations = _replace_generations(store, 5)
+
+            result = run_runtime_retention(store, reason="post-serve")
+
+            assert result["jobGenerations"]["deletedGenerationCount"] == 4
+            assert result["jobGenerations"]["truncated"] is True
+            assert result["truncated"] is True
+            remaining = store.execute_read(
+                "SELECT DISTINCT feed_generation FROM jobs ORDER BY feed_generation"
+            )
+            assert [row["feed_generation"] for row in remaining] == [generations[-1]]
+            assert JobRuntimeStore(store).current_generation() == generations[-1]
+
+
+def test_runtime_retention_marks_a_short_jobs_cleanup_as_drained() -> None:
+    with workspace_tmpdir("runtime-retention-jobs-short") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            generations = _replace_generations(store, 2)
+
+            result = run_runtime_retention(store, reason="post-serve")
+
+            assert result["jobGenerations"]["deletedGenerationCount"] == 1
+            assert result["jobGenerations"]["truncated"] is False
+            assert result["truncated"] is False
+            remaining = store.execute_read("SELECT DISTINCT feed_generation FROM jobs")
+            assert [row["feed_generation"] for row in remaining] == [generations[-1]]

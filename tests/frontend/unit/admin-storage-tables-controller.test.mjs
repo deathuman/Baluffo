@@ -111,12 +111,12 @@ const QUICK_DIAGNOSTIC = {
     ]
   },
   jobsByGeneration: {
-    listedRowCount: 3,
-    generationCount: 2,
+    listedRowCount: 2,
+    generationCount: 1,
     truncated: false,
+    scope: "current",
     byGeneration: [
-      { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
-      { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
+      { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }
     ]
   }
 };
@@ -125,6 +125,7 @@ function fixture({
   payload = { storage: { tableSizes: TABLE_SIZES } },
   reject = null,
   postPayload = { started: true, storageDiagnostic: DIAGNOSTIC },
+  maintenancePayload = { ok: true, started: true, alreadyRunning: false },
   postReject = null,
   shouldDefer = () => false,
   downloadJson = null
@@ -146,6 +147,12 @@ function fixture({
         listeners.quickCheck = handler;
       }
     }),
+    adminStorageMaintenanceBtnEl: createElement({
+      addEventListener(type, handler) {
+        listeners.maintenance = handler;
+      }
+    }),
+    adminStorageMaintenanceStatusEl: createElement(),
     adminStorageDiagnosticBtnEl: createElement({
       addEventListener(type, handler) {
         listeners.diagnostic = handler;
@@ -175,7 +182,7 @@ function fixture({
     postBridge: async (path, payloadBody, options) => {
       postCalls.push({ path, payload: payloadBody, options });
       if (postReject) throw postReject;
-      return postPayload;
+      return path === "/ops/storage-maintenance" ? maintenancePayload : postPayload;
     },
     downloadJson: downloadJson || ((filename, content) => {
       downloads.push({ filename, content });
@@ -190,7 +197,6 @@ function fixture({
 
 test("storage breakdown defers without calling storage health", async () => {
   const f = fixture({ shouldDefer: () => true });
-
   await f.controller.load();
 
   assert.equal(f.calls.length, 0);
@@ -200,7 +206,6 @@ test("storage breakdown defers without calling storage health", async () => {
 
 test("storage breakdown loads once with a bounded non-reachability read", async () => {
   const f = fixture();
-
   await f.controller.load();
 
   assert.equal(f.calls.length, 1);
@@ -208,7 +213,7 @@ test("storage breakdown loads once with a bounded non-reachability read", async 
   assert.equal(f.calls[0].options.affectsReachability, false);
   assert.equal(f.calls[0].options.timeoutMs, 5000);
   assert.match(f.refs.adminStorageTablesBodyEl.innerHTML, /source_runs/);
-  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated");
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated snapshot");
 });
 
 test("storage breakdown forwards the startup-lane allowance to the defer predicate", async () => {
@@ -219,12 +224,11 @@ test("storage breakdown forwards the startup-lane allowance to the defer predica
       return !options?.allowStartupBridgeLane;
     }
   });
-
   await f.controller.load({ allowStartupBridgeLane: true });
 
   assert.deepEqual(seen, [{ allowStartupBridgeLane: true }]);
   assert.equal(f.calls.length, 1);
-  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated");
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated snapshot");
 });
 
 test("refresh click reloads the breakdown", async () => {
@@ -248,8 +252,41 @@ test("exact diagnostic starts in the background and renders its result", async (
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /job_sources by feed generation/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-current/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /dbstat exact/);
-  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Complete");
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Technical details/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /data-generation-id="gen-current"/);
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Audit complete");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
+});
+
+test("maintenance button starts retention and reports the background handoff", async () => {
+  const f = fixture();
+  f.controller.init();
+
+  await f.listeners.maintenance();
+
+  assert.equal(f.postCalls.length, 1);
+  assert.equal(f.postCalls[0].path, "/ops/storage-maintenance");
+  assert.deepEqual(f.postCalls[0].payload, {});
+  assert.equal(f.postCalls[0].options.affectsReachability, false);
+  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /Maintenance started/);
+  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /database compacted/);
+});
+
+test("maintenance reports an active-task hold instead of claiming it started", async () => {
+  const f = fixture({
+    maintenancePayload: {
+      ok: true,
+      started: false,
+      alreadyRunning: false,
+      reason: "held-active-task"
+    }
+  });
+  f.controller.init();
+
+  await f.controller.startMaintenance();
+
+  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /active task/i);
+  assert.equal(f.refs.adminStorageMaintenanceStatusEl.attributes["data-tone"], "warning");
 });
 
 test("quick check starts with quick mode and renders generation counts", async () => {
@@ -263,26 +300,27 @@ test("quick check starts with quick mode and renders generation counts", async (
   assert.equal(f.postCalls.length, 1);
   assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
   assert.deepEqual(f.postCalls[0].payload, { mode: "quick" });
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Quick check reads current feed counts/i);
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Estimated row bytes/);
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-old/);
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /jobs by feed generation/i);
-  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check complete");
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Current feed/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Space used by saved rows/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-current/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Jobs by feed version/);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /bounded-rowid-sample/);
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Check complete");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
 });
 
-test("quick check reports partial when the generation count times out", async () => {
+test("quick check reports partial when the row-byte sample times out", async () => {
   const f = fixture({
     postPayload: {
       started: true,
       storageDiagnostic: {
         ...QUICK_DIAGNOSTIC,
         partial: true,
-        exactContent: false,
-        jobsByGeneration: {
-          ...QUICK_DIAGNOSTIC.jobsByGeneration,
+        exactContent: true,
+        rowBytesProbe: {
+          ...QUICK_DIAGNOSTIC.rowBytesProbe,
           status: "partial",
-          scope: "current"
+          warnings: ["job_sources row-byte sample hit the 3s table budget."]
         }
       }
     }
@@ -291,7 +329,7 @@ test("quick check reports partial when the generation count times out", async ()
 
   await f.controller.startQuickCheck();
 
-  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check partial");
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Partial results");
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.attributes["data-tone"], "warning");
 });
 

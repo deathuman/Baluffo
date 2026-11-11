@@ -6,7 +6,6 @@ from typing import cast
 
 import pytest
 
-import src.storage.db_storage_diagnostic as db_storage_diagnostic
 from src.storage.db_storage_diagnostic import (
     StorageDiagnosticCancelled,
     _dbstat_tables,
@@ -144,28 +143,9 @@ def test_quick_check_uses_current_source_counts_without_dbstat(tmp_path: Path) -
     assert sources["gen-current"]["isCurrent"] is True
     assert "gen-old" not in sources
     assert jobs["gen-current"]["rowCount"] == 2
-    assert jobs["gen-old"]["rowCount"] == 1
-
-
-def test_quick_check_does_not_scan_job_sources_generations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "runtime.db"
-    _seed(path)
-    seen: list[str] = []
-    original = db_storage_diagnostic._generation_counts
-
-    def recording(conn, table, current_generation, **kwargs):
-        seen.append(table)
-        return original(conn, table, current_generation, **kwargs)
-
-    monkeypatch.setattr(db_storage_diagnostic, "_generation_counts", recording)
-
-    result = measure_storage_quick_check(path)
-
-    assert seen == ["jobs"]
-    assert result["jobSourcesByGeneration"]["scope"] == "current"
-    assert result["jobSourcesByGeneration"]["listedRowCount"] == 2
+    assert "gen-old" not in jobs
+    assert result["jobsByGeneration"]["scope"] == "current"
+    assert result["jobsByGeneration"]["generationCount"] == 1
 
 
 def test_quick_check_estimates_current_and_older_row_bytes(tmp_path: Path) -> None:
@@ -192,35 +172,6 @@ def test_quick_check_estimates_current_and_older_row_bytes(tmp_path: Path) -> No
     assert tables["jobs"]["currentRows"] == 2
     assert tables["job_sources"]["currentSampleRows"] == 2
     assert tables["jobs"]["currentSampleRows"] == 2
-
-
-def test_quick_check_falls_back_when_jobs_count_times_out(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "runtime.db"
-    _seed(path)
-    monkeypatch.setattr(
-        db_storage_diagnostic,
-        "_bounded_generation_counts",
-        lambda *_args, **_kwargs: (None, "generation count exceeded 10 seconds"),
-    )
-
-    result = measure_storage_quick_check(path)
-
-    jobs = result["jobsByGeneration"]
-    assert result["exactContent"] is False
-    assert jobs["scope"] == "current"
-    assert jobs["status"] == "partial"
-    assert jobs["listedRowCount"] == 2
-    assert jobs["byGeneration"] == [
-        {
-            "generation": "gen-current",
-            "rowCount": 2,
-            "isCurrent": True,
-            "isOrphan": False,
-        }
-    ]
-    assert any("did not finish" in warning for warning in result["warnings"])
 
 
 class _FakeCursor:

@@ -1,17 +1,42 @@
 import { escapeHtml } from "../../shared/ui/index.js";
 
+const TABLE_LABELS = Object.freeze({
+  jobs: "Job listings",
+  job_sources: "Saved source records",
+  source_runs: "Fetch history",
+  task_events: "Task history",
+  task_runs: "Task runs",
+  sync_runs: "Sync history",
+  job_feed_state: "Current feed state"
+});
+
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatCount(value) {
-  return toNumber(value).toLocaleString();
+  return toNumber(value).toLocaleString("en-US");
+}
+
+function formatPercent(fraction, fallback = "—") {
+  const number = Number(fraction);
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  if (number === 0) return "0%";
+  if (number < 0.001) return "<0.1%";
+  return `${(number * 100).toFixed(1)}%`;
+}
+
+function formatShare(row, allocatedBytes) {
+  const share = Number(row?.share);
+  if (Number.isFinite(share)) return share;
+  const bytes = toNumber(row?.bytes);
+  return allocatedBytes > 0 ? bytes / allocatedBytes : null;
 }
 
 function formatTime(value) {
   const text = String(value || "").trim();
-  if (!text) return "—";
+  if (!text) return "Not recorded";
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? text : date.toLocaleString();
 }
@@ -24,283 +49,410 @@ function phaseLabel(phase) {
     feed_state: "Reading current feed state",
     row_bytes: "Estimating current and older row bytes",
     tables: "Measuring table allocation",
-    job_sources: "Grouping job_sources by generation",
-    jobs: "Grouping jobs by generation",
+    job_sources: "Counting saved source rows",
+    jobs: "Reading the current jobs count",
     finalizing: "Finalizing",
     cancelling: "Cancelling"
   };
-  return labels[String(phase || "")] || String(phase || "Not run");
+  return labels[String(phase || "")] || String(phase || "Not started");
+}
+
+function tableLabel(name) {
+  return TABLE_LABELS[name] || name || "Unknown table";
 }
 
 function generationLabel(generation) {
-  return String(generation || "").trim() || "(empty generation)";
+  return String(generation || "").trim() || "Unknown version";
 }
 
-function renderMeta(diagnostic, formatBytes) {
-  const parts = [
-    `${escapeHtml(formatBytes(toNumber(diagnostic.databaseBytes)))} database`,
-    `${escapeHtml(formatBytes(toNumber(diagnostic.walBytes)))} WAL`,
-    diagnostic.capturedAt ? `captured ${escapeHtml(formatTime(diagnostic.capturedAt))}` : "",
-    diagnostic.durationMs === null || diagnostic.durationMs === undefined
-      ? ""
-      : `${formatCount(diagnostic.durationMs)} ms`,
-    diagnostic.runId ? `run ${escapeHtml(String(diagnostic.runId))}` : ""
-  ].filter(Boolean);
-  return `<div class="admin-storage-diagnostic-meta">${parts.map(part => `<span>${part}</span>`).join("")}</div>`;
+function renderRawName(name, label) {
+  return name && name !== label
+    ? ` <code class="admin-storage-table-code">${escapeHtml(name)}</code>`
+    : "";
+}
+
+function renderStat(label, value, note = "") {
+  return `<div class="admin-storage-stat">
+    <span class="admin-storage-stat-label">${escapeHtml(label)}</span>
+    <strong class="admin-storage-stat-value">${escapeHtml(value)}</strong>
+    ${note ? `<span class="admin-storage-stat-note">${escapeHtml(note)}</span>` : ""}
+  </div>`;
+}
+
+function renderFact(label, value) {
+  return `<div class="admin-storage-fact">
+    <dt>${escapeHtml(label)}</dt>
+    <dd>${escapeHtml(String(value))}</dd>
+  </div>`;
+}
+
+function renderNotice(text, tone = "") {
+  return `<p class="admin-storage-notice${tone ? ` ${tone}` : ""}">${escapeHtml(text)}</p>`;
+}
+
+function renderPill(text, tone = "is-neutral") {
+  return `<span class="admin-storage-pill ${tone}">${escapeHtml(text)}</span>`;
+}
+
+function renderSpaceBar(current, older) {
+  const measured = current + older;
+  const currentWidth = measured > 0 ? (current / measured) * 100 : 0;
+  const olderWidth = measured > 0 ? (older / measured) * 100 : 0;
+  return `<div class="admin-storage-space-bar" role="img" aria-label="Estimated stored row bytes by feed version">
+    <span class="admin-storage-space-current" style="width:${currentWidth}%"></span>
+    <span class="admin-storage-space-older" style="width:${olderWidth}%"></span>
+  </div>`;
+}
+
+function renderQuickFeedState(feedState, currentBytes, formatBytes) {
+  const feed = feedState && typeof feedState === "object" ? feedState : {};
+  const published = Boolean(feed.currentPublishedAt || feed.currentGeneration);
+  return `<section class="admin-storage-card">
+    <div class="admin-storage-card-head">
+      <div>
+        <h3 class="admin-storage-card-title">Current feed</h3>
+        <p class="admin-storage-card-copy">What the jobs page is serving right now.</p>
+      </div>
+      ${published ? renderPill("Published feed", "is-ok") : renderPill("No published feed", "is-warning")}
+    </div>
+    <div class="admin-storage-stats">
+      ${renderStat("Jobs", formatCount(feed.currentRowCount), "in the current feed")}
+      ${renderStat("Saved source rows", formatCount(feed.currentSourceCount), "source records behind those jobs")}
+      ${renderStat("Published", formatTime(feed.currentPublishedAt), "last feed update")}
+      ${renderStat("Current stored rows", currentBytes > 0 ? `~${formatBytes(currentBytes)}` : "Not measured", "job and source text, excluding indexes")}
+    </div>
+  </section>`;
+}
+
+function probeTotals(probe) {
+  const tables = Array.isArray(probe?.tables) ? probe.tables : [];
+  const tableCurrent = tables.reduce((total, table) => total + toNumber(table?.currentBytes), 0);
+  const tableOlder = tables.reduce((total, table) => total + toNumber(table?.oldBytes), 0);
+  const tableTotal = tables.reduce((total, table) => total + toNumber(table?.totalBytes), 0);
+  const current = Math.max(toNumber(probe?.currentBytes), tableCurrent);
+  const older = Math.max(toNumber(probe?.oldBytes), tableOlder);
+  return {
+    current,
+    older,
+    total: Math.max(toNumber(probe?.totalBytes), tableTotal, current + older)
+  };
+}
+
+function renderQuickSpace(probe, formatBytes) {
+  if (!probe || typeof probe !== "object") return "";
+  const totals = probeTotals(probe);
+  const partial = probe.status !== "ok";
+  const measured = totals.current + totals.older;
+  const hasMeasurement = measured > 0;
+  const olderLabel = totals.older > 0
+    ? `~${formatBytes(totals.older)}`
+    : partial ? "Not measured" : "None detected";
+  const currentShare = measured > 0 ? totals.current / measured : null;
+  return `<section class="admin-storage-card">
+    <div class="admin-storage-card-head">
+      <div>
+        <h3 class="admin-storage-card-title">Space used by saved rows</h3>
+        <p class="admin-storage-card-copy">Shows whether most stored job and source text belongs to the current feed or older saved versions.</p>
+      </div>
+      ${renderPill(partial ? "Partial estimate" : "Estimated", partial ? "is-warning" : "is-neutral")}
+    </div>
+    ${partial
+      ? renderNotice("This estimate only covers the part of the sample that completed. Run Quick check again when the database is quiet for a fuller picture.", "is-warning")
+      : ""}
+    <div class="admin-storage-stats">
+      ${renderStat("Current data", totals.current > 0 ? `~${formatBytes(totals.current)}` : "Not measured", partial ? "at least this much" : "current feed rows")}
+      ${renderStat("Older saved versions", olderLabel, "older feed rows")}
+      ${renderStat("Total sampled", hasMeasurement ? `~${formatBytes(totals.total)}` : "Not measured", "excludes indexes")}
+    </div>
+    ${hasMeasurement
+      ? `${renderSpaceBar(totals.current, totals.older)}
+        <div class="admin-storage-space-legend">
+          <span><i class="admin-storage-legend-swatch is-current"></i>Current${currentShare === null ? "" : ` · ${formatPercent(currentShare)}`}</span>
+          <span><i class="admin-storage-legend-swatch is-older"></i>Older${totals.older > 0 && measured > 0 ? ` · ${formatPercent(totals.older / measured)}` : partial ? " · not measured" : " · none detected"}</span>
+        </div>`
+      : renderNotice("No usable stored-row size was returned by this check. Try Quick check again, or run a full audit for exact allocation.", "is-warning")}
+    <p class="admin-storage-card-note">Stored job and source text only. Indexes, schema, and free pages are reported by the full audit.</p>
+  </section>`;
+}
+
+function renderGenerationTable(title, section, rawTitle = "") {
+  if (!section || typeof section !== "object") return "";
+  const generations = Array.isArray(section.byGeneration) ? section.byGeneration : [];
+  const rows = generations.map(row => {
+    const current = row?.isCurrent
+      ? renderPill("Current", "is-ok")
+      : row?.isOrphan ? renderPill("Orphan", "is-warning") : "";
+    return `<div class="admin-storage-table-row admin-storage-generation-row" role="row"
+      data-generation-id="${escapeHtml(String(row?.generation || ""))}"
+      data-row-count="${escapeHtml(String(row?.rowCount ?? ""))}">
+      <span class="admin-storage-table-label" role="cell"><code class="admin-storage-table-code" title="${escapeHtml(generationLabel(row?.generation))}">${escapeHtml(generationLabel(row?.generation))}</code></span>
+      <span class="admin-storage-table-cell" role="cell">${formatCount(row?.rowCount)}</span>
+      <span class="admin-storage-table-cell" role="cell">${current || "—"}</span>
+    </div>`;
+  }).join("");
+  return `<div class="admin-storage-tech-section">
+    <h4>${escapeHtml(title)}${rawTitle ? ` <code class="admin-storage-table-code">${escapeHtml(rawTitle)}</code>` : ""}</h4>
+    <div class="admin-storage-tech-meta">
+      <span>${formatCount(section.listedRowCount)} rows listed</span>
+      <span>${formatCount(section.generationCount)} versions</span>
+      ${section.truncated ? "<span>largest versions only</span>" : ""}
+    </div>
+    <div class="admin-storage-table" role="table" aria-label="${escapeHtml(title)}">
+      <div class="admin-storage-table-row admin-storage-generation-row admin-storage-table-head" role="row">
+        <span role="columnheader">Feed version</span>
+        <span role="columnheader">Rows</span>
+        <span role="columnheader">State</span>
+      </div>
+      ${rows || `<div class="admin-storage-tech-empty">No rows were found.</div>`}
+    </div>
+    ${section.status === "partial" ? renderNotice(String(section.error || "This generation count did not finish."), "is-warning") : ""}
+  </div>`;
+}
+
+function renderProbeTable(probe, formatBytes) {
+  if (!probe || typeof probe !== "object") return "";
+  const tables = Array.isArray(probe.tables) ? probe.tables : [];
+  if (tables.length === 0) return "";
+  const rows = tables.map(table => `<div class="admin-storage-table-row admin-storage-probe-row" role="row"
+    data-table-name="${escapeHtml(String(table?.table || "unknown"))}">
+    <span class="admin-storage-table-label" role="cell">${escapeHtml(String(table?.table || "unknown"))}</span>
+    <span class="admin-storage-table-cell" role="cell">${escapeHtml(table?.currentBytes == null ? "—" : formatBytes(toNumber(table.currentBytes)))}</span>
+    <span class="admin-storage-table-cell" role="cell">${escapeHtml(table?.oldBytes == null ? "—" : formatBytes(toNumber(table.oldBytes)))}</span>
+    <span class="admin-storage-table-cell" role="cell">${escapeHtml(table?.totalBytes == null ? "—" : formatBytes(toNumber(table.totalBytes)))}</span>
+    <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatPercent(table?.currentShare))}</span>
+  </div>`).join("");
+  return `<div class="admin-storage-tech-section">
+    <h4>Raw row-byte sample</h4>
+    <div class="admin-storage-table" role="table" aria-label="Raw stored row bytes by table">
+      <div class="admin-storage-table-row admin-storage-probe-row admin-storage-table-head" role="row">
+        <span role="columnheader">Table</span>
+        <span role="columnheader">Current</span>
+        <span role="columnheader">Older</span>
+        <span role="columnheader">Total</span>
+        <span role="columnheader">Current share</span>
+      </div>
+      ${rows}
+    </div>
+  </div>`;
+}
+
+function renderQuickTechnical(diagnostic, formatBytes) {
+  const feed = diagnostic.feedState || {};
+  const probe = diagnostic.rowBytesProbe || {};
+  const warnings = Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [];
+  const facts = [
+    renderFact("Database file", formatBytes(toNumber(diagnostic.databaseBytes))),
+    renderFact("WAL", formatBytes(toNumber(diagnostic.walBytes))),
+    renderFact("Page size", `${formatCount(diagnostic.pageSize)} B`),
+    renderFact("Pages", formatCount(diagnostic.pageCount)),
+    renderFact("Free space", formatBytes(toNumber(diagnostic.freelistBytes))),
+    renderFact("Captured", formatTime(diagnostic.capturedAt)),
+    renderFact("Duration", `${formatCount(diagnostic.durationMs)} ms`),
+    renderFact("Run ID", diagnostic.runId || "Not recorded"),
+    renderFact("Probe method", probe.method || "Not reported"),
+    renderFact("Probe status", probe.status || "Not reported"),
+    renderFact("Feed version", feed.currentGeneration || "Not recorded"),
+    renderFact("Feed published", formatTime(feed.currentPublishedAt))
+  ];
+  const sections = [
+    renderGenerationTable("Saved source rows by feed version", diagnostic.jobSourcesByGeneration, "job_sources"),
+    renderGenerationTable("Jobs by feed version", diagnostic.jobsByGeneration, "jobs"),
+    renderProbeTable(probe, formatBytes)
+  ];
+  return renderTechnicalDetails("Technical details", facts, sections, warnings);
+}
+
+function renderWarnings(warnings, title = "Some measurements did not finish") {
+  if (!Array.isArray(warnings) || warnings.length === 0) return "";
+  return `<div class="admin-storage-notice is-warning"><strong>${escapeHtml(title)}.</strong> Open Technical details for the exact messages.</div>`;
+}
+
+function renderTechnicalDetails(summary, facts = [], sections = [], warnings = []) {
+  const warningsHtml = warnings.length
+    ? `<div class="admin-storage-tech-section"><h4>Warnings</h4><ul class="admin-storage-warning-list">${warnings.map(warning => `<li>${escapeHtml(String(warning))}</li>`).join("")}</ul></div>`
+    : "";
+  return `<details class="admin-storage-technical">
+    <summary>${escapeHtml(summary)}</summary>
+    <div class="admin-storage-technical-body">
+      ${facts.length ? `<dl class="admin-storage-facts">${facts.join("")}</dl>` : ""}
+      ${sections.join("")}${warningsHtml}
+      <p class="admin-storage-card-note">Raw values from the storage diagnostic API are preserved here for support and API inspection.</p>
+    </div>
+  </details>`;
+}
+
+function renderQuickDiagnostic(diagnostic, formatBytes) {
+  const probe = diagnostic.rowBytesProbe || {};
+  const totals = probeTotals(probe);
+  const warnings = Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [];
+  const partial = diagnostic.partial === true
+    || diagnostic.exactContent === false
+    || probe.status === "partial";
+  return `
+    ${renderQuickFeedState(diagnostic.feedState, totals.current, formatBytes)}
+    ${renderQuickSpace(probe, formatBytes)}
+    ${partial && warnings.length === 0
+      ? renderNotice("This check finished with partial results. Some measurements did not complete before the time limit.", "is-warning")
+      : ""}
+    ${renderWarnings(warnings)}
+    ${renderQuickTechnical(diagnostic, formatBytes)}
+  `;
+}
+
+function renderShareBar(fraction) {
+  const width = fraction === null ? 0 : Math.min(100, Math.max(0, fraction * 100));
+  return `<span class="admin-storage-table-share-cell">
+    <span class="admin-storage-share-track" aria-hidden="true"><span class="admin-storage-share-fill" style="width:${width}%"></span></span>
+    <span>${escapeHtml(formatPercent(fraction))}</span>
+  </span>`;
+}
+
+function renderTableAllocation(tableSizes, formatBytes) {
+  if (!tableSizes || tableSizes.status === "unavailable") {
+    return `<section class="admin-storage-card">
+      <div class="admin-storage-card-head">
+        <div><h3 class="admin-storage-card-title">Table allocation</h3><p class="admin-storage-card-copy">Exact table and index page usage is unavailable in this runtime.</p></div>
+      </div>
+      ${renderNotice(String(tableSizes?.error || "SQLite dbstat is not available."), "is-warning")}
+    </section>`;
+  }
+  const tables = Array.isArray(tableSizes.tables) ? tableSizes.tables : [];
+  const allocated = toNumber(tableSizes.allocatedBytes);
+  const rows = tables.map(table => {
+    const name = String(table?.name || "unknown");
+    const label = tableLabel(name);
+    const bytes = toNumber(table?.bytes);
+    return `<div class="admin-storage-table-row admin-storage-allocation-row" role="row"
+      data-table-name="${escapeHtml(name)}"
+      data-table-bytes="${bytes}"
+      data-table-share="${escapeHtml(String(table?.share ?? ""))}">
+      <span class="admin-storage-table-label" role="cell">${escapeHtml(label)}${renderRawName(name, label)}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(toNumber(table?.tableBytes)))}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(toNumber(table?.indexBytes)))}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(bytes))}</span>
+      ${renderShareBar(formatShare(table, allocated))}
+    </div>`;
+  }).join("");
+  const other = toNumber(tableSizes.otherBytes);
+  const otherRow = other > 0
+    ? `<div class="admin-storage-table-row admin-storage-allocation-row admin-storage-table-other" role="row" data-table-name="unattributed" data-table-bytes="${other}">
+        <span class="admin-storage-table-label" role="cell">Unassigned and free pages</span>
+        <span class="admin-storage-table-cell" role="cell">—</span>
+        <span class="admin-storage-table-cell" role="cell">—</span>
+        <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(other))}</span>
+        ${renderShareBar(formatShare({ bytes: other }, allocated))}
+      </div>`
+    : "";
+  return `<section class="admin-storage-card">
+    <div class="admin-storage-card-head">
+      <div><h3 class="admin-storage-card-title">Table allocation</h3><p class="admin-storage-card-copy">Exact page usage from SQLite dbstat, including indexes.</p></div>
+      ${renderPill("Exact", "is-ok")}
+    </div>
+    <div class="admin-storage-stats">
+      ${renderStat("Allocated", formatBytes(allocated))}
+      ${renderStat("Free pages", formatBytes(toNumber(tableSizes.freelistBytes)))}
+    </div>
+    <div class="admin-storage-table" role="table" aria-label="Exact runtime database table allocation">
+      <div class="admin-storage-table-row admin-storage-allocation-row admin-storage-table-head" role="row">
+        <span role="columnheader">Table</span>
+        <span role="columnheader">Table data</span>
+        <span role="columnheader">Indexes</span>
+        <span role="columnheader">Total</span>
+        <span role="columnheader">Share</span>
+      </div>
+      ${rows}${otherRow}
+    </div>
+  </section>`;
+}
+
+function renderJobSources(jobSources, formatBytes) {
+  if (!jobSources || typeof jobSources !== "object") return "";
+  const rows = (Array.isArray(jobSources.byGeneration) ? jobSources.byGeneration : []).map(row => {
+    const current = row?.isCurrent ? renderPill("Current", "is-ok") : "";
+    return `<div class="admin-storage-table-row admin-storage-generation-row admin-storage-source-generation-row" role="row"
+      data-generation-id="${escapeHtml(String(row?.generation || ""))}"
+      data-row-count="${escapeHtml(String(row?.rowCount ?? ""))}">
+      <span class="admin-storage-table-label" role="cell"><code class="admin-storage-table-code" title="${escapeHtml(generationLabel(row?.generation))}">${escapeHtml(generationLabel(row?.generation))}</code>${current}</span>
+      <span class="admin-storage-table-cell" role="cell">${formatCount(row?.rowCount)}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(toNumber(row?.payloadBytes)))}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatBytes(toNumber(row?.contentBytes)))}</span>
+      <span class="admin-storage-table-cell" role="cell">${escapeHtml(formatTime(row?.lastUpdatedAt))}</span>
+    </div>`;
+  }).join("");
+  return `<section class="admin-storage-card">
+    <div class="admin-storage-card-head">
+      <div><h3 class="admin-storage-card-title">Saved source rows by feed version</h3><p class="admin-storage-card-copy">Exact row and stored-text totals for each saved version of the source bundle.</p></div>
+    </div>
+    <div class="admin-storage-stats">
+      ${renderStat("Rows", formatCount(jobSources.rowCount))}
+      ${renderStat("Versions", formatCount(jobSources.generationCount))}
+      ${renderStat("Stored JSON", formatBytes(toNumber(jobSources.payloadBytes)))}
+      ${renderStat("Stored text", formatBytes(toNumber(jobSources.contentBytes)))}
+    </div>
+    <div class="admin-storage-table" role="table" aria-label="Saved source rows by feed version">
+      <div class="admin-storage-table-row admin-storage-generation-row admin-storage-source-generation-row admin-storage-table-head" role="row">
+        <span role="columnheader">Feed version</span>
+        <span role="columnheader">Rows</span>
+        <span role="columnheader">Stored JSON</span>
+        <span role="columnheader">Stored text</span>
+        <span role="columnheader">Updated</span>
+      </div>
+      ${rows || `<div class="admin-storage-tech-empty">No saved source rows were found.</div>`}
+    </div>
+    <p class="admin-storage-card-note">“Stored JSON” is the payload text. “Stored text” counts every text column; both are exact SQLite content counts, not samples.</p>
+  </section>`;
+}
+
+function renderExactDiagnostic(diagnostic, formatBytes) {
+  const warnings = Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [];
+  const facts = [
+    renderFact("Database file", formatBytes(toNumber(diagnostic.databaseBytes))),
+    renderFact("WAL", formatBytes(toNumber(diagnostic.walBytes))),
+    renderFact("Captured", formatTime(diagnostic.capturedAt)),
+    renderFact("Duration", `${formatCount(diagnostic.durationMs)} ms`),
+    renderFact("Run ID", diagnostic.runId || "Not recorded"),
+    renderFact("Allocation method", diagnostic.tableSizes?.status === "unavailable" ? "Unavailable" : "dbstat exact")
+  ];
+  return `
+    ${warnings.length ? renderWarnings(warnings) : ""}
+    ${renderTableAllocation(diagnostic.tableSizes, formatBytes)}
+    ${renderJobSources(diagnostic.jobSources, formatBytes)}
+    ${renderTechnicalDetails("Technical details", facts, [renderGenerationTable("Raw job_sources by feed generation", diagnostic.jobSources), renderGenerationTable("Raw jobs by feed generation", diagnostic.jobsByGeneration)], warnings)}
+  `;
 }
 
 function renderProgress(diagnostic, formatBytes) {
   const progress = diagnostic.progress || {};
   const operations = toNumber(progress.operationCount);
   const quick = diagnostic.mode === "quick";
-  return `
-    ${renderMeta(diagnostic, formatBytes)}
-    <div class="admin-storage-diagnostic-progress">
-      <strong>${escapeHtml(phaseLabel(diagnostic.phase))}</strong>
+  return `<section class="admin-storage-card admin-storage-progress-card">
+    <div class="admin-storage-card-head">
+      <div>
+        <h3 class="admin-storage-card-title">${quick ? "Quick check" : "Full storage audit"} in progress</h3>
+        <p class="admin-storage-card-copy">${escapeHtml(phaseLabel(diagnostic.phase))}</p>
+      </div>
+      ${renderPill(quick ? "Checking" : "Auditing", "is-neutral")}
+    </div>
+    <div class="admin-storage-progress-meta">
       <span>${formatCount(diagnostic.elapsedMs)} ms elapsed</span>
       ${operations > 0 ? `<span>${formatCount(operations)} SQLite operations</span>` : ""}
+      ${diagnostic.capturedAt ? `<span>started ${escapeHtml(formatTime(diagnostic.capturedAt))}</span>` : ""}
     </div>
-    <p class="admin-storage-diagnostic-note">This read-only ${quick ? "quick generation check" : "scan"} is running in the bridge background. You can keep using Admin or cancel it.</p>
-  `;
-}
-
-function renderQuickMeta(diagnostic, formatBytes) {
-  const parts = [
-    `${escapeHtml(formatBytes(toNumber(diagnostic.databaseBytes)))} database`,
-    `${escapeHtml(formatBytes(toNumber(diagnostic.walBytes)))} WAL`,
-    `${formatCount(diagnostic.pageSize)} B pages`,
-    `${formatCount(diagnostic.pageCount)} pages`,
-    `${escapeHtml(formatBytes(toNumber(diagnostic.freelistBytes)))} free`,
-    diagnostic.capturedAt ? `captured ${escapeHtml(formatTime(diagnostic.capturedAt))}` : "",
-    diagnostic.durationMs === null || diagnostic.durationMs === undefined
-      ? ""
-      : `${formatCount(diagnostic.durationMs)} ms`,
-    diagnostic.runId ? `run ${escapeHtml(String(diagnostic.runId))}` : ""
-  ].filter(Boolean);
-  return `<div class="admin-storage-diagnostic-meta">${parts.map(part => `<span>${part}</span>`).join("")}</div>`;
-}
-
-function renderQuickFeedState(feedState) {
-  if (!feedState || typeof feedState !== "object") return "";
-  return `<div class="admin-storage-diagnostic-section">
-    <h4>Current feed</h4>
-    <div class="admin-storage-diagnostic-meta">
-      <span>${escapeHtml(generationLabel(feedState.currentGeneration))}</span>
-      <span>${formatCount(feedState.currentRowCount)} jobs</span>
-      <span>${formatCount(feedState.currentSourceCount)} source rows</span>
-      ${feedState.currentPublishedAt ? `<span>published ${escapeHtml(formatTime(feedState.currentPublishedAt))}</span>` : ""}
-    </div>
-  </div>`;
-}
-
-function renderQuickGenerations(title, section) {
-  if (!section || typeof section !== "object") return "";
-  const generations = Array.isArray(section.byGeneration) ? section.byGeneration : [];
-  const currentOnly = section.scope === "current";
-  const partial = section.status === "partial";
-  const heading = currentOnly ? `${title} — current generation` : title;
-  const notes = [
-    currentOnly
-      ? "Only the current generation is counted here. Older generations are left to the exact diagnostic."
-      : "",
-    partial ? String(section.error || "This generation count did not finish.") : ""
-  ].filter(Boolean);
-  const rows = generations.map(row => {
-    const current = row?.isCurrent
-      ? ' <span class="admin-storage-diagnostic-current">current</span>'
-      : row?.isOrphan
-        ? ' <span class="admin-storage-diagnostic-orphan">orphan</span>'
-        : "";
-    return `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row" role="row">
-      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(generationLabel(row?.generation))}${current}</span>
-      <span role="cell">${formatCount(row?.rowCount)}</span>
-      <span role="cell">${row?.isOrphan ? "orphan" : row?.isCurrent ? "current" : "—"}</span>
-    </div>`;
-  }).join("");
-  return `<div class="admin-storage-diagnostic-section">
-    <h4>${escapeHtml(heading)}</h4>
-    <div class="admin-storage-diagnostic-meta">
-      <span>${formatCount(section.listedRowCount)} listed rows</span>
-      <span>${formatCount(section.generationCount)} generations shown</span>
-      ${section.truncated ? "<span>top generations only</span>" : ""}
-    </div>
-    ${notes.map(note => `<p class="admin-storage-diagnostic-note">${escapeHtml(note)}</p>`).join("")}
-    <div class="admin-storage-diagnostic-grid" role="table" aria-label="${escapeHtml(title)}">
-      <div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row admin-storage-diagnostic-head" role="row">
-        <span role="columnheader">Generation</span>
-        <span role="columnheader">Rows</span>
-        <span role="columnheader">State</span>
-      </div>
-      ${rows || '<div class="admin-storage-diagnostic-note">No rows were found.</div>'}
-    </div>
-  </div>`;
-}
-
-function formatShare(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "—";
-}
-
-function renderQuickRowBytes(probe, formatBytes) {
-  if (!probe || typeof probe !== "object") return "";
-  const tables = Array.isArray(probe.tables) ? probe.tables : [];
-  const rows = tables.map(table => {
-    const current = table?.currentBytes;
-    const older = table?.oldBytes;
-    const total = table?.totalBytes;
-    return `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row" role="row">
-      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(String(table?.table || "unknown"))}</span>
-      <span role="cell">${current === null || current === undefined ? "—" : escapeHtml(formatBytes(toNumber(current)))}</span>
-      <span role="cell">${older === null || older === undefined ? "—" : escapeHtml(formatBytes(toNumber(older)))}</span>
-      <span role="cell">${total === null || total === undefined ? "—" : escapeHtml(formatBytes(toNumber(total)))}</span>
-      <span role="cell">${escapeHtml(formatShare(table?.currentShare))}</span>
-    </div>`;
-  }).join("");
-  const warnings = (Array.isArray(probe.warnings) ? probe.warnings : [])
-    .map(warning => `<p class="admin-storage-diagnostic-note">${escapeHtml(String(warning))}</p>`)
-    .join("");
-  return `<div class="admin-storage-diagnostic-section">
-    <h4>Estimated row bytes — current vs older generations</h4>
-    <div class="admin-storage-diagnostic-meta">
-      <span>~${escapeHtml(formatBytes(toNumber(probe.totalBytes)))} total</span>
-      <span>~${escapeHtml(formatBytes(toNumber(probe.currentBytes)))} current (${escapeHtml(formatShare(probe.currentShare))})</span>
-      <span>~${escapeHtml(formatBytes(toNumber(probe.oldBytes)))} older</span>
-      ${probe.status === "ok" ? "" : "<span>partial sample</span>"}
-    </div>
-    ${probe.summary ? `<p class="admin-storage-diagnostic-note">${escapeHtml(String(probe.summary))}</p>` : ""}
-    ${rows
-      ? `<div class="admin-storage-diagnostic-grid" role="table" aria-label="Estimated row bytes by generation">
-        <div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row admin-storage-diagnostic-head" role="row">
-          <span role="columnheader">Table</span>
-          <span role="columnheader">Current</span>
-          <span role="columnheader">Older</span>
-          <span role="columnheader">Total</span>
-          <span role="columnheader">Current share</span>
-        </div>
-        ${rows}
-      </div>`
-      : ""}
-    <p class="admin-storage-diagnostic-note">Bounded rowid and current-generation sample of stored row bytes; excludes indexes. Current-generation counts come from job_feed_state.</p>
-    ${warnings}
-  </div>`;
-}
-
-function renderQuickDiagnostic(diagnostic, formatBytes) {
-  const warnings = (Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [])
-    .filter(warning => !String(warning).startsWith("Quick check reads current feed counts"));
-  return `
-    ${renderQuickMeta(diagnostic, formatBytes)}
-    <p class="admin-storage-diagnostic-note">Quick check reads current feed counts, counts jobs by generation within a deadline, and estimates current versus older stored row bytes. Older generation counts and exact table or index allocation remain in the exact diagnostic.</p>
-    ${warnings.length
-      ? `<p class="admin-storage-diagnostic-warning">${warnings.map(warning => escapeHtml(String(warning))).join(" ")}</p>`
-      : ""}
-    ${renderQuickFeedState(diagnostic.feedState)}
-    ${renderQuickRowBytes(diagnostic.rowBytesProbe, formatBytes)}
-    ${renderQuickGenerations("job_sources by feed generation", diagnostic.jobSourcesByGeneration)}
-    ${renderQuickGenerations("jobs by feed generation", diagnostic.jobsByGeneration)}
-  `;
-}
-
-function renderTableAllocation(tableSizes, formatBytes) {
-  if (!tableSizes || tableSizes.status === "unavailable") {
-    const reason = String(tableSizes?.error || "SQLite dbstat is unavailable in this runtime");
-    return `<div class="admin-storage-diagnostic-section">
-      <h4>Table allocation</h4>
-      <div class="admin-storage-diagnostic-note">${escapeHtml(reason)}</div>
-    </div>`;
-  }
-  const tables = Array.isArray(tableSizes.tables) ? tableSizes.tables : [];
-  const rows = tables.map(table => {
-    const bytes = toNumber(table?.bytes);
-    const share = Number(table?.share);
-    return `<div class="admin-storage-diagnostic-row" role="row">
-      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(String(table?.name || "unknown"))}</span>
-      <span role="cell">${escapeHtml(formatBytes(toNumber(table?.tableBytes)))}</span>
-      <span role="cell">${escapeHtml(formatBytes(toNumber(table?.indexBytes)))}</span>
-      <span role="cell">${escapeHtml(formatBytes(bytes))}</span>
-      <span role="cell">${escapeHtml(Number.isFinite(share) && share > 0 ? `${(share * 100).toFixed(1)}%` : "—")}</span>
-    </div>`;
-  }).join("");
-  const otherBytes = toNumber(tableSizes.otherBytes);
-  const otherRow = otherBytes > 0
-    ? `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-row-other" role="row">
-      <span role="cell">Freelist and unassigned pages</span>
-      <span role="cell">—</span>
-      <span role="cell">—</span>
-      <span role="cell">${escapeHtml(formatBytes(otherBytes))}</span>
-      <span role="cell">—</span>
-    </div>`
-    : "";
-  return `<div class="admin-storage-diagnostic-section">
-    <h4>Table allocation</h4>
-    <div class="admin-storage-diagnostic-meta">
-      <span>${escapeHtml(formatBytes(toNumber(tableSizes.allocatedBytes)))} allocated</span>
-      <span>${escapeHtml(formatBytes(toNumber(tableSizes.freelistBytes)))} free</span>
-      <span>dbstat exact</span>
-    </div>
-    <div class="admin-storage-diagnostic-grid" role="table" aria-label="Exact runtime database table allocation">
-      <div class="admin-storage-diagnostic-row admin-storage-diagnostic-head" role="row">
-        <span role="columnheader">Table</span>
-        <span role="columnheader">Table bytes</span>
-        <span role="columnheader">Index bytes</span>
-        <span role="columnheader">Total</span>
-        <span role="columnheader">Share</span>
-      </div>
-      ${rows}${otherRow}
-    </div>
-  </div>`;
-}
-
-function renderJobSources(jobSources, formatBytes) {
-  if (!jobSources || typeof jobSources !== "object") return "";
-  const rows = (Array.isArray(jobSources.byGeneration) ? jobSources.byGeneration : []).map(row => {
-    const current = row?.isCurrent
-      ? ' <span class="admin-storage-diagnostic-current">current</span>'
-      : "";
-    return `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-generation-row" role="row">
-      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(generationLabel(row?.generation))}${current}</span>
-      <span role="cell">${formatCount(row?.rowCount)}</span>
-      <span role="cell">${escapeHtml(formatBytes(toNumber(row?.payloadBytes)))}</span>
-      <span role="cell">${escapeHtml(formatBytes(toNumber(row?.contentBytes)))}</span>
-      <span role="cell">${escapeHtml(formatTime(row?.lastUpdatedAt))}</span>
-    </div>`;
-  }).join("");
-  const tableBytes = jobSources.tableBytes;
-  return `<div class="admin-storage-diagnostic-section">
-    <h4>job_sources by feed generation</h4>
-    <div class="admin-storage-diagnostic-meta">
-      <span>${formatCount(jobSources.rowCount)} rows</span>
-      <span>${formatCount(jobSources.generationCount)} generations</span>
-      <span>${escapeHtml(formatBytes(toNumber(jobSources.payloadBytes)))} payload</span>
-      <span>${escapeHtml(formatBytes(toNumber(jobSources.contentBytes)))} stored text</span>
-      ${tableBytes === null || tableBytes === undefined
-        ? "<span>table allocation unavailable</span>"
-        : `<span>${escapeHtml(formatBytes(toNumber(tableBytes)))} allocated</span>`}
-    </div>
-    <div class="admin-storage-diagnostic-grid" role="table" aria-label="job_sources rows by feed generation">
-      <div class="admin-storage-diagnostic-row admin-storage-diagnostic-generation-row admin-storage-diagnostic-head" role="row">
-        <span role="columnheader">Generation</span>
-        <span role="columnheader">Rows</span>
-        <span role="columnheader">Payload</span>
-        <span role="columnheader">Stored text</span>
-        <span role="columnheader">Last updated</span>
-      </div>
-      ${rows || "<div class=\"admin-storage-diagnostic-note\">No job_sources rows were found.</div>"}
-    </div>
-    <p class="admin-storage-diagnostic-note">Payload is the stored JSON text. Stored text counts every text-affinity column in job_sources; these row and byte totals are exact SQLite content counts, not sampled estimates.</p>
-  </div>`;
+    <p class="admin-storage-card-note">This read-only check runs in the bridge background. You can keep using Admin or cancel it.</p>
+    ${renderTechnicalDetails("Technical details", [renderFact("Database file", formatBytes(toNumber(diagnostic.databaseBytes))), renderFact("Run ID", diagnostic.runId || "Not recorded")], [], [])}
+  </section>`;
 }
 
 export function renderStorageDiagnosticHtml(diagnostic, formatBytes) {
-  const format = typeof formatBytes === "function" ? formatBytes : value => String(value);
+  const format = typeof formatBytes === "function" ? formatBytes : value => `${Number(value || 0)} B`;
   if (!diagnostic || typeof diagnostic !== "object" || diagnostic.status === "idle") {
-    return '<div class="admin-storage-tables-empty">Run Quick check for generation row counts, or Measure exact sizes for dbstat table allocation.</div>';
+    return `<div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to see the current feed and how much space stored rows use. Use the full audit only when support needs exact allocation.</p></div>`;
   }
   if (diagnostic.status === "failed") {
-    return `<div class="admin-storage-tables-empty">Storage diagnostic failed: ${escapeHtml(String(diagnostic.error || "unknown error"))}</div>`;
+    return `<div class="admin-storage-state"><strong>The check could not finish.</strong><p>${escapeHtml(String(diagnostic.error || "Unknown error."))}</p></div>`;
   }
   if (diagnostic.status === "cancelled") {
-    return `<div class="admin-storage-tables-empty">Storage diagnostic cancelled.</div>`;
+    return `<div class="admin-storage-state"><strong>The check was cancelled.</strong><p>Run Quick check again when you are ready.</p></div>`;
   }
   if (diagnostic.status === "running" || diagnostic.status === "cancelling") {
     return renderProgress(diagnostic, format);
@@ -308,12 +460,5 @@ export function renderStorageDiagnosticHtml(diagnostic, formatBytes) {
   if (diagnostic.mode === "quick") {
     return renderQuickDiagnostic(diagnostic, format);
   }
-  return `
-    ${renderMeta(diagnostic, format)}
-    ${Array.isArray(diagnostic.warnings) && diagnostic.warnings.length
-      ? `<p class="admin-storage-diagnostic-warning">${diagnostic.warnings.map(warning => escapeHtml(String(warning))).join(" ")}</p>`
-      : ""}
-    ${renderTableAllocation(diagnostic.tableSizes, format)}
-    ${renderJobSources(diagnostic.jobSources, format)}
-  `;
+  return renderExactDiagnostic(diagnostic, format);
 }

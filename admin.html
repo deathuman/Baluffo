@@ -90,29 +90,44 @@
 
       <details id="admin-storage-tables" data-ui="admin-storage-tables" class="admin-storage-tables" open>
         <summary>
-          <span>Runtime Database Storage</span>
-          <span id="admin-storage-tables-status" data-ui="admin-storage-tables-status" class="admin-storage-tables-status">Waiting for startup</span>
+          <span class="admin-storage-heading">
+            <span class="admin-storage-kicker">Local data</span>
+            <span class="admin-storage-title">Database storage</span>
+            <span class="admin-storage-subtitle">Space used by Baluffo's local job index, current feed, and saved history.</span>
+          </span>
+          <span id="admin-storage-tables-status" data-ui="admin-storage-tables-status" class="admin-storage-tables-status" role="status">Waiting for startup</span>
         </summary>
         <div class="admin-storage-tables-body">
-          <div class="admin-storage-tables-toolbar">
-            <button id="admin-storage-tables-refresh-btn" data-ui="admin-storage-tables-refresh-btn" class="btn clear-filters-btn" type="button" data-tooltip="Reload the runtime database table-size breakdown.">Refresh</button>
-            <button id="admin-storage-quick-check-btn" data-ui="admin-storage-quick-check-btn" class="btn clear-filters-btn" type="button" data-tooltip="Count job rows by feed generation without a full dbstat scan.">Quick check</button>
-            <button id="admin-storage-diagnostic-btn" data-ui="admin-storage-diagnostic-btn" class="btn clear-filters-btn" type="button" data-tooltip="Measure exact table allocation and job_sources generations in a background diagnostic.">Measure exact sizes</button>
-            <button id="admin-storage-diagnostic-cancel-btn" data-ui="admin-storage-diagnostic-cancel-btn" class="btn clear-filters-btn" type="button" hidden data-tooltip="Cancel the running exact storage diagnostic.">Cancel</button>
-            <button id="admin-storage-diagnostic-export-btn" data-ui="admin-storage-diagnostic-export-btn" class="btn clear-filters-btn" type="button" hidden data-tooltip="Download the completed exact diagnostic as JSON for an incident.">Export JSON</button>
+          <div class="admin-storage-actions" role="group" aria-label="Database storage actions">
+            <div class="admin-storage-actions-primary">
+              <button id="admin-storage-tables-refresh-btn" data-ui="admin-storage-tables-refresh-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Reload the database storage summary.">Refresh</button>
+              <button id="admin-storage-quick-check-btn" data-ui="admin-storage-quick-check-btn" class="btn clear-filters-btn admin-storage-btn admin-storage-btn-primary" type="button" data-tooltip="Check the current feed and estimate stored row space without scanning the whole database.">Quick check</button>
+              <button id="admin-storage-maintenance-btn" data-ui="admin-storage-maintenance-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Remove older saved feed versions and compact the database. The current feed is kept.">Run maintenance</button>
+            </div>
+            <div class="admin-storage-advanced" role="group" aria-label="Advanced storage tools">
+              <span class="admin-storage-advanced-label">Advanced</span>
+              <button id="admin-storage-diagnostic-btn" data-ui="admin-storage-diagnostic-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Run an exact table-allocation and saved-source audit. This can take hours on a large database.">Full storage audit</button>
+              <button id="admin-storage-diagnostic-cancel-btn" data-ui="admin-storage-diagnostic-cancel-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Cancel the running full storage audit.">Cancel</button>
+              <button id="admin-storage-diagnostic-export-btn" data-ui="admin-storage-diagnostic-export-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Download the completed full audit as JSON.">Export JSON</button>
+              <span class="admin-storage-advanced-note">A full audit checks exact table allocation and every saved version. It can take hours on a large database, so Quick check is usually enough.</span>
+            </div>
           </div>
+          <div id="admin-storage-maintenance-status" data-ui="admin-storage-maintenance-status" class="admin-storage-maintenance-status" role="status" aria-live="polite"></div>
           <div id="admin-storage-tables-body" data-ui="admin-storage-tables-body">
-            <div class="admin-storage-tables-empty">Runtime database table sizes load once after startup.</div>
+            <div class="admin-storage-state"><p>Database storage details load once after startup.</p></div>
           </div>
-          <div class="admin-storage-diagnostic" data-ui="admin-storage-diagnostic">
-            <div class="admin-storage-diagnostic-heading">
-              <span class="admin-storage-diagnostic-title">Storage diagnostic</span>
-              <span id="admin-storage-diagnostic-status" data-ui="admin-storage-diagnostic-status" class="admin-storage-diagnostic-status">Not run</span>
+          <section class="admin-storage-diagnostic" data-ui="admin-storage-diagnostic" aria-labelledby="admin-storage-check-title">
+            <div class="admin-storage-check-heading">
+              <div>
+                <h3 id="admin-storage-check-title" class="admin-storage-check-title">Checks and results</h3>
+                <p class="admin-storage-check-copy">Quick check is the routine health check. The full audit is for support and exact accounting.</p>
+              </div>
+              <span id="admin-storage-diagnostic-status" data-ui="admin-storage-diagnostic-status" class="admin-storage-diagnostic-status" role="status" aria-live="polite">Not run</span>
             </div>
             <div id="admin-storage-diagnostic-body" data-ui="admin-storage-diagnostic-body" class="admin-storage-diagnostic-body">
-              <div class="admin-storage-tables-empty">Run Quick check for exact generation row counts, or Measure exact sizes for dbstat table allocation. Both run in the background.</div>
+              <div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to see the current feed and how much space stored rows use. Use the full audit only when support needs exact allocation.</p></div>
             </div>
-          </div>
+          </section>
         </div>
       </details>
 

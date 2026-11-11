@@ -63,9 +63,9 @@ data/baluffo-runtime.db
 In the container runtime, this is `/data/baluffo-runtime.db`. It must not live under `_out/`, versioned app folders, or Docker image layers.
 
 The Admin quick storage check must stay bounded on large databases: current-generation
-`job_sources` counts come from `job_feed_state`, jobs are grouped under a short deadline,
-and the quick path must never group the full `job_sources` table. Full per-generation
-source-row and allocation counts belong to the explicit exact diagnostic.
+`job_sources` and `jobs` counts come from `job_feed_state`, stored row bytes are sampled
+with sequential rowid windows, and the quick path must never group `job_sources` or `jobs`.
+Full per-generation source-row and allocation counts belong to the explicit exact diagnostic.
 
 SQLite uses Python stdlib `sqlite3`. No new Python or Node dependency is allowed for the runtime store. Packaged builds must keep `sqlite3` in the main PyInstaller hidden imports.
 
@@ -191,6 +191,14 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   compaction pass. The status is reported in `health()["runtimeRetention"]`,
   including `truncated`, `timerScheduled`, and `nextRunInS`; a pass held by an
   active task is re-scheduled when the hold is released.
+- **Jobs feed generations are pruned by the same post-serve pass.** The current
+  published generation is always kept; up to four older `jobs`/`job_sources`
+  generations are deleted per bounded pass, and a pass that hits the cap keeps
+  the 30-second follow-up scheduled until the backlog drains. This is separate
+  from source-run retention: without it, every successful feed publish leaves a
+  full historical copy in SQLite. Compaction starts only after the generation
+  backlog is drained, because a rebuild during another deletion batch only skips
+  as busy.
 - **Full source details are written once.** The fetch closeout writes the
   per-source `details` to `artifacts/fetch/<run>/source-details.json.gz` and
   stores only the compact row in SQLite. The full `/ops/fetch-report` view
@@ -235,7 +243,9 @@ The read is bounded, because a diagnostic must answer while maintenance holds th
 
 The unbounded exact follow-up is a separate, explicit background job, not part of the health route: `POST /ops/storage-diagnostic` starts one read-only worker per data dir, `GET /ops/storage-diagnostic` reports its phase/progress/result, and `POST /ops/storage-diagnostic/cancel` asks it to stop through SQLite's progress handler. When `dbstat` is present it reports exact per-table and per-index allocated bytes; when it is absent the result says `tableSizes.status == "unavailable"` and never substitutes the bounded rowid sample. Independently of allocation support, it groups `job_sources` by `feed_generation` and reports exact row counts, payload JSON bytes (`length(CAST(payload_json AS BLOB))`), and stored-text bytes. The job measures aggregates only; it does not return row payloads or become an arbitrary SQL surface. A completed job is held in process memory for Admin until the bridge restarts or a new run replaces it. Admin can save the completed result as a JSON file for an incident. The export is generated client-side from the completed `storageDiagnostic` payload: it adds only `kind: "baluffo.storage-diagnostic"`, `schemaVersion`, and `exportedAt`, preserves the exact table and generation totals unchanged, and does not trigger another scan or add a bridge route.
 
-The same route accepts `mode: "quick"` for a bounded first look. It reads page counters and current feed state, samples stored row bytes for the current and older generations, and counts `jobs` by `feed_generation` with the remaining budget; it never groups `job_sources` or runs `dbstat`. The row-byte estimate samples current-generation rows through the generation-leading index and the whole table through random rowids, so a multi-hundred-gigabyte store answers without a full scan. It excludes indexes and is marked partial when a sample deadline expires. The quick result is aggregate-only, read-only, cancellable through the same progress handler, and held in the same in-process job. It is a diagnosis, not a cleanup authorization: old generations are removed only by the existing retention path after the current generation is established.
+The same route accepts `mode: "quick"` for a bounded first look. It reads page counters and current feed state, reads the current `jobs` count from `job_feed_state`, and samples stored row bytes for the current and older generations; it never groups `job_sources`, groups `jobs`, or runs `dbstat`. The row-byte estimate samples current-generation rows through the generation-leading index and the whole table through sequential rowid windows, so a multi-hundred-gigabyte store answers without a full scan. It excludes indexes and is marked partial when a sample deadline expires. The quick result is aggregate-only, read-only, cancellable through the same progress handler, and held in the same in-process job. It is a diagnosis, not a cleanup authorization: old generations are removed by the post-serve retention pass after the current generation is established.
+
+Admin also exposes that cleanup as an explicit **Run maintenance** action in the Runtime Database Storage panel. `POST /ops/storage-maintenance` starts one forced, bounded pass through the same scheduler, keeps the current generation, and refuses to schedule while an active task holds compaction. The route only hands the pass to the background worker; it does not wait, and a pass that hits a cap leaves the normal 30-second follow-up in place. The response reports `started`, `alreadyRunning`, and the current `runtimeRetention`/`compaction` records so an operator can tell a new pass from a held or already-running one.
 
 ## Migration Safety
 

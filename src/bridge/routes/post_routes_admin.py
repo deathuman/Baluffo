@@ -122,6 +122,8 @@ class _AdminPostRouteApi(Protocol):
 
     def cancel_storage_diagnostic(self) -> dict[str, Any]: ...
 
+    def start_storage_maintenance(self) -> dict[str, Any]: ...
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def start_jobs_pipeline_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -349,6 +351,11 @@ def _handle_ops_admin_post(
     if path == "/ops/storage-diagnostic/cancel":
         result = api.cancel_storage_diagnostic()
         handler.send_json(result, status=202 if bool(result.get("cancelling")) else 200)
+        return True
+
+    if path == "/ops/storage-maintenance":
+        result = api.start_storage_maintenance()
+        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
         return True
 
     if path == "/ops/alerts/ack":

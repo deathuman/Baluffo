@@ -729,6 +729,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=("frontend/admin/app/storage-breakdown.js",),
     ),
     _route(
+        "POST",
+        "/ops/storage-maintenance",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=("frontend/admin/app/storage-breakdown.js",),
+    ),
+    _route(
         "POST", "/sync/config", EXACT, POST_ADMIN_HANDLER, "public", caller_files=ADMIN_SYNC_CALLERS
     ),
     _route(

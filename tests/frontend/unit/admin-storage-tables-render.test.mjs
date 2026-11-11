@@ -40,9 +40,11 @@ test("renders estimated table sizes with share, row estimates, and pooled bytes"
   assert.match(html, /6 KB/);
   assert.match(html, /75\.0%/);
   assert.match(html, /~1[.,]200/);
-  assert.match(html, /estimated from rowid samples/);
-  assert.match(html, /Indexes, schema, and untracked pages/);
-  assert.match(html, /750 ms budget/);
+  assert.match(html, /Sampled estimate/);
+  assert.match(html, /rowid-sample/);
+  assert.match(html, /Time budget/);
+  assert.match(html, /Technical details/);
+  assert.match(html, /data-table-name="source_runs"/);
 });
 
 test("renders exact dbstat sizes without estimate tildes", () => {
@@ -52,14 +54,14 @@ test("renders exact dbstat sizes without estimate tildes", () => {
     tables: [{ name: "source_runs", bytes: 6_000, share: 0.75, rowCount: null }]
   }), formatBytes);
 
-  assert.match(html, /exact dbstat measurement/);
+  assert.match(html, /Exact allocation/);
   assert.doesNotMatch(html, /~1[.,]200/);
   assert.match(html, /—/);
 });
 
 test("renders partial and unavailable states", () => {
   const partial = renderStorageTablesHtml(payload({ status: "partial", complete: false }), formatBytes);
-  assert.match(partial, /time budget expired/);
+  assert.match(partial, /ran out of time/);
 
   const unavailable = renderStorageTablesHtml(
     { status: "unavailable", error: "no dbstat <unsafe>" },
@@ -154,7 +156,7 @@ test("renders unavailable allocation without hiding exact job source totals", ()
 
   assert.match(html, /does not include dbstat/);
   assert.match(html, /gen-current/);
-  assert.match(html, /content counts, not sampled estimates/);
+  assert.match(html, /not samples/);
 });
 
 test("renders quick generation counts without table allocation", () => {
@@ -214,23 +216,23 @@ test("renders quick generation counts without table allocation", () => {
       ]
     },
     jobsByGeneration: {
-      listedRowCount: 3,
-      generationCount: 2,
+      listedRowCount: 2,
+      generationCount: 1,
+      scope: "current",
       byGeneration: [
-        { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false },
-        { generation: "gen-old", rowCount: 1, isCurrent: false, isOrphan: true }
+        { generation: "gen-current", rowCount: 2, isCurrent: true, isOrphan: false }
       ]
     }
   }, formatBytes);
 
-  assert.match(html, /Quick check reads current feed counts/);
-  assert.match(html, /Only the current generation is counted here/);
-  assert.match(html, /Estimated row bytes/);
-  assert.match(html, /Most sampled row bytes are in older generations/);
+  assert.match(html, /Current feed/);
+  assert.match(html, /Space used by saved rows/);
+  assert.match(html, /Current stored rows/);
   assert.match(html, /gen-current/);
-  assert.match(html, /gen-old/);
-  assert.match(html, /orphan/);
-  assert.match(html, /job_sources by feed generation/);
+  assert.match(html, /data-generation-id="gen-current"/);
+  assert.match(html, /bounded-rowid-sample/);
+  assert.match(html, /Saved source rows by feed version/);
+  assert.match(html, /Jobs by feed version/);
   assert.doesNotMatch(html, /dbstat exact/);
 });
 
@@ -245,6 +247,12 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.ok(opsIndex > storageIndex);
   assert.match(adminHtml, /data-ui="admin-storage-tables-refresh-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-quick-check-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-maintenance-btn"/);
+  assert.match(adminHtml, /data-ui="admin-storage-maintenance-status"/);
+  assert.match(adminHtml, /Database storage/);
+  assert.match(adminHtml, /Full storage audit/);
+  assert.match(adminHtml, /admin-storage-advanced/);
+  assert.match(adminHtml, /admin-storage-check-title/);
   assert.match(adminHtml, /data-ui="admin-storage-tables-body"/);
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-cancel-btn"/);

@@ -1,25 +1,18 @@
-## [0.3.053] - 2026-11-11
-
-> This container rollup includes the changes published as 0.3.049 through
-> 0.3.052, so an install upgrading from 0.3.048 receives the storage,
-> retention, and Quick check changes in one step.
+## [0.3.054] - 2026-11-11
 
 ### Added
 
-- Admin's Runtime Database Storage panel can now run an exact, read-only diagnostic while the database is large. It reports table and index allocation, free pages, WAL overhead, and the rows and bytes held by each saved source-bundle generation, and the result can be exported as JSON for an incident record.
-- Admin's Quick check counts `job_sources` and `jobs` rows by feed generation without a full `dbstat` scan. It reports current feed counts, page and free-page totals, and the largest generations so a runaway database can be identified quickly.
-- Admin's Quick check now includes a bounded estimate of stored row bytes in the current generation versus older feed generations. It samples current rows and table rowids instead of walking the database or grouping `job_sources`; the estimate excludes indexes and is marked partial when its deadline expires.
-
-### Changed
-
-- The runtime database now keeps only the newest 30 fetch runs and removes older terminal source history in bounded, repeating passes, so a long-lived install can reclaim space instead of growing forever. Full source details remain in compressed evidence archives.
-- A database compaction that cannot run when first due is retried after the retention backlog drains, so a temporary busy period or low-disk condition does not strand cleanup indefinitely.
+- Admin's Runtime Database Storage panel now has a **Run maintenance** button. It starts the same bounded cleanup that normally runs after serving: older saved jobs-feed generations are removed, then the database is compacted when the backlog drains. It keeps the current feed and refuses to start while an active task is running.
 
 ### Fixed
 
-- The Admin **Quick check** no longer starts a full `job_sources` generation scan on a large runtime database. It reports the exact current-generation counters from `job_feed_state` and counts jobs by generation under a short deadline; older source-row totals stay in the exact diagnostic. On the live 211 GB database, the previous check spent over 20 minutes grouping `job_sources`.
-- The Admin Runtime Database Storage panel now receives table sizes while a large database is being cleaned. Table sampling has a hard deadline and no longer loads oversized source payloads before returning a partial estimate.
+- Admin's Quick check now estimates current versus older stored row bytes with a small number of sequential rowid windows instead of dozens of random row lookups. It reads the current jobs count from the feed state and no longer groups the jobs table on a large database, so the check can finish on a 211 GB store.
+
+### Changed
+
+- The runtime database now removes old saved jobs-feed generations during post-serve maintenance, keeping the current generation and deleting at most four older generations per bounded pass. The existing 30-second follow-up drains the backlog, then the database is compacted so the freed pages are returned to the filesystem instead of remaining in the file.
+- Admin's Runtime Database Storage panel now uses clear, bordered sections and plain-language labels. The exact **Full storage audit** sits under Advanced, while raw table, generation, byte, method, and warning details remain available in Technical details.
 
 ### Notes
 
-- Existing jobs, saved jobs, notes, and the exact diagnostic are unchanged. Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+- The current feed, saved jobs, notes, task history, and compatibility exports are preserved. Older feed generations are retained only until the post-serve cleanup has established that the current generation is published. Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.

@@ -68,6 +68,7 @@ def build_bridge_api(
     start_storage_diagnostic: Callable[[str], dict[str, Any]] | None = None,
     get_storage_diagnostic_payload: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_diagnostic: Callable[[], dict[str, Any]] | None = None,
+    start_storage_maintenance: Callable[[], dict[str, Any]] | None = None,
     compute_fetcher_metrics: Callable[..., dict[str, Any]],
     get_projected_run_history: Callable[[], Any],
     get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]],
@@ -177,6 +178,8 @@ def build_bridge_api(
         or (lambda: {"ok": True, "storageDiagnostic": None}),
         cancel_storage_diagnostic=cancel_storage_diagnostic
         or (lambda: {"ok": False, "error": "not_implemented"}),
+        start_storage_maintenance=start_storage_maintenance
+        or (lambda: {"ok": False, "started": False, "error": "not_implemented"}),
         compute_fetcher_metrics=compute_fetcher_metrics,
         get_projected_run_history=get_projected_run_history,
         get_lifecycle_run_history_rows=get_lifecycle_run_history_rows,

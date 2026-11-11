@@ -110,6 +110,9 @@ class MinimalAdminPostRouteApi:
     def cancel_storage_diagnostic(self) -> dict[str, Any]:
         return {"cancelling": True, "storageDiagnostic": {"status": "cancelling"}}
 
+    def start_storage_maintenance(self) -> dict[str, Any]:
+        return {"ok": True, "started": True, "alreadyRunning": False}
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
@@ -208,6 +211,10 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     storage_diagnostic_cancel = _post(api, "/ops/storage-diagnostic/cancel", {})
     assert storage_diagnostic_cancel.sent[-1]["status"] == 202
     assert storage_diagnostic_cancel.sent[-1]["payload"]["cancelling"] is True
+
+    storage_maintenance = _post(api, "/ops/storage-maintenance", {})
+    assert storage_maintenance.sent[-1]["status"] == 202
+    assert storage_maintenance.sent[-1]["payload"]["started"] is True
 
     sync_task = _post(api, "/tasks/run-sync-pull", {})
     assert sync_task.sent[-1]["payload"]["action"] == "pull"

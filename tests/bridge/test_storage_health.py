@@ -15,6 +15,7 @@ from src.bridge.storage_health import (
     runtime_db_file_sizes,
     set_storage_compaction_hold,
     set_storage_maintenance_deferred,
+    start_storage_maintenance,
     storage_compaction_hold_active,
     storage_maintenance_deferred,
 )
@@ -142,6 +143,62 @@ def test_runtime_db_file_sizes_reports_disk_state_without_opening_store(tmp_path
 
     assert sizes == {"databaseBytes": 2, "walBytes": 4, "shmBytes": 0}
     assert not (tmp_path / "baluffo-runtime.db-shm").exists()
+
+
+def test_start_storage_maintenance_schedules_the_bounded_retention_pass(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls: list[tuple[str, bool]] = []
+
+    class FakeStore:
+        compaction_held = False
+
+        def runtime_retention_status(self):
+            return {"running": False, "lastStatus": "not-run"}
+
+        def schedule_runtime_retention(self, *, reason: str, force: bool) -> bool:
+            calls.append((reason, force))
+            return True
+
+        def compaction_status(self):
+            return {"status": "not-run", "freelistBytes": 0}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: FakeStore(),
+    )
+
+    result = start_storage_maintenance(tmp_path)
+
+    assert result["ok"] is True
+    assert result["started"] is True
+    assert result["alreadyRunning"] is False
+    assert calls == [("admin-manual", True)]
+    assert result["compaction"]["status"] == "not-run"
+
+
+def test_start_storage_maintenance_honors_the_active_task_hold(tmp_path: Path, monkeypatch) -> None:
+    class HeldStore:
+        compaction_held = True
+
+        def runtime_retention_status(self):
+            return {"running": False, "lastStatus": "not-run"}
+
+        def schedule_runtime_retention(self, *, reason: str, force: bool) -> bool:
+            raise AssertionError("a held store must not schedule retention")
+
+        def compaction_status(self):
+            return {"status": "not-run", "freelistBytes": 0}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: HeldStore(),
+    )
+
+    result = start_storage_maintenance(tmp_path)
+
+    assert result["started"] is False
+    assert result["reason"] == "held-active-task"
 
 
 def test_storage_maintenance_deferral_covers_stores_created_later(tmp_path: Path) -> None:

@@ -237,6 +237,68 @@ def resume_storage_maintenance(
     return results
 
 
+def start_storage_maintenance(data_dir: Path | str) -> dict[str, Any]:
+    """Start one bounded retention/compaction pass for the runtime store.
+
+    This is the same post-serve maintenance path, exposed for an explicit Admin
+    action. It never waits for the pass to finish: the store schedules its own
+    daemon thread, and the existing retention follow-up drains a backlog. A
+    running bridge task holds the pass so a fetch cannot race generation removal.
+    """
+    resolved = _resolve_data_dir(data_dir)
+    try:
+        store = get_storage_store(resolved, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+    except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
+        return {
+            "ok": False,
+            "started": False,
+            "alreadyRunning": False,
+            "error": str(exc),
+        }
+    try:
+        status = store.runtime_retention_status()
+        if store.compaction_held:
+            return {
+                "ok": True,
+                "started": False,
+                "alreadyRunning": False,
+                "reason": "held-active-task",
+                "runtimeRetention": status,
+                "compaction": store.compaction_status(),
+            }
+        if bool(status.get("running")):
+            return {
+                "ok": True,
+                "started": False,
+                "alreadyRunning": True,
+                "reason": "already-running",
+                "runtimeRetention": status,
+                "compaction": store.compaction_status(),
+            }
+        started = bool(store.schedule_runtime_retention(reason="admin-manual", force=True))
+        current = store.runtime_retention_status()
+        reason = ""
+        if not started:
+            reason = (
+                "held-active-task" if current.get("status") == "held-active-task" else "not-started"
+            )
+        return {
+            "ok": True,
+            "started": started,
+            "alreadyRunning": (not started) and bool(current.get("running")),
+            "reason": reason,
+            "runtimeRetention": current,
+            "compaction": store.compaction_status(),
+        }
+    except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
+        return {
+            "ok": False,
+            "started": False,
+            "alreadyRunning": False,
+            "error": str(exc),
+        }
+
+
 def _stalled_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
     """Answer without a fresh reading, and say exactly that.
 

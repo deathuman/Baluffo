@@ -21,27 +21,26 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from src.storage_metrics import file_size
 
 SCHEMA_VERSION = 1
 PROGRESS_HANDLER_OPS = 2_000
 PROGRESS_EMIT_INTERVAL_S = 0.5
-QUICK_GENERATION_LIMIT = 50
-QUICK_JOBS_TIMEOUT_S = 10.0
-QUICK_TOTAL_BUDGET_S = 10.0
-QUICK_ROW_BYTES_BUDGET_S = 3.0
-QUICK_ROW_BYTES_SAMPLE_ROWS = 24
+QUICK_ROW_BYTES_BUDGET_S = 6.0
+QUICK_ROW_BYTES_SAMPLE_ROWS = 8
+QUICK_ROW_BYTES_WINDOWS = 6
+QUICK_ROW_BYTES_WINDOW_ROWS = 8
 QUICK_ROW_BYTES_TABLES = ("job_sources", "jobs")
 QUICK_ROW_BYTES_ROW_OVERHEAD = 8
 QUICK_ROW_BYTES_SEED = 20261111
 QUICK_CHECK_WARNING = (
-    "Quick check reads current feed counts and page counters, counts jobs by "
-    "generation within a bounded deadline, and samples stored row bytes for the "
-    "current and older generations. Row-byte figures are estimates that exclude "
-    "indexes; older generation counts and exact allocation remain in the exact "
-    "diagnostic."
+    "Quick check reads current feed counts and page counters, samples stored row "
+    "bytes for the current and older generations with bounded sequential rowid "
+    "windows, and does not group jobs by generation. Row-byte figures are "
+    "estimates that exclude indexes; older generation counts and exact allocation "
+    "remain in the exact diagnostic."
 )
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -238,45 +237,6 @@ def _feed_state(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
-def _generation_counts(
-    conn: sqlite3.Connection,
-    table: str,
-    current_generation: str,
-    *,
-    limit: int = QUICK_GENERATION_LIMIT,
-) -> dict[str, Any]:
-    """Count rows by generation using the table's generation-leading index."""
-    bounded_limit = max(1, int(limit))
-    rows = conn.execute(
-        f"""
-        SELECT feed_generation, COUNT(*) AS row_count
-        FROM {_quoted(table)}
-        GROUP BY feed_generation
-        ORDER BY row_count DESC, feed_generation ASC
-        LIMIT ?
-        """,
-        (bounded_limit + 1,),
-    ).fetchall()
-    truncated = len(rows) > bounded_limit
-    rows = rows[:bounded_limit]
-    by_generation = [
-        {
-            "generation": str(generation or ""),
-            "rowCount": int(cast(Any, row_count) or 0),
-            "isCurrent": bool(generation and str(generation) == current_generation),
-            "isOrphan": bool(generation and str(generation) != current_generation),
-        }
-        for generation, row_count in rows
-    ]
-    return {
-        "table": table,
-        "listedRowCount": sum(cast(int, row["rowCount"]) for row in by_generation),
-        "generationCount": len(by_generation),
-        "truncated": truncated,
-        "byGeneration": by_generation,
-    }
-
-
 class _DiagnosticProgress:
     """Track progress and cancellation outside the measurement body."""
 
@@ -405,6 +365,13 @@ def _row_bytes_total_sample(
     rng: random.Random,
     deadline: float,
 ) -> tuple[int, int, int | None, int | None, bool]:
+    """Estimate whole-table bytes with a few sequential rowid windows.
+
+    A random rowid lookup per sample is too expensive on a multi-hundred-gigabyte
+    HDD: every row can be a separate seek. Each window seeks once and reads its
+    rows in rowid order, while the window start is randomly placed inside its
+    stratum so old and current generations are both represented.
+    """
     bounds = conn.execute(f"SELECT MIN(rowid), MAX(rowid) FROM {_quoted(table)}").fetchone()
     if bounds is None or bounds[0] is None or bounds[1] is None:
         return 0, 0, 0, 0, False
@@ -414,29 +381,38 @@ def _row_bytes_total_sample(
     span = max(1, high - low + 1)
     hits = 0
     sampled_bytes = 0
-    attempts = 0
-    while attempts < QUICK_ROW_BYTES_SAMPLE_ROWS:
+    sampled_span = 0
+    windows_attempted = 0
+    for window_index in range(QUICK_ROW_BYTES_WINDOWS):
         if time.monotonic() >= deadline:
             break
-        row = conn.execute(
+        window_start = low + int(span * window_index / QUICK_ROW_BYTES_WINDOWS)
+        window_end = low + int(span * (window_index + 1) / QUICK_ROW_BYTES_WINDOWS)
+        if window_end <= window_start:
+            window_end = window_start + 1
+        start = rng.randrange(window_start, window_end)
+        rows = conn.execute(
             f"""
-            SELECT {expression}
+            SELECT rowid, {expression}
             FROM {_quoted(table)}
-            WHERE rowid = ?
+            WHERE rowid >= ?
+            ORDER BY rowid
+            LIMIT ?
             """,
-            (rng.randint(low, high),),
-        ).fetchone()
-        attempts += 1
-        if row is None:
+            (start, QUICK_ROW_BYTES_WINDOW_ROWS),
+        ).fetchall()
+        windows_attempted += 1
+        if not rows:
             continue
-        hits += 1
-        sampled_bytes += int(row[0] or 0) + overhead
-    partial = attempts < QUICK_ROW_BYTES_SAMPLE_ROWS
-    if not hits:
-        return attempts, 0, None, None, partial
-    total_rows = int(round(span * hits / max(1, attempts)))
+        hits += len(rows)
+        sampled_bytes += sum(int(row[1] or 0) + overhead for row in rows)
+        sampled_span += int(rows[-1][0]) - start + 1
+    partial = windows_attempted < QUICK_ROW_BYTES_WINDOWS
+    if not hits or sampled_span <= 0:
+        return hits, 0, None, None, partial
+    total_rows = int(round(span * hits / sampled_span))
     total_bytes = int(round((sampled_bytes / hits) * total_rows))
-    return attempts, hits, total_rows, total_bytes, partial
+    return hits, hits, total_rows, total_bytes, partial
 
 
 def _finish_row_bytes_entry(entry: dict[str, Any], warnings: list[str]) -> None:
@@ -464,6 +440,7 @@ def _row_bytes_table_probe(
     current_generation: str,
     rng: random.Random,
     deadline: float,
+    budget_s: float,
     progress: _DiagnosticProgress,
     warnings: list[str],
 ) -> dict[str, Any]:
@@ -516,25 +493,19 @@ def _row_bytes_table_probe(
             warnings.append(f"{table} row-byte sample found no live rows.")
         elif partial:
             entry["status"] = "partial"
-            warnings.append(
-                f"{table} row-byte sample hit the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
-            )
+            warnings.append(f"{table} row-byte sample hit the {budget_s:g}s table budget.")
         _finish_row_bytes_entry(entry, warnings)
     except TimeoutError:
         entry["status"] = "partial"
-        entry["error"] = f"row-byte sample exceeded {QUICK_ROW_BYTES_BUDGET_S:g}s"
-        warnings.append(
-            f"{table} row-byte sample exceeded the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
-        )
+        entry["error"] = f"row-byte sample exceeded {budget_s:g}s"
+        warnings.append(f"{table} row-byte sample exceeded the {budget_s:g}s table budget.")
     except sqlite3.OperationalError as exc:
         if progress.was_cancelled():
             raise StorageDiagnosticCancelled("storage quick check cancelled") from exc
         if "interrupt" in str(exc).lower():
             entry["status"] = "partial"
-            entry["error"] = f"row-byte sample exceeded {QUICK_ROW_BYTES_BUDGET_S:g}s"
-            warnings.append(
-                f"{table} row-byte sample exceeded the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
-            )
+            entry["error"] = f"row-byte sample exceeded {budget_s:g}s"
+            warnings.append(f"{table} row-byte sample exceeded the {budget_s:g}s table budget.")
         else:
             entry["status"] = "unavailable"
             entry["error"] = str(exc)
@@ -604,6 +575,8 @@ def _row_bytes_payload(
         "status": status,
         "method": "bounded-rowid-sample",
         "sampleRows": QUICK_ROW_BYTES_SAMPLE_ROWS,
+        "windows": QUICK_ROW_BYTES_WINDOWS,
+        "rowsPerWindow": QUICK_ROW_BYTES_WINDOW_ROWS,
         "budgetMs": int(round(QUICK_ROW_BYTES_BUDGET_S * 1000)),
         "durationMs": int(round((time.monotonic() - started) * 1000)),
         "currentBytes": current_bytes,
@@ -665,6 +638,7 @@ def _row_bytes_probe(
                     current_generation=current_generation,
                     rng=rng,
                     deadline=table_deadline,
+                    budget_s=table_budget_s,
                     progress=progress,
                     warnings=warnings,
                 )
@@ -672,41 +646,6 @@ def _row_bytes_probe(
     finally:
         conn.set_progress_handler(progress.sqlite_progress, PROGRESS_HANDLER_OPS)
     return _row_bytes_payload(tables, warnings, started=started)
-
-
-def _bounded_generation_counts(
-    conn: sqlite3.Connection,
-    table: str,
-    current_generation: str,
-    *,
-    timeout_s: float = QUICK_JOBS_TIMEOUT_S,
-    progress: _DiagnosticProgress | None = None,
-) -> tuple[dict[str, Any] | None, str]:
-    """Count one generation-leading table, returning partial status on timeout."""
-    deadline = time.monotonic() + max(0.1, float(timeout_s))
-
-    def _bounded_progress() -> int:
-        if progress is not None:
-            if progress.was_cancelled():
-                return 1
-            progress.operation_count += PROGRESS_HANDLER_OPS
-            progress.emit()
-        return 1 if time.monotonic() >= deadline else 0
-
-    conn.set_progress_handler(_bounded_progress, PROGRESS_HANDLER_OPS)
-    try:
-        return _generation_counts(conn, table, current_generation), ""
-    except sqlite3.OperationalError as exc:
-        if progress is not None and progress.was_cancelled():
-            raise StorageDiagnosticCancelled("storage quick check cancelled") from exc
-        if "interrupt" in str(exc).lower():
-            return None, f"generation count exceeded {timeout_s:g} seconds"
-        raise
-    finally:
-        conn.set_progress_handler(
-            progress.sqlite_progress if progress is not None else None,
-            PROGRESS_HANDLER_OPS,
-        )
 
 
 def _open_readonly(path: Path, progress: _DiagnosticProgress) -> sqlite3.Connection:
@@ -847,27 +786,12 @@ def measure_storage_quick_check(
         )
         tracker.check_cancelled()
         tracker.set_phase("jobs")
-        remaining_s = max(0.1, QUICK_TOTAL_BUDGET_S - (time.monotonic() - started))
-        jobs, jobs_error = _bounded_generation_counts(
-            conn,
+        jobs = _current_generation_counts(
             "jobs",
             current_generation,
-            timeout_s=remaining_s,
-            progress=tracker,
+            int(feed_state["currentRowCount"] or 0),
         )
         warnings = [QUICK_CHECK_WARNING, *row_bytes_probe["warnings"]]
-        if jobs is None:
-            jobs = _current_generation_counts(
-                "jobs",
-                current_generation,
-                int(feed_state["currentRowCount"] or 0),
-            )
-            jobs["status"] = "partial"
-            jobs["error"] = jobs_error
-            warnings.append(
-                f"Jobs by generation did not finish: {jobs_error}. "
-                "The current generation count is from job_feed_state."
-            )
         tracker.check_cancelled()
         tracker.set_phase("finalizing")
         return {
@@ -884,8 +808,8 @@ def measure_storage_quick_check(
             "pageCount": counters["pageCount"],
             "freelistBytes": counters["freelistBytes"],
             "allocatedBytes": counters["allocatedBytes"],
-            "exactContent": not jobs_error,
-            "partial": bool(jobs_error or row_bytes_probe["status"] != "ok"),
+            "exactContent": True,
+            "partial": bool(row_bytes_probe["status"] != "ok"),
             "exactAllocation": False,
             "tableSizes": None,
             "jobSources": None,

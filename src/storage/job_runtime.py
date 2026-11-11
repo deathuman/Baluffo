@@ -481,7 +481,7 @@ class JobRuntimeStore:
                 FROM jobs
                 WHERE feed_generation != ?
                 GROUP BY feed_generation
-                ORDER BY MIN(updated_at) ASC
+                ORDER BY feed_generation ASC
                 """,
                 (current,),
             )
@@ -492,7 +492,7 @@ class JobRuntimeStore:
                 FROM jobs
                 WHERE feed_generation != ?
                 GROUP BY feed_generation
-                ORDER BY MIN(updated_at) ASC
+                ORDER BY feed_generation ASC
                 LIMIT ?
                 """,
                 (current, int(delete_cap)),

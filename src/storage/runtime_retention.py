@@ -10,6 +10,7 @@ can be called from post-serve maintenance without importing bridge code.
 from __future__ import annotations
 
 import os
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from src.storage.source_runtime import (
@@ -80,6 +81,61 @@ def runtime_retention_policy() -> dict[str, int]:
     }
 
 
+def _cleanup_job_generations(store: BaluffoStore) -> dict[str, Any]:
+    """Delete old jobs-feed generations during post-serve retention.
+
+    Jobs generations are only needed while they are the published feed (or a
+    generation a fetch is about to publish). A long-lived store otherwise keeps
+    every fetch's full job and source payloads forever; on the live database that
+    was the multi-hundred-gigabyte table, while source-run retention kept
+    reporting that there was nothing to prune.
+    """
+    try:
+        modes = store.get_authority_modes()
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "deletedGenerationCount": 0,
+            "truncated": False,
+        }
+    if str((modes or {}).get("jobsFeed") or "").strip().lower() != "sqlite":
+        return {
+            "status": "skipped",
+            "reason": "jobsFeed is not sqlite-backed",
+            "deletedGenerationCount": 0,
+            "truncated": False,
+        }
+    from src.storage.job_runtime import DEFAULT_GENERATION_DELETE_CAP, JobRuntimeStore
+
+    try:
+        runtime = JobRuntimeStore(store)
+        current = runtime.current_generation()
+        if not current:
+            return {
+                "status": "nothing-to-prune",
+                "deletedGenerationCount": 0,
+                "truncated": False,
+            }
+        deleted = runtime.cleanup_old_generations(
+            keep_generations=1,
+            delete_cap=DEFAULT_GENERATION_DELETE_CAP,
+        )
+    except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "deletedGenerationCount": 0,
+            "truncated": False,
+        }
+    return {
+        "status": "ok" if deleted else "nothing-to-prune",
+        "deletedGenerationCount": int(deleted),
+        "keepGenerations": 1,
+        "truncated": int(deleted) >= DEFAULT_GENERATION_DELETE_CAP,
+    }
+
+
 def run_runtime_retention(store: BaluffoStore, *, reason: str = "") -> dict[str, Any]:
     """Run one bounded retention pass against the runtime store."""
     policy = runtime_retention_policy()
@@ -95,11 +151,24 @@ def run_runtime_retention(store: BaluffoStore, *, reason: str = "") -> dict[str,
         max_runs=policy["compact_runs"],
         max_rows=policy["compact_rows"],
     )
-    statuses = {str(result.get("status") or ""), str(compacted.get("status") or "")}
+    job_generations = _cleanup_job_generations(store)
+    statuses = {
+        str(result.get("status") or ""),
+        str(compacted.get("status") or ""),
+        str(job_generations.get("status") or ""),
+    }
+    job_failed = job_generations.get("status") == "failed"
     return {
         "reason": str(reason or ""),
         **result,
         **compacted,
-        "status": "ok" if "ok" in statuses else sorted(statuses)[0] or "nothing-to-prune",
-        "truncated": bool(result.get("truncated") or compacted.get("truncated")),
+        "jobGenerations": job_generations,
+        "status": "failed"
+        if job_failed
+        else ("ok" if "ok" in statuses else sorted(statuses)[0] or "nothing-to-prune"),
+        "truncated": bool(
+            result.get("truncated")
+            or compacted.get("truncated")
+            or job_generations.get("truncated")
+        ),
     }

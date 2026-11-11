@@ -11,6 +11,7 @@ import {
 
 const STORAGE_HEALTH_ROUTE = "/ops/storage-health";
 const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
+const STORAGE_MAINTENANCE_ROUTE = "/ops/storage-maintenance";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
 const STORAGE_DIAGNOSTIC_POLL_MS = 2000;
 
@@ -55,11 +56,12 @@ export function createStorageBreakdownController({
   let diagnosticInFlight = false;
   let diagnosticPollTimer = null;
   let diagnostic = null;
+  let maintenanceInFlight = false;
 
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
-    if (tableSizes.status === "partial" || tableSizes.complete === false) return "Partial estimate";
-    return tableSizes.estimated ? "Estimated" : "Exact";
+    if (tableSizes.status === "partial" || tableSizes.complete === false) return "Partial snapshot";
+    return tableSizes.estimated ? "Estimated snapshot" : "Measured";
   }
 
   function setStatus(text, tone = "") {
@@ -87,7 +89,7 @@ export function createStorageBreakdownController({
       return {
         text: value.status === "cancelling"
           ? "Cancelling…"
-          : quick ? "Checking…" : "Measuring…",
+          : quick ? "Checking…" : "Auditing…",
         tone: ""
       };
     }
@@ -98,15 +100,15 @@ export function createStorageBreakdownController({
           || value.jobsByGeneration?.status === "partial"
           || value.rowBytesProbe?.status === "partial";
         return partial
-          ? { text: "Quick check partial", tone: "warning" }
-          : { text: "Quick check complete", tone: "" };
+          ? { text: "Partial results", tone: "warning" }
+          : { text: "Check complete", tone: "" };
       }
       return value.tableSizes?.status === "unavailable"
-        ? { text: "Complete — content only", tone: "warning" }
-        : { text: "Complete", tone: "" };
+        ? { text: "Audit complete — content only", tone: "warning" }
+        : { text: "Audit complete", tone: "" };
     }
     if (value.status === "failed") {
-      return { text: quick ? "Quick check failed" : "Failed", tone: "warning" };
+      return { text: quick ? "Check failed" : "Audit failed", tone: "warning" };
     }
     if (value.status === "cancelled") return { text: "Cancelled", tone: "warning" };
     return { text: "Not run", tone: "" };
@@ -122,6 +124,13 @@ export function createStorageBreakdownController({
   function setExportAvailable(available) {
     const button = refs.adminStorageDiagnosticExportBtnEl;
     if (button) button.hidden = !available;
+  }
+
+  function setMaintenanceStatus(text, tone = "") {
+    const statusEl = refs.adminStorageMaintenanceStatusEl;
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.setAttribute?.("data-tone", tone);
   }
 
   function renderDiagnostic() {
@@ -193,12 +202,12 @@ export function createStorageBreakdownController({
     const quick = mode === "quick";
     clearDiagnosticPoll();
     setExportAvailable(false);
-    setDiagnosticStatus(quick ? "Starting quick check…" : "Starting…");
+    setDiagnosticStatus(quick ? "Starting check…" : "Starting full audit…");
     if (refs.adminStorageDiagnosticBodyEl) {
       refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
         quick
-          ? "Starting the quick generation check…"
-          : "Starting the exact storage diagnostic…"
+          ? "Starting the quick check…"
+          : "Starting the full storage audit…"
       );
     }
     try {
@@ -210,10 +219,10 @@ export function createStorageBreakdownController({
       return acceptDiagnostic(payload);
     } catch (err) {
       setExportAvailable(false);
-      setDiagnosticStatus(quick ? "Quick check failed" : "Failed", "warning");
+      setDiagnosticStatus(quick ? "Check failed" : "Audit failed", "warning");
       if (refs.adminStorageDiagnosticBodyEl) {
         refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
-          `Could not start the ${quick ? "quick check" : "exact diagnostic"}: ${err?.message || err || "unknown error"}`
+          `Could not start the ${quick ? "quick check" : "full audit"}: ${err?.message || err || "unknown error"}`
         );
       }
       return null;
@@ -242,10 +251,52 @@ export function createStorageBreakdownController({
       setDiagnosticStatus("Unavailable", "warning");
       if (refs.adminStorageDiagnosticBodyEl) {
         refs.adminStorageDiagnosticBodyEl.innerHTML = renderStorageTablesMessageHtml(
-          `Could not cancel the exact diagnostic: ${err?.message || err || "unknown error"}`
+          `Could not cancel the full audit: ${err?.message || err || "unknown error"}`
         );
       }
       return null;
+    }
+  }
+
+  async function startMaintenance() {
+    if (maintenanceInFlight || typeof postBridge !== "function") return null;
+    maintenanceInFlight = true;
+    const button = refs.adminStorageMaintenanceBtnEl;
+    if (button) button.disabled = true;
+    setMaintenanceStatus("Starting maintenance…");
+    try {
+      const payload = await postBridge(
+        STORAGE_MAINTENANCE_ROUTE,
+        {},
+        { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
+      );
+      if (payload?.started) {
+        setMaintenanceStatus(
+          "Maintenance started — older saved versions will be removed and the database compacted in the background."
+        );
+      } else if (payload?.alreadyRunning) {
+        setMaintenanceStatus("Maintenance is already running.", "warning");
+      } else if (payload?.reason === "held-active-task") {
+        setMaintenanceStatus(
+          "Deferred while an active task is running; try again when it finishes.",
+          "warning"
+        );
+      } else {
+        setMaintenanceStatus(
+          `Maintenance did not start: ${payload?.error || payload?.reason || "unknown reason"}`,
+          "warning"
+        );
+      }
+      return payload;
+    } catch (err) {
+      setMaintenanceStatus(
+        `Could not start maintenance: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      return null;
+    } finally {
+      maintenanceInFlight = false;
+      if (button) button.disabled = false;
     }
   }
 
@@ -286,7 +337,7 @@ export function createStorageBreakdownController({
     }
     inFlight = true;
     setStatus("Loading…");
-    renderMessage("Loading runtime database table sizes…");
+    renderMessage("Loading database storage details…");
     try {
       const payload = await getBridge(STORAGE_HEALTH_ROUTE, {
         timeoutMs,
@@ -312,6 +363,7 @@ export function createStorageBreakdownController({
     refreshBound = true;
     refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
     refs.adminStorageQuickCheckBtnEl?.addEventListener?.("click", () => startQuickCheck());
+    refs.adminStorageMaintenanceBtnEl?.addEventListener?.("click", () => startMaintenance());
     refs.adminStorageDiagnosticBtnEl?.addEventListener?.("click", () => startExactDiagnostic());
     refs.adminStorageDiagnosticCancelBtnEl?.addEventListener?.("click", () =>
       cancelExactDiagnostic()
@@ -327,6 +379,7 @@ export function createStorageBreakdownController({
     acceptStorageHealth,
     refreshDiagnostic,
     startStorageDiagnostic,
+    startMaintenance,
     startQuickCheck,
     startExactDiagnostic,
     cancelExactDiagnostic,
