@@ -22,6 +22,7 @@ function phaseLabel(phase) {
     opening: "Opening database",
     counters: "Reading page counters",
     feed_state: "Reading current feed state",
+    row_bytes: "Estimating current and older row bytes",
     tables: "Measuring table allocation",
     job_sources: "Grouping job_sources by generation",
     jobs: "Grouping jobs by generation",
@@ -135,14 +136,66 @@ function renderQuickGenerations(title, section) {
   </div>`;
 }
 
+function formatShare(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "—";
+}
+
+function renderQuickRowBytes(probe, formatBytes) {
+  if (!probe || typeof probe !== "object") return "";
+  const tables = Array.isArray(probe.tables) ? probe.tables : [];
+  const rows = tables.map(table => {
+    const current = table?.currentBytes;
+    const older = table?.oldBytes;
+    const total = table?.totalBytes;
+    return `<div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row" role="row">
+      <span class="admin-storage-diagnostic-name" role="cell">${escapeHtml(String(table?.table || "unknown"))}</span>
+      <span role="cell">${current === null || current === undefined ? "—" : escapeHtml(formatBytes(toNumber(current)))}</span>
+      <span role="cell">${older === null || older === undefined ? "—" : escapeHtml(formatBytes(toNumber(older)))}</span>
+      <span role="cell">${total === null || total === undefined ? "—" : escapeHtml(formatBytes(toNumber(total)))}</span>
+      <span role="cell">${escapeHtml(formatShare(table?.currentShare))}</span>
+    </div>`;
+  }).join("");
+  const warnings = (Array.isArray(probe.warnings) ? probe.warnings : [])
+    .map(warning => `<p class="admin-storage-diagnostic-note">${escapeHtml(String(warning))}</p>`)
+    .join("");
+  return `<div class="admin-storage-diagnostic-section">
+    <h4>Estimated row bytes — current vs older generations</h4>
+    <div class="admin-storage-diagnostic-meta">
+      <span>~${escapeHtml(formatBytes(toNumber(probe.totalBytes)))} total</span>
+      <span>~${escapeHtml(formatBytes(toNumber(probe.currentBytes)))} current (${escapeHtml(formatShare(probe.currentShare))})</span>
+      <span>~${escapeHtml(formatBytes(toNumber(probe.oldBytes)))} older</span>
+      ${probe.status === "ok" ? "" : "<span>partial sample</span>"}
+    </div>
+    ${probe.summary ? `<p class="admin-storage-diagnostic-note">${escapeHtml(String(probe.summary))}</p>` : ""}
+    ${rows
+      ? `<div class="admin-storage-diagnostic-grid" role="table" aria-label="Estimated row bytes by generation">
+        <div class="admin-storage-diagnostic-row admin-storage-diagnostic-quick-row admin-storage-diagnostic-head" role="row">
+          <span role="columnheader">Table</span>
+          <span role="columnheader">Current</span>
+          <span role="columnheader">Older</span>
+          <span role="columnheader">Total</span>
+          <span role="columnheader">Current share</span>
+        </div>
+        ${rows}
+      </div>`
+      : ""}
+    <p class="admin-storage-diagnostic-note">Bounded rowid and current-generation sample of stored row bytes; excludes indexes. Current-generation counts come from job_feed_state.</p>
+    ${warnings}
+  </div>`;
+}
+
 function renderQuickDiagnostic(diagnostic, formatBytes) {
+  const warnings = (Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [])
+    .filter(warning => !String(warning).startsWith("Quick check reads current feed counts"));
   return `
     ${renderQuickMeta(diagnostic, formatBytes)}
-    <p class="admin-storage-diagnostic-note">Quick check reads current feed counts and counts jobs by generation. It does not count older job_sources generations or measure table or index allocation.</p>
-    ${Array.isArray(diagnostic.warnings) && diagnostic.warnings.length
-      ? `<p class="admin-storage-diagnostic-warning">${diagnostic.warnings.map(warning => escapeHtml(String(warning))).join(" ")}</p>`
+    <p class="admin-storage-diagnostic-note">Quick check reads current feed counts, counts jobs by generation within a deadline, and estimates current versus older stored row bytes. Older generation counts and exact table or index allocation remain in the exact diagnostic.</p>
+    ${warnings.length
+      ? `<p class="admin-storage-diagnostic-warning">${warnings.map(warning => escapeHtml(String(warning))).join(" ")}</p>`
       : ""}
     ${renderQuickFeedState(diagnostic.feedState)}
+    ${renderQuickRowBytes(diagnostic.rowBytesProbe, formatBytes)}
     ${renderQuickGenerations("job_sources by feed generation", diagnostic.jobSourcesByGeneration)}
     ${renderQuickGenerations("jobs by feed generation", diagnostic.jobsByGeneration)}
   `;

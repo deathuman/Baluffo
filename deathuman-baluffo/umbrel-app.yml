@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.052"
+version: "0.3.053"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,10 +19,8 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.052 fixes the Admin Quick check on very large runtime databases.
-  It now reports the current feed counters immediately and counts jobs by
-  generation within a short deadline instead of scanning every job_sources row.
-  Older source-row totals and table allocation remain available in the exact
-  diagnostic. Existing data is unchanged.
+  Release 0.3.053 is a container rollup that adds a bounded current-versus-older
+  row-byte estimate to the Admin Quick check and includes the storage and
+  retention changes from 0.3.049 through 0.3.052. Existing data is unchanged.
 storage:
   dataRoot: data

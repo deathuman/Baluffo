@@ -78,6 +78,29 @@ const QUICK_DIAGNOSTIC = {
     currentSourceCount: 3,
     currentPublishedAt: "2026-11-11T09:00:00.000Z"
   },
+  rowBytesProbe: {
+    status: "ok",
+    method: "bounded-rowid-sample",
+    currentBytes: 400,
+    oldBytes: 1_600,
+    totalBytes: 2_000,
+    currentShare: 0.2,
+    oldShare: 0.8,
+    classification: "old-generations",
+    summary: "Most sampled row bytes are in older generations (20.0% current).",
+    tables: [
+      {
+        table: "job_sources",
+        currentBytes: 300,
+        oldBytes: 1_200,
+        totalBytes: 1_500,
+        currentRows: 2,
+        currentShare: 0.2,
+        status: "ok"
+      }
+    ],
+    warnings: []
+  },
   jobSourcesByGeneration: {
     listedRowCount: 2,
     generationCount: 1,
@@ -241,10 +264,35 @@ test("quick check starts with quick mode and renders generation counts", async (
   assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
   assert.deepEqual(f.postCalls[0].payload, { mode: "quick" });
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Quick check reads current feed counts/i);
+  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Estimated row bytes/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-old/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /jobs by feed generation/i);
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check complete");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, false);
+});
+
+test("quick check reports partial when the generation count times out", async () => {
+  const f = fixture({
+    postPayload: {
+      started: true,
+      storageDiagnostic: {
+        ...QUICK_DIAGNOSTIC,
+        partial: true,
+        exactContent: false,
+        jobsByGeneration: {
+          ...QUICK_DIAGNOSTIC.jobsByGeneration,
+          status: "partial",
+          scope: "current"
+        }
+      }
+    }
+  });
+  f.controller.init();
+
+  await f.controller.startQuickCheck();
+
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Quick check partial");
+  assert.equal(f.refs.adminStorageDiagnosticStatusEl.attributes["data-tone"], "warning");
 });
 
 test("exact diagnostic exports table and generation totals as JSON", async () => {

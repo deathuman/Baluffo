@@ -15,6 +15,7 @@ not measure allocation must not dress sampling up as exactness.
 
 from __future__ import annotations
 
+import random
 import sqlite3
 import time
 from collections.abc import Callable
@@ -29,11 +30,18 @@ PROGRESS_HANDLER_OPS = 2_000
 PROGRESS_EMIT_INTERVAL_S = 0.5
 QUICK_GENERATION_LIMIT = 50
 QUICK_JOBS_TIMEOUT_S = 10.0
+QUICK_TOTAL_BUDGET_S = 10.0
+QUICK_ROW_BYTES_BUDGET_S = 3.0
+QUICK_ROW_BYTES_SAMPLE_ROWS = 24
+QUICK_ROW_BYTES_TABLES = ("job_sources", "jobs")
+QUICK_ROW_BYTES_ROW_OVERHEAD = 8
+QUICK_ROW_BYTES_SEED = 20261111
 QUICK_CHECK_WARNING = (
-    "Quick check reads current feed counts and page counters and counts jobs by "
-    "generation within a bounded deadline; it does not count older job_sources "
-    "generations or measure table or index allocation. Use the exact diagnostic "
-    "for those totals."
+    "Quick check reads current feed counts and page counters, counts jobs by "
+    "generation within a bounded deadline, and samples stored row bytes for the "
+    "current and older generations. Row-byte figures are estimates that exclude "
+    "indexes; older generation counts and exact allocation remain in the exact "
+    "diagnostic."
 )
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -348,6 +356,324 @@ def _current_generation_counts(
     }
 
 
+def _stored_row_length_expression(conn: sqlite3.Connection, table: str) -> tuple[str, int]:
+    """Return a SQL expression for stored row bytes and its column count."""
+    rows = conn.execute(f"PRAGMA table_info({_quoted(table)})").fetchall()
+    columns = [str(row[1]) for row in rows if len(row) > 1 and row[1]]
+    if not columns:
+        return "0", 0
+    expression = " + ".join(
+        f"COALESCE(length(CAST({_quoted(column)} AS BLOB)), 0)" for column in columns
+    )
+    return expression, len(columns)
+
+
+def _row_bytes_current_sample(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    expression: str,
+    overhead: int,
+    generation: str,
+    row_count: int,
+    deadline: float,
+) -> tuple[int, int, int]:
+    if time.monotonic() >= deadline:
+        raise TimeoutError
+    rows = conn.execute(
+        f"""
+        SELECT {expression}
+        FROM {_quoted(table)}
+        WHERE feed_generation = ?
+        LIMIT ?
+        """,
+        (generation, QUICK_ROW_BYTES_SAMPLE_ROWS),
+    ).fetchall()
+    lengths = [int(row[0] or 0) for row in rows]
+    if not lengths:
+        return 0, 0, 0
+    average = int(round(sum(lengths) / len(lengths))) + overhead
+    return len(lengths), average, average * max(0, int(row_count))
+
+
+def _row_bytes_total_sample(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    expression: str,
+    overhead: int,
+    rng: random.Random,
+    deadline: float,
+) -> tuple[int, int, int | None, int | None, bool]:
+    bounds = conn.execute(f"SELECT MIN(rowid), MAX(rowid) FROM {_quoted(table)}").fetchone()
+    if bounds is None or bounds[0] is None or bounds[1] is None:
+        return 0, 0, 0, 0, False
+    if time.monotonic() >= deadline:
+        raise TimeoutError
+    low, high = int(bounds[0]), int(bounds[1])
+    span = max(1, high - low + 1)
+    hits = 0
+    sampled_bytes = 0
+    attempts = 0
+    while attempts < QUICK_ROW_BYTES_SAMPLE_ROWS:
+        if time.monotonic() >= deadline:
+            break
+        row = conn.execute(
+            f"""
+            SELECT {expression}
+            FROM {_quoted(table)}
+            WHERE rowid = ?
+            """,
+            (rng.randint(low, high),),
+        ).fetchone()
+        attempts += 1
+        if row is None:
+            continue
+        hits += 1
+        sampled_bytes += int(row[0] or 0) + overhead
+    partial = attempts < QUICK_ROW_BYTES_SAMPLE_ROWS
+    if not hits:
+        return attempts, 0, None, None, partial
+    total_rows = int(round(span * hits / max(1, attempts)))
+    total_bytes = int(round((sampled_bytes / hits) * total_rows))
+    return attempts, hits, total_rows, total_bytes, partial
+
+
+def _finish_row_bytes_entry(entry: dict[str, Any], warnings: list[str]) -> None:
+    total_bytes = entry.get("totalBytes")
+    current_bytes = entry.get("currentBytes")
+    if total_bytes is None or current_bytes is None:
+        return
+    total_bytes_int = max(0, int(total_bytes))
+    current_bytes_int = max(0, int(current_bytes))
+    if current_bytes_int > total_bytes_int and total_bytes_int > 0:
+        warnings.append(
+            f"{entry['table']} current-generation sample exceeded the table estimate; "
+            "sharing is clamped."
+        )
+    entry["oldBytes"] = max(0, total_bytes_int - current_bytes_int)
+    if total_bytes_int > 0:
+        entry["currentShare"] = round(min(1.0, current_bytes_int / total_bytes_int), 4)
+
+
+def _row_bytes_table_probe(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    count: int,
+    current_generation: str,
+    rng: random.Random,
+    deadline: float,
+    progress: _DiagnosticProgress,
+    warnings: list[str],
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "table": table,
+        "status": "ok",
+        "currentRows": count,
+        "currentSampleRows": 0,
+        "currentAvgRowBytes": None,
+        "currentBytes": None,
+        "estimatedTotalRows": None,
+        "totalSampleRows": 0,
+        "totalHits": 0,
+        "totalBytes": None,
+        "oldBytes": None,
+        "currentShare": None,
+        "error": "",
+    }
+    try:
+        expression, column_count = _stored_row_length_expression(conn, table)
+        overhead = QUICK_ROW_BYTES_ROW_OVERHEAD * max(1, column_count)
+        (
+            entry["currentSampleRows"],
+            entry["currentAvgRowBytes"],
+            entry["currentBytes"],
+        ) = _row_bytes_current_sample(
+            conn,
+            table=table,
+            expression=expression,
+            overhead=overhead,
+            generation=current_generation,
+            row_count=count,
+            deadline=deadline,
+        )
+        attempts, hits, total_rows, total_bytes, partial = _row_bytes_total_sample(
+            conn,
+            table=table,
+            expression=expression,
+            overhead=overhead,
+            rng=rng,
+            deadline=deadline,
+        )
+        entry["totalSampleRows"] = attempts
+        entry["totalHits"] = hits
+        entry["estimatedTotalRows"] = total_rows
+        entry["totalBytes"] = total_bytes
+        if hits == 0:
+            entry["status"] = "unavailable"
+            entry["error"] = "rowid sample found no live rows"
+            warnings.append(f"{table} row-byte sample found no live rows.")
+        elif partial:
+            entry["status"] = "partial"
+            warnings.append(
+                f"{table} row-byte sample hit the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
+            )
+        _finish_row_bytes_entry(entry, warnings)
+    except TimeoutError:
+        entry["status"] = "partial"
+        entry["error"] = f"row-byte sample exceeded {QUICK_ROW_BYTES_BUDGET_S:g}s"
+        warnings.append(
+            f"{table} row-byte sample exceeded the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
+        )
+    except sqlite3.OperationalError as exc:
+        if progress.was_cancelled():
+            raise StorageDiagnosticCancelled("storage quick check cancelled") from exc
+        if "interrupt" in str(exc).lower():
+            entry["status"] = "partial"
+            entry["error"] = f"row-byte sample exceeded {QUICK_ROW_BYTES_BUDGET_S:g}s"
+            warnings.append(
+                f"{table} row-byte sample exceeded the {QUICK_ROW_BYTES_BUDGET_S:g}s budget."
+            )
+        else:
+            entry["status"] = "unavailable"
+            entry["error"] = str(exc)
+            warnings.append(f"{table} row-byte sample unavailable: {exc}")
+    return entry
+
+
+def _row_bytes_classification(current_share: float | None) -> str:
+    if current_share is None:
+        return "inconclusive"
+    if current_share <= 0.30:
+        return "old-generations"
+    if current_share >= 0.65:
+        return "current-generation"
+    return "mixed"
+
+
+def _row_bytes_summary(classification: str, current_share: float | None) -> str:
+    if classification == "old-generations":
+        return f"Most sampled row bytes are in older generations ({current_share:.1%} current)."
+    if classification == "current-generation":
+        return (
+            f"Most sampled row bytes are in the current generation ({current_share:.1%} current)."
+        )
+    if classification == "mixed":
+        return (
+            "Both current and older generations contribute sampled row bytes "
+            f"({current_share:.1%} current)."
+        )
+    return "Row-byte totals could not be estimated from the bounded sample."
+
+
+def _row_bytes_payload(
+    tables: list[dict[str, Any]],
+    warnings: list[str],
+    *,
+    started: float,
+) -> dict[str, Any]:
+    available = [
+        row
+        for row in tables
+        if row.get("totalBytes") is not None and row.get("currentBytes") is not None
+    ]
+    if all(row.get("status") == "ok" for row in tables):
+        status = "ok"
+    elif available:
+        status = "partial"
+    else:
+        status = "unavailable"
+    current_bytes = sum(int(row.get("currentBytes") or 0) for row in available)
+    total_bytes = sum(int(row.get("totalBytes") or 0) for row in available)
+    old_bytes = sum(int(row.get("oldBytes") or 0) for row in available)
+    if current_bytes > total_bytes and total_bytes > 0:
+        warnings.append(
+            "The current-generation sample exceeded the total row-byte estimate; "
+            "sharing is clamped to the total."
+        )
+        current_bytes = total_bytes
+        old_bytes = 0
+    current_share = round(current_bytes / total_bytes, 4) if total_bytes > 0 else None
+    old_share = round(1.0 - current_share, 4) if current_share is not None else None
+    classification = _row_bytes_classification(current_share)
+    summary = _row_bytes_summary(classification, current_share)
+    if status != "ok":
+        summary = f"Provisional estimate. {summary}"
+    return {
+        "status": status,
+        "method": "bounded-rowid-sample",
+        "sampleRows": QUICK_ROW_BYTES_SAMPLE_ROWS,
+        "budgetMs": int(round(QUICK_ROW_BYTES_BUDGET_S * 1000)),
+        "durationMs": int(round((time.monotonic() - started) * 1000)),
+        "currentBytes": current_bytes,
+        "oldBytes": old_bytes,
+        "totalBytes": total_bytes,
+        "currentShare": current_share,
+        "oldShare": old_share,
+        "classification": classification,
+        "summary": summary,
+        "tables": tables,
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
+def _row_bytes_probe(
+    conn: sqlite3.Connection,
+    *,
+    current_generation: str,
+    source_count: int,
+    job_count: int,
+    progress: _DiagnosticProgress,
+) -> dict[str, Any]:
+    """Estimate stored row bytes in the current and older feed generations.
+
+    The probe samples current-generation rows through their generation-leading
+    index and samples the whole table through random rowids. Both samples are
+    bounded by a deadline and return lengths, never row payloads. The total
+    rowid sample is deliberately not a generation count: it estimates physical
+    row bytes, which is the question the Quick check could not answer on a
+    multi-hundred-gigabyte store.
+    """
+    started = time.monotonic()
+    deadline = started + max(0.25, float(QUICK_ROW_BYTES_BUDGET_S))
+    table_budget_s = max(0.25, (deadline - started) / max(1, len(QUICK_ROW_BYTES_TABLES)))
+    counts = {
+        "job_sources": max(0, int(source_count or 0)),
+        "jobs": max(0, int(job_count or 0)),
+    }
+    rng = random.Random(QUICK_ROW_BYTES_SEED)
+    tables: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    def _probe_progress() -> int:
+        if progress.was_cancelled():
+            return 1
+        progress.operation_count += PROGRESS_HANDLER_OPS
+        progress.emit()
+        return 1 if time.monotonic() >= deadline else 0
+
+    conn.set_progress_handler(_probe_progress, PROGRESS_HANDLER_OPS)
+    try:
+        for table in QUICK_ROW_BYTES_TABLES:
+            table_deadline = min(deadline, time.monotonic() + table_budget_s)
+            tables.append(
+                _row_bytes_table_probe(
+                    conn,
+                    table=table,
+                    count=counts[table],
+                    current_generation=current_generation,
+                    rng=rng,
+                    deadline=table_deadline,
+                    progress=progress,
+                    warnings=warnings,
+                )
+            )
+    finally:
+        conn.set_progress_handler(progress.sqlite_progress, PROGRESS_HANDLER_OPS)
+    return _row_bytes_payload(tables, warnings, started=started)
+
+
 def _bounded_generation_counts(
     conn: sqlite3.Connection,
     table: str,
@@ -511,14 +837,25 @@ def measure_storage_quick_check(
             int(feed_state["currentSourceCount"] or 0),
         )
         tracker.check_cancelled()
+        tracker.set_phase("row_bytes")
+        row_bytes_probe = _row_bytes_probe(
+            conn,
+            current_generation=current_generation,
+            source_count=int(feed_state["currentSourceCount"] or 0),
+            job_count=int(feed_state["currentRowCount"] or 0),
+            progress=tracker,
+        )
+        tracker.check_cancelled()
         tracker.set_phase("jobs")
+        remaining_s = max(0.1, QUICK_TOTAL_BUDGET_S - (time.monotonic() - started))
         jobs, jobs_error = _bounded_generation_counts(
             conn,
             "jobs",
             current_generation,
+            timeout_s=remaining_s,
             progress=tracker,
         )
-        warnings = [QUICK_CHECK_WARNING]
+        warnings = [QUICK_CHECK_WARNING, *row_bytes_probe["warnings"]]
         if jobs is None:
             jobs = _current_generation_counts(
                 "jobs",
@@ -548,12 +885,14 @@ def measure_storage_quick_check(
             "freelistBytes": counters["freelistBytes"],
             "allocatedBytes": counters["allocatedBytes"],
             "exactContent": not jobs_error,
+            "partial": bool(jobs_error or row_bytes_probe["status"] != "ok"),
             "exactAllocation": False,
             "tableSizes": None,
             "jobSources": None,
             "feedState": feed_state,
             "jobSourcesByGeneration": job_sources,
             "jobsByGeneration": jobs,
+            "rowBytesProbe": row_bytes_probe,
             "warnings": warnings,
         }
     except sqlite3.OperationalError as exc:

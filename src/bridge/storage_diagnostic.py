@@ -64,6 +64,7 @@ def _empty_state(data_dir: Path, *, mode: str = "") -> dict[str, Any]:
         "feedState": None,
         "jobSourcesByGeneration": [],
         "jobsByGeneration": [],
+        "rowBytesProbe": None,
         "warnings": [],
         "error": "",
     }

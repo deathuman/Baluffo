@@ -168,6 +168,32 @@ def test_quick_check_does_not_scan_job_sources_generations(
     assert result["jobSourcesByGeneration"]["listedRowCount"] == 2
 
 
+def test_quick_check_estimates_current_and_older_row_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.db"
+    _seed(path)
+
+    result = measure_storage_quick_check(path)
+
+    probe = result["rowBytesProbe"]
+    assert probe["status"] in {"ok", "partial"}
+    assert probe["method"] == "bounded-rowid-sample"
+    assert probe["currentBytes"] > 0
+    assert probe["totalBytes"] >= probe["currentBytes"]
+    assert probe["oldBytes"] >= 0
+    assert probe["classification"] in {
+        "current-generation",
+        "old-generations",
+        "mixed",
+        "inconclusive",
+    }
+    tables = {row["table"]: row for row in probe["tables"]}
+    assert set(tables) == {"job_sources", "jobs"}
+    assert tables["job_sources"]["currentRows"] == 2
+    assert tables["jobs"]["currentRows"] == 2
+    assert tables["job_sources"]["currentSampleRows"] == 2
+    assert tables["jobs"]["currentSampleRows"] == 2
+
+
 def test_quick_check_falls_back_when_jobs_count_times_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

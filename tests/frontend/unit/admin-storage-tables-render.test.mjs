@@ -173,6 +173,38 @@ test("renders quick generation counts without table allocation", () => {
       currentRowCount: 2,
       currentSourceCount: 3
     },
+    rowBytesProbe: {
+      status: "ok",
+      method: "bounded-rowid-sample",
+      currentBytes: 400,
+      oldBytes: 1_600,
+      totalBytes: 2_000,
+      currentShare: 0.2,
+      oldShare: 0.8,
+      classification: "old-generations",
+      summary: "Most sampled row bytes are in older generations (20.0% current).",
+      tables: [
+        {
+          table: "job_sources",
+          currentBytes: 300,
+          oldBytes: 1_200,
+          totalBytes: 1_500,
+          currentRows: 2,
+          currentShare: 0.2,
+          status: "ok"
+        },
+        {
+          table: "jobs",
+          currentBytes: 100,
+          oldBytes: 400,
+          totalBytes: 500,
+          currentRows: 2,
+          currentShare: 0.2,
+          status: "ok"
+        }
+      ],
+      warnings: []
+    },
     jobSourcesByGeneration: {
       listedRowCount: 2,
       generationCount: 1,
@@ -193,6 +225,8 @@ test("renders quick generation counts without table allocation", () => {
 
   assert.match(html, /Quick check reads current feed counts/);
   assert.match(html, /Only the current generation is counted here/);
+  assert.match(html, /Estimated row bytes/);
+  assert.match(html, /Most sampled row bytes are in older generations/);
   assert.match(html, /gen-current/);
   assert.match(html, /gen-old/);
   assert.match(html, /orphan/);

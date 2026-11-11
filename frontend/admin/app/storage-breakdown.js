@@ -92,7 +92,15 @@ export function createStorageBreakdownController({
       };
     }
     if (value.status === "complete") {
-      if (quick) return { text: "Quick check complete", tone: "" };
+      if (quick) {
+        const partial = value.partial === true
+          || value.exactContent === false
+          || value.jobsByGeneration?.status === "partial"
+          || value.rowBytesProbe?.status === "partial";
+        return partial
+          ? { text: "Quick check partial", tone: "warning" }
+          : { text: "Quick check complete", tone: "" };
+      }
       return value.tableSizes?.status === "unavailable"
         ? { text: "Complete — content only", tone: "warning" }
         : { text: "Complete", tone: "" };
