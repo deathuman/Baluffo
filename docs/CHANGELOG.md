@@ -48,114 +48,37 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.057] - 2026-11-12
+
+> This container rollup includes the storage, retention, maintenance, and
+> write-lock changes published as 0.3.049 through 0.3.056, so an install
+> upgrading from 0.3.048 receives the whole set in one step.
+
 ### Added
 
 - Admin's Database storage panel now shows the current database write-lock holder and held duration, with a clear "No write lock held" state when the database is idle.
+- Admin's Runtime Database Storage panel now shows live maintenance progress: the current cleanup phase, elapsed time, runs processed, and rows or older feed versions removed.
+- Admin's Runtime Database Storage panel has a **Run maintenance** button that starts the bounded cleanup normally run after serving. It keeps the current feed and refuses to start while an active task is running.
+- Admin's Runtime Database Storage panel can run an exact, read-only diagnostic on a large database. It reports table and index allocation, free pages, WAL overhead, and the rows and bytes held by each saved source-bundle generation, and the result can be exported as JSON.
+- Admin's Quick check counts `job_sources` and `jobs` rows by feed generation and includes a bounded estimate of current-versus-older stored row bytes, marking the estimate partial when its deadline expires.
+
+### Changed
+
+- Old saved jobs-feed generations are removed during post-serve maintenance in bounded batches, keeping the current generation and at most four older generations per pass. The cleanup releases the database write lock between batches instead of holding it for the entire deletion.
+- The runtime database keeps only the newest 30 fetch runs and removes older terminal source history in bounded, repeating passes. Full source details remain in compressed evidence archives.
+- A database compaction that cannot run when first due is retried after the retention backlog drains, so a temporary busy period or low-disk condition does not strand cleanup.
+- Admin's Runtime Database Storage panel uses clear, bordered sections and plain-language labels, with the exact **Full storage audit** under Advanced and raw details under Technical details.
 
 ### Fixed
 
-- Old job-feed generations are now removed in bounded batches, so a long cleanup no longer holds the database write lock for the entire deletion. A new cleanup pass also clears stale generation counters from the previous pass.
-
-## [0.3.056] - 2026-11-11
-
-### Added
-
-- Admin's Runtime Database Storage panel now shows live maintenance progress: the current cleanup phase, elapsed time, runs processed, and rows or older feed versions removed. It updates while cleanup is running and reports completion or a scheduled follow-up.
-- Storage health now reports which maintenance phase is active, so a long cleanup is visible instead of appearing as a running task with no status.
-
-### Fixed
-
-- Maintenance status now reports a pass as running from the moment it starts, including cleanup triggered after serving, rather than showing a running task with no recorded status.
+- A new cleanup pass clears stale generation counters left by the previous pass.
+- Maintenance status reports a pass as running from the moment it starts, including cleanup triggered after serving.
+- Closing the runtime database waits for background post-serve maintenance before releasing its SQLite connection, preventing a shutdown race during old-feed cleanup.
+- Admin's Quick check no longer groups `job_sources` or starts a full generation scan on a large database. It reports current counters immediately and counts jobs by generation under a short deadline.
+- The Runtime Database Storage panel receives table sizes while a large database is being cleaned, with a hard sampling deadline that does not load oversized source payloads.
+- Admin's Quick check estimates current versus older stored row bytes with a small number of sequential rowid windows instead of dozens of random row lookups.
 
 ### Notes
 
-- This release is for the Linux container and Umbrel app. The current feed, saved jobs, notes, and compatibility exports are preserved; no data migration is required.
+- The current feed, saved jobs, notes, task history, and compatibility exports are preserved. Older feed generations are retained only until the post-serve cleanup has established that the current generation is published.
 - No compatibility changes affect the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, or desktop localhost bridge compatibility.
-
-## [0.3.055] - 2026-11-11
-
-### Fixed
-
-- Closing the runtime database now waits for the background post-serve maintenance pass before releasing its SQLite connection. This prevents a shutdown race during old-feed cleanup and keeps the current feed safe.
-
-### Notes
-
-- This release includes the storage-maintenance, storage-panel, and Quick-check changes first published in 0.3.054. The current feed, saved jobs, notes, and compatibility exports are preserved.
-- Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
-
-## [0.3.054] - 2026-11-11
-
-### Added
-
-- Admin's Runtime Database Storage panel now has a **Run maintenance** button. It starts the same bounded cleanup that normally runs after serving: older saved jobs-feed generations are removed, then the database is compacted when the backlog drains. It keeps the current feed and refuses to start while an active task is running.
-
-### Fixed
-
-- Admin's Quick check now estimates current versus older stored row bytes with a small number of sequential rowid windows instead of dozens of random row lookups. It reads the current jobs count from the feed state and no longer groups the jobs table on a large database, so the check can finish on a 211 GB store.
-
-### Changed
-
-- The runtime database now removes old saved jobs-feed generations during post-serve maintenance, keeping the current generation and deleting at most four older generations per bounded pass. The existing 30-second follow-up drains the backlog, then the database is compacted so the freed pages are returned to the filesystem instead of remaining in the file.
-- Admin's Runtime Database Storage panel now uses clear, bordered sections and plain-language labels. The exact **Full storage audit** sits under Advanced, while raw table, generation, byte, method, and warning details remain available in Technical details.
-
-### Notes
-
-- The current feed, saved jobs, notes, task history, and compatibility exports are preserved. Older feed generations are retained only until the post-serve cleanup has established that the current generation is published. Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
-
-## [0.3.053] - 2026-11-11
-
-> This container rollup includes the changes published as 0.3.049 through
-> 0.3.052, so an install upgrading from 0.3.048 receives the storage,
-> retention, and Quick check changes in one step.
-
-### Added
-
-- Admin's Runtime Database Storage panel can now run an exact, read-only diagnostic while the database is large. It reports table and index allocation, free pages, WAL overhead, and the rows and bytes held by each saved source-bundle generation, and the result can be exported as JSON for an incident record.
-- Admin's Quick check counts `job_sources` and `jobs` rows by feed generation without a full `dbstat` scan. It reports current feed counts, page and free-page totals, and the largest generations so a runaway database can be identified quickly.
-- Admin's Quick check now includes a bounded estimate of stored row bytes in the current generation versus older feed generations. It samples current rows and table rowids instead of walking the database or grouping `job_sources`; the estimate excludes indexes and is marked partial when its deadline expires.
-
-### Changed
-
-- The runtime database now keeps only the newest 30 fetch runs and removes older terminal source history in bounded, repeating passes, so a long-lived install can reclaim space instead of growing forever. Full source details remain in compressed evidence archives.
-- A database compaction that cannot run when first due is retried after the retention backlog drains, so a temporary busy period or low-disk condition does not strand cleanup indefinitely.
-
-### Fixed
-
-- The Admin **Quick check** no longer starts a full `job_sources` generation scan on a large runtime database. It reports the exact current-generation counters from `job_feed_state` and counts jobs by generation under a short deadline; older source-row totals stay in the exact diagnostic. On the live 211 GB database, the previous check spent over 20 minutes grouping `job_sources`.
-- The Admin Runtime Database Storage panel now receives table sizes while a large database is being cleaned. Table sampling has a hard deadline and no longer loads oversized source payloads before returning a partial estimate.
-
-### Notes
-
-- Existing jobs, saved jobs, notes, and the exact diagnostic are unchanged. Compatibility is unchanged for the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
-
-## [0.3.048] - 2026-11-10
-
-> This desktop rollup includes the fixes published to the container channel as
-> 0.3.044 through 0.3.047, plus the desktop and Admin changes below.
-
-### Changed
-
-- Admin now uses the active fetch's live report while work is running, so progress and
-  failure details update instead of showing the last published report.
-- Admin loads its storage details only when they are used, and the storage read is bounded.
-  The panel stays responsive while a fetch is running and shows the last good sizes when the
-  disk is slow.
-- Source maintenance now recognizes career boards served by supported ATS providers and can
-  refresh or retire changed static sources only after the evidence and a working control pass.
-
-### Fixed
-
-- Finalizing a fetch preserves lock priority and finished rows if reconciliation is briefly
-  busy, so a lock timeout no longer discards completed work.
-- A failed availability update restores the same startup feed files that existed before the
-  attempt, instead of leaving a new file behind.
-- Linux browser fallback keeps Chromium's GPU work in-process, so browser fallback can render
-  on hosts that block the GPU helper.
-- Packaged desktop builds no longer exceed the startup size limit after the storage-panel
-  change.
-
-### Notes
-
-- Existing jobs, saved jobs and notes are kept. The same-origin Linux container,
-  GHCR multi-arch image publishing, wildcard browser CORS allow headers, and
-  desktop localhost bridge compatibility all continue to work.
