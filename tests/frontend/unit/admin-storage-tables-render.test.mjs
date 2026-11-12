@@ -74,6 +74,23 @@ test("renders partial and unavailable states", () => {
   assert.doesNotMatch(unavailable, /<unsafe>/);
 });
 
+test("partial table samples lead with exact allocation and do not claim a full share", () => {
+  const html = renderStorageTablesHtml(payload({
+    status: "partial",
+    complete: false,
+    databaseBytes: 210_900_000_000,
+    allocatedBytes: 203_900_000_000,
+    freelistBytes: 7_000_000_000,
+    tables: [{ name: "job_feed_state", bytes: 352, share: 0, rowCount: 1 }],
+    otherBytes: 203_899_999_648
+  }), formatBytes);
+
+  assert.match(html, /Allocated space/);
+  assert.match(html, /Unattributed allocated space/);
+  assert.match(html, /Database size, allocated space, and free space are exact/);
+  assert.match(html, /data-table-share=""/);
+  assert.doesNotMatch(html, /100\.0%/);
+});
 test("escapes table names", () => {
   const html = renderStorageTablesHtml(payload({
     tables: [{ name: "<script>alert(1)</script>", bytes: 1, share: 0.1, rowCount: 1 }]
@@ -180,6 +197,8 @@ test("renders quick generation counts without table allocation", () => {
     rowBytesProbe: {
       status: "ok",
       method: "bounded-rowid-sample",
+      currentComplete: true,
+      totalComplete: true,
       currentBytes: 400,
       oldBytes: 1_600,
       totalBytes: 2_000,
@@ -235,9 +254,77 @@ test("renders quick generation counts without table allocation", () => {
   assert.match(html, /bounded-rowid-sample/);
   assert.match(html, /Saved source rows by feed version/);
   assert.match(html, /Jobs by feed version/);
+  assert.match(html, /Current · 20\.0%/);
   assert.doesNotMatch(html, /dbstat exact/);
 });
 
+test("partial quick checks do not claim a current share when older rows are unmeasured", () => {
+  const html = renderStorageDiagnosticHtml({
+    mode: "quick",
+    status: "complete",
+    partial: true,
+    exactContent: true,
+    databaseBytes: 210_900_000_000,
+    walBytes: 100,
+    pageSize: 4096,
+    pageCount: 2,
+    freelistBytes: 7_000_000_000,
+    capturedAt: "2026-11-12T12:56:21Z",
+    durationMs: 6_085,
+    feedState: {
+      currentGeneration: "gen-current",
+      currentRowCount: 39_518,
+      currentSourceCount: 159_198,
+      currentPublishedAt: "2026-11-11T01:36:37Z"
+    },
+    rowBytesProbe: {
+      status: "unavailable",
+      method: "bounded-rowid-sample",
+      currentComplete: false,
+      totalComplete: false,
+      currentBytes: 0,
+      oldBytes: 0,
+      totalBytes: 0,
+      tables: [
+        {
+          table: "job_sources",
+          currentBytes: 90_424_464,
+          currentRows: 159_198,
+          oldBytes: null,
+          totalBytes: null,
+          status: "partial"
+        },
+        {
+          table: "jobs",
+          currentBytes: null,
+          currentRows: 39_518,
+          oldBytes: null,
+          totalBytes: null,
+          status: "partial"
+        }
+      ],
+      warnings: ["job_sources row-byte sample exceeded the 3s table budget."]
+    },
+    jobSourcesByGeneration: {
+      listedRowCount: 159_198,
+      generationCount: 1,
+      byGeneration: [{ generation: "gen-current", rowCount: 159_198, isCurrent: true }]
+    },
+    jobsByGeneration: {
+      listedRowCount: 39_518,
+      generationCount: 1,
+      byGeneration: [{ generation: "gen-current", rowCount: 39_518, isCurrent: true }]
+    }
+  }, formatBytes);
+
+  assert.match(html, /Current stored rows/);
+  assert.match(html, /measured tables only/);
+  assert.match(html, /Older saved versions/);
+  assert.match(html, /older rows not measured/);
+  assert.match(html, /current-versus-older share is not available/);
+  assert.doesNotMatch(html, /admin-storage-space-bar/);
+  assert.doesNotMatch(html, /100\.0%/);
+});
 test("renders maintenance phase, elapsed time, counters, and compaction", () => {
   const html = renderStorageMaintenanceHtml(
     {

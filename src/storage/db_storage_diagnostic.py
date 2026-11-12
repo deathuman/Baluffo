@@ -28,7 +28,7 @@ from src.storage_metrics import file_size
 SCHEMA_VERSION = 1
 PROGRESS_HANDLER_OPS = 2_000
 PROGRESS_EMIT_INTERVAL_S = 0.5
-QUICK_ROW_BYTES_BUDGET_S = 6.0
+QUICK_ROW_BYTES_BUDGET_S = 12.0
 QUICK_ROW_BYTES_SAMPLE_ROWS = 8
 QUICK_ROW_BYTES_WINDOWS = 6
 QUICK_ROW_BYTES_WINDOW_ROWS = 8
@@ -36,10 +36,10 @@ QUICK_ROW_BYTES_TABLES = ("job_sources", "jobs")
 QUICK_ROW_BYTES_ROW_OVERHEAD = 8
 QUICK_ROW_BYTES_SEED = 20261111
 QUICK_CHECK_WARNING = (
-    "Quick check reads current feed counts and page counters, samples stored row "
-    "bytes for the current and older generations with bounded sequential rowid "
-    "windows, and does not group jobs by generation. Row-byte figures are "
-    "estimates that exclude indexes; older generation counts and exact allocation "
+    "Quick check reads current feed counts and page counters, measures current-generation "
+    "stored rows first, then spends the remaining budget on older rows with bounded "
+    "sequential rowid windows, and does not group jobs by generation. Row-byte figures "
+    "are estimates that exclude indexes; older generation counts and exact allocation "
     "remain in the exact diagnostic."
 )
 
@@ -432,19 +432,8 @@ def _finish_row_bytes_entry(entry: dict[str, Any], warnings: list[str]) -> None:
         entry["currentShare"] = round(min(1.0, current_bytes_int / total_bytes_int), 4)
 
 
-def _row_bytes_table_probe(
-    conn: sqlite3.Connection,
-    *,
-    table: str,
-    count: int,
-    current_generation: str,
-    rng: random.Random,
-    deadline: float,
-    budget_s: float,
-    progress: _DiagnosticProgress,
-    warnings: list[str],
-) -> dict[str, Any]:
-    entry: dict[str, Any] = {
+def _new_row_bytes_entry(table: str, count: int) -> dict[str, Any]:
+    return {
         "table": table,
         "status": "ok",
         "currentRows": count,
@@ -459,22 +448,42 @@ def _row_bytes_table_probe(
         "currentShare": None,
         "error": "",
     }
+
+
+def _row_bytes_table_probe(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    count: int,
+    current_generation: str,
+    rng: random.Random,
+    deadline: float,
+    budget_s: float,
+    progress: _DiagnosticProgress,
+    warnings: list[str],
+    entry: dict[str, Any] | None = None,
+    include_total: bool = True,
+) -> dict[str, Any]:
+    entry = _new_row_bytes_entry(table, count) if entry is None else entry
     try:
         expression, column_count = _stored_row_length_expression(conn, table)
         overhead = QUICK_ROW_BYTES_ROW_OVERHEAD * max(1, column_count)
-        (
-            entry["currentSampleRows"],
-            entry["currentAvgRowBytes"],
-            entry["currentBytes"],
-        ) = _row_bytes_current_sample(
-            conn,
-            table=table,
-            expression=expression,
-            overhead=overhead,
-            generation=current_generation,
-            row_count=count,
-            deadline=deadline,
-        )
+        if entry.get("currentBytes") is None:
+            (
+                entry["currentSampleRows"],
+                entry["currentAvgRowBytes"],
+                entry["currentBytes"],
+            ) = _row_bytes_current_sample(
+                conn,
+                table=table,
+                expression=expression,
+                overhead=overhead,
+                generation=current_generation,
+                row_count=count,
+                deadline=deadline,
+            )
+        if not include_total:
+            return entry
         attempts, hits, total_rows, total_bytes, partial = _row_bytes_total_sample(
             conn,
             table=table,
@@ -491,6 +500,10 @@ def _row_bytes_table_probe(
             entry["status"] = "unavailable"
             entry["error"] = "rowid sample found no live rows"
             warnings.append(f"{table} row-byte sample found no live rows.")
+        elif total_bytes is None:
+            entry["status"] = "partial"
+            entry["error"] = "rowid sample could not estimate total row bytes"
+            warnings.append(f"{table} row-byte sample could not estimate total row bytes.")
         elif partial:
             entry["status"] = "partial"
             warnings.append(f"{table} row-byte sample hit the {budget_s:g}s table budget.")
@@ -544,28 +557,36 @@ def _row_bytes_payload(
     *,
     started: float,
 ) -> dict[str, Any]:
-    available = [
-        row
+    measured_current = [row for row in tables if row.get("currentBytes") is not None]
+    measured_total = [row for row in tables if row.get("totalBytes") is not None]
+    current_complete = bool(tables) and all(row.get("currentBytes") is not None for row in tables)
+    total_complete = bool(tables) and all(
+        row.get("currentBytes") is not None
+        and row.get("totalBytes") is not None
+        and row.get("oldBytes") is not None
         for row in tables
-        if row.get("totalBytes") is not None and row.get("currentBytes") is not None
-    ]
-    if all(row.get("status") == "ok" for row in tables):
+    )
+    if not tables:
+        status = "unavailable"
+    elif all(row.get("status") == "ok" for row in tables):
         status = "ok"
-    elif available:
+    elif measured_current or measured_total:
         status = "partial"
     else:
         status = "unavailable"
-    current_bytes = sum(int(row.get("currentBytes") or 0) for row in available)
-    total_bytes = sum(int(row.get("totalBytes") or 0) for row in available)
-    old_bytes = sum(int(row.get("oldBytes") or 0) for row in available)
-    if current_bytes > total_bytes and total_bytes > 0:
+    current_bytes = sum(int(row.get("currentBytes") or 0) for row in measured_current)
+    total_bytes = sum(int(row.get("totalBytes") or 0) for row in measured_total)
+    old_bytes = sum(int(row.get("oldBytes") or 0) for row in measured_total)
+    if total_complete and current_bytes > total_bytes and total_bytes > 0:
         warnings.append(
             "The current-generation sample exceeded the total row-byte estimate; "
             "sharing is clamped to the total."
         )
         current_bytes = total_bytes
         old_bytes = 0
-    current_share = round(current_bytes / total_bytes, 4) if total_bytes > 0 else None
+    current_share = (
+        round(current_bytes / total_bytes, 4) if total_complete and total_bytes > 0 else None
+    )
     old_share = round(1.0 - current_share, 4) if current_share is not None else None
     classification = _row_bytes_classification(current_share)
     summary = _row_bytes_summary(classification, current_share)
@@ -579,6 +600,8 @@ def _row_bytes_payload(
         "rowsPerWindow": QUICK_ROW_BYTES_WINDOW_ROWS,
         "budgetMs": int(round(QUICK_ROW_BYTES_BUDGET_S * 1000)),
         "durationMs": int(round((time.monotonic() - started) * 1000)),
+        "currentComplete": current_complete,
+        "totalComplete": total_complete,
         "currentBytes": current_bytes,
         "oldBytes": old_bytes,
         "totalBytes": total_bytes,
@@ -610,7 +633,6 @@ def _row_bytes_probe(
     """
     started = time.monotonic()
     deadline = started + max(0.25, float(QUICK_ROW_BYTES_BUDGET_S))
-    table_budget_s = max(0.25, (deadline - started) / max(1, len(QUICK_ROW_BYTES_TABLES)))
     counts = {
         "job_sources": max(0, int(source_count or 0)),
         "jobs": max(0, int(job_count or 0)),
@@ -618,18 +640,31 @@ def _row_bytes_probe(
     rng = random.Random(QUICK_ROW_BYTES_SEED)
     tables: list[dict[str, Any]] = []
     warnings: list[str] = []
+    active_deadline = deadline
 
     def _probe_progress() -> int:
         if progress.was_cancelled():
             return 1
         progress.operation_count += PROGRESS_HANDLER_OPS
         progress.emit()
-        return 1 if time.monotonic() >= deadline else 0
+        return 1 if time.monotonic() >= active_deadline else 0
+
+    def _next_table_deadline(remaining_tables: int) -> tuple[float, float]:
+        now = time.monotonic()
+        remaining_s = max(0.25, deadline - now)
+        budget_s = max(0.25, remaining_s / max(1, remaining_tables))
+        return min(deadline, now + budget_s), budget_s
 
     conn.set_progress_handler(_probe_progress, PROGRESS_HANDLER_OPS)
     try:
-        for table in QUICK_ROW_BYTES_TABLES:
-            table_deadline = min(deadline, time.monotonic() + table_budget_s)
+        # Measure the cheap current-generation rows for every table before any
+        # whole-table windows. A slow total sample must not hide the next
+        # table's current count and bytes.
+        for index, table in enumerate(QUICK_ROW_BYTES_TABLES):
+            table_deadline, table_budget_s = _next_table_deadline(
+                len(QUICK_ROW_BYTES_TABLES) - index
+            )
+            active_deadline = table_deadline
             tables.append(
                 _row_bytes_table_probe(
                     conn,
@@ -641,7 +676,36 @@ def _row_bytes_probe(
                     budget_s=table_budget_s,
                     progress=progress,
                     warnings=warnings,
+                    include_total=False,
                 )
+            )
+        # Use only the remaining budget for whole-table estimates.
+        for index, (table, entry) in enumerate(zip(QUICK_ROW_BYTES_TABLES, tables, strict=True)):
+            if entry.get("currentBytes") is None:
+                continue
+            if time.monotonic() >= deadline:
+                entry["status"] = "partial"
+                entry["error"] = "quick-check budget exhausted before total sample"
+                warnings.append(
+                    f"{table} total row-byte sample skipped: quick-check budget exhausted."
+                )
+                continue
+            table_deadline, table_budget_s = _next_table_deadline(
+                len(QUICK_ROW_BYTES_TABLES) - index
+            )
+            active_deadline = table_deadline
+            _row_bytes_table_probe(
+                conn,
+                table=table,
+                count=counts[table],
+                current_generation=current_generation,
+                rng=rng,
+                deadline=table_deadline,
+                budget_s=table_budget_s,
+                progress=progress,
+                warnings=warnings,
+                entry=entry,
+                include_total=True,
             )
     finally:
         conn.set_progress_handler(progress.sqlite_progress, PROGRESS_HANDLER_OPS)

@@ -281,16 +281,19 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
   ).join("");
   const otherBytes = toNumber(tableSizes.otherBytes);
   const otherLabel = partial
-    ? "Unmeasured tables, indexes, and free pages"
+    ? "Unattributed allocated space"
     : "Indexes, schema, and free pages";
+  const otherShare = partial
+    ? null
+    : formatShare({ bytes: otherBytes, share: tableSizes.otherShare }, allocatedBytes);
   const otherRow = otherBytes > 0
     ? `<div class="admin-storage-table-row admin-storage-overview-row admin-storage-table-other" role="row"
         data-table-name="unattributed"
         data-table-bytes="${otherBytes}"
-        data-table-share="${escapeHtml(String(tableSizes.otherShare ?? ""))}">
+        data-table-share="${partial ? "" : escapeHtml(String(tableSizes.otherShare ?? ""))}">
         <span class="admin-storage-table-label" role="cell">${escapeHtml(otherLabel)}</span>
         <span class="admin-storage-table-cell" role="cell">${escapeHtml(format(otherBytes))}</span>
-        ${renderShareBar(formatShare({ bytes: otherBytes, share: tableSizes.otherShare }, allocatedBytes))}
+        ${renderShareBar(otherShare)}
         <span class="admin-storage-table-cell admin-storage-table-rows" role="cell">—</span>
       </div>`
     : "";
@@ -298,7 +301,7 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
   const notices = [];
   if (partial) {
     notices.push(
-      "This snapshot is incomplete. The check ran out of time before measuring every table, so the list may be missing smaller tables and the unattributed total may be larger than usual."
+      "This bounded table sample ran out of time. Database size, allocated space, and free space are exact; table rows are estimates, and unattributed space includes tables and indexes the sample did not measure."
     );
   } else if (tableSizes.estimated) {
     notices.push("These sizes are estimated from a small sample, not exact page counts.");
@@ -317,16 +320,16 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
     </div>
     <div class="admin-storage-stats">
       ${renderStat("Database size", format(toNumber(tableSizes.databaseBytes)))}
+      ${renderStat("Allocated space", format(allocatedBytes))}
       ${renderStat("Free space", format(toNumber(tableSizes.freelistBytes)))}
-      ${renderStat("Tables measured", formatCount(tables.length), tableSizes.truncated ? "largest only" : "")}
       ${renderStat("Last checked", formatTime(tableSizes.capturedAt))}
     </div>
     ${notices.map(notice => `<p class="admin-storage-notice${partial ? " is-warning" : ""}">${escapeHtml(notice)}</p>`).join("")}
     <div class="admin-storage-table-block">
       <div class="admin-storage-table-block-head">
         <div>
-          <h4 class="admin-storage-subtitle">Largest measured tables</h4>
-          <p class="admin-storage-card-note">Sizes include table data, indexes, and other pages where measured.</p>
+          <h4 class="admin-storage-subtitle">${partial ? "Largest tables in this sample" : "Largest measured tables"}</h4>
+          <p class="admin-storage-card-note">${partial ? "Measured rows are estimates; the unattributed row is the remaining allocated space." : "Sizes include table data, indexes, and other pages where measured."}</p>
         </div>
       </div>
       <div class="admin-storage-table" role="table" aria-label="Runtime database table sizes">

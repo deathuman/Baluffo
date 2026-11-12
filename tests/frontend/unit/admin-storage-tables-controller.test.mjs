@@ -81,6 +81,8 @@ const QUICK_DIAGNOSTIC = {
   rowBytesProbe: {
     status: "ok",
     method: "bounded-rowid-sample",
+    currentComplete: true,
+    totalComplete: true,
     currentBytes: 400,
     oldBytes: 1_600,
     totalBytes: 2_000,
@@ -282,6 +284,8 @@ test("quick check reports partial when the row-byte sample times out", async () 
         rowBytesProbe: {
           ...QUICK_DIAGNOSTIC.rowBytesProbe,
           status: "partial",
+          currentComplete: false,
+          totalComplete: false,
           warnings: ["job_sources row-byte sample hit the 3s table budget."]
         }
       }

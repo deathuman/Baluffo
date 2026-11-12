@@ -15,6 +15,10 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function hasNumber(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+
 function formatCount(value) {
   return toNumber(value).toLocaleString("en-US");
 }
@@ -104,9 +108,15 @@ function renderSpaceBar(current, older) {
   </div>`;
 }
 
-function renderQuickFeedState(feedState, currentBytes, formatBytes) {
+function renderQuickFeedState(feedState, totals, formatBytes) {
   const feed = feedState && typeof feedState === "object" ? feedState : {};
   const published = Boolean(feed.currentPublishedAt || feed.currentGeneration);
+  const currentValue = totals.currentMeasured ? `~${formatBytes(totals.current)}` : "Not measured";
+  const currentNote = !totals.currentMeasured
+    ? "row-byte sample did not complete"
+    : totals.currentComplete
+      ? "job and source text, excluding indexes"
+      : "measured tables only; some row text is unmeasured";
   return `<section class="admin-storage-card">
     <div class="admin-storage-card-head">
       <div>
@@ -119,35 +129,57 @@ function renderQuickFeedState(feedState, currentBytes, formatBytes) {
       ${renderStat("Jobs", formatCount(feed.currentRowCount), "in the current feed")}
       ${renderStat("Saved source rows", formatCount(feed.currentSourceCount), "source records behind those jobs")}
       ${renderStat("Published", formatTime(feed.currentPublishedAt), "last feed update")}
-      ${renderStat("Current stored rows", currentBytes > 0 ? `~${formatBytes(currentBytes)}` : "Not measured", "job and source text, excluding indexes")}
+      ${renderStat("Current stored rows", currentValue, currentNote)}
     </div>
   </section>`;
 }
 
 function probeTotals(probe) {
   const tables = Array.isArray(probe?.tables) ? probe.tables : [];
-  const tableCurrent = tables.reduce((total, table) => total + toNumber(table?.currentBytes), 0);
-  const tableOlder = tables.reduce((total, table) => total + toNumber(table?.oldBytes), 0);
-  const tableTotal = tables.reduce((total, table) => total + toNumber(table?.totalBytes), 0);
-  const current = Math.max(toNumber(probe?.currentBytes), tableCurrent);
-  const older = Math.max(toNumber(probe?.oldBytes), tableOlder);
+  const sumMeasured = key =>
+    tables.reduce((total, table) => total + (hasNumber(table?.[key]) ? toNumber(table[key]) : 0), 0);
+  const tableCurrent = sumMeasured("currentBytes");
+  const tableOlder = sumMeasured("oldBytes");
+  const tableTotal = sumMeasured("totalBytes");
+  const current = Math.max(hasNumber(probe?.currentBytes) ? toNumber(probe.currentBytes) : 0, tableCurrent);
+  const older = Math.max(hasNumber(probe?.oldBytes) ? toNumber(probe.oldBytes) : 0, tableOlder);
+  const total = Math.max(
+    hasNumber(probe?.totalBytes) ? toNumber(probe.totalBytes) : 0,
+    tableTotal,
+    current + older
+  );
+  const currentMeasured = tables.some(table => hasNumber(table?.currentBytes))
+    || (tables.length === 0 && probe?.status === "ok" && hasNumber(probe?.currentBytes));
+  const olderMeasured = tables.some(table => hasNumber(table?.oldBytes))
+    || (tables.length === 0 && probe?.status === "ok" && hasNumber(probe?.oldBytes));
+  const totalMeasured = tables.some(table => hasNumber(table?.totalBytes))
+    || (tables.length === 0 && probe?.status === "ok" && hasNumber(probe?.totalBytes));
+  const currentComplete = probe?.currentComplete === true;
+  const totalComplete = probe?.totalComplete === true;
   return {
     current,
     older,
-    total: Math.max(toNumber(probe?.totalBytes), tableTotal, current + older)
+    total,
+    currentMeasured,
+    olderMeasured,
+    totalMeasured,
+    currentComplete,
+    totalComplete
   };
 }
 
 function renderQuickSpace(probe, formatBytes) {
   if (!probe || typeof probe !== "object") return "";
   const totals = probeTotals(probe);
-  const partial = probe.status !== "ok";
+  const partial = probe.status !== "ok" || !totals.totalComplete;
   const measured = totals.current + totals.older;
-  const hasMeasurement = measured > 0;
-  const olderLabel = totals.older > 0
-    ? `~${formatBytes(totals.older)}`
-    : partial ? "Not measured" : "None detected";
-  const currentShare = measured > 0 ? totals.current / measured : null;
+  const hasMeasurement = totals.currentMeasured || totals.totalMeasured;
+  const showShare = totals.totalComplete && totals.olderMeasured && measured > 0;
+  const olderLabel = totals.olderMeasured
+    ? totals.older > 0 ? `~${formatBytes(totals.older)}` : "None detected"
+    : "Not measured";
+  const totalLabel = totals.totalComplete ? `~${formatBytes(totals.total)}` : "Not measured";
+  const currentShare = showShare ? totals.current / measured : null;
   return `<section class="admin-storage-card">
     <div class="admin-storage-card-head">
       <div>
@@ -157,20 +189,22 @@ function renderQuickSpace(probe, formatBytes) {
       ${renderPill(partial ? "Partial estimate" : "Estimated", partial ? "is-warning" : "is-neutral")}
     </div>
     ${partial
-      ? renderNotice("This estimate only covers the part of the sample that completed. Run Quick check again when the database is quiet for a fuller picture.", "is-warning")
+      ? renderNotice("This estimate covers only the tables that completed. A current-versus-older share appears only when both sides were measured. Run Quick check again when the database is quiet for a fuller picture.", "is-warning")
       : ""}
     <div class="admin-storage-stats">
-      ${renderStat("Current data", totals.current > 0 ? `~${formatBytes(totals.current)}` : "Not measured", partial ? "at least this much" : "current feed rows")}
+      ${renderStat("Current data", totals.currentMeasured ? `~${formatBytes(totals.current)}` : "Not measured", totals.currentComplete ? "current feed rows" : "measured tables only")}
       ${renderStat("Older saved versions", olderLabel, "older feed rows")}
-      ${renderStat("Total sampled", hasMeasurement ? `~${formatBytes(totals.total)}` : "Not measured", "excludes indexes")}
+      ${renderStat("Total sampled", totalLabel, totals.totalComplete ? "excludes indexes" : "older rows not measured")}
     </div>
-    ${hasMeasurement
+    ${showShare
       ? `${renderSpaceBar(totals.current, totals.older)}
         <div class="admin-storage-space-legend">
-          <span><i class="admin-storage-legend-swatch is-current"></i>Current${currentShare === null ? "" : ` · ${formatPercent(currentShare)}`}</span>
-          <span><i class="admin-storage-legend-swatch is-older"></i>Older${totals.older > 0 && measured > 0 ? ` · ${formatPercent(totals.older / measured)}` : partial ? " · not measured" : " · none detected"}</span>
+          <span><i class="admin-storage-legend-swatch is-current"></i>Current · ${formatPercent(currentShare)}</span>
+          <span><i class="admin-storage-legend-swatch is-older"></i>Older · ${formatPercent(totals.older / measured)}</span>
         </div>`
-      : renderNotice("No usable stored-row size was returned by this check. Try Quick check again, or run a full audit for exact allocation.", "is-warning")}
+      : hasMeasurement
+        ? renderNotice("A current-versus-older share is not available because not every table completed on both sides.", "is-warning")
+        : renderNotice("No usable stored-row size was returned by this check. Try Quick check again, or run a full audit for exact allocation.", "is-warning")}
     <p class="admin-storage-card-note">Stored job and source text only. Indexes, schema, and free pages are reported by the full audit.</p>
   </section>`;
 }
@@ -287,9 +321,10 @@ function renderQuickDiagnostic(diagnostic, formatBytes) {
   const warnings = Array.isArray(diagnostic.warnings) ? diagnostic.warnings : [];
   const partial = diagnostic.partial === true
     || diagnostic.exactContent === false
-    || probe.status === "partial";
+    || probe.status !== "ok"
+    || !totals.totalComplete;
   return `
-    ${renderQuickFeedState(diagnostic.feedState, totals.current, formatBytes)}
+    ${renderQuickFeedState(diagnostic.feedState, totals, formatBytes)}
     ${renderQuickSpace(probe, formatBytes)}
     ${partial && warnings.length === 0
       ? renderNotice("This check finished with partial results. Some measurements did not complete before the time limit.", "is-warning")

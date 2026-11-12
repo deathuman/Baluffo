@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from time import monotonic
 from typing import cast
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from src.storage.db_storage_diagnostic import (
     StorageDiagnosticCancelled,
     _dbstat_tables,
+    _row_bytes_payload,
     measure_storage_diagnostic,
     measure_storage_quick_check,
 )
@@ -157,6 +159,8 @@ def test_quick_check_estimates_current_and_older_row_bytes(tmp_path: Path) -> No
     probe = result["rowBytesProbe"]
     assert probe["status"] in {"ok", "partial"}
     assert probe["method"] == "bounded-rowid-sample"
+    assert probe["currentComplete"] is True
+    assert probe["totalComplete"] is True
     assert probe["currentBytes"] > 0
     assert probe["totalBytes"] >= probe["currentBytes"]
     assert probe["oldBytes"] >= 0
@@ -172,6 +176,84 @@ def test_quick_check_estimates_current_and_older_row_bytes(tmp_path: Path) -> No
     assert tables["jobs"]["currentRows"] == 2
     assert tables["job_sources"]["currentSampleRows"] == 2
     assert tables["jobs"]["currentSampleRows"] == 2
+
+
+def test_quick_check_keeps_current_stats_when_total_sampling_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "runtime.db"
+    _seed(path)
+
+    def _timeout(*_args: object, **_kwargs: object) -> None:
+        raise TimeoutError
+
+    monkeypatch.setattr("src.storage.db_storage_diagnostic._row_bytes_total_sample", _timeout)
+    result = measure_storage_quick_check(path)
+    probe = result["rowBytesProbe"]
+
+    assert probe["currentComplete"] is True
+    assert probe["totalComplete"] is False
+    assert probe["currentBytes"] > 0
+    assert all(row["currentSampleRows"] > 0 for row in probe["tables"])
+
+
+def test_row_bytes_payload_reports_current_and_total_completeness_separately() -> None:
+    current_only = _row_bytes_payload(
+        [
+            {"table": "job_sources", "status": "partial", "currentBytes": 10},
+            {"table": "jobs", "status": "partial", "currentBytes": 20},
+        ],
+        [],
+        started=monotonic(),
+    )
+    assert current_only["currentComplete"] is True
+    assert current_only["totalComplete"] is False
+    assert current_only["currentBytes"] == 30
+    assert current_only["currentShare"] is None
+
+    partial = _row_bytes_payload(
+        [
+            {"table": "job_sources", "status": "partial", "currentBytes": 10},
+            {
+                "table": "jobs",
+                "status": "partial",
+                "currentBytes": None,
+                "totalBytes": None,
+                "oldBytes": None,
+            },
+        ],
+        [],
+        started=monotonic(),
+    )
+    assert partial["currentComplete"] is False
+    assert partial["totalComplete"] is False
+    assert partial["currentBytes"] == 10
+
+    complete = _row_bytes_payload(
+        [
+            {
+                "table": "job_sources",
+                "status": "ok",
+                "currentBytes": 10,
+                "totalBytes": 25,
+                "oldBytes": 15,
+            },
+            {
+                "table": "jobs",
+                "status": "ok",
+                "currentBytes": 20,
+                "totalBytes": 30,
+                "oldBytes": 10,
+            },
+        ],
+        [],
+        started=monotonic(),
+    )
+    assert complete["currentComplete"] is True
+    assert complete["totalComplete"] is True
+    assert complete["currentBytes"] == 30
+    assert complete["totalBytes"] == 55
+    assert complete["currentShare"] == round(30 / 55, 4)
 
 
 class _FakeCursor:
