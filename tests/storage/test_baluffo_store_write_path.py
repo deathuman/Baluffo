@@ -72,6 +72,49 @@ def test_required_checkpoint_failure_marks_store_unhealthy() -> None:
             assert health["lastWriteError"].startswith("SQLite WAL checkpoint busy")
 
 
+def test_terminal_passive_busy_checkpoint_does_not_count_a_retry() -> None:
+    with workspace_tmpdir("baluffo-store-passive-busy-terminal") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=1) as store:
+            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, 8, 4))  # type: ignore[method-assign]
+
+            def fail_retry(attempt: int) -> None:
+                pytest.fail("a terminal busy checkpoint must not schedule a retry")
+
+            store._sleep_for_retry = fail_retry  # type: ignore[method-assign]
+
+            with pytest.raises(BaluffoStoreError, match="busy retry attempts"):
+                store.checkpoint_required(mode="PASSIVE")
+
+            status = store.wal_maintenance_status()
+            assert status["passiveCheckpointBusyRetries"] == 0
+            assert status["passiveCheckpoint"]["count"] == 0
+
+
+def test_busy_operational_error_retry_increments_passive_busy_retries() -> None:
+    with workspace_tmpdir("baluffo-store-passive-operational-error") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=2, busy_retry_base_ms=1) as store:
+            attempts = 0
+
+            def flaky_checkpoint(mode: str) -> sqlite3.Row:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise sqlite3.OperationalError("database is locked")
+                return cast(sqlite3.Row, (0, 8, 8))
+
+            sleeps: list[int] = []
+            store._execute_checkpoint = flaky_checkpoint  # type: ignore[method-assign]
+            store._sleep_for_retry = sleeps.append  # type: ignore[assignment]
+
+            result = store.checkpoint_required(mode="PASSIVE")
+
+            assert result == {"busy": 0, "logFrames": 8, "checkpointedFrames": 8}
+            assert attempts == 2
+            assert sleeps == [0]
+            status = store.wal_maintenance_status()
+            assert status["passiveCheckpointBusyRetries"] == 1
+
+
 def test_write_reraises_non_busy_operational_error_without_retry() -> None:
     with workspace_tmpdir("baluffo-store-non-busy") as data_dir:
         with BaluffoStore(data_dir, busy_retry_attempts=3) as store:

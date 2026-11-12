@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -104,6 +106,191 @@ def test_wal_maintenance_is_scheduled_for_oversized_wal(
             assert store.wal_maintenance_status()["status"] in {"scheduled", "ok"}
 
     assert ("test", "TRUNCATE") in calls
+
+
+def test_wal_maintenance_cooldown_blocks_repeated_scheduling_for_pinned_wal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_run(self: BaluffoStore, *, reason: str, mode: str) -> None:
+        calls.append((reason, mode))
+
+    monkeypatch.setattr(BaluffoStore, "_run_wal_maintenance", fake_run)
+
+    with workspace_tmpdir("baluffo-store-wal-cooldown") as data_dir:
+        with BaluffoStore(
+            data_dir,
+            wal_checkpoint_threshold_bytes=1024 * 1024,
+            wal_truncate_threshold_bytes=2 * 1024 * 1024,
+        ) as store:
+            store.wal_checkpoint_threshold_bytes = 1
+            store.wal_truncate_threshold_bytes = 1024
+            store.db_path.with_name(f"{store.db_path.name}-wal").write_bytes(b"wal")
+
+            assert store.schedule_wal_maintenance_if_needed(reason="first") is True
+            thread = store._maintenance_thread
+            assert thread is not None
+            thread.join(timeout=1)
+
+            assert store.schedule_wal_maintenance_if_needed(reason="second") is False
+            status = store.wal_maintenance_status()
+            assert status["status"] == "cooldown"
+            assert status["cooldownS"] == 60.0
+            assert 0 < status["cooldownRemainingMs"] <= 60_000
+            assert calls == [("first", "PASSIVE")]
+
+            # The guard is a cooldown, not a permanent latch: once it expires a
+            # later oversized WAL can schedule again.
+            store._wal_maintenance_cooldown_until_monotonic = 0.0
+            assert store.schedule_wal_maintenance_if_needed(reason="after-cooldown") is True
+            thread = store._maintenance_thread
+            assert thread is not None
+            thread.join(timeout=1)
+            assert calls == [("first", "PASSIVE"), ("after-cooldown", "PASSIVE")]
+
+
+def test_wal_maintenance_truncate_bypasses_the_passive_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_run(self: BaluffoStore, *, reason: str, mode: str) -> None:
+        calls.append((reason, mode))
+
+    monkeypatch.setattr(BaluffoStore, "_run_wal_maintenance", fake_run)
+
+    with workspace_tmpdir("baluffo-store-wal-truncate-cooldown") as data_dir:
+        with BaluffoStore(
+            data_dir,
+            wal_checkpoint_threshold_bytes=1024 * 1024,
+            wal_truncate_threshold_bytes=2 * 1024 * 1024,
+        ) as store:
+            store.wal_checkpoint_threshold_bytes = 1
+            store.wal_truncate_threshold_bytes = 5
+            wal_path = store.db_path.with_name(f"{store.db_path.name}-wal")
+            wal_path.write_bytes(b"wal")
+
+            assert store.schedule_wal_maintenance_if_needed(reason="passive") is True
+            thread = store._maintenance_thread
+            assert thread is not None
+            thread.join(timeout=1)
+            assert store.schedule_wal_maintenance_if_needed(reason="blocked-passive") is False
+            assert store.wal_maintenance_status()["status"] == "cooldown"
+
+            # Crossing the truncate threshold must not wait out a cooldown that
+            # was started by an ordinary PASSIVE checkpoint.
+            wal_path.write_bytes(b"x" * 10)
+            assert store.schedule_wal_maintenance_if_needed(reason="truncate") is True
+            thread = store._maintenance_thread
+            assert thread is not None
+            thread.join(timeout=1)
+            assert calls == [("passive", "PASSIVE"), ("truncate", "TRUNCATE")]
+
+
+def test_passive_checkpoint_timing_counters_ignore_busy_attempts() -> None:
+    with workspace_tmpdir("baluffo-store-passive-checkpoint-busy") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store._record_passive_checkpoint_timing(
+                mode="PASSIVE", waited_s=0.010, held_s=0.020, busy=1
+            )
+            counters = store.wal_maintenance_status()["passiveCheckpoint"]
+            assert counters["count"] == 0
+            assert counters["waitMsTotal"] == 0
+            assert counters["holdMsTotal"] == 0
+
+            store._record_passive_checkpoint_timing(
+                mode="PASSIVE", waited_s=0.010, held_s=0.020, busy=0
+            )
+            counters = store.wal_maintenance_status()["passiveCheckpoint"]
+            assert counters == {
+                "count": 1,
+                "waitMsTotal": 10,
+                "holdMsTotal": 20,
+                "waitMsMax": 10,
+                "holdMsMax": 20,
+                "waitMsLast": 10,
+                "holdMsLast": 20,
+            }
+
+            # A later busy retry must not overwrite the last successful timing.
+            store._record_passive_checkpoint_timing(
+                mode="PASSIVE", waited_s=0.500, held_s=0.600, busy=1
+            )
+            assert store.wal_maintenance_status()["passiveCheckpoint"] == counters
+
+
+def test_checkpoint_required_retries_one_busy_passive_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CheckpointWriter:
+        def __init__(self, writer: sqlite3.Connection) -> None:
+            self._writer = writer
+            self._rows = [(1, 8, 4), (0, 8, 8)]
+            self.checkpoint_rows: list[tuple[int, int, int]] = []
+
+        def execute(self, sql: str, parameters: Any = ()) -> object:
+            if sql.strip().upper().startswith("PRAGMA WAL_CHECKPOINT"):
+                row = self._rows.pop(0)
+                self.checkpoint_rows.append(row)
+                return SimpleNamespace(fetchone=lambda: row)
+            return self._writer.execute(sql, parameters)
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._writer, name)
+
+    with workspace_tmpdir("baluffo-store-passive-busy-retry") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=2, busy_retry_base_ms=1) as store:
+            writer = _CheckpointWriter(store._writer)
+            store._writer = writer  # type: ignore[assignment]
+            retry_attempts: list[int] = []
+            monkeypatch.setattr(store, "_sleep_for_retry", retry_attempts.append)
+
+            result = store.checkpoint_required(mode="PASSIVE")
+
+            assert writer.checkpoint_rows == [(1, 8, 4), (0, 8, 8)]
+            assert retry_attempts == [0]
+            assert result == {"busy": 0, "logFrames": 8, "checkpointedFrames": 8}
+            assert store._busy_count == 1
+            status = store.wal_maintenance_status()
+            assert status["passiveCheckpointBusyRetries"] == 1
+            assert status["passiveCheckpoint"]["count"] == 1
+
+
+def test_health_reports_passive_checkpoint_timing_counters() -> None:
+    with workspace_tmpdir("baluffo-store-passive-checkpoint-counters") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.write(
+                lambda conn: conn.execute(
+                    "CREATE TABLE checkpoint_probe (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)"
+                )
+            )
+            store.write(
+                lambda conn: conn.execute(
+                    "INSERT INTO checkpoint_probe(payload) VALUES (?)",
+                    ("x" * 4096,),
+                )
+            )
+            assert store.wal_maintenance_status()["passiveCheckpoint"]["count"] == 0
+
+            store.checkpoint_required(mode="PASSIVE")
+            first = store.wal_maintenance_status()["passiveCheckpoint"]
+            store.checkpoint_required(mode="PASSIVE")
+            second = store.wal_maintenance_status()["passiveCheckpoint"]
+
+            assert first["count"] == 1
+            assert second["count"] == 2
+            assert second["waitMsTotal"] >= first["waitMsTotal"]
+            assert second["holdMsTotal"] >= first["holdMsTotal"]
+            assert second["waitMsLast"] >= 0
+            assert second["holdMsLast"] >= 0
+            assert second["waitMsMax"] >= second["waitMsLast"]
+            assert second["holdMsMax"] >= second["holdMsLast"]
+
+            # Only PASSIVE attempts belong in the passive counters.
+            store.checkpoint_required(mode="TRUNCATE")
+            health_counters = store.health()["walMaintenance"]["passiveCheckpoint"]
+            assert health_counters == second
 
 
 def test_bulk_execute_partitions_rows_into_bounded_transactions() -> None:

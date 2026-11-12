@@ -36,6 +36,11 @@ DEFAULT_BATCH_SIZE = 500
 DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES = 64 * 1024 * 1024
 DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES = 256 * 1024 * 1024
 DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
+# A passive checkpoint can leave the WAL file at the journal size limit: SQLite
+# has checkpointed the frames, but the file still looks over the threshold. A
+# new write must not turn that into a checkpoint loop, so background scheduling
+# is rate-limited independently of the size check.
+DEFAULT_WAL_CHECKPOINT_COOLDOWN_S = 60.0
 DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES = 64 * 1024 * 1024
 DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES = 50 * 1024 * 1024
 DEFAULT_VACUUM_FREELIST_RATIO = 0.20
@@ -157,6 +162,7 @@ class BaluffoStore:
         busy_retry_max_ms: int = DEFAULT_BUSY_RETRY_MAX_MS,
         wal_checkpoint_threshold_bytes: int = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES,
         wal_truncate_threshold_bytes: int = DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES,
+        wal_checkpoint_cooldown_s: float = DEFAULT_WAL_CHECKPOINT_COOLDOWN_S,
         quick_check_max_database_bytes: int = DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES,
         vacuum_freelist_threshold_bytes: int = DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES,
         vacuum_freelist_ratio: float = DEFAULT_VACUUM_FREELIST_RATIO,
@@ -184,6 +190,7 @@ class BaluffoStore:
         self.wal_truncate_threshold_bytes = max(
             self.wal_checkpoint_threshold_bytes, int(wal_truncate_threshold_bytes)
         )
+        self.wal_checkpoint_cooldown_s = max(0.0, float(wal_checkpoint_cooldown_s))
         self.quick_check_max_database_bytes = max(1, int(quick_check_max_database_bytes))
         self.vacuum_freelist_threshold_bytes = max(1, int(vacuum_freelist_threshold_bytes))
         self.vacuum_freelist_ratio = max(0.01, min(1.0, float(vacuum_freelist_ratio)))
@@ -211,6 +218,14 @@ class BaluffoStore:
             "durationMs": 0,
             "error": "",
         }
+        self._passive_checkpoint_count = 0
+        self._passive_checkpoint_wait_ms_total = 0
+        self._passive_checkpoint_hold_ms_total = 0
+        self._passive_checkpoint_wait_ms_max = 0
+        self._passive_checkpoint_hold_ms_max = 0
+        self._passive_checkpoint_wait_ms_last = 0
+        self._passive_checkpoint_hold_ms_last = 0
+        self._passive_checkpoint_busy_retries = 0
         self._last_vacuum: dict[str, Any] = {
             "status": "not-run",
             "reason": "",
@@ -251,6 +266,7 @@ class BaluffoStore:
         self._table_sizes_snapshot: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
+        self._wal_maintenance_cooldown_until_monotonic = 0.0
         self._write_lock = threading.RLock()
         self._write_lock_state_lock = threading.Lock()
         self._write_lock_owner_ident: int | None = None
@@ -764,6 +780,7 @@ class BaluffoStore:
                 if attempt + 1 >= self.busy_retry_attempts:
                     self._healthy = False
                     break
+                self._record_passive_checkpoint_busy_retry(checkpoint_mode)
                 self._sleep_for_retry(attempt)
             except sqlite3.OperationalError as exc:
                 if not _is_busy_error(exc):
@@ -775,6 +792,7 @@ class BaluffoStore:
                 if attempt + 1 >= self.busy_retry_attempts:
                     self._healthy = False
                     break
+                self._record_passive_checkpoint_busy_retry(checkpoint_mode)
                 self._sleep_for_retry(attempt)
         message = f"SQLite WAL checkpoint failed after busy retry attempts: {last_result}"
         LOGGER.error(message)
@@ -789,10 +807,44 @@ class BaluffoStore:
                 sqlite3.Row, self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
             )
             held_s = time.perf_counter() - hold_started
+        self._record_passive_checkpoint_timing(
+            mode=mode,
+            waited_s=waited_s,
+            held_s=held_s,
+            busy=int(row[0] or 0),
+        )
         self._record_slow_write(
             operation=f"checkpoint:{str(mode or '').lower()}", waited_s=waited_s, held_s=held_s
         )
         return row
+
+    def _record_passive_checkpoint_busy_retry(self, mode: str) -> None:
+        if str(mode or "").upper() != "PASSIVE":
+            return
+        with self._maintenance_lock:
+            self._passive_checkpoint_busy_retries += 1
+
+    def _record_passive_checkpoint_timing(
+        self, *, mode: str, waited_s: float, held_s: float, busy: int
+    ) -> None:
+        # Only completed PASSIVE checkpoints belong in these counters. A busy
+        # result is a retryable attempt, not completed checkpoint work.
+        if str(mode or "").upper() != "PASSIVE" or int(busy) != 0:
+            return
+        wait_ms = max(0, int(round(waited_s * 1000)))
+        hold_ms = max(0, int(round(held_s * 1000)))
+        with self._maintenance_lock:
+            self._passive_checkpoint_count += 1
+            self._passive_checkpoint_wait_ms_total += wait_ms
+            self._passive_checkpoint_hold_ms_total += hold_ms
+            self._passive_checkpoint_wait_ms_max = max(
+                self._passive_checkpoint_wait_ms_max, wait_ms
+            )
+            self._passive_checkpoint_hold_ms_max = max(
+                self._passive_checkpoint_hold_ms_max, hold_ms
+            )
+            self._passive_checkpoint_wait_ms_last = wait_ms
+            self._passive_checkpoint_hold_ms_last = hold_ms
 
     @staticmethod
     def _path_size(path: Path) -> int:
@@ -832,7 +884,29 @@ class BaluffoStore:
                 "postServeRun": self._post_serve_maintenance_started,
                 "checkpointThresholdBytes": self.wal_checkpoint_threshold_bytes,
                 "truncateThresholdBytes": self.wal_truncate_threshold_bytes,
+                "cooldownS": self.wal_checkpoint_cooldown_s,
+                "cooldownRemainingMs": self._wal_checkpoint_cooldown_remaining_ms_locked(
+                    time.monotonic()
+                ),
+                "passiveCheckpoint": {
+                    "count": self._passive_checkpoint_count,
+                    "waitMsTotal": self._passive_checkpoint_wait_ms_total,
+                    "holdMsTotal": self._passive_checkpoint_hold_ms_total,
+                    "waitMsMax": self._passive_checkpoint_wait_ms_max,
+                    "holdMsMax": self._passive_checkpoint_hold_ms_max,
+                    "waitMsLast": self._passive_checkpoint_wait_ms_last,
+                    "holdMsLast": self._passive_checkpoint_hold_ms_last,
+                },
+                "passiveCheckpointBusyRetries": self._passive_checkpoint_busy_retries,
             }
+
+    def _wal_checkpoint_cooldown_remaining_ms_locked(self, now: float) -> int:
+        if self.wal_checkpoint_cooldown_s <= 0.0:
+            return 0
+        return max(
+            0,
+            int(round((self._wal_maintenance_cooldown_until_monotonic - now) * 1000)),
+        )
 
     @property
     def maintenance_deferred(self) -> bool:
@@ -1178,6 +1252,19 @@ class BaluffoStore:
                 }
                 return False
             mode = "TRUNCATE" if wal_bytes >= self.wal_truncate_threshold_bytes else "PASSIVE"
+            now = time.monotonic()
+            if mode == "PASSIVE":
+                cooldown_remaining_ms = self._wal_checkpoint_cooldown_remaining_ms_locked(now)
+                if cooldown_remaining_ms > 0:
+                    self._last_checkpoint = {
+                        **self._last_checkpoint,
+                        "status": "cooldown",
+                        "reason": str(reason or ""),
+                        "walBytes": wal_bytes,
+                        "cooldownRemainingMs": cooldown_remaining_ms,
+                    }
+                    return False
+            self._wal_maintenance_cooldown_until_monotonic = now + self.wal_checkpoint_cooldown_s
             self._last_checkpoint = {
                 "status": "scheduled",
                 "reason": str(reason or ""),
@@ -1205,6 +1292,9 @@ class BaluffoStore:
         return True
 
     def _run_wal_maintenance(self, *, reason: str, mode: str) -> None:
+        now = time.monotonic()
+        with self._maintenance_lock:
+            self._wal_maintenance_cooldown_until_monotonic = now + self.wal_checkpoint_cooldown_s
         started = time.perf_counter()
         before = self.file_sizes()
         checkpoint_mode = str(mode or "PASSIVE").upper()
@@ -1233,6 +1323,11 @@ class BaluffoStore:
                 **before,
             }
         with self._maintenance_lock:
+            # Include the checkpoint's own duration in the quiet period. A slow
+            # checkpoint must not be followed immediately by another attempt.
+            self._wal_maintenance_cooldown_until_monotonic = (
+                time.monotonic() + self.wal_checkpoint_cooldown_s
+            )
             self._last_checkpoint = status
 
     def vacuum(self, *, reason: str = "") -> dict[str, Any]:

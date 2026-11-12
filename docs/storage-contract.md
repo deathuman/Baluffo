@@ -116,7 +116,14 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
 
 - `write()` schedules a checkpoint when the WAL exceeds
   `wal_checkpoint_threshold_bytes` and a VACUUM when the freelist exceeds both
-  `vacuum_freelist_threshold_bytes` and the effective freelist ratio.
+  `vacuum_freelist_threshold_bytes` and the effective freelist ratio. Background
+  WAL scheduling is single-in-flight, and PASSIVE scheduling has a
+  `wal_checkpoint_cooldown_s` (60 seconds) guard: a checkpoint can leave the WAL
+  file at the journal-size limit even after SQLite has checkpointed its frames,
+  so the cooldown prevents every later write from scheduling another PASSIVE
+  checkpoint. A WAL that crosses `wal_truncate_threshold_bytes` schedules
+  TRUNCATE regardless of the cooldown. Explicit close and maintenance checkpoints
+  still run directly.
 - The effective ratio is size-aware: below `vacuum_large_database_bytes`
   (512 MiB) it is `vacuum_freelist_ratio` (0.20), at or above it is the larger
   `vacuum_large_database_ratio` (0.35). A VACUUM rewrites the whole file, so its
@@ -246,7 +253,7 @@ landing on top of a running fetch or sync, which writes continuously and would
 otherwise queue behind tens of seconds of VACUUM on the same multi-gigabyte
 database.
 
-`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
+`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface. `walMaintenance.passiveCheckpoint` carries process-lifetime counters for successful PASSIVE checkpoints only: `count`, `waitMsTotal`, `holdMsTotal`, `waitMsMax`, `holdMsMax`, `waitMsLast`, and `holdMsLast`. A return with `busy != 0` is a retryable attempt and is excluded, as are TRUNCATE attempts; the counters reset when the bridge process restarts. `walMaintenance.passiveCheckpointBusyRetries` separately counts PASSIVE attempts that were actually retried after a busy result; a terminal busy attempt with no remaining retry is not counted, and this counter does not alter the successful-only timings.
 
 The read is bounded, because a diagnostic must answer while maintenance holds the write lock: the writer-only pragmas use a short lock timeout and fall back to the values captured while the writer was idle (`walModeSource`/`foreignKeysSource` = `cached-busy`, `healthLockBusy: true`), and the payload is cached per data dir for a few seconds (`healthSource`, `healthCacheAgeMs`) with `healthTiming` reporting the cost. Table-size sampling installs a SQLite progress handler and reads column lengths instead of materializing large payloads, so one oversized row cannot hold the single-flight read past its budget; an interrupted sample is returned as `tableSizes.status == "partial"` rather than as an unavailable panel. Partial table-size snapshots use a short cache and are retried on the next health poll. A read that cannot run at all reports `healthStalled: true` and `healthSource: "unavailable"` while leaving `healthy` at its last known value: a diagnostic that did not run is not evidence of corruption and must not raise the Admin storage alert. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log. Admin renders `tableSizes` in a Runtime Database Storage panel beside Stored Profiles Overview; it reads the route once after startup by joining the serial startup bridge lane, so the read waits behind the bootstrap heavy loads instead of racing them or waiting for the Action Center's next poll; it refreshes on an explicit Refresh click and defers while the active-work gate is held. While an explicit maintenance pass is running and the gate is clear, the panel adds one bounded status poll: 3 s for the first two minutes, 15 s after that, stopping when the pass ends or after 30 minutes. It never schedules that poll while active work holds the gate.
 
