@@ -163,7 +163,12 @@ def test_cleanup_old_generations_batches_rows_and_reports_progress(
 ) -> None:
     with workspace_tmpdir("job-runtime-cleanup-batches") as data_dir:
         with BaluffoStore(data_dir) as store:
-            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z", batch_size=1)
+            runtime = JobRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T10:00:00Z",
+                batch_size=1,
+                delete_batch_size=1,
+            )
             bundle: list[dict[str, object]] = [{"sourceName": "Source", "sourceJobId": "id-1"}]
             old = runtime.replace_feed(
                 run_id="fetch_old",
@@ -227,19 +232,32 @@ def test_generation_cleanup_batch_plan_uses_feed_generation_indexes() -> None:
             store.write(lambda conn: conn.execute("ANALYZE"))
 
             cases = (
-                (_JOB_SOURCES_BATCH_DELETE_SQL, "idx_job_sources_generation_job"),
-                (_JOBS_BATCH_DELETE_SQL, "idx_jobs_generation_ordinal"),
+                (
+                    _JOB_SOURCES_BATCH_DELETE_SQL,
+                    ("old", 500),
+                    (
+                        "INTEGER PRIMARY KEY (rowid=?)",
+                        "idx_job_sources_generation_job (feed_generation=?)",
+                    ),
+                ),
+                (
+                    _JOBS_BATCH_DELETE_SQL,
+                    ("old", "old", 500),
+                    (
+                        "idx_jobs_generation_ordinal (feed_generation=? AND row_ordinal=?)",
+                        "idx_jobs_generation_ordinal (feed_generation=?)",
+                    ),
+                ),
             )
-            for statement, index_name in cases:
+            for statement, parameters, expected_fragments in cases:
                 plan = store.execute_read(
                     "EXPLAIN QUERY PLAN " + statement,
-                    ("old", "old", 500),
+                    parameters,
                 )
                 details = [str(row.get("detail") or "") for row in plan]
                 plan_text = "\n".join(details)
 
-                assert plan_text.count(index_name) >= 2, plan_text
-                assert "feed_generation=?" in plan_text, plan_text
+                assert all(fragment in plan_text for fragment in expected_fragments), plan_text
                 assert not any(
                     detail.startswith("SCAN") or " SCAN " in detail for detail in details
                 ), plan_text

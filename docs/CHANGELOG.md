@@ -48,6 +48,10 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+### Fixed
+
+- Jobs-generation retention now caps `job_sources` deletions by row count instead of job keys and uses 250-row delete batches, so a multi-source job cannot inflate one cleanup transaction beyond the configured bound.
+
 ## [0.3.057] - 2026-11-12
 
 > This container rollup includes the storage, retention, maintenance, and

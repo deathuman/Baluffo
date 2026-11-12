@@ -24,17 +24,17 @@ from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 
 JOB_FEED_SCHEMA_VERSION = 1
 DEFAULT_GENERATION_DELETE_CAP = 4
+DEFAULT_GENERATION_DELETE_BATCH_SIZE = 250
 _SOURCE_ALIAS_QUERY_CHUNK = 200
 
-# Keep the batch's selection and deletion generation-scoped and name the
-# feed_generation-leading index on both sides. A rowid-only outer delete can
-# still be planned through the rowid index, but it does not make the generation
-# boundary explicit and can silently become a table scan after a planner change.
+# Keep the batch's selection generation-scoped and name the feed_generation-leading
+# index. The outer delete is by rowid, so a batch is bounded by rows even when one
+# job has a large source bundle; selecting job keys would make the transaction size
+# depend on the bundle shape.
 _JOB_SOURCES_BATCH_DELETE_SQL = """
-DELETE FROM job_sources INDEXED BY idx_job_sources_generation_job
-WHERE feed_generation = ?
-  AND job_key IN (
-      SELECT job_key
+DELETE FROM job_sources
+WHERE rowid IN (
+      SELECT rowid
       FROM job_sources INDEXED BY idx_job_sources_generation_job
       WHERE feed_generation = ?
       ORDER BY job_key
@@ -156,10 +156,15 @@ class JobRuntimeStore:
         *,
         now_iso: Callable[[], str] = _now_iso,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        delete_batch_size: int | None = None,
     ) -> None:
         self.store = store
         self._now_iso = now_iso
         self.batch_size = max(1, int(batch_size or DEFAULT_BATCH_SIZE))
+        self.delete_batch_size = max(
+            1,
+            int(delete_batch_size or DEFAULT_GENERATION_DELETE_BATCH_SIZE),
+        )
 
     def stage_feed(
         self,
@@ -505,19 +510,31 @@ class JobRuntimeStore:
                     }
                 )
 
-        def delete_generation_rows(sql: str, generation: str) -> None:
+        def delete_generation_rows(
+            sql: str,
+            generation: str,
+            parameters: tuple[Any, ...],
+        ) -> None:
             def on_deleted(deleted: int) -> None:
                 nonlocal deleted_rows
                 deleted_rows += deleted
                 report_progress(generation)
 
-            self._delete_generation_batches(sql, generation, on_deleted=on_deleted)
+            self._delete_generation_batches(sql, parameters, on_deleted=on_deleted)
 
         for generation in generations:
             # Sources must go before their parent job rows; each batch is a
             # separate transaction so the write lock is released between them.
-            delete_generation_rows(_JOB_SOURCES_BATCH_DELETE_SQL, generation)
-            delete_generation_rows(_JOBS_BATCH_DELETE_SQL, generation)
+            delete_generation_rows(
+                _JOB_SOURCES_BATCH_DELETE_SQL,
+                generation,
+                (generation, self.delete_batch_size),
+            )
+            delete_generation_rows(
+                _JOBS_BATCH_DELETE_SQL,
+                generation,
+                (generation, generation, self.delete_batch_size),
+            )
             deleted_generations += 1
             report_progress(generation)
         return deleted_generations
@@ -525,19 +542,19 @@ class JobRuntimeStore:
     def _delete_generation_batches(
         self,
         sql: str,
-        generation: str,
+        parameters: tuple[Any, ...],
         *,
         on_deleted: Callable[[int], None],
     ) -> None:
         while True:
-            deleted = self._delete_generation_batch(sql, generation)
+            deleted = self._delete_generation_batch(sql, parameters)
             if deleted <= 0:
                 break
             on_deleted(deleted)
 
-    def _delete_generation_batch(self, sql: str, generation: str) -> int:
+    def _delete_generation_batch(self, sql: str, parameters: tuple[Any, ...]) -> int:
         def delete_rows(conn: Any) -> int:
-            cursor = conn.execute(sql, (generation, generation, self.batch_size))
+            cursor = conn.execute(sql, parameters)
             return max(0, int(cursor.rowcount or 0))
 
         return int(self.store.write(delete_rows))

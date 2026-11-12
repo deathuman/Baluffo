@@ -200,7 +200,9 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   from source-run retention: without it, every successful feed publish leaves a
   full historical copy in SQLite. Each generation is removed in bounded
   `job_sources` and `jobs` batches, one transaction per batch, so a large
-  generation does not hold the write lock for the whole cleanup. Progress and
+  generation does not hold the write lock for the whole cleanup. Deletes default
+  to 250 rows per transaction; `job_sources` selects rowids first, so a job with
+  many source rows cannot make one batch larger than the row cap. Progress and
   completion report `deletedGenerationCount`/`deletedRowCount` under
   `jobGenerations`, with the generation count repeated at the top level; a new
   pass starts with an empty `jobGenerations` and `truncated=false`. Compaction
