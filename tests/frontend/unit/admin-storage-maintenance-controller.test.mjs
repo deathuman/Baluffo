@@ -21,7 +21,8 @@ function fixture({
       }
     }),
     adminStorageMaintenanceStatusEl: createElement(),
-    adminStorageMaintenanceProgressEl: createElement({ hidden: true })
+    adminStorageMaintenanceProgressEl: createElement({ hidden: true }),
+    adminStorageWriteLockEl: createElement({ hidden: true })
   };
   const controller = createStorageBreakdownController({
     refs,
@@ -81,6 +82,33 @@ test("storage health renders live maintenance phase and progress", () => {
   assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /2 runs \/ 20 rows/);
   assert.equal(f.refs.adminStorageMaintenanceProgressEl.hidden, false);
   f.controller.stopMaintenancePoll();
+});
+
+test("storage health renders the current write-lock holder and duration", () => {
+  const f = fixture();
+  f.controller.acceptStorageHealth({
+    storage: {
+      writeLock: {
+        held: true,
+        threadName: "baluffo-sqlite-runtime-retention",
+        operation: "prune-job-generations",
+        heldMs: 65_000
+      }
+    }
+  });
+
+  assert.match(f.refs.adminStorageWriteLockEl.innerHTML, /Held by baluffo-sqlite-runtime-retention/);
+  assert.match(f.refs.adminStorageWriteLockEl.innerHTML, /prune-job-generations/);
+  assert.match(f.refs.adminStorageWriteLockEl.innerHTML, /for 1m 5s/);
+  assert.equal(f.refs.adminStorageWriteLockEl.hidden, false);
+});
+
+test("storage health renders the no-lock fallback without maintenance state", () => {
+  const f = fixture();
+  f.controller.acceptStorageHealth({ storage: { writeLock: { held: false } } });
+
+  assert.match(f.refs.adminStorageWriteLockEl.innerHTML, /No write lock held/);
+  assert.equal(f.refs.adminStorageWriteLockEl.hidden, false);
 });
 
 test("maintenance status reader renders completion from storage health", async () => {

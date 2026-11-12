@@ -64,6 +64,7 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     assert storage["authorityModes"]["syncRuns"] == "sqlite"
     assert storage["authorityModes"]["sourceRuns"] == "sqlite"
     assert storage["authorityModes"]["jobsFeed"] == "sqlite"
+    assert storage["writeLock"]["held"] is False
     assert storage["runtimeRetention"]["phase"] == "not-run"
     assert storage["runtimeRetention"]["elapsedMs"] >= 0
     assert "processedRunCount" in storage["runtimeRetention"]
@@ -323,11 +324,11 @@ def test_storage_health_payload_does_not_wait_on_a_held_write_lock(tmp_path: Pat
     holding = threading.Event()
 
     def hold_write_lock() -> None:
-        with store._write_lock:
+        with store._write_lock_guard("test-holder"):
             holding.set()
             release.wait(timeout=10)
 
-    holder = threading.Thread(target=hold_write_lock, daemon=True)
+    holder = threading.Thread(target=hold_write_lock, name="test-write-lock-holder", daemon=True)
     holder.start()
     try:
         assert holding.wait(timeout=5)
@@ -349,6 +350,45 @@ def test_storage_health_payload_does_not_wait_on_a_held_write_lock(tmp_path: Pat
     # A busy lock is not a health verdict: the last known WAL state still stands.
     assert storage["walMode"] == "wal"
     assert storage["healthy"] is True
+    write_lock = storage["writeLock"]
+    assert write_lock["held"] is True
+    assert write_lock["threadName"] == "test-write-lock-holder"
+    assert write_lock["threadId"] == holder.ident
+    assert write_lock["operation"] == "test-holder"
+    assert write_lock["depth"] == 1
+    assert write_lock["acquiredAt"]
+    assert write_lock["heldMs"] >= 0
+
+
+def test_cached_storage_health_refreshes_live_write_lock_holder(tmp_path: Path) -> None:
+    store = get_storage_store(tmp_path)
+    first = get_storage_health_payload(tmp_path)
+    assert first["storage"]["healthSource"] == "live"
+    assert first["storage"]["writeLock"]["held"] is False
+
+    release = threading.Event()
+    holding = threading.Event()
+
+    def hold_write_lock() -> None:
+        with store._write_lock_guard("cached-holder"):
+            holding.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_write_lock, name="cached-write-lock-holder", daemon=True)
+    holder.start()
+    try:
+        assert holding.wait(timeout=5)
+        cached = get_storage_health_payload(tmp_path)
+    finally:
+        release.set()
+        holder.join(timeout=5)
+        close_storage_stores()
+
+    storage = cached["storage"]
+    assert storage["healthSource"] == "cached"
+    assert storage["writeLock"]["held"] is True
+    assert storage["writeLock"]["threadName"] == "cached-write-lock-holder"
+    assert storage["writeLock"]["operation"] == "cached-holder"
 
 
 def test_storage_health_payload_is_cached_within_the_ttl(tmp_path: Path, monkeypatch) -> None:

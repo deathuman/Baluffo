@@ -585,6 +585,31 @@ h2.admin-section-title {
   color: var(--text-secondary);
 }
 
+.admin-storage-write-lock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.55rem;
+  margin: 0;
+}
+
+.admin-storage-write-lock:empty {
+  display: none;
+}
+
+.admin-storage-write-lock-label {
+  color: var(--text-subtle);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-storage-write-lock strong {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 .admin-storage-maintenance-progress {
   margin: -0.15rem 0 0;
   padding: 0.55rem 0.65rem;

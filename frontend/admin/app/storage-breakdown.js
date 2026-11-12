@@ -2,6 +2,7 @@ import {
   renderStorageMaintenanceHtml,
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml,
+  renderStorageWriteLockHtml,
   storageMaintenancePhaseLabel
 } from "../render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
@@ -67,6 +68,7 @@ export function createStorageBreakdownController({
   let maintenanceInFlight = false;
   let maintenanceStatus = null;
   let maintenanceCompaction = null;
+  let writeLock = null;
   let maintenancePollTimer = null;
   let maintenancePollStartedAt = 0;
   let maintenanceStatusInFlight = false;
@@ -185,6 +187,13 @@ export function createStorageBreakdownController({
     progressEl.hidden = !html;
   }
 
+  function renderWriteLock() {
+    const lockEl = refs.adminStorageWriteLockEl;
+    if (!lockEl) return;
+    lockEl.innerHTML = renderStorageWriteLockHtml(writeLock);
+    lockEl.hidden = false;
+  }
+
   function stopMaintenancePoll() {
     if (maintenancePollTimer !== null) {
       clearTimeout(maintenancePollTimer);
@@ -228,6 +237,8 @@ export function createStorageBreakdownController({
   function acceptMaintenanceStatus(storage) {
     if (storage?.runtimeRetention) maintenanceStatus = storage.runtimeRetention;
     if (storage?.compaction) maintenanceCompaction = storage.compaction;
+    if (storage?.writeLock !== undefined) writeLock = storage.writeLock;
+    renderWriteLock();
     if (!maintenanceStatus) return;
     const headline = maintenanceHeadline(maintenanceStatus);
     if (headline.text) setMaintenanceStatus(headline.text, headline.tone);

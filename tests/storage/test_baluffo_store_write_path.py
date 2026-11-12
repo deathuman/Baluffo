@@ -270,7 +270,7 @@ def test_write_lock_wait_times_out_instead_of_hanging_forever() -> None:
             release = threading.Event()
 
             def hold_write_lock() -> None:
-                with store._write_lock:
+                with store._write_lock_guard("test-timeout-holder"):
                     held.set()
                     release.wait(5)
 
@@ -284,4 +284,5 @@ def test_write_lock_wait_times_out_instead_of_hanging_forever() -> None:
                 release.set()
                 holder.join(timeout=5)
 
+            assert store.write_lock_status()["held"] is False
             assert "write lock" in str(store.health()["lastWriteError"])

@@ -16,7 +16,8 @@ import threading
 import time
 import traceback
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,6 +236,8 @@ class BaluffoStore:
             "candidateRunCount": 0,
             "processedRunCount": 0,
             "totalRunCount": 0,
+            "jobGenerations": {},
+            "truncated": False,
             "error": "",
         }
         self._retention_started_monotonic = 0.0
@@ -249,6 +252,14 @@ class BaluffoStore:
         self._table_sizes_cache_until_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
         self._write_lock = threading.RLock()
+        self._write_lock_state_lock = threading.Lock()
+        self._write_lock_owner_ident: int | None = None
+        self._write_lock_owner_name = ""
+        self._write_lock_owner_native_id: int | None = None
+        self._write_lock_acquired_monotonic = 0.0
+        self._write_lock_acquired_at = ""
+        self._write_lock_operation = ""
+        self._write_lock_depth = 0
         self._read_lock = threading.RLock()
         self._maintenance_lock = threading.RLock()
         self._maintenance_deferred = bool(defer_maintenance)
@@ -410,7 +421,10 @@ class BaluffoStore:
             self._write_attempts += 1
             try:
                 lock_started = time.perf_counter()
-                if not self._write_lock.acquire(timeout=self.write_lock_timeout_ms / 1000.0):
+                if not self._acquire_write_lock(
+                    timeout_s=self.write_lock_timeout_ms / 1000.0,
+                    operation="write",
+                ):
                     waited_s = time.perf_counter() - lock_started
                     self._record_slow_write(
                         operation="write_lock_timeout", waited_s=waited_s, held_s=0.0
@@ -429,7 +443,7 @@ class BaluffoStore:
                     self._writer.commit()
                     held_s = time.perf_counter() - hold_started
                 finally:
-                    self._write_lock.release()
+                    self._release_write_lock()
                 self._record_slow_write(operation="write", waited_s=waited_s, held_s=held_s)
                 self._last_write_error = ""
                 self._write_transactions += 1
@@ -491,6 +505,71 @@ class BaluffoStore:
         except (OSError, RuntimeError, TypeError, ValueError):
             # Diagnostics must never break a committed write.
             return
+
+    def _acquire_write_lock(self, *, timeout_s: float | None, operation: str) -> bool:
+        if timeout_s is None:
+            acquired = self._write_lock.acquire()
+        else:
+            acquired = self._write_lock.acquire(timeout=max(0.0, float(timeout_s)))
+        if acquired:
+            ident = threading.get_ident()
+            thread = threading.current_thread()
+            with self._write_lock_state_lock:
+                if self._write_lock_owner_ident == ident:
+                    self._write_lock_depth += 1
+                else:
+                    self._write_lock_owner_ident = ident
+                    self._write_lock_owner_name = thread.name
+                    self._write_lock_owner_native_id = getattr(thread, "native_id", None)
+                    self._write_lock_acquired_monotonic = time.monotonic()
+                    self._write_lock_acquired_at = _now_iso()
+                    self._write_lock_operation = str(operation or "write")
+                    self._write_lock_depth = 1
+        return bool(acquired)
+
+    def _release_write_lock(self) -> None:
+        ident = threading.get_ident()
+        with self._write_lock_state_lock:
+            if self._write_lock_owner_ident == ident:
+                self._write_lock_depth = max(0, self._write_lock_depth - 1)
+                if self._write_lock_depth == 0:
+                    self._write_lock_owner_ident = None
+                    self._write_lock_owner_name = ""
+                    self._write_lock_owner_native_id = None
+                    self._write_lock_acquired_monotonic = 0.0
+                    self._write_lock_acquired_at = ""
+                    self._write_lock_operation = ""
+            self._write_lock.release()
+
+    @contextmanager
+    def _write_lock_guard(self, operation: str) -> Iterator[None]:
+        if not self._acquire_write_lock(timeout_s=None, operation=operation):
+            raise RuntimeError("could not acquire the SQLite write lock")
+        try:
+            yield
+        finally:
+            self._release_write_lock()
+
+    def write_lock_status(self) -> dict[str, Any]:
+        """Return the current in-process SQLite write-lock holder."""
+        with self._write_lock_state_lock:
+            held = self._write_lock_owner_ident is not None
+            held_ms = 0
+            if held:
+                held_ms = max(
+                    0,
+                    int(round((time.monotonic() - self._write_lock_acquired_monotonic) * 1000)),
+                )
+            return {
+                "held": held,
+                "threadName": self._write_lock_owner_name,
+                "threadId": self._write_lock_owner_ident,
+                "threadNativeId": self._write_lock_owner_native_id,
+                "operation": self._write_lock_operation,
+                "depth": self._write_lock_depth,
+                "acquiredAt": self._write_lock_acquired_at,
+                "heldMs": held_ms,
+            }
 
     def _rollback_after_error(self) -> None:
         try:
@@ -648,12 +727,15 @@ class BaluffoStore:
         never answered at all, so the caller gets the value captured while the
         writer was last idle, tagged `cached-busy`, instead of an unbounded wait.
         """
-        if not self._write_lock.acquire(timeout=self.health_lock_timeout_ms / 1000.0):
+        if not self._acquire_write_lock(
+            timeout_s=self.health_lock_timeout_ms / 1000.0,
+            operation="health-pragma",
+        ):
             return fallback, "cached-busy"
         try:
             return self._writer.execute(sql).fetchone()[0], "live"
         finally:
-            self._write_lock.release()
+            self._release_write_lock()
 
     def wal_mode(self) -> str:
         wal_mode, _source = self._pragma_with_source(
@@ -700,7 +782,7 @@ class BaluffoStore:
 
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
         lock_started = time.perf_counter()
-        with self._write_lock:
+        with self._write_lock_guard(f"checkpoint:{str(mode or '').lower()}"):
             waited_s = time.perf_counter() - lock_started
             hold_started = time.perf_counter()
             row = cast(
@@ -977,6 +1059,10 @@ class BaluffoStore:
                 "candidateRunCount": 0,
                 "processedRunCount": 0,
                 "totalRunCount": 0,
+                # The previous pass's nested generation result must not survive
+                # into this pass alongside freshly reset outer counters.
+                "jobGenerations": {},
+                "truncated": False,
                 "error": "",
             }
 
@@ -1164,7 +1250,7 @@ class BaluffoStore:
         for attempt in range(self.busy_retry_attempts):
             try:
                 lock_started = time.perf_counter()
-                with self._write_lock:
+                with self._write_lock_guard("vacuum"):
                     waited_s = time.perf_counter() - lock_started
                     hold_started = time.perf_counter()
                     self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -1398,7 +1484,7 @@ class BaluffoStore:
         abandoned instead of dropping it. The stale WAL/SHM files go with the old
         file; the copy already carries the state its snapshot saw.
         """
-        with self._write_lock, self._read_lock:
+        with self._write_lock_guard("compact-swap"), self._read_lock:
             if self._write_transactions != expected_transactions:
                 return False
             self._validate_database_file(staging)
@@ -1599,7 +1685,7 @@ class BaluffoStore:
         target.parent.mkdir(parents=True, exist_ok=True)
         destination = sqlite3.connect(str(target), isolation_level=None)
         try:
-            with self._write_lock:
+            with self._write_lock_guard("backup"):
                 self._writer.backup(destination)
         finally:
             destination.close()
@@ -1704,6 +1790,7 @@ class BaluffoStore:
             "quickCheckMaxDatabaseBytes": self.quick_check_max_database_bytes,
             "healthy": bool(self._healthy and quick_check_ok),
             "lastWriteError": self._last_write_error,
+            "writeLock": self.write_lock_status(),
             "busyCount": self._busy_count,
             "busyRate": busy_rate,
             "writeAttempts": self._write_attempts,

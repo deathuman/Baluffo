@@ -54,6 +54,26 @@ function formatDuration(value) {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function formatLockDuration(value) {
+  const heldMs = Math.max(0, toNumber(value));
+  if (heldMs > 0 && heldMs < 1000) return "<1s";
+  return formatDuration(heldMs);
+}
+
+export function renderStorageWriteLockHtml(writeLock) {
+  const label = '<span class="admin-storage-write-lock-label">Write lock</span>';
+  if (!writeLock || typeof writeLock !== "object") {
+    return `${label}<strong>Status unavailable</strong><span>Storage health did not report a lock holder.</span>`;
+  }
+  if (writeLock.held !== true) {
+    return `${label}<strong>No write lock held</strong><span>Database writes can proceed.</span>`;
+  }
+  const holder = String(writeLock.threadName || "").trim() || "unknown thread";
+  const operation = String(writeLock.operation || "").trim();
+  const operationText = operation ? ` (${escapeHtml(operation)})` : "";
+  return `${label}<strong>Held by ${escapeHtml(holder)}${operationText}</strong><span>for ${escapeHtml(formatLockDuration(writeLock.heldMs))}</span>`;
+}
+
 export function storageMaintenancePhaseLabel(phase) {
   const labels = {
     starting: "Preparing maintenance",

@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 
 from src.storage import BaluffoStore, JobRuntimeStore
-from src.storage.job_runtime import _base_job_key, _source_identity, jobs_feed_rows_hash
+from src.storage.job_runtime import (
+    _JOB_SOURCES_BATCH_DELETE_SQL,
+    _JOBS_BATCH_DELETE_SQL,
+    _base_job_key,
+    _source_identity,
+    jobs_feed_rows_hash,
+)
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -150,6 +156,93 @@ def test_cleanup_old_generations_keeps_current_generation() -> None:
             assert runtime.current_summary()["generation"] == current.generation
             assert runtime.rows_for_generation(current.generation) == [_row(2)]
             assert runtime.rows_for_generation(old.generation) == []
+
+
+def test_cleanup_old_generations_batches_rows_and_reports_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("job-runtime-cleanup-batches") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z", batch_size=1)
+            bundle: list[dict[str, object]] = [{"sourceName": "Source", "sourceJobId": "id-1"}]
+            old = runtime.replace_feed(
+                run_id="fetch_old",
+                rows=[
+                    _row(1, source_bundle=bundle),
+                    _row(2, source_bundle=bundle),
+                ],
+            )
+            current = runtime.replace_feed(run_id="fetch_current", rows=[_row(3)])
+            write_calls = 0
+            original_write = store.write
+
+            def counting_write(callback):
+                nonlocal write_calls
+                write_calls += 1
+                return original_write(callback)
+
+            monkeypatch.setattr(store, "write", counting_write)
+            progress: list[dict[str, object]] = []
+
+            deleted = runtime.cleanup_old_generations(
+                delete_cap=10,
+                on_progress=progress.append,
+            )
+
+            assert deleted == 1
+            assert write_calls >= 6
+            assert progress[-1] == {
+                "deletedGenerationCount": 1,
+                "deletedRowCount": 4,
+                "generation": old.generation,
+            }
+            assert runtime.rows_for_generation(old.generation) == []
+            assert runtime.rows_for_generation(current.generation) == [_row(3)]
+
+
+def test_generation_cleanup_batch_plan_uses_feed_generation_indexes() -> None:
+    with workspace_tmpdir("job-runtime-cleanup-plan") as data_dir:
+        with BaluffoStore(data_dir) as store:
+
+            def seed(conn) -> None:
+                conn.executemany(
+                    "INSERT INTO jobs(feed_generation, job_key, row_ordinal) VALUES (?, ?, ?)",
+                    [
+                        (generation, f"job_{generation}_{index}", index)
+                        for generation in ("old", "current")
+                        for index in range(5000)
+                    ],
+                )
+                conn.executemany(
+                    "INSERT INTO job_sources(feed_generation, job_key, source_ordinal) "
+                    "VALUES (?, ?, 0)",
+                    [
+                        (generation, f"job_{generation}_{index}")
+                        for generation in ("old", "current")
+                        for index in range(5000)
+                    ],
+                )
+
+            store.write(seed)
+            store.write(lambda conn: conn.execute("ANALYZE"))
+
+            cases = (
+                (_JOB_SOURCES_BATCH_DELETE_SQL, "idx_job_sources_generation_job"),
+                (_JOBS_BATCH_DELETE_SQL, "idx_jobs_generation_ordinal"),
+            )
+            for statement, index_name in cases:
+                plan = store.execute_read(
+                    "EXPLAIN QUERY PLAN " + statement,
+                    ("old", "old", 500),
+                )
+                details = [str(row.get("detail") or "") for row in plan]
+                plan_text = "\n".join(details)
+
+                assert plan_text.count(index_name) >= 2, plan_text
+                assert "feed_generation=?" in plan_text, plan_text
+                assert not any(
+                    detail.startswith("SCAN") or " SCAN " in detail for detail in details
+                ), plan_text
 
 
 def test_cleanup_old_generations_keep_generations_and_unconstrained() -> None:

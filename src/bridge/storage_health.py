@@ -69,6 +69,18 @@ def _resolve_data_dir(data_dir: Path | str) -> Path:
     return Path(data_dir).expanduser().resolve()
 
 
+def _live_write_lock_status(resolved: Path) -> dict[str, Any] | None:
+    """Read the current holder without rebuilding or opening the store."""
+    with _STORE_LOCK:
+        store = _STORES_BY_DATA_DIR.get(resolved)
+    if store is None:
+        return None
+    try:
+        return store.write_lock_status()
+    except (AttributeError, RuntimeError, ValueError):
+        return None
+
+
 def _env_int(name: str, default: int) -> int:
     raw = str(os.getenv(name) or "").strip()
     try:
@@ -307,18 +319,19 @@ def _stalled_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
     `healthy === false`, and a diagnostic that could not run must not do that.
     `healthStalled` is the signal that this is not a reading.
     """
-    return {
-        "ok": True,
-        "storage": {
-            "healthy": True,
-            "healthStalled": True,
-            "healthSource": "unavailable",
-            "error": reason,
-            "dataDir": str(resolved),
-            **_runtime_db_file_sizes(resolved),
-            "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
-        },
+    storage = {
+        "healthy": True,
+        "healthStalled": True,
+        "healthSource": "unavailable",
+        "error": reason,
+        "dataDir": str(resolved),
+        **_runtime_db_file_sizes(resolved),
+        "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
     }
+    live_lock = _live_write_lock_status(resolved)
+    if live_lock is not None:
+        storage["writeLock"] = live_lock
+    return {"ok": True, "storage": storage}
 
 
 def _cached_storage_payload(
@@ -334,6 +347,11 @@ def _cached_storage_payload(
         storage["healthSource"] = source
         storage["healthCacheAgeMs"] = max(0, int(round(age_ms)))
         storage["diagnostics"] = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
+        # The cached health reading may predate a maintenance lock. Holder
+        # metadata is cheap and must describe the poll, not the cache entry.
+        live_lock = _live_write_lock_status(resolved)
+        if live_lock is not None:
+            storage["writeLock"] = live_lock
     return payload
 
 

@@ -48,6 +48,14 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+### Added
+
+- Admin's Database storage panel now shows the current database write-lock holder and held duration, with a clear "No write lock held" state when the database is idle.
+
+### Fixed
+
+- Old job-feed generations are now removed in bounded batches, so a long cleanup no longer holds the database write lock for the entire deletion. A new cleanup pass also clears stale generation counters from the previous pass.
+
 ## [0.3.056] - 2026-11-11
 
 ### Added

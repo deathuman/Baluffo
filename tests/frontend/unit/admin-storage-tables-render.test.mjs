@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   renderStorageMaintenanceHtml,
   renderStorageTablesHtml,
-  renderStorageTablesMessageHtml
+  renderStorageTablesMessageHtml,
+  renderStorageWriteLockHtml
 } from "../../../frontend/admin/render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../../../frontend/admin/render/storage-diagnostic.js";
 
@@ -263,6 +264,28 @@ test("renders maintenance phase, elapsed time, counters, and compaction", () => 
   assert.match(html, /data-maintenance-phase="prune-source-runs"/);
 });
 
+test("renders the write-lock holder, operation, and held duration", () => {
+  const html = renderStorageWriteLockHtml({
+    held: true,
+    threadName: "baluffo-sqlite-runtime-retention",
+    operation: "prune-job-generations",
+    heldMs: 65_000
+  });
+
+  assert.match(html, /Write lock/);
+  assert.match(html, /Held by baluffo-sqlite-runtime-retention/);
+  assert.match(html, /prune-job-generations/);
+  assert.match(html, /for 1m 5s/);
+});
+
+test("renders a clear fallback when no write lock is held", () => {
+  const html = renderStorageWriteLockHtml({ held: false });
+
+  assert.match(html, /No write lock held/);
+  assert.match(html, /Database writes can proceed/);
+  assert.match(renderStorageWriteLockHtml(null), /Status unavailable/);
+});
+
 test("admin shell places the runtime storage panel beside the profiles overview", () => {
   const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
   const usersIndex = adminHtml.indexOf('data-ui="admin-users-list"');
@@ -277,6 +300,7 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.match(adminHtml, /data-ui="admin-storage-maintenance-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-maintenance-status"/);
   assert.match(adminHtml, /data-ui="admin-storage-maintenance-progress"/);
+  assert.match(adminHtml, /data-ui="admin-storage-write-lock"/);
   assert.match(adminHtml, /Database storage/);
   assert.match(adminHtml, /Full storage audit/);
   assert.match(adminHtml, /admin-storage-advanced/);

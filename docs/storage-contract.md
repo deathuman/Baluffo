@@ -198,9 +198,14 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   generations are deleted per bounded pass, and a pass that hits the cap keeps
   the 30-second follow-up scheduled until the backlog drains. This is separate
   from source-run retention: without it, every successful feed publish leaves a
-  full historical copy in SQLite. Compaction starts only after the generation
-  backlog is drained, because a rebuild during another deletion batch only skips
-  as busy.
+  full historical copy in SQLite. Each generation is removed in bounded
+  `job_sources` and `jobs` batches, one transaction per batch, so a large
+  generation does not hold the write lock for the whole cleanup. Progress and
+  completion report `deletedGenerationCount`/`deletedRowCount` under
+  `jobGenerations`, with the generation count repeated at the top level; a new
+  pass starts with an empty `jobGenerations` and `truncated=false`. Compaction
+  starts only after the generation backlog is drained, because a rebuild during
+  another deletion batch only skips as busy.
 - **Full source details are written once.** The fetch closeout writes the
   per-source `details` to `artifacts/fetch/<run>/source-details.json.gz` and
   stores only the compact row in SQLite. The full `/ops/fetch-report` view
@@ -248,6 +253,12 @@ The unbounded exact follow-up is a separate, explicit background job, not part o
 The same route accepts `mode: "quick"` for a bounded first look. It reads page counters and current feed state, reads the current `jobs` count from `job_feed_state`, and samples stored row bytes for the current and older generations; it never groups `job_sources`, groups `jobs`, or runs `dbstat`. The row-byte estimate samples current-generation rows through the generation-leading index and the whole table through sequential rowid windows, so a multi-hundred-gigabyte store answers without a full scan. It excludes indexes and is marked partial when a sample deadline expires. The quick result is aggregate-only, read-only, cancellable through the same progress handler, and held in the same in-process job. It is a diagnosis, not a cleanup authorization: old generations are removed by the post-serve retention pass after the current generation is established.
 
 Admin also exposes that cleanup as an explicit **Run maintenance** action in the Runtime Database Storage panel. `POST /ops/storage-maintenance` starts one forced, bounded pass through the same scheduler, keeps the current generation, and refuses to schedule while an active task holds compaction. The route only hands the pass to the background worker; it does not wait, and a pass that hits a cap leaves the normal 30-second follow-up in place. The response reports `started`, `alreadyRunning`, and the current `runtimeRetention`/`compaction` records so an operator can tell a new pass from a held or already-running one. While the pass runs, `runtimeRetention` carries `phase`, `stage`, `elapsedMs`, `processedRunCount`/`totalRunCount`, and deletion counters; those fields advance before the pass completes. Admin polls `/ops/storage-health` for them and stops when `running` is false.
+
+The payload also carries `writeLock`, refreshed from the live store even when
+the rest is cached or stalled: `held`, `threadName`, `threadId`,
+`threadNativeId`, `operation`, `depth`, `acquiredAt`, and `heldMs`. Admin's
+Runtime Database Storage panel shows the holder, operation, and held duration,
+with explicit fallbacks for "No write lock held" and an unavailable field.
 
 ## Migration Safety
 

@@ -30,6 +30,7 @@ export const ADMIN_TOKENS = Object.freeze({
   storageMaintenanceBtn: "admin-storage-maintenance-btn",
   storageMaintenanceStatus: "admin-storage-maintenance-status",
   storageMaintenanceProgress: "admin-storage-maintenance-progress",
+  storageWriteLock: "admin-storage-write-lock",
   storageDiagnosticBtn: "admin-storage-diagnostic-btn",
   storageDiagnosticCancelBtn: "admin-storage-diagnostic-cancel-btn",
   storageDiagnosticExportBtn: "admin-storage-diagnostic-export-btn",

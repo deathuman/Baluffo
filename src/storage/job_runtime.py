@@ -26,6 +26,34 @@ JOB_FEED_SCHEMA_VERSION = 1
 DEFAULT_GENERATION_DELETE_CAP = 4
 _SOURCE_ALIAS_QUERY_CHUNK = 200
 
+# Keep the batch's selection and deletion generation-scoped and name the
+# feed_generation-leading index on both sides. A rowid-only outer delete can
+# still be planned through the rowid index, but it does not make the generation
+# boundary explicit and can silently become a table scan after a planner change.
+_JOB_SOURCES_BATCH_DELETE_SQL = """
+DELETE FROM job_sources INDEXED BY idx_job_sources_generation_job
+WHERE feed_generation = ?
+  AND job_key IN (
+      SELECT job_key
+      FROM job_sources INDEXED BY idx_job_sources_generation_job
+      WHERE feed_generation = ?
+      ORDER BY job_key
+      LIMIT ?
+  )
+"""
+
+_JOBS_BATCH_DELETE_SQL = """
+DELETE FROM jobs INDEXED BY idx_jobs_generation_ordinal
+WHERE feed_generation = ?
+  AND row_ordinal IN (
+      SELECT row_ordinal
+      FROM jobs INDEXED BY idx_jobs_generation_ordinal
+      WHERE feed_generation = ?
+      ORDER BY row_ordinal
+      LIMIT ?
+  )
+"""
+
 
 def _now_iso() -> str:
     return _shared_now_iso()
@@ -441,7 +469,15 @@ class JobRuntimeStore:
         *,
         delete_cap: int | None = DEFAULT_GENERATION_DELETE_CAP,
         keep_generations: int = 1,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> int:
+        """Delete old jobs-feed generations without holding the write lock.
+
+        A generation can contain enough rows to hold the store write lock for
+        hours. Delete ``job_sources`` and ``jobs`` in bounded row batches, one
+        committed transaction per batch, and report progress after each batch
+        so health reads and other writers can interleave with the cleanup.
+        """
         if delete_cap is not None and int(delete_cap) <= 0:
             return 0
         generations = [
@@ -456,13 +492,55 @@ class JobRuntimeStore:
         if not generations:
             return 0
 
-        def delete_old(conn: Any) -> None:
-            for generation in generations:
-                conn.execute("DELETE FROM job_sources WHERE feed_generation = ?", (generation,))
-                conn.execute("DELETE FROM jobs WHERE feed_generation = ?", (generation,))
+        deleted_generations = 0
+        deleted_rows = 0
 
-        self.store.write(delete_old)
-        return len(generations)
+        def report_progress(generation: str) -> None:
+            if on_progress is not None:
+                on_progress(
+                    {
+                        "deletedGenerationCount": deleted_generations,
+                        "deletedRowCount": deleted_rows,
+                        "generation": generation,
+                    }
+                )
+
+        def delete_generation_rows(sql: str, generation: str) -> None:
+            def on_deleted(deleted: int) -> None:
+                nonlocal deleted_rows
+                deleted_rows += deleted
+                report_progress(generation)
+
+            self._delete_generation_batches(sql, generation, on_deleted=on_deleted)
+
+        for generation in generations:
+            # Sources must go before their parent job rows; each batch is a
+            # separate transaction so the write lock is released between them.
+            delete_generation_rows(_JOB_SOURCES_BATCH_DELETE_SQL, generation)
+            delete_generation_rows(_JOBS_BATCH_DELETE_SQL, generation)
+            deleted_generations += 1
+            report_progress(generation)
+        return deleted_generations
+
+    def _delete_generation_batches(
+        self,
+        sql: str,
+        generation: str,
+        *,
+        on_deleted: Callable[[int], None],
+    ) -> None:
+        while True:
+            deleted = self._delete_generation_batch(sql, generation)
+            if deleted <= 0:
+                break
+            on_deleted(deleted)
+
+    def _delete_generation_batch(self, sql: str, generation: str) -> int:
+        def delete_rows(conn: Any) -> int:
+            cursor = conn.execute(sql, (generation, generation, self.batch_size))
+            return max(0, int(cursor.rowcount or 0))
+
+        return int(self.store.write(delete_rows))
 
     def _deletable_generations(
         self, *, current: str, keep_count: int, delete_cap: int | None

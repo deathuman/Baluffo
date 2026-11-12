@@ -239,6 +239,108 @@ def test_runtime_retention_status_reports_live_phase(monkeypatch: pytest.MonkeyP
             assert final["durationMs"] >= 0
 
 
+def test_runtime_retention_start_clears_previous_job_generation_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def fake_retention(
+        store: BaluffoStore, *, reason: str = "", on_progress=None, **_: object
+    ) -> dict[str, object]:
+        live = store.runtime_retention_status()
+        observed.append(
+            {
+                "jobGenerations": live.get("jobGenerations"),
+                "truncated": live.get("truncated"),
+            }
+        )
+        return {"status": "ok", "reason": reason}
+
+    monkeypatch.setattr("src.storage.runtime_retention.run_runtime_retention", fake_retention)
+
+    with workspace_tmpdir("baluffo-store-retention-stale-jobs") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            monkeypatch.setattr(store, "schedule_compaction_if_needed", lambda **_: False)
+            store._last_retention = {
+                **store._last_retention,
+                "jobGenerations": {"deletedGenerationCount": 4},
+                "truncated": True,
+            }
+
+            assert store._run_runtime_retention(reason="post-serve") is True
+            if store._retention_timer is not None:
+                store._retention_timer.cancel()
+
+            assert observed == [{"jobGenerations": {}, "truncated": False}]
+
+
+def test_runtime_retention_clears_stale_job_generation_counts_for_current_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def fake_retention(
+        store: BaluffoStore, *, reason: str = "", on_progress=None, **_: object
+    ) -> dict[str, object]:
+        live = store.runtime_retention_status()
+        observed.append(
+            {
+                "deletedGenerationCount": live.get("deletedGenerationCount"),
+                "jobGenerations": live.get("jobGenerations"),
+            }
+        )
+        if on_progress is not None:
+            on_progress(
+                {
+                    "phase": "prune-job-generations",
+                    "stage": "deleting",
+                    "deletedGenerationCount": 1,
+                    "deletedRowCount": 2,
+                }
+            )
+        return {
+            "status": "ok",
+            "reason": reason,
+            "deletedGenerationCount": 1,
+            "jobGenerations": {
+                "status": "ok",
+                "deletedGenerationCount": 1,
+                "deletedRowCount": 2,
+                "keepGenerations": 1,
+                "truncated": False,
+            },
+            "truncated": False,
+        }
+
+    monkeypatch.setattr("src.storage.runtime_retention.run_runtime_retention", fake_retention)
+
+    with workspace_tmpdir("baluffo-store-retention-current-jobs") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            monkeypatch.setattr(store, "schedule_compaction_if_needed", lambda **_: False)
+            store._last_retention = {
+                **store._last_retention,
+                "deletedGenerationCount": 0,
+                "jobGenerations": {
+                    "deletedGenerationCount": 4,
+                    "deletedRowCount": 8,
+                    "truncated": True,
+                },
+                "truncated": True,
+            }
+
+            assert store._run_runtime_retention(reason="post-serve") is True
+            if store._retention_timer is not None:
+                store._retention_timer.cancel()
+
+            final = store.runtime_retention_status()
+
+    assert observed == [{"deletedGenerationCount": 0, "jobGenerations": {}}]
+    assert final["deletedGenerationCount"] == 1
+    assert final["jobGenerations"]["deletedGenerationCount"] == 1
+    assert final["jobGenerations"]["deletedRowCount"] == 2
+    assert final["truncated"] is False
+
+
 def test_runtime_retention_bounds_event_and_sync_deletes() -> None:
     with workspace_tmpdir("source-runtime-bounded-events") as data_dir:
         with BaluffoStore(data_dir) as store:
