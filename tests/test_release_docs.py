@@ -298,6 +298,29 @@ def test_drift_check_allows_a_shipped_untagged_release_above_the_last_tag(tmp_pa
     test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
 
 
+def test_drift_check_allows_the_just_shipped_release_when_the_last_tag_was_archived(
+    tmp_path: Path,
+) -> None:
+    """The clamp can remove the only tagged section from the changelog.
+
+    The release below the in-flight version is still the one that just shipped, so it
+    must not be read as a phantom merely because the last tagged section was archived.
+    An older untagged section is still rejected.
+    """
+    repo = _drifting_repo(tmp_path, version="0.3.058", sections=["0.3.058", "0.3.057"])
+    _tag(repo, "0.3.048")
+
+    test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
+
+    repo = _drifting_repo(
+        tmp_path / "older", version="0.3.059", sections=["0.3.059", "0.3.058", "0.3.057"]
+    )
+    _tag(repo, "0.3.048")
+
+    with pytest.raises(AssertionError, match=r"0\.3\.057"):
+        test_changelog_holds_no_unpublished_section_above_the_last_release_tag(repo)
+
+
 def test_drift_check_allows_the_version_in_flight_to_await_its_tag(tmp_path: Path) -> None:
     """Between a bump and its release the current version legitimately has no tag."""
     repo = _drifting_repo(tmp_path, version="0.3.017", sections=["0.3.017", "0.3.016"])

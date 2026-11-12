@@ -964,18 +964,36 @@ def test_changelog_holds_no_unpublished_section_above_the_last_release_tag(
         ),
         None,
     )
+    current_idx = next(
+        (index for index, (version, _) in enumerate(sections) if version == current_version),
+        None,
+    )
+    # The changelog clamp can archive the last tagged section out of this file. In that
+    # shape there is no tagged section left to anchor the window, but the newest release
+    # below the in-flight version is still the one that just shipped untagged. Allow that
+    # single section; older untagged sections remain phantoms.
+    just_shipped_idx = None
+    if newest_tagged_idx is None and current_idx is not None:
+        just_shipped_idx = next(
+            (
+                index
+                for index, (version, _) in enumerate(sections)
+                if index > current_idx and _VERSIONED_SECTION_RE.match(version)
+            ),
+            None,
+        )
+
     unpublished = []
-    for version, _ in sections:
+    for index, (version, _) in enumerate(sections):
         if not _VERSIONED_SECTION_RE.match(version):
             continue
         if version == current_version or f"v{version}" in tags:
             continue
         if newest_tagged_idx is None:
-            # No versioned section carries a tag: fall back to treating every untagged
-            # non-current section as a phantom rather than silently accepting any of them.
+            if index == just_shipped_idx:
+                continue
             unpublished.append(version)
             continue
-        index = next(i for i, (candidate, _) in enumerate(sections) if candidate == version)
         if index <= newest_tagged_idx:
             continue
         unpublished.append(version)
