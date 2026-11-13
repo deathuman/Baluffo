@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.058"
+version: "0.3.059"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,14 +19,11 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.058 reduces write-lock contention during storage maintenance.
-  Job-feed retention now removes source rows in fixed 250-row batches, so one
-  job with many sources cannot make a cleanup transaction run long. Background
-  PASSIVE WAL checkpoints now wait 60 seconds between attempts while the
-  journal is at its 64 MiB limit; crossing 256 MiB still schedules an immediate
-  truncate. Storage health now reports checkpoint wait and hold timings, and
-  Quick check keeps partial measurements instead of presenting incomplete
-  samples as exact. The current feed, saved jobs, notes, and compatibility
-  exports are preserved.
+  Release 0.3.059 adds saved-version progress to storage maintenance. Admin now
+  shows how many older feed generations and rows are being removed, backed by
+  per-generation jobs and source-row counts. Older generations without that
+  metadata are counted once, and maintenance continues with generation-only
+  progress if counting fails. Cleanup remains bounded and less disruptive. The
+  current feed, saved jobs, notes, and compatibility exports are preserved.
 storage:
   dataRoot: data
