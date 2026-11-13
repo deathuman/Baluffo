@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-06-04
+> - **Last updated:** 2026-11-12
 
 ---
 
@@ -124,8 +124,9 @@ A single slow diagnostic must not read as a dead bridge. `GET /ops/storage-healt
 is bounded and cached: it reports `healthSource` (`live`, `cached`, or
 `unavailable`), `healthLockBusy`, and `healthTiming`, and a read that cannot take
 the store write lock returns `healthStalled: true` instead of hanging. The Admin
-Action Center marks that poll diagnostic-only, so a failure there leaves the
-storage card stale but never changes the badge.
+Action Center marks that poll diagnostic-only, and the shared
+`/ops/fetch-kpis?view=summary` poll likewise opts out of reachability, so a slow
+diagnostic or summary read leaves its card stale but never changes the badge.
 
 | Check | How to read it |
 |-------|----------------|

@@ -1,9 +1,10 @@
 /**
- * The Action Center's storage poll is diagnostic-only.
+ * The Action Center's data polls are not bridge-health probes.
  *
- * /ops/storage-health can be slow while the bridge serves every other route, so
- * its failure must not be reported as the bridge going offline. The health poll
- * keeps the default attribution, so a genuinely dead bridge still shows up.
+ * /ops/storage-health and the shared /ops/fetch-kpis?view=summary route can be
+ * slow while the bridge serves every other route, so their failures must not be
+ * reported as the bridge going offline. The sync poll keeps the default
+ * attribution, and the bridge-status watcher owns /app/ready.
  */
 
 import test from "node:test";
@@ -16,7 +17,7 @@ import {
   cleanSyncPayload
 } from "./helpers/action-center-fixture.mjs";
 
-test("action center marks the storage health poll as diagnostic-only", async () => {
+test("action center marks its passive data polls as diagnostic-only", async () => {
   const seen = [];
   const { controller } = createFixture({
     getBridge: async (path, options) => {
@@ -33,8 +34,10 @@ test("action center marks the storage health poll as diagnostic-only", async () 
   const storageCall = seen.find(([path]) => path === "/ops/storage-health");
   assert.equal(storageCall?.[1]?.affectsReachability, false);
 
-  // The core signal routes still own the badge, so a dead bridge cannot hide
-  // behind the diagnostic-only flag.
   const healthCall = seen.find(([path]) => path === "/ops/fetch-kpis?view=summary");
-  assert.equal(healthCall?.[1]?.affectsReachability, undefined);
+  assert.equal(healthCall?.[1]?.affectsReachability, false);
+
+  // User actions and the sync poll still report reachability failures.
+  const syncCall = seen.find(([path]) => path === "/sync/status?view=summary");
+  assert.equal(syncCall?.[1]?.affectsReachability, undefined);
 });

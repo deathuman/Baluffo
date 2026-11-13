@@ -306,7 +306,7 @@ now. The cooldown stays parked here with its policy constants still unapproved.
 |---|---|---|
 | Storage health is bounded and cached | `src/storage/baluffo_store.py`, `src/bridge/storage_health.py` | `/ops/storage-health` no longer waits on the writer lock or on another thread's store open; it answers from a 5-second single-flight cache and reports `healthSource`, `healthTiming`, `healthLockBusy` |
 | A slow read keeps its last good body | `src/container_gateway.py` | a 504 or proxy timeout on that route serves the last good payload with `stale: true`, `gatewayFallback: true`, bounded to 5 minutes |
-| A failed diagnostic is no longer "bridge offline" | `frontend/admin/app/runtime/actions.js`, `runtime.js`, `action-center.js` | the Action Center's storage poll opts out of reachability attribution; real bridge failures on `/ops/fetch-kpis` and `/sync/status` still count |
+| A failed diagnostic is no longer "bridge offline" | `frontend/admin/app/runtime/actions.js`, `runtime.js`, `action-center.js` | the Action Center's storage and KPI-summary polls opt out of reachability attribution; the bridge-status watcher owns `/app/ready` |
 | The badge returns to its real state | `frontend/admin/app/ops/bridge-reconnect-banner.js` | the pre-wait state class and label are snapshotted and restored, so "Bridge Reconnecting" cannot outlive the wait |
 
 ### 11.2 What it does not ship

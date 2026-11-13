@@ -52,6 +52,10 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 - Jobs-generation cleanup now uses a bulk-delete mode with 1,000-row batches, a per-delete-transaction `secure_delete=FAST` override that restores the normal writer policy immediately, one larger WAL auto-checkpoint instead of repeated 4 MiB checkpoints, and a single final truncating checkpoint. On the measured subset it raised cleanup throughput from about 3,900 to 326,000 rows/minute, including the final checkpoint.
 
+### Fixed
+
+- A slow KPI summary read no longer makes the Admin page report the bridge as offline; the bridge badge follows `/app/ready` while panel data refreshes independently.
+
 ## [0.3.058] - 2026-11-12
 
 ### Added

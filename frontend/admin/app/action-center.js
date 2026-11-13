@@ -589,7 +589,12 @@ export function createActionCenterController({
         ? [pollCache.health || null, pollCache.sync || null, pollCache.storage || null]
         : await Promise.all([
           healthFeed.load(
-            () => getBridge(HEALTH_ROUTE, { timeoutMs: 5000 }).catch(() => null),
+            // The summary is a passive data read. A slow summary computation must
+            // not claim the bridge is offline; `/app/ready` owns that state.
+            () => getBridge(HEALTH_ROUTE, {
+              timeoutMs: 5000,
+              affectsReachability: false
+            }).catch(() => null),
             { maxAgeMs: 5000 }
           ),
           getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),

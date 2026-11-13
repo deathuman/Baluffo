@@ -83,14 +83,22 @@ export function createFetchKpisHydration({
             () => measuredGetBridge(
               OPS_FETCH_KPIS_SUMMARY_PATH,
               "admin_ops_fetch_kpis_summary_fetch",
-              { enabled: !options?.fromPoll && !options?.silent }
+              {
+                enabled: !options?.fromPoll && !options?.silent,
+                // Shared with the Action Center: the summary is a passive data
+                // read, not a bridge-reachability probe.
+                requestOptions: { affectsReachability: false }
+              }
             ),
             { maxAgeMs: options?.fromPoll || options?.force ? 0 : 5000 }
           )
         : measuredGetBridge(
             OPS_FETCH_KPIS_SUMMARY_PATH,
             "admin_ops_fetch_kpis_summary_fetch",
-            { enabled: !options?.fromPoll && !options?.silent }
+            {
+              enabled: !options?.fromPoll && !options?.silent,
+              requestOptions: { affectsReachability: false }
+            }
           );
       fetchKpisLoad = request.finally(() => {
         fetchKpisLoad = null;

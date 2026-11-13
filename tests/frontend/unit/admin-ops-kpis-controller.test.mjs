@@ -66,8 +66,8 @@ test("admin ops summary auto-loads bounded fetch KPI cards", async () => {
   const calls = [];
   const controller = createAdminOpsController(createBaseControllerOptions({
     state,
-    getBridge: async path => {
-      calls.push(path);
+    getBridge: async (path, options) => {
+      calls.push({ path, options });
       if (path === "/ops/dashboard-health?view=summary") return { alerts: [], kpis: { pendingApprovalsCount: 812 }, schedule: {}, status: "healthy", summaryView: true };
       if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: { lastSuccessfulFetchAge: "4m", sevenDayFetchSuccessRate: 0.91 }, summaryView: true };
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
@@ -84,7 +84,9 @@ test("admin ops summary auto-loads bounded fetch KPI cards", async () => {
   await flushAdminOpsBackground();
   controller.stopOpsHealthPolling();
 
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  const fetchKpisCall = calls.find(call => call.path === "/ops/fetch-kpis?view=summary");
+  assert.ok(fetchKpisCall);
+  assert.equal(fetchKpisCall.options?.affectsReachability, false);
   assert.equal(renderedKpis.at(-1).lastSuccessfulFetchAge, "4m");
   assert.equal(renderedKpis.at(-1).sevenDayFetchSuccessRate, 0.91);
 });
