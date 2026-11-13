@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
+import sqlite3
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -24,7 +26,10 @@ from src.storage.baluffo_store import (
     BULK_DELETE_SECURE_DELETE,
     DEFAULT_BATCH_SIZE,
     BaluffoStore,
+    BaluffoStoreError,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 JOB_FEED_SCHEMA_VERSION = 1
 DEFAULT_GENERATION_DELETE_CAP = 4
@@ -260,6 +265,10 @@ class JobRuntimeStore:
                 )
 
             self.store.write(write_sources)
+        self._save_generation_stats(
+            {feed_generation: (len(records), len(source_records))},
+            updated_at=generated_at,
+        )
         return JobFeedWriteSummary(
             generation=feed_generation,
             run_id=_clean_text(run_id),
@@ -337,6 +346,19 @@ class JobRuntimeStore:
                     now,
                     _json_dumps({"generation": feed_generation}),
                 ),
+            )
+            conn.execute(
+                """
+                INSERT INTO job_feed_generation_stats(
+                    feed_generation, row_count, source_count, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(feed_generation) DO UPDATE SET
+                    row_count = excluded.row_count,
+                    source_count = excluded.source_count,
+                    updated_at = excluded.updated_at
+                """,
+                (feed_generation, len(rows), source_count, now),
             )
 
         self.store.write(publish)
@@ -501,15 +523,24 @@ class JobRuntimeStore:
         if not generations:
             return 0
 
+        total_generations, row_counts_known, total_rows = self._generation_cleanup_metadata(
+            generations,
+            on_progress=on_progress,
+        )
         deleted_generations = 0
         deleted_rows = 0
 
-        def report_progress(generation: str) -> None:
+        def report_progress(generation: str, *, stage: str = "deleting") -> None:
             if on_progress is not None:
                 on_progress(
                     {
+                        "stage": stage,
                         "deletedGenerationCount": deleted_generations,
                         "deletedRowCount": deleted_rows,
+                        "totalGenerationCount": total_generations,
+                        "processedGenerationCount": deleted_generations,
+                        "totalGenerationRowCount": total_rows,
+                        "generationRowCountKnown": row_counts_known,
                         "generation": generation,
                     }
                 )
@@ -526,6 +557,7 @@ class JobRuntimeStore:
 
             self._delete_generation_batches(sql, parameters, on_deleted=on_deleted)
 
+        report_progress(generations[0])
         with self.store.bulk_delete_mode():
             for generation in generations:
                 # Sources must go before their parent job rows; each batch is a
@@ -542,7 +574,189 @@ class JobRuntimeStore:
                 )
                 deleted_generations += 1
                 report_progress(generation)
+        self._delete_generation_stats(generations)
         return deleted_generations
+
+    def _generation_cleanup_metadata(
+        self,
+        generations: Sequence[str],
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None,
+    ) -> tuple[int, bool, int]:
+        total_generations = len(generations)
+        stats = self._generation_stats(generations)
+        missing_stats = [generation for generation in generations if generation not in stats]
+        if missing_stats:
+            self._report_generation_counting(
+                generations[0], total_generations, on_progress=on_progress
+            )
+            counted = self._count_and_save_generation_stats(missing_stats)
+            stats.update(counted)
+        row_counts_known = all(generation in stats for generation in generations)
+        total_rows = (
+            sum(row_count + source_count for row_count, source_count in stats.values())
+            if row_counts_known
+            else 0
+        )
+        return total_generations, row_counts_known, total_rows
+
+    def _report_generation_counting(
+        self,
+        generation: str,
+        total_generations: int,
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None,
+    ) -> None:
+        if on_progress is None:
+            return
+        on_progress(
+            {
+                "stage": "counting",
+                "deletedGenerationCount": 0,
+                "deletedRowCount": 0,
+                "totalGenerationCount": total_generations,
+                "processedGenerationCount": 0,
+                "totalGenerationRowCount": 0,
+                "generationRowCountKnown": False,
+                "generation": generation,
+            }
+        )
+
+    def _count_and_save_generation_stats(
+        self, generations: Sequence[str]
+    ) -> dict[str, tuple[int, int]]:
+        try:
+            counted = self._count_generation_stats(generations)
+        except (
+            BaluffoStoreError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
+            LOGGER.warning("Could not count jobs-feed generation rows: %s", exc)
+            return {}
+        if not counted:
+            return {}
+        try:
+            self._save_generation_stats(counted, updated_at=self._now_iso())
+        except (
+            BaluffoStoreError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
+            LOGGER.warning("Could not persist jobs-feed generation row counts: %s", exc)
+        return counted
+
+    def _generation_stats(self, generations: Sequence[str]) -> dict[str, tuple[int, int]]:
+        if not generations:
+            return {}
+        placeholders = ", ".join("?" for _ in generations)
+        rows = self.store.execute_read(
+            f"""
+            SELECT feed_generation, row_count, source_count
+            FROM job_feed_generation_stats
+            WHERE feed_generation IN ({placeholders})
+            """,
+            tuple(generations),
+        )
+        return {
+            _clean_text(row.get("feed_generation")): (
+                int_or_default(row.get("row_count")),
+                int_or_default(row.get("source_count")),
+            )
+            for row in rows
+            if _clean_text(row.get("feed_generation"))
+        }
+
+    def _count_generation_stats(self, generations: Sequence[str]) -> dict[str, tuple[int, int]]:
+        """Count rows for legacy generations that predate the stats table."""
+        if not generations:
+            return {}
+        placeholders = ", ".join("?" for _ in generations)
+        parameters = tuple(generations)
+        job_rows = self.store.execute_read(
+            f"""
+            SELECT feed_generation, COUNT(*) AS row_count
+            FROM jobs
+            WHERE feed_generation IN ({placeholders})
+            GROUP BY feed_generation
+            """,
+            parameters,
+        )
+        source_rows = self.store.execute_read(
+            f"""
+            SELECT feed_generation, COUNT(*) AS source_count
+            FROM job_sources
+            WHERE feed_generation IN ({placeholders})
+            GROUP BY feed_generation
+            """,
+            parameters,
+        )
+        counts = {generation: [0, 0] for generation in generations}
+        for row in job_rows:
+            generation = _clean_text(row.get("feed_generation"))
+            if generation in counts:
+                counts[generation][0] = int_or_default(row.get("row_count"))
+        for row in source_rows:
+            generation = _clean_text(row.get("feed_generation"))
+            if generation in counts:
+                counts[generation][1] = int_or_default(row.get("source_count"))
+        return {
+            generation: (int(values[0]), int(values[1])) for generation, values in counts.items()
+        }
+
+    def _save_generation_stats(
+        self,
+        stats: Mapping[str, tuple[int, int]],
+        *,
+        updated_at: str,
+    ) -> None:
+        if not stats:
+            return
+        rows = [
+            (generation, max(0, int(row_count)), max(0, int(source_count)), str(updated_at))
+            for generation, (row_count, source_count) in stats.items()
+        ]
+        self.store.write(
+            lambda conn: conn.executemany(
+                """
+                INSERT INTO job_feed_generation_stats(
+                    feed_generation, row_count, source_count, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(feed_generation) DO UPDATE SET
+                    row_count = excluded.row_count,
+                    source_count = excluded.source_count,
+                    updated_at = excluded.updated_at
+                """,
+                rows,
+            )
+        )
+
+    def _delete_generation_stats(self, generations: Sequence[str]) -> None:
+        if not generations:
+            return
+        try:
+            self.store.write(
+                lambda conn: conn.executemany(
+                    "DELETE FROM job_feed_generation_stats WHERE feed_generation = ?",
+                    [(generation,) for generation in generations],
+                )
+            )
+        except (
+            BaluffoStoreError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
+            LOGGER.warning("Could not delete jobs-feed generation row stats: %s", exc)
 
     def _delete_generation_batches(
         self,

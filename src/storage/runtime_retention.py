@@ -111,6 +111,11 @@ def _cleanup_job_generations(
             "status": "failed",
             "error": str(exc),
             "deletedGenerationCount": 0,
+            "processedGenerationCount": 0,
+            "totalGenerationCount": 0,
+            "totalGenerationRowCount": 0,
+            "deletedGenerationRowCount": 0,
+            "generationRowCountKnown": False,
             "truncated": False,
         }
     if str((modes or {}).get("jobsFeed") or "").strip().lower() != "sqlite":
@@ -118,20 +123,35 @@ def _cleanup_job_generations(
             "status": "skipped",
             "reason": "jobsFeed is not sqlite-backed",
             "deletedGenerationCount": 0,
+            "processedGenerationCount": 0,
+            "totalGenerationCount": 0,
+            "totalGenerationRowCount": 0,
+            "deletedGenerationRowCount": 0,
+            "generationRowCountKnown": False,
             "truncated": False,
         }
     from src.storage.job_runtime import DEFAULT_GENERATION_DELETE_CAP, JobRuntimeStore
 
     deleted_rows = 0
+    total_generations = 0
+    total_generation_rows = 0
+    generation_row_count_known = False
 
     def report_generation_progress(progress: dict[str, Any]) -> None:
-        nonlocal deleted_rows
+        nonlocal deleted_rows, total_generations, total_generation_rows, generation_row_count_known
         deleted_rows = int(progress.get("deletedRowCount") or deleted_rows)
+        total_generations = int(progress.get("totalGenerationCount") or total_generations)
+        total_generation_rows = int(
+            progress.get("totalGenerationRowCount") or total_generation_rows
+        )
+        if "generationRowCountKnown" in progress:
+            generation_row_count_known = bool(progress.get("generationRowCountKnown"))
+        payload = dict(progress)
+        payload.setdefault("stage", "deleting")
         _report_progress(
             on_progress,
             "prune-job-generations",
-            stage="deleting",
-            **progress,
+            **payload,
         )
 
     try:
@@ -141,7 +161,12 @@ def _cleanup_job_generations(
             return {
                 "status": "nothing-to-prune",
                 "deletedGenerationCount": 0,
+                "processedGenerationCount": 0,
+                "totalGenerationCount": 0,
                 "deletedRowCount": 0,
+                "totalGenerationRowCount": 0,
+                "deletedGenerationRowCount": 0,
+                "generationRowCountKnown": False,
                 "truncated": False,
             }
         deleted = runtime.cleanup_old_generations(
@@ -154,13 +179,23 @@ def _cleanup_job_generations(
             "status": "failed",
             "error": str(exc),
             "deletedGenerationCount": 0,
+            "processedGenerationCount": 0,
+            "totalGenerationCount": 0,
             "deletedRowCount": deleted_rows,
+            "totalGenerationRowCount": 0,
+            "deletedGenerationRowCount": deleted_rows,
+            "generationRowCountKnown": False,
             "truncated": False,
         }
     return {
         "status": "ok" if deleted else "nothing-to-prune",
         "deletedGenerationCount": int(deleted),
+        "processedGenerationCount": int(deleted),
+        "totalGenerationCount": total_generations,
         "deletedRowCount": deleted_rows,
+        "totalGenerationRowCount": total_generation_rows,
+        "deletedGenerationRowCount": deleted_rows,
+        "generationRowCountKnown": generation_row_count_known,
         "keepGenerations": 1,
         "truncated": int(deleted) >= DEFAULT_GENERATION_DELETE_CAP,
     }
@@ -198,11 +233,19 @@ def run_runtime_retention(
     )
     _report_progress(on_progress, "prune-job-generations", stage="scanning")
     job_generations = _cleanup_job_generations(store, on_progress=on_progress)
+    deleted_generations = int(job_generations.get("deletedGenerationCount") or 0)
     _report_progress(
         on_progress,
         "prune-job-generations",
         stage="complete",
-        deletedGenerationCount=int(job_generations.get("deletedGenerationCount") or 0),
+        deletedGenerationCount=deleted_generations,
+        processedGenerationCount=int(
+            job_generations.get("processedGenerationCount") or deleted_generations
+        ),
+        totalGenerationCount=int(job_generations.get("totalGenerationCount") or 0),
+        totalGenerationRowCount=int(job_generations.get("totalGenerationRowCount") or 0),
+        deletedGenerationRowCount=int(job_generations.get("deletedGenerationRowCount") or 0),
+        generationRowCountKnown=bool(job_generations.get("generationRowCountKnown")),
     )
     statuses = {
         str(result.get("status") or ""),
@@ -216,6 +259,15 @@ def run_runtime_retention(
         **compacted,
         "jobGenerations": job_generations,
         "deletedGenerationCount": int(job_generations.get("deletedGenerationCount") or 0),
+        "processedGenerationCount": int(
+            job_generations.get("processedGenerationCount")
+            or job_generations.get("deletedGenerationCount")
+            or 0
+        ),
+        "totalGenerationCount": int(job_generations.get("totalGenerationCount") or 0),
+        "totalGenerationRowCount": int(job_generations.get("totalGenerationRowCount") or 0),
+        "deletedGenerationRowCount": int(job_generations.get("deletedGenerationRowCount") or 0),
+        "generationRowCountKnown": bool(job_generations.get("generationRowCountKnown")),
         "status": "failed"
         if job_failed
         else ("ok" if "ok" in statuses else sorted(statuses)[0] or "nothing-to-prune"),

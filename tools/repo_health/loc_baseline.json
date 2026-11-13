@@ -2,12 +2,12 @@
   "_comment": "Tracked source line budget. An area may not grow above its count, and a reduction must be ratcheted down here in the same change. Regenerate with: python tools/repo_health/loc_budget.py --update",
   "areas": {
     "<root>": 2001,
-    "frontend": 53489,
+    "frontend": 53529,
     "probes": 758,
     "scripts": 27014,
-    "src": 201518,
+    "src": 201804,
     "styles": 11383,
-    "tests": 281206,
+    "tests": 281298,
     "tools": 42851
   }
 }

@@ -218,12 +218,17 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   before releasing the lock; unrelated runtime writes therefore keep the normal
   policy. FAST still overwrites deleted cell headers but leaves more of the old
   public job payload recoverable than `secure_delete=ON`; foreign keys and
-  `synchronous=NORMAL` remain enabled. Progress and
-  completion report `deletedGenerationCount`/`deletedRowCount` under
-  `jobGenerations`, with the generation count repeated at the top level; a new
-  pass starts with an empty `jobGenerations` and `truncated=false`. Compaction
-  starts only after the generation backlog is drained, because a rebuild during
-  another deletion batch only skips as busy.
+  `synchronous=NORMAL` remain enabled. Each staged generation records its jobs
+  and source-row counts in `job_feed_generation_stats`; cleanup reports
+  `totalGenerationCount`/`processedGenerationCount` and
+  `totalGenerationRowCount`/`deletedGenerationRowCount` under `jobGenerations`,
+  with the generation count repeated at the top level. Legacy generations
+  without stats are counted once for the candidate set and cached; if that
+  count fails, cleanup continues with `generationRowCountKnown=false` and the
+  generation count remains available. A new pass starts with an empty
+  `jobGenerations` and `truncated=false`. Compaction starts only after the
+  generation backlog is drained, because a rebuild during another deletion
+  batch only skips as busy.
 - **Full source details are written once.** The fetch closeout writes the
   per-source `details` to `artifacts/fetch/<run>/source-details.json.gz` and
   stores only the compact row in SQLite. The full `/ops/fetch-report` view

@@ -41,7 +41,11 @@ def test_runtime_retention_drains_old_jobs_generations_and_keeps_current() -> No
 
             assert result["deletedGenerationCount"] == 4
             assert result["jobGenerations"]["deletedGenerationCount"] == 4
+            assert result["jobGenerations"]["processedGenerationCount"] == 4
+            assert result["jobGenerations"]["totalGenerationCount"] == 4
+            assert result["jobGenerations"]["totalGenerationRowCount"] == 4
             assert result["jobGenerations"]["deletedRowCount"] == 4
+            assert result["jobGenerations"]["generationRowCountKnown"] is True
             assert result["jobGenerations"]["truncated"] is True
             assert result["truncated"] is True
             remaining = store.execute_read(
@@ -111,10 +115,52 @@ def test_runtime_retention_reports_phase_progress() -> None:
                 item.get("phase") == "prune-job-generations"
                 and item.get("stage") == "deleting"
                 and item.get("deletedGenerationCount") == 1
+                and item.get("totalGenerationCount") == 1
+                and item.get("totalGenerationRowCount") == 1
+                and item.get("generationRowCountKnown") is True
                 for item in progress
             )
             assert result["deletedGenerationCount"] == 1
             assert result["jobGenerations"]["deletedGenerationCount"] == 1
+
+
+def test_runtime_retention_counts_legacy_generation_rows_and_clears_stats() -> None:
+    with workspace_tmpdir("runtime-retention-legacy-generation-stats") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            generations = _replace_generations(store, 2)
+            old = generations[0]
+            store.write(
+                lambda conn: conn.execute(
+                    "DELETE FROM job_feed_generation_stats WHERE feed_generation = ?",
+                    (old,),
+                )
+            )
+            progress: list[dict[str, object]] = []
+
+            result = run_runtime_retention(
+                store,
+                reason="post-serve",
+                on_progress=progress.append,
+            )
+
+            assert any(
+                item.get("stage") == "counting" and item.get("totalGenerationCount") == 1
+                for item in progress
+            )
+            assert any(
+                item.get("generationRowCountKnown") is True
+                and item.get("totalGenerationRowCount") == 1
+                for item in progress
+            )
+            assert result["jobGenerations"]["generationRowCountKnown"] is True
+            assert result["jobGenerations"]["totalGenerationRowCount"] == 1
+            assert (
+                store.execute_scalar(
+                    "SELECT COUNT(*) FROM job_feed_generation_stats WHERE feed_generation = ?",
+                    (old,),
+                )
+                == 0
+            )
 
 
 def test_runtime_retention_marks_a_short_jobs_cleanup_as_drained() -> None:
@@ -126,6 +172,7 @@ def test_runtime_retention_marks_a_short_jobs_cleanup_as_drained() -> None:
 
             assert result["deletedGenerationCount"] == 1
             assert result["jobGenerations"]["deletedGenerationCount"] == 1
+            assert result["jobGenerations"]["totalGenerationCount"] == 1
             assert result["jobGenerations"]["truncated"] is False
             assert result["truncated"] is False
             remaining = store.execute_read("SELECT DISTINCT feed_generation FROM jobs")

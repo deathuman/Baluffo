@@ -53,6 +53,18 @@ def test_replace_feed_publishes_generation_and_preserves_order_and_source_bundle
             assert summary.row_count == 2
             assert summary.row_hash == jobs_feed_rows_hash(rows)
             assert runtime.current_rows() == rows
+            assert store.execute_read(
+                """
+                SELECT feed_generation, row_count, source_count
+                FROM job_feed_generation_stats
+                """
+            ) == [
+                {
+                    "feed_generation": summary.generation,
+                    "row_count": 2,
+                    "source_count": 2,
+                }
+            ]
             assert runtime.current_summary() == {
                 "generation": summary.generation,
                 "runId": "fetch_abc",
@@ -197,8 +209,13 @@ def test_cleanup_old_generations_batches_rows_and_reports_progress(
             assert deleted == 1
             assert write_calls >= 6
             assert progress[-1] == {
+                "stage": "deleting",
                 "deletedGenerationCount": 1,
                 "deletedRowCount": 4,
+                "totalGenerationCount": 1,
+                "processedGenerationCount": 1,
+                "totalGenerationRowCount": 4,
+                "generationRowCountKnown": True,
                 "generation": old.generation,
             }
             assert runtime.rows_for_generation(old.generation) == []

@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/ui/index.js";
 
 const TABLE_LABELS = Object.freeze({
   job_feed_state: "Current feed state",
+  job_feed_generation_stats: "Saved version row counts",
   jobs: "Job listings",
   job_sources: "Saved source records",
   source_runs: "Fetch history",
@@ -77,6 +78,7 @@ export function renderStorageWriteLockHtml(writeLock) {
 export function storageMaintenancePhaseLabel(phase) {
   const labels = {
     starting: "Preparing maintenance",
+    counting: "Counting saved-version rows",
     "prune-source-runs": "Removing old fetch history",
     "prune-event-history": "Pruning task and sync history",
     "compact-archived-payloads": "Compacting archived payloads",
@@ -103,7 +105,9 @@ export function renderStorageMaintenanceHtml(
 
   const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
   const phase = String(status.phase || status.status || "");
-  const phaseLabel = storageMaintenancePhaseLabel(phase);
+  const phaseLabel = phase === "prune-job-generations" && status.stage === "counting"
+    ? storageMaintenancePhaseLabel("counting")
+    : storageMaintenancePhaseLabel(phase);
   const elapsed = toNumber(status.elapsedMs ?? status.durationMs);
   const totalRuns = toNumber(status.totalRunCount);
   const processedRuns = toNumber(status.processedRunCount);
@@ -112,6 +116,28 @@ export function renderStorageMaintenanceHtml(
   const deletedEvents = toNumber(status.deletedEventCount);
   const deletedSyncRuns = toNumber(status.deletedSyncRunCount);
   const deletedGenerations = toNumber(status.deletedGenerationCount);
+  const jobGenerations = status.jobGenerations && typeof status.jobGenerations === "object"
+    ? status.jobGenerations
+    : {};
+  const totalGenerations = toNumber(
+    status.totalGenerationCount ?? jobGenerations.totalGenerationCount
+  );
+  const processedGenerations = toNumber(
+    status.processedGenerationCount
+      ?? jobGenerations.processedGenerationCount
+      ?? deletedGenerations
+  );
+  const totalGenerationRows = toNumber(
+    status.totalGenerationRowCount ?? jobGenerations.totalGenerationRowCount
+  );
+  const deletedGenerationRows = toNumber(
+    status.deletedGenerationRowCount ?? jobGenerations.deletedGenerationRowCount
+  );
+  const generationRowCountKnown = status.generationRowCountKnown === true
+    || jobGenerations.generationRowCountKnown === true;
+  const generationPercent = generationRowCountKnown && totalGenerationRows > 0
+    ? Math.min(100, Math.round((deletedGenerationRows / totalGenerationRows) * 100))
+    : null;
   const details = [];
 
   details.push(`<span class="admin-storage-maintenance-phase">${escapeHtml(phaseLabel)}</span>`);
@@ -121,7 +147,7 @@ export function renderStorageMaintenanceHtml(
       `<span>${formatCount(processedRuns)} of ${formatCount(totalRuns)} runs</span>`
     );
   }
-  if (deletedRuns > 0 || deletedRows > 0) {
+  if (deletedRuns > 0) {
     details.push(
       `<span>Removed ${formatCount(deletedRuns)} runs / ${formatCount(deletedRows)} rows</span>`
     );
@@ -131,8 +157,22 @@ export function renderStorageMaintenanceHtml(
       `<span>Task/sync rows ${formatCount(deletedEvents)} / ${formatCount(deletedSyncRuns)}</span>`
     );
   }
-  if (deletedGenerations > 0) {
+  if (totalGenerations > 0) {
+    details.push(
+      `<span>Saved versions ${formatCount(processedGenerations)} of ${formatCount(totalGenerations)}</span>`
+    );
+  } else if (deletedGenerations > 0) {
     details.push(`<span>Removed ${formatCount(deletedGenerations)} saved versions</span>`);
+  }
+  if (generationRowCountKnown && totalGenerationRows > 0) {
+    const percentText = generationPercent === null ? "" : ` (${generationPercent}%)`;
+    details.push(
+      `<span>${formatCount(deletedGenerationRows)} of ${formatCount(totalGenerationRows)} saved-version rows${percentText}</span>`
+    );
+  } else if (deletedGenerationRows > 0) {
+    details.push(
+      `<span>${formatCount(deletedGenerationRows)} saved-version rows removed</span>`
+    );
   }
   if (compaction && String(compaction.status || "") !== "not-run") {
     const reclaimed = toNumber(compaction.reclaimedBytes);

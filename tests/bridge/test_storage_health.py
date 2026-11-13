@@ -52,7 +52,7 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     storage = payload["storage"]
     assert payload["ok"] is True
     assert storage["healthy"] is True
-    assert storage["migrationVersion"] == "008"
+    assert storage["migrationVersion"] == "009"
     assert storage["walMode"] == "wal"
     assert storage["quickCheck"] == "ok"
     assert storage["quickCheckScope"] == "limited"
