@@ -112,6 +112,7 @@ def test_bundle_contains_python_import_closure_modules(
             "src/storage/migrations/006_source_run_runtime.sql",
             "src/storage/migrations/007_jobs_feed_runtime.sql",
             "src/storage/migrations/008_source_registry_runtime.sql",
+            "src/storage/migrations/009_job_feed_generation_stats.sql",
             "src/storage/job_runtime.py",
             "src/storage/source_registry_runtime.py",
             "src/storage/source_runtime.py",

@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.059"
+version: "0.3.060"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,11 +19,12 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.059 adds saved-version progress to storage maintenance. Admin now
-  shows how many older feed generations and rows are being removed, backed by
-  per-generation jobs and source-row counts. Older generations without that
-  metadata are counted once, and maintenance continues with generation-only
-  progress if counting fails. Cleanup remains bounded and less disruptive. The
-  current feed, saved jobs, notes, and compatibility exports are preserved.
+  Release 0.3.060 adds saved-version progress to storage maintenance and fixes
+  desktop update packaging. Admin now shows how many older feed generations and
+  rows are being removed, backed by per-generation jobs and source-row counts.
+  Older generations without that metadata are counted once, and maintenance
+  continues with generation-only progress if counting fails. Desktop ship-bundle
+  packaging now validates the current storage migration sequence. Existing
+  feeds, saved jobs, notes, and compatibility exports are preserved.
 storage:
   dataRoot: data
