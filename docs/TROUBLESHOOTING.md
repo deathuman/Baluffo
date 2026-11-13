@@ -134,6 +134,35 @@ storage card stale but never changes the badge.
 | Gateway timeout | A 504 is served from the gateway's last good reading (`stale: true`, `gatewayFallback: true`, `staleAgeS`); an error body instead means nothing was cached yet |
 | Badge truth | The badge text and its state class must always agree; a grey pill reading "Bridge Reconnecting" was a presentation bug, not a bridge failure |
 
+### SQLite generation cleanup is slow
+
+Checkpoint scheduling and `secure_delete`, not cache size or the index, are the
+main levers. A 2026-11-12 subset benchmark found that raising the writer cache
+from 32 MiB to 64 MiB did **not** improve cleanup (3,479.3 vs 3,392.6 rows/minute;
+maximum hold 21.1 vs 20.3 seconds), and dropping
+`idx_job_sources_generation_job` regressed the matched workload from 4,436.6 to
+2,753.6 rows/minute. Keep the index. Generation cleanup now uses 1,000-row
+batches under `BaluffoStore.bulk_delete_mode()`: an 80 MiB WAL auto-checkpoint,
+no duplicate background checkpoint while deleting, and one final TRUNCATE
+checkpoint. Each cleanup delete transaction temporarily uses
+`secure_delete=FAST` and restores the normal writer policy before releasing the
+lock. On the same subset that took the source-only rate from
+3,872 rows/minute to 326,175 rows/minute including the final checkpoint (20,000
+rows; 365 ms maximum batch hold). A later per-transaction confirmation kept the
+same 85,848,472-byte WAL and had a 178-1,298 ms maximum hold; inclusive throughput
+varied from 130,435 to 417,536 rows/minute because the final checkpoint took
+2.2-8.3 s, and a paired connection-scoped run showed the same checkpoint variance.
+`secure_delete=OFF` measured faster (417,827 rows/minute) but leaves more deleted
+payload recoverable; keep FAST unless the data classification changes.
+
+Also avoid forcing table-size sampling while retention is running: the live
+211 GB store reports a partial sample of 1.0–1.5 s every 5 s, and on a matched
+subset skipping it improved throughput from 2,829.9 to 2,936.4 rows/minute
+(+3.8%). Serve cached or omitted table sizes during retention. A full 211 GB
+confirmation is still required; the subset and local store-path measurements are
+recorded in
+[`storage-contract.md`](storage-contract.md#measured-generation-cleanup-levers-2026-11-12).
+
 ### Saved jobs not persisting
 
 | Possible Cause | Solution |

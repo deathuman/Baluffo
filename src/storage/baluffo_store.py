@@ -36,6 +36,13 @@ DEFAULT_BATCH_SIZE = 500
 DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES = 64 * 1024 * 1024
 DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES = 256 * 1024 * 1024
 DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
+# Generation cleanup deletes a very large number of rows. Its per-batch writes
+# must not trigger the normal 64 MiB background checkpoint: that turns a bounded
+# delete loop into repeated write-lock stalls. One larger auto-checkpoint keeps
+# the WAL bounded while the bulk delete runs, and the context checkpoints once at
+# the end before restoring the normal writer settings.
+DEFAULT_BULK_DELETE_WAL_AUTOCHECKPOINT_PAGES = 20_000
+BULK_DELETE_SECURE_DELETE = "FAST"
 # A passive checkpoint can leave the WAL file at the journal size limit: SQLite
 # has checkpointed the frames, but the file still looks over the threshold. A
 # new write must not turn that into a checkpoint loop, so background scheduling
@@ -262,6 +269,7 @@ class BaluffoStore:
         self._retention_timer: threading.Timer | None = None
         self._retention_next_run_monotonic = 0.0
         self._closed = False
+        self._bulk_delete_mode = False
         self._table_sizes_lock = threading.Lock()
         self._table_sizes_snapshot: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
@@ -428,7 +436,15 @@ class BaluffoStore:
             applied_now.append(migration.version)
         return applied_now
 
-    def write(self, callback: Callable[[sqlite3.Connection], _T]) -> _T:
+    def write(
+        self,
+        callback: Callable[[sqlite3.Connection], _T],
+        *,
+        secure_delete: str | None = None,
+    ) -> _T:
+        secure_delete_mode = str(secure_delete or "").upper() or None
+        if secure_delete_mode not in {None, "ON", "OFF", "FAST"}:
+            raise ValueError(f"Unsupported SQLite secure_delete mode: {secure_delete}")
         last_busy_error: sqlite3.OperationalError | None = None
         for attempt in range(self.busy_retry_attempts):
             # Every attempt, including a busy retry, counts as write activity: the
@@ -453,11 +469,7 @@ class BaluffoStore:
                     )
                 try:
                     waited_s = time.perf_counter() - lock_started
-                    hold_started = time.perf_counter()
-                    self._writer.execute("BEGIN IMMEDIATE")
-                    result = callback(self._writer)
-                    self._writer.commit()
-                    held_s = time.perf_counter() - hold_started
+                    result, held_s = self._write_transaction(callback, secure_delete_mode)
                 finally:
                     self._release_write_lock()
                 self._record_slow_write(operation="write", waited_s=waited_s, held_s=held_s)
@@ -493,6 +505,73 @@ class BaluffoStore:
         message = f"SQLite write failed after busy retry attempts: {last_busy_error}"
         LOGGER.error(message)
         raise BaluffoStoreError(message)
+
+    def _write_transaction(
+        self,
+        callback: Callable[[sqlite3.Connection], _T],
+        secure_delete_mode: str | None,
+    ) -> tuple[_T, float]:
+        """Run one write transaction, optionally with a transaction-scoped pragma."""
+        secure_delete_before: int | None = None
+        hold_started = time.perf_counter()
+        try:
+            if secure_delete_mode is not None:
+                secure_delete_before = int(
+                    self._writer.execute("PRAGMA secure_delete").fetchone()[0] or 0
+                )
+                self._writer.execute(f"PRAGMA secure_delete={secure_delete_mode}")
+            self._writer.execute("BEGIN IMMEDIATE")
+            try:
+                result = callback(self._writer)
+                self._writer.commit()
+            except BaseException:
+                self._writer.rollback()
+                raise
+            return result, time.perf_counter() - hold_started
+        finally:
+            if secure_delete_before is not None:
+                self._writer.execute(f"PRAGMA secure_delete={secure_delete_before}")
+
+    @contextmanager
+    def bulk_delete_mode(self) -> Iterator[None]:
+        """Use cleanup-friendly SQLite settings for a bounded bulk delete.
+
+        A 250-row generation-cleanup batch used to trigger SQLite's 1,000-page
+        auto-checkpoint (and, once the WAL crossed 64 MiB, the store's own
+        background checkpoint). On the measured 108 MiB subset that churn held
+        the write lock for 16-20 s and capped throughput near 3,900 rows/min.
+        Keep the WAL bounded, but checkpoint at 20,000 pages instead, suppress
+        the duplicate background scheduling, and checkpoint once on exit.
+
+        This context changes only WAL/checkpoint policy. Individual cleanup
+        delete transactions request `secure_delete=FAST` themselves, so unrelated
+        runtime writes keep the writer's normal secure-delete setting. Foreign-key
+        enforcement and NORMAL synchronous durability stay enabled. The final
+        checkpoint uses TRUNCATE: a PASSIVE checkpoint leaves the WAL at the 64 MiB
+        journal-size limit, which makes the next write schedule another background
+        checkpoint.
+        """
+        if self._bulk_delete_mode:
+            yield
+            return
+        with self._write_lock_guard("bulk-delete-mode"):
+            auto_checkpoint = int(
+                self._writer.execute("PRAGMA wal_autocheckpoint").fetchone()[0] or 0
+            )
+            self._writer.execute(
+                f"PRAGMA wal_autocheckpoint={DEFAULT_BULK_DELETE_WAL_AUTOCHECKPOINT_PAGES}"
+            )
+            self._bulk_delete_mode = True
+        try:
+            yield
+        finally:
+            with self._write_lock_guard("bulk-delete-mode-restore"):
+                self._bulk_delete_mode = False
+                self._writer.execute(f"PRAGMA wal_autocheckpoint={auto_checkpoint}")
+            try:
+                self.checkpoint_required(mode="TRUNCATE")
+            except (BaluffoStoreError, sqlite3.Error) as exc:
+                LOGGER.warning("SQLite bulk-delete final checkpoint failed: %s", exc)
 
     def _record_slow_write(self, *, operation: str, waited_s: float, held_s: float) -> None:
         """Journal a write-lock operation that will not go unnoticed in the field.
@@ -1235,6 +1314,8 @@ class BaluffoStore:
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
         if self._closed:
             return False
+        if self._bulk_delete_mode:
+            return False
         sizes = self.file_sizes()
         wal_bytes = int(sizes.get("walBytes") or 0)
         if wal_bytes < self.wal_checkpoint_threshold_bytes:
@@ -1647,6 +1728,8 @@ class BaluffoStore:
 
     def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
         if self._closed:
+            return False
+        if self._bulk_delete_mode:
             return False
         sizes = self.file_sizes()
         if not self._compaction_needed(sizes):

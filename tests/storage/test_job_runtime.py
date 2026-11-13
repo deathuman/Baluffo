@@ -181,10 +181,10 @@ def test_cleanup_old_generations_batches_rows_and_reports_progress(
             write_calls = 0
             original_write = store.write
 
-            def counting_write(callback):
+            def counting_write(callback, **kwargs):
                 nonlocal write_calls
                 write_calls += 1
-                return original_write(callback)
+                return original_write(callback, **kwargs)
 
             monkeypatch.setattr(store, "write", counting_write)
             progress: list[dict[str, object]] = []

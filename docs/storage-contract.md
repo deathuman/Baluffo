@@ -208,8 +208,17 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   full historical copy in SQLite. Each generation is removed in bounded
   `job_sources` and `jobs` batches, one transaction per batch, so a large
   generation does not hold the write lock for the whole cleanup. Deletes default
-  to 250 rows per transaction; `job_sources` selects rowids first, so a job with
-  many source rows cannot make one batch larger than the row cap. Progress and
+  to 1,000 rows per transaction; `job_sources` selects rowids first, so a job with
+  many source rows cannot make one batch larger than the row cap. The cleanup
+  runs under `BaluffoStore.bulk_delete_mode()`: the writer uses an 80 MiB
+  `wal_autocheckpoint`, while the normal 64 MiB background WAL scheduler and
+  compaction scheduler are suppressed. One TRUNCATE checkpoint runs on exit, so
+  the WAL cannot remain at the 64 MiB trigger. Each cleanup delete transaction
+  temporarily sets `secure_delete=FAST` and restores the writer's prior value
+  before releasing the lock; unrelated runtime writes therefore keep the normal
+  policy. FAST still overwrites deleted cell headers but leaves more of the old
+  public job payload recoverable than `secure_delete=ON`; foreign keys and
+  `synchronous=NORMAL` remain enabled. Progress and
   completion report `deletedGenerationCount`/`deletedRowCount` under
   `jobGenerations`, with the generation count repeated at the top level; a new
   pass starts with an empty `jobGenerations` and `truncated=false`. Compaction
@@ -242,6 +251,83 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   `beforeBytes`, `afterBytes`, `reclaimedBytes`, and `budgetMs`; the original file
   stays in place until the copy validates, so a bounded-out or failed run costs
   the staging file only.
+
+### Measured generation-cleanup levers (2026-11-12)
+
+These measurements close the current cache-size, index-drop, delete-policy, and
+checkpoint-scheduling questions. They are **subset** measurements, not a full
+211 GB run: 110 MB / 108 MB current-data copies, 20,000 `job_sources` rows and
+about 40,000 `jobs`, the same delete SQL, a 300-second budget, and live retention
+competing for the same disk. All runs reported `busyErrors=0`.
+
+| Experiment | Rows deleted | Rows/minute | Maximum write-lock hold | Result |
+|---|---:|---:|---:|---|
+| 32 MiB cache (first subset) | 17,750 | 3,479.3 | 21,130 ms | Baseline; 71 batches |
+| 64 MiB cache (same subset) | 17,750 | 3,392.6 | 20,321 ms | **No improvement; do not tune cache size for cleanup** |
+| Indexed 32 MiB (matched rebuilt subset) | 20,000 | 4,436.6 | 16,238 ms | Baseline; source rows drained |
+| Dropped `idx_job_sources_generation_job` | 14,000 | 2,753.6 | 24,669 ms | **Regression; hit the 300 s cap** |
+| 5 s table-size sampler during cleanup | 14,250 | 2,829.9 | 29,667 ms | 61 samples, 13.7 s sampling |
+| Same cleanup, table-size sampling skipped | 15,000 | 2,936.4 | 20,479 ms | +3.8% rows/minute; max hold noisy |
+| Current 250-row shape, 32 MiB cache | 8,500 | 3,872.1 | 16,282 ms | Baseline for the new experiments; 34 batches |
+| `secure_delete=OFF`, 250-row, auto 1,000 pages | 10,500 | 5,093.5 | 14,463 ms | +31.5%; not enough |
+| `secure_delete=FAST`, 1,000-row, deferred checkpoint | 20,000 | 326,175 | 365 ms | Cleanup 0.76 s + 2.9 s final checkpoint |
+| `secure_delete=FAST`, per-transaction, 1,000-row, deferred | 20,000 | 130,435-417,536 (median 309,516) | 178-1,298 ms (median 465) | 3 confirmation runs; WAL exactly 85,848,472 B each |
+| `secure_delete=OFF`, 1,000-row, deferred checkpoint | 20,000 | 417,827 | 190 ms | Cleanup 0.57 s + 2.3 s final checkpoint |
+| `secure_delete=ON`, 1,000-row, deferred checkpoint | 20,000 | 99,420 | 607 ms | Cleanup 1.03 s + 11.0 s final checkpoint |
+| `secure_delete=OFF`, 1,000-row, 80 MiB auto-checkpoint | 20,000 | 169,276 | 4,180 ms | Bounded WAL; 4.8 s + 2.3 s final checkpoint |
+| `secure_delete=OFF`, 1,000-row, 64 MiB auto-checkpoint | 20,000 | 70,526 | 7,845 ms | WAL held at threshold; one auto + one final checkpoint |
+
+Rows/minute for the new rows includes the final checkpoint; the raw delete loop
+was faster than the table suggests. The decisive lever is not cache size or the
+index: it is checkpoint scheduling and `secure_delete`. The 250-row shape spends
+much of its time in repeated 4 MiB WAL checkpoints, and `secure_delete=FAST`
+avoids both the per-cell full overwrite and the much slower final checkpoint that
+`secure_delete=ON` causes. A bounded 80 MiB auto-checkpoint (`20,000` pages) keeps
+the WAL from growing without the 64 MiB re-checkpoint loop; suppressing the
+store's separate 64 MiB background scheduler during the bulk delete is required,
+or the two schedulers contend.
+
+The same `BaluffoStore.bulk_delete_mode()` path was exercised on a local copy of
+the subset before the per-transaction secure-delete refinement: it deleted
+**59,433 rows** (39,433 `jobs` plus 20,000 `job_sources`) in **1.646 s** including
+the final TRUNCATE checkpoint; the WAL was zero bytes afterwards. That run is not
+directly
+comparable to the source-only host rows above, and it is not a full 211 GB
+confirmation, but it verifies the actual store/context path rather than only the
+raw SQL harness.
+
+A follow-up confirmation on a freshly rebuilt subset applied `secure_delete=FAST`
+inside each delete transaction, matching the shipped `BaluffoStore.write()` path,
+instead of for the whole connection. Three transaction-scoped runs kept the WAL
+exactly at **85,848,472 bytes** every time, the same as the earlier connection-wide
+run. Delete-loop throughput ranged from 0.570 s to 1.666 s (720,178-2,105,408
+rows/minute; median 1,398,290), maximum hold ranged from 178 to 1,298 ms (median
+465 ms), and inclusive rows/minute with the final checkpoint ranged from 130,435
+to 417,536 (median 309,516). The earlier single run was 0.756 s, 1,588,118
+rows/minute, 365 ms maximum hold, and 326,175 rows/minute inclusive. The final
+TRUNCATE checkpoint is the noisy component: it took 2.211-8.342 s across these
+runs, and a paired connection-scoped run also took 8.381 s, so the variance is
+host I/O rather than per-transaction scoping. The scoped run does not add a
+measurable regression.
+
+The post-drop plan still uses an index, but the larger primary-key autoindex
+(`sqlite_autoindex_job_sources_1`), not the narrower generation/job index. The
+earlier `EXPLAIN` claim that the dedicated index was redundant was incomplete:
+the plan shape changed but the ordered delete became materially slower. Do not
+retry the cache-size or index-drop levers unless the delete SQL, batch size,
+schema, or underlying storage changes. The 1,000-row batch is safe here because
+the measured maximum hold stayed under one second; do not raise it further
+without re-measuring the hold.
+
+The table-size sampler is a different result. On the 108 MB subset it completed
+in 224 ms on average (13.7 s across 61 samples); skipping it during retention
+raised throughput **3.8%** and cut the maximum hold from **29.7 s to 20.5 s**,
+while p95 and mean hold moved only about **5%** and **4%**. The live 211 GB store
+currently reports a **partial** sample taking **1.0–1.5 s every 5 s**, so the
+subset pair understates the live read cost, but this was a single pair under
+live disk contention. Serving cached or omitted table sizes while retention runs
+is directionally supported; a full-size confirmation is still needed and needs
+the live retention backlog drained first.
 
 Why this exists: a 1.44 GB runtime database with a 1.16 GB freelist and a 392 MB
 WAL started a VACUUM and a TRUNCATE checkpoint the moment the desktop bridge

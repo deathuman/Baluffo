@@ -20,11 +20,15 @@ from src.shared.json_io import json_dumps, loads_object
 from src.shared.text_utils import clean_text as _shared_clean_text
 from src.shared.utils import int_or_default
 from src.shared.utils import now_iso as _shared_now_iso
-from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
+from src.storage.baluffo_store import (
+    BULK_DELETE_SECURE_DELETE,
+    DEFAULT_BATCH_SIZE,
+    BaluffoStore,
+)
 
 JOB_FEED_SCHEMA_VERSION = 1
 DEFAULT_GENERATION_DELETE_CAP = 4
-DEFAULT_GENERATION_DELETE_BATCH_SIZE = 250
+DEFAULT_GENERATION_DELETE_BATCH_SIZE = 1000
 _SOURCE_ALIAS_QUERY_CHUNK = 200
 
 # Keep the batch's selection generation-scoped and name the feed_generation-leading
@@ -522,21 +526,22 @@ class JobRuntimeStore:
 
             self._delete_generation_batches(sql, parameters, on_deleted=on_deleted)
 
-        for generation in generations:
-            # Sources must go before their parent job rows; each batch is a
-            # separate transaction so the write lock is released between them.
-            delete_generation_rows(
-                _JOB_SOURCES_BATCH_DELETE_SQL,
-                generation,
-                (generation, self.delete_batch_size),
-            )
-            delete_generation_rows(
-                _JOBS_BATCH_DELETE_SQL,
-                generation,
-                (generation, generation, self.delete_batch_size),
-            )
-            deleted_generations += 1
-            report_progress(generation)
+        with self.store.bulk_delete_mode():
+            for generation in generations:
+                # Sources must go before their parent job rows; each batch is a
+                # separate transaction so the write lock is released between them.
+                delete_generation_rows(
+                    _JOB_SOURCES_BATCH_DELETE_SQL,
+                    generation,
+                    (generation, self.delete_batch_size),
+                )
+                delete_generation_rows(
+                    _JOBS_BATCH_DELETE_SQL,
+                    generation,
+                    (generation, generation, self.delete_batch_size),
+                )
+                deleted_generations += 1
+                report_progress(generation)
         return deleted_generations
 
     def _delete_generation_batches(
@@ -557,7 +562,12 @@ class JobRuntimeStore:
             cursor = conn.execute(sql, parameters)
             return max(0, int(cursor.rowcount or 0))
 
-        return int(self.store.write(delete_rows))
+        return int(
+            self.store.write(
+                delete_rows,
+                secure_delete=BULK_DELETE_SECURE_DELETE,
+            )
+        )
 
     def _deletable_generations(
         self, *, current: str, keep_count: int, delete_cap: int | None

@@ -134,6 +134,58 @@ def test_write_reraises_non_busy_operational_error_without_retry() -> None:
             assert health["lastWriteError"] == "syntax exploded"
 
 
+def test_secure_delete_override_is_scoped_to_one_transaction() -> None:
+    with workspace_tmpdir("baluffo-store-secure-delete-scope") as data_dir:
+        with BaluffoStore(data_dir) as store:
+
+            def current_policy(conn: sqlite3.Connection) -> int:
+                return int(conn.execute("PRAGMA secure_delete").fetchone()[0])
+
+            normal_before = store.write(current_policy)
+            with store.bulk_delete_mode():
+                normal_during_cleanup = store.write(current_policy)
+                cleanup_transaction = store.write(
+                    current_policy,
+                    secure_delete="FAST",
+                )
+                normal_after_cleanup = store.write(current_policy)
+
+            assert normal_during_cleanup == normal_before
+            assert cleanup_transaction == 2
+            assert normal_after_cleanup == normal_before
+
+
+def test_cleanup_delete_failure_restores_secure_delete_policy() -> None:
+    with workspace_tmpdir("baluffo-store-secure-delete-failure") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store._writer.execute("PRAGMA secure_delete=ON")
+
+            def current_policy(conn: sqlite3.Connection) -> int:
+                return int(conn.execute("PRAGMA secure_delete").fetchone()[0])
+
+            store.write(
+                lambda conn: conn.execute("CREATE TABLE cleanup_probe (id INTEGER PRIMARY KEY)")
+            )
+            original_policy = store.write(current_policy)
+            assert original_policy == 1
+            observed_policies: list[int] = []
+
+            def fail_mid_batch(conn: sqlite3.Connection) -> None:
+                observed_policies.append(current_policy(conn))
+                conn.execute("INSERT INTO cleanup_probe(id) VALUES (1)")
+                raise RuntimeError("simulated cleanup delete failure")
+
+            with store.bulk_delete_mode():
+                with pytest.raises(RuntimeError, match="simulated cleanup delete failure"):
+                    store.write(fail_mid_batch, secure_delete="FAST")
+
+                normal_after_failure = store.write(current_policy)
+
+            assert observed_policies == [2]
+            assert normal_after_failure == original_policy
+            assert store.execute_scalar("SELECT COUNT(*) FROM cleanup_probe") == 0
+
+
 def test_write_busy_retry_exhaustion_marks_store_unhealthy() -> None:
     with workspace_tmpdir("baluffo-store-busy-exhaustion") as data_dir:
         with BaluffoStore(
