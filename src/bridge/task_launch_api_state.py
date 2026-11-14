@@ -120,6 +120,9 @@ class TaskLaunchApiState:
     _source_run_ctx: SourceRunContext | None
     _jobs_feed_ctx: JobsFeedContext | None
     _bootstrap_storage_ctx: BootstrapStorageContext | None
+    _feed_projection_progress_run_id: str
+    _feed_projection_progress_key: tuple[str, str] | None
+    _feed_projection_progress_heartbeat_at: float
 
     # Cross-mixin method surface. The bodies live in the task_launch_api mixin leaves;
     # these stubs let mypy type ``self`` in every leaf without repeating the composed
@@ -173,7 +176,17 @@ class TaskLaunchApiState:
         report: dict[str, Any],
         *,
         cleanup_old_generations: bool = True,
+        cleanup_in_background: bool = True,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> bool:
+        raise NotImplementedError
+
+    def _project_jobs_feed_for_pipeline(
+        self,
+        report: dict[str, Any],
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
     def _packaged_smoke_bootstrap_controlled_mode(self) -> str:

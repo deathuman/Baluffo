@@ -152,3 +152,4 @@ def test_admin_bridge_pipeline_service_wires_load_json_object(monkeypatch, tmp_p
     service = admin_bridge._get_pipeline_service()
 
     assert service._load_json_object is admin_bridge.load_json_object
+    assert callable(service._project_feed)

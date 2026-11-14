@@ -27,10 +27,105 @@ _PIPELINE_OPERATIONAL_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
 # user-visible problem even when it eventually succeeds. The normal path is a
 # status write and a worker start (tens of milliseconds).
 JOBS_PIPELINE_LAUNCH_SLOW_MS = 5000
+FEED_PROJECTION_HEARTBEAT_INTERVAL_S = 10.0
+FEED_PROJECTION_MAX_PHASES = 32
+_FEED_PROJECTION_PHASE_LABELS = {
+    "lock": "Waiting for feed reconciliation lock...",
+    "read": "Reading jobs feed rows...",
+    "open_store": "Opening SQLite feed store...",
+    "hash": "Hashing jobs feed content...",
+    "compare": "Comparing published feed generation...",
+    "stage": "Staging feed generation...",
+    "verify": "Verifying staged feed generation...",
+    "publish": "Publishing feed generation...",
+    "export": "Writing feed projections...",
+    "summary": "Reading published feed state...",
+    "complete": "Feed projection complete.",
+    "unchanged": "Feed content unchanged; reusing published generation.",
+    "skipped": "Feed projection skipped.",
+    "failed": "Feed projection failed.",
+}
+_FEED_PROJECTION_DETAIL_LABELS = {
+    ("stage", "preparing"): "Preparing feed generation...",
+    ("stage", "stats"): "Saving feed generation stats...",
+    ("read", "missing"): "Jobs feed rows are unavailable.",
+    ("publish", "read_generation"): "Reading staged feed generation...",
+    ("publish", "hash_generation"): "Hashing staged feed generation...",
+    ("publish", "read_sources"): "Counting feed sources...",
+    ("publish", "write_state"): "Writing published feed state...",
+    ("export", "read_rows"): "Reading published feed for export...",
+    ("export", "write_json"): "Writing full feed projection...",
+    ("export", "write_light"): "Writing lightweight feed projection...",
+    ("export", "write_startup"): "Writing startup feed projection...",
+    ("complete", "published"): "Feed generation published.",
+}
+_FEED_PROJECTION_PROGRESS_FIELDS = (
+    "mode",
+    "generation",
+    "contentHash",
+    "rowCount",
+    "sourceRowCount",
+    "sourceCount",
+    "processedRowCount",
+    "processedSourceRowCount",
+    "batchIndex",
+    "batchCount",
+    "sourceBatchIndex",
+    "sourceBatchCount",
+)
 
 
 def _elapsed_ms(started_at: float) -> int:
     return int(round((time.perf_counter() - started_at) * 1000))
+
+
+def _progress_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _advance_feed_projection_phase(
+    telemetry: dict[str, Any], *, phase: str, label: str, now: str, now_monotonic: float
+) -> bool:
+    previous_phase = str(telemetry.get("phase") or "").strip()
+    phases = telemetry.get("phases")
+    if not isinstance(phases, list):
+        phases = []
+        telemetry["phases"] = phases
+    if phase == previous_phase:
+        return False
+    phase_started = float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
+    if previous_phase and phases and str(phases[-1].get("phase") or "") == previous_phase:
+        phases[-1]["finishedAt"] = now
+        phases[-1]["durationMs"] = max(0, int(round((now_monotonic - phase_started) * 1000)))
+    phases.append(
+        {
+            "phase": phase,
+            "phaseLabel": label,
+            "startedAt": now,
+            "finishedAt": "",
+            "durationMs": 0,
+        }
+    )
+    if len(phases) > FEED_PROJECTION_MAX_PHASES:
+        del phases[:-FEED_PROJECTION_MAX_PHASES]
+    telemetry["_phaseStartedMonotonic"] = now_monotonic
+    telemetry["phaseStartedAt"] = now
+    return True
+
+
+def _feed_projection_stage_label(update: dict[str, Any], detail: str) -> str:
+    row_count = _progress_int(update.get("rowCount"))
+    if detail == "write_jobs" and row_count:
+        processed = _progress_int(update.get("processedRowCount"))
+        return f"Staging feed generation... {processed:,}/{row_count:,} job rows"
+    source_row_count = _progress_int(update.get("sourceRowCount"))
+    if detail == "write_sources" and source_row_count:
+        processed_sources = _progress_int(update.get("processedSourceRowCount"))
+        return f"Staging feed generation... {processed_sources:,}/{source_row_count:,} source rows"
+    return ""
 
 
 class _PipelineServiceStageMixin(PipelineServiceState):
@@ -173,7 +268,539 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             task_type="fetch",
             task_run_id=fetch_run_id,
         )
-        return self._fetch_failure_warning(report)
+        warning = self._fetch_failure_warning(report)
+        self._run_feed_projection_stage(
+            run_id=run_id,
+            fetch_run_id=fetch_run_id,
+            report=report,
+        )
+        return warning
+
+    @staticmethod
+    def _fetch_report_failed(report: dict[str, Any]) -> bool:
+        summary = report.get("summary") if isinstance(report, dict) else None
+        summary = summary if isinstance(summary, dict) else {}
+        statuses = {
+            str(report.get("status") or "").strip().lower(),
+            str(summary.get("status") or "").strip().lower(),
+        }
+        return bool(
+            statuses & {"error", "failed", "failure"} or str(summary.get("error") or "").strip()
+        )
+
+    @staticmethod
+    def _new_feed_projection_telemetry(
+        *, fetch_run_id: str, started_at: str, started_monotonic: float
+    ) -> dict[str, Any]:
+        return {
+            "fetchRunId": fetch_run_id,
+            "startedAt": started_at,
+            "phase": "",
+            "phaseLabel": "",
+            "phaseStartedAt": "",
+            "detail": "",
+            "updatedAt": started_at,
+            "heartbeatAt": started_at,
+            "elapsedMs": 0,
+            "phaseElapsedMs": 0,
+            "rowCount": 0,
+            "sourceRowCount": 0,
+            "sourceCount": 0,
+            "processedRowCount": 0,
+            "processedSourceRowCount": 0,
+            "batchIndex": 0,
+            "batchCount": 0,
+            "generation": "",
+            "mode": "",
+            "error": "",
+            "phases": [],
+            "_startedMonotonic": started_monotonic,
+            "_phaseStartedMonotonic": started_monotonic,
+        }
+
+    @staticmethod
+    def _feed_projection_phase_label(update: dict[str, Any]) -> str:
+        phase = str(update.get("phase") or "").strip().lower()
+        detail = str(update.get("detail") or "").strip().lower()
+        label = _FEED_PROJECTION_DETAIL_LABELS.get((phase, detail))
+        if label is not None:
+            return label
+        if phase == "stage":
+            label = _feed_projection_stage_label(update, detail)
+            if label:
+                return label
+        return str(_FEED_PROJECTION_PHASE_LABELS.get(phase) or "Feed projection...")
+
+    def _publish_feed_projection_telemetry_locked(self, telemetry: dict[str, Any]) -> None:
+        phases = [
+            dict(item) for item in list(telemetry.get("phases") or []) if isinstance(item, dict)
+        ]
+        public = {key: value for key, value in telemetry.items() if not key.startswith("_")}
+        public["phases"] = phases
+        self._status["feedProjection"] = public
+        self._status["feedProjectionPhase"] = str(public.get("phase") or "")
+        self._status["feedProjectionPhaseLabel"] = str(public.get("phaseLabel") or "")
+        self._status["feedProjectionHeartbeatAt"] = str(public.get("heartbeatAt") or "")
+        self._status["feedProjectionElapsedMs"] = _progress_int(public.get("elapsedMs"))
+        self._status["feedProjectionPhaseElapsedMs"] = _progress_int(public.get("phaseElapsedMs"))
+        self._status["heartbeatAt"] = str(public.get("updatedAt") or self._now_iso())
+        progress = self._status.get("progress")
+        if isinstance(progress, dict):
+            progress = dict(progress)
+            label = str(public.get("phaseLabel") or "").strip()
+            if label:
+                progress["label"] = label
+            self._status["progress"] = progress
+
+    def _record_feed_projection_progress(
+        self,
+        update: dict[str, Any] | None,
+        *,
+        run_id: str,
+        fetch_run_id: str,
+        telemetry: dict[str, Any],
+        heartbeat: bool = True,
+    ) -> None:
+        if not isinstance(update, dict):
+            return
+        phase = str(update.get("phase") or "").strip().lower()
+        if not phase:
+            return
+        detail = str(update.get("detail") or "").strip()
+        label = str(update.get("phaseLabel") or "").strip() or self._feed_projection_phase_label(
+            {**update, "phase": phase, "detail": detail}
+        )
+        now = self._now_iso()
+        now_monotonic = time.monotonic()
+        with self._lock:
+            if str(self._status.get("runId") or "").strip() != str(run_id or "").strip():
+                return
+            phase_changed = _advance_feed_projection_phase(
+                telemetry,
+                phase=phase,
+                label=label,
+                now=now,
+                now_monotonic=now_monotonic,
+            )
+            telemetry["phase"] = phase
+            telemetry["phaseLabel"] = label
+            telemetry["detail"] = detail
+            telemetry["updatedAt"] = now
+            telemetry["heartbeatAt"] = now
+            telemetry["elapsedMs"] = max(
+                0,
+                int(
+                    round(
+                        (now_monotonic - float(telemetry.get("_startedMonotonic") or now_monotonic))
+                        * 1000
+                    )
+                ),
+            )
+            telemetry["phaseElapsedMs"] = max(
+                0,
+                int(
+                    round(
+                        (
+                            now_monotonic
+                            - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
+                        )
+                        * 1000
+                    )
+                ),
+            )
+            if fetch_run_id:
+                telemetry["fetchRunId"] = fetch_run_id
+            for field in _FEED_PROJECTION_PROGRESS_FIELDS:
+                if field in update and update.get(field) is not None:
+                    telemetry[field] = update.get(field)
+            if "error" in update:
+                telemetry["error"] = str(update.get("error") or "")
+            self._publish_feed_projection_telemetry_locked(telemetry)
+        if heartbeat:
+            self._heartbeat_pipeline_wait()
+        if phase_changed:
+            self._bridge_log(
+                "info",
+                "jobs_pipeline_feed_projection_phase",
+                runId=run_id,
+                fetchRunId=fetch_run_id,
+                phase=phase,
+                detail=detail,
+                label=label,
+            )
+
+    def _finalize_feed_projection_telemetry(
+        self,
+        *,
+        run_id: str,
+        fetch_run_id: str,
+        telemetry: dict[str, Any],
+        phase: str,
+        label: str,
+        error: str = "",
+    ) -> None:
+        self._record_feed_projection_progress(
+            {"phase": phase, "phaseLabel": label, "error": error},
+            run_id=run_id,
+            fetch_run_id=fetch_run_id,
+            telemetry=telemetry,
+        )
+        now = self._now_iso()
+        now_monotonic = time.monotonic()
+        with self._lock:
+            phases = telemetry.get("phases")
+            if isinstance(phases, list) and phases:
+                last = phases[-1]
+                if isinstance(last, dict) and not str(last.get("finishedAt") or "").strip():
+                    last["finishedAt"] = now
+                    last["durationMs"] = max(
+                        0,
+                        int(
+                            round(
+                                (
+                                    now_monotonic
+                                    - float(
+                                        telemetry.get("_phaseStartedMonotonic") or now_monotonic
+                                    )
+                                )
+                                * 1000
+                            )
+                        ),
+                    )
+            telemetry["updatedAt"] = now
+            telemetry["heartbeatAt"] = now
+            telemetry["elapsedMs"] = max(
+                0,
+                int(
+                    round(
+                        (now_monotonic - float(telemetry.get("_startedMonotonic") or now_monotonic))
+                        * 1000
+                    )
+                ),
+            )
+            telemetry["phaseElapsedMs"] = max(
+                0,
+                int(
+                    round(
+                        (
+                            now_monotonic
+                            - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
+                        )
+                        * 1000
+                    )
+                ),
+            )
+            self._publish_feed_projection_telemetry_locked(telemetry)
+
+    def _feed_projection_heartbeat_loop(
+        self,
+        *,
+        run_id: str,
+        fetch_run_id: str,
+        telemetry: dict[str, Any],
+        stop: threading.Event,
+    ) -> None:
+        while not stop.wait(FEED_PROJECTION_HEARTBEAT_INTERVAL_S):
+            now = self._now_iso()
+            now_monotonic = time.monotonic()
+            with self._lock:
+                if (
+                    stop.is_set()
+                    or not bool(self._status.get("active"))
+                    or str(self._status.get("runId") or "").strip() != str(run_id or "").strip()
+                ):
+                    return
+                telemetry["heartbeatAt"] = now
+                telemetry["updatedAt"] = now
+                telemetry["elapsedMs"] = max(
+                    0,
+                    int(
+                        round(
+                            (
+                                now_monotonic
+                                - float(telemetry.get("_startedMonotonic") or now_monotonic)
+                            )
+                            * 1000
+                        )
+                    ),
+                )
+                telemetry["phaseElapsedMs"] = max(
+                    0,
+                    int(
+                        round(
+                            (
+                                now_monotonic
+                                - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
+                            )
+                            * 1000
+                        )
+                    ),
+                )
+                self._publish_feed_projection_telemetry_locked(telemetry)
+            self._heartbeat_pipeline_wait()
+
+    @staticmethod
+    def _feed_projection_evidence(result: dict[str, Any], *, fetch_run_id: str) -> dict[str, Any]:
+        return {
+            "fetchRunId": str(result.get("runId") or fetch_run_id or "").strip(),
+            "feedRunId": str(result.get("feedRunId") or "").strip(),
+            "feedGeneration": str(result.get("generation") or "").strip(),
+            "feedPublishedAt": str(result.get("publishedAt") or "").strip(),
+            "feedRowCount": int(result.get("rowCount") or 0),
+            "feedSourceCount": int(result.get("sourceCount") or 0),
+            "feedMode": str(result.get("mode") or "").strip(),
+            "feedProjectionStatus": str(result.get("status") or "").strip(),
+            "feedUnchanged": bool(result.get("unchanged")),
+        }
+
+    def _run_feed_projection_stage(
+        self,
+        *,
+        run_id: str,
+        fetch_run_id: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Publish or verify the live feed before sync and completion.
+
+        The fetch child's report is terminal before the feed mirror runs in the
+        fetch lifecycle watcher. Without this explicit stage the pipeline can
+        complete while that mirror is still staging the generation.
+        """
+        self._check_abort(run_id)
+        self._mark_stage(
+            stage="feed_projection",
+            current_step=2,
+            total_steps=3,
+            label="Publishing jobs feed...",
+        )
+        started_at = self._now_iso()
+        started_monotonic = time.monotonic()
+        telemetry = self._new_feed_projection_telemetry(
+            fetch_run_id=fetch_run_id,
+            started_at=started_at,
+            started_monotonic=started_monotonic,
+        )
+        with self._lock:
+            self._status["fetchRunId"] = fetch_run_id
+        if self._fetch_report_failed(report):
+            label = "Feed projection skipped because the fetch failed."
+            self._record_feed_projection_progress(
+                {"phase": "skipped", "phaseLabel": label, "detail": "fetch_failed"},
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+            )
+            self._finalize_feed_projection_telemetry(
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                phase="skipped",
+                label=label,
+            )
+            evidence = {
+                "fetchRunId": fetch_run_id,
+                "feedRunId": "",
+                "feedGeneration": "",
+                "feedPublishedAt": "",
+                "feedRowCount": 0,
+                "feedSourceCount": 0,
+                "feedMode": "",
+                "feedProjectionStatus": "skipped_fetch_failed",
+                "feedUnchanged": False,
+            }
+            with self._lock:
+                self._status.update(evidence)
+            self._bridge_log(
+                "info",
+                "jobs_pipeline_feed_projection_skipped",
+                runId=run_id,
+                fetchRunId=fetch_run_id,
+                reason="fetch_failed",
+            )
+            return {"ok": True, "skipped": True, **evidence}
+        project = self._project_feed
+        if not callable(project):
+            label = "Feed projection skipped because no projector is configured."
+            self._record_feed_projection_progress(
+                {"phase": "skipped", "phaseLabel": label, "detail": "unavailable"},
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+            )
+            self._finalize_feed_projection_telemetry(
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                phase="skipped",
+                label=label,
+            )
+            evidence = {
+                "fetchRunId": fetch_run_id,
+                "feedRunId": "",
+                "feedGeneration": "",
+                "feedPublishedAt": "",
+                "feedRowCount": 0,
+                "feedSourceCount": 0,
+                "feedMode": "",
+                "feedProjectionStatus": "skipped",
+                "feedUnchanged": False,
+            }
+            with self._lock:
+                self._status.update(evidence)
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_feed_projection_unavailable",
+                runId=run_id,
+                fetchRunId=fetch_run_id,
+            )
+            return {"ok": True, "skipped": True, **evidence}
+        payload = dict(report or {})
+        if not str(payload.get("runId") or "").strip():
+            payload["runId"] = fetch_run_id
+
+        def on_progress(update: dict[str, Any]) -> None:
+            # Projector callbacks can run inside a storage write transaction;
+            # only publish status here and leave lifecycle heartbeats to the
+            # listener thread (which cannot deadlock the storage lock).
+            self._record_feed_projection_progress(
+                update,
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                heartbeat=False,
+            )
+
+        self._record_feed_projection_progress(
+            {"phase": "lock", "detail": "waiting"},
+            run_id=run_id,
+            fetch_run_id=fetch_run_id,
+            telemetry=telemetry,
+        )
+        stop_heartbeat = threading.Event()
+        heartbeat_thread = threading.Thread(
+            target=self._feed_projection_heartbeat_loop,
+            kwargs={
+                "run_id": run_id,
+                "fetch_run_id": fetch_run_id,
+                "telemetry": telemetry,
+                "stop": stop_heartbeat,
+            },
+            name=f"feed-projection-heartbeat-{run_id}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+
+        def stop_heartbeat_thread() -> None:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=5.0)
+
+        try:
+            result = project(payload, on_progress=on_progress)
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            # Stop the heartbeat before publishing the terminal phase; otherwise
+            # a heartbeat already in flight can overwrite the failure status.
+            stop_heartbeat_thread()
+            error = f"feed_projection: {exc}"
+            with self._lock:
+                self._status["feedProjectionStatus"] = "failed"
+            self._record_feed_projection_progress(
+                {"phase": "failed", "phaseLabel": "Feed projection failed.", "error": error},
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+            )
+            self._finalize_feed_projection_telemetry(
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                phase="failed",
+                label="Feed projection failed.",
+                error=error,
+            )
+            raise RuntimeError(error) from exc
+        finally:
+            stop_heartbeat_thread()
+        if not isinstance(result, dict):
+            error = "feed_projection: invalid result payload"
+            with self._lock:
+                self._status["feedProjectionStatus"] = "failed"
+            self._record_feed_projection_progress(
+                {"phase": "failed", "phaseLabel": "Feed projection failed.", "error": error},
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+            )
+            self._finalize_feed_projection_telemetry(
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                phase="failed",
+                label="Feed projection failed.",
+                error=error,
+            )
+            raise RuntimeError(error)
+        if not bool(result.get("ok")):
+            with self._lock:
+                self._status["feedProjectionStatus"] = "failed"
+            error = str(result.get("error") or "jobs feed generation was not published").strip()
+            message = f"feed_projection: {error}"
+            self._record_feed_projection_progress(
+                {
+                    "phase": "failed",
+                    "phaseLabel": "Feed projection failed.",
+                    "error": message,
+                },
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+            )
+            self._finalize_feed_projection_telemetry(
+                run_id=run_id,
+                fetch_run_id=fetch_run_id,
+                telemetry=telemetry,
+                phase="failed",
+                label="Feed projection failed.",
+                error=message,
+            )
+            raise RuntimeError(message)
+        evidence = self._feed_projection_evidence(result, fetch_run_id=fetch_run_id)
+        with self._lock:
+            self._status.update(evidence)
+        final_phase = "skipped" if bool(result.get("skipped")) else "complete"
+        final_label = (
+            "Feed projection skipped."
+            if final_phase == "skipped"
+            else self._feed_projection_phase_label(
+                {
+                    "phase": "complete",
+                    "detail": "unchanged" if result.get("unchanged") else "published",
+                }
+            )
+        )
+        self._record_feed_projection_progress(
+            {
+                "phase": final_phase,
+                "phaseLabel": final_label,
+                "generation": evidence["feedGeneration"],
+                "rowCount": evidence["feedRowCount"],
+                "sourceCount": evidence["feedSourceCount"],
+                "mode": evidence["feedMode"],
+            },
+            run_id=run_id,
+            fetch_run_id=fetch_run_id,
+            telemetry=telemetry,
+        )
+        self._finalize_feed_projection_telemetry(
+            run_id=run_id,
+            fetch_run_id=fetch_run_id,
+            telemetry=telemetry,
+            phase=final_phase,
+            label=final_label,
+        )
+        self._bridge_log("info", "jobs_pipeline_feed_projected", runId=run_id, **evidence)
+        self._check_abort(run_id)
+        self._heartbeat_pipeline_wait()
+        return result
 
     def _run_registry_conflict_adjudication_stage(self, run_id: str) -> None:
         if not callable(self._run_registry_conflict_adjudication):
@@ -566,6 +1193,21 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     "completedWithWarnings": False,
                     "updatesFound": False,
                     "refreshRecommended": False,
+                    "fetchRunId": "",
+                    "feedRunId": "",
+                    "feedGeneration": "",
+                    "feedPublishedAt": "",
+                    "feedRowCount": 0,
+                    "feedSourceCount": 0,
+                    "feedMode": "",
+                    "feedProjectionStatus": "",
+                    "feedUnchanged": False,
+                    "feedProjection": {},
+                    "feedProjectionPhase": "",
+                    "feedProjectionPhaseLabel": "",
+                    "feedProjectionHeartbeatAt": "",
+                    "feedProjectionElapsedMs": 0,
+                    "feedProjectionPhaseElapsedMs": 0,
                     "activeChildren": [],
                     "activeChildTaskType": "",
                     "activeChildRunId": "",

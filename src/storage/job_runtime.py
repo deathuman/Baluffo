@@ -25,7 +25,6 @@ from src.shared.utils import int_or_default
 from src.shared.utils import now_iso as _shared_now_iso
 from src.storage.baluffo_store import (
     BULK_DELETE_SECURE_DELETE,
-    DEFAULT_BATCH_SIZE,
     BaluffoStore,
     BaluffoStoreError,
 )
@@ -34,6 +33,11 @@ from src.storage.retention_cancel import CancelRequested, raise_if_cancelled
 LOGGER = logging.getLogger(__name__)
 
 JOB_FEED_SCHEMA_VERSION = 1
+# Feed staging writes tens of thousands of job rows and several times as many
+# source rows. Small batches multiply commit and checkpoint cost on the live
+# rotational disk; 5,000 rows keeps each callback bounded while cutting the
+# number of commits by an order of magnitude.
+DEFAULT_FEED_STAGE_BATCH_SIZE = 5_000
 # These fields change on every successful fetch or availability check even when
 # the published jobs are the same. They are excluded from the content hash that
 # decides whether a new feed generation is warranted; the full row hash still
@@ -112,6 +116,26 @@ def _json_loads_list(value: Any) -> list[Any]:
     except (TypeError, json.JSONDecodeError):
         return []
     return list(loaded) if isinstance(loaded, list) else []
+
+
+def _report_feed_progress(
+    on_progress: Callable[[dict[str, Any]], None] | None,
+    phase: str,
+    *,
+    detail: str = "",
+    **fields: Any,
+) -> None:
+    """Emit optional feed-write telemetry without letting it break the write."""
+    if on_progress is None:
+        return
+    payload: dict[str, Any] = {"phase": phase}
+    if detail:
+        payload["detail"] = detail
+    payload.update(fields)
+    try:
+        on_progress(payload)
+    except Exception:
+        LOGGER.exception("jobs feed progress callback failed phase=%s detail=%s", phase, detail)
 
 
 def _sha256_json(value: Any) -> str:
@@ -247,12 +271,12 @@ class JobRuntimeStore:
         store: BaluffoStore,
         *,
         now_iso: Callable[[], str] = _now_iso,
-        batch_size: int = DEFAULT_BATCH_SIZE,
+        batch_size: int = DEFAULT_FEED_STAGE_BATCH_SIZE,
         delete_batch_size: int | None = None,
     ) -> None:
         self.store = store
         self._now_iso = now_iso
-        self.batch_size = max(1, int(batch_size or DEFAULT_BATCH_SIZE))
+        self.batch_size = max(1, int(batch_size or DEFAULT_FEED_STAGE_BATCH_SIZE))
         self.delete_batch_size = max(
             1,
             int(delete_batch_size or DEFAULT_GENERATION_DELETE_BATCH_SIZE),
@@ -264,93 +288,152 @@ class JobRuntimeStore:
         run_id: str,
         rows: Sequence[Mapping[str, Any]],
         generation: str = "",
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> JobFeedWriteSummary:
         generated_at = self._now_iso()
         feed_generation = _clean_text(generation) or _generation_token(generated_at)
+        _report_feed_progress(
+            on_progress,
+            "stage",
+            detail="preparing",
+            generation=feed_generation,
+            rowCount=len(rows),
+        )
         records, source_records, row_hash, source_hash = self._records_for_rows(
             run_id=run_id,
             rows=rows,
             generation=feed_generation,
             updated_at=generated_at,
         )
-        self.store.write(
-            lambda conn: (
-                conn.execute(
-                    "DELETE FROM job_sources WHERE feed_generation = ?", (feed_generation,)
-                ),
-                conn.execute("DELETE FROM jobs WHERE feed_generation = ?", (feed_generation,)),
-            )
+        _report_feed_progress(
+            on_progress,
+            "stage",
+            detail="prepared",
+            generation=feed_generation,
+            rowCount=len(records),
+            sourceRowCount=len(source_records),
         )
-        for start in range(0, len(records), self.batch_size):
-            batch = records[start : start + self.batch_size]
-
-            def write_jobs(conn: Any, batch_rows: list[dict[str, Any]] = batch) -> None:
-                conn.executemany(
-                    """
-                    INSERT INTO jobs(
-                        feed_generation, job_key, row_ordinal, run_id, row_hash,
-                        title, company, location, status, first_seen_at, last_seen_at,
-                        updated_at, payload_json, schema_version
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            record["feed_generation"],
-                            record["job_key"],
-                            record["row_ordinal"],
-                            record["run_id"],
-                            record["row_hash"],
-                            record["title"],
-                            record["company"],
-                            record["location"],
-                            record["status"],
-                            record["first_seen_at"],
-                            record["last_seen_at"],
-                            record["updated_at"],
-                            record["payload_json"],
-                            record["schema_version"],
-                        )
-                        for record in batch_rows
-                    ],
+        job_batch_count = max(1, (len(records) + self.batch_size - 1) // self.batch_size)
+        source_batch_count = max(1, (len(source_records) + self.batch_size - 1) // self.batch_size)
+        with self.store.bulk_insert_mode():
+            self.store.write(
+                lambda conn: (
+                    conn.execute(
+                        "DELETE FROM job_sources WHERE feed_generation = ?", (feed_generation,)
+                    ),
+                    conn.execute("DELETE FROM jobs WHERE feed_generation = ?", (feed_generation,)),
                 )
+            )
+            for batch_index, start in enumerate(range(0, len(records), self.batch_size), start=1):
+                batch = records[start : start + self.batch_size]
 
-            self.store.write(write_jobs)
-        for start in range(0, len(source_records), self.batch_size):
-            batch = source_records[start : start + self.batch_size]
-
-            def write_sources(conn: Any, batch_rows: list[dict[str, Any]] = batch) -> None:
-                conn.executemany(
-                    """
-                    INSERT INTO job_sources(
-                        feed_generation, job_key, source_ordinal, source_id,
-                        source_job_id, source_name, source_key, row_hash,
-                        payload_json, schema_version, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            record["feed_generation"],
-                            record["job_key"],
-                            record["source_ordinal"],
-                            record["source_id"],
-                            record["source_job_id"],
-                            record["source_name"],
-                            record["source_key"],
-                            record["row_hash"],
-                            record["payload_json"],
-                            record["schema_version"],
-                            record["updated_at"],
+                def write_jobs(conn: Any, batch_rows: list[dict[str, Any]] = batch) -> None:
+                    conn.executemany(
+                        """
+                        INSERT INTO jobs(
+                            feed_generation, job_key, row_ordinal, run_id, row_hash,
+                            title, company, location, status, first_seen_at, last_seen_at,
+                            updated_at, payload_json, schema_version
                         )
-                        for record in batch_rows
-                    ],
-                )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            (
+                                record["feed_generation"],
+                                record["job_key"],
+                                record["row_ordinal"],
+                                record["run_id"],
+                                record["row_hash"],
+                                record["title"],
+                                record["company"],
+                                record["location"],
+                                record["status"],
+                                record["first_seen_at"],
+                                record["last_seen_at"],
+                                record["updated_at"],
+                                record["payload_json"],
+                                record["schema_version"],
+                            )
+                            for record in batch_rows
+                        ],
+                    )
 
-            self.store.write(write_sources)
-        self._save_generation_stats(
-            {feed_generation: (len(records), len(source_records))},
-            updated_at=generated_at,
+                self.store.write(write_jobs)
+                _report_feed_progress(
+                    on_progress,
+                    "stage",
+                    detail="write_jobs",
+                    generation=feed_generation,
+                    rowCount=len(records),
+                    sourceRowCount=len(source_records),
+                    processedRowCount=min(start + len(batch), len(records)),
+                    batchIndex=batch_index,
+                    batchCount=job_batch_count,
+                )
+            for source_batch_index, start in enumerate(
+                range(0, len(source_records), self.batch_size), start=1
+            ):
+                batch = source_records[start : start + self.batch_size]
+
+                def write_sources(conn: Any, batch_rows: list[dict[str, Any]] = batch) -> None:
+                    conn.executemany(
+                        """
+                        INSERT INTO job_sources(
+                            feed_generation, job_key, source_ordinal, source_id,
+                            source_job_id, source_name, source_key, row_hash,
+                            payload_json, schema_version, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            (
+                                record["feed_generation"],
+                                record["job_key"],
+                                record["source_ordinal"],
+                                record["source_id"],
+                                record["source_job_id"],
+                                record["source_name"],
+                                record["source_key"],
+                                record["row_hash"],
+                                record["payload_json"],
+                                record["schema_version"],
+                                record["updated_at"],
+                            )
+                            for record in batch_rows
+                        ],
+                    )
+
+                self.store.write(write_sources)
+                _report_feed_progress(
+                    on_progress,
+                    "stage",
+                    detail="write_sources",
+                    generation=feed_generation,
+                    rowCount=len(records),
+                    sourceRowCount=len(source_records),
+                    processedSourceRowCount=min(start + len(batch), len(source_records)),
+                    sourceBatchIndex=source_batch_index,
+                    sourceBatchCount=source_batch_count,
+                )
+            _report_feed_progress(
+                on_progress,
+                "stage",
+                detail="stats",
+                generation=feed_generation,
+                rowCount=len(records),
+                sourceRowCount=len(source_records),
+            )
+            self._save_generation_stats(
+                {feed_generation: (len(records), len(source_records))},
+                updated_at=generated_at,
+            )
+        _report_feed_progress(
+            on_progress,
+            "stage",
+            detail="complete",
+            generation=feed_generation,
+            rowCount=len(records),
+            sourceRowCount=len(source_records),
         )
         return JobFeedWriteSummary(
             generation=feed_generation,
@@ -391,11 +474,22 @@ class JobRuntimeStore:
         *,
         expected_row_count: int | None = None,
         expected_row_hash: str = "",
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         feed_generation = _clean_text(generation)
         if not feed_generation:
             raise ValueError("jobs feed publish requires a generation")
+        _report_feed_progress(
+            on_progress, "publish", detail="read_generation", generation=feed_generation
+        )
         rows = self.rows_for_generation(feed_generation)
+        _report_feed_progress(
+            on_progress,
+            "publish",
+            detail="hash_generation",
+            generation=feed_generation,
+            rowCount=len(rows),
+        )
         row_hash = jobs_feed_rows_hash(rows)
         if expected_row_count is not None and len(rows) != int(expected_row_count):
             raise ValueError(
@@ -403,10 +497,25 @@ class JobRuntimeStore:
             )
         if expected_row_hash and row_hash != expected_row_hash:
             raise ValueError("jobs feed generation hash mismatch")
+        _report_feed_progress(
+            on_progress,
+            "publish",
+            detail="read_sources",
+            generation=feed_generation,
+            rowCount=len(rows),
+        )
         source_count = self._source_count(feed_generation)
         source_hash = self._source_hash(feed_generation)
         run_id = self._run_id_for_generation(feed_generation)
         now = self._now_iso()
+        _report_feed_progress(
+            on_progress,
+            "publish",
+            detail="write_state",
+            generation=feed_generation,
+            rowCount=len(rows),
+            sourceCount=source_count,
+        )
 
         def publish(conn: Any) -> None:
             conn.execute(
@@ -445,6 +554,14 @@ class JobRuntimeStore:
             )
 
         self.store.write(publish)
+        _report_feed_progress(
+            on_progress,
+            "publish",
+            detail="complete",
+            generation=feed_generation,
+            rowCount=len(rows),
+            sourceCount=source_count,
+        )
         return self.current_summary()
 
     def current_generation(self) -> str:
@@ -582,6 +699,24 @@ class JobRuntimeStore:
     def parity_hash(self, rows: Sequence[Mapping[str, Any]] | None = None) -> str:
         return jobs_feed_rows_hash(self.current_rows() if rows is None else rows)
 
+    def cleanup_candidates(
+        self,
+        *,
+        keep_generations: int = 1,
+        delete_cap: int | None = DEFAULT_GENERATION_DELETE_CAP,
+    ) -> list[str]:
+        """Snapshot generations cleanup may delete, excluding the current one."""
+        current = self.current_generation()
+        return [
+            generation
+            for generation in self._deletable_generations(
+                current=current,
+                keep_count=max(1, int(keep_generations or 1)),
+                delete_cap=delete_cap,
+            )
+            if generation and generation != current
+        ]
+
     def cleanup_old_generations(
         self,
         *,
@@ -589,6 +724,7 @@ class JobRuntimeStore:
         keep_generations: int = 1,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
         cancel_requested: CancelRequested | None = None,
+        generations: Sequence[str] | None = None,
     ) -> int:
         """Delete old jobs-feed generations without holding the write lock.
 
@@ -600,15 +736,24 @@ class JobRuntimeStore:
         raise_if_cancelled(cancel_requested)
         if delete_cap is not None and int(delete_cap) <= 0:
             return 0
-        generations = [
-            generation
-            for generation in self._deletable_generations(
-                current=self.current_generation(),
-                keep_count=max(1, int(keep_generations or 1)),
-                delete_cap=delete_cap,
-            )
-            if generation
-        ]
+        current = self.current_generation()
+        if generations is None:
+            generations = [
+                generation
+                for generation in self._deletable_generations(
+                    current=current,
+                    keep_count=max(1, int(keep_generations or 1)),
+                    delete_cap=delete_cap,
+                )
+                if generation
+            ]
+        else:
+            # A background cleanup may start after a later generation was
+            # staged. Never delete the current generation, even if a stale
+            # candidate snapshot included it.
+            generations = [
+                generation for generation in generations if generation and generation != current
+            ]
         if not generations:
             return 0
 

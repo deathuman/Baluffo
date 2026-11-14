@@ -43,6 +43,11 @@ DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
 # the WAL bounded while the bulk delete runs, and the context checkpoints once at
 # the end before restoring the normal writer settings.
 DEFAULT_BULK_DELETE_WAL_AUTOCHECKPOINT_PAGES = 20_000
+# Feed staging writes one or two large generations in a single pass. Even the
+# 20,000-page cleanup setting is too small for a 196k-row source load, so the
+# insert path disables automatic checkpoints entirely and performs one bounded
+# TRUNCATE checkpoint after the batch loop.
+DEFAULT_BULK_INSERT_WAL_AUTOCHECKPOINT_PAGES = 0
 BULK_DELETE_SECURE_DELETE = "FAST"
 # A passive checkpoint can leave the WAL file at the journal size limit: SQLite
 # has checkpointed the frames, but the file still looks over the threshold. A
@@ -279,7 +284,7 @@ class BaluffoStore:
         self._retention_timer: threading.Timer | None = None
         self._retention_next_run_monotonic = 0.0
         self._closed = False
-        self._bulk_delete_mode = False
+        self._bulk_write_mode = False
         self._table_sizes_lock = threading.Lock()
         self._table_sizes_snapshot: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
@@ -565,45 +570,66 @@ class BaluffoStore:
                 self._writer.execute(f"PRAGMA secure_delete={secure_delete_before}")
 
     @contextmanager
-    def bulk_delete_mode(self) -> Iterator[None]:
-        """Use cleanup-friendly SQLite settings for a bounded bulk delete.
+    def bulk_write_mode(
+        self,
+        *,
+        auto_checkpoint_pages: int,
+        label: str = "bulk-write",
+    ) -> Iterator[None]:
+        """Run a bounded bulk write without per-batch WAL checkpoints.
 
-        A 250-row generation-cleanup batch used to trigger SQLite's 1,000-page
-        auto-checkpoint (and, once the WAL crossed 64 MiB, the store's own
-        background checkpoint). On the measured 108 MiB subset that churn held
-        the write lock for 16-20 s and capped throughput near 3,900 rows/min.
-        Keep the WAL bounded, but checkpoint at 20,000 pages instead, suppress
-        the duplicate background scheduling, and checkpoint once on exit.
+        A large feed stage used to cross SQLite's 1,000-page auto-checkpoint on
+        nearly every 500-row batch (and the store's 64 MiB background checkpoint
+        as well). On a rotational disk that churn held the write lock for seconds
+        per batch. This context replaces the per-write policy with one explicit
+        checkpoint after the loop, suppresses duplicate background scheduling,
+        and restores the writer's original settings on exit.
 
-        This context changes only WAL/checkpoint policy. Individual cleanup
-        delete transactions request `secure_delete=FAST` themselves, so unrelated
-        runtime writes keep the writer's normal secure-delete setting. Foreign-key
-        enforcement and NORMAL synchronous durability stay enabled. The final
-        checkpoint uses TRUNCATE: a PASSIVE checkpoint leaves the WAL at the 64 MiB
-        journal-size limit, which makes the next write schedule another background
-        checkpoint.
+        The final checkpoint uses TRUNCATE: a PASSIVE checkpoint leaves the WAL
+        at the journal-size limit, which makes the next write schedule another
+        checkpoint. Foreign-key enforcement and NORMAL synchronous durability
+        stay enabled. Callers that need per-row secure-delete behavior continue
+        to request it on the individual transaction.
         """
-        if self._bulk_delete_mode:
+        if self._bulk_write_mode:
             yield
             return
-        with self._write_lock_guard("bulk-delete-mode"):
+        mode_label = str(label or "bulk-write")
+        pages = max(0, int(auto_checkpoint_pages))
+        with self._write_lock_guard(f"{mode_label}-mode"):
             auto_checkpoint = int(
                 self._writer.execute("PRAGMA wal_autocheckpoint").fetchone()[0] or 0
             )
-            self._writer.execute(
-                f"PRAGMA wal_autocheckpoint={DEFAULT_BULK_DELETE_WAL_AUTOCHECKPOINT_PAGES}"
-            )
-            self._bulk_delete_mode = True
+            self._writer.execute(f"PRAGMA wal_autocheckpoint={pages}")
+            self._bulk_write_mode = True
         try:
             yield
         finally:
-            with self._write_lock_guard("bulk-delete-mode-restore"):
-                self._bulk_delete_mode = False
+            with self._write_lock_guard(f"{mode_label}-mode-restore"):
+                self._bulk_write_mode = False
                 self._writer.execute(f"PRAGMA wal_autocheckpoint={auto_checkpoint}")
             try:
                 self.checkpoint_required(mode="TRUNCATE")
             except (BaluffoStoreError, sqlite3.Error) as exc:
-                LOGGER.warning("SQLite bulk-delete final checkpoint failed: %s", exc)
+                LOGGER.warning("SQLite %s final checkpoint failed: %s", mode_label, exc)
+
+    @contextmanager
+    def bulk_delete_mode(self) -> Iterator[None]:
+        """Use cleanup-friendly SQLite settings for a bounded bulk delete."""
+        with self.bulk_write_mode(
+            auto_checkpoint_pages=DEFAULT_BULK_DELETE_WAL_AUTOCHECKPOINT_PAGES,
+            label="bulk-delete",
+        ):
+            yield
+
+    @contextmanager
+    def bulk_insert_mode(self) -> Iterator[None]:
+        """Disable WAL auto-checkpoints for a bounded bulk insert."""
+        with self.bulk_write_mode(
+            auto_checkpoint_pages=DEFAULT_BULK_INSERT_WAL_AUTOCHECKPOINT_PAGES,
+            label="bulk-insert",
+        ):
+            yield
 
     def _record_slow_write(
         self,
@@ -1585,7 +1611,7 @@ class BaluffoStore:
     def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
         if self._closed:
             return False
-        if self._bulk_delete_mode:
+        if self._bulk_write_mode:
             return False
         sizes = self.file_sizes()
         wal_bytes = int(sizes.get("walBytes") or 0)
@@ -2267,7 +2293,7 @@ class BaluffoStore:
     def schedule_compaction_if_needed(self, *, reason: str = "") -> bool:
         if self._closed:
             return False
-        if self._bulk_delete_mode:
+        if self._bulk_write_mode:
             return False
         sizes = self.file_sizes()
         if not self._compaction_needed(sizes):

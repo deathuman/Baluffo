@@ -156,7 +156,11 @@ def test_pipeline_mirror_waits_for_complete_direct_transition(
     mirror_result: list[bool] = []
     mirror_thread = threading.Thread(
         target=lambda: mirror_result.append(
-            mirror_jobs_feed_rows(context, {"runId": "pipeline_new"})
+            mirror_jobs_feed_rows(
+                context,
+                {"runId": "pipeline_new"},
+                cleanup_old_generations=False,
+            )
         )
     )
     mirror_thread.start()

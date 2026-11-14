@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.bridge.feed_cleanup_telemetry import get_feed_cleanup_telemetry
 from src.bridge.pipeline_stall import (
     compute_pipeline_child_quiet_info,
     compute_pipeline_stall_info,
@@ -36,6 +37,7 @@ class _PipelineServiceStatusMixin(PipelineServiceState):
             )
             payload["active"] = bool(payload.get("active"))
             payload["appVersion"] = self._get_app_version()
+            self._merge_feed_cleanup_telemetry(payload)
             # ponytail: stall detection lives in a pure helper module
             # (src/bridge/pipeline_stall.py) so it can be tested without the
             # circular-import risk that blocks pipeline_service itself.
@@ -50,6 +52,29 @@ class _PipelineServiceStatusMixin(PipelineServiceState):
                 if quiet:
                     payload["childQuiet"] = quiet
             return payload
+
+    def _merge_feed_cleanup_telemetry(self, payload: dict[str, Any]) -> None:
+        """Attach background cleanup telemetry without changing completion evidence."""
+        data_dir = self._control_data_dir
+        fetch_run_id = str(payload.get("fetchRunId") or "").strip()
+        if data_dir is None or not fetch_run_id:
+            return
+        cleanup = get_feed_cleanup_telemetry(
+            data_dir=data_dir,
+            fetch_run_id=fetch_run_id,
+        )
+        if not cleanup:
+            return
+        started = self._parse_iso(cleanup.get("startedAt"))
+        heartbeat = self._parse_iso(cleanup.get("heartbeatAt"))
+        if started is not None and heartbeat is not None:
+            cleanup["elapsedMs"] = max(0, int(round((heartbeat - started).total_seconds() * 1000)))
+        else:
+            cleanup["elapsedMs"] = 0
+        projection = payload.get("feedProjection")
+        projection = dict(projection) if isinstance(projection, dict) else {}
+        projection["cleanup"] = cleanup
+        payload["feedProjection"] = projection
 
     def _refresh_child_lifecycle_evidence(
         self,

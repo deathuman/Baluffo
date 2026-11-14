@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
+from src.bridge import task_launch_jobs_feed as jobs_feed_module
 from src.bridge.task_launch_api import (
     TaskLaunchApi,
     TaskLaunchDeps,
@@ -105,13 +107,18 @@ def _reobserved_content_row(row: dict[str, object]) -> dict[str, object]:
 
 
 def _close_fetch(api: TaskLaunchApi, report: dict[str, Any]) -> bool:
-    return api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+    closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
         run_id=str(report["runId"]),
         normalize_fetch_report_contract=lambda payload: payload,
         load_json_object=lambda _path, _default: report,
         finish_lifecycle_run=lambda *_args, **_kwargs: {},
         fail_lifecycle_run=lambda *_args, **_kwargs: {},
     )
+    if closed:
+        assert jobs_feed_module.wait_for_jobs_feed_generation_cleanup(
+            api._runtime.data_dir  # noqa: SLF001
+        )
+    return closed
 
 
 def test_fetch_lifecycle_close_shadow_writes_jobs_feed() -> None:
@@ -403,7 +410,7 @@ def test_sqlite_fetch_finalization_falls_back_to_staging_when_hash_read_fails(
 
             assert _close_fetch(api, second_report) is True
 
-            assert runtime.current_generation() != generation
+            assert runtime.current_generation() != generation, diagnostics
             assert runtime.current_rows()[0]["lastSeenAt"] == "2026-05-12T13:00:00+00:00"
             assert [row["code"] for row in diagnostics] == [
                 "jobs_feed_sqlite_export_written",
@@ -478,3 +485,267 @@ def test_failed_fetch_does_not_publish_jobs_feed_generation() -> None:
 
             assert runtime.current_rows() == []
             assert [row for row in diagnostics if row.get("surface") == "jobsFeed"] == []
+
+
+def test_project_jobs_feed_for_pipeline_returns_published_generation_evidence() -> None:
+    base_row = _content_row()
+    with workspace_tmpdir("task-launch-jobs-feed-pipeline-projection") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([base_row], list(base_row.keys())),
+            )
+
+            progress: list[dict[str, Any]] = []
+            first = api._project_jobs_feed_for_pipeline(  # noqa: SLF001
+                {
+                    "runId": "fetch_jobs_1",
+                    "finishedAt": "2026-05-12T12:00:00+00:00",
+                    "summary": {"outputCount": 1},
+                    "sources": [],
+                },
+                on_progress=progress.append,
+            )
+
+            assert first["ok"] is True
+            assert first["status"] == "published"
+            assert first["skipped"] is False
+            assert first["feedRunId"] == "fetch_jobs_1"
+            assert first["generation"]
+            assert first["publishedAt"] == "2026-05-12T12:00:00+00:00"
+            assert first["rowCount"] == 1
+            assert first["sourceCount"] >= 1
+            assert first["mode"] == "sqlite"
+            phases = [event["phase"] for event in progress]
+            assert phases[0] == "lock"
+            assert "read" in phases
+            assert "stage" in phases
+            assert "publish" in phases
+            assert "export" in phases
+            assert phases[-1] == "complete"
+            assert any(
+                event.get("detail") == "write_jobs" and event.get("processedRowCount") == 1
+                for event in progress
+            )
+            generation = first["generation"]
+
+            reobserved_row = _reobserved_content_row(base_row)
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([reobserved_row], list(reobserved_row.keys())),
+            )
+            second = api._project_jobs_feed_for_pipeline(  # noqa: SLF001
+                {
+                    "runId": "fetch_jobs_2",
+                    "finishedAt": "2026-05-12T13:00:00+00:00",
+                    "summary": {"outputCount": 1},
+                    "sources": [],
+                }
+            )
+
+            assert second["ok"] is True
+            assert second["status"] == "unchanged"
+            assert second["unchanged"] is True
+            assert second["feedRunId"] == "fetch_jobs_1"
+            assert second["generation"] == generation
+
+
+def test_mirror_jobs_feed_rows_reports_cleanup_phase_progress() -> None:
+    old_row = _content_row()
+    new_row = {**old_row, "title": "Senior Tools Programmer"}
+    with workspace_tmpdir("task-launch-jobs-feed-cleanup-progress") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "shadow", reason="test-shadow")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            old = runtime.replace_feed(run_id="fetch_old", rows=[old_row])
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([new_row], list(new_row.keys())),
+            )
+            report = {
+                "runId": "fetch_new",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+            progress: list[dict[str, Any]] = []
+
+            assert api._mirror_jobs_feed_rows(  # noqa: SLF001
+                report,
+                on_progress=progress.append,
+                cleanup_in_background=False,
+            )
+
+            phases = [event["phase"] for event in progress]
+            assert "cleanup" in phases
+            cleanup_events = [event for event in progress if event["phase"] == "cleanup"]
+            assert cleanup_events[-1]["detail"] == "complete"
+            assert cleanup_events[-1]["deletedGenerationCount"] == 1
+            assert runtime.rows_for_generation(old.generation) == []
+
+
+def test_mirror_jobs_feed_rows_schedules_cleanup_without_blocking(
+    monkeypatch: Any,
+) -> None:
+    old_row = _content_row()
+    new_row = {**old_row, "title": "Senior Tools Programmer"}
+    entered_cleanup = threading.Event()
+    release_cleanup = threading.Event()
+    cleanup_complete = threading.Event()
+    cleanup_reported = threading.Event()
+
+    def blocking_cleanup(
+        _ctx: Any,
+        *,
+        keep_generations: int = 1,
+        on_progress: Any = None,
+        **_kwargs: Any,
+    ) -> int:
+        entered_cleanup.set()
+        assert release_cleanup.wait(2.0)
+        cleanup_complete.set()
+        return 1
+
+    monkeypatch.setattr(
+        jobs_feed_module,
+        "cleanup_jobs_feed_generations",
+        blocking_cleanup,
+    )
+    with workspace_tmpdir("task-launch-jobs-feed-background-cleanup") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "shadow", reason="test-shadow")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            runtime.replace_feed(run_id="fetch_old", rows=[old_row])
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([new_row], list(new_row.keys())),
+            )
+            report = {
+                "runId": "fetch_new",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+            progress: list[dict[str, Any]] = []
+
+            def record_progress(update: dict[str, Any]) -> None:
+                progress.append(update)
+                if update.get("phase") == "cleanup" and update.get("detail") == "complete":
+                    cleanup_reported.set()
+
+            try:
+                assert api._mirror_jobs_feed_rows(  # noqa: SLF001
+                    report,
+                    on_progress=record_progress,
+                )
+                assert entered_cleanup.wait(1.0)
+                assert not cleanup_complete.is_set()
+            finally:
+                release_cleanup.set()
+
+            assert cleanup_complete.wait(1.0)
+            assert cleanup_reported.wait(1.0)
+            assert jobs_feed_module.wait_for_jobs_feed_generation_cleanup(data_dir, timeout_s=2.0)
+            assert any(
+                event.get("phase") == "cleanup" and event.get("detail") == "complete"
+                for event in progress
+            )
+
+
+def test_fetch_lifecycle_finishes_before_background_cleanup_completes(
+    monkeypatch: Any,
+) -> None:
+    old_row = _content_row()
+    new_row = {**old_row, "title": "Senior Tools Programmer"}
+    entered_cleanup = threading.Event()
+    release_cleanup = threading.Event()
+    cleanup_complete = threading.Event()
+    lifecycle_finished = threading.Event()
+    finished_calls: list[dict[str, Any]] = []
+    finished_generations: list[str] = []
+
+    def blocking_cleanup(
+        _ctx: Any,
+        *,
+        keep_generations: int = 1,
+        on_progress: Any = None,
+        **_kwargs: Any,
+    ) -> int:
+        entered_cleanup.set()
+        assert release_cleanup.wait(2.0)
+        cleanup_complete.set()
+        return 1
+
+    monkeypatch.setattr(
+        jobs_feed_module,
+        "cleanup_jobs_feed_generations",
+        blocking_cleanup,
+    )
+    with workspace_tmpdir("task-launch-jobs-feed-lifecycle-publish-time") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "shadow", reason="test-shadow")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            old = runtime.replace_feed(run_id="fetch_old", rows=[old_row])
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([new_row], list(new_row.keys())),
+            )
+            report = {
+                "runId": "fetch_new",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            def finish_lifecycle(_run_id: str, _task_type: str, **kwargs: Any) -> dict[str, Any]:
+                finished_calls.append(dict(kwargs))
+                finished_generations.append(runtime.current_generation())
+                lifecycle_finished.set()
+                return {}
+
+            try:
+                assert api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+                    run_id="fetch_new",
+                    normalize_fetch_report_contract=lambda payload: payload,
+                    load_json_object=lambda _path, _default: report,
+                    finish_lifecycle_run=finish_lifecycle,
+                    fail_lifecycle_run=lambda *_args, **_kwargs: {},
+                )
+                assert lifecycle_finished.is_set()
+                assert entered_cleanup.wait(1.0)
+                assert not cleanup_complete.is_set()
+            finally:
+                release_cleanup.set()
+
+            assert cleanup_complete.wait(1.0)
+            assert jobs_feed_module.wait_for_jobs_feed_generation_cleanup(data_dir, timeout_s=2.0)
+            assert finished_calls[0]["finished_at"] == report["finishedAt"]
+            assert finished_calls[0]["terminal_reason"] == "completed"
+            assert finished_generations[0] == runtime.current_generation()
+            assert finished_generations[0] != old.generation

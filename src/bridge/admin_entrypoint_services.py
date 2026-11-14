@@ -96,6 +96,13 @@ class _TaskLaunchApiLike(Protocol):
         self, payload: JsonObject | None = None, **kwargs: Any
     ) -> JsonObject: ...
 
+    def _project_jobs_feed_for_pipeline(
+        self,
+        report: JsonObject,
+        *,
+        on_progress: Callable[[JsonObject], None] | None = None,
+    ) -> JsonObject: ...
+
 
 class _PipelineServiceLike(Protocol):
     def get_status_payload(self) -> JsonObject: ...
@@ -107,6 +114,7 @@ class _PipelineServiceLike(Protocol):
     def request_abort(self, run_id: str, **kwargs: Any) -> JsonObject: ...
 
     _load_json_object: Callable[..., Any]
+    _project_feed: Callable[..., Any]
 
 
 class _JobAvailabilityServiceLike(Protocol):
@@ -653,6 +661,59 @@ def get_ops_api(*, root_mod: Any) -> _OpsApiLike:
     )
 
 
+def _build_pipeline_project_feed(
+    *, root_mod: Any, stub_success_mode: bool
+) -> Callable[..., JsonObject]:
+    if stub_success_mode:
+
+        def stub_project_feed(
+            report: dict[str, Any],
+            *,
+            on_progress: Callable[[dict[str, Any]], None] | None = None,
+        ) -> JsonObject:
+            generation = "smoke-generation"
+            if on_progress is not None:
+                on_progress(
+                    {
+                        "phase": "complete",
+                        "detail": "published",
+                        "generation": generation,
+                        "rowCount": 0,
+                        "sourceCount": 0,
+                        "mode": "sqlite",
+                    }
+                )
+            return {
+                "ok": True,
+                "skipped": False,
+                "status": "published",
+                "runId": str(report.get("runId") or "fetch_smoke"),
+                "feedRunId": str(report.get("runId") or "fetch_smoke"),
+                "generation": generation,
+                "publishedAt": root_mod.now_iso(),
+                "rowCount": 0,
+                "sourceCount": 0,
+                "mode": "sqlite",
+                "unchanged": False,
+                "error": "",
+            }
+
+        return stub_project_feed
+
+    def real_project_feed(
+        report: dict[str, Any],
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> JsonObject:
+        task_launch_api = get_task_launch_api(root_mod=root_mod)
+        return task_launch_api._project_jobs_feed_for_pipeline(
+            report,
+            on_progress=on_progress,
+        )
+
+    return real_project_feed
+
+
 def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
     services = root_mod.BRIDGE_SERVICES
     with services.pipeline_service_lock:
@@ -769,6 +830,10 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 )
                 return dict(result or {})
 
+            pipeline_project_feed = _build_pipeline_project_feed(
+                root_mod=root_mod, stub_success_mode=stub_success_mode
+            )
+
             services.pipeline_service = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -778,6 +843,7 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 parse_iso=root_mod.parse_iso,
                 sync_task_running=root_mod.sync_task_running,
                 current_fetch_output_count=pipeline_current_fetch_output_count,
+                project_feed=pipeline_project_feed,
                 load_json_object=pipeline_load_json_object,
                 load_runtime_evidence=pipeline_load_runtime_evidence,
                 wait_for_sync_completion=pipeline_wait_for_sync_completion,

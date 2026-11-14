@@ -49,6 +49,7 @@ class PipelineServiceState:
     _parse_iso: Callable[[Any], Any]
     _sync_task_running: Callable[[], bool]
     _current_fetch_output_count: Callable[[], int]
+    _project_feed: Callable[..., dict[str, Any]] | None
     _load_json_object: Callable[[Any, Any], Any]
     _load_runtime_evidence: Callable[[Any, Any], Any]
     _wait_for_sync_completion: Callable[[str, float], dict[str, Any]]

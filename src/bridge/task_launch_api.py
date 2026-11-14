@@ -101,6 +101,9 @@ class TaskLaunchApi(
         self._source_run_ctx: SourceRunContext | None = None
         self._jobs_feed_ctx: JobsFeedContext | None = None
         self._bootstrap_storage_ctx: BootstrapStorageContext | None = None
+        self._feed_projection_progress_run_id: str = ""
+        self._feed_projection_progress_key: tuple[str, str] | None = None
+        self._feed_projection_progress_heartbeat_at: float = 0.0
 
     def _build_child_env(self, task_type: str, extra_env: dict[str, str] | None) -> dict[str, str]:
         child_env = os.environ.copy()

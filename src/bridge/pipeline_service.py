@@ -90,6 +90,7 @@ class PipelineService(
         parse_iso: Callable[[Any], Any],
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
+        project_feed: Callable[..., dict[str, Any]] | None = None,
         load_json_object: Callable[[Any, Any], Any],
         load_runtime_evidence: Callable[[Any, Any], Any] | None = None,
         wait_for_sync_completion: Callable[[str, float], dict[str, Any]],
@@ -125,6 +126,7 @@ class PipelineService(
         self._parse_iso = parse_iso
         self._sync_task_running = sync_task_running
         self._current_fetch_output_count = current_fetch_output_count
+        self._project_feed = project_feed
         self._load_json_object = load_json_object
         if load_runtime_evidence is None:
             self._load_runtime_evidence = self._load_json_object

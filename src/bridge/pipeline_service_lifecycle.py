@@ -93,6 +93,22 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
         self._post_publish_run_id = run_id
         return True
 
+    def _feed_completion_evidence(self) -> dict[str, Any]:
+        return {
+            "fetchRunId": str(self._status.get("fetchRunId") or "").strip(),
+            "feedRunId": str(self._status.get("feedRunId") or "").strip(),
+            "feedGeneration": str(self._status.get("feedGeneration") or "").strip(),
+            "feedPublishedAt": str(self._status.get("feedPublishedAt") or "").strip(),
+            "feedRowCount": int(self._status.get("feedRowCount") or 0),
+            "feedSourceCount": int(self._status.get("feedSourceCount") or 0),
+            "feedMode": str(self._status.get("feedMode") or "").strip(),
+            "feedProjectionStatus": str(self._status.get("feedProjectionStatus") or "").strip(),
+            "feedUnchanged": bool(self._status.get("feedUnchanged")),
+            "feedProjection": dict(self._status.get("feedProjection") or {}),
+            "feedProjectionPhase": str(self._status.get("feedProjectionPhase") or "").strip(),
+            "feedProjectionElapsedMs": int(self._status.get("feedProjectionElapsedMs") or 0),
+        }
+
     def _build_post_publish_payload(
         self,
         *,
@@ -111,6 +127,7 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
             "finishedAt": finished_at,
             "status": stage,
             "completedWithWarnings": completed_with_warnings,
+            **self._feed_completion_evidence(),
         }
 
     def _append_terminal_stage_ledger_entry(self, finished_at: str) -> None:
@@ -157,6 +174,7 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
             "finalOutputCount": final_output_count,
             "updatesFound": updates_found,
             "stageLedger": stage_ledger,
+            **self._feed_completion_evidence(),
         }
         if callable(self._cancel_lifecycle_run) and canceled:
             self._cancel_lifecycle_run(
@@ -273,6 +291,8 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
             finished_at = str(self._status.get("finishedAt") or "")
             started_at = str(self._status.get("startedAt") or "")
             stage = str(self._status.get("stage") or "")
+            feed_evidence = self._feed_completion_evidence()
+            self._status.update(feed_evidence)
             duration_seconds = self._completion_duration_seconds(started_at, finished_at)
             if (
                 run_id
@@ -291,6 +311,7 @@ class _PipelineServiceLifecycleMixin(PipelineServiceState):
                     "warnings": clean_warnings,
                     "syncWarning": clean_sync_warning,
                     "completedWithWarnings": bool(completed_with_warnings),
+                    **feed_evidence,
                 }
             self._append_terminal_stage_ledger_entry(finished_at)
             post_publish_payload = self._build_post_publish_payload(

@@ -7,10 +7,12 @@ AI boundary search before contracts: post admin routes, task lifecycle services,
 AI boundary verify: `npm run lint:repo-guardrails` plus focused task launch tests.
 """
 
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.bridge.feed_cleanup_telemetry import record_feed_cleanup_progress
 from src.bridge.task_launch_api_state import (
     TaskLaunchApiState,
 )
@@ -234,16 +236,82 @@ class TaskLaunchApiContextsMixin(TaskLaunchApiState):
 
         return _read_jobs_feed_rows(self._paths.jobs_fetch_report)
 
+    def _report_mirror_jobs_feed_progress(
+        self, update: dict[str, Any], *, run_id: str = ""
+    ) -> None:
+        """Log mirror/cleanup phase changes and a 10s progress heartbeat."""
+        phase = str(update.get("phase") or "").strip()
+        if not phase:
+            return
+        if phase == "cleanup":
+            record_feed_cleanup_progress(
+                data_dir=self._runtime.data_dir,
+                fetch_run_id=run_id,
+                update=update,
+                now_iso=self._deps.now_iso,
+            )
+        detail = str(update.get("detail") or "").strip()
+        now = time.monotonic()
+        if self._feed_projection_progress_run_id != run_id:
+            # Do not suppress a new run's first phase because the previous run
+            # ended on the same phase/detail within the log heartbeat window.
+            self._feed_projection_progress_run_id = run_id
+            self._feed_projection_progress_key = None
+            self._feed_projection_progress_heartbeat_at = 0.0
+        if (phase, detail) == self._feed_projection_progress_key:
+            if now - self._feed_projection_progress_heartbeat_at < 10.0:
+                return
+        self._feed_projection_progress_key = (phase, detail)
+        self._feed_projection_progress_heartbeat_at = now
+        self._deps.bridge_log(
+            "info",
+            "jobs_feed_projection_phase",
+            phase=phase,
+            detail=detail,
+            generation=str(update.get("generation") or ""),
+            rowCount=int(update.get("rowCount") or 0),
+            processedRowCount=int(update.get("processedRowCount") or 0),
+            deletedGenerationCount=int(update.get("deletedGenerationCount") or 0),
+            deletedRowCount=int(update.get("deletedRowCount") or 0),
+            totalGenerationRowCount=int(update.get("totalGenerationRowCount") or 0),
+            processedGenerationCount=int(update.get("processedGenerationCount") or 0),
+        )
+
     def _mirror_jobs_feed_rows(
         self,
         report: dict[str, Any],
         *,
         cleanup_old_generations: bool = True,
+        cleanup_in_background: bool = True,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> bool:
+        run_id = str(report.get("runId") or "")
+
+        def report_progress(update: dict[str, Any]) -> None:
+            self._report_mirror_jobs_feed_progress(update, run_id=run_id)
+            if on_progress is not None:
+                on_progress(update)
+
         return _mirror_jobs_feed_rows(
             self._jobs_feed_context,
             report,
             cleanup_old_generations=cleanup_old_generations,
+            cleanup_in_background=cleanup_in_background,
+            on_progress=report_progress,
+        )
+
+    def _project_jobs_feed_for_pipeline(
+        self,
+        report: dict[str, Any],
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        from src.bridge.task_launch_jobs_feed import project_jobs_feed_for_pipeline
+
+        return project_jobs_feed_for_pipeline(
+            self._jobs_feed_context,
+            report,
+            on_progress=on_progress,
         )
 
     def _archive_and_compact_fetch_report(
