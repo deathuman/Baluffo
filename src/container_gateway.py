@@ -95,6 +95,7 @@ _HEAVY_GET_EXACT = frozenset(
     {
         "/admin/ops-tab-counts",
         "/ops/dashboard-health",
+        "/ops/storage-maintenance/preview",
         "/registry/sources",
         "/source-policy/recommendations",
     }

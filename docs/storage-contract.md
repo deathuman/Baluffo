@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-11-12
+> - **Last updated:** 2026-11-13
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -101,6 +101,14 @@ Store rules:
   later writer with no error and a task that never leaves `running`. On timeout
   the write raises `BaluffoStoreError`, marks the store unhealthy, and journals a
   `sqliteSlowWrite` row with `operation == "write_lock_timeout"`.
+- Slow-write rows carry per-transaction `callbackMs` (statement/DELETE work),
+  `deleteMs` for cleanup deletes, `commitMs` (including any inline
+  auto-checkpoint), WAL size before/after plus signed growth, and
+  `checkpointMs` on explicit checkpoint operations. Generation cleanup labels
+  its batches `cleanup-delete:job_sources`, `cleanup-delete:jobs`, or
+  `cleanup-delete:job_feed_generation_stats` so a production pass can attribute
+  holds without ad hoc profiling. SQLite cannot time its inline auto-checkpoint
+  separately; that cost is inside `commitMs`.
 - Bulk writes default to 500 rows per transaction.
 - Migrations are idempotent and tracked in a migration table.
 - Startup verifies schema version, WAL mode, foreign keys, and `quick_check`.
@@ -165,6 +173,12 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   reset the idle clock — a page that polls the bridge must not be able to postpone
   compaction forever. WAL checkpointing is not gated: a checkpoint holds the write
   lock only for its own duration.
+- `health()["compaction"]["space"]` is a read-only size-gate report, not a
+  scheduling signal. It reports `allocatedBytes`, `freelistBytes`,
+  `observedFreelistRatio`, `effectiveFreelistRatio`, `vacuumDueBySize`,
+  `vacuumBlockedBy` (`freelist-bytes` or `freelist-ratio`), and
+  `largeAllocatedLowFreelist`. The flag explains a rebuild that is suppressed by
+  the existing ratio gate; it never authorizes or starts a VACUUM.
 - A **deferred** store (`BaluffoStore(defer_maintenance=True)`, or
   `set_storage_maintenance_deferred(True)`) still records the decision but starts
   no maintenance thread. The record is
@@ -197,8 +211,14 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   `BALUFFO_RUNTIME_RETENTION_COMPACT_ROWS` bounds the archive-payload
   compaction pass. The status is reported live in `health()["runtimeRetention"]`:
   `status`, `phase`, `stage`, `elapsedMs`, `processedRunCount`/`totalRunCount`,
-  deletion counters, `truncated`, `timerScheduled`, and `nextRunInS`. A pass held
-  by an active task reports `held-active-task` and is re-scheduled when the hold
+  deletion counters, `truncated`, `timerScheduled`, and `nextRunInS`. A pass that
+  hit a cap and queued another pass exposes `followUpScheduled`/`followUpInS`
+  with `completionState: "follow-up-scheduled"` and `fullyComplete: false`, so
+  its per-pass completion is not presented as final. A failed pass that queued a
+  retry uses `retryScheduled`/`retryInS`. Saved-version progress distinguishes
+  `processedGenerationCount` from `deletedGenerationCount`, and
+  `deletedGenerationRowCount` tracks the rows removed by generation deletion. A
+  pass held by an active task reports `held-active-task` and is re-scheduled when the hold
   is released.
 - **Jobs feed generations are pruned by the same post-serve pass.** The current
   published generation is always kept; up to four older `jobs`/`job_sources`
@@ -256,6 +276,46 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   `beforeBytes`, `afterBytes`, `reclaimedBytes`, and `budgetMs`; the original file
   stays in place until the copy validates, so a bounded-out or failed run costs
   the staging file only.
+
+### Current-feed rebuild (one maintenance window)
+
+Deleting several hundred historical generations in bounded batches is safe but
+not fast: the measured live rate is roughly 7.3k rows/min over ~139M rows, so a
+full drain needs weeks. `POST /ops/storage-rebuild` is the one-shot alternative.
+It builds a fresh database in a sibling staging file with every non-feed table
+copied verbatim and only the published generation of `jobs` / `job_sources`,
+then installs it under the store locks. The VACUUM gate, cleanup cap, batch size
+and retention schedule are unchanged; this is an explicit Admin action, not a
+replacement for them.
+
+- The rebuild first asks the running retention pass to stop at its next batch
+  boundary and waits for it to leave the write path. Retention writes would
+  otherwise make the swap superseded.
+- The staging copy is built read-only against the live database. Free space is
+  checked first: at least 1% of the live file (clamped to 256 MiB-3 GiB) plus a
+  64 MiB margin must be free, which is the measured 1-3 GB planning envelope for
+  a 226 GB source.
+- Before installation the copy must pass `quick_check`, `foreign_key_check`,
+  per-table row-count comparison, and the published feed contract: the
+  `job_feed_state` pointer, job/source counts, and recomputed row/source hashes
+  must match. A mismatch leaves the live database untouched and removes the
+  staging file.
+- The store checkpoints the WAL with `TRUNCATE`, hardlinks the live file to
+  `<db>.pre-rebuild`, then atomically replaces the live path. The rollback copy
+  costs no extra disk and is never deleted automatically. A store write that
+  commits between the copy snapshot and the swap makes the install return
+  `superseded`; the staging file is discarded rather than dropping that write.
+- `Admin -> Database storage -> Rebuild current feed` shows the live phase,
+  verified hashes, reclaimed bytes and the retained copy. `Roll back` restores
+  the old database and consumes the backup; `Delete old database` frees the
+  duplicate space and makes rollback unavailable.
+- Progress and the crash journal are written to `<db>.rebuild.json` at every
+  phase (`running`, `staged`, `backup-created`, `complete`, `failed`,
+  `rolled-back`). The journal is evidence only: a restart never resumes or
+  repeats a rebuild by itself, and `/ops/storage-rebuild` reads it beside the
+  retained backup so the outcome survives a bridge restart.
+- For the approval-gated preflight, independent validation, and rollback
+  sequence, see [`plans/current-feed-full-rebuild-plan.md`](plans/current-feed-full-rebuild-plan.md).
 
 ### Measured generation-cleanup levers (2026-11-12)
 
@@ -344,15 +404,19 @@ landing on top of a running fetch or sync, which writes continuously and would
 otherwise queue behind tens of seconds of VACUUM on the same multi-gigabyte
 database.
 
-`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface. `walMaintenance.passiveCheckpoint` carries process-lifetime counters for successful PASSIVE checkpoints only: `count`, `waitMsTotal`, `holdMsTotal`, `waitMsMax`, `holdMsMax`, `waitMsLast`, and `holdMsLast`. A return with `busy != 0` is a retryable attempt and is excluded, as are TRUNCATE attempts; the counters reset when the bridge process restarts. `walMaintenance.passiveCheckpointBusyRetries` separately counts PASSIVE attempts that were actually retried after a busy result; a terminal busy attempt with no remaining retry is not counted, and this counter does not alter the successful-only timings.
+`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface. `compaction.running` marks a live rebuild and `compaction.interruptible` is always `false`: a compact-copy rewrite or in-place VACUUM must finish its own terminal path before the store can safely continue. `walMaintenance.passiveCheckpoint` carries process-lifetime counters for successful PASSIVE checkpoints only: `count`, `waitMsTotal`, `holdMsTotal`, `waitMsMax`, `holdMsMax`, `waitMsLast`, and `holdMsLast`. A return with `busy != 0` is a retryable attempt and is excluded, as are TRUNCATE attempts; the counters reset when the bridge process restarts. `walMaintenance.passiveCheckpointBusyRetries` separately counts PASSIVE attempts that were actually retried after a busy result; a terminal busy attempt with no remaining retry is not counted, and this counter does not alter the successful-only timings.
 
 The read is bounded, because a diagnostic must answer while maintenance holds the write lock: the writer-only pragmas use a short lock timeout and fall back to the values captured while the writer was idle (`walModeSource`/`foreignKeysSource` = `cached-busy`, `healthLockBusy: true`), and the payload is cached per data dir for a few seconds (`healthSource`, `healthCacheAgeMs`) with `healthTiming` reporting the cost. Table-size sampling installs a SQLite progress handler and reads column lengths instead of materializing large payloads, so one oversized row cannot hold the single-flight read past its budget; an interrupted sample is returned as `tableSizes.status == "partial"` rather than as an unavailable panel. Partial table-size snapshots use a short cache and are retried on the next health poll. A read that cannot run at all reports `healthStalled: true` and `healthSource: "unavailable"` while leaving `healthy` at its last known value: a diagnostic that did not run is not evidence of corruption and must not raise the Admin storage alert. It also reports `walMaintenance` and `compaction` status records (including `deferred`, `skipped-busy`, `held-active-task`, and `postServeRun`, plus the gate settings `idleGateS`/`idleMaxWaitS`, `largeDatabaseIdleS`, `heldByActiveTask`, and `lastWriteAgoS`) so skipped, held, or failed maintenance is diagnosable without the bridge log. Admin renders `tableSizes` in a Runtime Database Storage panel beside Stored Profiles Overview; it reads the route once after startup by joining the serial startup bridge lane, so the read waits behind the bootstrap heavy loads instead of racing them or waiting for the Action Center's next poll; it refreshes on an explicit Refresh click and defers while the active-work gate is held. While an explicit maintenance pass is running and the gate is clear, the panel adds one bounded status poll: 3 s for the first two minutes, 15 s after that, stopping when the pass ends or after 30 minutes. It never schedules that poll while active work holds the gate.
 
-The unbounded exact follow-up is a separate, explicit background job, not part of the health route: `POST /ops/storage-diagnostic` starts one read-only worker per data dir, `GET /ops/storage-diagnostic` reports its phase/progress/result, and `POST /ops/storage-diagnostic/cancel` asks it to stop through SQLite's progress handler. When `dbstat` is present it reports exact per-table and per-index allocated bytes; when it is absent the result says `tableSizes.status == "unavailable"` and never substitutes the bounded rowid sample. Independently of allocation support, it groups `job_sources` by `feed_generation` and reports exact row counts, payload JSON bytes (`length(CAST(payload_json AS BLOB))`), and stored-text bytes. The job measures aggregates only; it does not return row payloads or become an arbitrary SQL surface. A completed job is held in process memory for Admin until the bridge restarts or a new run replaces it. Admin can save the completed result as a JSON file for an incident. The export is generated client-side from the completed `storageDiagnostic` payload: it adds only `kind: "baluffo.storage-diagnostic"`, `schemaVersion`, and `exportedAt`, preserves the exact table and generation totals unchanged, and does not trigger another scan or add a bridge route.
+The unbounded exact follow-up is a separate, explicit background job, not part of the health route: `POST /ops/storage-diagnostic` starts one read-only worker per data dir, `GET /ops/storage-diagnostic` reports its phase/progress/result, and `POST /ops/storage-diagnostic/cancel` asks one run to stop through SQLite's progress handler. The cancel body must carry that run's `runId`; a missing or stale token is rejected with `stale: true` and cannot stop a newer diagnostic. When `dbstat` is present it reports exact per-table and per-index allocated bytes; when it is absent the result says `tableSizes.status == "unavailable"` and never substitutes the bounded rowid sample. Independently of allocation support, it groups `job_sources` by `feed_generation` and reports exact row counts, payload JSON bytes (`length(CAST(payload_json AS BLOB))`), and stored-text bytes. The job measures aggregates only; it does not return row payloads or become an arbitrary SQL surface. A completed job is held in process memory for Admin until the bridge restarts or a new run replaces it. Admin can save the completed result as a JSON file for an incident. The export is generated client-side from the completed `storageDiagnostic` payload: it adds only `kind: "baluffo.storage-diagnostic"`, `schemaVersion`, and `exportedAt`, preserves the exact table and generation totals unchanged, and does not trigger another scan or add a bridge route.
 
 The same route accepts `mode: "quick"` for a bounded first look. It reads page counters and current feed state, reads the current `jobs` count from `job_feed_state`, and samples stored row bytes for the current and older generations; it never groups `job_sources`, groups `jobs`, or runs `dbstat`. The row-byte estimate measures every table's current-generation rows through the generation-leading index first, then spends only the remaining budget on whole-table sequential rowid windows, so a multi-hundred-gigabyte store answers without a full scan and a slow older-row sample cannot hide another table's current figures. It excludes indexes and is marked partial when a sample deadline expires. `rowBytesProbe.currentComplete` and `totalComplete` state whether every table's current measurement and full current/older measurement completed; a partial current sum may be present while either flag is false, and `currentShare` is omitted until the total comparison is complete. The quick result is aggregate-only, read-only, cancellable through the same progress handler, and held in the same in-process job. It is a diagnosis, not a cleanup authorization: old generations are removed by the post-serve retention pass after the current generation is established.
 
+Before that destructive action, Admin can call the read-only `GET /ops/storage-maintenance/preview`. It uses the same generation selector and delete cap as the pass, keeps the current generation out of the candidate list, and reports per-version job/source row counts, bounded payload-byte estimates, the current-feed protection flag, free disk space, and reusable SQLite pages. It never writes generation stats or schedules retention; payload bytes are estimates and actual file shrinkage still depends on compaction. The preview uses cached generation stats first; missing legacy counts get one shared two-second deadline and fall back to bounded-sample lower bounds when interrupted. Admin allows 45 seconds with an in-progress state, and the container gateway uses its existing 60-second heavy-route budget.
+
 Admin also exposes that cleanup as an explicit **Run maintenance** action in the Runtime Database Storage panel. `POST /ops/storage-maintenance` starts one forced, bounded pass through the same scheduler, keeps the current generation, and refuses to schedule while an active task holds compaction. The route only hands the pass to the background worker; it does not wait, and a pass that hits a cap leaves the normal 30-second follow-up in place. The response reports `started`, `alreadyRunning`, and the current `runtimeRetention`/`compaction` records so an operator can tell a new pass from a held or already-running one. While the pass runs, `runtimeRetention` carries `phase`, `stage`, `elapsedMs`, `processedRunCount`/`totalRunCount`, and deletion counters; those fields advance before the pass completes. Admin polls `/ops/storage-health` for them and stops when `running` is false.
+
+A running pass can be stopped with `POST /ops/storage-maintenance/cancel`. The cancel body must carry the active `runtimeRetention.runId`; a missing token or one from an older pass is rejected with `stale: true` and leaves the newer pass running. Cancellation is checked only at bounded batch and phase boundaries, so the current SQLite transaction, bulk-delete pragmas, and WAL restoration finish normally; no new batch starts. A pass that is scheduled but has not entered its worker yet reports `starting: true` with `running: true`; a stop requested then is honored before the first mutation. The status moves to `cancelling` and then `cancelled`, with the counters reached so far. Already deleted rows stay deleted, and a cancelled pass does not schedule a follow-up or start compaction. The Admin **Stop maintenance** button appears only while `runtimeRetention.running` is true and is disabled once stopping is requested. Compaction is not cancellable: while `compaction.running` is true, Admin labels the control **Stop feed cleanup**, keeps it available only for the retention pass, and reports that compaction cannot be safely interrupted. When retention is not running, the control is hidden and the panel reports the compaction state instead.
 
 The payload also carries `writeLock`, refreshed from the live store even when
 the rest is cached or stalled: `held`, `threadName`, `threadId`,
@@ -383,6 +447,8 @@ Every lifecycle save mirrors the bounded `taskRuns` projection into SQLite in **
 Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sqlite`, terminal bridge-started fetch reports mirror source rows into `source_runs`, and source-run read/write/parity failures persistently roll the surface back to `json`.
 
 Milestone 5 cutover is complete for `jobsFeed`: new stores seed `jobsFeed=sqlite`, bridge-managed terminal fetch closeout and direct availability reconciliation publish canonical rows through generation-scoped SQLite tables, then regenerate the private full JSON plus public light/startup projections. Pipeline finalization, bootstrap promotion/rollback, and bridge reconciliation share a re-entrant cross-process data-directory lock. Finalization performs its pre-compute lifecycle refresh/direct-live merge without the lock and holds it only for the authoritative feed/lifecycle commit; dedupe, lifecycle computation, quality audits, report construction, and non-feed artifacts run outside it. Writers wait through contention, reload lifecycle authority after acquiring the lock, and direct transitions recheck evidence freshness before mutation. Direct reconciliation restores the exact previous generation and both plain/gzip physical projections on lifecycle/export failure. Jobs-feed failures retain SQLite generations for diagnosis.
+
+Fetch finalization computes a canonical content hash before staging anything. The projection keeps every published field, nested source bundle, and row order, but omits the observation timestamps (`lastSeenAt`, `fetchedAt`) and the availability timestamps (`availabilityCheckedAt`, `availabilityVerifiedAt`, `availabilityUnavailableAt`, and the nested evidence `checkedAt`). If that hash equals the current published generation's canonical hash, the run records `jobs_feed_content_unchanged` and returns success without calling `stage_feed`, publishing a generation, or exporting the SQLite generation. The JSON written by finalization keeps its newer volatile timestamps. The retention cap, generation cleanup, and VACUUM gate are unchanged.
 
 Milestone 6 cutover is complete for `sourceRegistry`: new stores seed `sourceRegistry=sqlite`, registry active/pending/rejected rows and tombstones publish through generation-scoped SQLite tables, and successful authoritative publishes regenerate compatibility JSON/gzip exports. Source-registry read/write/parity/export failures, missing published generations, or direct JSON drift persistently roll the surface back to `json` while retaining SQLite generations and diagnostics.
 

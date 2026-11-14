@@ -35,6 +35,7 @@ from src.shared.json_io import (
 from src.storage.job_runtime import (
     DEFAULT_GENERATION_DELETE_CAP,
     JobRuntimeStore,
+    jobs_feed_content_hash,
     jobs_feed_rows_hash,
 )
 
@@ -569,6 +570,42 @@ def _mirror_jobs_feed_rows_locked(
         if mode not in {"shadow", "sqlite"}:
             return False, runtime_store
         try:
+            incoming_content_hash = jobs_feed_content_hash(rows)
+            try:
+                current_generation = str(runtime_store.current_generation() or "").strip()
+                current_content_hash = (
+                    str(runtime_store.current_feed_content_hash() or "")
+                    if current_generation
+                    else ""
+                )
+            except (
+                AttributeError,
+                RuntimeError,
+                OSError,
+                sqlite3.Error,
+                TypeError,
+                ValueError,
+            ):
+                # A test double or an unreadable generation must take the normal
+                # stage/publish path; never skip on an unverified comparison.
+                current_generation = ""
+                current_content_hash = ""
+            if current_generation and current_content_hash == incoming_content_hash:
+                _record_jobs_feed_diagnostic(
+                    ctx,
+                    code="jobs_feed_content_unchanged",
+                    ok=True,
+                    message=(
+                        "Published jobs feed content is unchanged; no new generation was created."
+                    ),
+                    details={
+                        "rowCount": len(rows),
+                        "generation": current_generation,
+                        "contentHash": incoming_content_hash,
+                        "mode": mode,
+                    },
+                )
+                return True, runtime_store
             expected_hash = jobs_feed_rows_hash(rows)
             staged = runtime_store.stage_feed(run_id=run_id, rows=rows)
             staged_rows = runtime_store.rows_for_generation(staged.generation)

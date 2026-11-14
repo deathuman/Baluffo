@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import threading
+import time
 from pathlib import Path
+from typing import cast
 
 from src import source_registry_io as registry_io
 from src import storage_metrics as storage_metrics_mod
+from src.storage import BaluffoStore
 from src.storage_metrics import (
     record_json_write,
     record_jsonl_write,
@@ -14,6 +19,8 @@ from src.storage_metrics import (
     reset_storage_metrics,
     snapshot_storage_metrics,
 )
+from tests.helpers.temp_paths import workspace_tmpdir
+from tests.storage.test_baluffo_store_write_path import _slow_store_write_rows
 
 
 def test_storage_metrics_records_json_write_stats(tmp_path: Path) -> None:
@@ -216,6 +223,137 @@ def test_slow_store_write_metrics_name_the_waiter_and_the_holder(tmp_path: Path)
     assert slow["operations"][0]["lastThread"] == "baluffo-bridge-on-started"
     assert slow["recent"][0]["lastFrame"].endswith("in <lambda>")
     assert slow["recent"][1]["thread"] == "baluffo-sqlite-post-serve-maintenance"
+
+
+def test_slow_store_write_timings_are_summarized_per_operation(tmp_path: Path) -> None:
+    reset_storage_metrics(data_dir=tmp_path, remove_file=True)
+
+    storage_metrics_mod.record_slow_store_write(
+        operation="cleanup-delete:job_sources",
+        wait_ms=0,
+        hold_ms=4_500,
+        thread_name="baluffo-sqlite-runtime-retention",
+        stack='  File "src/storage/job_runtime.py", line 780, in delete_rows\n',
+        data_dir=tmp_path,
+        timings={
+            "callbackMs": 23,
+            "deleteMs": 23,
+            "commitMs": 4_470,
+            "walBytesBefore": 78_000_000,
+            "walBytesAfter": 79_000_000,
+            "walGrowthBytes": 1_000_000,
+        },
+    )
+    storage_metrics_mod.record_slow_store_write(
+        operation="checkpoint:truncate",
+        wait_ms=0,
+        hold_ms=600,
+        thread_name="baluffo-sqlite-runtime-retention",
+        data_dir=tmp_path,
+        timings={
+            "checkpointMs": 600,
+            "walBytesBefore": 79_000_000,
+            "walBytesAfter": 0,
+            "walGrowthBytes": -79_000_000,
+        },
+    )
+    reset_storage_metrics(data_dir=tmp_path, remove_file=False)
+
+    slow = snapshot_storage_metrics(tmp_path)["slowWrites"]
+    cleanup = next(
+        row for row in slow["operations"] if row["operation"] == "cleanup-delete:job_sources"
+    )
+
+    assert slow["timings"]["deleteMs"]["max"] == 23
+    assert slow["timings"]["commitMs"]["max"] == 4_470
+    assert slow["timings"]["checkpointMs"]["max"] == 600
+    assert slow["timings"]["walGrowthBytes"]["min"] == -79_000_000
+    assert cleanup["timings"]["commitMs"]["max"] == 4_470
+    assert cleanup["timings"]["deleteMs"]["max"] == 23
+    assert slow["recent"][0]["timings"]["deleteMs"] == 23
+    assert slow["recent"][1]["timings"]["checkpointMs"] == 600
+    assert "commitMs" not in slow["recent"][1]["timings"]
+
+
+def test_slow_cleanup_delete_records_delete_commit_and_wal_timings() -> None:
+    with workspace_tmpdir("baluffo-store-slow-delete-timings") as data_dir:
+        with BaluffoStore(data_dir, slow_write_warn_ms=1) as store:
+            store.write(
+                lambda conn: conn.execute(
+                    "CREATE TABLE delete_timing_probe (id INTEGER PRIMARY KEY, payload TEXT)"
+                )
+            )
+
+            def slow_delete(conn: sqlite3.Connection) -> int:
+                time.sleep(0.02)
+                cursor = conn.execute(
+                    "INSERT INTO delete_timing_probe(payload) VALUES (?)", ("x" * 4096,)
+                )
+                return int(cursor.rowcount or 0)
+
+            store.write(slow_delete, operation="cleanup-delete:jobs")
+
+        rows = [
+            row
+            for row in _slow_store_write_rows(data_dir)
+            if row.get("operation") == "cleanup-delete:jobs"
+        ]
+
+        assert rows, "a slow cleanup delete must be journaled with its operation label"
+        row = rows[-1]
+        assert row["deleteMs"] == row["callbackMs"]
+        assert int(cast(int, row["deleteMs"])) >= 15
+        assert int(cast(int, row["commitMs"])) >= 0
+        assert int(cast(int, row["walBytesAfter"])) >= int(cast(int, row["walBytesBefore"]))
+        assert int(cast(int, row["walGrowthBytes"])) == int(cast(int, row["walBytesAfter"])) - int(
+            cast(int, row["walBytesBefore"])
+        )
+
+
+def test_slow_checkpoint_records_checkpoint_and_wal_timings() -> None:
+    with workspace_tmpdir("baluffo-store-slow-checkpoint-timings") as data_dir:
+        with BaluffoStore(data_dir, slow_write_warn_ms=1) as store:
+            store.write(
+                lambda conn: conn.execute(
+                    "CREATE TABLE checkpoint_timing_probe (id INTEGER PRIMARY KEY, payload TEXT)"
+                )
+            )
+            store.write(
+                lambda conn: conn.execute(
+                    "INSERT INTO checkpoint_timing_probe(payload) VALUES (?)", ("x" * 4096,)
+                )
+            )
+            held = threading.Event()
+            release = threading.Event()
+
+            def hold_write_lock() -> None:
+                with store._write_lock_guard("test-checkpoint-wait"):
+                    held.set()
+                    release.wait(5)
+
+            holder = threading.Thread(target=hold_write_lock, daemon=True)
+            holder.start()
+            assert held.wait(2)
+            try:
+                store.checkpoint_required(mode="TRUNCATE")
+            finally:
+                release.set()
+                holder.join(timeout=5)
+
+            rows = [
+                row
+                for row in _slow_store_write_rows(data_dir)
+                if row.get("operation") == "checkpoint:truncate"
+            ]
+
+            assert rows, "a checkpoint that waited past the threshold must be journaled"
+            row = rows[-1]
+            assert int(cast(int, row["checkpointMs"])) >= 0
+            assert int(cast(int, row["walBytesBefore"])) > 0
+            assert int(cast(int, row["walBytesAfter"])) == 0
+            assert int(cast(int, row["walGrowthBytes"])) == int(
+                cast(int, row["walBytesAfter"])
+            ) - int(cast(int, row["walBytesBefore"]))
 
 
 def test_save_json_atomic_records_storage_metrics_without_recursing(tmp_path: Path) -> None:

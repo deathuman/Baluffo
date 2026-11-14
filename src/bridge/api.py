@@ -132,6 +132,10 @@ def _not_started_noarg() -> JsonObject:
     return _not_started_result()
 
 
+def _not_started_run_id(_run_id: str = "") -> JsonObject:
+    return _not_started_result()
+
+
 def _not_started_mode(_mode: str = "exact") -> JsonObject:
     return _not_started_result()
 
@@ -145,6 +149,10 @@ def _not_started_result(_payload: JsonObject | None = None) -> JsonObject:
 
 def _empty_storage_diagnostic_payload() -> JsonObject:
     return {"ok": True, "storageDiagnostic": None}
+
+
+def _empty_storage_rebuild_payload() -> JsonObject:
+    return {"ok": True, "storageRebuild": None}
 
 
 def _abort_not_available(_payload: JsonObject | None = None) -> tuple[int, JsonObject]:
@@ -436,10 +444,17 @@ class BridgeApi:
     compute_ops_dashboard_health_summary: Callable[[], JsonObject] = _ok_payload
     compute_ops_fetch_kpis_summary: Callable[[], JsonObject] = _ok_payload
     get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
+    get_storage_maintenance_preview: Callable[[], JsonObject] = _not_started_noarg
     start_storage_diagnostic: Callable[[str], JsonObject] = _not_started_mode
     get_storage_diagnostic_payload: Callable[[], JsonObject] = _empty_storage_diagnostic_payload
-    cancel_storage_diagnostic: Callable[[], JsonObject] = _not_started_noarg
+    cancel_storage_diagnostic: Callable[[str], JsonObject] = _not_started_run_id
     start_storage_maintenance: Callable[[], JsonObject] = _not_started_noarg
+    cancel_storage_maintenance: Callable[[str], JsonObject] = _not_started_run_id
+    get_storage_rebuild_payload: Callable[[], JsonObject] = _empty_storage_rebuild_payload
+    start_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
+    cancel_storage_rebuild: Callable[[str], JsonObject] = _not_started_run_id
+    rollback_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
+    delete_storage_rebuild_backup: Callable[[], JsonObject] = _not_started_noarg
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics

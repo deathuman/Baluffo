@@ -127,6 +127,7 @@ function fixture({
   payload = { storage: { tableSizes: TABLE_SIZES } },
   reject = null,
   postPayload = { started: true, storageDiagnostic: DIAGNOSTIC },
+  cancelPayload = null,
   postReject = null,
   shouldDefer = () => false,
   downloadJson = null
@@ -177,7 +178,7 @@ function fixture({
     postBridge: async (path, payloadBody, options) => {
       postCalls.push({ path, payload: payloadBody, options });
       if (postReject) throw postReject;
-      return postPayload;
+      return path.endsWith("/cancel") && cancelPayload ? cancelPayload : postPayload;
     },
     downloadJson: downloadJson || ((filename, content) => {
       downloads.push({ filename, content });
@@ -339,12 +340,35 @@ test("exact diagnostic cancel posts to the cancel route", async () => {
     }
   });
 
+  await f.controller.startExactDiagnostic();
   await f.controller.cancelExactDiagnostic();
 
-  assert.equal(f.postCalls.length, 1);
-  assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic/cancel");
+  assert.equal(f.postCalls.length, 2);
+  assert.equal(f.postCalls[1].path, "/ops/storage-diagnostic/cancel");
+  assert.deepEqual(f.postCalls[1].payload, { runId: DIAGNOSTIC.runId });
+  assert.deepEqual(f.postCalls[1].options.allowStatuses, [409]);
   assert.equal(f.refs.adminStorageDiagnosticStatusEl.textContent, "Cancelling…");
   assert.equal(f.refs.adminStorageDiagnosticExportBtnEl.hidden, true);
+});
+
+test("exact diagnostic reports a stale stop request without retargeting", async () => {
+  const f = fixture({
+    cancelPayload: {
+      stale: true,
+      storageDiagnostic: {
+        ...DIAGNOSTIC,
+        status: "running",
+        runId: "storage_diag_newer"
+      }
+    }
+  });
+
+  await f.controller.startExactDiagnostic();
+  const result = await f.controller.cancelExactDiagnostic();
+
+  assert.equal(result.status, "running");
+  assert.deepEqual(f.postCalls[1].payload, { runId: DIAGNOSTIC.runId });
+  assert.match(f.refs.adminStorageDiagnosticStatusEl.textContent, /stale/i);
 });
 
 test("storage breakdown reports read failures", async () => {

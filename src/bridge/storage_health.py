@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -247,6 +248,89 @@ def resume_storage_maintenance(
             }
         )
     return results
+
+
+def cancel_storage_maintenance(data_dir: Path | str, run_id: str = "") -> dict[str, Any]:
+    """Ask one specific retention run to stop after its bounded batch."""
+    resolved = _resolve_data_dir(data_dir)
+    try:
+        store = get_storage_store(resolved, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+    except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
+        return {
+            "ok": False,
+            "requested": False,
+            "cancelling": False,
+            "error": str(exc),
+        }
+    try:
+        result = store.cancel_runtime_retention(run_id)
+        return {
+            "ok": True,
+            **result,
+            "compaction": store.compaction_status(),
+        }
+    except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
+        return {
+            "ok": False,
+            "requested": False,
+            "cancelling": False,
+            "error": str(exc),
+        }
+
+
+def get_storage_maintenance_preview(data_dir: Path | str) -> dict[str, Any]:
+    """Return the read-only cleanup candidate report for the runtime store."""
+    resolved = _resolve_data_dir(data_dir)
+    try:
+        store = get_storage_store(resolved, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+    except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "maintenancePreview": {
+                "readOnly": True,
+                "status": "failed",
+                "error": str(exc),
+            },
+        }
+    try:
+        from src.storage.runtime_retention import preview_runtime_retention
+
+        preview = preview_runtime_retention(store)
+        sizes = store.file_sizes()
+        try:
+            disk = shutil.disk_usage(resolved)
+            free_disk_bytes = int(disk.free)
+            disk_total_bytes = int(disk.total)
+            free_space_known = True
+        except OSError:
+            free_disk_bytes = 0
+            disk_total_bytes = 0
+            free_space_known = False
+        return {
+            "ok": True,
+            "maintenancePreview": {
+                **preview,
+                "databaseBytes": int(sizes.get("databaseBytes") or 0),
+                "walBytes": int(sizes.get("walBytes") or 0),
+                "freelistBytes": int(sizes.get("freelistBytes") or 0),
+                "freeDiskBytes": free_disk_bytes,
+                "diskTotalBytes": disk_total_bytes,
+                "freeSpaceKnown": free_space_known,
+            },
+            "runtimeRetention": store.runtime_retention_status(),
+            "compaction": store.compaction_status(),
+        }
+    except (BaluffoStoreError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "maintenancePreview": {
+                "readOnly": True,
+                "status": "failed",
+                "error": str(exc),
+            },
+        }
 
 
 def start_storage_maintenance(data_dir: Path | str) -> dict[str, Any]:

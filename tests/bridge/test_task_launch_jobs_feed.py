@@ -72,6 +72,38 @@ def _job_row() -> dict[str, object]:
     }
 
 
+def _content_row() -> dict[str, object]:
+    return {
+        **_job_row(),
+        "firstSeenAt": "2026-05-12T10:00:00+00:00",
+        "lastSeenAt": "2026-05-12T12:00:00+00:00",
+        "availabilityId": "availability_1",
+        "availabilityStatus": "available",
+        "availabilityCheckedAt": "2026-05-12T12:00:00+00:00",
+        "availabilityVerifiedAt": "2026-05-12T12:00:00+00:00",
+        "availabilityEvidence": {
+            "kind": "source_present",
+            "confidence": "definitive",
+            "checkedAt": "2026-05-12T12:00:00+00:00",
+            "source": "Studio A",
+        },
+    }
+
+
+def _reobserved_content_row(row: dict[str, object]) -> dict[str, object]:
+    evidence = row.get("availabilityEvidence")
+    return {
+        **row,
+        "lastSeenAt": "2026-05-12T13:00:00+00:00",
+        "availabilityCheckedAt": "2026-05-12T13:00:00+00:00",
+        "availabilityVerifiedAt": "2026-05-12T13:00:00+00:00",
+        "availabilityEvidence": {
+            **(evidence if isinstance(evidence, dict) else {}),
+            "checkedAt": "2026-05-12T13:00:00+00:00",
+        },
+    }
+
+
 def _close_fetch(api: TaskLaunchApi, report: dict[str, Any]) -> bool:
     return api._close_fetch_lifecycle_from_report(  # noqa: SLF001
         run_id=str(report["runId"]),
@@ -195,6 +227,192 @@ def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() 
                 "jobs_feed_sqlite_export_written",
                 "jobs_feed_projection_match",
             ]
+
+
+def test_fetch_finalization_skips_an_unchanged_content_generation() -> None:
+    base_row = _content_row()
+    with workspace_tmpdir("task-launch-jobs-feed-unchanged") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "shadow", reason="test-shadow")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([base_row], list(base_row.keys())),
+            )
+            first_report = {
+                "runId": "fetch_jobs_1",
+                "finishedAt": "2026-05-12T12:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, first_report) is True
+            generation = runtime.current_generation()
+            assert generation
+            first_rows = runtime.current_rows()
+
+            reobserved_row = _reobserved_content_row(base_row)
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([reobserved_row], list(reobserved_row.keys())),
+            )
+            second_report = {
+                "runId": "fetch_jobs_2",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, second_report) is True
+
+            assert runtime.current_generation() == generation
+            assert runtime.current_rows() == first_rows
+            assert diagnostics[-1]["code"] == "jobs_feed_content_unchanged"
+            assert store.execute_scalar("SELECT COUNT(*) FROM job_feed_generation_stats") == 1
+
+            changed_row = {**reobserved_row, "title": "Senior Tools Programmer"}
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([changed_row], list(changed_row.keys())),
+            )
+            third_report = {
+                "runId": "fetch_jobs_3",
+                "finishedAt": "2026-05-12T14:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, third_report) is True
+
+            assert runtime.current_generation() != generation
+            assert diagnostics[-1]["code"] == "jobs_feed_projection_match"
+
+
+def test_sqlite_fetch_finalization_skips_unchanged_content_without_rewriting_exports() -> None:
+    base_row = _content_row()
+    reobserved_row = _reobserved_content_row(base_row)
+    projection_names = (
+        "jobs-unified.json",
+        "jobs-unified-light.json",
+        "jobs-unified-startup.json",
+    )
+    with workspace_tmpdir("task-launch-jobs-feed-sqlite-unchanged") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([base_row], list(base_row.keys())),
+            )
+            first_report = {
+                "runId": "fetch_jobs_1",
+                "finishedAt": "2026-05-12T12:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, first_report) is True
+            generation = runtime.current_generation()
+            assert generation
+            first_rows = runtime.current_rows()
+            assert diagnostics[-1]["code"] == "jobs_feed_projection_match"
+            diagnostics.clear()
+
+            # A fetch finalization writes all three projections before closeout.
+            for name in projection_names:
+                write_atomic_if_changed(
+                    data_dir / name,
+                    serialize_rows_for_json([reobserved_row], list(reobserved_row.keys())),
+                )
+            second_report = {
+                "runId": "fetch_jobs_2",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, second_report) is True
+
+            assert runtime.current_generation() == generation
+            assert runtime.current_rows() == first_rows
+            assert [row["code"] for row in diagnostics] == ["jobs_feed_content_unchanged"]
+            assert store.execute_scalar("SELECT COUNT(*) FROM job_feed_generation_stats") == 1
+            assert store.get_authority_modes()["jobsFeed"] == "sqlite"
+            for name in projection_names:
+                assert read_json(data_dir / name, [])[0]["lastSeenAt"] == (
+                    "2026-05-12T13:00:00+00:00"
+                )
+
+
+def test_sqlite_fetch_finalization_falls_back_to_staging_when_hash_read_fails(
+    monkeypatch: Any,
+) -> None:
+    base_row = _content_row()
+    reobserved_row = _reobserved_content_row(base_row)
+    with workspace_tmpdir("task-launch-jobs-feed-sqlite-hash-failure") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([base_row], list(base_row.keys())),
+            )
+            first_report = {
+                "runId": "fetch_jobs_1",
+                "finishedAt": "2026-05-12T12:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+            assert _close_fetch(api, first_report) is True
+            generation = runtime.current_generation()
+            assert generation
+            diagnostics.clear()
+
+            def fail_content_hash() -> str:
+                raise sqlite3.OperationalError("database is locked")
+
+            monkeypatch.setattr(runtime, "current_feed_content_hash", fail_content_hash)
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json([reobserved_row], list(reobserved_row.keys())),
+            )
+            second_report = {
+                "runId": "fetch_jobs_2",
+                "finishedAt": "2026-05-12T13:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, second_report) is True
+
+            assert runtime.current_generation() != generation
+            assert runtime.current_rows()[0]["lastSeenAt"] == "2026-05-12T13:00:00+00:00"
+            assert [row["code"] for row in diagnostics] == [
+                "jobs_feed_sqlite_export_written",
+                "jobs_feed_projection_match",
+            ]
+            assert (
+                store.execute_scalar("SELECT feed_generation FROM job_feed_generation_stats")
+                == runtime.current_generation()
+            )
 
 
 def test_fetch_lifecycle_close_rolls_back_jobs_feed_when_sqlite_export_fails(

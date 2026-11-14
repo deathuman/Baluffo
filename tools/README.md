@@ -444,6 +444,7 @@ is typically gitignored - do not commit generated files here.
 | Adjudicate the shipped pool claim | `python tools/measurements/corpus/adjudicate.py --epoch <epoch-dir>` |
 | Price a candidate change before committing it | `tools/measurements/corpus/probes/row_dict/sitecustomize.py` via `ab.py run --arm-b-env` |
 | Test whether a wider audit lane count changes which boards are validated | `python tools/measurements/discovery/lane_parity.py study --study <dir>` |
+| Profile generation-cleanup transactions on a fixed disposable fixture | `python tools/measurements/pipeline/generation_cleanup_profile.py` |
 | Reconcile carried source-bundle provenance | `python tools/source_bundle_reconcile.py --feed <feed> [--apply]` |
 | Verify a published release (assets, signed manifests, GHCR) | `python tools/verify_release.py [--tag v<version>]` |
 | Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |

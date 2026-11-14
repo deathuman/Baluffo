@@ -36,7 +36,11 @@ class _OpsDiagnosticsRouteApi(Protocol):
 
     def get_storage_health_payload(self) -> dict[str, Any]: ...
 
+    def get_storage_maintenance_preview(self) -> dict[str, Any]: ...
+
     def get_storage_diagnostic_payload(self) -> dict[str, Any]: ...
+
+    def get_storage_rebuild_payload(self) -> dict[str, Any]: ...
 
     def load_json_object(self, path: Path, default: Any) -> dict[str, Any]: ...
 
@@ -63,8 +67,14 @@ def _handle_storage_get_routes(
     if path == "/ops/storage-health":
         handler.send_json(api.get_storage_health_payload())
         return True
+    if path == "/ops/storage-maintenance/preview":
+        handler.send_json(api.get_storage_maintenance_preview())
+        return True
     if path == "/ops/storage-diagnostic":
         handler.send_json(api.get_storage_diagnostic_payload())
+        return True
+    if path == "/ops/storage-rebuild":
+        handler.send_json(api.get_storage_rebuild_payload())
         return True
     return False
 

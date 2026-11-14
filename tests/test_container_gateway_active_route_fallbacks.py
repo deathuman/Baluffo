@@ -53,6 +53,12 @@ def _write_schedule(data_dir: Path) -> None:
     )
 
 
+def test_storage_maintenance_preview_reuses_the_heavy_proxy_budget() -> None:
+    timeout = container_gateway._proxy_timeout_for("GET", "/ops/storage-maintenance/preview")
+
+    assert timeout == container_gateway.HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS
+
+
 def test_gateway_sync_summary_timeout_returns_delayed_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -29,8 +29,21 @@ class MinimalOpsDiagnosticsRouteApi:
     def get_storage_health_payload(self) -> dict[str, Any]:
         return {"ok": True, "health": "ok"}
 
+    def get_storage_maintenance_preview(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "maintenancePreview": {
+                "readOnly": True,
+                "status": "ok",
+                "candidateGenerationCount": 1,
+            },
+        }
+
     def get_storage_diagnostic_payload(self) -> dict[str, Any]:
         return {"ok": True, "storageDiagnostic": {"status": "idle"}}
+
+    def get_storage_rebuild_payload(self) -> dict[str, Any]:
+        return {"ok": True, "storageRebuild": {"status": "idle"}}
 
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]:
         target = Path(path)
@@ -82,6 +95,18 @@ def test_ops_diagnostic_routes_accept_minimal_capability_object(tmp_path: Path) 
         is True
     )
     assert storage_handler.sent[-1]["payload"] == {"ok": True, "health": "ok"}
+
+    preview_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            preview_handler,
+            api=api,
+            path="/ops/storage-maintenance/preview",
+            query={},
+        )
+        is True
+    )
+    assert preview_handler.sent[-1]["payload"]["maintenancePreview"]["readOnly"] is True
 
     storage_diagnostic_handler = FakeHandler()
     assert (

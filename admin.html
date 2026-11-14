@@ -102,7 +102,13 @@
             <div class="admin-storage-actions-primary">
               <button id="admin-storage-tables-refresh-btn" data-ui="admin-storage-tables-refresh-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Reload the database storage summary.">Refresh</button>
               <button id="admin-storage-quick-check-btn" data-ui="admin-storage-quick-check-btn" class="btn clear-filters-btn admin-storage-btn admin-storage-btn-primary" type="button" data-tooltip="Check the current feed and estimate stored row space without scanning the whole database.">Quick check</button>
+              <button id="admin-storage-maintenance-preview-btn" data-ui="admin-storage-maintenance-preview-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Preview which saved feed versions cleanup would remove, how many rows and estimated bytes, and the free space. This read-only check never deletes data.">Preview cleanup</button>
               <button id="admin-storage-maintenance-btn" data-ui="admin-storage-maintenance-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Remove older saved feed versions and compact the database. The current feed is kept.">Run maintenance</button>
+              <button id="admin-storage-maintenance-cancel-btn" data-ui="admin-storage-maintenance-cancel-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Stop feed cleanup after the current bounded database step. Compaction cannot be safely interrupted; already removed data stays removed.">Stop maintenance</button>
+              <button id="admin-storage-rebuild-btn" data-ui="admin-storage-rebuild-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Rebuild the database around the current feed in one maintenance window. All non-feed tables and the current feed are kept; the old database is retained as the rollback copy.">Rebuild current feed</button>
+              <button id="admin-storage-rebuild-cancel-btn" data-ui="admin-storage-rebuild-cancel-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Stop the current-feed rebuild before it installs the new database. The live database is untouched until installation.">Stop rebuild</button>
+              <button id="admin-storage-rebuild-rollback-btn" data-ui="admin-storage-rebuild-rollback-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Put the retained pre-rebuild database back in place. This consumes the rollback copy.">Roll back</button>
+              <button id="admin-storage-rebuild-backup-delete-btn" data-ui="admin-storage-rebuild-backup-delete-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Delete the retained pre-rebuild database. The current feed stays live and rollback is no longer possible.">Delete old database</button>
             </div>
             <div class="admin-storage-advanced" role="group" aria-label="Advanced storage tools">
               <span class="admin-storage-advanced-label">Advanced</span>
@@ -113,7 +119,17 @@
             </div>
           </div>
           <div id="admin-storage-maintenance-status" data-ui="admin-storage-maintenance-status" class="admin-storage-maintenance-status" role="status" aria-live="polite"></div>
+          <div id="admin-storage-maintenance-preview" data-ui="admin-storage-maintenance-preview" class="admin-storage-maintenance-preview" aria-live="polite" hidden></div>
           <div id="admin-storage-maintenance-progress" data-ui="admin-storage-maintenance-progress" class="admin-storage-maintenance-progress" aria-live="polite" hidden></div>
+          <section id="admin-storage-rebuild" data-ui="admin-storage-rebuild" class="admin-storage-maintenance-preview admin-storage-rebuild" aria-live="polite" aria-label="Current-feed rebuild">
+            <div class="admin-storage-maintenance-preview-head">
+              <strong>Current-feed rebuild</strong>
+              <span id="admin-storage-rebuild-status" data-ui="admin-storage-rebuild-status" role="status">Not run</span>
+            </div>
+            <div id="admin-storage-rebuild-body" data-ui="admin-storage-rebuild-body" class="admin-storage-rebuild-body">
+              <p class="admin-storage-card-note">Rebuilds the database in one pass around the published feed: every other table is copied, old feed generations are dropped, and the old database is kept as the rollback copy. Install is refused if a write commits while the copy is being built.</p>
+            </div>
+          </section>
           <div id="admin-storage-write-lock" data-ui="admin-storage-write-lock" class="admin-storage-maintenance-status admin-storage-write-lock" aria-live="polite"></div>
           <div id="admin-storage-tables-body" data-ui="admin-storage-tables-body">
             <div class="admin-storage-state"><p>Database storage details load once after startup.</p></div>

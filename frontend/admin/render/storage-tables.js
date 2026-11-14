@@ -61,6 +61,39 @@ function formatLockDuration(value) {
   return formatDuration(heldMs);
 }
 
+function formatRatio(fraction) {
+  if (fraction === null || fraction === undefined) return "—";
+  const number = Number(fraction);
+  if (!Number.isFinite(number) || number < 0) return "—";
+  if (number === 0) return "0%";
+  if (number < 0.001) return "<0.1%";
+  return `${(number * 100).toFixed(1)}%`;
+}
+
+function compactionSuppressionText(compaction, format) {
+  const space = compaction && typeof compaction === "object" ? compaction.space : null;
+  if (!space || typeof space !== "object") return "";
+  if (space.largeAllocatedLowFreelist !== true || space.vacuumDueBySize !== false) return "";
+  const free = format(toNumber(space.freelistBytes));
+  if (space.vacuumBlockedBy === "freelist-bytes") {
+    return `VACUUM is not due: ${free} free is below the ${format(toNumber(compaction.freelistThresholdBytes))} threshold.`;
+  }
+  if (space.vacuumBlockedBy !== "freelist-ratio") return "";
+  const allocated = format(toNumber(space.allocatedBytes));
+  return `VACUUM is suppressed: ${allocated} allocated, ${free} free (${formatRatio(space.observedFreelistRatio)} freelist), below the ${formatRatio(space.effectiveFreelistRatio)} large-database threshold.`;
+}
+
+function renderCompactionSuppressionHtml(text) {
+  if (!text) return "";
+  return `<div class="admin-storage-maintenance-progress is-idle" data-maintenance-phase="compaction-not-due" data-maintenance-running="false" data-compaction-suppressed="true">
+    <div class="admin-storage-maintenance-progress-head">
+      <strong>Compaction not due</strong>
+      <span>VACUUM suppressed</span>
+    </div>
+    <div class="admin-storage-maintenance-progress-meta"><span>${escapeHtml(text)}</span></div>
+  </div>`;
+}
+
 export function renderStorageWriteLockHtml(writeLock) {
   const label = '<span class="admin-storage-write-lock-label">Write lock</span>';
   if (!writeLock || typeof writeLock !== "object") {
@@ -75,6 +108,23 @@ export function renderStorageWriteLockHtml(writeLock) {
   return `${label}<strong>Held by ${escapeHtml(holder)}${operationText}</strong><span>for ${escapeHtml(formatLockDuration(writeLock.heldMs))}</span>`;
 }
 
+export function storageMaintenanceFollowUpScheduled(status) {
+  if (!status || typeof status !== "object") return false;
+  if (String(status.status || "") === "failed") return false;
+  if (status.followUpScheduled === true) return true;
+  if (status.completionState === "follow-up-scheduled") return true;
+  return status.timerScheduled === true
+    && status.done === false
+    && String(status.status || "") === "ok";
+}
+
+export function storageMaintenanceRetryScheduled(status) {
+  if (!status || typeof status !== "object") return false;
+  if (status.retryScheduled === true) return true;
+  if (status.completionState === "retry-scheduled") return true;
+  return status.timerScheduled === true && String(status.status || "") === "failed";
+}
+
 export function storageMaintenancePhaseLabel(phase) {
   const labels = {
     starting: "Preparing maintenance",
@@ -83,6 +133,9 @@ export function storageMaintenancePhaseLabel(phase) {
     "prune-event-history": "Pruning task and sync history",
     "compact-archived-payloads": "Compacting archived payloads",
     "prune-job-generations": "Removing older saved versions",
+    cancelling: "Stopping after the current database step",
+    cancelled: "Stopped",
+    compaction: "Compacting database",
     complete: "Complete",
     failed: "Failed",
     "held-active-task": "Waiting for active task",
@@ -96,18 +149,52 @@ export function renderStorageMaintenanceHtml(
   compaction,
   formatBytesFormatter
 ) {
+  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
   const status = runtimeRetention && typeof runtimeRetention === "object"
     ? runtimeRetention
     : null;
-  if (!status) return "";
-  const running = status.running === true || status.status === "running";
-  if (!running && String(status.status || "") === "not-run") return "";
-
-  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
-  const phase = String(status.phase || status.status || "");
-  const phaseLabel = phase === "prune-job-generations" && status.stage === "counting"
-    ? storageMaintenancePhaseLabel("counting")
-    : storageMaintenancePhaseLabel(phase);
+  const compactionRunning = Boolean(
+    compaction
+      && typeof compaction === "object"
+      && (
+        compaction.running === true
+        || String(compaction.status || "") === "running"
+      )
+  );
+  const suppressionText = compactionSuppressionText(compaction, format);
+  if (!status) {
+    if (compactionRunning) {
+      return `<div class="admin-storage-maintenance-progress is-running" data-maintenance-phase="compaction" data-maintenance-running="true">
+        <div class="admin-storage-maintenance-progress-head">
+          <strong>Compaction running</strong>
+          <span>Cannot be safely interrupted</span>
+        </div>
+        <div class="admin-storage-maintenance-progress-meta"><span>Wait for compaction to finish. The stop control only applies to feed cleanup.</span></div>
+      </div>`;
+    }
+    return renderCompactionSuppressionHtml(suppressionText);
+  }
+  const statusName = String(status.status || "");
+  const cancelling = statusName === "cancelling";
+  const cancelled = statusName === "cancelled";
+  const running = status.running === true || statusName === "running" || cancelling;
+  if (!running && !compactionRunning && statusName === "not-run") {
+    return renderCompactionSuppressionHtml(suppressionText);
+  }
+  const phase = String(
+    (compactionRunning && !running ? "compaction" : status.phase)
+      || (compactionRunning ? "compaction" : status.status)
+      || ""
+  );
+  const followUpScheduled = storageMaintenanceFollowUpScheduled(status);
+  const retryScheduled = storageMaintenanceRetryScheduled(status);
+  const phaseLabel = followUpScheduled
+    ? "Follow-up scheduled"
+    : retryScheduled
+      ? "Retry scheduled"
+      : phase === "prune-job-generations" && status.stage === "counting"
+        ? storageMaintenancePhaseLabel("counting")
+        : storageMaintenancePhaseLabel(phase);
   const elapsed = toNumber(status.elapsedMs ?? status.durationMs);
   const totalRuns = toNumber(status.totalRunCount);
   const processedRuns = toNumber(status.processedRunCount);
@@ -142,6 +229,18 @@ export function renderStorageMaintenanceHtml(
 
   details.push(`<span class="admin-storage-maintenance-phase">${escapeHtml(phaseLabel)}</span>`);
   if (elapsed > 0) details.push(`<span>Elapsed ${escapeHtml(formatDuration(elapsed))}</span>`);
+  if (followUpScheduled) {
+    const followUpInS = Math.max(0, toNumber(status.followUpInS ?? status.nextRunInS));
+    details.push(
+      `<span>Follow-up scheduled${followUpInS > 0 ? ` in ${escapeHtml(formatDuration(followUpInS * 1000))}` : ""}</span>`
+    );
+  }
+  if (retryScheduled) {
+    const retryInS = Math.max(0, toNumber(status.retryInS ?? status.nextRunInS));
+    details.push(
+      `<span>Retry scheduled${retryInS > 0 ? ` in ${escapeHtml(formatDuration(retryInS * 1000))}` : ""}</span>`
+    );
+  }
   if (totalRuns > 0) {
     details.push(
       `<span>${formatCount(processedRuns)} of ${formatCount(totalRuns)} runs</span>`
@@ -174,25 +273,48 @@ export function renderStorageMaintenanceHtml(
       `<span>${formatCount(deletedGenerationRows)} saved-version rows removed</span>`
     );
   }
-  if (compaction && String(compaction.status || "") !== "not-run") {
+  if (compactionRunning) {
+    details.push("<span>Compaction is running and cannot be safely interrupted.</span>");
+  } else if (compaction && String(compaction.status || "") !== "not-run" && !suppressionText) {
     const reclaimed = toNumber(compaction.reclaimedBytes);
     const compactionText = reclaimed > 0
       ? `${String(compaction.status)} · ${format(reclaimed)} reclaimed`
       : String(compaction.status);
     details.push(`<span>Compaction: ${escapeHtml(compactionText)}</span>`);
   }
+  if (!running && !compactionRunning && suppressionText) {
+    details.push(`<span class="admin-storage-maintenance-suppression" data-compaction-suppressed="true">${escapeHtml(suppressionText)}</span>`);
+  }
   if (status.error) {
     details.push(`<span class="admin-storage-maintenance-error">${escapeHtml(String(status.error))}</span>`);
   }
+  if (cancelled) {
+    details.push(
+      "<span>Stopped after the current database step. Already removed data stays removed.</span>"
+    );
+  }
 
-  const headline = running
-    ? "Maintenance running"
-    : status.status === "failed"
-      ? "Maintenance failed"
-      : status.status === "held-active-task"
-        ? "Maintenance paused"
-        : "Maintenance complete";
-  return `<div class="admin-storage-maintenance-progress${running ? " is-running" : ""}" data-maintenance-phase="${escapeHtml(phase)}" data-maintenance-running="${running ? "true" : "false"}">
+  const headline = cancelling
+    ? compactionRunning
+      ? "Feed cleanup stopping"
+      : "Maintenance stopping"
+    : running
+      ? "Maintenance running"
+      : followUpScheduled
+        ? "Maintenance batch complete"
+        : statusName === "failed"
+          ? "Maintenance failed"
+          : statusName === "held-active-task"
+            ? "Maintenance paused"
+            : cancelled
+              ? compactionRunning
+                ? "Feed cleanup stopped"
+                : "Maintenance stopped"
+              : compactionRunning
+                ? "Compaction running"
+                : "Maintenance complete";
+  const active = running || compactionRunning;
+  return `<div class="admin-storage-maintenance-progress${active ? " is-running" : ""}" data-maintenance-phase="${escapeHtml(phase)}" data-maintenance-running="${active ? "true" : "false"}" data-maintenance-follow-up="${followUpScheduled || retryScheduled ? "true" : "false"}" data-maintenance-completion-state="${escapeHtml(String(status.completionState || ""))}">
     <div class="admin-storage-maintenance-progress-head">
       <strong>${escapeHtml(headline)}</strong>
       <span>${escapeHtml(phaseLabel)}</span>
@@ -383,5 +505,188 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
       </div>
     </div>
     ${renderTechnicalDetails(tableSizes, format, tables.length)}
+  </section>`;
+}
+
+function storageRebuildPhaseLabel(phase) {
+  const labels = {
+    idle: "Not started",
+    queued: "Queued",
+    "stopping-retention": "Stopping feed cleanup",
+    "checking-space": "Checking free space",
+    copying: "Copying current feed and history",
+    installing: "Installing the rebuilt database",
+    cancelling: "Stopping before installation",
+    complete: "Complete",
+    cancelled: "Stopped",
+    superseded: "Superseded by a write",
+    interrupted: "Interrupted by a restart",
+    failed: "Failed",
+    "rolled-back": "Old database restored"
+  };
+  return labels[String(phase || "")] || String(phase || "Not started");
+}
+
+function shortHash(value) {
+  const text = String(value || "").trim();
+  return text ? text.slice(0, 12) : "—";
+}
+
+export function renderStorageRebuildHtml(rebuild, formatBytesFormatter) {
+  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
+  if (!rebuild || typeof rebuild !== "object") {
+    return `<p class="admin-storage-card-note">No current-feed rebuild has run.</p>`;
+  }
+  const status = String(rebuild.status || "idle");
+  const running = status === "running" || status === "cancelling";
+  const phaseLabel = storageRebuildPhaseLabel(rebuild.phase || status);
+  const details = [];
+  const generation = String(rebuild.currentGeneration || "").trim();
+  if (generation) {
+    details.push(
+      `<span>Current feed <code class="admin-storage-table-code">${escapeHtml(generation)}</code></span>`
+    );
+  }
+  if (toNumber(rebuild.jobRowCount) > 0 || toNumber(rebuild.sourceRowCount) > 0) {
+    details.push(
+      `<span>${formatCount(rebuild.jobRowCount)} jobs / ${formatCount(rebuild.sourceRowCount)} source rows</span>`
+    );
+  }
+  if (toNumber(rebuild.stagingBytes) > 0) {
+    details.push(`<span>Rebuilt copy ${escapeHtml(format(toNumber(rebuild.stagingBytes)))}</span>`);
+  }
+  if (toNumber(rebuild.databaseBytes) > 0) {
+    details.push(`<span>Live database ${escapeHtml(format(toNumber(rebuild.databaseBytes)))}</span>`);
+  }
+  if (toNumber(rebuild.reclaimedBytes) > 0) {
+    details.push(`<span>${escapeHtml(format(toNumber(rebuild.reclaimedBytes)))} reclaimed</span>`);
+  }
+  if (toNumber(rebuild.backupBytes) > 0 && rebuild.backupExists !== false) {
+    details.push(
+      `<span>Rollback copy ${escapeHtml(format(toNumber(rebuild.backupBytes)))}</span>`
+    );
+  }
+  const progress = rebuild.progress && typeof rebuild.progress === "object"
+    ? rebuild.progress
+    : {};
+  if (toNumber(progress.tablesTotal) > 0) {
+    details.push(
+      `<span>${formatCount(progress.tablesDone)} of ${formatCount(progress.tablesTotal)} tables</span>`
+    );
+  }
+  if (toNumber(rebuild.elapsedMs) > 0) {
+    details.push(`<span>Elapsed ${escapeHtml(formatDuration(toNumber(rebuild.elapsedMs)))}</span>`);
+  }
+  const validation = rebuild.validation && typeof rebuild.validation === "object"
+    ? rebuild.validation
+    : {};
+  const verified = status === "complete" && validation.rowHash;
+  if (verified) {
+    details.push(
+      `<span>Verified row hash <code class="admin-storage-table-code">${escapeHtml(shortHash(validation.rowHash))}</code></span>`
+    );
+    details.push(
+      `<span>Verified source hash <code class="admin-storage-table-code">${escapeHtml(shortHash(validation.sourceHash))}</code></span>`
+    );
+    details.push("<span>Quick check ok; no foreign-key violations</span>");
+  }
+  if (rebuild.error) {
+    details.push(
+      `<span class="admin-storage-maintenance-error">${escapeHtml(String(rebuild.error))}</span>`
+    );
+  }
+
+  const tone = status === "failed" || status === "superseded" || status === "cancelled"
+    ? " is-warning"
+    : verified || status === "rolled-back"
+      ? " is-ok"
+      : "";
+  const backupNote = rebuild.backupExists
+    ? "The pre-rebuild database is retained on disk. Roll back to restore it, or delete it to free the space."
+    : "No pre-rebuild database is retained.";
+  return `<div class="admin-storage-maintenance-progress${running ? " is-running" : ""}" data-rebuild-status="${escapeHtml(status)}" data-rebuild-running="${running ? "true" : "false"}">
+    <div class="admin-storage-maintenance-progress-head">
+      <strong>${escapeHtml(phaseLabel)}</strong>
+      <span>${escapeHtml(status === "idle" ? "No rebuild has run" : status)}</span>
+    </div>
+    <div class="admin-storage-maintenance-progress-meta">${details.join("")}</div>
+    <p class="admin-storage-maintenance-preview-protection${tone}">${escapeHtml(backupNote)}</p>
+  </div>`;
+}
+
+export function renderStorageMaintenancePreviewHtml(preview, formatBytesFormatter) {
+  if (!preview || typeof preview !== "object") {
+    return renderStorageTablesMessageHtml("Maintenance preview did not return a report.");
+  }
+  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
+  if (preview.status === "failed") {
+    return renderStorageTablesMessageHtml(
+      `Maintenance preview unavailable: ${String(preview.error || "the read did not run")}`
+    );
+  }
+  if (preview.status === "skipped") {
+    return renderStorageTablesMessageHtml(
+      `Maintenance preview unavailable: ${String(preview.reason || "the jobs feed is not SQLite-backed")}.`
+    );
+  }
+  if (preview.status === "loading") {
+    return `<section class="admin-storage-maintenance-preview" data-maintenance-preview="loading" aria-busy="true">
+      <div class="admin-storage-maintenance-preview-head">
+        <strong>Cleanup preview</strong>
+        <span>Read-only · in progress</span>
+      </div>
+      <p class="admin-storage-maintenance-preview-protection">Preparing cleanup preview…</p>
+      <p class="admin-storage-card-note">Reading cached or time-bounded generation counts and bounded payload samples. Nothing is deleted.</p>
+    </section>`;
+  }
+  const candidates = Array.isArray(preview.candidates) ? preview.candidates : [];
+  const currentGeneration = String(preview.currentGeneration || "");
+  const currentProtected = preview.currentFeedProtected === true && Boolean(currentGeneration);
+  const countsKnown = preview.countsKnown !== false;
+  const candidateRows = toNumber(preview.candidateRowCount);
+  const estimatedBytes = toNumber(preview.estimatedBytes);
+  const freeDiskBytes = toNumber(preview.freeDiskBytes);
+  const freelistBytes = toNumber(preview.freelistBytes);
+  const candidateHtml = candidates.length
+    ? `<ul class="admin-storage-maintenance-candidates">${candidates.map(candidate => {
+      const generation = String(candidate?.generation || "unknown");
+      const jobRows = toNumber(candidate?.jobRowCount);
+      const sourceRows = toNumber(candidate?.sourceRowCount);
+      const countsRowKnown = candidate?.countsKnown !== false;
+      const countLabel = countsRowKnown ? "" : "At least ";
+      const bytesPrefix = countsRowKnown ? "~" : "≥";
+      return `<li class="admin-storage-maintenance-candidate" data-generation="${escapeHtml(generation)}">
+        <code class="admin-storage-table-code">${escapeHtml(generation)}</code>
+        <span>${countLabel}${formatCount(jobRows)} jobs + ${formatCount(sourceRows)} source rows</span>
+        <strong>${bytesPrefix}${escapeHtml(format(toNumber(candidate?.estimatedBytes)))}</strong>
+      </li>`;
+    }).join("")}</ul>`
+    : `<p class="admin-storage-card-note">No old saved versions are currently eligible for cleanup.</p>`;
+  const capNote = preview.capReached === true
+    ? ` One pass removes up to ${formatCount(preview.deleteCap)} versions; run the preview again after it finishes.`
+    : "";
+  const countNote = countsKnown
+    ? ""
+    : " Legacy counts that exceed the short counting budget fall back to bounded samples; rows marked at least and bytes marked ≥ are lower bounds.";
+  const rowsPrefix = countsKnown ? "" : "≥ ";
+  const bytesPrefix = countsKnown ? "~" : "≥";
+  const freeSpaceNote = preview.freeSpaceKnown === false
+    ? " Free disk space could not be read."
+    : "";
+  return `<section class="admin-storage-maintenance-preview" data-maintenance-preview="read-only" data-candidate-generations="${candidates.length}">
+    <div class="admin-storage-maintenance-preview-head">
+      <strong>Cleanup preview</strong>
+      <span>Read-only · generated ${escapeHtml(formatTime(preview.generatedAt))}</span>
+    </div>
+    <div class="admin-storage-maintenance-preview-stats">
+      <span><strong>${formatCount(candidates.length)}</strong> candidate versions</span>
+      <span><strong>${rowsPrefix}${formatCount(candidateRows)}</strong> rows</span>
+      <span><strong>${bytesPrefix}${escapeHtml(format(estimatedBytes))}</strong> stored payload</span>
+      <span><strong>${escapeHtml(format(freeDiskBytes))}</strong> free disk</span>
+      <span><strong>${escapeHtml(format(freelistBytes))}</strong> reusable SQLite pages</span>
+    </div>
+    <p class="admin-storage-maintenance-preview-protection${currentProtected ? " is-ok" : " is-warning"}">${currentProtected ? `Current feed <code>${escapeHtml(currentGeneration)}</code> is protected and never included.` : "No current feed generation is published; cleanup is held."}</p>
+    ${candidateHtml}
+    <p class="admin-storage-card-note">Payload bytes are a bounded estimate, not a promise of file shrinkage; compaction determines what is reclaimed.${capNote}${countNote}${freeSpaceNote}</p>
   </section>`;
 }

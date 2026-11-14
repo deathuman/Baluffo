@@ -64,6 +64,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
+| [`plans/current-feed-full-rebuild-plan.md`](plans/current-feed-full-rebuild-plan.md) | Operator plan | You are preparing or executing the approved full current-feed rebuild; includes preflight, independent validation, and rollback gates |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
 | [`archive/registry-summary-desktop-performance-cleanup-report.md`](archive/registry-summary-desktop-performance-cleanup-report.md) | Archived Cleanup Report | June 2026 registry summary diagnostics, Admin count-basis copy, and desktop startup/page performance benchmark evidence (retained for provenance; no active follow-up) |
 | [`test-reduction-policy.md`](test-reduction-policy.md) | Active / Test Reduction | You are deciding whether a test can be deleted or merged, checking retained-test boundaries, or starting a coverage-backed reduction sweep |

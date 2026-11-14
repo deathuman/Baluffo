@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createStorageBreakdownController } from "../../../frontend/admin/app/storage-breakdown.js";
-import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  createElement,
+  stubScheduledTimers
+} from "./helpers/admin-controller-test-helpers.mjs";
 
 function fixture({
   payload = { storage: {} },
@@ -134,6 +137,75 @@ test("maintenance status reader renders completion from storage health", async (
   assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /Maintenance complete/);
   assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /Removed 1 runs \/ 2 rows/);
   assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /500 B reclaimed/);
+});
+
+test("a completed batch with a follow-up stays visible and keeps polling", () => {
+  const timers = stubScheduledTimers();
+  const f = fixture();
+  try {
+    f.controller.acceptStorageHealth({
+      storage: {
+        runtimeRetention: {
+          status: "ok",
+          running: false,
+          phase: "complete",
+          done: false,
+          timerScheduled: true,
+          nextRunInS: 30,
+          followUpScheduled: true,
+          followUpInS: 30,
+          completionState: "follow-up-scheduled",
+          deletedGenerationCount: 2,
+          processedGenerationCount: 2,
+          totalGenerationCount: 4,
+          deletedGenerationRowCount: 289_370,
+          totalGenerationRowCount: 578_740,
+          generationRowCountKnown: true
+        },
+        compaction: { status: "not-run" }
+      }
+    });
+
+    assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /batch complete/i);
+    assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /follow-up scheduled/i);
+    assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /Maintenance batch complete/);
+    assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /Follow-up scheduled/);
+    assert.match(f.refs.adminStorageMaintenanceProgressEl.innerHTML, /Saved versions 2 of 4/);
+    assert.ok(timers.scheduled.length > 0);
+  } finally {
+    f.controller.stopMaintenancePoll();
+    timers.restore();
+  }
+});
+
+test("a drained batch with only its periodic timer is complete and does not poll", () => {
+  const timers = stubScheduledTimers();
+  const f = fixture();
+  try {
+    f.controller.acceptStorageHealth({
+      storage: {
+        runtimeRetention: {
+          status: "ok",
+          running: false,
+          phase: "complete",
+          done: true,
+          timerScheduled: true,
+          nextRunInS: 6 * 60 * 60,
+          followUpScheduled: false,
+          completionState: "complete",
+          fullyComplete: true
+        },
+        compaction: { status: "not-run" }
+      }
+    });
+
+    assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /Maintenance complete/);
+    assert.doesNotMatch(f.refs.adminStorageMaintenanceStatusEl.textContent, /follow-up/i);
+    assert.equal(timers.scheduled.length, 0);
+  } finally {
+    f.controller.stopMaintenancePoll();
+    timers.restore();
+  }
 });
 
 test("maintenance live polling defers while active work holds the gate", () => {

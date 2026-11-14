@@ -107,11 +107,46 @@ class MinimalAdminPostRouteApi:
     def start_storage_diagnostic(self, mode: str = "exact") -> dict[str, Any]:
         return {"started": True, "storageDiagnostic": {"status": "running", "mode": mode}}
 
-    def cancel_storage_diagnostic(self) -> dict[str, Any]:
-        return {"cancelling": True, "storageDiagnostic": {"status": "cancelling"}}
+    def cancel_storage_diagnostic(self, run_id: str = "") -> dict[str, Any]:
+        if run_id != "diag-current":
+            return {
+                "cancelling": False,
+                "stale": True,
+                "reason": "run-id-mismatch",
+                "storageDiagnostic": {"status": "running", "runId": "diag-current"},
+            }
+        return {
+            "cancelling": True,
+            "stale": False,
+            "requestedRunId": run_id,
+            "storageDiagnostic": {"status": "cancelling", "runId": run_id},
+        }
 
     def start_storage_maintenance(self) -> dict[str, Any]:
         return {"ok": True, "started": True, "alreadyRunning": False}
+
+    def cancel_storage_maintenance(self, run_id: str = "") -> dict[str, Any]:
+        if run_id != "retention-current":
+            return {
+                "ok": True,
+                "requested": False,
+                "cancelling": False,
+                "stale": True,
+                "reason": "run-id-mismatch",
+                "runtimeRetention": {
+                    "status": "running",
+                    "running": True,
+                    "runId": "retention-current",
+                },
+            }
+        return {
+            "ok": True,
+            "requested": True,
+            "cancelling": True,
+            "stale": False,
+            "requestedRunId": run_id,
+            "runtimeRetention": {"status": "cancelling", "running": True, "runId": run_id},
+        }
 
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
@@ -208,13 +243,33 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     storage_quick = _post(api, "/ops/storage-diagnostic", {"mode": "quick"})
     assert storage_quick.sent[-1]["payload"]["storageDiagnostic"]["mode"] == "quick"
 
-    storage_diagnostic_cancel = _post(api, "/ops/storage-diagnostic/cancel", {})
+    storage_diagnostic_cancel = _post(
+        api, "/ops/storage-diagnostic/cancel", {"runId": "diag-current"}
+    )
     assert storage_diagnostic_cancel.sent[-1]["status"] == 202
     assert storage_diagnostic_cancel.sent[-1]["payload"]["cancelling"] is True
+    assert storage_diagnostic_cancel.sent[-1]["payload"]["requestedRunId"] == "diag-current"
+    stale_diagnostic = _post(api, "/ops/storage-diagnostic/cancel", {"runId": "diag-old"})
+    assert stale_diagnostic.sent[-1]["status"] == 409
+    assert stale_diagnostic.sent[-1]["payload"]["stale"] is True
+    missing_diagnostic = _post(api, "/ops/storage-diagnostic/cancel", {})
+    assert missing_diagnostic.sent[-1]["status"] == 409
 
     storage_maintenance = _post(api, "/ops/storage-maintenance", {})
     assert storage_maintenance.sent[-1]["status"] == 202
     assert storage_maintenance.sent[-1]["payload"]["started"] is True
+
+    storage_maintenance_cancel = _post(
+        api, "/ops/storage-maintenance/cancel", {"runId": "retention-current"}
+    )
+    assert storage_maintenance_cancel.sent[-1]["status"] == 202
+    assert storage_maintenance_cancel.sent[-1]["payload"]["cancelling"] is True
+    assert storage_maintenance_cancel.sent[-1]["payload"]["requestedRunId"] == "retention-current"
+    stale_maintenance = _post(api, "/ops/storage-maintenance/cancel", {"runId": "retention-old"})
+    assert stale_maintenance.sent[-1]["status"] == 409
+    assert stale_maintenance.sent[-1]["payload"]["stale"] is True
+    missing_maintenance = _post(api, "/ops/storage-maintenance/cancel", {})
+    assert missing_maintenance.sent[-1]["status"] == 409
 
     sync_task = _post(api, "/tasks/run-sync-pull", {})
     assert sync_task.sent[-1]["payload"]["action"] == "pull"

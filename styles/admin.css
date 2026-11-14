@@ -610,6 +610,99 @@ h2.admin-section-title {
   overflow-wrap: anywhere;
 }
 
+.admin-storage-maintenance-preview {
+  margin: -0.15rem 0 0;
+  padding: 0.65rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.admin-storage-maintenance-preview[hidden] {
+  display: none;
+}
+
+.admin-storage-rebuild {
+  margin: -0.15rem 0 0;
+}
+
+.admin-storage-rebuild-body .admin-storage-maintenance-preview-protection.is-ok {
+  border-left-color: var(--tint-success, var(--accent));
+}
+
+.admin-storage-rebuild-body .admin-storage-maintenance-preview-protection.is-warning {
+  border-left-color: var(--tint-warning);
+}
+
+.admin-storage-maintenance-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.admin-storage-maintenance-preview-head strong {
+  color: var(--text-primary);
+}
+
+.admin-storage-maintenance-preview-head span {
+  color: var(--text-subtle);
+}
+
+.admin-storage-maintenance-preview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.admin-storage-maintenance-preview-stats strong {
+  color: var(--text-primary);
+}
+
+.admin-storage-maintenance-preview-protection {
+  margin: 0.3rem 0;
+  padding: 0.35rem 0.45rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 5px 5px 0;
+  background: var(--surface-4);
+}
+
+.admin-storage-maintenance-preview-protection.is-warning {
+  border-left-color: var(--tint-warning);
+}
+
+.admin-storage-maintenance-candidates {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.35rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-storage-maintenance-candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.65rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 5px;
+  background: var(--surface-4);
+}
+
+.admin-storage-maintenance-candidate span {
+  flex: 1 1 12rem;
+}
+
+.admin-storage-maintenance-candidate strong {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
 .admin-storage-maintenance-progress {
   margin: -0.15rem 0 0;
   padding: 0.55rem 0.65rem;

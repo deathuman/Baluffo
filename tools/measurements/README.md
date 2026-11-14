@@ -15,6 +15,7 @@ measurements/
 
   pipeline/
     fetch_report_read_audit.py              # Audit every hot fetch-report consumer's read cost
+    generation_cleanup_profile.py            # Profile cleanup DELETE/commit/WAL/checkpoint cost
     job_discovery_increment_measurement.py  # Measure pipeline discovery gains
     launch_baseline_read.py                 # Measure the launch's baseline output-count read
     static_residual_failures.py             # Classify residual failed source rows
@@ -157,6 +158,32 @@ is matched after stripping `www.`, with a subdomain linked to its parent in eith
 the screen over-excludes rather than under-excludes. A difference that survives the screen is not
 a 429; a screen with no clean boards on either side returns `429-free-population-empty` instead of
 claiming parity. The flag requires traced arms and does not change the raw verdict.
+
+### Generation Cleanup Profile
+
+Measure the real `JobRuntimeStore.cleanup_old_generations` path on a disposable,
+deterministic fixture. The fixture is generated from code, so the run needs no
+live feed sample, no `_out` artifact, and no running instance. It pins the row
+template, timestamps, generations and counts; `results.json` records the fixture
+version and a SHA-256 of the generated rows.
+
+```bash
+# Default: one old generation of 39,518 jobs x 4 sources, plus all three arms
+python tools/measurements/pipeline/generation_cleanup_profile.py
+
+# Smaller repeatable check while changing the tool
+python tools/measurements/pipeline/generation_cleanup_profile.py \
+  --job-count 5000 --sources-per-job 4 --arms baseline,no-auto-checkpoint
+```
+
+Arms are `baseline` (shipped 80 MiB bulk-delete auto-checkpoint),
+`no-auto-checkpoint`, and `large-payload` (baseline plus a 16 KiB job
+description). Each run writes `.tmp/generation-cleanup-profile/<UTC-stamp>/`
+with `results.json` and `SUMMARY.md`; the database copies are removed unless
+`--keep-fixtures` is passed. Read `deleteSeconds` against `commitSeconds` per
+batch. SQLite's inline auto-checkpoint is inside `commitSeconds`; explicit
+TRUNCATE checkpoints are recorded separately with `walBytesBefore`/`After` and
+`checkpointSeconds`.
 
 ### Pipeline Measurements
 

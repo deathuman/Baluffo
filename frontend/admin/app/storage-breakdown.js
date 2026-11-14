@@ -1,9 +1,13 @@
 import {
   renderStorageMaintenanceHtml,
+  renderStorageMaintenancePreviewHtml,
+  renderStorageRebuildHtml,
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml,
   renderStorageWriteLockHtml,
-  storageMaintenancePhaseLabel
+  storageMaintenanceFollowUpScheduled,
+  storageMaintenancePhaseLabel,
+  storageMaintenanceRetryScheduled
 } from "../render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
 import {
@@ -15,12 +19,20 @@ import {
 const STORAGE_HEALTH_ROUTE = "/ops/storage-health";
 const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
 const STORAGE_MAINTENANCE_ROUTE = "/ops/storage-maintenance";
+const STORAGE_MAINTENANCE_PREVIEW_ROUTE = "/ops/storage-maintenance/preview";
+const STORAGE_REBUILD_ROUTE = "/ops/storage-rebuild";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
+// The preview reads cached generation stats and bounded 200-row samples, then
+// stays under the container gateway's existing 60 s heavy-route budget.
+const STORAGE_MAINTENANCE_PREVIEW_TIMEOUT_MS = 45 * 1000;
 const STORAGE_DIAGNOSTIC_POLL_MS = 2000;
 const MAINTENANCE_POLL_FAST_MS = 3000;
 const MAINTENANCE_POLL_SLOW_MS = 15000;
 const MAINTENANCE_POLL_FAST_WINDOW_MS = 120000;
 const MAINTENANCE_POLL_MAX_MS = 30 * 60 * 1000;
+// A full current-feed rebuild copies the whole live database and can run for
+// hours on a slow disk; keep the panel polling until the run reports terminal.
+const REBUILD_POLL_MAX_MS = 12 * 60 * 60 * 1000;
 
 function stateShouldDefer(state, options = {}) {
   const busy = state?.adminBusyState || {};
@@ -66,12 +78,22 @@ export function createStorageBreakdownController({
   let diagnosticPollTimer = null;
   let diagnostic = null;
   let maintenanceInFlight = false;
+  let maintenanceCancelInFlight = false;
   let maintenanceStatus = null;
   let maintenanceCompaction = null;
+  let maintenancePreview = null;
+  let maintenancePreviewInFlight = false;
+  let maintenancePreviewRequestId = 0;
   let writeLock = null;
   let maintenancePollTimer = null;
   let maintenancePollStartedAt = 0;
   let maintenanceStatusInFlight = false;
+  let rebuild = null;
+  let rebuildInFlight = false;
+  let rebuildCancelInFlight = false;
+  let rebuildStatusInFlight = false;
+  let rebuildPollTimer = null;
+  let rebuildPollStartedAt = 0;
 
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
@@ -149,34 +171,118 @@ export function createStorageBreakdownController({
   }
 
   function maintenanceRunning(status) {
-    return Boolean(status && (status.running === true || status.status === "running"));
+    return Boolean(
+      status
+        && (
+          status.running === true
+          || status.status === "running"
+          || status.status === "cancelling"
+        )
+    );
+  }
+
+  function compactionRunning(status = maintenanceCompaction) {
+    return Boolean(
+      status
+        && (
+          status.running === true
+          || String(status.status || "") === "running"
+        )
+    );
+  }
+
+  function maintenanceActive() {
+    return maintenanceRunning(maintenanceStatus)
+      || compactionRunning()
+      || storageMaintenanceFollowUpScheduled(maintenanceStatus)
+      || storageMaintenanceRetryScheduled(maintenanceStatus);
   }
 
   function maintenanceHeadline(status) {
-    if (!status) return { text: "", tone: "" };
+    if (!status) {
+      return compactionRunning()
+        ? { text: "Compaction is running and cannot be safely interrupted.", tone: "warning" }
+        : { text: "", tone: "" };
+    }
+    const compactionNote = compactionRunning()
+      ? " Compaction is running and cannot be safely interrupted."
+      : "";
+    if (status.status === "cancelling") {
+      return {
+        text: `${compactionRunning() ? "Feed cleanup stopping" : "Maintenance stopping"} after the current database step…${compactionNote}`,
+        tone: "warning"
+      };
+    }
     if (maintenanceRunning(status)) {
       return {
-        text: `Maintenance running — ${storageMaintenancePhaseLabel(status.phase)}`,
+        text: `Maintenance running — ${storageMaintenancePhaseLabel(status.phase)}${compactionNote}`,
         tone: ""
       };
     }
+    if (status.status === "cancelled") {
+      return {
+        text: compactionRunning()
+          ? "Feed cleanup stopped. Compaction is still running and cannot be safely interrupted."
+          : "Maintenance stopped. Already removed data stays removed.",
+        tone: "warning"
+      };
+    }
     if (status.status === "failed") {
-      return { text: `Maintenance failed: ${status.error || "unknown error"}`, tone: "warning" };
+      const retryScheduled = storageMaintenanceRetryScheduled(status);
+      const retryInS = Math.max(0, Number(status.retryInS ?? status.nextRunInS));
+      const retryText = retryScheduled
+        ? ` Retry scheduled${retryInS > 0 ? ` in ${Math.max(1, Math.round(retryInS))}s` : ""}.`
+        : "";
+      return {
+        text: `Maintenance failed: ${status.error || "unknown error"}.${retryText}${compactionNote}`,
+        tone: "warning"
+      };
     }
     if (status.status === "held-active-task") {
       return { text: "Maintenance paused while an active task runs.", tone: "warning" };
     }
-    if (status.status === "ok" && status.timerScheduled) {
-      return { text: "Maintenance batch complete; follow-up scheduled.", tone: "" };
+    if (storageMaintenanceFollowUpScheduled(status)) {
+      const followUpInS = Math.max(0, Number(status.followUpInS ?? status.nextRunInS));
+      return {
+        text: `Maintenance batch complete; follow-up scheduled${followUpInS > 0 ? ` in ${Math.max(1, Math.round(followUpInS))}s` : ""}.${compactionNote}`,
+        tone: ""
+      };
     }
     if (status.status === "ok" || status.status === "nothing-to-prune") {
-      return { text: "Maintenance complete.", tone: "" };
+      return {
+        text: compactionRunning()
+          ? "Feed cleanup complete. Compaction is running and cannot be safely interrupted."
+          : "Maintenance complete.",
+        tone: ""
+      };
+    }
+    if (status.status === "not-run" && compactionRunning()) {
+      return { text: "Compaction is running and cannot be safely interrupted.", tone: "warning" };
     }
     return { text: "", tone: "" };
   }
 
+  function renderMaintenanceCancel() {
+    const button = refs.adminStorageMaintenanceCancelBtnEl;
+    if (!button) return;
+    const active = maintenanceRunning(maintenanceStatus);
+    const compaction = compactionRunning();
+    button.hidden = !active;
+    button.disabled = Boolean(
+      maintenanceCancelInFlight || maintenanceStatus?.status === "cancelling"
+    );
+    button.textContent = compaction ? "Stop feed cleanup" : "Stop maintenance";
+    button.setAttribute?.(
+      "data-tooltip",
+      compaction
+        ? "Stop feed cleanup after the current batch. Compaction is running and cannot be safely interrupted."
+        : "Stop maintenance after the current bounded database step. Already removed data stays removed."
+    );
+  }
+
   function renderMaintenanceProgress() {
     const progressEl = refs.adminStorageMaintenanceProgressEl;
+    renderMaintenanceCancel();
     if (!progressEl) return;
     const html = renderStorageMaintenanceHtml(
       maintenanceStatus,
@@ -185,6 +291,59 @@ export function createStorageBreakdownController({
     );
     progressEl.innerHTML = html;
     progressEl.hidden = !html;
+  }
+
+  function renderMaintenancePreview() {
+    const previewEl = refs.adminStorageMaintenancePreviewEl;
+    if (!previewEl) return;
+    if (!maintenancePreview) {
+      previewEl.hidden = true;
+      previewEl.innerHTML = "";
+      return;
+    }
+    previewEl.hidden = false;
+    previewEl.innerHTML = renderStorageMaintenancePreviewHtml(maintenancePreview, formatBytes);
+  }
+
+  async function previewMaintenance() {
+    if (maintenancePreviewInFlight || typeof getBridge !== "function") return null;
+    maintenancePreviewInFlight = true;
+    const requestId = ++maintenancePreviewRequestId;
+    const button = refs.adminStorageMaintenancePreviewBtnEl;
+    if (button) {
+      button.disabled = true;
+      button.setAttribute?.("aria-busy", "true");
+    }
+    maintenancePreview = { status: "loading" };
+    renderMaintenancePreview();
+    try {
+      const payload = await getBridge(STORAGE_MAINTENANCE_PREVIEW_ROUTE, {
+        timeoutMs: STORAGE_MAINTENANCE_PREVIEW_TIMEOUT_MS,
+        affectsReachability: false
+      });
+      if (requestId !== maintenancePreviewRequestId) return null;
+      const preview = payload?.maintenancePreview || null;
+      maintenancePreview = preview || {
+        status: "failed",
+        error: payload?.error || "maintenance preview did not return a report"
+      };
+      renderMaintenancePreview();
+      return maintenancePreview;
+    } catch (err) {
+      if (requestId !== maintenancePreviewRequestId) return null;
+      maintenancePreview = {
+        status: "failed",
+        error: err?.message || err || "unknown error"
+      };
+      renderMaintenancePreview();
+      return null;
+    } finally {
+      maintenancePreviewInFlight = false;
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute?.("aria-busy");
+      }
+    }
   }
 
   function renderWriteLock() {
@@ -203,14 +362,18 @@ export function createStorageBreakdownController({
   }
 
   function scheduleMaintenancePoll() {
-    if (!maintenanceRunning(maintenanceStatus)) {
+    if (!maintenanceActive()) {
       stopMaintenancePoll();
       return;
     }
     if (maintenancePollTimer !== null) return;
     if (shouldDefer()) {
       setMaintenanceStatus(
-        "Maintenance is running. Live updates pause while an active task runs.",
+        maintenanceRunning(maintenanceStatus)
+          ? "Maintenance is running. Live updates pause while an active task runs."
+          : storageMaintenanceFollowUpScheduled(maintenanceStatus)
+            ? "Follow-up is scheduled. Live updates pause while an active task runs."
+            : "Compaction is running. Live updates pause while an active task runs.",
         "warning"
       );
       return;
@@ -239,12 +402,25 @@ export function createStorageBreakdownController({
     if (storage?.compaction) maintenanceCompaction = storage.compaction;
     if (storage?.writeLock !== undefined) writeLock = storage.writeLock;
     renderWriteLock();
-    if (!maintenanceStatus) return;
+    if (!maintenanceStatus) {
+      if (compactionRunning()) {
+        setMaintenanceStatus("Compaction is running and cannot be safely interrupted.", "warning");
+      } else {
+        setMaintenanceStatus("", "");
+      }
+      renderMaintenanceProgress();
+      if (maintenanceActive()) scheduleMaintenancePoll();
+      else stopMaintenancePoll();
+      return;
+    }
     const headline = maintenanceHeadline(maintenanceStatus);
     if (headline.text) setMaintenanceStatus(headline.text, headline.tone);
     renderMaintenanceProgress();
-    if (maintenanceRunning(maintenanceStatus)) scheduleMaintenancePoll();
-    else stopMaintenancePoll();
+    if (maintenanceActive()) scheduleMaintenancePoll();
+    else {
+      stopMaintenancePoll();
+      if (maintenanceStatus.status === "not-run") setMaintenanceStatus("", "");
+    }
   }
 
   async function refreshMaintenanceStatus() {
@@ -258,7 +434,7 @@ export function createStorageBreakdownController({
       acceptStorageHealth(payload);
       return payload?.storage?.runtimeRetention || null;
     } catch (err) {
-      if (maintenanceRunning(maintenanceStatus)) {
+      if (maintenanceActive()) {
         setMaintenanceStatus(
           `Maintenance status unavailable: ${err?.message || err || "unknown error"}. Retrying…`,
           "warning"
@@ -377,12 +553,32 @@ export function createStorageBreakdownController({
 
   async function cancelExactDiagnostic() {
     if (typeof postBridge !== "function") return null;
+    const runId = String(diagnostic?.runId || "").trim();
+    if (!runId) {
+      setDiagnosticStatus(
+        "The audit stop needs the current run id; refresh the audit and try again.",
+        "warning"
+      );
+      return null;
+    }
     try {
       const payload = await postBridge(
         `${STORAGE_DIAGNOSTIC_ROUTE}/cancel`,
-        {},
-        { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
+        { runId },
+        {
+          timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+          affectsReachability: false,
+          allowStatuses: [409]
+        }
       );
+      if (payload?.stale) {
+        acceptDiagnostic(payload);
+        setDiagnosticStatus(
+          "Stop request was stale: the audit has already moved on. Refresh before trying again.",
+          "warning"
+        );
+        return diagnostic;
+      }
       return acceptDiagnostic(payload);
     } catch (err) {
       setExportAvailable(false);
@@ -396,9 +592,88 @@ export function createStorageBreakdownController({
     }
   }
 
+  async function cancelMaintenance() {
+    if (
+      maintenanceCancelInFlight
+      || typeof postBridge !== "function"
+      || !maintenanceRunning(maintenanceStatus)
+    ) {
+      return null;
+    }
+    const runId = String(maintenanceStatus?.runId || "").trim();
+    if (!runId) {
+      setMaintenanceStatus(
+        "Maintenance stop needs the current run id; refresh the status and try again.",
+        "warning"
+      );
+      return null;
+    }
+    maintenanceCancelInFlight = true;
+    const previousStatus = maintenanceStatus;
+    if (maintenanceStatus) {
+      maintenanceStatus = {
+        ...maintenanceStatus,
+        status: "cancelling",
+        phase: "cancelling",
+        stage: "cancelling",
+        cancelRequested: true
+      };
+    }
+    setMaintenanceStatus(
+      "Stopping maintenance after the current database step…",
+      "warning"
+    );
+    renderMaintenanceProgress();
+    try {
+      const payload = await postBridge(
+        `${STORAGE_MAINTENANCE_ROUTE}/cancel`,
+        { runId },
+        {
+          timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+          affectsReachability: false,
+          allowStatuses: [409]
+        }
+      );
+      const runtimeRetention = payload?.runtimeRetention || null;
+      acceptMaintenanceStatus({ runtimeRetention, compaction: payload?.compaction });
+      if (!runtimeRetention) scheduleMaintenancePoll();
+      if (payload?.stale) {
+        setMaintenanceStatus(
+          "Stop request was stale: maintenance has already moved on. Refresh before trying again.",
+          "warning"
+        );
+        scheduleMaintenancePoll();
+        return payload;
+      }
+      if (payload?.ok === false) {
+        maintenanceStatus = previousStatus;
+        setMaintenanceStatus(
+          `Could not stop maintenance: ${payload?.error || "unknown error"}`,
+          "warning"
+        );
+        scheduleMaintenancePoll();
+      }
+      return payload;
+    } catch (err) {
+      maintenanceStatus = previousStatus;
+      setMaintenanceStatus(
+        `Could not stop maintenance: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      scheduleMaintenancePoll();
+      return null;
+    } finally {
+      maintenanceCancelInFlight = false;
+      renderMaintenanceProgress();
+    }
+  }
+
   async function startMaintenance() {
     if (maintenanceInFlight || typeof postBridge !== "function") return null;
     maintenanceInFlight = true;
+    maintenancePreviewRequestId += 1;
+    maintenancePreview = null;
+    renderMaintenancePreview();
     maintenancePollStartedAt = 0;
     const button = refs.adminStorageMaintenanceBtnEl;
     if (button) button.disabled = true;
@@ -410,12 +685,16 @@ export function createStorageBreakdownController({
         { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
       );
       const runtimeRetention = payload?.runtimeRetention || null;
-      if (runtimeRetention) {
-        acceptMaintenanceStatus({ runtimeRetention, compaction: payload?.compaction });
-      }
+      acceptMaintenanceStatus({ runtimeRetention, compaction: payload?.compaction });
       if (payload?.started) {
-        if (!runtimeRetention) {
-          maintenanceStatus = { status: "running", running: true, phase: "starting", elapsedMs: 0 };
+        if (!runtimeRetention || !maintenanceRunning(runtimeRetention)) {
+          maintenanceStatus = {
+            ...(runtimeRetention || {}),
+            status: "running",
+            running: true,
+            phase: runtimeRetention?.phase || "starting",
+            elapsedMs: runtimeRetention?.elapsedMs || 0
+          };
           renderMaintenanceProgress();
           setMaintenanceStatus(
             "Maintenance started — older saved versions will be removed and the database compacted in the background."
@@ -423,8 +702,14 @@ export function createStorageBreakdownController({
         }
         scheduleMaintenancePoll();
       } else if (payload?.alreadyRunning) {
-        if (!runtimeRetention) {
-          maintenanceStatus = { status: "running", running: true, phase: "starting", elapsedMs: 0 };
+        if (!runtimeRetention || !maintenanceRunning(runtimeRetention)) {
+          maintenanceStatus = {
+            ...(runtimeRetention || {}),
+            status: "running",
+            running: true,
+            phase: runtimeRetention?.phase || "starting",
+            elapsedMs: runtimeRetention?.elapsedMs || 0
+          };
           renderMaintenanceProgress();
           setMaintenanceStatus("Maintenance is already running.", "warning");
         }
@@ -450,6 +735,291 @@ export function createStorageBreakdownController({
     } finally {
       maintenanceInFlight = false;
       if (button) button.disabled = false;
+    }
+  }
+
+  function rebuildRunning(value = rebuild) {
+    return Boolean(
+      value
+        && (
+          value.running === true
+          || String(value.status || "") === "running"
+          || String(value.status || "") === "cancelling"
+        )
+    );
+  }
+
+  function rebuildStatusText(value) {
+    if (!value) return { text: "Not run", tone: "" };
+    const status = String(value.status || "idle");
+    if (status === "running") return { text: "Rebuild running", tone: "" };
+    if (status === "cancelling") return { text: "Stopping rebuild…", tone: "warning" };
+    if (status === "complete") return { text: "Rebuild complete", tone: "" };
+    if (status === "superseded") {
+      return { text: "Rebuild superseded by a database write", tone: "warning" };
+    }
+    if (status === "interrupted") {
+      return { text: "Rebuild interrupted by a restart", tone: "warning" };
+    }
+    if (status === "failed") return { text: "Rebuild failed", tone: "warning" };
+    if (status === "cancelled") return { text: "Rebuild stopped", tone: "warning" };
+    if (status === "rolled-back") return { text: "Old database restored", tone: "" };
+    return { text: "Not run", tone: "" };
+  }
+
+  function setRebuildStatus(text, tone = "") {
+    const statusEl = refs.adminStorageRebuildStatusEl;
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.setAttribute?.("data-tone", tone);
+  }
+
+  function renderRebuild() {
+    if (refs.adminStorageRebuildBodyEl) {
+      refs.adminStorageRebuildBodyEl.innerHTML = renderStorageRebuildHtml(rebuild, formatBytes);
+    }
+    const status = rebuildStatusText(rebuild);
+    setRebuildStatus(status.text, status.tone);
+    const active = rebuildRunning();
+    const runButton = refs.adminStorageRebuildBtnEl;
+    if (runButton) {
+      runButton.disabled = rebuildInFlight || active;
+      runButton.hidden = active;
+    }
+    const cancelButton = refs.adminStorageRebuildCancelBtnEl;
+    if (cancelButton) {
+      cancelButton.hidden = !active;
+      cancelButton.disabled = rebuildCancelInFlight || rebuild?.status === "cancelling";
+    }
+    const canRestore = rebuild?.canRollback === true && !active;
+    if (refs.adminStorageRebuildRollbackBtnEl) {
+      refs.adminStorageRebuildRollbackBtnEl.hidden = !canRestore;
+      refs.adminStorageRebuildRollbackBtnEl.disabled = rebuildInFlight;
+    }
+    if (refs.adminStorageRebuildBackupDeleteBtnEl) {
+      refs.adminStorageRebuildBackupDeleteBtnEl.hidden = !canRestore;
+      refs.adminStorageRebuildBackupDeleteBtnEl.disabled = rebuildInFlight;
+    }
+  }
+
+  function stopRebuildPoll() {
+    if (rebuildPollTimer !== null) {
+      clearTimeout(rebuildPollTimer);
+      rebuildPollTimer = null;
+    }
+    rebuildPollStartedAt = 0;
+  }
+
+  function scheduleRebuildPoll() {
+    if (!rebuildRunning()) {
+      stopRebuildPoll();
+      return;
+    }
+    if (rebuildPollTimer !== null) return;
+    if (shouldDefer()) return;
+    if (!rebuildPollStartedAt) rebuildPollStartedAt = Date.now();
+    const elapsed = Date.now() - rebuildPollStartedAt;
+    if (elapsed >= REBUILD_POLL_MAX_MS) return;
+    const delay = elapsed < MAINTENANCE_POLL_FAST_WINDOW_MS
+      ? MAINTENANCE_POLL_FAST_MS
+      : MAINTENANCE_POLL_SLOW_MS;
+    rebuildPollTimer = setTimeout(() => {
+      rebuildPollTimer = null;
+      void refreshRebuildStatus();
+    }, delay);
+    rebuildPollTimer?.unref?.();
+  }
+
+  function acceptRebuild(payload) {
+    if (payload?.storageRebuild !== undefined) rebuild = payload.storageRebuild;
+    renderRebuild();
+    if (rebuildRunning()) scheduleRebuildPoll();
+    else stopRebuildPoll();
+    return rebuild;
+  }
+
+  async function refreshRebuildStatus() {
+    if (rebuildStatusInFlight || typeof getBridge !== "function") return null;
+    rebuildStatusInFlight = true;
+    try {
+      const payload = await getBridge(STORAGE_REBUILD_ROUTE, {
+        timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+        affectsReachability: false
+      });
+      return acceptRebuild(payload);
+    } catch (err) {
+      if (rebuildRunning()) {
+        setRebuildStatus(
+          `Rebuild status unavailable: ${err?.message || err || "unknown error"}. Retrying…`,
+          "warning"
+        );
+        scheduleRebuildPoll();
+      }
+      return null;
+    } finally {
+      rebuildStatusInFlight = false;
+    }
+  }
+
+  async function startRebuild() {
+    if (rebuildInFlight || typeof postBridge !== "function") return null;
+    rebuildInFlight = true;
+    rebuildPollStartedAt = 0;
+    setRebuildStatus("Starting rebuild…");
+    try {
+      const payload = await postBridge(
+        STORAGE_REBUILD_ROUTE,
+        {},
+        { timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS, affectsReachability: false }
+      );
+      acceptRebuild(payload);
+      if (!payload?.started && !payload?.alreadyRunning) {
+        const reason = String(payload?.reason || "");
+        if (reason === "held-active-task") {
+          setRebuildStatus(
+            "Rebuild is deferred while an active task runs; try again when it finishes.",
+            "warning"
+          );
+        } else if (reason === "backup-exists") {
+          setRebuildStatus(
+            "A rollback copy already exists. Roll back or delete it before rebuilding again.",
+            "warning"
+          );
+        } else if (reason === "compaction-running") {
+          setRebuildStatus("A compaction is running; wait for it to finish.", "warning");
+        } else if (payload?.error) {
+          setRebuildStatus(`Rebuild did not start: ${payload.error}`, "warning");
+        }
+      }
+      if (payload?.started) scheduleRebuildPoll();
+      return payload;
+    } catch (err) {
+      setRebuildStatus(
+        `Could not start the rebuild: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      return null;
+    } finally {
+      rebuildInFlight = false;
+      renderRebuild();
+    }
+  }
+
+  async function cancelRebuild() {
+    if (
+      rebuildCancelInFlight
+      || typeof postBridge !== "function"
+      || !rebuildRunning()
+    ) {
+      return null;
+    }
+    const runId = String(rebuild?.runId || "").trim();
+    if (!runId) {
+      setRebuildStatus(
+        "Stopping the rebuild needs the current run id; refresh and try again.",
+        "warning"
+      );
+      return null;
+    }
+    rebuildCancelInFlight = true;
+    if (rebuild) rebuild = { ...rebuild, status: "cancelling", phase: "cancelling" };
+    renderRebuild();
+    try {
+      const payload = await postBridge(
+        `${STORAGE_REBUILD_ROUTE}/cancel`,
+        { runId },
+        {
+          timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+          affectsReachability: false,
+          allowStatuses: [409]
+        }
+      );
+      acceptRebuild(payload);
+      if (payload?.stale) {
+        setRebuildStatus(
+          "Stop request was stale: the rebuild already moved on. Refresh before trying again.",
+          "warning"
+        );
+      }
+      return payload;
+    } catch (err) {
+      setRebuildStatus(
+        `Could not stop the rebuild: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      return null;
+    } finally {
+      rebuildCancelInFlight = false;
+      renderRebuild();
+    }
+  }
+
+  async function rollbackRebuild() {
+    if (rebuildInFlight || typeof postBridge !== "function") return null;
+    rebuildInFlight = true;
+    setRebuildStatus("Restoring the old database…");
+    try {
+      const payload = await postBridge(
+        `${STORAGE_REBUILD_ROUTE}/rollback`,
+        {},
+        {
+          timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+          affectsReachability: false,
+          allowStatuses: [409]
+        }
+      );
+      acceptRebuild(payload);
+      if (!payload?.ok) {
+        setRebuildStatus(
+          `Could not restore the old database: ${payload?.error || "unknown error"}`,
+          "warning"
+        );
+      }
+      void load();
+      return payload;
+    } catch (err) {
+      setRebuildStatus(
+        `Could not restore the old database: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      return null;
+    } finally {
+      rebuildInFlight = false;
+      renderRebuild();
+    }
+  }
+
+  async function deleteRebuildBackup() {
+    if (rebuildInFlight || typeof postBridge !== "function") return null;
+    rebuildInFlight = true;
+    setRebuildStatus("Deleting the retained old database…");
+    try {
+      const payload = await postBridge(
+        `${STORAGE_REBUILD_ROUTE}/backup-delete`,
+        {},
+        {
+          timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
+          affectsReachability: false,
+          allowStatuses: [409]
+        }
+      );
+      acceptRebuild(payload);
+      if (!payload?.ok) {
+        setRebuildStatus(
+          `Could not delete the old database: ${payload?.error || "unknown error"}`,
+          "warning"
+        );
+      }
+      return payload;
+    } catch (err) {
+      setRebuildStatus(
+        `Could not delete the old database: ${err?.message || err || "unknown error"}`,
+        "warning"
+      );
+      return null;
+    } finally {
+      rebuildInFlight = false;
+      renderRebuild();
     }
   }
 
@@ -500,6 +1070,7 @@ export function createStorageBreakdownController({
         affectsReachability: false
       });
       const tableSizes = acceptStorageHealth(payload);
+      if (refs.adminStorageRebuildBodyEl) void refreshRebuildStatus();
       if (!tableSizes) {
         setStatus("Unavailable", "warning");
         renderMessage("Storage health did not include a table-size breakdown.");
@@ -519,7 +1090,19 @@ export function createStorageBreakdownController({
     refreshBound = true;
     refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
     refs.adminStorageQuickCheckBtnEl?.addEventListener?.("click", () => startQuickCheck());
+    refs.adminStorageMaintenancePreviewBtnEl?.addEventListener?.("click", () =>
+      previewMaintenance()
+    );
     refs.adminStorageMaintenanceBtnEl?.addEventListener?.("click", () => startMaintenance());
+    refs.adminStorageMaintenanceCancelBtnEl?.addEventListener?.("click", () =>
+      cancelMaintenance()
+    );
+    refs.adminStorageRebuildBtnEl?.addEventListener?.("click", () => startRebuild());
+    refs.adminStorageRebuildCancelBtnEl?.addEventListener?.("click", () => cancelRebuild());
+    refs.adminStorageRebuildRollbackBtnEl?.addEventListener?.("click", () => rollbackRebuild());
+    refs.adminStorageRebuildBackupDeleteBtnEl?.addEventListener?.("click", () =>
+      deleteRebuildBackup()
+    );
     refs.adminStorageDiagnosticBtnEl?.addEventListener?.("click", () => startExactDiagnostic());
     refs.adminStorageDiagnosticCancelBtnEl?.addEventListener?.("click", () =>
       cancelExactDiagnostic()
@@ -537,7 +1120,16 @@ export function createStorageBreakdownController({
     stopMaintenancePoll,
     refreshDiagnostic,
     startStorageDiagnostic,
+    previewMaintenance,
     startMaintenance,
+    cancelMaintenance,
+    acceptRebuild,
+    refreshRebuildStatus,
+    stopRebuildPoll,
+    startRebuild,
+    cancelRebuild,
+    rollbackRebuild,
+    deleteRebuildBackup,
     startQuickCheck,
     startExactDiagnostic,
     cancelExactDiagnostic,

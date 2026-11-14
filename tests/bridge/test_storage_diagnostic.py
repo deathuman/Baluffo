@@ -66,10 +66,22 @@ def test_background_diagnostic_reports_cancellation(tmp_path: Path, monkeypatch)
 
     monkeypatch.setattr(storage_diagnostic, "measure_storage_diagnostic", fake_measure)
     try:
-        storage_diagnostic.start_storage_diagnostic(tmp_path)
+        started = storage_diagnostic.start_storage_diagnostic(tmp_path)
+        run_id = started["storageDiagnostic"]["runId"]
+        assert run_id.startswith("storage_diag_")
         assert entered.wait(timeout=1.0)
-        cancelled = storage_diagnostic.cancel_storage_diagnostic(tmp_path)
+        stale = storage_diagnostic.cancel_storage_diagnostic(tmp_path, "storage_diag_old")
+        assert stale["cancelling"] is False
+        assert stale["stale"] is True
+        assert stale["reason"] == "run-id-mismatch"
+        assert stale["storageDiagnostic"]["status"] == "running"
+        missing = storage_diagnostic.cancel_storage_diagnostic(tmp_path)
+        assert missing["cancelling"] is False
+        assert missing["stale"] is True
+        assert missing["reason"] == "run-id-required"
+        cancelled = storage_diagnostic.cancel_storage_diagnostic(tmp_path, run_id)
         assert cancelled["cancelling"] is True
+        assert cancelled["stale"] is False
         assert _wait_for(
             lambda: (
                 storage_diagnostic.get_storage_diagnostic_payload(tmp_path)["storageDiagnostic"][

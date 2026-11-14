@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from src.shared.utils import now_iso
+from src.storage.retention_cancel import CancelRequested, raise_if_cancelled
 from src.storage.source_runtime import (
     DEFAULT_ARCHIVE_COMPACT_ROWS,
     DEFAULT_ARCHIVE_COMPACT_RUNS,
@@ -91,10 +94,68 @@ def _report_progress(
         on_progress({"phase": phase, **fields})
 
 
+def preview_runtime_retention(store: BaluffoStore) -> dict[str, Any]:
+    """Describe the jobs-feed cleanup a maintenance pass would perform.
+
+    This is a read-only leaf: it never schedules retention, writes generation
+    stats, or touches the current feed. The bridge adds disk free space around
+    this storage-native candidate report.
+    """
+    started = time.monotonic()
+    generated_at = now_iso()
+    try:
+        modes = store.get_authority_modes()
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as exc:
+        return {
+            "readOnly": True,
+            "status": "failed",
+            "scope": "jobs-feed-generations",
+            "generatedAt": generated_at,
+            "durationMs": int(round((time.monotonic() - started) * 1000)),
+            "error": str(exc),
+            "currentGeneration": "",
+            "currentFeedProtected": False,
+            "candidateGenerationCount": 0,
+            "candidateRowCount": 0,
+            "estimatedBytes": 0,
+            "candidates": [],
+        }
+    if str((modes or {}).get("jobsFeed") or "").strip().lower() != "sqlite":
+        return {
+            "readOnly": True,
+            "status": "skipped",
+            "scope": "jobs-feed-generations",
+            "generatedAt": generated_at,
+            "durationMs": int(round((time.monotonic() - started) * 1000)),
+            "reason": "jobsFeed is not sqlite-backed",
+            "currentGeneration": "",
+            "currentFeedProtected": False,
+            "candidateGenerationCount": 0,
+            "candidateRowCount": 0,
+            "estimatedBytes": 0,
+            "candidates": [],
+        }
+    from src.storage.job_runtime import DEFAULT_GENERATION_DELETE_CAP, JobRuntimeStore
+
+    preview = JobRuntimeStore(store).cleanup_preview(
+        keep_generations=1,
+        delete_cap=DEFAULT_GENERATION_DELETE_CAP,
+    )
+    return {
+        "readOnly": True,
+        "status": "ok" if preview.get("candidateGenerationCount") else "nothing-to-prune",
+        "scope": "jobs-feed-generations",
+        "generatedAt": generated_at,
+        "durationMs": int(round((time.monotonic() - started) * 1000)),
+        **preview,
+    }
+
+
 def _cleanup_job_generations(
     store: BaluffoStore,
     *,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    cancel_requested: CancelRequested | None = None,
 ) -> dict[str, Any]:
     """Delete old jobs-feed generations during post-serve retention.
 
@@ -104,6 +165,7 @@ def _cleanup_job_generations(
     was the multi-hundred-gigabyte table, while source-run retention kept
     reporting that there was nothing to prune.
     """
+    raise_if_cancelled(cancel_requested)
     try:
         modes = store.get_authority_modes()
     except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as exc:
@@ -133,13 +195,18 @@ def _cleanup_job_generations(
     from src.storage.job_runtime import DEFAULT_GENERATION_DELETE_CAP, JobRuntimeStore
 
     deleted_rows = 0
+    processed_generations = 0
     total_generations = 0
     total_generation_rows = 0
     generation_row_count_known = False
 
     def report_generation_progress(progress: dict[str, Any]) -> None:
-        nonlocal deleted_rows, total_generations, total_generation_rows, generation_row_count_known
+        nonlocal deleted_rows, processed_generations, total_generations
+        nonlocal total_generation_rows, generation_row_count_known
         deleted_rows = int(progress.get("deletedRowCount") or deleted_rows)
+        processed_generations = int(
+            progress.get("processedGenerationCount") or processed_generations
+        )
         total_generations = int(progress.get("totalGenerationCount") or total_generations)
         total_generation_rows = int(
             progress.get("totalGenerationRowCount") or total_generation_rows
@@ -148,6 +215,11 @@ def _cleanup_job_generations(
             generation_row_count_known = bool(progress.get("generationRowCountKnown"))
         payload = dict(progress)
         payload.setdefault("stage", "deleting")
+        # A progress event can arrive from an older worker that only carried the
+        # generic row counter. Keep the generation-specific counter explicit so
+        # the API never reports deleted generations with zero deleted rows.
+        payload["deletedGenerationRowCount"] = deleted_rows
+        payload["processedGenerationCount"] = processed_generations
         _report_progress(
             on_progress,
             "prune-job-generations",
@@ -173,6 +245,7 @@ def _cleanup_job_generations(
             keep_generations=1,
             delete_cap=DEFAULT_GENERATION_DELETE_CAP,
             on_progress=report_generation_progress,
+            cancel_requested=cancel_requested,
         )
     except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
         return {
@@ -188,16 +261,16 @@ def _cleanup_job_generations(
             "truncated": False,
         }
     return {
-        "status": "ok" if deleted else "nothing-to-prune",
+        "status": "ok" if deleted or processed_generations else "nothing-to-prune",
         "deletedGenerationCount": int(deleted),
-        "processedGenerationCount": int(deleted),
+        "processedGenerationCount": processed_generations,
         "totalGenerationCount": total_generations,
         "deletedRowCount": deleted_rows,
         "totalGenerationRowCount": total_generation_rows,
         "deletedGenerationRowCount": deleted_rows,
         "generationRowCountKnown": generation_row_count_known,
         "keepGenerations": 1,
-        "truncated": int(deleted) >= DEFAULT_GENERATION_DELETE_CAP,
+        "truncated": processed_generations >= DEFAULT_GENERATION_DELETE_CAP,
     }
 
 
@@ -206,8 +279,10 @@ def run_runtime_retention(
     *,
     reason: str = "",
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    cancel_requested: CancelRequested | None = None,
 ) -> dict[str, Any]:
     """Run one bounded retention pass against the runtime store."""
+    raise_if_cancelled(cancel_requested)
     policy = runtime_retention_policy()
     runtime = SourceRuntimeStore(store)
     _report_progress(on_progress, "prune-source-runs", stage="scanning")
@@ -218,7 +293,9 @@ def run_runtime_retention(
         max_event_rows=policy["max_event_rows"],
         max_sync_runs=policy["max_sync_runs"],
         on_progress=on_progress,
+        cancel_requested=cancel_requested,
     )
+    raise_if_cancelled(cancel_requested)
     _report_progress(
         on_progress,
         "compact-archived-payloads",
@@ -230,9 +307,16 @@ def run_runtime_retention(
         max_runs=policy["compact_runs"],
         max_rows=policy["compact_rows"],
         on_progress=on_progress,
+        cancel_requested=cancel_requested,
     )
+    raise_if_cancelled(cancel_requested)
     _report_progress(on_progress, "prune-job-generations", stage="scanning")
-    job_generations = _cleanup_job_generations(store, on_progress=on_progress)
+    job_generations = _cleanup_job_generations(
+        store,
+        on_progress=on_progress,
+        cancel_requested=cancel_requested,
+    )
+    raise_if_cancelled(cancel_requested)
     deleted_generations = int(job_generations.get("deletedGenerationCount") or 0)
     _report_progress(
         on_progress,

@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
+from src.storage.retention_cancel import RetentionCancelled
 from src.storage_metrics import record_slow_store_write
 
 LOGGER = logging.getLogger(__name__)
@@ -269,8 +270,12 @@ class BaluffoStore:
         }
         self._retention_started_monotonic = 0.0
         self._retention_in_progress = False
+        self._retention_starting = False
         self._runtime_retention_done = False
         self._retention_thread: threading.Thread | None = None
+        self._retention_run_id = ""
+        self._retention_cancel = threading.Event()
+        self._retention_cancelled_last_run = False
         self._retention_timer: threading.Timer | None = None
         self._retention_next_run_monotonic = 0.0
         self._closed = False
@@ -279,6 +284,7 @@ class BaluffoStore:
         self._table_sizes_snapshot: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
+        self._compaction_in_progress = False
         self._wal_maintenance_cooldown_until_monotonic = 0.0
         self._write_lock = threading.RLock()
         self._write_lock_state_lock = threading.Lock()
@@ -446,7 +452,9 @@ class BaluffoStore:
         callback: Callable[[sqlite3.Connection], _T],
         *,
         secure_delete: str | None = None,
+        operation: str = "write",
     ) -> _T:
+        operation_label = str(operation or "write").strip() or "write"
         secure_delete_mode = str(secure_delete or "").upper() or None
         if secure_delete_mode not in {None, "ON", "OFF", "FAST"}:
             raise ValueError(f"Unsupported SQLite secure_delete mode: {secure_delete}")
@@ -474,10 +482,15 @@ class BaluffoStore:
                     )
                 try:
                     waited_s = time.perf_counter() - lock_started
-                    result, held_s = self._write_transaction(callback, secure_delete_mode)
+                    result, held_s, timings = self._write_transaction(callback, secure_delete_mode)
                 finally:
                     self._release_write_lock()
-                self._record_slow_write(operation="write", waited_s=waited_s, held_s=held_s)
+                self._record_slow_write(
+                    operation=operation_label,
+                    waited_s=waited_s,
+                    held_s=held_s,
+                    timings=timings,
+                )
                 self._last_write_error = ""
                 self._write_transactions += 1
                 self.schedule_wal_maintenance_if_needed(reason="write")
@@ -515,9 +528,10 @@ class BaluffoStore:
         self,
         callback: Callable[[sqlite3.Connection], _T],
         secure_delete_mode: str | None,
-    ) -> tuple[_T, float]:
+    ) -> tuple[_T, float, dict[str, int]]:
         """Run one write transaction, optionally with a transaction-scoped pragma."""
         secure_delete_before: int | None = None
+        wal_path = self.db_path.with_name(f"{self.db_path.name}-wal")
         hold_started = time.perf_counter()
         try:
             if secure_delete_mode is not None:
@@ -526,13 +540,26 @@ class BaluffoStore:
                 )
                 self._writer.execute(f"PRAGMA secure_delete={secure_delete_mode}")
             self._writer.execute("BEGIN IMMEDIATE")
+            wal_bytes_before = self._path_size(wal_path)
+            callback_started = time.perf_counter()
             try:
                 result = callback(self._writer)
+                callback_ms = int(round((time.perf_counter() - callback_started) * 1000))
+                commit_started = time.perf_counter()
                 self._writer.commit()
+                commit_ms = int(round((time.perf_counter() - commit_started) * 1000))
             except BaseException:
                 self._writer.rollback()
                 raise
-            return result, time.perf_counter() - hold_started
+            wal_bytes_after = self._path_size(wal_path)
+            timings = {
+                "callbackMs": max(0, callback_ms),
+                "commitMs": max(0, commit_ms),
+                "walBytesBefore": wal_bytes_before,
+                "walBytesAfter": wal_bytes_after,
+                "walGrowthBytes": wal_bytes_after - wal_bytes_before,
+            }
+            return result, time.perf_counter() - hold_started, timings
         finally:
             if secure_delete_before is not None:
                 self._writer.execute(f"PRAGMA secure_delete={secure_delete_before}")
@@ -578,11 +605,20 @@ class BaluffoStore:
             except (BaluffoStoreError, sqlite3.Error) as exc:
                 LOGGER.warning("SQLite bulk-delete final checkpoint failed: %s", exc)
 
-    def _record_slow_write(self, *, operation: str, waited_s: float, held_s: float) -> None:
+    def _record_slow_write(
+        self,
+        *,
+        operation: str,
+        waited_s: float,
+        held_s: float,
+        timings: dict[str, int] | None = None,
+    ) -> None:
         """Journal a write-lock operation that will not go unnoticed in the field.
 
         A waiter and a holder both write a row, so the stalled caller and the
-        writer that blocked it are attributable from the same journal.
+        writer that blocked it are attributable from the same journal. The
+        optional per-transaction timings separate statement work from commit and
+        checkpoint cost.
         """
         if self.slow_write_warn_ms <= 0:
             return
@@ -590,6 +626,9 @@ class BaluffoStore:
         hold_ms = int(round(max(0.0, held_s) * 1000))
         if wait_ms < self.slow_write_warn_ms and hold_ms < self.slow_write_warn_ms:
             return
+        timing_payload = dict(timings or {})
+        if operation.startswith("cleanup-delete:"):
+            timing_payload["deleteMs"] = max(0, int(timing_payload.get("callbackMs") or 0))
         try:
             record_slow_store_write(
                 operation=operation,
@@ -601,6 +640,7 @@ class BaluffoStore:
                 ),
                 artifact=self.db_path.name,
                 data_dir=self.data_dir,
+                timings=timing_payload,
             )
         except (OSError, RuntimeError, TypeError, ValueError):
             # Diagnostics must never break a committed write.
@@ -727,6 +767,37 @@ class BaluffoStore:
             lambda conn: self._execute_read_fetchall(conn, sql, parameters)
         )
         return [dict(row) for row in rows]
+
+    def execute_read_with_deadline(
+        self,
+        sql: str,
+        parameters: Sequence[Any] | dict[str, Any] = (),
+        *,
+        deadline: float,
+    ) -> list[dict[str, Any]] | None:
+        """Read all rows, aborting SQLite work at a monotonic deadline.
+
+        Returns ``None`` when SQLite interrupted the statement because the
+        deadline expired. Other database errors still propagate so callers can
+        distinguish a bounded miss from a broken read.
+        """
+
+        def read(conn: sqlite3.Connection) -> list[sqlite3.Row] | None:
+            conn.set_progress_handler(
+                lambda: 1 if time.monotonic() >= deadline else 0,
+                1000,
+            )
+            try:
+                return self._execute_read_fetchall(conn, sql, parameters)
+            except sqlite3.OperationalError as exc:
+                if "interrupted" in str(exc).lower():
+                    return None
+                raise
+            finally:
+                conn.set_progress_handler(None, 0)
+
+        rows = self._read_with_retry(read)
+        return None if rows is None else [dict(row) for row in rows]
 
     def execute_scalar(self, sql: str, parameters: Sequence[Any] | dict[str, Any] = ()) -> Any:
         row = self._read_with_retry(lambda conn: self._execute_read_fetchone(conn, sql, parameters))
@@ -884,13 +955,16 @@ class BaluffoStore:
 
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
         lock_started = time.perf_counter()
+        wal_path = self.db_path.with_name(f"{self.db_path.name}-wal")
         with self._write_lock_guard(f"checkpoint:{str(mode or '').lower()}"):
             waited_s = time.perf_counter() - lock_started
+            wal_bytes_before = self._path_size(wal_path)
             hold_started = time.perf_counter()
             row = cast(
                 sqlite3.Row, self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
             )
             held_s = time.perf_counter() - hold_started
+            wal_bytes_after = self._path_size(wal_path)
         self._record_passive_checkpoint_timing(
             mode=mode,
             waited_s=waited_s,
@@ -898,7 +972,15 @@ class BaluffoStore:
             busy=int(row[0] or 0),
         )
         self._record_slow_write(
-            operation=f"checkpoint:{str(mode or '').lower()}", waited_s=waited_s, held_s=held_s
+            operation=f"checkpoint:{str(mode or '').lower()}",
+            waited_s=waited_s,
+            held_s=held_s,
+            timings={
+                "checkpointMs": max(0, int(round(held_s * 1000))),
+                "walBytesBefore": wal_bytes_before,
+                "walBytesAfter": wal_bytes_after,
+                "walGrowthBytes": wal_bytes_after - wal_bytes_before,
+            },
         )
         return row
 
@@ -1084,6 +1166,10 @@ class BaluffoStore:
         try:
             self._run_runtime_retention(reason=reason)
             with self._maintenance_lock:
+                if self._retention_cancelled_last_run:
+                    # An operator stopped this pass. Do not turn the stop into a
+                    # compaction/WAL run that would hold the write lock anyway.
+                    return
                 if self._last_checkpoint.get("status") == MAINTENANCE_STATUS_DEFERRED:
                     self._last_checkpoint = {
                         **self._last_checkpoint,
@@ -1144,19 +1230,133 @@ class BaluffoStore:
             if self._retention_timer is not None:
                 next_run_in_s = max(0.0, self._retention_next_run_monotonic - time.monotonic())
             running = bool(self._retention_in_progress)
+            starting = bool(self._retention_starting)
             elapsed_ms = int(self._last_retention.get("elapsedMs") or 0)
             if running and self._retention_started_monotonic:
                 elapsed_ms = max(
                     elapsed_ms,
                     int(round((time.monotonic() - self._retention_started_monotonic) * 1000)),
                 )
-            return {
+            last_status = str(self._last_retention.get("status") or "")
+            follow_up_scheduled = False
+            retry_scheduled = False
+            needs_more = bool(self._last_retention.get("truncated")) and not (
+                self._runtime_retention_done
+            )
+            if not running and not starting and self._retention_timer is not None:
+                if last_status == "failed" and not self._runtime_retention_done:
+                    retry_scheduled = True
+                elif not self._runtime_retention_done and last_status not in {
+                    "cancelled",
+                    MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+                }:
+                    follow_up_scheduled = True
+            elif (
+                not running
+                and not starting
+                and needs_more
+                and last_status not in {"failed", "cancelled", MAINTENANCE_STATUS_HELD_ACTIVE_TASK}
+            ):
+                # The worker has published its finished status but has not
+                # attached the follow-up timer yet. Never expose that narrow
+                # window as a fully complete pass.
+                follow_up_scheduled = True
+            if running or starting:
+                completion_state = "running"
+            elif last_status == "cancelled":
+                completion_state = "cancelled"
+            elif retry_scheduled:
+                completion_state = "retry-scheduled"
+            elif last_status == "failed":
+                completion_state = "failed"
+            elif last_status == MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
+                completion_state = "held-active-task"
+            elif follow_up_scheduled:
+                completion_state = "follow-up-scheduled"
+            elif self._runtime_retention_done:
+                completion_state = "complete"
+            else:
+                completion_state = last_status or "not-run"
+            status = {
                 **self._last_retention,
+                "runId": str(self._retention_run_id or ""),
                 "done": bool(self._runtime_retention_done),
-                "running": running,
+                "running": running or starting,
+                "starting": starting,
+                "cancelRequested": bool(self._retention_cancel.is_set()),
                 "timerScheduled": bool(self._retention_timer is not None),
                 "nextRunInS": round(next_run_in_s, 1),
+                "followUpScheduled": follow_up_scheduled,
+                "followUpInS": round(next_run_in_s, 1) if follow_up_scheduled else 0.0,
+                "retryScheduled": retry_scheduled,
+                "retryInS": round(next_run_in_s, 1) if retry_scheduled else 0.0,
+                "fullyComplete": bool(
+                    self._runtime_retention_done
+                    and not running
+                    and not starting
+                    and last_status
+                    not in {"cancelled", "failed", MAINTENANCE_STATUS_HELD_ACTIVE_TASK}
+                ),
+                "completionState": completion_state,
                 "elapsedMs": elapsed_ms,
+            }
+            if starting and status.get("status") != "cancelling":
+                # The scheduler has accepted a pass but its worker has not
+                # published its first phase yet. Do not surface a stale
+                # previous result as the current state.
+                status.update({"status": "running", "phase": "starting", "stage": "starting"})
+            return status
+
+    def cancel_runtime_retention(self, run_id: str = "") -> dict[str, Any]:
+        """Request cancellation of one specific retention run.
+
+        The running batch is never interrupted mid-transaction: its commit,
+        bulk-delete pragmas, and WAL restoration finish normally. The next
+        batch or phase observes this flag and ends the pass. A missing or stale
+        run id is rejected rather than being applied to a newer pass.
+        """
+        with self._maintenance_lock:
+            active = bool(self._retention_in_progress or self._retention_starting)
+            requested_run_id = str(run_id or "").strip()
+            current_run_id = str(self._retention_run_id or "")
+            if not active:
+                return {
+                    "requested": False,
+                    "cancelling": False,
+                    "stale": bool(requested_run_id),
+                    "reason": "no-running-pass",
+                    "runtimeRetention": self.runtime_retention_status(),
+                }
+            if not requested_run_id:
+                return {
+                    "requested": False,
+                    "cancelling": False,
+                    "stale": True,
+                    "reason": "run-id-required",
+                    "runtimeRetention": self.runtime_retention_status(),
+                }
+            if requested_run_id != current_run_id:
+                return {
+                    "requested": False,
+                    "cancelling": False,
+                    "stale": True,
+                    "reason": "run-id-mismatch",
+                    "runtimeRetention": self.runtime_retention_status(),
+                }
+            self._retention_cancel.set()
+            self._last_retention = {
+                **self._last_retention,
+                "status": "cancelling",
+                "phase": "cancelling",
+                "stage": "cancelling",
+                "updatedAt": _now_iso(),
+            }
+            return {
+                "requested": True,
+                "cancelling": True,
+                "stale": False,
+                "reason": "",
+                "runtimeRetention": self.runtime_retention_status(),
             }
 
     def schedule_runtime_retention(self, *, reason: str = "", force: bool = False) -> bool:
@@ -1171,7 +1371,9 @@ class BaluffoStore:
                 return False
             if self._runtime_retention_done and not force:
                 return False
-            if self._retention_thread is not None and self._retention_thread.is_alive():
+            if self._retention_starting or (
+                self._retention_thread is not None and self._retention_thread.is_alive()
+            ):
                 return False
             if self._retention_timer is not None:
                 self._retention_timer.cancel()
@@ -1182,6 +1384,9 @@ class BaluffoStore:
                 return False
             if force:
                 self._runtime_retention_done = False
+            self._retention_cancel.clear()
+            self._retention_run_id = f"retention_{uuid.uuid4().hex[:12]}"
+            self._retention_starting = True
             thread = threading.Thread(
                 target=self._run_runtime_retention,
                 kwargs={"reason": str(reason or "")},
@@ -1189,18 +1394,33 @@ class BaluffoStore:
                 daemon=True,
             )
             self._retention_thread = thread
-            thread.start()
+            try:
+                thread.start()
+            except BaseException:
+                self._retention_starting = False
+                self._retention_thread = None
+                self._retention_run_id = ""
+                raise
             return True
 
     def _run_runtime_retention(self, *, reason: str) -> bool:
         started = time.monotonic()
         started_at = _now_iso()
         with self._maintenance_lock:
+            scheduled = self._retention_starting
+            self._retention_starting = False
+            self._retention_cancelled_last_run = False
             if self._runtime_retention_done:
                 return False
             if self._compaction_hold:
                 self._set_retention_held(reason)
                 return False
+            # A scheduled thread already owns its run id. A direct call must
+            # start a new run and clear any event left by the previous pass.
+            if not scheduled or not self._retention_run_id:
+                self._retention_run_id = f"retention_{uuid.uuid4().hex[:12]}"
+            if not scheduled:
+                self._retention_cancel.clear()
             self._retention_started_monotonic = started
             self._retention_in_progress = True
             self._last_retention = {
@@ -1240,7 +1460,7 @@ class BaluffoStore:
                 self._last_retention = {
                     **self._last_retention,
                     **progress,
-                    "status": "running",
+                    "status": "cancelling" if self._retention_cancel.is_set() else "running",
                     "updatedAt": _now_iso(),
                     "elapsedMs": int(round((now - started) * 1000)),
                 }
@@ -1248,8 +1468,23 @@ class BaluffoStore:
         try:
             from src.storage.runtime_retention import run_runtime_retention
 
-            status = run_runtime_retention(self, reason=reason, on_progress=report_progress)
-        except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
+            status = run_runtime_retention(
+                self,
+                reason=reason,
+                on_progress=report_progress,
+                cancel_requested=self._retention_cancel.is_set,
+            )
+        except RetentionCancelled:
+            status = {
+                **self._last_retention,
+                "status": "cancelled",
+                "phase": "cancelled",
+                "stage": "cancelled",
+                "reason": str(reason or ""),
+                "error": "",
+            }
+            LOGGER.info("SQLite runtime retention cancelled by operator")
+        except Exception as exc:
             status = {
                 "status": "failed",
                 "reason": str(reason or ""),
@@ -1265,10 +1500,19 @@ class BaluffoStore:
             LOGGER.warning("SQLite runtime retention failed: %s", exc)
         elapsed_ms = int(round((time.monotonic() - started) * 1000))
         failed = str(status.get("status") or "") == "failed"
+        cancelled = str(status.get("status") or "") == "cancelled"
+        if self._retention_cancel.is_set():
+            # A request can land after the last batch boundary but before this
+            # final status is published. It still wins over a clean finish, and
+            # it must also suppress a retry after a failure.
+            cancelled = True
+            if not failed:
+                status = {**status, "status": "cancelled"}
         status = {
             **status,
-            "phase": "failed" if failed else "complete",
-            "stage": "failed" if failed else "complete",
+            "phase": "failed" if failed else "cancelled" if cancelled else "complete",
+            "stage": "failed" if failed else "cancelled" if cancelled else "complete",
+            "cancelRequested": bool(self._retention_cancel.is_set()),
             "startedAt": started_at,
             "completedAt": _now_iso(),
             "updatedAt": _now_iso(),
@@ -1280,7 +1524,8 @@ class BaluffoStore:
             self._last_retention = status
             self._retention_started_monotonic = 0.0
             self._retention_in_progress = False
-            self._runtime_retention_done = (
+            self._retention_cancelled_last_run = cancelled
+            self._runtime_retention_done = cancelled or (
                 str(status.get("status") or "")
                 not in {
                     "failed",
@@ -1288,10 +1533,15 @@ class BaluffoStore:
                 }
                 and not needs_more
             )
-        if not needs_more and str(status.get("status") or "") not in {
-            "failed",
-            MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
-        }:
+        if (
+            not cancelled
+            and not needs_more
+            and str(status.get("status") or "")
+            not in {
+                "failed",
+                MAINTENANCE_STATUS_HELD_ACTIVE_TASK,
+            }
+        ):
             # Deleted rows only become free pages; the rewrite is what returns
             # them to the filesystem. Retry on every drained pass, not only on a
             # pass that deleted something: a compaction skipped for space or a
@@ -1299,12 +1549,13 @@ class BaluffoStore:
             # Wait for the backlog to drain first, because a rebuild that starts
             # while another retention batch is still writing only skips as busy.
             self.schedule_compaction_if_needed(reason=f"{reason}:retention")
-        if needs_more:
-            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S)
-        elif str(status.get("status") or "") == "failed":
-            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_RETRY_S)
-        elif str(status.get("status") or "") != MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
-            self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_INTERVAL_S)
+        if not cancelled:
+            if needs_more:
+                self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S)
+            elif str(status.get("status") or "") == "failed":
+                self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_RETRY_S)
+            elif str(status.get("status") or "") != MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
+                self._schedule_retention_followup(DEFAULT_RUNTIME_RETENTION_INTERVAL_S)
         with self._maintenance_lock:
             if self._retention_thread is threading.current_thread():
                 self._retention_thread = None
@@ -1431,13 +1682,46 @@ class BaluffoStore:
             )
             self._last_checkpoint = status
 
+    @contextmanager
+    def _compaction_run(self, reason: str) -> Iterator[None]:
+        """Mark a real rebuild as running for health and Admin observers."""
+        with self._maintenance_lock:
+            self._compaction_in_progress = True
+            self._last_vacuum = {
+                **self._last_vacuum,
+                "status": "running",
+                "reason": str(reason or ""),
+                "startedAt": _now_iso(),
+                "durationMs": 0,
+                "reclaimedBytes": 0,
+                "error": "",
+            }
+        try:
+            yield
+        finally:
+            with self._maintenance_lock:
+                self._compaction_in_progress = False
+                if self._last_vacuum.get("status") == "running":
+                    self._last_vacuum = {
+                        **self._last_vacuum,
+                        "status": "failed",
+                        "error": "compaction ended without a terminal status",
+                    }
+
     def vacuum(self, *, reason: str = "") -> dict[str, Any]:
         """Rebuild the database to return free pages to the filesystem.
 
         An in-place VACUUM holds the write lock for its whole run, which is
         unbounded on a large database, so past `vacuum_large_database_bytes` this
-        delegates to the bounded compact-copy rewrite.
+        delegates to the bounded compact-copy rewrite. The rebuild is not
+        interruptible: a copy or VACUUM must reach its own terminal state before
+        the store can safely continue.
         """
+        with self._compaction_run(reason):
+            return self._vacuum_locked(reason=reason)
+
+    def _vacuum_locked(self, *, reason: str = "") -> dict[str, Any]:
+        """Run the selected rebuild implementation while compaction is marked live."""
         if self._path_size(self.db_path) >= self.vacuum_large_database_bytes:
             return self.compact_database(reason=reason)
         started = time.perf_counter()
@@ -1705,7 +1989,238 @@ class BaluffoStore:
                 raise
             return True
 
-    def compaction_status(self) -> dict[str, Any]:
+    def write_transaction_count(self) -> int:
+        """Committed store write transactions, used to detect a racing write."""
+        return int(self._write_transactions)
+
+    def rebuilt_database_status(self) -> dict[str, Any]:
+        """Report the retained rollback copy and the last rebuild journal."""
+        # Imported here because the leaf imports JobRuntimeStore, which imports
+        # this module; a module-level import would close the package cycle.
+        from src.storage.current_feed_rebuild import (
+            read_rebuild_journal,
+            rebuild_backup_path,
+            rebuild_journal_path,
+        )
+
+        backup = rebuild_backup_path(self.db_path)
+        journal = read_rebuild_journal(rebuild_journal_path(self.db_path))
+        return {
+            "journalPath": str(rebuild_journal_path(self.db_path)),
+            "backupPath": str(backup),
+            "backupExists": backup.is_file(),
+            "backupBytes": self._path_size(backup),
+            "journal": journal,
+        }
+
+    def install_rebuilt_database(
+        self,
+        staging: Path | str,
+        *,
+        expected_transactions: int,
+        backup_path: Path | str | None = None,
+        journal_path: Path | str | None = None,
+        journal_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Swap in a validated current-feed copy and retain the old database.
+
+        The live file is hardlinked to ``backup_path`` before the rename, so the
+        rollback copy costs no extra disk. Both locks are held for the swap: no
+        reader can resolve a half-swapped path and no writer can commit against
+        the file being replaced. A write that landed after the copy's snapshot
+        makes the swap ``superseded`` instead of silently dropping it.
+        """
+        from src.storage.current_feed_rebuild import (
+            rebuild_backup_path,
+            rebuild_journal_path,
+            update_rebuild_journal,
+        )
+
+        staging_path = Path(staging)
+        target_backup = (
+            Path(backup_path) if backup_path is not None else rebuild_backup_path(self.db_path)
+        )
+        target_journal = (
+            Path(journal_path) if journal_path is not None else rebuild_journal_path(self.db_path)
+        )
+        with self._write_lock_guard("current-feed-rebuild-install"), self._read_lock:
+            if self._write_transactions != int(expected_transactions):
+                return {
+                    "installed": False,
+                    "reason": "superseded",
+                    "writesDuringCopy": self._write_transactions - int(expected_transactions),
+                    "backupPath": str(target_backup),
+                    "journalPath": str(target_journal),
+                }
+            self._validate_database_file(staging_path)
+            if target_backup.exists():
+                raise BaluffoStoreError(
+                    "a rollback copy already exists; delete it or roll back before rebuilding"
+                )
+            # The rollback copy has no WAL of its own, so every committed frame
+            # must be in the main file before the hardlink is created.
+            checkpoint = self._writer.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if int(checkpoint[0] or 0) != 0:
+                return {
+                    "installed": False,
+                    "reason": "checkpoint-busy",
+                    "backupPath": str(target_backup),
+                    "journalPath": str(target_journal),
+                }
+            try:
+                os.link(self.db_path, target_backup)
+            except OSError as exc:
+                raise BaluffoStoreError(
+                    f"could not create the old-database hardlink: {exc}"
+                ) from exc
+            before_bytes = self._path_size(self.db_path)
+            update_rebuild_journal(
+                target_journal,
+                status="backup-created",
+                phase="backup-created",
+                backupPath=str(target_backup),
+                backupBytes=before_bytes,
+                **(journal_fields or {}),
+            )
+            if self._reader is not None:
+                self._reader.close()
+                self._reader = None
+            self._writer.close()
+            replaced = False
+            try:
+                os.replace(staging_path, self.db_path)
+                replaced = True
+                for suffix in ("-wal", "-shm"):
+                    self.db_path.with_name(f"{self.db_path.name}{suffix}").unlink(missing_ok=True)
+                self._writer = self._connect()
+                self._initialize_writer()
+            except BaseException:
+                if replaced:
+                    self._healthy = False
+                    self._last_write_error = (
+                        "current-feed rebuild installed but the store could not reopen"
+                    )
+                else:
+                    self._writer = self._connect()
+                raise
+            after_bytes = self._path_size(self.db_path)
+            result = {
+                "installed": True,
+                "reason": "",
+                "backupPath": str(target_backup),
+                "backupBytes": before_bytes,
+                "beforeBytes": before_bytes,
+                "databaseBytes": after_bytes,
+                "reclaimedBytes": max(0, before_bytes - after_bytes),
+                "journalPath": str(target_journal),
+            }
+            update_rebuild_journal(
+                target_journal,
+                status="complete",
+                phase="complete",
+                backupPath=str(target_backup),
+                backupBytes=before_bytes,
+                databaseBytes=after_bytes,
+                reclaimedBytes=result["reclaimedBytes"],
+                **(journal_fields or {}),
+            )
+            return result
+
+    def restore_rebuilt_database(
+        self,
+        backup_path: Path | str | None = None,
+        *,
+        journal_path: Path | str | None = None,
+    ) -> dict[str, Any]:
+        """Reinstate the retained pre-rebuild database.
+
+        A rollback consumes the hardlink: the old database becomes live again and
+        the backup path disappears. ``beforeBytes`` is the size of the rebuilt
+        database that is being replaced.
+        """
+        from src.storage.current_feed_rebuild import (
+            rebuild_backup_path,
+            rebuild_journal_path,
+            update_rebuild_journal,
+        )
+
+        target_backup = (
+            Path(backup_path) if backup_path is not None else rebuild_backup_path(self.db_path)
+        )
+        target_journal = (
+            Path(journal_path) if journal_path is not None else rebuild_journal_path(self.db_path)
+        )
+        with self._write_lock_guard("current-feed-rebuild-rollback"), self._read_lock:
+            if not target_backup.is_file():
+                raise BaluffoStoreError("no retained pre-rebuild database to restore")
+            self._validate_database_file(target_backup)
+            before_bytes = self._path_size(self.db_path)
+            if self._reader is not None:
+                self._reader.close()
+                self._reader = None
+            self._writer.close()
+            replaced = False
+            try:
+                os.replace(target_backup, self.db_path)
+                replaced = True
+                for suffix in ("-wal", "-shm"):
+                    self.db_path.with_name(f"{self.db_path.name}{suffix}").unlink(missing_ok=True)
+                self._writer = self._connect()
+                self._initialize_writer()
+            except BaseException:
+                if replaced:
+                    self._healthy = False
+                    self._last_write_error = (
+                        "pre-rebuild database restored but the store could not reopen"
+                    )
+                else:
+                    self._writer = self._connect()
+                raise
+            after_bytes = self._path_size(self.db_path)
+            result = {
+                "restored": True,
+                "backupPath": str(target_backup),
+                "beforeBytes": before_bytes,
+                "databaseBytes": after_bytes,
+                "journalPath": str(target_journal),
+            }
+            update_rebuild_journal(
+                target_journal,
+                status="rolled-back",
+                phase="rolled-back",
+                restoredAt=_now_iso(),
+                databaseBytes=after_bytes,
+            )
+            return result
+
+    def compaction_status(self, *, sizes: dict[str, int] | None = None) -> dict[str, Any]:
+        """Report the configured gate and the observed reason it is not due."""
+        current_sizes = dict(sizes) if sizes is not None else self.file_sizes()
+        database_bytes = max(0, int(current_sizes.get("databaseBytes") or 0))
+        freelist_bytes = max(0, int(current_sizes.get("freelistBytes") or 0))
+        allocated_bytes = max(0, database_bytes - freelist_bytes)
+        observed_ratio = freelist_bytes / database_bytes if database_bytes > 0 else 0.0
+        effective_ratio = self.effective_vacuum_freelist_ratio(database_bytes)
+        vacuum_due_by_size = self._compaction_needed(current_sizes)
+        vacuum_blocked_by = ""
+        if not vacuum_due_by_size:
+            if freelist_bytes < self.vacuum_freelist_threshold_bytes:
+                vacuum_blocked_by = "freelist-bytes"
+            elif observed_ratio < effective_ratio:
+                vacuum_blocked_by = "freelist-ratio"
+        space = {
+            "databaseBytes": database_bytes,
+            "allocatedBytes": allocated_bytes,
+            "freelistBytes": freelist_bytes,
+            "observedFreelistRatio": round(observed_ratio, 4),
+            "effectiveFreelistRatio": effective_ratio,
+            "vacuumDueBySize": vacuum_due_by_size,
+            "vacuumBlockedBy": vacuum_blocked_by,
+            "largeAllocatedLowFreelist": bool(
+                allocated_bytes >= self.vacuum_large_database_bytes
+                and observed_ratio < effective_ratio
+            ),
+        }
         with self._maintenance_lock:
             return {
                 **self._last_vacuum,
@@ -1719,8 +2234,11 @@ class BaluffoStore:
                 "idleGateS": self.vacuum_idle_s,
                 "idleMaxWaitS": self.vacuum_idle_max_wait_s,
                 "compactionBudgetMs": int(round(self.compaction_budget_s * 1000)),
+                "running": bool(self._compaction_in_progress),
+                "interruptible": False,
                 "heldByActiveTask": self._compaction_hold,
                 "lastWriteAgoS": round(max(0.0, time.monotonic() - self._last_write_monotonic), 3),
+                "space": space,
             }
 
     def effective_vacuum_freelist_ratio(self, database_bytes: int) -> float:
@@ -1994,8 +2512,9 @@ class BaluffoStore:
             "writeAttempts": self._write_attempts,
             "writeTransactions": self._write_transactions,
             "walMaintenance": self.wal_maintenance_status(),
-            "compaction": self.compaction_status(),
+            "compaction": self.compaction_status(sizes=sizes),
             "runtimeRetention": self.runtime_retention_status(),
+            "currentFeedRebuild": self.rebuilt_database_status(),
             "tableSizes": self.table_sizes(),
             "authorityModes": self.get_authority_modes(),
         }

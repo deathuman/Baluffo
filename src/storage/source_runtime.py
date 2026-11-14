@@ -22,6 +22,10 @@ from src.shared.utils import now_iso as _shared_now_iso
 from src.shared.utils import parse_iso as _parse_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 from src.storage.evidence_archive import EvidenceArchiveStore
+from src.storage.retention_cancel import (
+    CancelRequested,
+    raise_if_cancelled,
+)
 
 SOURCE_RUN_SCHEMA_VERSION = 1
 DEFAULT_SOURCE_RUN_LIMIT = 500
@@ -88,10 +92,12 @@ def _delete_source_run_batches(
     *,
     candidate_run_count: int,
     on_progress: Callable[[dict[str, Any]], None] | None,
+    cancel_requested: CancelRequested | None = None,
 ) -> tuple[int, int]:
     deleted_run_count = 0
     deleted_row_count = 0
     for start in range(0, len(selected), DEFAULT_RUNTIME_RETENTION_BATCH_RUNS):
+        raise_if_cancelled(cancel_requested)
         batch = selected[start : start + DEFAULT_RUNTIME_RETENTION_BATCH_RUNS]
         batch_ids = [run_id for run_id, _ended_at in batch]
 
@@ -409,6 +415,7 @@ class SourceRuntimeStore:
         max_sync_runs: int = DEFAULT_RUNTIME_RETENTION_MAX_SYNC_RUNS,
         now: datetime | None = None,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
+        cancel_requested: CancelRequested | None = None,
     ) -> dict[str, Any]:
         """Delete old terminal source-run payloads in bounded batches.
 
@@ -421,6 +428,7 @@ class SourceRuntimeStore:
         are bounded separately so a huge history cannot become one giant
         transaction.
         """
+        raise_if_cancelled(cancel_requested)
         normalized_days = max(0, int(retention_days or 0))
         normalized_keep = max(1, int(keep_runs or 1))
         normalized_max = max(0, int(max_runs or 0))
@@ -484,7 +492,9 @@ class SourceRuntimeStore:
             selected,
             candidate_run_count=len(candidates),
             on_progress=on_progress,
+            cancel_requested=cancel_requested,
         )
+        raise_if_cancelled(cancel_requested)
 
         cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
         event_limit = max(0, int(max_event_rows or 0))
@@ -550,7 +560,9 @@ class SourceRuntimeStore:
                 "deletedRowCount": deleted_row_count,
             },
         )
+        raise_if_cancelled(cancel_requested)
         event_row_count, sync_row_count = self.store.write(delete_bounded_rows)
+        raise_if_cancelled(cancel_requested)
         event_truncated = event_limit > 0 and event_row_count >= event_limit
         sync_truncated = sync_limit > 0 and sync_row_count >= sync_limit
         _emit_progress(
@@ -592,6 +604,7 @@ class SourceRuntimeStore:
         max_bytes: int = DEFAULT_ARCHIVE_COMPACT_BYTES,
         now: datetime | None = None,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
+        cancel_requested: CancelRequested | None = None,
     ) -> dict[str, Any]:
         """Remove full source details from SQLite when the gzip archive owns them.
 
@@ -602,6 +615,7 @@ class SourceRuntimeStore:
         so a row without a durable copy of its details is never stripped.
         """
         del now  # Kept in the signature for parity with prune_old_runs.
+        raise_if_cancelled(cancel_requested)
         normalized_max_runs = max(1, int(max_runs or 1))
         normalized_max_rows = max(1, int(max_rows or 1))
         normalized_max_bytes = max(1, int(max_bytes or 1))
@@ -647,6 +661,7 @@ class SourceRuntimeStore:
             """,
             (*run_ids, normalized_max_rows + 1),
         )
+        raise_if_cancelled(cancel_requested)
         truncated = len(rows) > normalized_max_rows
         _emit_progress(
             on_progress,
@@ -664,6 +679,7 @@ class SourceRuntimeStore:
         compacted_bytes = 0
         processed_bytes = 0
         for row in rows[:normalized_max_rows]:
+            raise_if_cancelled(cancel_requested)
             raw = str(row.get("payload_json") or "")
             raw_bytes = len(raw.encode("utf-8"))
             if updates and processed_bytes + raw_bytes > normalized_max_bytes:
@@ -689,6 +705,7 @@ class SourceRuntimeStore:
             )
             processed_bytes += raw_bytes
             compacted_bytes += raw_bytes - len(compact_text.encode("utf-8"))
+        raise_if_cancelled(cancel_requested)
         if updates:
             self.store.write(
                 lambda conn: conn.executemany(
@@ -700,6 +717,7 @@ class SourceRuntimeStore:
                     updates,
                 )
             )
+        raise_if_cancelled(cancel_requested)
         _emit_progress(
             on_progress,
             {

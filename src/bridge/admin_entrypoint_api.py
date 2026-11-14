@@ -6,6 +6,7 @@ from typing import Any
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import storage_diagnostic as storage_diagnostic_mod
 from src.bridge import storage_health as storage_health_mod
+from src.bridge import storage_rebuild as storage_rebuild_mod
 from src.bridge.api import BridgeApi
 
 
@@ -96,16 +97,37 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
             Path(config.data_dir).resolve()
         ),
+        get_storage_maintenance_preview=lambda: storage_health_mod.get_storage_maintenance_preview(
+            Path(config.data_dir).resolve()
+        ),
         start_storage_diagnostic=lambda mode: storage_diagnostic_mod.start_storage_diagnostic(
             Path(config.data_dir).resolve(), mode=mode
         ),
         get_storage_diagnostic_payload=lambda: (
             storage_diagnostic_mod.get_storage_diagnostic_payload(Path(config.data_dir).resolve())
         ),
-        cancel_storage_diagnostic=lambda: storage_diagnostic_mod.cancel_storage_diagnostic(
-            Path(config.data_dir).resolve()
+        cancel_storage_diagnostic=lambda run_id: storage_diagnostic_mod.cancel_storage_diagnostic(
+            Path(config.data_dir).resolve(), run_id
         ),
         start_storage_maintenance=lambda: storage_health_mod.start_storage_maintenance(
+            Path(config.data_dir).resolve()
+        ),
+        cancel_storage_maintenance=lambda run_id: storage_health_mod.cancel_storage_maintenance(
+            Path(config.data_dir).resolve(), run_id
+        ),
+        get_storage_rebuild_payload=lambda: storage_rebuild_mod.get_storage_rebuild_payload(
+            Path(config.data_dir).resolve()
+        ),
+        start_storage_rebuild=lambda: storage_rebuild_mod.start_storage_rebuild(
+            Path(config.data_dir).resolve()
+        ),
+        cancel_storage_rebuild=lambda run_id: storage_rebuild_mod.cancel_storage_rebuild(
+            Path(config.data_dir).resolve(), run_id
+        ),
+        rollback_storage_rebuild=lambda: storage_rebuild_mod.rollback_storage_rebuild(
+            Path(config.data_dir).resolve()
+        ),
+        delete_storage_rebuild_backup=lambda: storage_rebuild_mod.delete_storage_rebuild_backup(
             Path(config.data_dir).resolve()
         ),
         compute_fetcher_metrics=root_mod.compute_fetcher_metrics,

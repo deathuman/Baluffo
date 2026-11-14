@@ -180,13 +180,16 @@ def test_truncated_retention_schedules_followup_before_compaction(
             assert status["timerScheduled"] is True
             assert 0 < status["nextRunInS"] <= 30
             assert status["done"] is False
+            assert status["followUpScheduled"] is True
+            assert status["completionState"] == "follow-up-scheduled"
+            assert status["fullyComplete"] is False
 
 
 def test_runtime_retention_status_reports_live_phase(monkeypatch: pytest.MonkeyPatch) -> None:
     started = threading.Event()
     release = threading.Event()
 
-    def fake_retention(store: BaluffoStore, *, reason: str = "", on_progress=None):
+    def fake_retention(store: BaluffoStore, *, reason: str = "", on_progress=None, **_: object):
         assert on_progress is not None
         on_progress(
             {
@@ -237,6 +240,9 @@ def test_runtime_retention_status_reports_live_phase(monkeypatch: pytest.MonkeyP
             assert final["status"] == "ok"
             assert final["phase"] == "complete"
             assert final["durationMs"] >= 0
+            assert final["completionState"] == "complete"
+            assert final["followUpScheduled"] is False
+            assert final["fullyComplete"] is True
 
 
 def test_runtime_retention_start_clears_previous_job_generation_status(

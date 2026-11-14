@@ -5,7 +5,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,15 @@ REGISTRY_JOURNAL_NAMES = (
 )
 MAX_READ_LABEL_LENGTH = 96
 _SAFE_READ_LABEL_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
+SLOW_WRITE_TIMING_FIELDS = (
+    "callbackMs",
+    "deleteMs",
+    "commitMs",
+    "walBytesBefore",
+    "walBytesAfter",
+    "walGrowthBytes",
+    "checkpointMs",
+)
 
 _LOCK = threading.RLock()
 _EVENTS: list[dict[str, Any]] = []
@@ -137,6 +146,7 @@ def record_slow_store_write(
     stack: str = "",
     artifact: str = "sqlite",
     data_dir: Path | str | None = None,
+    timings: Mapping[str, Any] | None = None,
 ) -> None:
     """Record one SQLite write-lock operation that crossed the slow threshold.
 
@@ -144,28 +154,39 @@ def record_slow_store_write(
     is time holding it. A waiter names the operation that stalled; a holder's
     stack names the caller that stalled every other writer, which is what makes
     a multi-second startup step attributable from the journal alone.
+
+    Optional `timings` add the per-transaction breakdown: callback/statement and
+    cleanup-DELETE execution, commit (including any inline auto-checkpoint), WAL
+    size before/after, and the explicit checkpoint hold for `checkpoint:*`
+    operations. SQLite does not expose inline auto-checkpoint time separately.
     """
-    _append_event(
-        {
-            "type": "sqliteSlowWrite",
-            "artifact": str(artifact or "sqlite"),
-            "path": "",
-            "target": "",
-            "storageKind": "sqlite",
-            "operation": str(operation or "write"),
-            "waitMs": max(0, int(wait_ms or 0)),
-            "holdMs": max(0, int(hold_ms or 0)),
-            "thread": str(thread_name or ""),
-            "stack": str(stack or "")[:4000],
-            "serializationDurationMs": 0,
-            "atomicReplaceDurationMs": max(0, int(hold_ms or 0)),
-            "compressedSizeBytes": 0,
-            "uncompressedSizeBytes": 0,
-            "writeCount": 1,
-            "replaced": False,
-        },
-        data_dir=data_dir,
-    )
+    event: dict[str, Any] = {
+        "type": "sqliteSlowWrite",
+        "artifact": str(artifact or "sqlite"),
+        "path": "",
+        "target": "",
+        "storageKind": "sqlite",
+        "operation": str(operation or "write"),
+        "waitMs": max(0, int(wait_ms or 0)),
+        "holdMs": max(0, int(hold_ms or 0)),
+        "thread": str(thread_name or ""),
+        "stack": str(stack or "")[:4000],
+        "serializationDurationMs": 0,
+        "atomicReplaceDurationMs": max(0, int(hold_ms or 0)),
+        "compressedSizeBytes": 0,
+        "uncompressedSizeBytes": 0,
+        "writeCount": 1,
+        "replaced": False,
+    }
+    if timings:
+        for field in SLOW_WRITE_TIMING_FIELDS:
+            value = timings.get(field)
+            if value is None:
+                continue
+            event[field] = (
+                _signed_int_value(value) if field == "walGrowthBytes" else max(0, _int_value(value))
+            )
+    _append_event(event, data_dir=data_dir)
 
 
 def record_jsonl_write(
@@ -443,6 +464,26 @@ def _summarize_write_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _slow_write_timing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for field in SLOW_WRITE_TIMING_FIELDS:
+        values = [row.get(field) for row in rows if row.get(field) is not None]
+        summary[field] = _signed_stats(values) if field == "walGrowthBytes" else _stats(values)
+    return summary
+
+
+def _slow_write_timing_row(row: dict[str, Any]) -> dict[str, int]:
+    timings: dict[str, int] = {}
+    for field in SLOW_WRITE_TIMING_FIELDS:
+        value = row.get(field)
+        if value is None:
+            continue
+        timings[field] = (
+            _signed_int_value(value) if field == "walGrowthBytes" else max(0, _int_value(value))
+        )
+    return timings
+
+
 def _summarize_slow_store_writes(events: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [row for row in events if row.get("type") == "sqliteSlowWrite"]
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -454,6 +495,7 @@ def _summarize_slow_store_writes(events: list[dict[str, Any]]) -> dict[str, Any]
             "count": len(group_rows),
             "waitMs": _stats(row.get("waitMs") for row in group_rows),
             "holdMs": _stats(row.get("holdMs") for row in group_rows),
+            "timings": _slow_write_timing_summary(group_rows),
             "lastThread": str(group_rows[-1].get("thread") or ""),
         }
         for operation, group_rows in sorted(grouped.items())
@@ -467,6 +509,7 @@ def _summarize_slow_store_writes(events: list[dict[str, Any]]) -> dict[str, Any]
             "holdMs": max(0, int(row.get("holdMs") or 0)),
             "thread": str(row.get("thread") or ""),
             "lastFrame": (str(row.get("stack") or "").strip().splitlines() or [""])[-1][:180],
+            "timings": _slow_write_timing_row(row),
         }
         for row in rows[-5:]
     ]
@@ -474,6 +517,7 @@ def _summarize_slow_store_writes(events: list[dict[str, Any]]) -> dict[str, Any]
         "count": len(rows),
         "maxWaitMs": max((int(row.get("waitMs") or 0) for row in rows), default=0),
         "maxHoldMs": max((int(row.get("holdMs") or 0) for row in rows), default=0),
+        "timings": _slow_write_timing_summary(rows),
         "operations": operations,
         "recent": recent,
     }

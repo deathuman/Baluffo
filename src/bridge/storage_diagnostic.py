@@ -118,17 +118,36 @@ class StorageDiagnosticJob:
             self._thread.start()
             return self._snapshot_locked(), True
 
-    def cancel(self) -> dict[str, Any]:
+    def cancel(self, run_id: str = "", *, force: bool = False) -> dict[str, Any]:
         with self._lock:
-            if self._state["status"] == "running":
-                self._cancel.set()
-                self._state["status"] = "cancelling"
-                self._state["phase"] = "cancelling"
-                self._state["progress"] = {
-                    **dict(self._state.get("progress") or {}),
-                    "phase": "cancelling",
-                }
-            return self._snapshot_locked()
+            active = self._state["status"] in {"running", "cancelling"}
+            current_run_id = str(self._state.get("runId") or "")
+            requested_run_id = str(run_id or "").strip()
+            stale = False
+            reason = ""
+            if not active:
+                stale = bool(requested_run_id and requested_run_id != current_run_id)
+                reason = "no-running-run"
+            elif not force and not requested_run_id:
+                stale = True
+                reason = "run-id-required"
+            elif not force and requested_run_id != current_run_id:
+                stale = True
+                reason = "run-id-mismatch"
+            else:
+                if self._state["status"] == "running":
+                    self._cancel.set()
+                    self._state["status"] = "cancelling"
+                    self._state["phase"] = "cancelling"
+                    self._state["progress"] = {
+                        **dict(self._state.get("progress") or {}),
+                        "phase": "cancelling",
+                    }
+            return {
+                "storageDiagnostic": self._snapshot_locked(),
+                "stale": stale,
+                "reason": reason,
+            }
 
     def _on_progress(self, update: dict[str, Any]) -> None:
         with self._lock:
@@ -217,12 +236,15 @@ def get_storage_diagnostic_payload(data_dir: Path | str) -> dict[str, Any]:
     return {"ok": True, "storageDiagnostic": job.snapshot()}
 
 
-def cancel_storage_diagnostic(data_dir: Path | str) -> dict[str, Any]:
+def cancel_storage_diagnostic(data_dir: Path | str, run_id: str = "") -> dict[str, Any]:
     job = _job_for(data_dir)
-    diagnostic = job.cancel()
+    result = job.cancel(run_id)
+    diagnostic = result["storageDiagnostic"]
     return {
         "ok": True,
         "cancelling": diagnostic["status"] == "cancelling",
+        "stale": bool(result.get("stale")),
+        "reason": str(result.get("reason") or ""),
         "storageDiagnostic": diagnostic,
     }
 
@@ -233,4 +255,4 @@ def close_storage_diagnostic_jobs() -> None:
         jobs = list(_JOBS_BY_DATA_DIR.values())
         _JOBS_BY_DATA_DIR.clear()
     for job in jobs:
-        job.cancel()
+        job.cancel(force=True)

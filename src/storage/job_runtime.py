@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -28,12 +29,30 @@ from src.storage.baluffo_store import (
     BaluffoStore,
     BaluffoStoreError,
 )
+from src.storage.retention_cancel import CancelRequested, raise_if_cancelled
 
 LOGGER = logging.getLogger(__name__)
 
 JOB_FEED_SCHEMA_VERSION = 1
+# These fields change on every successful fetch or availability check even when
+# the published jobs are the same. They are excluded from the content hash that
+# decides whether a new feed generation is warranted; the full row hash still
+# includes them for change forensics.
+JOBS_FEED_CONTENT_IGNORED_FIELDS = frozenset(
+    {
+        "lastSeenAt",
+        "fetchedAt",
+        "availabilityCheckedAt",
+        "availabilityVerifiedAt",
+        "availabilityUnavailableAt",
+    }
+)
+_AVAILABILITY_EVIDENCE_FIELDS = frozenset({"availabilityEvidence", "availabilityPendingEvidence"})
+_AVAILABILITY_EVIDENCE_IGNORED_FIELDS = frozenset({"checkedAt"})
 DEFAULT_GENERATION_DELETE_CAP = 4
 DEFAULT_GENERATION_DELETE_BATCH_SIZE = 1000
+DEFAULT_GENERATION_PREVIEW_SAMPLE_ROWS = 200
+DEFAULT_GENERATION_PREVIEW_COUNT_BUDGET_S = 2.0
 _SOURCE_ALIAS_QUERY_CHUNK = 200
 
 # Keep the batch's selection generation-scoped and name the feed_generation-leading
@@ -71,6 +90,14 @@ def _now_iso() -> str:
 _clean_text = _shared_clean_text
 
 
+def _estimate_payload_bytes(sample_count: int, sample_bytes: int, total_rows: int) -> int:
+    if sample_count <= 0 or sample_bytes <= 0 or total_rows <= 0:
+        return 0
+    if total_rows <= sample_count:
+        return int(sample_bytes)
+    return int(round(sample_bytes * total_rows / sample_count))
+
+
 def _json_dumps(value: Any) -> str:
     return json_dumps(value)
 
@@ -93,6 +120,62 @@ def _sha256_json(value: Any) -> str:
 
 def jobs_feed_rows_hash(rows: Sequence[Mapping[str, Any]]) -> str:
     return _sha256_json([dict(row) for row in rows if isinstance(row, Mapping)])
+
+
+def _canonical_content_value(value: Any, *, availability_evidence: bool = False) -> Any:
+    if isinstance(value, Mapping):
+        ignored = _AVAILABILITY_EVIDENCE_IGNORED_FIELDS if availability_evidence else frozenset()
+        return {
+            str(key): _canonical_content_value(
+                item,
+                availability_evidence=(
+                    availability_evidence or str(key) in _AVAILABILITY_EVIDENCE_FIELDS
+                ),
+            )
+            for key, item in value.items()
+            if str(key) not in JOBS_FEED_CONTENT_IGNORED_FIELDS and str(key) not in ignored
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            _canonical_content_value(item, availability_evidence=availability_evidence)
+            for item in value
+        ]
+    return value
+
+
+def canonical_jobs_feed_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Project one feed row onto stable content fields.
+
+    ``lastSeenAt`` and availability timestamps advance on every observation.
+    They are deliberately omitted so a successful fetch that observed the same
+    published jobs does not allocate another generation. A nested evidence
+    ``checkedAt`` is omitted for the same reason; every other field, including
+    availability status and evidence kind, remains part of the comparison.
+    """
+    return {
+        str(key): _canonical_content_value(
+            value,
+            availability_evidence=str(key) in _AVAILABILITY_EVIDENCE_FIELDS,
+        )
+        for key, value in row.items()
+        if str(key) not in JOBS_FEED_CONTENT_IGNORED_FIELDS
+    }
+
+
+def jobs_feed_content_hash(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Hash the canonical content projection of a feed row set.
+
+    Rows are hashed incrementally so a 40k-row fetch does not build a second
+    full row list plus one giant JSON string just to compare content. Row order
+    remains part of the hash.
+    """
+    digest = hashlib.sha256(b"jobs-feed-content-v1\x00")
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        digest.update(_json_dumps(canonical_jobs_feed_row(row)).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def _location_label(row: Mapping[str, Any]) -> str:
@@ -376,6 +459,10 @@ class JobRuntimeStore:
             return []
         return self.rows_for_generation(generation)
 
+    def current_feed_content_hash(self) -> str:
+        """Canonical content hash of the published generation."""
+        return jobs_feed_content_hash(self.current_rows())
+
     def current_feed_published_at(self) -> str:
         """When the current feed generation was published, or the last update."""
         row = self.store.execute_read(
@@ -501,6 +588,7 @@ class JobRuntimeStore:
         delete_cap: int | None = DEFAULT_GENERATION_DELETE_CAP,
         keep_generations: int = 1,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
+        cancel_requested: CancelRequested | None = None,
     ) -> int:
         """Delete old jobs-feed generations without holding the write lock.
 
@@ -509,6 +597,7 @@ class JobRuntimeStore:
         committed transaction per batch, and report progress after each batch
         so health reads and other writers can interleave with the cleanup.
         """
+        raise_if_cancelled(cancel_requested)
         if delete_cap is not None and int(delete_cap) <= 0:
             return 0
         generations = [
@@ -523,11 +612,14 @@ class JobRuntimeStore:
         if not generations:
             return 0
 
+        raise_if_cancelled(cancel_requested)
         total_generations, row_counts_known, total_rows = self._generation_cleanup_metadata(
             generations,
             on_progress=on_progress,
         )
+        raise_if_cancelled(cancel_requested)
         deleted_generations = 0
+        processed_generations = 0
         deleted_rows = 0
 
         def report_progress(generation: str, *, stage: str = "deleting") -> None:
@@ -537,8 +629,9 @@ class JobRuntimeStore:
                         "stage": stage,
                         "deletedGenerationCount": deleted_generations,
                         "deletedRowCount": deleted_rows,
+                        "deletedGenerationRowCount": deleted_rows,
                         "totalGenerationCount": total_generations,
-                        "processedGenerationCount": deleted_generations,
+                        "processedGenerationCount": processed_generations,
                         "totalGenerationRowCount": total_rows,
                         "generationRowCountKnown": row_counts_known,
                         "generation": generation,
@@ -546,6 +639,7 @@ class JobRuntimeStore:
                 )
 
         def delete_generation_rows(
+            table: str,
             sql: str,
             generation: str,
             parameters: tuple[Any, ...],
@@ -555,27 +649,207 @@ class JobRuntimeStore:
                 deleted_rows += deleted
                 report_progress(generation)
 
-            self._delete_generation_batches(sql, parameters, on_deleted=on_deleted)
+            self._delete_generation_batches(
+                table,
+                sql,
+                parameters,
+                on_deleted=on_deleted,
+                cancel_requested=cancel_requested,
+            )
 
         report_progress(generations[0])
+        raise_if_cancelled(cancel_requested)
         with self.store.bulk_delete_mode():
             for generation in generations:
                 # Sources must go before their parent job rows; each batch is a
                 # separate transaction so the write lock is released between them.
+                rows_before = deleted_rows
                 delete_generation_rows(
+                    "job_sources",
                     _JOB_SOURCES_BATCH_DELETE_SQL,
                     generation,
                     (generation, self.delete_batch_size),
                 )
+                raise_if_cancelled(cancel_requested)
                 delete_generation_rows(
+                    "jobs",
                     _JOBS_BATCH_DELETE_SQL,
                     generation,
                     (generation, generation, self.delete_batch_size),
                 )
-                deleted_generations += 1
+                raise_if_cancelled(cancel_requested)
+                processed_generations += 1
+                if deleted_rows > rows_before:
+                    deleted_generations += 1
                 report_progress(generation)
         self._delete_generation_stats(generations)
         return deleted_generations
+
+    def cleanup_preview(
+        self,
+        *,
+        keep_generations: int = 1,
+        delete_cap: int | None = DEFAULT_GENERATION_DELETE_CAP,
+        sample_rows: int = DEFAULT_GENERATION_PREVIEW_SAMPLE_ROWS,
+        count_budget_s: float = DEFAULT_GENERATION_PREVIEW_COUNT_BUDGET_S,
+    ) -> dict[str, Any]:
+        """Describe the generations a cleanup pass would delete, without writing.
+
+        Candidate selection matches ``cleanup_old_generations``. Row counts use
+        cached generation stats first, then a short deadline-bounded count for
+        legacy generations. If that count is interrupted, the preview reports
+        sample lower bounds instead of scanning a huge generation to completion.
+        Payload bytes always come from a bounded sample per table.
+        """
+        current = self.current_generation()
+        current_summary = self.current_summary()
+        keep_count = max(1, int(keep_generations or 1))
+        if not current:
+            return self._empty_cleanup_preview(
+                keep_count=keep_count,
+                delete_cap=delete_cap,
+                sample_rows=sample_rows,
+                current_summary=current_summary,
+            )
+        candidates = [
+            generation
+            for generation in self._deletable_generations(
+                current=current,
+                keep_count=keep_count,
+                delete_cap=delete_cap,
+            )
+            if generation and generation != current
+        ]
+        try:
+            stats = self._generation_stats(candidates)
+        except (BaluffoStoreError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError):
+            stats = {}
+        missing_stats = [generation for generation in candidates if generation not in stats]
+        counted_stats: dict[str, tuple[int, int]] = {}
+        if missing_stats and float(count_budget_s or 0) > 0:
+            counted_stats = self._count_generation_stats_bounded(
+                missing_stats, budget_s=float(count_budget_s)
+            )
+            stats.update(counted_stats)
+        counts_known = all(generation in stats for generation in candidates)
+        if counts_known:
+            counts_source = "bounded-count" if counted_stats else "generation-stats"
+        else:
+            counts_source = (
+                "bounded-count+sample-bounds" if counted_stats else "generation-stats+sample-bounds"
+            )
+        candidate_rows = 0
+        candidate_job_rows = 0
+        candidate_source_rows = 0
+        estimated_bytes = 0
+        rows: list[dict[str, Any]] = []
+        for generation in candidates:
+            counts_row_known = generation in stats
+            job_count, source_count = stats.get(generation, (0, 0))
+            job_sample = self._payload_sample("jobs", generation, sample_rows)
+            source_sample = self._payload_sample("job_sources", generation, sample_rows)
+            effective_job_count = (
+                int(job_count) if counts_row_known else int(job_sample["sampleCount"])
+            )
+            effective_source_count = (
+                int(source_count) if counts_row_known else int(source_sample["sampleCount"])
+            )
+            job_bytes = _estimate_payload_bytes(
+                int(job_sample["sampleCount"]), int(job_sample["sampleBytes"]), effective_job_count
+            )
+            source_bytes = _estimate_payload_bytes(
+                int(source_sample["sampleCount"]),
+                int(source_sample["sampleBytes"]),
+                effective_source_count,
+            )
+            row_count = effective_job_count + effective_source_count
+            bytes_for_generation = job_bytes + source_bytes
+            candidate_job_rows += effective_job_count
+            candidate_source_rows += effective_source_count
+            candidate_rows += row_count
+            estimated_bytes += bytes_for_generation
+            rows.append(
+                {
+                    "generation": generation,
+                    "jobRowCount": effective_job_count,
+                    "sourceRowCount": effective_source_count,
+                    "rowCount": row_count,
+                    "estimatedBytes": bytes_for_generation,
+                    "sampleRowCount": int(job_sample["sampleCount"])
+                    + int(source_sample["sampleCount"]),
+                    "sampled": bool(job_sample["sampled"] or source_sample["sampled"]),
+                    "countsKnown": counts_row_known,
+                }
+            )
+        return {
+            "currentGeneration": current,
+            "currentFeedProtected": bool(current),
+            "currentJobRowCount": int(current_summary.get("rowCount") or 0),
+            "currentSourceRowCount": int(current_summary.get("sourceCount") or 0),
+            "keepGenerations": keep_count,
+            "deleteCap": delete_cap,
+            "capReached": delete_cap is not None and len(candidates) >= int(delete_cap),
+            "candidateGenerationCount": len(rows),
+            "candidateJobRowCount": candidate_job_rows,
+            "candidateSourceRowCount": candidate_source_rows,
+            "candidateRowCount": candidate_rows,
+            "estimatedBytes": estimated_bytes,
+            "sampleRowsPerTable": max(1, int(sample_rows or 1)),
+            "countsSource": counts_source,
+            "countsKnown": counts_known,
+            "candidates": rows,
+        }
+
+    def _empty_cleanup_preview(
+        self,
+        *,
+        keep_count: int,
+        delete_cap: int | None,
+        sample_rows: int,
+        current_summary: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "currentGeneration": "",
+            "currentFeedProtected": False,
+            "currentJobRowCount": int(current_summary.get("rowCount") or 0),
+            "currentSourceRowCount": int(current_summary.get("sourceCount") or 0),
+            "keepGenerations": keep_count,
+            "deleteCap": delete_cap,
+            "capReached": False,
+            "candidateGenerationCount": 0,
+            "candidateJobRowCount": 0,
+            "candidateSourceRowCount": 0,
+            "candidateRowCount": 0,
+            "estimatedBytes": 0,
+            "sampleRowsPerTable": max(1, int(sample_rows or 1)),
+            "countsSource": "generation-stats",
+            "countsKnown": True,
+            "candidates": [],
+        }
+
+    def _payload_sample(self, table: str, generation: str, sample_rows: int) -> dict[str, Any]:
+        if table not in {"jobs", "job_sources"}:
+            raise ValueError(f"unsupported preview table: {table}")
+        rows = self.store.execute_read(
+            f"""
+            SELECT COUNT(*) AS sample_count,
+                   COALESCE(SUM(length(CAST(payload_json AS BLOB))), 0) AS sample_bytes
+            FROM (
+                SELECT payload_json
+                FROM {table}
+                WHERE feed_generation = ?
+                LIMIT ?
+            )
+            """,
+            (generation, max(1, int(sample_rows or 1))),
+        )
+        row = rows[0] if rows else {}
+        sample_count = int_or_default(row.get("sample_count"))
+        return {
+            "sampleCount": sample_count,
+            "sampleBytes": int_or_default(row.get("sample_bytes")),
+            "sampled": sample_count >= max(1, int(sample_rows or 1)),
+        }
 
     def _generation_cleanup_metadata(
         self,
@@ -614,6 +888,7 @@ class JobRuntimeStore:
                 "stage": "counting",
                 "deletedGenerationCount": 0,
                 "deletedRowCount": 0,
+                "deletedGenerationRowCount": 0,
                 "totalGenerationCount": total_generations,
                 "processedGenerationCount": 0,
                 "totalGenerationRowCount": 0,
@@ -673,30 +948,65 @@ class JobRuntimeStore:
             if _clean_text(row.get("feed_generation"))
         }
 
-    def _count_generation_stats(self, generations: Sequence[str]) -> dict[str, tuple[int, int]]:
+    def _count_generation_stats_bounded(
+        self, generations: Sequence[str], *, budget_s: float
+    ) -> dict[str, tuple[int, int]]:
+        """Count legacy generations within one shared deadline.
+
+        The deadline covers both the jobs and sources queries. An interrupted
+        count returns no partial counts so the caller can fall back to sample
+        lower bounds consistently.
+        """
+        if not generations or budget_s <= 0:
+            return {}
+        deadline = time.monotonic() + budget_s
+        try:
+            return self._count_generation_stats(generations, deadline=deadline)
+        except (
+            BaluffoStoreError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ):
+            return {}
+
+    def _count_generation_stats(
+        self, generations: Sequence[str], *, deadline: float | None = None
+    ) -> dict[str, tuple[int, int]]:
         """Count rows for legacy generations that predate the stats table."""
         if not generations:
             return {}
         placeholders = ", ".join("?" for _ in generations)
         parameters = tuple(generations)
-        job_rows = self.store.execute_read(
-            f"""
+        job_sql = f"""
             SELECT feed_generation, COUNT(*) AS row_count
             FROM jobs
             WHERE feed_generation IN ({placeholders})
             GROUP BY feed_generation
-            """,
-            parameters,
-        )
-        source_rows = self.store.execute_read(
-            f"""
+            """
+        source_sql = f"""
             SELECT feed_generation, COUNT(*) AS source_count
             FROM job_sources
             WHERE feed_generation IN ({placeholders})
             GROUP BY feed_generation
-            """,
-            parameters,
-        )
+            """
+        job_rows: list[dict[str, Any]] | None
+        source_rows: list[dict[str, Any]] | None
+        if deadline is None:
+            job_rows = self.store.execute_read(job_sql, parameters)
+            source_rows = self.store.execute_read(source_sql, parameters)
+        else:
+            job_rows = self.store.execute_read_with_deadline(job_sql, parameters, deadline=deadline)
+            if job_rows is None:
+                return {}
+            source_rows = self.store.execute_read_with_deadline(
+                source_sql, parameters, deadline=deadline
+            )
+            if source_rows is None:
+                return {}
+
         counts = {generation: [0, 0] for generation in generations}
         for row in job_rows:
             generation = _clean_text(row.get("feed_generation"))
@@ -746,7 +1056,8 @@ class JobRuntimeStore:
                 lambda conn: conn.executemany(
                     "DELETE FROM job_feed_generation_stats WHERE feed_generation = ?",
                     [(generation,) for generation in generations],
-                )
+                ),
+                operation="cleanup-delete:job_feed_generation_stats",
             )
         except (
             BaluffoStoreError,
@@ -760,18 +1071,21 @@ class JobRuntimeStore:
 
     def _delete_generation_batches(
         self,
+        table: str,
         sql: str,
         parameters: tuple[Any, ...],
         *,
         on_deleted: Callable[[int], None],
+        cancel_requested: CancelRequested | None = None,
     ) -> None:
         while True:
-            deleted = self._delete_generation_batch(sql, parameters)
+            raise_if_cancelled(cancel_requested)
+            deleted = self._delete_generation_batch(table, sql, parameters)
             if deleted <= 0:
                 break
             on_deleted(deleted)
 
-    def _delete_generation_batch(self, sql: str, parameters: tuple[Any, ...]) -> int:
+    def _delete_generation_batch(self, table: str, sql: str, parameters: tuple[Any, ...]) -> int:
         def delete_rows(conn: Any) -> int:
             cursor = conn.execute(sql, parameters)
             return max(0, int(cursor.rowcount or 0))
@@ -780,6 +1094,7 @@ class JobRuntimeStore:
             self.store.write(
                 delete_rows,
                 secure_delete=BULK_DELETE_SECURE_DELETE,
+                operation=f"cleanup-delete:{table}",
             )
         )
 

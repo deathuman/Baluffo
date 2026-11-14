@@ -190,12 +190,11 @@ def test_cleanup_old_generations_batches_rows_and_reports_progress(
                 ],
             )
             current = runtime.replace_feed(run_id="fetch_current", rows=[_row(3)])
-            write_calls = 0
+            write_operations: list[str] = []
             original_write = store.write
 
             def counting_write(callback, **kwargs):
-                nonlocal write_calls
-                write_calls += 1
+                write_operations.append(str(kwargs.get("operation") or ""))
                 return original_write(callback, **kwargs)
 
             monkeypatch.setattr(store, "write", counting_write)
@@ -207,11 +206,14 @@ def test_cleanup_old_generations_batches_rows_and_reports_progress(
             )
 
             assert deleted == 1
-            assert write_calls >= 6
+            assert len(write_operations) >= 6
+            assert "cleanup-delete:job_sources" in write_operations
+            assert "cleanup-delete:jobs" in write_operations
             assert progress[-1] == {
                 "stage": "deleting",
                 "deletedGenerationCount": 1,
                 "deletedRowCount": 4,
+                "deletedGenerationRowCount": 4,
                 "totalGenerationCount": 1,
                 "processedGenerationCount": 1,
                 "totalGenerationRowCount": 4,

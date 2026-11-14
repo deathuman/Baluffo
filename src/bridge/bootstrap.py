@@ -65,10 +65,17 @@ def build_bridge_api(
     compute_ops_health_ready: Callable[[], dict[str, Any]] | None,
     compute_ops_dashboard_health: Callable[[], dict[str, Any]],
     get_storage_health_payload: Callable[[], dict[str, Any]],
+    get_storage_maintenance_preview: Callable[[], dict[str, Any]] | None = None,
     start_storage_diagnostic: Callable[[str], dict[str, Any]] | None = None,
     get_storage_diagnostic_payload: Callable[[], dict[str, Any]] | None = None,
-    cancel_storage_diagnostic: Callable[[], dict[str, Any]] | None = None,
+    cancel_storage_diagnostic: Callable[[str], dict[str, Any]] | None = None,
     start_storage_maintenance: Callable[[], dict[str, Any]] | None = None,
+    cancel_storage_maintenance: Callable[[str], dict[str, Any]] | None = None,
+    get_storage_rebuild_payload: Callable[[], dict[str, Any]] | None = None,
+    start_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
+    cancel_storage_rebuild: Callable[[str], dict[str, Any]] | None = None,
+    rollback_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
+    delete_storage_rebuild_backup: Callable[[], dict[str, Any]] | None = None,
     compute_fetcher_metrics: Callable[..., dict[str, Any]],
     get_projected_run_history: Callable[[], Any],
     get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]],
@@ -172,14 +179,42 @@ def build_bridge_api(
             compute_ops_fetch_kpis_summary or _empty_fetch_kpis_summary
         ),
         get_storage_health_payload=get_storage_health_payload,
+        get_storage_maintenance_preview=get_storage_maintenance_preview
+        or (lambda: {"ok": False, "error": "not_implemented"}),
         start_storage_diagnostic=start_storage_diagnostic
         or (lambda _mode: {"started": False, "error": "not_implemented"}),
         get_storage_diagnostic_payload=get_storage_diagnostic_payload
         or (lambda: {"ok": True, "storageDiagnostic": None}),
         cancel_storage_diagnostic=cancel_storage_diagnostic
-        or (lambda: {"ok": False, "error": "not_implemented"}),
+        or (lambda _run_id: {"ok": False, "error": "not_implemented"}),
         start_storage_maintenance=start_storage_maintenance
         or (lambda: {"ok": False, "started": False, "error": "not_implemented"}),
+        cancel_storage_maintenance=cancel_storage_maintenance
+        or (
+            lambda _run_id: {
+                "ok": False,
+                "requested": False,
+                "cancelling": False,
+                "error": "not_implemented",
+            }
+        ),
+        get_storage_rebuild_payload=get_storage_rebuild_payload
+        or (lambda: {"ok": True, "storageRebuild": None}),
+        start_storage_rebuild=start_storage_rebuild
+        or (lambda: {"ok": False, "started": False, "error": "not_implemented"}),
+        cancel_storage_rebuild=cancel_storage_rebuild
+        or (
+            lambda _run_id: {
+                "ok": False,
+                "cancelling": False,
+                "stale": True,
+                "error": "not_implemented",
+            }
+        ),
+        rollback_storage_rebuild=rollback_storage_rebuild
+        or (lambda: {"ok": False, "error": "not_implemented"}),
+        delete_storage_rebuild_backup=delete_storage_rebuild_backup
+        or (lambda: {"ok": False, "error": "not_implemented"}),
         compute_fetcher_metrics=compute_fetcher_metrics,
         get_projected_run_history=get_projected_run_history,
         get_lifecycle_run_history_rows=get_lifecycle_run_history_rows,

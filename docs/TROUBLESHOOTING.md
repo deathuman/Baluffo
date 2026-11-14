@@ -164,6 +164,14 @@ confirmation is still required; the subset and local store-path measurements are
 recorded in
 [`storage-contract.md`](storage-contract.md#measured-generation-cleanup-levers-2026-11-12).
 
+For a repeatable local attribution run, use
+`python tools/measurements/pipeline/generation_cleanup_profile.py`. It builds a
+versioned synthetic fixture through the shipped migrations and seed path, then
+profiles the real cleanup path; it never reads a live sample or a prior `_out`
+artifact. The default run writes `.tmp/generation-cleanup-profile/<UTC-stamp>/`
+with `results.json` and `SUMMARY.md`, and removes the disposable databases unless
+`--keep-fixtures` is passed. Use `--job-count` and `--arms` for a smaller check.
+
 ### Saved jobs not persisting
 
 | Possible Cause | Solution |
@@ -658,6 +666,15 @@ npm run test:smoke
 |----------|-------|
 | Backup before update | Use Export Backup in Saved Jobs page |
 | Check migration | Look for migration plan in `docs/RELEASE.md` |
+
+### Runtime database is too large to drain
+
+| Check | Action |
+|-------|--------|
+| Cleanup rate | Bounded generation deletion is roughly 7.3k rows/min on the live store; a full backlog can take weeks |
+| Free space | Admin → Database storage → **Rebuild current feed** needs 1-3 GB free and copies only the published feed generation |
+| Rollback | The old database is retained as `baluffo-runtime.db.pre-rebuild`; **Roll back** restores it, **Delete old database** frees the space |
+| Superseded | A rebuild stops before installation when a write commits during the copy; run it again while the bridge is idle |
 
 ### Source registry in inconsistent state
 

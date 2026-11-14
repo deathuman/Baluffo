@@ -9,6 +9,7 @@ from src.bridge.storage_health import (
     _StoreOpenBusy,
     close_storage_stores,
     get_storage_health_payload,
+    get_storage_maintenance_preview,
     get_storage_store,
     record_storage_diagnostic,
     resume_storage_maintenance,
@@ -147,6 +148,43 @@ def test_runtime_db_file_sizes_reports_disk_state_without_opening_store(tmp_path
 
     assert sizes == {"databaseBytes": 2, "walBytes": 4, "shmBytes": 0}
     assert not (tmp_path / "baluffo-runtime.db-shm").exists()
+
+
+def test_get_storage_maintenance_preview_adds_free_space_without_scheduling(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class PreviewStore:
+        def get_authority_modes(self):
+            return {"jobsFeed": "sqlite"}
+
+        def execute_read(self, _sql, _parameters=None):
+            return []
+
+        def file_sizes(self):
+            return {"databaseBytes": 4096, "walBytes": 12, "freelistBytes": 1024}
+
+        def runtime_retention_status(self):
+            return {"running": False, "status": "not-run"}
+
+        def compaction_status(self):
+            return {"status": "not-run"}
+
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: PreviewStore(),
+    )
+
+    result = get_storage_maintenance_preview(tmp_path)
+
+    preview = result["maintenancePreview"]
+    assert result["ok"] is True
+    assert preview["readOnly"] is True
+    assert preview["currentFeedProtected"] is False
+    assert preview["databaseBytes"] == 4096
+    assert preview["freelistBytes"] == 1024
+    assert preview["freeDiskBytes"] > 0
+    assert preview["freeSpaceKnown"] is True
+    assert result["runtimeRetention"]["status"] == "not-run"
 
 
 def test_start_storage_maintenance_schedules_the_bounded_retention_pass(

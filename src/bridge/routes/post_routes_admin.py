@@ -120,9 +120,19 @@ class _AdminPostRouteApi(Protocol):
 
     def start_storage_diagnostic(self, mode: str) -> dict[str, Any]: ...
 
-    def cancel_storage_diagnostic(self) -> dict[str, Any]: ...
+    def cancel_storage_diagnostic(self, run_id: str) -> dict[str, Any]: ...
 
     def start_storage_maintenance(self) -> dict[str, Any]: ...
+
+    def cancel_storage_maintenance(self, run_id: str) -> dict[str, Any]: ...
+
+    def start_storage_rebuild(self) -> dict[str, Any]: ...
+
+    def cancel_storage_rebuild(self, run_id: str) -> dict[str, Any]: ...
+
+    def rollback_storage_rebuild(self) -> dict[str, Any]: ...
+
+    def delete_storage_rebuild_backup(self) -> dict[str, Any]: ...
 
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -349,13 +359,50 @@ def _handle_ops_admin_post(
         return True
 
     if path == "/ops/storage-diagnostic/cancel":
-        result = api.cancel_storage_diagnostic()
-        handler.send_json(result, status=202 if bool(result.get("cancelling")) else 200)
+        run_id = str(data.get("runId") or "").strip()
+        result = api.cancel_storage_diagnostic(run_id)
+        status = (
+            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
+        )
+        handler.send_json(result, status=status)
         return True
 
     if path == "/ops/storage-maintenance":
         result = api.start_storage_maintenance()
         handler.send_json(result, status=202 if bool(result.get("started")) else 200)
+        return True
+
+    if path == "/ops/storage-maintenance/cancel":
+        run_id = str(data.get("runId") or "").strip()
+        result = api.cancel_storage_maintenance(run_id)
+        status = (
+            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
+        )
+        handler.send_json(result, status=status)
+        return True
+
+    if path == "/ops/storage-rebuild":
+        result = api.start_storage_rebuild()
+        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
+        return True
+
+    if path == "/ops/storage-rebuild/cancel":
+        run_id = str(data.get("runId") or "").strip()
+        result = api.cancel_storage_rebuild(run_id)
+        status = (
+            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
+        )
+        handler.send_json(result, status=status)
+        return True
+
+    if path == "/ops/storage-rebuild/rollback":
+        result = api.rollback_storage_rebuild()
+        handler.send_json(result, status=200 if bool(result.get("ok")) else 409)
+        return True
+
+    if path == "/ops/storage-rebuild/backup-delete":
+        result = api.delete_storage_rebuild_backup()
+        handler.send_json(result, status=200 if bool(result.get("ok")) else 409)
         return True
 
     if path == "/ops/alerts/ack":
