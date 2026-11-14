@@ -121,10 +121,10 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.65.0",
     "esbuild": "^0.28.2",
-    "eslint": "10.11.0",
-    "knip": "6.38.0"
+    "eslint": "10.14.0",
+    "knip": "6.44.2"
   },
   "overrides": {
     "smol-toml": "1.9.0",
