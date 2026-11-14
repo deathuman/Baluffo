@@ -45,8 +45,6 @@ def _cleanup_label(detail: str, counts: Mapping[str, Any]) -> str:
     deleted_rows = int(counts.get("deletedRowCount") or 0)
     if detail == "scheduled":
         return "Preparing old feed cleanup..."
-    if detail == "scanning":
-        return "Scanning old feed generations..."
     if detail == "deleting":
         return f"Cleaning old feed generations... {deleted_rows:,} rows deleted"
     if detail == "complete":

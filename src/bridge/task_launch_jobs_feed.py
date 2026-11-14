@@ -324,9 +324,6 @@ def export_jobs_feed_from_sqlite(
     try:
         _emit_feed_projection_progress(ctx, on_progress, "export", detail="read_rows")
         rows = runtime_store.current_rows()
-        _emit_feed_projection_progress(
-            ctx, on_progress, "export", detail="read_rows_complete", rowCount=len(rows)
-        )
         json_path = _jobs_feed_path(jobs_fetch_report)
         light_path = _jobs_feed_light_path(jobs_fetch_report)
         startup_path = _jobs_feed_startup_path(jobs_fetch_report)

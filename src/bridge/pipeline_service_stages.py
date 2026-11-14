@@ -62,7 +62,6 @@ _FEED_PROJECTION_DETAIL_LABELS = {
 _FEED_PROJECTION_PROGRESS_FIELDS = (
     "mode",
     "generation",
-    "contentHash",
     "rowCount",
     "sourceRowCount",
     "sourceCount",
@@ -114,6 +113,15 @@ def _advance_feed_projection_phase(
     telemetry["_phaseStartedMonotonic"] = now_monotonic
     telemetry["phaseStartedAt"] = now
     return True
+
+
+def _feed_projection_timings(telemetry: dict[str, Any], now_monotonic: float) -> tuple[int, int]:
+    started = float(telemetry.get("_startedMonotonic") or now_monotonic)
+    phase_started = float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
+    return (
+        max(0, int(round((now_monotonic - started) * 1000))),
+        max(0, int(round((now_monotonic - phase_started) * 1000))),
+    )
 
 
 def _feed_projection_stage_label(update: dict[str, Any], detail: str) -> str:
@@ -387,27 +395,9 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             telemetry["detail"] = detail
             telemetry["updatedAt"] = now
             telemetry["heartbeatAt"] = now
-            telemetry["elapsedMs"] = max(
-                0,
-                int(
-                    round(
-                        (now_monotonic - float(telemetry.get("_startedMonotonic") or now_monotonic))
-                        * 1000
-                    )
-                ),
-            )
-            telemetry["phaseElapsedMs"] = max(
-                0,
-                int(
-                    round(
-                        (
-                            now_monotonic
-                            - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
-                        )
-                        * 1000
-                    )
-                ),
-            )
+            elapsed_ms, phase_elapsed_ms = _feed_projection_timings(telemetry, now_monotonic)
+            telemetry["elapsedMs"] = elapsed_ms
+            telemetry["phaseElapsedMs"] = phase_elapsed_ms
             if fetch_run_id:
                 telemetry["fetchRunId"] = fetch_run_id
             for field in _FEED_PROJECTION_PROGRESS_FIELDS:
@@ -437,59 +427,29 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         telemetry: dict[str, Any],
         phase: str,
         label: str,
+        update: dict[str, Any] | None = None,
         error: str = "",
     ) -> None:
         self._record_feed_projection_progress(
-            {"phase": phase, "phaseLabel": label, "error": error},
+            {"phase": phase, "phaseLabel": label, "error": error, **(update or {})},
             run_id=run_id,
             fetch_run_id=fetch_run_id,
             telemetry=telemetry,
         )
         now = self._now_iso()
         now_monotonic = time.monotonic()
+        elapsed_ms, phase_elapsed_ms = _feed_projection_timings(telemetry, now_monotonic)
         with self._lock:
             phases = telemetry.get("phases")
             if isinstance(phases, list) and phases:
                 last = phases[-1]
                 if isinstance(last, dict) and not str(last.get("finishedAt") or "").strip():
                     last["finishedAt"] = now
-                    last["durationMs"] = max(
-                        0,
-                        int(
-                            round(
-                                (
-                                    now_monotonic
-                                    - float(
-                                        telemetry.get("_phaseStartedMonotonic") or now_monotonic
-                                    )
-                                )
-                                * 1000
-                            )
-                        ),
-                    )
+                    last["durationMs"] = phase_elapsed_ms
             telemetry["updatedAt"] = now
             telemetry["heartbeatAt"] = now
-            telemetry["elapsedMs"] = max(
-                0,
-                int(
-                    round(
-                        (now_monotonic - float(telemetry.get("_startedMonotonic") or now_monotonic))
-                        * 1000
-                    )
-                ),
-            )
-            telemetry["phaseElapsedMs"] = max(
-                0,
-                int(
-                    round(
-                        (
-                            now_monotonic
-                            - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
-                        )
-                        * 1000
-                    )
-                ),
-            )
+            telemetry["elapsedMs"] = elapsed_ms
+            telemetry["phaseElapsedMs"] = phase_elapsed_ms
             self._publish_feed_projection_telemetry_locked(telemetry)
 
     def _feed_projection_heartbeat_loop(
@@ -512,30 +472,9 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                     return
                 telemetry["heartbeatAt"] = now
                 telemetry["updatedAt"] = now
-                telemetry["elapsedMs"] = max(
-                    0,
-                    int(
-                        round(
-                            (
-                                now_monotonic
-                                - float(telemetry.get("_startedMonotonic") or now_monotonic)
-                            )
-                            * 1000
-                        )
-                    ),
-                )
-                telemetry["phaseElapsedMs"] = max(
-                    0,
-                    int(
-                        round(
-                            (
-                                now_monotonic
-                                - float(telemetry.get("_phaseStartedMonotonic") or now_monotonic)
-                            )
-                            * 1000
-                        )
-                    ),
-                )
+                elapsed_ms, phase_elapsed_ms = _feed_projection_timings(telemetry, now_monotonic)
+                telemetry["elapsedMs"] = elapsed_ms
+                telemetry["phaseElapsedMs"] = phase_elapsed_ms
                 self._publish_feed_projection_telemetry_locked(telemetry)
             self._heartbeat_pipeline_wait()
 
@@ -584,12 +523,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             self._status["fetchRunId"] = fetch_run_id
         if self._fetch_report_failed(report):
             label = "Feed projection skipped because the fetch failed."
-            self._record_feed_projection_progress(
-                {"phase": "skipped", "phaseLabel": label, "detail": "fetch_failed"},
-                run_id=run_id,
-                fetch_run_id=fetch_run_id,
-                telemetry=telemetry,
-            )
             self._finalize_feed_projection_telemetry(
                 run_id=run_id,
                 fetch_run_id=fetch_run_id,
@@ -621,12 +554,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         project = self._project_feed
         if not callable(project):
             label = "Feed projection skipped because no projector is configured."
-            self._record_feed_projection_progress(
-                {"phase": "skipped", "phaseLabel": label, "detail": "unavailable"},
-                run_id=run_id,
-                fetch_run_id=fetch_run_id,
-                telemetry=telemetry,
-            )
             self._finalize_feed_projection_telemetry(
                 run_id=run_id,
                 fetch_run_id=fetch_run_id,
@@ -691,6 +618,8 @@ class _PipelineServiceStageMixin(PipelineServiceState):
         heartbeat_thread.start()
 
         def stop_heartbeat_thread() -> None:
+            if stop_heartbeat.is_set():
+                return
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=5.0)
 
@@ -703,12 +632,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             error = f"feed_projection: {exc}"
             with self._lock:
                 self._status["feedProjectionStatus"] = "failed"
-            self._record_feed_projection_progress(
-                {"phase": "failed", "phaseLabel": "Feed projection failed.", "error": error},
-                run_id=run_id,
-                fetch_run_id=fetch_run_id,
-                telemetry=telemetry,
-            )
             self._finalize_feed_projection_telemetry(
                 run_id=run_id,
                 fetch_run_id=fetch_run_id,
@@ -724,12 +647,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
             error = "feed_projection: invalid result payload"
             with self._lock:
                 self._status["feedProjectionStatus"] = "failed"
-            self._record_feed_projection_progress(
-                {"phase": "failed", "phaseLabel": "Feed projection failed.", "error": error},
-                run_id=run_id,
-                fetch_run_id=fetch_run_id,
-                telemetry=telemetry,
-            )
             self._finalize_feed_projection_telemetry(
                 run_id=run_id,
                 fetch_run_id=fetch_run_id,
@@ -744,16 +661,6 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                 self._status["feedProjectionStatus"] = "failed"
             error = str(result.get("error") or "jobs feed generation was not published").strip()
             message = f"feed_projection: {error}"
-            self._record_feed_projection_progress(
-                {
-                    "phase": "failed",
-                    "phaseLabel": "Feed projection failed.",
-                    "error": message,
-                },
-                run_id=run_id,
-                fetch_run_id=fetch_run_id,
-                telemetry=telemetry,
-            )
             self._finalize_feed_projection_telemetry(
                 run_id=run_id,
                 fetch_run_id=fetch_run_id,
@@ -777,25 +684,18 @@ class _PipelineServiceStageMixin(PipelineServiceState):
                 }
             )
         )
-        self._record_feed_projection_progress(
-            {
-                "phase": final_phase,
-                "phaseLabel": final_label,
-                "generation": evidence["feedGeneration"],
-                "rowCount": evidence["feedRowCount"],
-                "sourceCount": evidence["feedSourceCount"],
-                "mode": evidence["feedMode"],
-            },
-            run_id=run_id,
-            fetch_run_id=fetch_run_id,
-            telemetry=telemetry,
-        )
         self._finalize_feed_projection_telemetry(
             run_id=run_id,
             fetch_run_id=fetch_run_id,
             telemetry=telemetry,
             phase=final_phase,
             label=final_label,
+            update={
+                "generation": evidence["feedGeneration"],
+                "rowCount": evidence["feedRowCount"],
+                "sourceCount": evidence["feedSourceCount"],
+                "mode": evidence["feedMode"],
+            },
         )
         self._bridge_log("info", "jobs_pipeline_feed_projected", runId=run_id, **evidence)
         self._check_abort(run_id)
