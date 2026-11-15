@@ -12,6 +12,7 @@ tools/
   mcp/               # Required Serena and Basic Memory setup plus deprecated local MCP fallback
   repo_health/       # Repository readiness and refactorability analysis
   measurements/      # Pipeline, source and desktop performance measurement
+  storage/           # Runtime SQLite maintenance and restart-settlement proof
   reports/           # Generated outputs (not tracked in git)
 ```
 
@@ -447,6 +448,7 @@ is typically gitignored - do not commit generated files here.
 | Profile generation-cleanup transactions on a fixed disposable fixture | `python tools/measurements/pipeline/generation_cleanup_profile.py` |
 | Reconcile carried source-bundle provenance | `python tools/source_bundle_reconcile.py --feed <feed> [--apply]` |
 | Verify a published release (assets, signed manifests, GHCR) | `python tools/verify_release.py [--tag v<version>]` |
+| Re-prove the backup-delete restart settlement against a real bridge | `python tools/storage/proof_backup_delete_restart.py --json _out/restart-proof.json` |
 | Live-check provider ETag capture + 304 revalidation | `python tools/provider_revalidation_smoke.py --adapter <adapter> --source <board>` |
 | Sweep an adapter for feeds that ignore If-None-Match | `python tools/provider_revalidation_smoke.py --adapter <adapter> --all` |
 | Monitor social sources | `tools/measurements/sources/social_sources_monitoring.py` |
