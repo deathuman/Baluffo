@@ -47,6 +47,61 @@ def test_preview_counts_legacy_generations_within_its_budget() -> None:
     assert all(row["countsKnown"] is True for row in preview["candidates"])
 
 
+def test_preview_reports_current_and_historical_payload_estimates() -> None:
+    with workspace_tmpdir("preview-reclaim-fields") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            generations = _replace_generations(store, 3)
+            preview = JobRuntimeStore(store).cleanup_preview()
+            freelist_bytes = store.file_sizes()["freelistBytes"]
+
+    assert preview["currentGeneration"] == generations[-1]
+    assert preview["currentGenerationEstimatedBytes"] > 0
+    assert preview["historicalGenerationEstimatedBytes"] > 0
+    assert preview["historicalGenerationCount"] == 2
+    assert preview["estimatedReclaimableBytes"] == (
+        preview["historicalGenerationEstimatedBytes"] + freelist_bytes
+    )
+
+
+def test_preview_history_sample_ignores_the_delete_cap() -> None:
+    with workspace_tmpdir("preview-reclaim-beyond-cap") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _replace_generations(store, 6)
+            preview = JobRuntimeStore(store).cleanup_preview(delete_cap=1)
+
+    # The cap bounds the candidate list; it must not bound the history estimate,
+    # because the cap is exactly what made the count misleading on real backlogs.
+    assert preview["deleteCap"] == 1
+    assert preview["candidateGenerationCount"] == 1
+    assert preview["capReached"] is True
+    assert preview["historicalGenerationCount"] == 5
+    assert preview["historicalGenerationEstimatedBytes"] > 0
+
+
+def test_preview_reports_no_history_when_only_the_current_feed_exists() -> None:
+    with workspace_tmpdir("preview-reclaim-current-only") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _replace_generations(store, 1)
+            preview = JobRuntimeStore(store).cleanup_preview()
+            freelist_bytes = store.file_sizes()["freelistBytes"]
+
+    assert preview["currentGenerationEstimatedBytes"] > 0
+    assert preview["historicalGenerationEstimatedBytes"] == 0
+    assert preview["historicalGenerationCount"] == 0
+    assert preview["estimatedReclaimableBytes"] == freelist_bytes
+
+
+def test_preview_without_a_current_generation_reports_no_reclaim_estimate() -> None:
+    with workspace_tmpdir("preview-reclaim-empty") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            preview = JobRuntimeStore(store).cleanup_preview()
+
+    assert preview["currentGenerationEstimatedBytes"] == 0
+    assert preview["historicalGenerationEstimatedBytes"] == 0
+    assert preview["historicalGenerationCount"] == 0
+    assert preview["estimatedReclaimableBytes"] == 0
+
+
 def test_bounded_read_interrupts_sql_and_leaves_the_read_connection_usable() -> None:
     with workspace_tmpdir("preview-bounded-read") as data_dir:
         with BaluffoStore(data_dir) as store:

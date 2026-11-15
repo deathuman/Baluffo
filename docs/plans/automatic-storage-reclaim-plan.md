@@ -6,7 +6,9 @@
 >   (measured ~7.3k rows/min) and only a rebuild returns the space
 > - **Verified against:** `560ed78f` (tree inspection of the existing rebuild,
 >   retention, and storage-health surface; no reclaim code exists yet)
-> - **Status:** Planned — not started. Every slice below is unimplemented.
+> - **Status:** In progress. The four preview fields (§1) are implemented in
+  `cleanup_preview` and pinned by `tests/storage/test_job_runtime_preview.py`.
+  The verdict leaf and every later slice are unimplemented.
 
 ## Scope
 

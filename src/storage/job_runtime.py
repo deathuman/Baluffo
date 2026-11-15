@@ -57,6 +57,10 @@ DEFAULT_GENERATION_DELETE_CAP = 4
 DEFAULT_GENERATION_DELETE_BATCH_SIZE = 1000
 DEFAULT_GENERATION_PREVIEW_SAMPLE_ROWS = 200
 DEFAULT_GENERATION_PREVIEW_COUNT_BUDGET_S = 2.0
+# The all-history payload sample walks the oldest non-current generations first,
+# because those are the ones retention deletes first. Bounded so a deep backlog
+# costs a fixed number of samples rather than one per generation.
+HISTORY_SAMPLE_GENERATION_LIMIT = 32
 _SOURCE_ALIAS_QUERY_CHUNK = 200
 
 # Keep the batch's selection generation-scoped and name the feed_generation-leading
@@ -926,6 +930,18 @@ class JobRuntimeStore:
                     "countsKnown": counts_row_known,
                 }
             )
+        # Reclaim-facing estimates. The capped candidate list cannot describe a
+        # weeks-old backlog, so history is sampled across every non-current
+        # generation. Both numbers are payload lower bounds: page and index
+        # overhead is excluded, so they can delay a reclaim but never invent one.
+        current_generation_bytes = self._sampled_payload_bytes(
+            "jobs", current, int(current_summary.get("rowCount") or 0), sample_rows
+        ) + self._sampled_payload_bytes(
+            "job_sources", current, int(current_summary.get("sourceCount") or 0), sample_rows
+        )
+        historical_bytes, historical_generations = self._historical_payload_bytes(
+            current, sample_rows=sample_rows, count_budget_s=count_budget_s
+        )
         return {
             "currentGeneration": current,
             "currentFeedProtected": bool(current),
@@ -939,6 +955,10 @@ class JobRuntimeStore:
             "candidateSourceRowCount": candidate_source_rows,
             "candidateRowCount": candidate_rows,
             "estimatedBytes": estimated_bytes,
+            "currentGenerationEstimatedBytes": current_generation_bytes,
+            "historicalGenerationEstimatedBytes": historical_bytes,
+            "historicalGenerationCount": historical_generations,
+            "estimatedReclaimableBytes": historical_bytes + self._freelist_bytes(),
             "sampleRowsPerTable": max(1, int(sample_rows or 1)),
             "countsSource": counts_source,
             "countsKnown": counts_known,
@@ -966,11 +986,72 @@ class JobRuntimeStore:
             "candidateSourceRowCount": 0,
             "candidateRowCount": 0,
             "estimatedBytes": 0,
+            # No published feed means there is no protected generation to define
+            # history, so every feed row would look reclaimable. The verdict
+            # refuses with `no-current-generation` instead of using these.
+            "currentGenerationEstimatedBytes": 0,
+            "historicalGenerationEstimatedBytes": 0,
+            "historicalGenerationCount": 0,
+            "estimatedReclaimableBytes": 0,
             "sampleRowsPerTable": max(1, int(sample_rows or 1)),
             "countsSource": "generation-stats",
             "countsKnown": True,
             "candidates": [],
         }
+
+    def _sampled_payload_bytes(
+        self, table: str, generation: str, total_rows: int, sample_rows: int
+    ) -> int:
+        sample = self._payload_sample(table, generation, sample_rows)
+        return _estimate_payload_bytes(
+            int(sample["sampleCount"]), int(sample["sampleBytes"]), max(0, int(total_rows))
+        )
+
+    def _historical_payload_bytes(
+        self, current: str, *, sample_rows: int, count_budget_s: float
+    ) -> tuple[int, int]:
+        """Estimate payload bytes across every non-current generation.
+
+        Returns ``(estimated_bytes, generations_seen)``. Cached generation stats
+        provide the projection; missing ones get the preview's bounded count, and
+        when even that cannot finish the sample itself is the floor. The estimate
+        therefore understates history rather than overstating it.
+        """
+        generations = self._generations_before_current(current, None)[
+            :HISTORY_SAMPLE_GENERATION_LIMIT
+        ]
+        if not generations:
+            return 0, 0
+        stats = self._generation_stats(generations)
+        missing = [generation for generation in generations if generation not in stats]
+        if missing and float(count_budget_s or 0) > 0:
+            stats.update(
+                self._count_generation_stats_bounded(missing, budget_s=float(count_budget_s))
+            )
+        estimated = 0
+        seen = 0
+        for generation in generations:
+            job_sample = self._payload_sample("jobs", generation, sample_rows)
+            source_sample = self._payload_sample("job_sources", generation, sample_rows)
+            if int(job_sample["sampleCount"]) > 0 or int(source_sample["sampleCount"]) > 0:
+                seen += 1
+            job_count, source_count = stats.get(generation, (0, 0))
+            job_rows = job_count if generation in stats else int(job_sample["sampleCount"])
+            source_rows = source_count if generation in stats else int(source_sample["sampleCount"])
+            estimated += _estimate_payload_bytes(
+                int(job_sample["sampleCount"]), int(job_sample["sampleBytes"]), job_rows
+            ) + _estimate_payload_bytes(
+                int(source_sample["sampleCount"]),
+                int(source_sample["sampleBytes"]),
+                source_rows,
+            )
+        return estimated, seen
+
+    def _freelist_bytes(self) -> int:
+        try:
+            return max(0, int(self.store.file_sizes().get("freelistBytes") or 0))
+        except (BaluffoStoreError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError):
+            return 0
 
     def _payload_sample(self, table: str, generation: str, sample_rows: int) -> dict[str, Any]:
         if table not in {"jobs", "job_sources"}:
