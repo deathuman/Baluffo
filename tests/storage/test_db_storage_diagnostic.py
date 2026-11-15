@@ -114,6 +114,28 @@ def test_exact_diagnostic_groups_job_sources_by_generation(tmp_path: Path) -> No
         assert job_sources["tableBytes"] is None
 
 
+def test_exact_diagnostic_nests_feed_state_under_job_sources(tmp_path: Path) -> None:
+    """The Admin audit's Current feed card reads the feed from ``jobSources``.
+
+    Exact mode has no top-level ``feedState``: ``_job_sources`` spreads
+    ``_feed_state`` into its totals and ``_completed_payload`` hands that object
+    over as ``jobSources``. The frontend card depends on that nesting, so pin the
+    field names here -- moving them out from under ``jobSources`` would silently
+    remove the card instead of failing a test.
+    """
+    path = tmp_path / "runtime.db"
+    _seed(path)
+
+    result = measure_storage_diagnostic(path)
+
+    job_sources = result["jobSources"]
+    assert job_sources["currentGeneration"] == "gen-current"
+    assert job_sources["currentRowCount"] == 2
+    assert job_sources["currentSourceCount"] == 2
+    assert job_sources["currentPublishedAt"] == "2026-11-09T10:01:00Z"
+    assert job_sources["currentRunId"] == "fetch_1"
+
+
 def test_exact_diagnostic_is_cancellable_from_the_progress_handler(tmp_path: Path) -> None:
     path = tmp_path / "runtime.db"
     _seed(path)
