@@ -12,8 +12,12 @@
   `tests/storage/test_reclaim_policy.py`), and `GET /ops/storage-reclaim` serves
   the verdict, live status and journal through the 60 s cache
   (`src/bridge/storage_reclaim.py`, pinned by
-  `tests/bridge/test_storage_reclaim.py`). The POSTs, orchestrator, hold, triggers
-  and presentation are unimplemented.
+  `tests/bridge/test_storage_reclaim.py`). The journaled `StorageReclaimJob` and
+  the start/cancel POSTs are implemented in the same module, composing the
+  rebuild's public start/cancel/delete entry points; `active-task` is read from
+  the bridge's task hold. The reclaim hold (§3), triggers (§4), rehearsal (§9),
+  content-parity digests and full-disk order (§3) and presentation (§6) are
+  unimplemented, and `{dryRun: true}` is refused until the rehearsal lands.
 
 ## Scope
 

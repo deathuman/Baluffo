@@ -73,6 +73,8 @@ def build_bridge_api(
     cancel_storage_maintenance: Callable[[str], dict[str, Any]] | None = None,
     get_storage_rebuild_payload: Callable[[], dict[str, Any]] | None = None,
     get_storage_reclaim_payload: Callable[..., dict[str, Any]] | None = None,
+    start_storage_reclaim: Callable[..., dict[str, Any]] | None = None,
+    cancel_storage_reclaim: Callable[[str], dict[str, Any]] | None = None,
     start_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_rebuild: Callable[[str], dict[str, Any]] | None = None,
     rollback_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
@@ -203,6 +205,17 @@ def build_bridge_api(
         or (lambda: {"ok": True, "storageRebuild": None}),
         get_storage_reclaim_payload=get_storage_reclaim_payload
         or (lambda **_kwargs: {"ok": True, "storageReclaim": None}),
+        start_storage_reclaim=start_storage_reclaim
+        or (lambda **_kwargs: {"ok": False, "started": False, "error": "not_implemented"}),
+        cancel_storage_reclaim=cancel_storage_reclaim
+        or (
+            lambda _run_id: {
+                "ok": False,
+                "cancelling": False,
+                "stale": True,
+                "error": "not_implemented",
+            }
+        ),
         start_storage_rebuild=start_storage_rebuild
         or (lambda: {"ok": False, "started": False, "error": "not_implemented"}),
         cancel_storage_rebuild=cancel_storage_rebuild

@@ -122,6 +122,8 @@ _HEAVY_POST_EXACT = frozenset(
         "/tasks/run-fetcher",
         "/tasks/run-jobs-pipeline",
         "/tasks/run-jobs-bootstrap",
+        "/ops/storage-reclaim",
+        "/ops/storage-reclaim/cancel",
     }
 )
 

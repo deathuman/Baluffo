@@ -774,6 +774,30 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "POST",
+        "/ops/storage-reclaim",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=(),
+        rationale=(
+            "Starts one journaled reclaim run or answers the blocker that refused it; the "
+            "storage panel is its caller once the presentation slice lands."
+        ),
+    ),
+    _route(
+        "POST",
+        "/ops/storage-reclaim/cancel",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=(),
+        rationale=(
+            "Cancels a reclaim run by runId, delegating to the rebuild cancel once the "
+            "copy owns it; the storage panel is its caller once presentation lands."
+        ),
+    ),
+    _route(
+        "POST",
         "/ops/storage-rebuild",
         EXACT,
         POST_ADMIN_HANDLER,

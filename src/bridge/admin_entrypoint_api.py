@@ -124,6 +124,12 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
                 Path(config.data_dir).resolve(), refresh=refresh, scope=scope
             )
         ),
+        start_storage_reclaim=lambda *, auto=False: storage_reclaim_mod.start_storage_reclaim(
+            Path(config.data_dir).resolve(), auto=auto
+        ),
+        cancel_storage_reclaim=lambda run_id: storage_reclaim_mod.cancel_storage_reclaim(
+            Path(config.data_dir).resolve(), run_id
+        ),
         start_storage_rebuild=lambda: storage_rebuild_mod.start_storage_rebuild(
             Path(config.data_dir).resolve()
         ),

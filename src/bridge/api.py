@@ -457,6 +457,8 @@ class BridgeApi:
     }
     start_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
     cancel_storage_rebuild: Callable[[str], JsonObject] = _not_started_run_id
+    start_storage_reclaim: Callable[..., JsonObject] = lambda **_kwargs: _not_started_result()
+    cancel_storage_reclaim: Callable[[str], JsonObject] = _not_started_run_id
     rollback_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
     start_storage_rebuild_backup_delete: Callable[..., JsonObject] = lambda **_: {
         "ok": False,

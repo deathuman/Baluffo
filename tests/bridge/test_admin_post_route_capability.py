@@ -164,6 +164,33 @@ class MinimalAdminPostRouteApi:
             "storageRebuild": {},
         }
 
+    def start_storage_reclaim(self, *, auto: bool = False) -> dict[str, Any]:
+        if auto:
+            return {"ok": True, "started": False, "reason": "cooldown", "storageReclaim": {}}
+        return {
+            "ok": True,
+            "started": True,
+            "runId": "reclaim-current",
+            "storageReclaim": {"status": "running", "phase": "evaluating"},
+        }
+
+    def cancel_storage_reclaim(self, run_id: str = "") -> dict[str, Any]:
+        if run_id != "reclaim-current":
+            return {
+                "ok": False,
+                "cancelling": False,
+                "stale": True,
+                "reason": "run-id-mismatch",
+                "storageReclaim": {"status": "running", "runId": "reclaim-current"},
+            }
+        return {
+            "ok": True,
+            "cancelling": True,
+            "stale": False,
+            "reason": "",
+            "storageReclaim": {"status": "cancelling", "runId": run_id},
+        }
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
@@ -303,6 +330,27 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     assert backup_delete.sent[-1]["status"] == 202
     assert backup_delete.sent[-1]["payload"]["started"] is True
     assert backup_delete.sent[-1]["payload"]["runId"] == "backup_delete_test"
+
+    reclaim = _post(api, "/ops/storage-reclaim", {})
+    assert reclaim.sent[-1]["status"] == 202
+    assert reclaim.sent[-1]["payload"]["runId"] == "reclaim-current"
+
+    automatic_reclaim = _post(api, "/ops/storage-reclaim", {"auto": True})
+    assert automatic_reclaim.sent[-1]["status"] == 200
+    assert automatic_reclaim.sent[-1]["payload"]["reason"] == "cooldown"
+
+    dry_run = _post(api, "/ops/storage-reclaim", {"dryRun": True})
+    assert dry_run.sent[-1]["status"] == 400
+    assert dry_run.sent[-1]["payload"]["reason"] == "dry-run-unavailable"
+
+    reclaim_cancel = _post(api, "/ops/storage-reclaim/cancel", {"runId": "reclaim-current"})
+    assert reclaim_cancel.sent[-1]["status"] == 202
+    assert reclaim_cancel.sent[-1]["payload"]["cancelling"] is True
+    stale_reclaim = _post(api, "/ops/storage-reclaim/cancel", {"runId": "reclaim-old"})
+    assert stale_reclaim.sent[-1]["status"] == 409
+    assert stale_reclaim.sent[-1]["payload"]["stale"] is True
+    missing_reclaim = _post(api, "/ops/storage-reclaim/cancel", {})
+    assert missing_reclaim.sent[-1]["status"] == 409
 
     sync_task = _post(api, "/tasks/run-sync-pull", {})
     assert sync_task.sent[-1]["payload"]["action"] == "pull"

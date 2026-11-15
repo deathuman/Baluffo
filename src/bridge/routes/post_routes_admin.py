@@ -131,6 +131,10 @@ class _AdminPostRouteApi(Protocol):
 
     def cancel_storage_rebuild(self, run_id: str) -> dict[str, Any]: ...
 
+    def start_storage_reclaim(self, *, auto: bool = False) -> dict[str, Any]: ...
+
+    def cancel_storage_reclaim(self, run_id: str) -> dict[str, Any]: ...
+
     def rollback_storage_rebuild(self) -> dict[str, Any]: ...
 
     def start_storage_rebuild_backup_delete(
@@ -367,6 +371,73 @@ def _start_storage_rebuild_backup_delete_result(
     return result, 202 if bool(result.get("started")) else 200
 
 
+def _handle_ops_storage_copy_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: _AdminPostRouteApi,
+    path: str,
+    data: dict[str, Any],
+) -> bool:
+    """The routes that start, stop, or clean up a database copy.
+
+    The rebuild and the reclaim share the copy, its cancel path and the retained
+    backup lifecycle, so they dispatch together instead of each taking a branch
+    in the ops handler.
+    """
+    if path == "/ops/storage-rebuild":
+        result = api.start_storage_rebuild()
+        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
+        return True
+
+    if path == "/ops/storage-rebuild/cancel":
+        run_id = str(data.get("runId") or "").strip()
+        result = api.cancel_storage_rebuild(run_id)
+        status = (
+            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
+        )
+        handler.send_json(result, status=status)
+        return True
+
+    if path == "/ops/storage-rebuild/rollback":
+        result = api.rollback_storage_rebuild()
+        handler.send_json(result, status=200 if bool(result.get("ok")) else 409)
+        return True
+
+    if path == "/ops/storage-rebuild/backup-delete":
+        result, status = _start_storage_rebuild_backup_delete_result(api, data)
+        handler.send_json(result, status=status)
+        return True
+
+    if path == "/ops/storage-reclaim":
+        if data.get("dryRun") is True:
+            # The recipe calls for a background rehearsal on the same single-flight.
+            # Until it lands, refuse the request rather than start a real copy.
+            handler.send_json(
+                {
+                    "ok": False,
+                    "started": False,
+                    "reason": "dry-run-unavailable",
+                    "error": "the reclaim rehearsal is not implemented yet",
+                },
+                status=400,
+            )
+            return True
+        result = api.start_storage_reclaim(auto=data.get("auto") is True)
+        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
+        return True
+
+    if path == "/ops/storage-reclaim/cancel":
+        run_id = str(data.get("runId") or "").strip()
+        result = api.cancel_storage_reclaim(run_id)
+        status = (
+            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
+        )
+        handler.send_json(result, status=status)
+        return True
+
+    return False
+
+
 def _handle_ops_admin_post(
     handler: BridgeResponseWriter,
     *,
@@ -403,28 +474,7 @@ def _handle_ops_admin_post(
         handler.send_json(result, status=status)
         return True
 
-    if path == "/ops/storage-rebuild":
-        result = api.start_storage_rebuild()
-        handler.send_json(result, status=202 if bool(result.get("started")) else 200)
-        return True
-
-    if path == "/ops/storage-rebuild/cancel":
-        run_id = str(data.get("runId") or "").strip()
-        result = api.cancel_storage_rebuild(run_id)
-        status = (
-            409 if bool(result.get("stale")) else 202 if bool(result.get("cancelling")) else 200
-        )
-        handler.send_json(result, status=status)
-        return True
-
-    if path == "/ops/storage-rebuild/rollback":
-        result = api.rollback_storage_rebuild()
-        handler.send_json(result, status=200 if bool(result.get("ok")) else 409)
-        return True
-
-    if path == "/ops/storage-rebuild/backup-delete":
-        result, status = _start_storage_rebuild_backup_delete_result(api, data)
-        handler.send_json(result, status=status)
+    if _handle_ops_storage_copy_post(handler, api=api, path=path, data=data):
         return True
 
     if path == "/ops/alerts/ack":

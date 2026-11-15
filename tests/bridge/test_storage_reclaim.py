@@ -9,6 +9,9 @@ refuses through blockers instead of failing the request.
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -16,8 +19,10 @@ from typing import Any
 import pytest
 
 from src.bridge import storage_reclaim
+from src.bridge.storage_rebuild import close_storage_rebuild_jobs
 from src.storage import BaluffoStore, BaluffoStoreError, JobRuntimeStore
 from src.storage.baluffo_store import DEFAULT_DB_NAME
+from src.storage.current_feed_rebuild import rebuild_backup_path
 from src.storage.runtime_retention import preview_runtime_retention
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -212,3 +217,229 @@ def test_journal_path_is_beside_the_runtime_store(tmp_path: Path) -> None:
     assert storage_reclaim.reclaim_journal_path(tmp_path).name == (
         f"{DEFAULT_DB_NAME}.reclaim.json"
     )
+
+
+MIB = 1024 * 1024
+GIB = 1024 * MIB
+TERMINAL = storage_reclaim.RECLAIM_TERMINAL_STATUSES
+
+
+def _bloat_verdict(*, blockers: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "verdict": "bloat",
+        "ratio": 0.2,
+        "reclaimable": 2 * GIB,
+        "databaseBytes": 10 * GIB,
+        "freelistBytes": 0,
+        "currentGenerationEstimatedBytes": 40 * MIB,
+        "historicalGenerationEstimatedBytes": 2 * GIB,
+        "historicalGenerationCount": 2,
+        "estimatedReclaimableBytes": 2 * GIB,
+        "reclaimableBasis": "payload-sample+freelist",
+        "candidateGenerationCount": 0,
+        "capReached": False,
+        "blockers": list(blockers or []),
+        "cooldownRemainingHours": 0.0,
+    }
+
+
+def _wait_for(predicate: Callable[[], bool], timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
+def _status(data_dir: Path) -> str:
+    return str(storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]["status"])
+
+
+def test_a_reclaim_run_rebuilds_verifies_and_deletes_the_retained_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-run-complete") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(
+            storage_reclaim, "_compute_verdict", lambda *_args, **_kwargs: _bloat_verdict()
+        )
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+
+            assert started["started"] is True
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 30.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            backup = rebuild_backup_path(data_dir / DEFAULT_DB_NAME)
+            assert not backup.exists()
+            with BaluffoStore(data_dir) as store:
+                preview = preview_runtime_retention(store)
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "complete"
+    assert payload["phase"] == "complete"
+    assert payload["mode"] == "reclaim"
+    assert journal is not None
+    assert journal["status"] == "complete"
+    assert journal["rebuildRunId"].startswith("current_feed_rebuild_")
+    assert journal["expectedBackupBytes"] > 0
+    assert journal["finishedAt"]
+    assert journal["copyDigests"] == {}
+    # The copy kept only the published generation, so retention has nothing left.
+    assert preview["historicalGenerationCount"] == 0
+
+
+def test_a_safety_blocker_refuses_the_start_and_writes_no_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-run-blocked") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(
+            storage_reclaim,
+            "_compute_verdict",
+            lambda *_args, **_kwargs: _bloat_verdict(blockers=["active-task"]),
+        )
+
+        result = storage_reclaim.start_storage_reclaim(data_dir)
+        journal = storage_reclaim.read_reclaim_journal(data_dir)
+
+    assert result["started"] is False
+    assert result["reason"] == "active-task"
+    assert result["blockers"] == ["active-task"]
+    assert journal is None
+
+
+def test_cooldown_and_auto_disabled_gate_only_the_automatic_trigger() -> None:
+    guarded = _bloat_verdict(blockers=["cooldown", "auto-disabled"])
+    assert storage_reclaim._preflight_refusal(guarded, auto=True) == ("cooldown", False)
+    assert storage_reclaim._preflight_refusal(guarded, auto=False) == ("", True)
+
+    safety = _bloat_verdict(blockers=["cooldown", "free-space"])
+    assert storage_reclaim._preflight_refusal(safety, auto=False) == ("free-space", True)
+    assert storage_reclaim._preflight_refusal(_bloat_verdict(), auto=False) == ("", False)
+
+    quiet = {**_bloat_verdict(), "verdict": "ok"}
+    assert storage_reclaim._preflight_refusal(quiet, auto=False) == ("not-bloated", False)
+
+
+def test_an_explicit_start_overrides_the_cooldown_and_cancel_stops_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = threading.Event()
+    calls: list[int] = []
+
+    def verdict(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            # The evaluating phase waits here so the cancel lands before the copy.
+            release.wait(5.0)
+        return _bloat_verdict(blockers=["cooldown"] if len(calls) == 1 else [])
+
+    with workspace_tmpdir("reclaim-run-cancel") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(storage_reclaim, "_compute_verdict", verdict)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            assert started["started"] is True
+            assert journal is not None
+            assert journal["triggerOverride"] is True
+            assert journal["auto"] is False
+
+            cancel = storage_reclaim.cancel_storage_reclaim(data_dir, started["runId"])
+            assert cancel["cancelling"] is True
+            assert cancel["stale"] is False
+
+            release.set()
+            assert _wait_for(lambda: _status(data_dir) == "cancelled", 10.0)
+            settled = storage_reclaim.read_reclaim_journal(data_dir)
+        finally:
+            release.set()
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert settled is not None
+    assert settled["status"] == "cancelled"
+    assert settled["finishedAt"]
+
+
+def test_get_reports_the_live_run_rather_than_the_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = threading.Event()
+    calls: list[int] = []
+
+    def verdict(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            release.wait(5.0)
+        return _bloat_verdict()
+
+    with workspace_tmpdir("reclaim-run-live") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(storage_reclaim, "_compute_verdict", verdict)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+            assert started["started"] is True
+            assert _wait_for(lambda: len(calls) >= 2, 5.0)
+
+            live = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+            assert live["status"] == "running"
+            assert live["phase"] == "evaluating"
+            assert live["runId"] == started["runId"]
+            assert live["journal"]["status"] == "running"
+
+            storage_reclaim.cancel_storage_reclaim(data_dir, started["runId"])
+            release.set()
+            assert _wait_for(lambda: _status(data_dir) == "cancelled", 10.0)
+        finally:
+            release.set()
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+
+def test_cancel_reports_a_stale_or_missing_run_id(tmp_path: Path) -> None:
+    stale = storage_reclaim.cancel_storage_reclaim(tmp_path, "storage_reclaim_old")
+    missing = storage_reclaim.cancel_storage_reclaim(tmp_path, "")
+
+    assert stale["stale"] is True
+    assert stale["reason"] == "no-running-run"
+    assert missing["stale"] is False
+    assert missing["cancelling"] is False
+
+
+def test_cancel_is_refused_once_the_install_phase_begins(tmp_path: Path) -> None:
+    # The install, verification and delete phases are not interruptible, and a
+    # multi-GB copy is not something a test can hold at `installing` honestly.
+    job = storage_reclaim.StorageReclaimJob(tmp_path.resolve())
+    run_id = "storage_reclaim_installing"
+    with job._lock:
+        job._state.update({"status": "running", "phase": "installing", "runId": run_id})
+
+    result = job.cancel(run_id)
+
+    assert result["ok"] is False
+    assert result["reason"] == "phase-not-cancellable"
+    assert result["stale"] is False
+    assert job.status_fields()["status"] == "running"
+
+
+def test_active_task_is_read_from_the_bridge_hold(monkeypatch: pytest.MonkeyPatch) -> None:
+    with workspace_tmpdir("reclaim-hold-blocker") as data_dir:
+        _seed(data_dir, generations=1)
+        monkeypatch.setattr(storage_reclaim, "storage_compaction_hold_active", lambda: False)
+        idle = storage_reclaim.get_storage_reclaim_payload(data_dir, refresh=True)[
+            "storageReclaim"
+        ]["verdict"]
+        monkeypatch.setattr(storage_reclaim, "storage_compaction_hold_active", lambda: True)
+        held = storage_reclaim.get_storage_reclaim_payload(data_dir, refresh=True)[
+            "storageReclaim"
+        ]["verdict"]
+
+    assert "active-task" not in idle["blockers"]
+    assert "active-task" in held["blockers"]
+    assert held["verdict"] == idle["verdict"]
