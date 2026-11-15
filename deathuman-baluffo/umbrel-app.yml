@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.061"
+version: "0.3.062"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,12 +19,11 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.061 adds a one-action current-feed rebuild for oversized runtime
-  databases, a read-only cleanup preview, and safe stop controls for feed
-  cleanup. Fetch finalization now keeps the current saved version when a run
-  finds no meaningful job changes, and storage diagnostics report compaction
-  sizing and per-transaction timing. Existing feeds, saved jobs, notes, and
-  compatibility exports are preserved; the previous database remains available
-  for rollback until you delete it.
+  Release 0.3.062 makes deleting the retained pre-rebuild database safer: it
+  requires explicit confirmation, checks the reviewed backup size, and verifies
+  the live feed before freeing space. If a newer feed has replaced the completed
+  rebuild, the current feed is checked instead. Existing feeds, saved jobs,
+  notes, and compatibility exports are preserved; rollback remains available
+  until you confirm deletion.
 storage:
   dataRoot: data

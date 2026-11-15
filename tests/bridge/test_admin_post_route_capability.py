@@ -148,6 +148,15 @@ class MinimalAdminPostRouteApi:
             "runtimeRetention": {"status": "cancelling", "running": True, "runId": run_id},
         }
 
+    def delete_storage_rebuild_backup(
+        self, *, confirm: bool = False, expected_backup_bytes: int | None = None
+    ) -> dict[str, Any]:
+        if not confirm:
+            return {"ok": False, "reason": "confirmation-required", "error": "confirm"}
+        if not expected_backup_bytes:
+            return {"ok": False, "reason": "expected-size-required", "error": "size"}
+        return {"ok": True, "freedBytes": expected_backup_bytes, "storageRebuild": {}}
+
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"started": True, "payload": payload}
 
@@ -270,6 +279,22 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     assert stale_maintenance.sent[-1]["payload"]["stale"] is True
     missing_maintenance = _post(api, "/ops/storage-maintenance/cancel", {})
     assert missing_maintenance.sent[-1]["status"] == 409
+
+    missing_backup_delete = _post(api, "/ops/storage-rebuild/backup-delete", {})
+    assert missing_backup_delete.sent[-1]["status"] == 400
+    assert missing_backup_delete.sent[-1]["payload"]["reason"] == "confirmation-required"
+
+    missing_backup_size = _post(api, "/ops/storage-rebuild/backup-delete", {"confirm": True})
+    assert missing_backup_size.sent[-1]["status"] == 400
+    assert missing_backup_size.sent[-1]["payload"]["reason"] == "expected-size-required"
+
+    backup_delete = _post(
+        api,
+        "/ops/storage-rebuild/backup-delete",
+        {"confirm": True, "expectedBackupBytes": 123},
+    )
+    assert backup_delete.sent[-1]["status"] == 200
+    assert backup_delete.sent[-1]["payload"]["freedBytes"] == 123
 
     sync_task = _post(api, "/tasks/run-sync-pull", {})
     assert sync_task.sent[-1]["payload"]["action"] == "pull"

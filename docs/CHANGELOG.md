@@ -48,6 +48,16 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.062] - 2026-11-15
+
+### Changed
+
+- Deleting the retained pre-rebuild database now requires explicit confirmation and a fresh database check. The completed rebuild's generation must still match its counts and hashes, or, if a newer feed has superseded and removed it, the current published feed must match its own stored counts and hashes. A mismatch keeps the rollback copy in place, and Admin refreshes the freed-space summary after a successful delete.
+
+### Notes
+
+- The guarded delete keeps the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved; the rollback copy is removed only after the operator confirms deletion.
+
 ## [0.3.061] - 2026-11-14
 
 ### Added
@@ -74,14 +84,3 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 - The current feed, saved jobs, notes, and compatibility exports are preserved across the rebuild. The old database remains available as a rollback copy and is never deleted automatically.
 - The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility remain unchanged; this release does not change desktop packaging or its update manifest.
-
-## [0.3.060] - 2026-11-13
-
-### Fixed
-
-- Desktop ship-bundle packaging now validates the current storage migration sequence, so packages containing the saved-version progress migration build successfully.
-
-### Notes
-
-- Existing feeds, saved jobs, notes, and compatibility exports are preserved.
-- The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility are unchanged.

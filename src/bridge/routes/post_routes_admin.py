@@ -47,6 +47,7 @@ from src.shared.json_shapes import (
     copy_json_object,
     json_object_rows,
 )
+from src.shared.utils import int_or_default
 from src.source_registry import (
     REGISTRY_REASON_APPROVE,
     REGISTRY_REASON_DELETE,
@@ -132,7 +133,9 @@ class _AdminPostRouteApi(Protocol):
 
     def rollback_storage_rebuild(self) -> dict[str, Any]: ...
 
-    def delete_storage_rebuild_backup(self) -> dict[str, Any]: ...
+    def delete_storage_rebuild_backup(
+        self, *, confirm: bool = False, expected_backup_bytes: int | None = None
+    ) -> dict[str, Any]: ...
 
     def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -345,6 +348,23 @@ def _handle_review_post(
     ) or _handle_registry_repair_post(handler, api=api, path=path, data=data)
 
 
+def _delete_storage_rebuild_backup_result(
+    api: _AdminPostRouteApi, data: dict[str, Any]
+) -> tuple[dict[str, Any], int]:
+    raw_expected_bytes = data.get("expectedBackupBytes")
+    expected_backup_bytes: int | None = None
+    if raw_expected_bytes is not None and not isinstance(raw_expected_bytes, bool):
+        expected_backup_bytes = int_or_default(raw_expected_bytes, 0) or None
+    result = api.delete_storage_rebuild_backup(
+        confirm=data.get("confirm") is True,
+        expected_backup_bytes=expected_backup_bytes,
+    )
+    reason = str(result.get("reason") or "")
+    if reason in {"confirmation-required", "expected-size-required"}:
+        return result, 400
+    return result, 200 if bool(result.get("ok")) else 409
+
+
 def _handle_ops_admin_post(
     handler: BridgeResponseWriter,
     *,
@@ -401,8 +421,8 @@ def _handle_ops_admin_post(
         return True
 
     if path == "/ops/storage-rebuild/backup-delete":
-        result = api.delete_storage_rebuild_backup()
-        handler.send_json(result, status=200 if bool(result.get("ok")) else 409)
+        result, status = _delete_storage_rebuild_backup_result(api, data)
+        handler.send_json(result, status=status)
         return True
 
     if path == "/ops/alerts/ack":

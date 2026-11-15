@@ -46,7 +46,11 @@ const COMPLETE = {
   }
 };
 
-function fixture({ startPayload = { ok: true, started: true, storageRebuild: RUNNING }, rebuildPayload = { ok: true, storageRebuild: COMPLETE } } = {}) {
+function fixture({
+  startPayload = { ok: true, started: true, storageRebuild: RUNNING },
+  rebuildPayload = { ok: true, storageRebuild: COMPLETE },
+  confirmDelete = () => true
+} = {}) {
   const listeners = {};
   const posts = [];
   const gets = [];
@@ -102,15 +106,20 @@ function fixture({ startPayload = { ok: true, started: true, storageRebuild: RUN
         return { ok: true, storageRebuild: currentRebuild };
       }
       if (path.endsWith("/backup-delete")) {
-        return {
-          ok: true,
-          freedBytes: 1024,
-          storageRebuild: { ...COMPLETE, backupExists: false, backupBytes: 0, canRollback: false }
+        currentRebuild = {
+          ...COMPLETE,
+          backupExists: false,
+          backupBytes: 0,
+          canRollback: false,
+          backupDeletedAt: "2026-11-14T18:00:00Z",
+          backupDeleteFreedBytes: 1024
         };
+        return { ok: true, freedBytes: 1024, storageRebuild: currentRebuild };
       }
       return {};
     },
     formatBytes: value => `${value} B`,
+    confirmDelete,
     shouldDefer: () => false
   });
   return { controller, refs, listeners, posts, gets };
@@ -180,16 +189,46 @@ test("rollback restores the old database and reloads storage", async () => {
   f.controller.stopRebuildPoll();
 });
 
-test("deleting the retained backup hides rollback", async () => {
-  const f = fixture();
+test("deleting the retained backup requires confirmation and refreshes storage", async () => {
+  const messages = [];
+  const f = fixture({
+    confirmDelete: message => {
+      messages.push(message);
+      return true;
+    }
+  });
+  f.controller.acceptRebuild({ ok: true, storageRebuild: COMPLETE });
+
+  await f.controller.deleteRebuildBackup();
+  await Promise.resolve();
+
+  assert.equal(f.posts[0].path, "/ops/storage-rebuild/backup-delete");
+  assert.deepEqual(f.posts[0].body, {
+    confirm: true,
+    expectedBackupBytes: COMPLETE.backupBytes
+  });
+  assert.match(messages[0], /Permanently delete/);
+  assert.match(messages[0], /226491760640 B/);
+  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /Old database deleted/);
+  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /1024 B freed/);
+  assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, true);
+  assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, true);
+  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /No pre-rebuild database is retained/);
+  assert.ok(f.gets.includes("/ops/storage-health"));
+  f.controller.stopRebuildPoll();
+});
+
+test("cancelling the delete confirmation keeps the rollback copy", async () => {
+  const f = fixture({ confirmDelete: () => false });
   f.controller.acceptRebuild({ ok: true, storageRebuild: COMPLETE });
 
   await f.controller.deleteRebuildBackup();
 
-  assert.equal(f.posts[0].path, "/ops/storage-rebuild/backup-delete");
-  assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, true);
-  assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, true);
-  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /No pre-rebuild database is retained/);
+  assert.equal(f.posts.length, 0);
+  assert.match(f.refs.adminStorageRebuildStatusEl.textContent, /cancelled/i);
+  assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, false);
+  assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, false);
+  f.controller.stopRebuildPoll();
 });
 
 test("a superseded rebuild is shown as a warning, not a failure to install", () => {

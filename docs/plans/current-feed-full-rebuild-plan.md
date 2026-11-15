@@ -156,7 +156,12 @@ PY
    appears in the logs after the swap.
 9. Keep the retained backup for at least one normal fetch/refresh cycle and the
    agreed observation window. Do not delete it until the user separately
-   approves **Delete old database**.
+   approves **Delete old database**. That action now requires explicit
+   confirmation and verifies the completed generation's job/source counts and
+   hashes are still present in the live database before unlinking the backup.
+   If a later feed has superseded and removed that generation, it instead
+   verifies the current published feed's counts and hashes; a mismatch leaves
+   the backup in place.
 
 ## Rollback
 

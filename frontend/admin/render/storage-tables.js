@@ -566,6 +566,12 @@ export function renderStorageRebuildHtml(rebuild, formatBytesFormatter) {
       `<span>Rollback copy ${escapeHtml(format(toNumber(rebuild.backupBytes)))}</span>`
     );
   }
+  if (rebuild.backupDeletedAt) {
+    const freed = toNumber(rebuild.backupDeleteFreedBytes);
+    details.push(
+      `<span>Old database deleted${freed > 0 ? ` · ${escapeHtml(format(freed))} freed` : ""}</span>`
+    );
+  }
   const progress = rebuild.progress && typeof rebuild.progress === "object"
     ? rebuild.progress
     : {};

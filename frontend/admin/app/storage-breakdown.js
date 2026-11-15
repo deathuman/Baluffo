@@ -67,6 +67,7 @@ export function createStorageBreakdownController({
   getBridge,
   postBridge,
   formatBytes,
+  confirmDelete = message => globalThis.confirm?.(message) === true,
   state = {},
   shouldDefer = options => stateShouldDefer(state, options),
   timeoutMs = DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
@@ -991,35 +992,56 @@ export function createStorageBreakdownController({
 
   async function deleteRebuildBackup() {
     if (rebuildInFlight || typeof postBridge !== "function") return null;
+    const expectedBackupBytes = Math.max(0, Number(rebuild?.backupBytes) || 0);
+    if (expectedBackupBytes <= 0) {
+      setRebuildStatus(
+        "The retained database size is unavailable; refresh before deleting it.",
+        "warning"
+      );
+      return null;
+    }
+    const confirmed = confirmDelete(
+      `Permanently delete the retained rollback copy (${formatBytes(expectedBackupBytes)})? `
+      + "The current feed stays live, but rollback will no longer be possible."
+    );
+    if (!confirmed) {
+      setRebuildStatus("Delete cancelled; the rollback copy was kept.", "");
+      return null;
+    }
     rebuildInFlight = true;
+    let finalStatus = "";
+    let finalTone = "";
     setRebuildStatus("Deleting the retained old database…");
     try {
       const payload = await postBridge(
         `${STORAGE_REBUILD_ROUTE}/backup-delete`,
-        {},
+        { confirm: true, expectedBackupBytes },
         {
           timeoutMs: DEFAULT_STORAGE_HEALTH_TIMEOUT_MS,
           affectsReachability: false,
-          allowStatuses: [409]
+          allowStatuses: [400, 409]
         }
       );
       acceptRebuild(payload);
       if (!payload?.ok) {
-        setRebuildStatus(
-          `Could not delete the old database: ${payload?.error || "unknown error"}`,
-          "warning"
-        );
+        finalStatus = `Could not delete the old database: ${
+          payload?.error || "unknown error"
+        }`;
+        finalTone = "warning";
+      } else {
+        void load();
       }
       return payload;
     } catch (err) {
-      setRebuildStatus(
-        `Could not delete the old database: ${err?.message || err || "unknown error"}`,
-        "warning"
-      );
+      finalStatus = `Could not delete the old database: ${
+        err?.message || err || "unknown error"
+      }`;
+      finalTone = "warning";
       return null;
     } finally {
       rebuildInFlight = false;
       renderRebuild();
+      if (finalStatus) setRebuildStatus(finalStatus, finalTone);
     }
   }
 

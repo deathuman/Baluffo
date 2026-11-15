@@ -27,6 +27,7 @@ from src.storage.current_feed_rebuild import (
     CurrentFeedRebuildError,
     database_feed_state,
     free_disk_bytes,
+    generation_row_counts,
     read_rebuild_journal,
     rebuild_backup_path,
     rebuild_current_feed_database,
@@ -34,6 +35,8 @@ from src.storage.current_feed_rebuild import (
     rebuild_required_free_bytes,
     rebuild_staging_path,
     update_rebuild_journal,
+    validate_current_feed_database,
+    validate_feed_generation,
 )
 from src.storage_metrics import file_size
 
@@ -67,6 +70,8 @@ def _empty_state(data_dir: Path) -> dict[str, Any]:
         "backupPath": str(backup),
         "backupBytes": file_size(backup),
         "backupExists": backup.is_file(),
+        "backupDeletedAt": "",
+        "backupDeleteFreedBytes": 0,
         "reclaimedBytes": 0,
         "requiredFreeBytes": 0,
         "freeDiskBytes": 0,
@@ -127,6 +132,8 @@ class StorageRebuildJob:
                 "sourceHash": str(journal.get("sourceHash") or ""),
                 "databaseBytes": int(journal.get("databaseBytes") or 0),
                 "reclaimedBytes": int(journal.get("reclaimedBytes") or 0),
+                "backupDeletedAt": str(journal.get("backupDeletedAt") or ""),
+                "backupDeleteFreedBytes": int(journal.get("backupDeleteFreedBytes") or 0),
                 "error": str(journal.get("error") or ""),
                 "finishedAt": str(journal.get("updatedAt") or ""),
             }
@@ -661,40 +668,262 @@ class StorageRebuildJob:
                 self.cancel(force=True)
                 thread.join(timeout=30.0)
 
-    def delete_backup(self) -> dict[str, Any]:
+    def delete_backup(
+        self, *, confirm: bool = False, expected_backup_bytes: int | None = None
+    ) -> dict[str, Any]:
         with self._start_lock:
-            return self._delete_backup_locked()
+            return self._delete_backup_locked(
+                confirm=confirm, expected_backup_bytes=expected_backup_bytes
+            )
 
-    def _delete_backup_locked(self) -> dict[str, Any]:
+    def _backup_delete_error(self, reason: str, error: str, **extra: Any) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "reason": reason,
+            "error": error,
+            **extra,
+            "storageRebuild": self.snapshot(),
+        }
+
+    def _delete_backup_request(
+        self, *, confirm: bool, expected_backup_bytes: int | None
+    ) -> tuple[dict[str, Any] | None, int]:
+        if not confirm:
+            return (
+                self._backup_delete_error(
+                    "confirmation-required",
+                    "explicit confirmation is required before deleting the old database",
+                ),
+                0,
+            )
+        try:
+            expected_bytes = int(expected_backup_bytes or 0)
+        except (TypeError, ValueError):
+            expected_bytes = 0
+        if expected_bytes <= 0:
+            return (
+                self._backup_delete_error(
+                    "expected-size-required",
+                    "expectedBackupBytes is required before deleting the old database",
+                ),
+                0,
+            )
+        return None, expected_bytes
+
+    def _delete_backup_file(self, expected_bytes: int) -> tuple[dict[str, Any] | None, int]:
+        if self.backup_path.is_symlink():
+            return (
+                self._backup_delete_error(
+                    "backup-not-regular",
+                    "the retained pre-rebuild database is not a regular file",
+                ),
+                0,
+            )
+        if not self.backup_path.is_file():
+            return (
+                self._backup_delete_error(
+                    "backup-missing", "no retained pre-rebuild database exists"
+                ),
+                0,
+            )
+        backup_bytes = file_size(self.backup_path)
+        if backup_bytes <= 0:
+            return (
+                self._backup_delete_error(
+                    "backup-empty", "the retained pre-rebuild database is empty"
+                ),
+                0,
+            )
+        if backup_bytes != expected_bytes:
+            return (
+                self._backup_delete_error(
+                    "expected-size-mismatch",
+                    "the retained pre-rebuild database is "
+                    f"{backup_bytes} bytes, not {expected_bytes}; refresh and try again",
+                    backupBytes=backup_bytes,
+                ),
+                0,
+            )
+        return None, backup_bytes
+
+    def _delete_backup_feed_validation(
+        self,
+        *,
+        generation: str,
+        row_hash: str,
+        source_hash: str,
+        expected_job_rows: int,
+        expected_source_rows: int,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        try:
+            validation = validate_feed_generation(
+                self.db_path,
+                generation=generation,
+                expected_row_count=expected_job_rows,
+                expected_row_hash=row_hash,
+                expected_source_count=expected_source_rows,
+                expected_source_hash=source_hash,
+            )
+        except (CurrentFeedRebuildError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            try:
+                counts = generation_row_counts(self.db_path, generation=generation)
+            except (OSError, sqlite3.Error) as counts_exc:
+                return (
+                    self._backup_delete_error(
+                        "validation-failed",
+                        f"the completed rebuild generation could not be checked: {counts_exc}",
+                    ),
+                    {},
+                )
+            if counts["jobRowCount"] or counts["sourceRowCount"]:
+                return (
+                    self._backup_delete_error(
+                        "validation-failed",
+                        "the completed rebuild generation still has rows but failed "
+                        f"validation: {exc}",
+                    ),
+                    {},
+                )
+            try:
+                current = validate_current_feed_database(self.db_path)
+            except (
+                CurrentFeedRebuildError,
+                OSError,
+                sqlite3.Error,
+                TypeError,
+                ValueError,
+            ) as current_exc:
+                return (
+                    self._backup_delete_error(
+                        "validation-failed",
+                        "the completed rebuild generation is gone and the current "
+                        f"feed failed validation: {current_exc}",
+                    ),
+                    {},
+                )
+            if str(current.get("currentGeneration") or "") == generation:
+                return (
+                    self._backup_delete_error(
+                        "validation-failed",
+                        "the completed rebuild generation is gone but the live feed "
+                        "still points at it",
+                    ),
+                    {},
+                )
+            return None, {
+                "validation": current,
+                "validationBasis": "current-feed-after-supersede",
+                "completedGenerationRetained": False,
+            }
+        return None, {
+            "validation": validation,
+            "validationBasis": "completed-generation",
+            "completedGenerationRetained": True,
+        }
+
+    def _delete_backup_run(self) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        journal = read_rebuild_journal(self.journal_path)
+        if str(journal.get("status") or "") != "complete":
+            return (
+                self._backup_delete_error(
+                    "journal-not-complete",
+                    "the rebuild journal does not describe a completed run",
+                ),
+                {},
+            )
+        generation = str(journal.get("currentGeneration") or "").strip()
+        row_hash = str(journal.get("rowHash") or "").strip()
+        source_hash = str(journal.get("sourceHash") or "").strip()
+        if not generation or not row_hash or not source_hash:
+            return (
+                self._backup_delete_error(
+                    "journal-incomplete",
+                    "the completed rebuild journal is missing its feed identity or hashes",
+                ),
+                {},
+            )
+        error, run = self._delete_backup_feed_validation(
+            generation=generation,
+            row_hash=row_hash,
+            source_hash=source_hash,
+            expected_job_rows=int(journal.get("jobRowCount") or 0),
+            expected_source_rows=int(journal.get("sourceRowCount") or 0),
+        )
+        if error is not None:
+            return error, {}
+        return None, {"journal": journal, **run}
+
+    def _delete_backup_locked(
+        self, *, confirm: bool, expected_backup_bytes: int | None
+    ) -> dict[str, Any]:
         with self._lock:
             if self._state["status"] in {"running", "cancelling"}:
                 return {
                     "ok": False,
+                    "reason": "rebuild-running",
                     "error": "a current-feed rebuild is running",
                     "storageRebuild": self._snapshot_locked(),
                 }
-        if not self.backup_path.is_file():
-            return {
-                "ok": False,
-                "error": "no retained pre-rebuild database exists",
-                "storageRebuild": self.snapshot(),
-            }
-        freed = file_size(self.backup_path)
+        error, expected_bytes = self._delete_backup_request(
+            confirm=confirm, expected_backup_bytes=expected_backup_bytes
+        )
+        if error is not None:
+            return error
+        error, backup_bytes = self._delete_backup_file(expected_bytes)
+        if error is not None:
+            return error
+        error, run = self._delete_backup_run()
+        if error is not None:
+            return error
+        journal = run["journal"]
+        validation = run["validation"]
+        validation_basis = str(run.get("validationBasis") or "")
+
+        try:
+            redundant_hardlink = os.path.samefile(self.db_path, self.backup_path)
+        except OSError:
+            redundant_hardlink = False
+        before_free = free_disk_bytes(self.data_dir)
         try:
             self.backup_path.unlink()
         except OSError as exc:
-            return {"ok": False, "error": str(exc), "storageRebuild": self.snapshot()}
+            return self._backup_delete_error("delete-failed", str(exc))
+        after_free = free_disk_bytes(self.data_dir)
+        freed_bytes = 0 if redundant_hardlink else backup_bytes
+        observed_freed = (
+            max(0, after_free - before_free) if before_free > 0 and after_free > 0 else None
+        )
+        deleted_at = _now_iso()
         update_rebuild_journal(
             self.journal_path,
-            backupDeletedAt=_now_iso(),
+            backupDeletedAt=deleted_at,
             backupBytes=0,
+            backupDeleted=True,
+            backupDeletedRunId=str(journal.get("runId") or ""),
+            backupDeleteFreedBytes=freed_bytes,
+            backupDeleteValidationBasis=validation_basis,
         )
         with self._lock:
-            self._state["backupExists"] = False
-            self._state["backupBytes"] = 0
-            self._state["canRollback"] = False
+            self._state.update(
+                {
+                    "backupExists": False,
+                    "backupBytes": 0,
+                    "canRollback": False,
+                    "backupDeletedAt": deleted_at,
+                    "backupDeleteFreedBytes": freed_bytes,
+                }
+            )
             snapshot = self._snapshot_locked()
-        return {"ok": True, "freedBytes": freed, "storageRebuild": snapshot}
+        return {
+            "ok": True,
+            "freedBytes": freed_bytes,
+            "observedFreedBytes": observed_freed,
+            "redundantHardlink": redundant_hardlink,
+            "validation": validation,
+            "validationBasis": validation_basis,
+            "completedGenerationRetained": bool(run.get("completedGenerationRetained")),
+            "storageRebuild": snapshot,
+        }
 
 
 def _job_for(data_dir: Path | str) -> StorageRebuildJob:
@@ -741,8 +970,15 @@ def rollback_storage_rebuild(data_dir: Path | str) -> dict[str, Any]:
     return _job_for(data_dir).rollback()
 
 
-def delete_storage_rebuild_backup(data_dir: Path | str) -> dict[str, Any]:
-    return _job_for(data_dir).delete_backup()
+def delete_storage_rebuild_backup(
+    data_dir: Path | str,
+    *,
+    confirm: bool = False,
+    expected_backup_bytes: int | None = None,
+) -> dict[str, Any]:
+    return _job_for(data_dir).delete_backup(
+        confirm=confirm, expected_backup_bytes=expected_backup_bytes
+    )
 
 
 def close_storage_rebuild_jobs() -> None:

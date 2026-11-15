@@ -541,6 +541,132 @@ def rebuild_current_feed_database(
     return result
 
 
+def _check_database_integrity(conn: sqlite3.Connection) -> str:
+    quick_check = str(conn.execute("PRAGMA quick_check").fetchone()[0] or "")
+    if quick_check != "ok":
+        raise CurrentFeedRebuildError(f"rebuilt database quick_check failed: {quick_check}")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if violations:
+        raise CurrentFeedRebuildError(
+            f"rebuilt database has {len(violations)} foreign-key violations"
+        )
+    return quick_check
+
+
+def _validate_generation_rows(
+    conn: sqlite3.Connection,
+    *,
+    generation: str,
+    expected_row_count: int,
+    expected_row_hash: str,
+    expected_source_count: int,
+    expected_source_hash: str,
+) -> dict[str, Any]:
+    job_rows = _count(conn, "jobs", generation=generation)
+    source_rows = _count(conn, "job_sources", generation=generation)
+    if job_rows != int(expected_row_count):
+        raise CurrentFeedRebuildError(
+            f"rebuilt database has {job_rows} current jobs, expected {expected_row_count}"
+        )
+    if source_rows != int(expected_source_count):
+        raise CurrentFeedRebuildError(
+            "rebuilt database has "
+            f"{source_rows} current source rows, expected {expected_source_count}"
+        )
+    row_hash = _row_hash(conn, generation)
+    source_hash = _source_hash(conn, generation)
+    if expected_row_hash and row_hash != expected_row_hash:
+        raise CurrentFeedRebuildError(
+            "rebuilt database current-feed row hash does not match the published feed"
+        )
+    if expected_source_hash and source_hash != expected_source_hash:
+        raise CurrentFeedRebuildError(
+            "rebuilt database current-feed source hash does not match the published feed"
+        )
+    return {
+        "jobRowCount": job_rows,
+        "sourceRowCount": source_rows,
+        "rowHash": row_hash,
+        "sourceHash": source_hash,
+        "validatedAt": _now_iso(),
+    }
+
+
+def validate_feed_generation(
+    target_path: Path | str,
+    *,
+    generation: str,
+    expected_row_count: int,
+    expected_row_hash: str,
+    expected_source_count: int,
+    expected_source_hash: str,
+) -> dict[str, Any]:
+    """Verify one generation is still intact in a read-only database."""
+    conn = _connect_read_only(Path(target_path))
+    try:
+        quick_check = _check_database_integrity(conn)
+        rows = _validate_generation_rows(
+            conn,
+            generation=generation,
+            expected_row_count=expected_row_count,
+            expected_row_hash=expected_row_hash,
+            expected_source_count=expected_source_count,
+            expected_source_hash=expected_source_hash,
+        )
+        return {
+            "quickCheck": quick_check,
+            "foreignKeyViolations": 0,
+            **rows,
+        }
+    finally:
+        conn.close()
+
+
+def generation_row_counts(target_path: Path | str, *, generation: str) -> dict[str, int]:
+    """Count one generation's rows without validating its contents."""
+    conn = _connect_read_only(Path(target_path))
+    try:
+        return {
+            "jobRowCount": _count(conn, "jobs", generation=generation),
+            "sourceRowCount": _count(conn, "job_sources", generation=generation),
+        }
+    finally:
+        conn.close()
+
+
+def validate_current_feed_database(target_path: Path | str) -> dict[str, Any]:
+    """Verify the published feed in a read-only database is self-consistent."""
+    conn = _connect_read_only(Path(target_path))
+    try:
+        quick_check = _check_database_integrity(conn)
+        state = _feed_state(conn)
+        generation = str(state.get("current_generation") or "").strip()
+        row_hash = str(state.get("row_hash") or "").strip()
+        source_hash = str(state.get("source_hash") or "").strip()
+        if not generation:
+            raise CurrentFeedRebuildError("the live database has no published feed generation")
+        if not row_hash or not source_hash:
+            raise CurrentFeedRebuildError(
+                "the live database feed state is missing its row or source hash"
+            )
+        rows = _validate_generation_rows(
+            conn,
+            generation=generation,
+            expected_row_count=int(state.get("row_count") or 0),
+            expected_row_hash=row_hash,
+            expected_source_count=int(state.get("source_count") or 0),
+            expected_source_hash=source_hash,
+        )
+        return {
+            "quickCheck": quick_check,
+            "foreignKeyViolations": 0,
+            "currentGeneration": generation,
+            **rows,
+        }
+    finally:
+        conn.close()
+
+
 def validate_rebuilt_database(
     target_path: Path | str,
     *,
@@ -555,41 +681,21 @@ def validate_rebuilt_database(
     target = Path(target_path)
     conn = _connect_read_only(target)
     try:
-        quick_check = str(conn.execute("PRAGMA quick_check").fetchone()[0] or "")
-        if quick_check != "ok":
-            raise CurrentFeedRebuildError(f"rebuilt database quick_check failed: {quick_check}")
-        inserted = conn.execute("PRAGMA foreign_key_check").fetchall()
-        if inserted:
-            raise CurrentFeedRebuildError(
-                f"rebuilt database has {len(inserted)} foreign-key violations"
-            )
+        quick_check = _check_database_integrity(conn)
         state = _feed_state(conn)
         staged_generation = str(state.get("current_generation") or "").strip()
         if staged_generation != current_generation:
             raise CurrentFeedRebuildError(
                 "rebuilt database feed state does not point at the published generation"
             )
-        job_rows = _count(conn, "jobs", generation=current_generation)
-        source_rows = _count(conn, "job_sources", generation=current_generation)
-        if job_rows != int(expected_row_count):
-            raise CurrentFeedRebuildError(
-                f"rebuilt database has {job_rows} current jobs, expected {expected_row_count}"
-            )
-        if source_rows != int(expected_source_count):
-            raise CurrentFeedRebuildError(
-                "rebuilt database has "
-                f"{source_rows} current source rows, expected {expected_source_count}"
-            )
-        row_hash = _row_hash(conn, current_generation)
-        source_hash = _source_hash(conn, current_generation)
-        if expected_row_hash and row_hash != expected_row_hash:
-            raise CurrentFeedRebuildError(
-                "rebuilt database current-feed row hash does not match the published feed"
-            )
-        if expected_source_hash and source_hash != expected_source_hash:
-            raise CurrentFeedRebuildError(
-                "rebuilt database current-feed source hash does not match the published feed"
-            )
+        rows = _validate_generation_rows(
+            conn,
+            generation=current_generation,
+            expected_row_count=expected_row_count,
+            expected_row_hash=expected_row_hash,
+            expected_source_count=expected_source_count,
+            expected_source_hash=expected_source_hash,
+        )
         table_counts: dict[str, int] = {}
         if expected_table_counts:
             tables = set(_table_names(conn))
@@ -607,12 +713,8 @@ def validate_rebuilt_database(
             "quickCheck": quick_check,
             "foreignKeyViolations": 0,
             "currentGeneration": staged_generation,
-            "jobRowCount": job_rows,
-            "sourceRowCount": source_rows,
-            "rowHash": row_hash,
-            "sourceHash": source_hash,
+            **rows,
             "tableCounts": table_counts,
-            "validatedAt": _now_iso(),
         }
     finally:
         conn.close()

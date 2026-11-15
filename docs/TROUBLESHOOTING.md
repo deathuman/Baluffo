@@ -673,7 +673,7 @@ npm run test:smoke
 |-------|--------|
 | Cleanup rate | Bounded generation deletion is roughly 7.3k rows/min on the live store; a full backlog can take weeks |
 | Free space | Admin → Database storage → **Rebuild current feed** needs 1-3 GB free and copies only the published feed generation |
-| Rollback | The old database is retained as `baluffo-runtime.db.pre-rebuild`; **Roll back** restores it, **Delete old database** frees the space |
+| Rollback | The old database is retained as `baluffo-runtime.db.pre-rebuild`; **Roll back** restores it, **Delete old database** frees the space after a confirmation and a live hash/count check |
 | Superseded | A rebuild stops before installation when a write commits during the copy; run it again while the bridge is idle |
 
 ### Source registry in inconsistent state

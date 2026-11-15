@@ -454,7 +454,10 @@ class BridgeApi:
     start_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
     cancel_storage_rebuild: Callable[[str], JsonObject] = _not_started_run_id
     rollback_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
-    delete_storage_rebuild_backup: Callable[[], JsonObject] = _not_started_noarg
+    delete_storage_rebuild_backup: Callable[..., JsonObject] = lambda **_: {
+        "ok": False,
+        "error": "not_implemented",
+    }
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics

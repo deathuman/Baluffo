@@ -307,8 +307,13 @@ replacement for them.
   `superseded`; the staging file is discarded rather than dropping that write.
 - `Admin -> Database storage -> Rebuild current feed` shows the live phase,
   verified hashes, reclaimed bytes and the retained copy. `Roll back` restores
-  the old database and consumes the backup; `Delete old database` frees the
-  duplicate space and makes rollback unavailable.
+  the old database and consumes the backup. `Delete old database` requires
+  explicit confirmation and the reviewed backup byte count, then re-verifies
+  `quick_check == ok` and no foreign-key violations. It validates the completed
+  run's generation with matching counts and hashes when that generation is
+  still retained; if a newer feed has superseded and removed it, it instead
+  validates the current published feed's counts and hashes against the stored
+  rows. Only then does it unlink the duplicate and make rollback unavailable.
 - Progress and the crash journal are written to `<db>.rebuild.json` at every
   phase (`running`, `staged`, `backup-created`, `complete`, `failed`,
   `rolled-back`). The journal is evidence only: a restart never resumes or
