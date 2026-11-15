@@ -14,10 +14,18 @@ What it does, end to end, in one process:
 5. restarts the bridge on the same dir and reads `GET /ops/storage-rebuild` once.
 
 Pass condition: the first status read after the restart reports
-`backupDeleteStatus: "failed"` with the restart error, the delete keeps its run
-id, `backupDeletedAt` stays empty, the retained copy is still on disk at its
+`backupDeleteStatus: "failed"`, and that record can only have been written by
+the restarted process — the journal on disk was still `running` at the kill, and
+its terminal `finishedAt` appears only after the restart while the interrupted
+run's `startedAt` is preserved. The delete keeps its run id, `backupDeletedAt`
+stays empty, freed bytes stay zero, the retained copy is still on disk at its
 unchanged size, rollback is still available, and the live database still
 validates. Any other outcome exits non-zero with the failing check named.
+
+The settlement's error *message* is printed but never asserted: it is prose and
+will be reworded. The structure above is what "settled by a restart" means —
+with the backup still present, `failed` plus a post-restart `finishedAt` and no
+deletion record has exactly one writer, `_settle_stale_delete`.
 
 Everything happens under a fresh throwaway directory (default
 `_out/proof-backup-delete-restart/<token>`); it refuses to run against a
@@ -53,8 +61,6 @@ DEFAULT_OUTPUT_ROOT = ROOT / "_out" / "proof-backup-delete-restart"
 HEALTH_PATH = "/ops/health"
 REBUILD_PATH = "/ops/storage-rebuild"
 DELETE_PATH = "/ops/storage-rebuild/backup-delete"
-# The shipped settlement message for a delete with no live worker owner.
-RESTART_ERROR_FRAGMENT = "restarted before the backup delete finished"
 BRIDGE_START_TIMEOUT_S = 240.0
 REBUILD_TIMEOUT_S = 900.0
 # The kill has to land inside validation, so this is a fraction of the measured
@@ -344,6 +350,8 @@ def run(
 
         journal_path = rebuild_journal_path(db_path)
         journal = read_rebuild_journal(journal_path)
+        started_at_text = str(journal.get("backupDeleteStartedAt") or "")
+        finished_at_at_kill = str(journal.get("backupDeleteFinishedAt") or "")
         backup_after_kill = backup_path.stat().st_size if backup_path.is_file() else 0
         print(f"SIGKILL at +{killed_after_s:.2f}s of a {validation_s:.2f}s validation pass")
         print(
@@ -356,11 +364,7 @@ def run(
             journal.get("backupDeleteStatus") == "running",
             journal.get("backupDeleteStatus"),
         )
-        check(
-            "delete-had-not-finished",
-            not str(journal.get("backupDeleteFinishedAt") or ""),
-            journal.get("backupDeleteFinishedAt"),
-        )
+        check("delete-had-not-finished", not finished_at_at_kill, finished_at_at_kill)
         check(
             "backup-untouched-by-kill",
             backup_after_kill == backup_bytes,
@@ -371,7 +375,7 @@ def run(
         _wait_for_health(port, second, second_log, start_timeout_s)
         status, payload = _request(port, REBUILD_PATH)
         settled = _delete_fields(payload)
-        error = str(settled.get("backupDeleteError") or "")
+        settled_finished = str(settled.get("backupDeleteFinishedAt") or "")
         print(f"first status read after restart: {json.dumps(settled, sort_keys=True)}")
         check("status-read-ok", status == 200, status)
         check(
@@ -379,7 +383,26 @@ def run(
             settled.get("backupDeleteStatus") == "failed",
             settled.get("backupDeleteStatus"),
         )
-        check("settled-error-names-restart", RESTART_ERROR_FRAGMENT in error, error)
+        # Structural proof of *restart* settlement, not a message match: the
+        # journal carried no terminal record at the kill, so a `finishedAt` here
+        # was written by the restarted process, and with the backup still on disk
+        # the only writer of `failed` is the settle-stale-delete path.
+        check(
+            "settlement-written-after-kill",
+            bool(settled_finished) and not finished_at_at_kill,
+            f"finishedAt {finished_at_at_kill!r} -> {settled_finished!r}",
+        )
+        check(
+            "settlement-kept-start-time",
+            bool(started_at_text)
+            and str(settled.get("backupDeleteStartedAt") or "") == started_at_text,
+            f"{started_at_text!r} -> {settled.get('backupDeleteStartedAt')!r}",
+        )
+        check(
+            "failure-carries-a-message",
+            bool(str(settled.get("backupDeleteError") or "").strip()),
+            "error text present (wording not asserted)",
+        )
         check(
             "settled-keeps-run-id",
             settled.get("backupDeleteRunId") == run_id,
@@ -387,8 +410,10 @@ def run(
         )
         check(
             "no-deletion-recorded",
-            not str(settled.get("backupDeletedAt") or ""),
-            settled.get("backupDeletedAt"),
+            not str(settled.get("backupDeletedAt") or "")
+            and int(settled.get("backupDeleteFreedBytes") or 0) == 0,
+            f"deletedAt={settled.get('backupDeletedAt')!r} "
+            f"freed={settled.get('backupDeleteFreedBytes')!r}",
         )
         check(
             "backup-still-on-disk",
