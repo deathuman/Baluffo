@@ -9,6 +9,7 @@ refuses through blockers instead of failing the request.
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
@@ -26,9 +27,14 @@ from src.bridge.storage_health import (
     storage_reclaim_hold_status,
 )
 from src.bridge.storage_rebuild import close_storage_rebuild_jobs
-from src.storage import BaluffoStore, BaluffoStoreError, JobRuntimeStore
+from src.storage import BaluffoStore, BaluffoStoreError, JobRuntimeStore, current_feed_rebuild
 from src.storage.baluffo_store import DEFAULT_DB_NAME
-from src.storage.current_feed_rebuild import CONTENT_PARITY_TABLES, rebuild_backup_path
+from src.storage.current_feed_rebuild import (
+    CONTENT_PARITY_TABLES,
+    rebuild_backup_path,
+    rebuild_journal_path,
+    rebuild_staging_path,
+)
 from src.storage.runtime_retention import preview_runtime_retention
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -331,6 +337,120 @@ def test_a_content_mismatch_keeps_the_retained_copy(
     # The delete never started, so the reviewed byte count was never set.
     assert journal["expectedBackupBytes"] == 0
     assert backup_exists is True
+
+
+def test_a_rehearsal_measures_the_copy_and_installs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-rehearsal") as data_dir:
+        _seed(data_dir, generations=2)
+        db_path = data_dir / DEFAULT_DB_NAME
+        # A rehearsal is the step that precedes enabling auto mode, so an `ok`
+        # verdict and an `auto-disabled` blocker must still let it measure.
+        monkeypatch.setattr(
+            storage_reclaim,
+            "_compute_verdict",
+            lambda *_args, **_kwargs: {
+                **_bloat_verdict(blockers=["auto-disabled"]),
+                "verdict": "ok",
+            },
+        )
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert started["storageReclaim"]["mode"] == "rehearsal"
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            live_jobs = sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            staging_exists = rebuild_staging_path(db_path, run_id=str(started["runId"])).exists()
+            scratch_exists = storage_reclaim.rehearsal_journal_path(data_dir).exists()
+            rebuild_journal_exists = rebuild_journal_path(db_path).exists()
+            backup_exists = rebuild_backup_path(db_path).exists()
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "complete", payload
+    assert payload["mode"] == "rehearsal"
+    assert journal is not None
+    assert journal["mode"] == "rehearsal"
+    assert journal["status"] == "complete"
+    assert journal["finishedAt"]
+    result = journal["result"]
+    assert result["stagingBytes"] > 0
+    assert result["reclaimedBytes"] >= 0
+    assert result["durationMs"] >= 0
+    assert result["tableCounts"]["jobs"] == 1
+    assert result["validation"]["quickCheck"] == "ok"
+    assert set(result["copyDigests"]) == set(CONTENT_PARITY_TABLES)
+    assert result["freeBytes"] > 0
+    assert result["requiredFreeBytes"] > 0
+    # A rehearsal keeps none of what it made and changes nothing it read.
+    assert live_jobs == 2
+    assert staging_exists is False
+    assert scratch_exists is False
+    assert rebuild_journal_exists is False
+    assert backup_exists is False
+
+
+def test_a_cancelled_rehearsal_removes_its_staging_and_scratch_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_copy_table = current_feed_rebuild._copy_table
+    cancelled: list[int] = []
+
+    with workspace_tmpdir("reclaim-rehearsal-cancel") as data_dir:
+        _seed(data_dir, generations=2)
+        db_path = data_dir / DEFAULT_DB_NAME
+
+        def cancel_on_first_table(*args: Any, **kwargs: Any) -> int:
+            if not cancelled:
+                cancelled.append(1)
+                journal = storage_reclaim.read_reclaim_journal(data_dir) or {}
+                storage_reclaim.cancel_storage_reclaim(data_dir, str(journal.get("runId") or ""))
+            return real_copy_table(*args, **kwargs)
+
+        monkeypatch.setattr(current_feed_rebuild, "_copy_table", cancel_on_first_table)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            live_jobs = sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            leftovers = sorted(
+                path.name
+                for path in data_dir.iterdir()
+                if path.name.endswith(".tmp") or "rehearsal" in path.name
+            )
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "cancelled", payload
+    assert journal is not None
+    assert journal["status"] == "cancelled"
+    assert live_jobs == 2
+    # The staging copy and the scratch journal both belong to the run.
+    assert leftovers == []
+
+
+def test_a_rehearsal_still_refuses_a_safety_blocker(monkeypatch: pytest.MonkeyPatch) -> None:
+    with workspace_tmpdir("reclaim-rehearsal-blocked") as data_dir:
+        _seed(data_dir)
+        monkeypatch.setattr(
+            storage_reclaim,
+            "_compute_verdict",
+            lambda *_args, **_kwargs: _bloat_verdict(blockers=["active-task"]),
+        )
+
+        result = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+        journal = storage_reclaim.read_reclaim_journal(data_dir)
+
+    assert result["started"] is False
+    assert result["reason"] == "active-task"
+    assert journal is None
 
 
 def test_a_safety_blocker_refuses_the_start_and_writes_no_journal(

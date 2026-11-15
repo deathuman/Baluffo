@@ -171,14 +171,17 @@ class MinimalAdminPostRouteApi:
             "storageRebuild": {},
         }
 
-    def start_storage_reclaim(self, *, auto: bool = False) -> dict[str, Any]:
+    def start_storage_reclaim(
+        self, *, auto: bool = False, rehearsal: bool = False
+    ) -> dict[str, Any]:
         if auto:
             return {"ok": True, "started": False, "reason": "cooldown", "storageReclaim": {}}
+        mode = "rehearsal" if rehearsal else "reclaim"
         return {
             "ok": True,
             "started": True,
-            "runId": "reclaim-current",
-            "storageReclaim": {"status": "running", "phase": "evaluating"},
+            "runId": f"{mode}-current",
+            "storageReclaim": {"status": "running", "phase": "evaluating", "mode": mode},
         }
 
     def cancel_storage_reclaim(self, run_id: str = "") -> dict[str, Any]:
@@ -347,8 +350,9 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
     assert automatic_reclaim.sent[-1]["payload"]["reason"] == "cooldown"
 
     dry_run = _post(api, "/ops/storage-reclaim", {"dryRun": True})
-    assert dry_run.sent[-1]["status"] == 400
-    assert dry_run.sent[-1]["payload"]["reason"] == "dry-run-unavailable"
+    assert dry_run.sent[-1]["status"] == 202
+    assert dry_run.sent[-1]["payload"]["started"] is True
+    assert dry_run.sent[-1]["payload"]["storageReclaim"]["mode"] == "rehearsal"
 
     reclaim_cancel = _post(api, "/ops/storage-reclaim/cancel", {"runId": "reclaim-current"})
     assert reclaim_cancel.sent[-1]["status"] == 202

@@ -124,12 +124,15 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
                 Path(config.data_dir).resolve(), refresh=refresh, scope=scope
             )
         ),
-        start_storage_reclaim=lambda *, auto=False: storage_reclaim_mod.start_storage_reclaim(
-            Path(config.data_dir).resolve(),
-            auto=auto,
-            # The container holds task starts during the copy; desktop runs inline
-            # and takes none.
-            hold=not bool(getattr(config, "desktop_mode", False)),
+        start_storage_reclaim=lambda *, auto=False, rehearsal=False: (
+            storage_reclaim_mod.start_storage_reclaim(
+                Path(config.data_dir).resolve(),
+                auto=auto,
+                rehearsal=rehearsal,
+                # The container holds task starts during the copy; desktop runs
+                # inline and takes none.
+                hold=not bool(getattr(config, "desktop_mode", False)),
+            )
         ),
         cancel_storage_reclaim=lambda run_id: storage_reclaim_mod.cancel_storage_reclaim(
             Path(config.data_dir).resolve(), run_id

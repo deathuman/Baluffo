@@ -52,16 +52,24 @@ from src.shared.utils import env_flag, parse_iso
 from src.storage import BaluffoStoreError
 from src.storage.baluffo_store import DEFAULT_DB_NAME
 from src.storage.current_feed_rebuild import (
+    CurrentFeedRebuildCancelled,
     CurrentFeedRebuildError,
     rebuild_backup_path,
+    rebuild_current_feed_database,
+    rebuild_required_free_bytes,
+    rebuild_staging_path,
     validate_feed_generation,
     validate_installed_content,
 )
 from src.storage.reclaim_policy import RECLAIM_VERDICT_TTL_S, ReclaimContext, reclaim_verdict
+from src.storage.retention_cancel import RetentionCancelled
 from src.storage.runtime_retention import preview_runtime_retention
 from src.storage_metrics import file_size
 
 RECLAIM_JOURNAL_SUFFIX = ".reclaim.json"
+# A rehearsal owns this scratch journal and unlinks it; the real rebuild journal
+# is never written by a rehearsal, which is why it cannot clobber recovery.
+RECLAIM_REHEARSAL_SUFFIX = ".reclaim-rehearsal.json"
 RECLAIM_JOURNAL_SCHEMA_VERSION = 1
 RECLAIM_AUTO_ENABLED_ENV = "BALUFFO_RECLAIM_AUTO_ENABLED"
 RECLAIM_MIN_INTERVAL_HOURS_ENV = "BALUFFO_RECLAIM_MIN_INTERVAL_HOURS"
@@ -93,6 +101,11 @@ _JOBS_BY_DATA_DIR: dict[Path, StorageReclaimJob] = {}
 def reclaim_journal_path(data_dir: Path | str) -> Path:
     """Where the reclaim journal lives, beside the runtime store it describes."""
     return Path(data_dir) / f"{DEFAULT_DB_NAME}{RECLAIM_JOURNAL_SUFFIX}"
+
+
+def rehearsal_journal_path(data_dir: Path | str) -> Path:
+    """Scratch journal for a rehearsal; its own run unlinks it in a ``finally``."""
+    return Path(data_dir) / f"{DEFAULT_DB_NAME}{RECLAIM_REHEARSAL_SUFFIX}"
 
 
 def read_reclaim_journal(data_dir: Path | str) -> dict[str, Any] | None:
@@ -149,10 +162,10 @@ def get_storage_reclaim_payload(
 
 
 def start_storage_reclaim(
-    data_dir: Path | str, *, auto: bool = False, hold: bool = True
+    data_dir: Path | str, *, auto: bool = False, hold: bool = True, rehearsal: bool = False
 ) -> dict[str, Any]:
     """Start one journaled reclaim run, or answer why it did not start."""
-    return _job_for(data_dir).start(auto=auto, hold=hold)
+    return _job_for(data_dir).start(auto=auto, hold=hold, rehearsal=rehearsal)
 
 
 def cancel_storage_reclaim(data_dir: Path | str, run_id: str = "") -> dict[str, Any]:
@@ -287,6 +300,8 @@ def _empty_state() -> dict[str, Any]:
         "triggerOverride": False,
         "expectedBackupBytes": 0,
         "copyDigests": {},
+        # A rehearsal reports its measurements here; a reclaim leaves it empty.
+        "result": {},
         "error": "",
     }
 
@@ -325,6 +340,7 @@ class StorageReclaimJob:
                     "triggerOverride": bool(journal.get("triggerOverride")),
                     "expectedBackupBytes": int(journal.get("expectedBackupBytes") or 0),
                     "copyDigests": dict(journal.get("copyDigests") or {}),
+                    "result": dict(journal.get("result") or {}),
                     "error": str(journal.get("error") or ""),
                 }
             )
@@ -349,13 +365,20 @@ class StorageReclaimJob:
                 "error": str(self._state["error"]),
             }
 
-    def start(self, *, auto: bool = False, hold: bool = True) -> dict[str, Any]:
+    def start(
+        self, *, auto: bool = False, hold: bool = True, rehearsal: bool = False
+    ) -> dict[str, Any]:
         """Start one run, or answer ``{started: false, reason}`` without changing state.
 
         ``hold`` is the container's concurrency guard: a task started mid-copy
         would make the install ``superseded`` and burn the copy, so the run holds
         task starts from before its thread exists until its terminal phase.
         Desktop runs inline and takes none.
+
+        ``rehearsal`` is the ``{dryRun: true}`` path: a background copy that
+        validates a staging file, reports what a real run would cost, and then
+        unlinks it. It installs nothing, links no backup and deletes nothing, so
+        it is safe to run before auto mode has ever been enabled.
         """
         with self._start_lock:
             with self._lock:
@@ -368,7 +391,10 @@ class StorageReclaimJob:
                 return self._refusal("rebuild-running")
             verdict = _compute_verdict(self.data_dir, read_reclaim_journal(self.data_dir))
             reason, override = _preflight_refusal(verdict, auto=auto)
-            if reason:
+            # A rehearsal measures a host before auto mode is enabled, so "the
+            # verdict is not bloat" is exactly the case it exists for. Every
+            # safety blocker still refuses it.
+            if reason != "not-bloated" and reason:
                 return self._refusal(reason, blockers=list(verdict.get("blockers") or []))
             run_id = f"storage_reclaim_{uuid.uuid4().hex[:12]}"
             with self._lock:
@@ -376,7 +402,7 @@ class StorageReclaimJob:
                 self._state = {
                     **_empty_state(),
                     "runId": run_id,
-                    "mode": "reclaim",
+                    "mode": "rehearsal" if rehearsal else "reclaim",
                     "status": "running",
                     "phase": "evaluating",
                     "startedAt": _now_iso(),
@@ -388,7 +414,7 @@ class StorageReclaimJob:
                     set_storage_reclaim_hold(run_id)
                     self._hold_taken = True
                 thread = threading.Thread(
-                    target=self._run,
+                    target=self._run_rehearsal if rehearsal else self._run,
                     name=f"baluffo-storage-reclaim-{run_id[-6:]}",
                     daemon=True,
                 )
@@ -529,7 +555,14 @@ class StorageReclaimJob:
             self._state["phase"] = phase
             self._write_journal_locked()
 
-    def _settle(self, status: str, *, error: str = "", phase: str = "") -> None:
+    def _settle(
+        self,
+        status: str,
+        *,
+        error: str = "",
+        phase: str = "",
+        result: dict[str, Any] | None = None,
+    ) -> None:
         with self._lock:
             if self._state["status"] in RECLAIM_TERMINAL_STATUSES:
                 return
@@ -541,13 +574,16 @@ class StorageReclaimJob:
                     "error": error,
                 }
             )
+            if result is not None:
+                self._state["result"] = dict(result)
             self._write_journal_locked()
 
-    def _evaluate(self) -> str | None:
+    def _evaluate(self, *, rehearsal: bool = False) -> str | None:
         """Why this run must stop before copying anything, or ``None`` to proceed.
 
         An empty string means the run was cancelled; a non-empty one is the
-        refusal to journal.
+        refusal to journal. A rehearsal skips only the bloat requirement: it
+        exists to measure a host before auto mode is enabled.
         """
         if self._cancel_event.is_set():
             return ""
@@ -563,7 +599,7 @@ class StorageReclaimJob:
         ]
         if blockers:
             return f"blocked by {blockers[0]}"
-        if str(verdict.get("verdict") or "") != "bloat":
+        if not rehearsal and str(verdict.get("verdict") or "") != "bloat":
             return "the verdict no longer reports bloat"
         return None
 
@@ -609,19 +645,112 @@ class StorageReclaimJob:
         ) as exc:
             self._settle("failed", error=f"{type(exc).__name__}: {exc}")
         finally:
-            with self._lock:
-                if self._thread is threading.current_thread():
-                    self._thread = None
-                # A newer run can already own the job by the time this thread
-                # unwinds; it must not lose its hold to the older finally.
-                same_run = str(self._state["runId"]) == run_id
-                took_hold = self._hold_taken and same_run
-                if took_hold:
-                    self._hold_taken = False
-            # Same finally that clears the thread: a terminal phase and the hold
-            # release are one transition, never a phase boundary.
+            self._release_run_hold(run_id)
+
+    def _run_rehearsal(self) -> None:
+        """Measure a copy and discard it: no install, no backup, no delete."""
+        with self._lock:
+            run_id = str(self._state["runId"])
+        try:
+            self._rehearse()
+        except (CurrentFeedRebuildCancelled, RetentionCancelled):
+            self._settle("cancelled")
+        except (
+            BaluffoStoreError,
+            CurrentFeedRebuildError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
+            self._settle("failed", error=f"{type(exc).__name__}: {exc}")
+        finally:
+            self._cleanup_rehearsal(run_id)
+            self._release_run_hold(run_id)
+
+    def _rehearse(self) -> None:
+        """Run the real copy on the live database and report what it cost.
+
+        The copy helper validates its staging file and computes the content
+        digests on it, so the report carries the same checks a real run would
+        rely on; only the install, the rollback link and the delete are missing.
+        """
+        refusal = self._evaluate(rehearsal=True)
+        if refusal is not None:
+            self._settle("cancelled", error=refusal)
+            return
+        self._set_phase("copying")
+        with self._lock:
+            run_id = str(self._state["runId"])
+        started = time.monotonic()
+        source_bytes = file_size(self.db_path)
+        free_bytes = _free_space_bytes(self.data_dir)
+        required_free = rebuild_required_free_bytes(source_bytes)
+        staging = rebuild_staging_path(self.db_path, run_id=run_id)
+        copied = rebuild_current_feed_database(
+            self.db_path,
+            staging,
+            journal_path=rehearsal_journal_path(self.data_dir),
+            run_id=run_id,
+            cancel_requested=self._cancel_event.is_set,
+            # A multi-GB copy must refresh the hold's stall clock while it reads.
+            on_progress=lambda _progress: self._heartbeat(),
+        )
+        staging_bytes = file_size(staging)
+        self._settle(
+            "complete",
+            result={
+                "stagingBytes": staging_bytes,
+                "reclaimedBytes": max(0, source_bytes - staging_bytes),
+                "durationMs": int(copied.get("durationMs") or 0)
+                or int(round((time.monotonic() - started) * 1000)),
+                "tableCounts": dict(copied.get("tableCounts") or {}),
+                "jobRowCount": int(copied.get("jobRowCount") or 0),
+                "sourceRowCount": int(copied.get("sourceRowCount") or 0),
+                "validation": {
+                    key: copied.get(key)
+                    for key in (
+                        "quickCheck",
+                        "foreignKeyViolations",
+                        "rowHash",
+                        "sourceHash",
+                    )
+                },
+                "copyDigests": dict(copied.get("copyDigests") or {}),
+                "freeBytes": int(free_bytes or 0),
+                "requiredFreeBytes": int(required_free or 0),
+            },
+        )
+
+    def _cleanup_rehearsal(self, run_id: str) -> None:
+        """The rehearsal owns a staging file and a scratch journal, nothing else."""
+        journal = rehearsal_journal_path(self.data_dir)
+        for path in (
+            rebuild_staging_path(self.db_path, run_id=run_id),
+            journal,
+            journal.with_name(f"{journal.name}.tmp"),
+        ):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _release_run_hold(self, run_id: str) -> None:
+        """Clear this thread and release its hold in one transition."""
+        with self._lock:
+            if self._thread is threading.current_thread():
+                self._thread = None
+            # A newer run can already own the job by the time this thread
+            # unwinds; it must not lose its hold to the older finally.
+            same_run = str(self._state["runId"]) == run_id
+            took_hold = self._hold_taken and same_run
             if took_hold:
-                clear_storage_reclaim_hold("terminal", run_id=run_id)
+                self._hold_taken = False
+        # Same finally that clears the thread: a terminal phase and the hold
+        # release are one transition, never a phase boundary.
+        if took_hold:
+            clear_storage_reclaim_hold("terminal", run_id=run_id)
 
     def _start_rebuild_waiting(self) -> tuple[dict[str, Any] | None, str]:
         """Start the rebuild once any in-flight one has left, or name the refusal.

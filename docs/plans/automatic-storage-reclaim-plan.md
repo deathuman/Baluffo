@@ -24,9 +24,13 @@
   on both sides of the copy, `copyDigests` is journaled, and the installed
   database is re-hashed before the delete, failing as `non-feed-mismatch` with the
   table's name. A write that races the copy settles `superseded` (the source
-  moved, not the copy), so only a copy defect is reported as a mismatch. Triggers (§4), rehearsal (§9), full-disk order (§3) and
-  presentation (§6) are unimplemented, and `{dryRun: true}` is refused until the
-  rehearsal lands.
+  moved, not the copy), so only a copy defect is reported as a mismatch. The
+  rehearsal (§9) is implemented: `POST {dryRun: true}` starts a background
+  read-only copy on the same single-flight and hold, reports staging/reclaimed
+  bytes, duration, per-table counts, validation and the content digests under the
+  journal's `result`, and unlinks its staging file and scratch
+  `<db>.reclaim-rehearsal.json` in a `finally`. Triggers (§4), full-disk order (§3)
+  and presentation (§6) are unimplemented.
 
 ## Scope
 

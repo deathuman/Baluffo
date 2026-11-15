@@ -560,8 +560,9 @@ def rebuild_current_feed_database(
         target_conn.set_progress_handler(interrupt_check, 10_000)
         target_conn.execute("BEGIN IMMEDIATE")
         copied = 0
+        table_counts: dict[str, int] = {}
         for table in table_names:
-            _copy_table(
+            table_counts[table] = _copy_table(
                 source_conn,
                 target_conn,
                 table,
@@ -665,6 +666,7 @@ def rebuild_current_feed_database(
         "sourceBytes": file_size(source),
         "stagingBytes": file_size(staging),
         "durationMs": int(round((time.monotonic() - started) * 1000)),
+        "tableCounts": table_counts,
         "copyDigests": copy_digests,
         **validation,
     }
@@ -676,6 +678,7 @@ def rebuild_current_feed_database(
         stagingBytes=result["stagingBytes"],
         rowHash=validation["rowHash"],
         sourceHash=validation["sourceHash"],
+        tableCounts=table_counts,
         copyDigests=copy_digests,
         error="",
     )

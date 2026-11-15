@@ -132,7 +132,9 @@ class _AdminPostRouteApi(Protocol):
 
     def cancel_storage_rebuild(self, run_id: str) -> dict[str, Any]: ...
 
-    def start_storage_reclaim(self, *, auto: bool = False) -> dict[str, Any]: ...
+    def start_storage_reclaim(
+        self, *, auto: bool = False, rehearsal: bool = False
+    ) -> dict[str, Any]: ...
 
     def cancel_storage_reclaim(self, run_id: str) -> dict[str, Any]: ...
 
@@ -413,20 +415,12 @@ def _handle_ops_storage_copy_post(
         return True
 
     if path == "/ops/storage-reclaim":
-        if data.get("dryRun") is True:
-            # The recipe calls for a background rehearsal on the same single-flight.
-            # Until it lands, refuse the request rather than start a real copy.
-            handler.send_json(
-                {
-                    "ok": False,
-                    "started": False,
-                    "reason": "dry-run-unavailable",
-                    "error": "the reclaim rehearsal is not implemented yet",
-                },
-                status=400,
-            )
-            return True
-        result = api.start_storage_reclaim(auto=data.get("auto") is True)
+        # `{dryRun: true}` starts the background rehearsal on the same
+        # single-flight: a real copy that validates staging, reports what a run
+        # would cost, and is discarded without installing or deleting anything.
+        result = api.start_storage_reclaim(
+            auto=data.get("auto") is True, rehearsal=data.get("dryRun") is True
+        )
         handler.send_json(result, status=202 if bool(result.get("started")) else 200)
         return True
 
