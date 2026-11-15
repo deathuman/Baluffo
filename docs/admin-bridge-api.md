@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/get_*.py`, `src/bridge/routes/post_routes_{admin,local_data,update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-07-14
+> - **Last updated:** 2026-11-15 (backup-delete restart settlement documented as leaving a live in-process worker's `running` record alone)
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,availability,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -183,6 +183,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 If a completed rebuild journal still reports a retained backup but the backup file is already gone, the next storage-rebuild status read records the deletion in the journal and marks `backupDeleteStatus: "succeeded"`. This covers a delete whose worker stopped after unlinking but before writing its terminal journal state, including a bridge restart. A status read while a rebuild, rollback, or delete owns the backup path is skipped so an in-flight operation is not mistaken for deletion. The reconciliation only updates journal fields (`backupDeletedAt`, `backupBytes: 0`, freed bytes, run/status fields, and validation basis); it never removes or rewrites live data, another file, or the feed.
 
 A delete is journaled `running` before its worker starts, so a bridge that restarts mid-validation reports `backupDeleteStatus: "failed"` with the restart error on the next status read rather than falling back to the previous `complete` with no delete record. The retained copy is untouched by that settlement, and the delete can be retried.
+
+That settlement has one exception: a second storage-rebuild job built for the same data dir (a reload, a second bridge view) leaves a journaled `running` delete alone while its worker is still alive in the same process, because the run is current rather than stale. Liveness is per process and matched by run id, so every worker that is gone — including all of them after a restart — still settles as above. [`storage-contract.md`](storage-contract.md) carries the rule; this route only reports it.
 
 ## Diagnostic Artifacts
 

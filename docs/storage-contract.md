@@ -323,6 +323,14 @@ replacement for them.
   `rolled-back`). The journal is evidence only: a restart never resumes or
   repeats a rebuild by itself, and `/ops/storage-rebuild` reads it beside the
   retained backup so the outcome survives a bridge restart.
+- A delete's own record is settled the same way, with one live-worker exception:
+  a journaled `running` delete is reported as a failed attempt only when no
+  worker in this process still owns its run id. A second rebuild job built for
+  the same data dir (a reload, a second bridge view) therefore leaves a
+  `running` delete alone while its worker is alive, instead of telling the
+  operator it failed while it is still validating or unlinking. Liveness is per
+  process and matched by run id, so a worker that is gone — including every
+  worker after a bridge restart — still settles on the next status read.
 - For the approval-gated preflight, independent validation, and rollback
   sequence, see [`plans/current-feed-full-rebuild-plan.md`](plans/current-feed-full-rebuild-plan.md).
 - The automatic form of this window — bloat verdict, rebuild, and verified delete of
