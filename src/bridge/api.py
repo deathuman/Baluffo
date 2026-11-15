@@ -451,6 +451,10 @@ class BridgeApi:
     start_storage_maintenance: Callable[[], JsonObject] = _not_started_noarg
     cancel_storage_maintenance: Callable[[str], JsonObject] = _not_started_run_id
     get_storage_rebuild_payload: Callable[[], JsonObject] = _empty_storage_rebuild_payload
+    get_storage_reclaim_payload: Callable[..., JsonObject] = lambda **_kwargs: {
+        "ok": True,
+        "storageReclaim": None,
+    }
     start_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg
     cancel_storage_rebuild: Callable[[str], JsonObject] = _not_started_run_id
     rollback_storage_rebuild: Callable[[], JsonObject] = _not_started_noarg

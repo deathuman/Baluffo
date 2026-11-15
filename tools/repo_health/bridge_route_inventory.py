@@ -761,6 +761,18 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=("frontend/admin/app/storage-breakdown.js",),
     ),
     _route(
+        "GET",
+        "/ops/storage-reclaim",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+        caller_files=(),
+        rationale=(
+            "Read-only reclaim verdict, status and journal; cached for 60 s and never "
+            "starts work. The storage panel is its caller once the presentation slice lands."
+        ),
+    ),
+    _route(
         "POST",
         "/ops/storage-rebuild",
         EXACT,

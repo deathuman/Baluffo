@@ -72,6 +72,7 @@ def build_bridge_api(
     start_storage_maintenance: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_maintenance: Callable[[str], dict[str, Any]] | None = None,
     get_storage_rebuild_payload: Callable[[], dict[str, Any]] | None = None,
+    get_storage_reclaim_payload: Callable[..., dict[str, Any]] | None = None,
     start_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_rebuild: Callable[[str], dict[str, Any]] | None = None,
     rollback_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
@@ -200,6 +201,8 @@ def build_bridge_api(
         ),
         get_storage_rebuild_payload=get_storage_rebuild_payload
         or (lambda: {"ok": True, "storageRebuild": None}),
+        get_storage_reclaim_payload=get_storage_reclaim_payload
+        or (lambda **_kwargs: {"ok": True, "storageReclaim": None}),
         start_storage_rebuild=start_storage_rebuild
         or (lambda: {"ok": False, "started": False, "error": "not_implemented"}),
         cancel_storage_rebuild=cancel_storage_rebuild

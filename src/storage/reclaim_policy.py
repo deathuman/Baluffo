@@ -27,6 +27,9 @@ from src.storage.current_feed_rebuild import rebuild_required_free_bytes
 RECLAIM_ABSOLUTE_FLOOR_BYTES = 512 * 1024 * 1024
 RECLAIM_MIN_RATIO_PCT_DEFAULT = 10.0
 RECLAIMABLE_BASIS = "payload-sample+freelist"
+# The verdict runs a bounded cleanup preview, while the reclaim modal polls its
+# route; this is how long the route may answer with the verdict it already has.
+RECLAIM_VERDICT_TTL_S = 60.0
 
 BLOCKER_NO_CURRENT_GENERATION = "no-current-generation"
 BLOCKER_ACTIVE_TASK = "active-task"

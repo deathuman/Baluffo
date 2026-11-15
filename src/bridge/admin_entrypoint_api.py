@@ -7,6 +7,7 @@ from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import storage_diagnostic as storage_diagnostic_mod
 from src.bridge import storage_health as storage_health_mod
 from src.bridge import storage_rebuild as storage_rebuild_mod
+from src.bridge import storage_reclaim as storage_reclaim_mod
 from src.bridge.api import BridgeApi
 
 
@@ -117,6 +118,11 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         ),
         get_storage_rebuild_payload=lambda: storage_rebuild_mod.get_storage_rebuild_payload(
             Path(config.data_dir).resolve()
+        ),
+        get_storage_reclaim_payload=lambda *, refresh=False, scope="modal": (
+            storage_reclaim_mod.get_storage_reclaim_payload(
+                Path(config.data_dir).resolve(), refresh=refresh, scope=scope
+            )
         ),
         start_storage_rebuild=lambda: storage_rebuild_mod.start_storage_rebuild(
             Path(config.data_dir).resolve()

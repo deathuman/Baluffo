@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
 from tests.helpers.bridge_api import FakeHandler
 
@@ -44,6 +46,11 @@ class MinimalOpsDiagnosticsRouteApi:
 
     def get_storage_rebuild_payload(self) -> dict[str, Any]:
         return {"ok": True, "storageRebuild": {"status": "idle"}}
+
+    def get_storage_reclaim_payload(
+        self, *, refresh: bool = False, scope: str = "modal"
+    ) -> dict[str, Any]:
+        return {"ok": True, "storageReclaim": {"refresh": refresh, "scope": scope}}
 
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]:
         target = Path(path)
@@ -143,3 +150,73 @@ def test_ops_diagnostic_routes_accept_minimal_capability_object(tmp_path: Path) 
         is True
     )
     assert attempts_handler.sent[-1]["payload"]["ok"] is True
+
+
+def test_storage_reclaim_route_passes_refresh_and_runtime_scope(tmp_path: Path) -> None:
+    api = MinimalOpsDiagnosticsRouteApi(tmp_path)
+
+    cached_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            cached_handler,
+            api=api,
+            path="/ops/storage-reclaim",
+            query={},
+        )
+        is True
+    )
+    assert cached_handler.sent[-1]["payload"]["storageReclaim"] == {
+        "refresh": False,
+        "scope": "modal",
+    }
+
+    refresh_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            refresh_handler,
+            api=api,
+            path="/ops/storage-reclaim",
+            query={"refresh": ["1"]},
+        )
+        is True
+    )
+    assert refresh_handler.sent[-1]["payload"]["storageReclaim"]["refresh"] is True
+
+    api.runtime_config.desktop_mode = True
+    desktop_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            desktop_handler,
+            api=api,
+            path="/ops/storage-reclaim",
+            query={},
+        )
+        is True
+    )
+    assert desktop_handler.sent[-1]["payload"]["storageReclaim"]["scope"] == "inline"
+
+    api.runtime_config.container_mode = True
+    container_handler = FakeHandler()
+    assert (
+        handle_ops_diagnostic_routes(
+            container_handler,
+            api=api,
+            path="/ops/storage-reclaim",
+            query={},
+        )
+        is True
+    )
+    assert container_handler.sent[-1]["payload"]["storageReclaim"]["scope"] == "modal"
+
+
+@pytest.mark.parametrize("raw", ["1", "true", "yes", "on", "TRUE", " 1 "])
+def test_storage_reclaim_refresh_accepts_the_usual_truthy_spellings(
+    tmp_path: Path, raw: str
+) -> None:
+    api = MinimalOpsDiagnosticsRouteApi(tmp_path)
+    handler = FakeHandler()
+    handle_ops_diagnostic_routes(
+        handler, api=api, path="/ops/storage-reclaim", query={"refresh": [raw]}
+    )
+
+    assert handler.sent[-1]["payload"]["storageReclaim"]["refresh"] is True

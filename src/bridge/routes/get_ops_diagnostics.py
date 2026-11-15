@@ -42,6 +42,10 @@ class _OpsDiagnosticsRouteApi(Protocol):
 
     def get_storage_rebuild_payload(self) -> dict[str, Any]: ...
 
+    def get_storage_reclaim_payload(
+        self, *, refresh: bool = False, scope: str = "modal"
+    ) -> dict[str, Any]: ...
+
     def load_json_object(self, path: Path, default: Any) -> dict[str, Any]: ...
 
 
@@ -61,11 +65,36 @@ def _performance_profile_runtime(api: _OpsDiagnosticsRouteApi) -> dict[str, Any]
     }
 
 
+def _storage_reclaim_scope(api: _OpsDiagnosticsRouteApi) -> str:
+    """The container blocks behind a modal; desktop renders the same run inline."""
+    if is_container_runtime(api):
+        return "modal"
+    runtime_config = getattr(api, "runtime_config", None)
+    return "inline" if bool(getattr(runtime_config, "desktop_mode", False)) else "modal"
+
+
+def _query_flag(query: dict[str, list[str]], name: str) -> bool:
+    raw = str((query.get(name) or ["0"])[0]).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _handle_storage_get_routes(
-    handler: BridgeResponseWriter, *, api: _OpsDiagnosticsRouteApi, path: str
+    handler: BridgeResponseWriter,
+    *,
+    api: _OpsDiagnosticsRouteApi,
+    path: str,
+    query: dict[str, list[str]],
 ) -> bool:
     if path == "/ops/storage-health":
         handler.send_json(api.get_storage_health_payload())
+        return True
+    if path == "/ops/storage-reclaim":
+        handler.send_json(
+            api.get_storage_reclaim_payload(
+                refresh=_query_flag(query, "refresh"),
+                scope=_storage_reclaim_scope(api),
+            )
+        )
         return True
     if path == "/ops/storage-maintenance/preview":
         handler.send_json(api.get_storage_maintenance_preview())
@@ -116,7 +145,7 @@ def handle_ops_diagnostic_routes(
         )
         return True
 
-    if _handle_storage_get_routes(handler, api=api, path=path):
+    if _handle_storage_get_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/ops/discovery-audit-artifacts":
