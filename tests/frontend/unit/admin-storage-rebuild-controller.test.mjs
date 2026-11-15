@@ -294,6 +294,20 @@ test("a superseded rebuild is shown as a warning, not a failure to install", () 
   f.controller.stopRebuildPoll();
 });
 
+test("the collapsed summary reports a rebuild or delete ahead of the snapshot wording", () => {
+  const f = fixture();
+
+  f.controller.acceptRebuild({ ok: true, storageRebuild: RUNNING });
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Rebuild running");
+
+  f.controller.acceptRebuild({ ok: true, storageRebuild: DELETE_RUNNING });
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Deleting old database");
+
+  f.controller.acceptRebuild({ ok: true, storageRebuild: COMPLETE });
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Open to load");
+  f.controller.stopRebuildPoll();
+});
+
 test("a retained rollback copy is announced in the panel body, not only under Advanced", () => {
   const f = fixture();
 

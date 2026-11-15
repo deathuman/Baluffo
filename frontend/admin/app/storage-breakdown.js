@@ -81,6 +81,9 @@ export function createStorageBreakdownController({
   // second time reuses it instead of re-reading. A failed or deferred read
   // leaves it false and the next open retries.
   let healthRendered = false;
+  // The summary keeps the snapshot wording until something is actually running,
+  // then says what is running. `Open to load` matches the collapsed markup.
+  let snapshotStatus = { text: "Open to load", tone: "" };
   let refreshBound = false;
   let diagnosticInFlight = false;
   let diagnosticPollTimer = null;
@@ -110,11 +113,35 @@ export function createStorageBreakdownController({
     return tableSizes.estimated ? "Estimated snapshot" : "Measured";
   }
 
-  function setStatus(text, tone = "") {
+  // Short enough to stay one line in the collapsed summary. Ordered by what the
+  // operator would want to know first: a rebuild owns the database, then
+  // maintenance, and a held pass is stated rather than left as "open to load".
+  function summaryActivity() {
+    if (rebuildDeleteRunning()) return { text: "Deleting old database", tone: "" };
+    if (rebuild?.status === "cancelling") return { text: "Stopping rebuild", tone: "warning" };
+    if (rebuildRunning()) return { text: "Rebuild running", tone: "" };
+    if (maintenanceStatus?.status === "cancelling") {
+      return { text: "Maintenance stopping", tone: "warning" };
+    }
+    if (maintenanceRunning(maintenanceStatus)) return { text: "Maintenance running", tone: "" };
+    if (compactionRunning()) return { text: "Compaction running", tone: "warning" };
+    if (maintenanceStatus?.status === "held-active-task") {
+      return { text: "Held by a task", tone: "warning" };
+    }
+    return null;
+  }
+
+  function renderSummaryStatus() {
     const statusEl = refs.adminStorageTablesStatusEl;
     if (!statusEl) return;
-    statusEl.textContent = text;
-    statusEl.setAttribute?.("data-tone", tone);
+    const next = summaryActivity() || snapshotStatus;
+    statusEl.textContent = next.text;
+    statusEl.setAttribute?.("data-tone", next.tone || "");
+  }
+
+  function setStatus(text, tone = "") {
+    snapshotStatus = { text, tone };
+    renderSummaryStatus();
   }
 
   function renderMessage(message) {
@@ -300,6 +327,7 @@ export function createStorageBreakdownController({
     );
     progressEl.innerHTML = html;
     progressEl.hidden = !html;
+    renderSummaryStatus();
   }
 
   function renderMaintenancePreview() {
@@ -835,6 +863,7 @@ export function createStorageBreakdownController({
       refs.adminStorageRebuildBackupDeleteBtnEl.hidden = !canRestore;
       refs.adminStorageRebuildBackupDeleteBtnEl.disabled = rebuildInFlight || deleteActive;
     }
+    renderSummaryStatus();
   }
 
   function stopRebuildPoll() {

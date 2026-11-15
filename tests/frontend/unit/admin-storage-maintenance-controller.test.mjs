@@ -87,6 +87,48 @@ test("storage health renders live maintenance phase and progress", () => {
   f.controller.stopMaintenancePoll();
 });
 
+test("the collapsed summary names a running or held pass, then returns to the snapshot", async () => {
+  const f = fixture({
+    payload: {
+      storage: {
+        tableSizes: {
+          status: "ok",
+          complete: true,
+          databaseBytes: 100,
+          allocatedBytes: 80,
+          freelistBytes: 20,
+          tables: []
+        }
+      }
+    }
+  });
+  await f.controller.load();
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Measured");
+
+  f.controller.acceptStorageHealth({ storage: { runtimeRetention: LIVE_STATUS } });
+  assert.equal(
+    f.refs.adminStorageTablesStatusEl.textContent,
+    "Maintenance running",
+    "a running pass must be visible without opening the panel"
+  );
+
+  f.controller.acceptStorageHealth({
+    storage: { runtimeRetention: { ...LIVE_STATUS, status: "held-active-task", running: false } }
+  });
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Held by a task");
+  assert.equal(f.refs.adminStorageTablesStatusEl.attributes["data-tone"], "warning");
+
+  f.controller.acceptStorageHealth({
+    storage: { runtimeRetention: { ...LIVE_STATUS, status: "ok", running: false, phase: "complete" } }
+  });
+  assert.equal(
+    f.refs.adminStorageTablesStatusEl.textContent,
+    "Measured",
+    "the snapshot wording returns once nothing is running"
+  );
+  f.controller.stopMaintenancePoll();
+});
+
 test("storage health renders the current write-lock holder and duration", () => {
   const f = fixture();
   f.controller.acceptStorageHealth({
