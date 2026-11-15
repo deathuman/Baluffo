@@ -892,11 +892,13 @@ class JobRuntimeStore:
         candidate_source_rows = 0
         estimated_bytes = 0
         rows: list[dict[str, Any]] = []
+        candidate_samples: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
         for generation in candidates:
             counts_row_known = generation in stats
             job_count, source_count = stats.get(generation, (0, 0))
             job_sample = self._payload_sample("jobs", generation, sample_rows)
             source_sample = self._payload_sample("job_sources", generation, sample_rows)
+            candidate_samples[generation] = (job_sample, source_sample)
             effective_job_count = (
                 int(job_count) if counts_row_known else int(job_sample["sampleCount"])
             )
@@ -940,7 +942,10 @@ class JobRuntimeStore:
             "job_sources", current, int(current_summary.get("sourceCount") or 0), sample_rows
         )
         historical_bytes, historical_generations = self._historical_payload_bytes(
-            current, sample_rows=sample_rows, count_budget_s=count_budget_s
+            current,
+            sample_rows=sample_rows,
+            count_budget_s=count_budget_s,
+            samples=candidate_samples,
         )
         return {
             "currentGeneration": current,
@@ -1008,7 +1013,12 @@ class JobRuntimeStore:
         )
 
     def _historical_payload_bytes(
-        self, current: str, *, sample_rows: int, count_budget_s: float
+        self,
+        current: str,
+        *,
+        sample_rows: int,
+        count_budget_s: float,
+        samples: Mapping[str, tuple[Mapping[str, Any], Mapping[str, Any]]],
     ) -> tuple[int, int]:
         """Estimate payload bytes across every non-current generation.
 
@@ -1016,10 +1026,15 @@ class JobRuntimeStore:
         provide the projection; missing ones get the preview's bounded count, and
         when even that cannot finish the sample itself is the floor. The estimate
         therefore understates history rather than overstating it.
+
+        ``samples`` carries the payload samples the candidate loop already took, so
+        a generation inside the delete cap is measured once, not twice. The
+        generation list is limited in SQL: this runs against the multi-GB backlogs
+        the estimate exists for.
         """
-        generations = self._generations_before_current(current, None)[
-            :HISTORY_SAMPLE_GENERATION_LIMIT
-        ]
+        generations = self._generations_before_current(
+            current, None, limit=HISTORY_SAMPLE_GENERATION_LIMIT
+        )
         if not generations:
             return 0, 0
         stats = self._generation_stats(generations)
@@ -1031,8 +1046,14 @@ class JobRuntimeStore:
         estimated = 0
         seen = 0
         for generation in generations:
-            job_sample = self._payload_sample("jobs", generation, sample_rows)
-            source_sample = self._payload_sample("job_sources", generation, sample_rows)
+            job_sample: Mapping[str, Any]
+            source_sample: Mapping[str, Any]
+            reused = samples.get(generation)
+            if reused is None:
+                job_sample = self._payload_sample("jobs", generation, sample_rows)
+                source_sample = self._payload_sample("job_sources", generation, sample_rows)
+            else:
+                job_sample, source_sample = reused
             if int(job_sample["sampleCount"]) > 0 or int(source_sample["sampleCount"]) > 0:
                 seen += 1
             job_count, source_count = stats.get(generation, (0, 0))
@@ -1332,9 +1353,19 @@ class JobRuntimeStore:
             return self._generations_before_current(current, delete_cap)
         return self._generations_beyond_keep(current, keep_count, delete_cap)
 
-    def _generations_before_current(self, current: str, delete_cap: int | None) -> list[str]:
-        """Everything except the current generation, oldest ``feed_generation`` first."""
-        if delete_cap is None:
+    def _generations_before_current(
+        self, current: str, delete_cap: int | None, *, limit: int | None = None
+    ) -> list[str]:
+        """Everything except the current generation, oldest ``feed_generation`` first.
+
+        ``limit`` bounds the query, not just the returned list: grouping every
+        generation on a deep backlog and then discarding most of them is the cost
+        this argument exists to avoid.
+        """
+        bound = None if delete_cap is None else int(delete_cap)
+        if limit is not None:
+            bound = int(limit) if bound is None else min(bound, int(limit))
+        if bound is None:
             rows = self.store.execute_read(
                 """
                 SELECT feed_generation
@@ -1355,7 +1386,7 @@ class JobRuntimeStore:
                 ORDER BY feed_generation ASC
                 LIMIT ?
                 """,
-                (current, int(delete_cap)),
+                (current, bound),
             )
         return [_clean_text(row.get("feed_generation")) for row in rows]
 

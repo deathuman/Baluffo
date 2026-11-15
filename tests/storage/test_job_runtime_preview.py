@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import time
+from typing import Any
+
+import pytest
 
 from src.storage import BaluffoStore, JobRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -76,6 +79,39 @@ def test_preview_history_sample_ignores_the_delete_cap() -> None:
     assert preview["capReached"] is True
     assert preview["historicalGenerationCount"] == 5
     assert preview["historicalGenerationEstimatedBytes"] > 0
+
+
+def test_preview_history_sample_is_query_bounded_and_reuses_candidate_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("preview-reclaim-bounded-sample") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _replace_generations(store, 7)
+            statements: list[str] = []
+            execute_read = store.execute_read
+
+            def recording_read(sql: str, parameters: Any = None) -> Any:
+                statements.append(sql)
+                return execute_read(sql) if parameters is None else execute_read(sql, parameters)
+
+            monkeypatch.setattr(store, "execute_read", recording_read)
+            preview = JobRuntimeStore(store).cleanup_preview()
+
+    sample_queries = [sql for sql in statements if "AS sample_count" in sql]
+    generation_queries = [
+        sql
+        for sql in statements
+        if "GROUP BY feed_generation" in sql and "ORDER BY feed_generation ASC" in sql
+    ]
+
+    assert preview["candidateGenerationCount"] == 4
+    assert preview["historicalGenerationCount"] == 6
+    # Two tables per generation: four candidates, the two generations outside the
+    # cap, and the current one. The candidate generations are not sampled twice.
+    assert len(sample_queries) == 14
+    # Both listings bind their own LIMIT, so no GROUP BY covers a whole backlog.
+    assert len(generation_queries) == 2
+    assert all("LIMIT ?" in sql for sql in generation_queries)
 
 
 def test_preview_reports_no_history_when_only_the_current_feed_exists() -> None:
