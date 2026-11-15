@@ -9,6 +9,7 @@ import pytest
 from src.storage import BaluffoStore, JobRuntimeStore, current_feed_rebuild
 from src.storage.current_feed_rebuild import (
     CONTENT_PARITY_TABLES,
+    ContentParityRace,
     CurrentFeedRebuildError,
     content_table_digest,
     database_feed_state,
@@ -241,6 +242,28 @@ def test_validation_rejects_a_staged_copy_with_a_missing_current_row() -> None:
                 )
 
 
+def test_a_copy_defect_still_fails_as_a_non_feed_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_copy_table = current_feed_rebuild._copy_table
+
+    def corrupted_sources(*args: Any, **kwargs: Any) -> int:
+        copied = real_copy_table(*args, **kwargs)
+        if args[2] == "sources":
+            # A copy bug with no write to blame must stay a mismatch.
+            args[1].execute("UPDATE sources SET name = 'corrupted'")
+        return copied
+
+    with workspace_tmpdir("current-feed-rebuild-parity-defect") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _seed_two_generations(store)
+            _seed_registry_row(store)
+            monkeypatch.setattr(current_feed_rebuild, "_copy_table", corrupted_sources)
+
+            with pytest.raises(CurrentFeedRebuildError, match="non-feed-mismatch: sources"):
+                rebuild_current_feed_database(store.db_path, data_dir / "staged-rebuild.db")
+
+
 def test_rebuild_records_content_parity_digests_before_the_copy_is_installed() -> None:
     with workspace_tmpdir("current-feed-rebuild-parity") as data_dir:
         with BaluffoStore(data_dir) as store:
@@ -287,6 +310,36 @@ def test_rebuild_refuses_a_staged_copy_that_differs_from_the_source(
             # Nothing was installed and the bad copy is gone.
             assert not staging.exists()
             assert store.execute_scalar("SELECT COUNT(*) FROM sources") == 1
+
+
+def test_a_write_during_the_copy_is_a_race_not_a_copy_defect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_copy_table = current_feed_rebuild._copy_table
+
+    with workspace_tmpdir("current-feed-rebuild-parity-race") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _seed_two_generations(store)
+            _seed_registry_row(store)
+            staging = data_dir / "staged-rebuild.db"
+            journal = rebuild_journal_path(store.db_path)
+
+            def copying_after_a_write(*args: Any, **kwargs: Any) -> int:
+                if args[2] == "sources":
+                    _seed_registry_row(store, name="Approved mid-copy")
+                return real_copy_table(*args, **kwargs)
+
+            monkeypatch.setattr(current_feed_rebuild, "_copy_table", copying_after_a_write)
+
+            with pytest.raises(ContentParityRace, match="sources changed while"):
+                rebuild_current_feed_database(store.db_path, staging, journal_path=journal)
+
+            # The source moved, not the copy: the run is retried, not failed.
+            assert not staging.exists()
+            assert read_rebuild_journal(journal)["status"] == "superseded"
+            assert store.execute_scalar("SELECT name FROM sources WHERE id = 'src-1'") == (
+                "Approved mid-copy"
+            )
 
 
 def test_installed_content_check_ignores_runtime_tables_and_names_the_changed_one() -> None:

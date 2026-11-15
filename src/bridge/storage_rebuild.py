@@ -23,6 +23,7 @@ from src.bridge.storage_health import HEALTH_STORE_OPEN_TIMEOUT_S, get_storage_s
 from src.storage.baluffo_store import DEFAULT_DB_NAME, BaluffoStoreError
 from src.storage.current_feed_rebuild import (
     REBUILD_STAGING_SUFFIX,
+    ContentParityRace,
     CurrentFeedRebuildCancelled,
     CurrentFeedRebuildError,
     database_feed_state,
@@ -785,16 +786,36 @@ class StorageRebuildJob:
         ) as exc:
             if staging is not None:
                 staging.unlink(missing_ok=True)
-            if self._cancel.is_set():
-                self._finish("cancelled")
-            else:
-                self._drop_redundant_backup()
-                update_rebuild_journal(self.journal_path, status="failed", error=str(exc))
-                self._finish("failed", error=f"{type(exc).__name__}: {exc}")
+            self._settle_failure(exc)
         finally:
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
+
+    def _settle_failure(self, exc: BaseException) -> None:
+        """Journal and publish a terminal failure from the copy or the install."""
+        if self._cancel.is_set():
+            self._finish("cancelled")
+            return
+        if isinstance(exc, ContentParityRace):
+            # A write landed on the data of record while the copy was reading it.
+            # That is the condition the install gate calls superseded, so the run
+            # is retried in the next idle window, not reported as a defect.
+            superseded_error = (
+                "a database write committed while the rebuild was copying; "
+                "run the rebuild again when the bridge is idle"
+            )
+            update_rebuild_journal(
+                self.journal_path,
+                status="superseded",
+                phase="superseded",
+                error=superseded_error,
+            )
+            self._finish("superseded", error=superseded_error)
+            return
+        self._drop_redundant_backup()
+        update_rebuild_journal(self.journal_path, status="failed", error=str(exc))
+        self._finish("failed", error=f"{type(exc).__name__}: {exc}")
 
     def rollback(self) -> dict[str, Any]:
         with self._start_lock:

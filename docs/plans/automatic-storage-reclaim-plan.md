@@ -23,7 +23,8 @@
   `src/storage/current_feed_rebuild.py`: the immutable-table allowlist is hashed
   on both sides of the copy, `copyDigests` is journaled, and the installed
   database is re-hashed before the delete, failing as `non-feed-mismatch` with the
-  table's name. Triggers (§4), rehearsal (§9), full-disk order (§3) and
+  table's name. A write that races the copy settles `superseded` (the source
+  moved, not the copy), so only a copy defect is reported as a mismatch. Triggers (§4), rehearsal (§9), full-disk order (§3) and
   presentation (§6) are unimplemented, and `{dryRun: true}` is refused until the
   rehearsal lands.
 

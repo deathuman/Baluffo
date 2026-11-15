@@ -59,6 +59,31 @@ class CurrentFeedRebuildError(RuntimeError):
     """Raised when a current-feed rebuild cannot produce a trustworthy copy."""
 
 
+class ContentParityMismatch(CurrentFeedRebuildError):
+    """The copy diverged from the source: a rebuild defect, not a race."""
+
+    def __init__(self, table: str) -> None:
+        super().__init__(
+            f"non-feed-mismatch: {table} differs between the source and the staged copy"
+        )
+        self.table = table
+
+
+class ContentParityRace(CurrentFeedRebuildError):
+    """A write touched a data-of-record table while it was being copied.
+
+    The copy itself is not suspect: the source moved underneath it, so the run is
+    superseded and the next idle window may copy a stable database.
+    """
+
+    def __init__(self, table: str) -> None:
+        super().__init__(
+            f"{table} changed while the rebuild was copying; run the rebuild again "
+            "when the bridge is idle"
+        )
+        self.table = table
+
+
 class CurrentFeedRebuildCancelled(CurrentFeedRebuildError):
     """Raised when the operator stopped the rebuild before installation."""
 
@@ -300,6 +325,23 @@ def content_table_digest(conn: sqlite3.Connection, table: str) -> str:
     return digest.hexdigest()
 
 
+def _failure_journal_status(exc: BaseException, *, cancelled: bool) -> str:
+    """Journal status for a copy that raised: a raced source retries, a defect fails."""
+    if cancelled:
+        return "cancelled"
+    return "superseded" if isinstance(exc, ContentParityRace) else "failed"
+
+
+def _parity_baseline(source_conn: sqlite3.Connection, table_names: list[str]) -> dict[str, str]:
+    """Digest the immutable tables as they stand before the copy starts."""
+    present = set(table_names)
+    return {
+        table: content_table_digest(source_conn, table)
+        for table in CONTENT_PARITY_TABLES
+        if table in present
+    }
+
+
 def content_parity_digests(conn: sqlite3.Connection) -> dict[str, str]:
     """Digest every immutable table this database actually has."""
     present = {
@@ -313,12 +355,17 @@ def content_parity_digests(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def _copy_parity_digests(
-    source_conn: sqlite3.Connection, target_conn: sqlite3.Connection
+    source_conn: sqlite3.Connection,
+    target_conn: sqlite3.Connection,
+    *,
+    baseline: Mapping[str, str],
 ) -> dict[str, str]:
-    """Compare the copied immutable tables and return the source digests.
+    """Compare the copied immutable tables with their pre-copy digests.
 
-    This is the check that can catch a copy bug: the same rows are hashed on both
-    sides of the pass, before the copy is installed or linked as a rollback.
+    `baseline` was taken on the source immediately before each table moved, so a
+    difference means the copy lost or changed rows (``ContentParityMismatch``),
+    unless the source itself moved during the copy (``ContentParityRace``). Both
+    stop the install; only the race is worth an immediate retry.
     """
     present = {
         str(row[0])
@@ -328,12 +375,15 @@ def _copy_parity_digests(
     for table in CONTENT_PARITY_TABLES:
         if table not in present:
             continue
-        source_digest = content_table_digest(source_conn, table)
-        if source_digest != content_table_digest(target_conn, table):
-            raise CurrentFeedRebuildError(
-                f"non-feed-mismatch: {table} differs between the source and the staged copy"
-            )
-        digests[table] = source_digest
+        baseline_digest = baseline.get(table)
+        if baseline_digest is None:
+            raise ContentParityMismatch(table)
+        if baseline_digest == content_table_digest(target_conn, table):
+            digests[table] = baseline_digest
+            continue
+        if content_table_digest(source_conn, table) != baseline_digest:
+            raise ContentParityRace(table)
+        raise ContentParityMismatch(table)
     return digests
 
 
@@ -504,6 +554,9 @@ def rebuild_current_feed_database(
         raise_if_cancelled(cancel_requested)
         report("schema", currentGeneration=generation, tablesTotal=len(table_names))
 
+        # Hash the data of record before any row moves: a later difference is
+        # then either a copy defect or a write that landed mid-copy.
+        parity_baseline = _parity_baseline(source_conn, table_names)
         target_conn.set_progress_handler(interrupt_check, 10_000)
         target_conn.execute("BEGIN IMMEDIATE")
         copied = 0
@@ -546,7 +599,7 @@ def rebuild_current_feed_database(
         # Content parity before anything can be installed: the copy is compared
         # row-for-row with the source, and the digests become the delete-time
         # evidence.
-        copy_digests = _copy_parity_digests(source_conn, target_conn)
+        copy_digests = _copy_parity_digests(source_conn, target_conn, baseline=parity_baseline)
         report("parity", tablesDone=len(copy_digests), tablesTotal=len(copy_digests))
         raise_if_cancelled(cancel_requested)
         report("indexes", tablesDone=len(table_names), tablesTotal=len(table_names))
@@ -593,10 +646,11 @@ def rebuild_current_feed_database(
         cancelled = cancel_requested is not None and bool(cancel_requested())
         close_target()
         staging.unlink(missing_ok=True)
+        status = _failure_journal_status(exc, cancelled=cancelled)
         update_rebuild_journal(
             journal,
-            status="cancelled" if cancelled else "failed",
-            phase="cancelled" if cancelled else "failed",
+            status=status,
+            phase=status,
             error="" if cancelled else str(exc),
         )
         raise
