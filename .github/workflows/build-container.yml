@@ -101,6 +101,14 @@ jobs:
           print(f"version={APP_VERSION}")
           PY
 
+      # ``/ops/health`` reports ``build.commit``/``build.builtAt`` from these
+      # values, and release verification compares ``build.commit`` against the
+      # image it just pulled. Without them the image bakes the Dockerfile's
+      # empty defaults and the host cannot prove which commit it is running.
+      - name: Record build identity stamp
+        shell: bash
+        run: echo "BALUFFO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       # Umbrel compares version strings to decide whether an update exists. The
       # offline version gate treats only a git tag as released, but container
       # releases are published by version string and are often never tagged
@@ -170,6 +178,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false
+            BALUFFO_BUILD_COMMIT=${{ github.sha }}
+            BALUFFO_BUILT_AT=${{ env.BALUFFO_BUILT_AT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -186,6 +196,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=true
+            BALUFFO_BUILD_COMMIT=${{ github.sha }}
+            BALUFFO_BUILT_AT=${{ env.BALUFFO_BUILT_AT }}
           secrets: |
             BALUFFO_SYNC_BUILD_APP_ID=${{ secrets.BALUFFO_SYNC_BUILD_APP_ID }}
             BALUFFO_SYNC_BUILD_INSTALLATION_ID=${{ secrets.BALUFFO_SYNC_BUILD_INSTALLATION_ID }}

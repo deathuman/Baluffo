@@ -38,6 +38,17 @@ def test_build_info_reads_the_packaged_stamp(monkeypatch, tmp_path: Path) -> Non
     }
 
 
+def test_build_info_ignores_the_unstamped_container_sentinel(monkeypatch, tmp_path: Path) -> None:
+    # The image used to bake "unknown" into the env when no build arg was passed;
+    # that must read as absent, not as a commit, or release verification compared
+    # the string "unknown" against a real hash forever.
+    monkeypatch.setattr(build_info, "_candidate_paths", lambda: (tmp_path / "missing.json",))
+    monkeypatch.setenv(build_info.BUILD_COMMIT_ENV, "unknown")
+    monkeypatch.setenv(build_info.BUILD_BUILT_AT_ENV, "unknown")
+
+    assert build_info.read_build_info() == {"commit": "", "builtAt": ""}
+
+
 def test_build_info_is_empty_without_a_stamp(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(build_info, "_candidate_paths", lambda: (tmp_path / "missing.json",))
     monkeypatch.delenv(build_info.BUILD_COMMIT_ENV, raising=False)

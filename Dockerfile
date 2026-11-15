@@ -39,8 +39,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 ARG BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false
-ARG BALUFFO_BUILD_COMMIT=unknown
-ARG BALUFFO_BUILT_AT=unknown
+# Deliberately no default: an unstamped build must stay empty so
+# ``src/build_info.py`` can fall back to the packaged stamp instead of
+# reporting a placeholder as though it were the real commit.
+ARG BALUFFO_BUILD_COMMIT
+ARG BALUFFO_BUILT_AT
 ENV BALUFFO_BUILD_COMMIT=$BALUFFO_BUILD_COMMIT \
     BALUFFO_BUILT_AT=$BALUFFO_BUILT_AT
 

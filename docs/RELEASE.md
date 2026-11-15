@@ -315,7 +315,7 @@ Container ship checklist:
    earlier bump would otherwise leave release notes or the store entry on an
    older version; pass `--allow-drift` to rewrite them all deliberately.
 2. Run the focused tests for the changed runtime surface, then the broader frontend/refactor/lint gates requested by the release plan.
-3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`.
+3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`. A plain local build carries no build stamp, so `/ops/health.build` reports empty strings; add `--build-arg BALUFFO_BUILD_COMMIT=$(git rev-parse HEAD) --build-arg BALUFFO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)` when the smoke has to prove the commit.
 4. Smoke the local image with a fresh `/data` mount: `/ops/health`, UI load, same-origin runtime config, no wildcard CORS, disabled desktop-only routes, profile/job persistence, and source-sync status expectations for the build type.
 5. Push `main`, then verify normal main checks and `Build Container` are green when the change touches image-relevant paths. For docs/test/process-only changes, the container workflow may be intentionally skipped.
 6. Confirm `ghcr.io/deathuman/baluffo:<version>` exists with `linux/amd64` and `linux/arm64` manifests, and record the multi-arch digest.

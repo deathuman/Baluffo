@@ -15,6 +15,16 @@ from typing import Any
 
 BUILD_COMMIT_ENV = "BALUFFO_BUILD_COMMIT"
 BUILD_BUILT_AT_ENV = "BALUFFO_BUILT_AT"
+# The container image used to default these variables to the literal "unknown"
+# when no build arg was supplied. Treated as absent here so an unstamped build
+# reports empty strings (the honest answer) instead of a placeholder that release
+# verification could mistake for a real commit.
+_UNSET_VALUES = frozenset({"unknown"})
+
+
+def _clean_stamp(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text.lower() in _UNSET_VALUES else text
 
 
 def _candidate_paths() -> tuple[Path, ...]:
@@ -25,8 +35,8 @@ def _candidate_paths() -> tuple[Path, ...]:
 
 
 def read_build_info() -> dict[str, str]:
-    commit = str(os.environ.get(BUILD_COMMIT_ENV) or "").strip()
-    built_at = str(os.environ.get(BUILD_BUILT_AT_ENV) or "").strip()
+    commit = _clean_stamp(os.environ.get(BUILD_COMMIT_ENV))
+    built_at = _clean_stamp(os.environ.get(BUILD_BUILT_AT_ENV))
     if commit and built_at:
         return {"commit": commit, "builtAt": built_at}
     for path in _candidate_paths():
@@ -36,7 +46,7 @@ def read_build_info() -> dict[str, str]:
             continue
         if not isinstance(payload, dict):
             continue
-        commit = commit or str(payload.get("commit") or "").strip()
-        built_at = built_at or str(payload.get("builtAt") or "").strip()
+        commit = commit or _clean_stamp(payload.get("commit"))
+        built_at = built_at or _clean_stamp(payload.get("builtAt"))
         break
     return {"commit": commit, "builtAt": built_at}
