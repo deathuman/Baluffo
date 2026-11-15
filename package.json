@@ -112,7 +112,7 @@
     "lint:py": "ruff check .",
     "typecheck:py": "npm run check:python-version && python -m mypy --config-file mypy.ini",
     "format:py": "ruff format .",
-    "lint:js": "eslint .",
+    "lint:js": "node ./node_modules/eslint/bin/eslint.js .",
     "security:python": "python scripts/security_audit.py",
     "security:js": "python scripts/js_security_audit.py",
     "check:published-version": "python scripts/check_published_version.py",
