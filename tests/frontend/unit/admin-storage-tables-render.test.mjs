@@ -411,3 +411,62 @@ test("runtime storage panel starts collapsed and says it loads on open", () => {
   );
   assert.doesNotMatch(adminHtml, /Waiting for startup/);
 });
+
+test("runtime storage panel keeps only Refresh and Quick check outside Advanced", () => {
+  const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
+  const advancedTag = adminHtml.match(/<details[^>]*data-ui="admin-storage-advanced"[^>]*>/);
+
+  assert.ok(advancedTag, "expected one Advanced disclosure inside the storage panel");
+  assert.doesNotMatch(advancedTag[0], /\sopen(\s|>|=)/);
+
+  const advancedIndex = adminHtml.indexOf('data-ui="admin-storage-advanced"');
+  const refreshIndex = adminHtml.indexOf('data-ui="admin-storage-tables-refresh-btn"');
+  const quickIndex = adminHtml.indexOf('data-ui="admin-storage-quick-check-btn"');
+  assert.ok(refreshIndex > 0 && quickIndex > refreshIndex);
+  assert.ok(refreshIndex < advancedIndex, "Refresh stays in the primary row");
+  assert.ok(quickIndex < advancedIndex, "Quick check stays in the primary row");
+
+  const advancedOnly = [
+    "maintenance-preview-btn",
+    "maintenance-btn",
+    "maintenance-cancel-btn",
+    "rebuild-btn",
+    "rebuild-cancel-btn",
+    "rebuild-rollback-btn",
+    "rebuild-backup-delete-btn",
+    "diagnostic-btn",
+    "diagnostic-cancel-btn",
+    "diagnostic-export-btn"
+  ];
+  for (const token of advancedOnly) {
+    const index = adminHtml.indexOf(`data-ui="admin-storage-${token}"`);
+    assert.ok(index > advancedIndex, `${token} must sit inside the Advanced disclosure`);
+  }
+});
+
+test("irreversible storage actions state their cost and carry the warning tooltip tone", () => {
+  const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
+  const warningTokens = [
+    "maintenance-btn",
+    "rebuild-btn",
+    "rebuild-rollback-btn",
+    "rebuild-backup-delete-btn"
+  ];
+
+  for (const token of warningTokens) {
+    const tag = adminHtml.match(
+      new RegExp(`<button[^>]*data-ui="admin-storage-${token}"[^>]*>`)
+    );
+    assert.ok(tag, `expected the ${token} control`);
+    assert.match(tag[0], /data-tooltip-tone="warning"/, `${token} needs the warning tone`);
+  }
+
+  assert.match(adminHtml, /Copies the whole database first/);
+  assert.match(adminHtml, /Restores the retained copy and consumes it/);
+  assert.match(adminHtml, /Irreversible;/);
+  assert.match(adminHtml, /Runs the pass the bridge would run on its own/);
+  assert.match(
+    adminHtml,
+    /data-ui="admin-storage-retained-copy"[^>]*class="admin-storage-retained-copy"[^>]*hidden/
+  );
+});

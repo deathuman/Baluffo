@@ -20,6 +20,7 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminStorageTablesStatusEl: { token: "storageTablesStatus" },
   adminStorageTablesBodyEl: { token: "storageTablesBody" },
   adminStorageTablesRefreshBtnEl: { token: "storageTablesRefreshBtn" },
+  adminStorageRetainedCopyEl: { token: "storageRetainedCopy" },
   adminStorageQuickCheckBtnEl: { token: "storageQuickCheckBtn" },
   adminStorageMaintenancePreviewBtnEl: { token: "storageMaintenancePreviewBtn" },
   adminStorageMaintenanceBtnEl: { token: "storageMaintenanceBtn" },

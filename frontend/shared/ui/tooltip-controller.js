@@ -1,5 +1,16 @@
 const CONTROLLER_KEY = "__baluffoTooltipController";
 const TOOLTIP_ID = "baluffo-global-tooltip";
+const WARNING_CLASS = "baluffo-tooltip-portal-warning";
+
+// Controls whose click has a cost or is irreversible mark the tooltip itself,
+// so the warning tone is visible while the pointer or keyboard focus is on them.
+function tooltipTone(target) {
+  return String(
+    target?.getAttribute?.("data-tooltip-tone")
+    || target?.dataset?.tooltipTone
+    || ""
+  ).trim();
+}
 
 function getTooltipText(target) {
   const direct = String(
@@ -152,6 +163,7 @@ export function installGlobalTooltipController({
     if (!activeTarget || !portal) return;
     restoreDescribedBy();
     portal.classList?.remove?.("visible");
+    portal.classList?.remove?.(WARNING_CLASS);
     portal.setAttribute("aria-hidden", "true");
     portal.textContent = "";
     activeTarget = null;
@@ -168,6 +180,7 @@ export function installGlobalTooltipController({
     activeTarget = target;
     const node = ensurePortal();
     node.textContent = getTooltipText(target);
+    node.classList?.toggle?.(WARNING_CLASS, tooltipTone(target) === "warning");
     node.setAttribute("aria-hidden", "false");
     if (!sameTarget) applyDescribedBy(target);
     positionTooltip(target);

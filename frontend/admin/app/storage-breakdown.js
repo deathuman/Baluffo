@@ -2,6 +2,7 @@ import {
   renderStorageMaintenanceHtml,
   renderStorageMaintenancePreviewHtml,
   renderStorageRebuildHtml,
+  renderStorageRetainedCopyHtml,
   renderStorageTablesHtml,
   renderStorageTablesMessageHtml,
   renderStorageWriteLockHtml,
@@ -801,6 +802,15 @@ export function createStorageBreakdownController({
   function renderRebuild() {
     if (refs.adminStorageRebuildBodyEl) {
       refs.adminStorageRebuildBodyEl.innerHTML = renderStorageRebuildHtml(rebuild, formatBytes);
+    }
+    // The retained copy is announced in the panel body: with Roll back and
+    // Delete behind Advanced, a closed panel would otherwise hide the fact that
+    // a rollback copy exists at all.
+    const retainedEl = refs.adminStorageRetainedCopyEl;
+    if (retainedEl) {
+      const retainedHtml = renderStorageRetainedCopyHtml(rebuild, formatBytes);
+      retainedEl.innerHTML = retainedHtml;
+      retainedEl.hidden = !retainedHtml;
     }
     const status = rebuildStatusText(rebuild);
     setRebuildStatus(status.text, status.tone);

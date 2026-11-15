@@ -414,6 +414,23 @@ function formatBytes(value) {
   return `${Number(value || 0).toLocaleString("en-US")} B`;
 }
 
+/**
+ * One body-level line announcing a retained rollback copy, so moving Roll back
+ * into the Advanced disclosure does not bury the fact that a copy exists.
+ */
+export function renderStorageRetainedCopyHtml(rebuild, formatBytesFormatter) {
+  if (!rebuild || typeof rebuild !== "object") return "";
+  if (rebuild.backupDeletedAt) return "";
+  const bytes = toNumber(rebuild.backupBytes);
+  if (rebuild.backupExists !== true || bytes <= 0) return "";
+  const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
+  const action = rebuild.canRollback === false
+    ? "rollback is available once the rebuild completes"
+    : "rollback available under Advanced";
+  return `<span class="admin-storage-retained-copy-icon" aria-hidden="true">↺</span>
+    <span>Retained copy <strong>${escapeHtml(format(bytes))}</strong> — ${escapeHtml(action)}.</span>`;
+}
+
 export function renderStorageTablesMessageHtml(message) {
   return `<div class="admin-storage-state"><p>${escapeHtml(message)}</p></div>`;
 }

@@ -88,6 +88,7 @@ function fixture({
     adminStorageTablesBodyEl: createElement(),
     adminStorageRebuildStatusEl: createElement(),
     adminStorageRebuildBodyEl: createElement(),
+    adminStorageRetainedCopyEl: createElement({ hidden: true }),
     adminStorageRebuildBtnEl: createElement({
       addEventListener(type, handler) {
         listeners.start = handler;
@@ -290,6 +291,23 @@ test("a superseded rebuild is shown as a warning, not a failure to install", () 
   assert.match(f.refs.adminStorageRebuildStatusEl.textContent, /superseded/i);
   assert.equal(f.refs.adminStorageRebuildStatusEl.attributes["data-tone"], "warning");
   assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /database write committed/);
+  f.controller.stopRebuildPoll();
+});
+
+test("a retained rollback copy is announced in the panel body, not only under Advanced", () => {
+  const f = fixture();
+
+  f.controller.acceptRebuild({ ok: true, storageRebuild: COMPLETE });
+  const retained = f.refs.adminStorageRetainedCopyEl;
+  assert.equal(retained.hidden, false);
+  assert.match(retained.innerHTML, /Retained copy/);
+  assert.match(retained.innerHTML, /226491760640 B/);
+  assert.match(retained.innerHTML, /rollback available under Advanced/);
+
+  // Deleting the copy must remove the announcement in the same render path.
+  f.controller.acceptRebuild({ ok: true, storageRebuild: DELETE_SUCCEEDED });
+  assert.equal(retained.hidden, true);
+  assert.equal(retained.innerHTML, "");
   f.controller.stopRebuildPoll();
 });
 

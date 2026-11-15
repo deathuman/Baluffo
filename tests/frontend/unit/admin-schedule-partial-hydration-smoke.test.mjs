@@ -391,7 +391,8 @@ test("admin schedule smoke renders saved config while next-run details refresh",
     // Opening the collapsed panel is what asks for storage health, exactly once.
     // Last on purpose: the read is no longer startup work, so it must not be
     // judged against the startup-lane ordering checked above.
-    await page.locator('[data-ui="admin-storage-tables"] summary').click();
+    // Direct child on purpose: the panel now also contains the Advanced summary.
+    await page.locator('[data-ui="admin-storage-tables"] > summary').click();
     await waitForRouteCount(harness.events, "/ops/storage-health", 1);
     assert.equal(
       harness.events.filter(row => row.path.startsWith("/ops/storage-health")).length,

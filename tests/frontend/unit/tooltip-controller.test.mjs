@@ -257,3 +257,32 @@ test("tooltip controller keeps an Escape dismissal across a re-render, until the
     "hovering back after the pointer left must show the tooltip again"
   );
 });
+
+test("a warning-toned tooltip renders on keyboard focus and drops the tone on blur", () => {
+  const { doc, windowTarget } = createTooltipDom();
+  const target = createFakeElement(doc, "button");
+  target.setAttribute(
+    "data-tooltip",
+    "Irreversible; after it the rebuilt database has no rollback copy."
+  );
+  target.setAttribute("data-tooltip-tone", "warning");
+  doc.body.appendChild(target);
+
+  installGlobalTooltipController({ documentTarget: doc, windowTarget });
+  doc.dispatch("focusin", { target });
+
+  const portal = doc.body.children.find(child => child.id === "baluffo-global-tooltip");
+  assert.ok(portal);
+  assert.equal(portal.getAttribute("aria-hidden"), "false");
+  assert.match(portal.textContent, /no rollback copy/);
+  assert.match(
+    portal.className,
+    /\bbaluffo-tooltip-portal-warning\b/,
+    "a warned control must not be silent when reached by Tab"
+  );
+  assert.match(target.getAttribute("aria-describedby"), /\bbaluffo-global-tooltip\b/);
+
+  doc.dispatch("focusout", { target });
+  assert.doesNotMatch(portal.className, /\bbaluffo-tooltip-portal-warning\b/);
+  assert.equal(target.getAttribute("aria-describedby"), null);
+});
