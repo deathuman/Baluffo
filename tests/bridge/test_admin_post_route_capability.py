@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from src.bridge.routes.post_routes_admin import _AdminPostRouteApi, handle_post
+from src.bridge.storage_health import clear_storage_reclaim_hold, set_storage_reclaim_hold
 from tests.helpers.bridge_api import FakeHandler
 
 
@@ -376,6 +377,27 @@ def test_admin_post_routes_accept_minimal_capability_object(tmp_path: Path) -> N
 
     sync_pull = _post(api, "/sync/pull", {})
     assert sync_pull.sent[-1]["payload"]["action"] == "pull"
+
+
+def test_task_starts_are_refused_while_a_reclaim_run_holds(tmp_path: Path) -> None:
+    api = MinimalAdminPostRouteApi(tmp_path)
+    try:
+        set_storage_reclaim_hold("storage_reclaim_route")
+
+        blocked = _post(api, "/tasks/run-fetcher", {})
+        blocked_sync = _post(api, "/tasks/run-sync-pull", {})
+        blocked_discovery = _post(api, "/discovery/check-source", {"sourceId": "x"})
+
+        assert blocked.sent[-1]["status"] == 409
+        assert blocked.sent[-1]["payload"]["reason"] == "storage-reclaim-running"
+        assert blocked.sent[-1]["payload"]["storageReclaimHold"]["active"] is True
+        assert blocked_sync.sent[-1]["status"] == 409
+        assert blocked_discovery.sent[-1]["status"] == 409
+    finally:
+        clear_storage_reclaim_hold("terminal")
+
+    allowed = _post(api, "/tasks/run-fetcher", {})
+    assert allowed.sent[-1]["status"] == 200
 
 
 def test_review_posts_do_not_load_registry_state(tmp_path: Path) -> None:

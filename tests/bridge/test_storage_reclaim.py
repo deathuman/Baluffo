@@ -18,7 +18,13 @@ from typing import Any
 
 import pytest
 
-from src.bridge import storage_reclaim
+from src.bridge import storage_health, storage_reclaim
+from src.bridge.storage_health import (
+    clear_storage_reclaim_hold,
+    heartbeat_storage_reclaim_hold,
+    set_storage_reclaim_hold,
+    storage_reclaim_hold_status,
+)
 from src.bridge.storage_rebuild import close_storage_rebuild_jobs
 from src.storage import BaluffoStore, BaluffoStoreError, JobRuntimeStore
 from src.storage.baluffo_store import DEFAULT_DB_NAME
@@ -426,6 +432,161 @@ def test_cancel_is_refused_once_the_install_phase_begins(tmp_path: Path) -> None
     assert result["reason"] == "phase-not-cancellable"
     assert result["stale"] is False
     assert job.status_fields()["status"] == "running"
+
+
+def test_the_hold_expires_by_stall_and_hard_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
+    try:
+        assert set_storage_reclaim_hold("storage_reclaim_1")["active"] is True
+        assert storage_reclaim_hold_status()["runId"] == "storage_reclaim_1"
+        assert heartbeat_storage_reclaim_hold("storage_reclaim_1")["active"] is True
+        assert heartbeat_storage_reclaim_hold("someone-else") == {}
+
+        monkeypatch.setattr(storage_health, "RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S", 0.0)
+        stalled = storage_reclaim_hold_status()
+        assert stalled["active"] is False
+        assert stalled["releasedBy"] == "watchdog"
+        assert stalled["releasedRunId"] == "storage_reclaim_1"
+
+        # A heartbeat never renews the hard maximum.
+        set_storage_reclaim_hold("storage_reclaim_2")
+        heartbeat_storage_reclaim_hold("storage_reclaim_2")
+        monkeypatch.setattr(storage_health, "RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S", 60.0)
+        monkeypatch.setattr(storage_health, "RECLAIM_HOLD_MAX_S", 0.0)
+        expired = storage_reclaim_hold_status()
+        assert expired["active"] is False
+        assert expired["releasedBy"] == "ttl"
+    finally:
+        clear_storage_reclaim_hold("terminal")
+
+
+def test_a_reclaim_run_holds_and_releases_task_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = threading.Event()
+    calls: list[int] = []
+
+    def verdict(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            release.wait(5.0)
+        return _bloat_verdict()
+
+    with workspace_tmpdir("reclaim-run-hold") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(storage_reclaim, "_compute_verdict", verdict)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+            assert started["started"] is True
+            assert _wait_for(lambda: len(calls) >= 2, 5.0)
+
+            held = storage_reclaim_hold_status()
+            assert held["active"] is True
+            assert held["runId"] == started["runId"]
+
+            storage_reclaim.cancel_storage_reclaim(data_dir, started["runId"])
+            release.set()
+            assert _wait_for(lambda: _status(data_dir) == "cancelled", 10.0)
+            # The hold is released in the same finally that clears the thread.
+            assert _wait_for(lambda: storage_reclaim_hold_status()["active"] is False, 5.0)
+
+            released = storage_reclaim_hold_status()
+            assert released["releasedBy"] == "terminal"
+        finally:
+            release.set()
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+            clear_storage_reclaim_hold("terminal")
+
+
+def test_a_desktop_run_takes_no_hold(monkeypatch: pytest.MonkeyPatch) -> None:
+    release = threading.Event()
+    calls: list[int] = []
+
+    def verdict(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            release.wait(5.0)
+        return _bloat_verdict()
+
+    with workspace_tmpdir("reclaim-run-inline") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(storage_reclaim, "_compute_verdict", verdict)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, hold=False)
+            assert started["started"] is True
+            assert _wait_for(lambda: len(calls) >= 2, 5.0)
+            assert storage_reclaim_hold_status()["active"] is False
+
+            storage_reclaim.cancel_storage_reclaim(data_dir, started["runId"])
+            release.set()
+            assert _wait_for(lambda: _status(data_dir) == "cancelled", 10.0)
+        finally:
+            release.set()
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+
+def test_the_watchdog_settles_a_run_whose_thread_is_gone(tmp_path: Path) -> None:
+    job = storage_reclaim.StorageReclaimJob(tmp_path.resolve())
+    run_id = "storage_reclaim_dead"
+    with job._lock:
+        job._state.update(
+            {"status": "running", "phase": "copying", "runId": run_id, "mode": "reclaim"}
+        )
+        job._hold_taken = True
+    set_storage_reclaim_hold(run_id)
+    try:
+        job.watchdog()
+
+        assert job.status_fields()["status"] == "interrupted"
+        assert job.status_fields()["phase"] == "copying"
+        hold = storage_reclaim_hold_status()
+        assert hold["active"] is False
+        assert hold["releasedBy"] == "watchdog"
+    finally:
+        clear_storage_reclaim_hold("terminal")
+
+
+def test_shutdown_releases_a_hold_it_took(tmp_path: Path) -> None:
+    job = storage_reclaim.StorageReclaimJob(tmp_path.resolve())
+    set_storage_reclaim_hold("storage_reclaim_shutdown")
+    job._hold_taken = True
+
+    job.shutdown()
+
+    assert storage_reclaim_hold_status()["releasedBy"] == "shutdown"
+
+
+def test_a_rebuild_refusal_settles_cancelled_not_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-run-refused") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(
+            storage_reclaim, "_compute_verdict", lambda *_args, **_kwargs: _bloat_verdict()
+        )
+        monkeypatch.setattr(
+            storage_reclaim.rebuild_mod,
+            "start_storage_rebuild",
+            lambda _data_dir: {
+                "ok": True,
+                "started": False,
+                "reason": "backup-exists",
+                "storageRebuild": {"status": "idle"},
+            },
+        )
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+            assert started["started"] is True
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 10.0)
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert journal is not None
+    assert journal["status"] == "cancelled"
+    assert "backup-exists" in journal["error"]
 
 
 def test_active_task_is_read_from_the_bridge_hold(monkeypatch: pytest.MonkeyPatch) -> None:

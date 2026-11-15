@@ -29,6 +29,7 @@ from src.bridge.routes.error_boundary import (
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.source_policy_migration_links import apply_source_policy_migration_link_action
+from src.bridge.storage_health import storage_reclaim_hold_status
 from src.jobs.common.contracts_dedup_review_state import (
     apply_dedup_review_action,
     read_dedup_review_state_artifact,
@@ -511,10 +512,50 @@ def _handle_ops_admin_post(
     return False
 
 
+# Every route that starts a background task row. A reclaim copy holds these
+# closed: a fetch that starts mid-copy makes the install `superseded` and burns
+# the whole copy, which is exactly what the reclaim exists to avoid.
+TASK_START_PATHS = frozenset(
+    {
+        "/discovery/check-source",
+        "/sync/pull",
+        "/sync/push",
+        "/tasks/job-availability-check",
+        "/tasks/run-discovery",
+        "/tasks/run-fetcher",
+        "/tasks/run-jobs-bootstrap",
+        "/tasks/run-jobs-pipeline",
+        "/tasks/run-sync-pull",
+        "/tasks/run-sync-push",
+    }
+)
+
+
+def _storage_reclaim_start_refusal(handler: BridgeResponseWriter, *, path: str) -> bool:
+    if path not in TASK_START_PATHS:
+        return False
+    hold = storage_reclaim_hold_status()
+    if not bool(hold.get("active")):
+        return False
+    handler.send_json(
+        {
+            "ok": False,
+            "started": False,
+            "reason": "storage-reclaim-running",
+            "storageReclaimHold": hold,
+        },
+        status=409,
+    )
+    return True
+
+
 def handle_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
     data = as_json_object(payload)
+
+    if _storage_reclaim_start_refusal(handler, path=path):
+        return True
 
     if _handle_review_post(handler, api=api, path=path, data=data):
         return True

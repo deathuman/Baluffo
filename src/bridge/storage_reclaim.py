@@ -40,8 +40,13 @@ from typing import Any
 from src.bridge import storage_rebuild as rebuild_mod
 from src.bridge.storage_health import (
     HEALTH_STORE_OPEN_TIMEOUT_S,
+    RECLAIM_HOLD_MAX_S,
+    clear_storage_reclaim_hold,
     get_storage_store,
+    heartbeat_storage_reclaim_hold,
+    set_storage_reclaim_hold,
     storage_compaction_hold_active,
+    storage_reclaim_hold_status,
 )
 from src.shared.utils import env_flag, parse_iso
 from src.storage import BaluffoStoreError
@@ -65,7 +70,7 @@ RECLAIM_SCOPES = ("modal", "inline")
 # must never wait on a copy, and the rebuild job already publishes its phase.
 RECLAIM_POLL_S = 0.5
 # Caps a stuck run at the same two hours the hold's hard maximum allows.
-RECLAIM_MAX_RUN_S = 7200.0
+RECLAIM_MAX_RUN_S = RECLAIM_HOLD_MAX_S
 RECLAIM_TERMINAL_STATUSES = frozenset(
     {"complete", "failed", "superseded", "cancelled", "interrupted"}
 )
@@ -111,6 +116,9 @@ def get_storage_reclaim_payload(
     """Verdict, live status and journal for the Runtime Database Storage panel."""
     resolved = Path(data_dir).resolve()
     job = _job_for(resolved)
+    # Read path watchdog: a hold whose run has no thread is settled here, so it
+    # works with no job running to notice.
+    job.watchdog()
     journal = read_reclaim_journal(resolved)
     cached = None if refresh else _cached_verdict(resolved)
     if cached is None:
@@ -132,15 +140,18 @@ def get_storage_reclaim_payload(
             "verdictCached": verdict_cached,
             "verdictAgeMs": verdict_age_ms,
             **job.status_fields(),
+            "hold": storage_reclaim_hold_status(),
             "journalPresent": journal is not None,
             "journal": journal,
         },
     }
 
 
-def start_storage_reclaim(data_dir: Path | str, *, auto: bool = False) -> dict[str, Any]:
+def start_storage_reclaim(
+    data_dir: Path | str, *, auto: bool = False, hold: bool = True
+) -> dict[str, Any]:
     """Start one journaled reclaim run, or answer why it did not start."""
-    return _job_for(data_dir).start(auto=auto)
+    return _job_for(data_dir).start(auto=auto, hold=hold)
 
 
 def cancel_storage_reclaim(data_dir: Path | str, run_id: str = "") -> dict[str, Any]:
@@ -290,6 +301,7 @@ class StorageReclaimJob:
         self._start_lock = threading.Lock()
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._hold_taken = False
         self._state = _empty_state()
         self._hydrate_from_journal()
 
@@ -336,8 +348,14 @@ class StorageReclaimJob:
                 "error": str(self._state["error"]),
             }
 
-    def start(self, *, auto: bool = False) -> dict[str, Any]:
-        """Start one run, or answer ``{started: false, reason}`` without changing state."""
+    def start(self, *, auto: bool = False, hold: bool = True) -> dict[str, Any]:
+        """Start one run, or answer ``{started: false, reason}`` without changing state.
+
+        ``hold`` is the container's concurrency guard: a task started mid-copy
+        would make the install ``superseded`` and burn the copy, so the run holds
+        task starts from before its thread exists until its terminal phase.
+        Desktop runs inline and takes none.
+        """
         with self._start_lock:
             with self._lock:
                 if self._state["status"] in {"running", "cancelling"}:
@@ -365,6 +383,9 @@ class StorageReclaimJob:
                     "triggerOverride": override,
                 }
                 self._write_journal_locked()
+                if hold:
+                    set_storage_reclaim_hold(run_id)
+                    self._hold_taken = True
                 thread = threading.Thread(
                     target=self._run,
                     name=f"baluffo-storage-reclaim-{run_id[-6:]}",
@@ -423,6 +444,36 @@ class StorageReclaimJob:
             if thread is not None and thread.is_alive():
                 self.cancel(run_id)
                 thread.join(timeout=10.0)
+            if self._hold_taken:
+                clear_storage_reclaim_hold("shutdown")
+                self._hold_taken = False
+
+    def watchdog(self) -> None:
+        """Settle a run whose thread is gone, and release the hold it left behind.
+
+        The journal says `running` until a thread settles it. When that thread no
+        longer exists — a crash between phases, a killed worker — the read path is
+        the only thing left to notice, so it settles `interrupted` and releases
+        the hold instead of reporting activity nothing can finish.
+        """
+        hold = storage_reclaim_hold_status()
+        with self._lock:
+            status = str(self._state["status"])
+            thread = self._thread
+            run_id = str(self._state["runId"])
+            phase = str(self._state["phase"])
+        if status not in {"running", "cancelling"}:
+            return
+        if thread is not None and thread.is_alive():
+            return
+        self._settle(
+            "interrupted",
+            error="the reclaim run stopped without settling its journal",
+            phase=phase,
+        )
+        if self._hold_taken and str(hold.get("runId") or "") in {"", run_id}:
+            clear_storage_reclaim_hold("watchdog")
+            self._hold_taken = False
 
     def _cancel_refusal(self, reason: str, *, stale: bool, requested: str) -> dict[str, Any]:
         return {
@@ -491,46 +542,55 @@ class StorageReclaimJob:
             )
             self._write_journal_locked()
 
+    def _evaluate(self) -> str | None:
+        """Why this run must stop before copying anything, or ``None`` to proceed.
+
+        An empty string means the run was cancelled; a non-empty one is the
+        refusal to journal.
+        """
+        if self._cancel_event.is_set():
+            return ""
+        verdict = _compute_verdict(self.data_dir, read_reclaim_journal(self.data_dir))
+        # The verdict read is the slow part of this phase; a cancel that arrives
+        # during it must stop the run before any copy starts.
+        if self._cancel_event.is_set():
+            return ""
+        blockers = [
+            str(blocker)
+            for blocker in verdict.get("blockers") or []
+            if str(blocker) not in RECLAIM_TRIGGER_GUARDS
+        ]
+        if blockers:
+            return f"blocked by {blockers[0]}"
+        if str(verdict.get("verdict") or "") != "bloat":
+            return "the verdict no longer reports bloat"
+        return None
+
     def _run(self) -> None:
         try:
-            verdict = _compute_verdict(self.data_dir, read_reclaim_journal(self.data_dir))
-            if self._cancel_event.is_set():
-                self._settle("cancelled")
+            refusal = self._evaluate()
+            if refusal is not None:
+                self._settle("cancelled", error=refusal)
                 return
-            blockers = [
-                str(blocker)
-                for blocker in verdict.get("blockers") or []
-                if str(blocker) not in RECLAIM_TRIGGER_GUARDS
-            ]
-            if blockers:
-                self._settle("cancelled", error=f"blocked by {blockers[0]}")
-                return
-            if str(verdict.get("verdict") or "") != "bloat":
-                self._settle("cancelled", error="the verdict no longer reports bloat")
-                return
-            started = rebuild_mod.start_storage_rebuild(self.data_dir)
-            if not bool(started.get("started")):
-                self._settle(
-                    "failed",
-                    error=str(started.get("reason") or "the current-feed rebuild did not start"),
+            rebuild, refusal = self._start_rebuild_waiting()
+            if rebuild is None:
+                # A refused start is not a failed reclaim: nothing was copied, so
+                # the run closes and the journal keeps the reason.
+                error = (
+                    ""
+                    if self._cancel_event.is_set()
+                    else (f"the current-feed rebuild did not start: {refusal}")
                 )
+                self._settle("cancelled", error=error)
                 return
-            rebuild = dict(started.get("storageRebuild") or {})
             with self._lock:
                 self._state["rebuildRunId"] = str(rebuild.get("runId") or "")
                 self._write_journal_locked()
             snapshot = self._await_rebuild()
             if snapshot is None:
                 return
-            error = self._verify(snapshot)
-            if error is not None:
-                self._settle("failed", error=error)
-                return
-            error = self._delete_backup(snapshot)
-            if error is not None:
-                self._settle("failed", error=error)
-                return
-            self._settle("complete")
+            failure = self._verify(snapshot) or self._delete_backup(snapshot)
+            self._settle("failed" if failure is not None else "complete", error=failure or "")
         except (
             BaluffoStoreError,
             CurrentFeedRebuildError,
@@ -545,6 +605,40 @@ class StorageReclaimJob:
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
+            # Same finally that clears the thread: a terminal phase and the hold
+            # release are one transition, never a phase boundary.
+            if self._hold_taken:
+                clear_storage_reclaim_hold("terminal")
+                self._hold_taken = False
+
+    def _start_rebuild_waiting(self) -> tuple[dict[str, Any] | None, str]:
+        """Start the rebuild once any in-flight one has left, or name the refusal.
+
+        The pre-flight saw no rebuild, but the Admin panel can start one in the
+        window before this thread runs. Waiting closes that race; if it will not
+        yield, the start is refused (``cancelled``), not failed.
+        """
+        deadline = time.monotonic() + RECLAIM_MAX_RUN_S
+        while True:
+            snapshot = (
+                rebuild_mod.get_storage_rebuild_payload(self.data_dir).get("storageRebuild") or {}
+            )
+            if str(snapshot.get("status") or "") not in {"running", "cancelling"}:
+                break
+            if self._cancel_event.is_set():
+                return None, "cancelled"
+            if time.monotonic() > deadline:
+                return None, "rebuild-running"
+            self._heartbeat()
+            time.sleep(RECLAIM_POLL_S)
+        started = rebuild_mod.start_storage_rebuild(self.data_dir)
+        if bool(started.get("started")):
+            return dict(started.get("storageRebuild") or {}), ""
+        return None, str(started.get("reason") or "rebuild-refused")
+
+    def _heartbeat(self) -> None:
+        if self._hold_taken:
+            heartbeat_storage_reclaim_hold(str(self._state["runId"]))
 
     def _await_rebuild(self) -> dict[str, Any] | None:
         """Follow the rebuild to its terminal state, mirroring its phase."""
@@ -563,6 +657,7 @@ class StorageReclaimJob:
                 if self._cancel_event.is_set() and status == "running" and rebuild_run_id:
                     self._cancel_rebuild(rebuild_run_id)
                 self._set_phase(str(snapshot.get("phase") or "rebuild"))
+                self._heartbeat()
                 time.sleep(RECLAIM_POLL_S)
                 continue
             if status == "complete":
@@ -648,6 +743,7 @@ class StorageReclaimJob:
                 if delete_status == "succeeded":
                     return None
                 return str(rebuild.get("backupDeleteError") or "the retained-copy delete failed")
+            self._heartbeat()
             time.sleep(RECLAIM_POLL_S)
         return "the retained-copy delete did not finish within the run limit"
 

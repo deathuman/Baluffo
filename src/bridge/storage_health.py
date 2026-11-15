@@ -223,6 +223,113 @@ def set_storage_compaction_hold(held: bool) -> list[dict[str, Any]]:
     return results
 
 
+# The reclaim hold blocks task starts while a container reclaim copies the
+# database. A boolean cannot expire, so the record carries its own deadlines and
+# is evaluated on every read: a crashed run must not block fetches until the
+# bridge restarts. `expiresAt` is a hard maximum and is never renewed.
+RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S = 60.0
+RECLAIM_HOLD_MAX_S = 7200.0
+_RECLAIM_HOLD_LOCK = threading.Lock()
+_RECLAIM_HOLD: dict[str, Any] | None = None
+_RECLAIM_HOLD_LAST_RELEASE: dict[str, str] = {}
+
+
+def _reclaim_hold_payload(record: dict[str, Any], *, released_by: str = "") -> dict[str, Any]:
+    now = time.monotonic()
+    held_at = float(record["heldAt"])
+    return {
+        "active": not released_by,
+        "runId": str(record.get("runId") or ""),
+        "heldForS": round(max(0.0, now - held_at), 1),
+        "heartbeatAgeS": round(max(0.0, now - float(record["heartbeatAt"])), 1),
+        "expiresInS": round(max(0.0, held_at + RECLAIM_HOLD_MAX_S - now), 1),
+        "releasedBy": released_by,
+        "releasedRunId": str(record.get("runId") or "") if released_by else "",
+    }
+
+
+def _no_reclaim_hold_locked() -> dict[str, Any]:
+    last = _RECLAIM_HOLD_LAST_RELEASE
+    return {
+        "active": False,
+        "runId": "",
+        "heldForS": 0.0,
+        "heartbeatAgeS": 0.0,
+        "expiresInS": 0.0,
+        "releasedBy": str(last.get("releasedBy") or ""),
+        "releasedRunId": str(last.get("runId") or ""),
+    }
+
+
+def _release_reclaim_hold_locked(released_by: str) -> dict[str, Any]:
+    global _RECLAIM_HOLD, _RECLAIM_HOLD_LAST_RELEASE
+    record = _RECLAIM_HOLD or {}
+    _RECLAIM_HOLD = None
+    _RECLAIM_HOLD_LAST_RELEASE = {
+        "runId": str(record.get("runId") or ""),
+        "releasedBy": released_by,
+    }
+    return {
+        **_reclaim_hold_payload(
+            {
+                "runId": record.get("runId") or "",
+                "heldAt": record.get("heldAt", time.monotonic()),
+                "heartbeatAt": record.get("heartbeatAt", time.monotonic()),
+            },
+            released_by=released_by,
+        ),
+    }
+
+
+def set_storage_reclaim_hold(run_id: str) -> dict[str, Any]:
+    """Take the container reclaim hold for one run, replacing any stale record."""
+    global _RECLAIM_HOLD
+    now = time.monotonic()
+    record = {"runId": str(run_id or ""), "heldAt": now, "heartbeatAt": now}
+    with _RECLAIM_HOLD_LOCK:
+        _RECLAIM_HOLD = record
+        return _reclaim_hold_payload(record)
+
+
+def heartbeat_storage_reclaim_hold(run_id: str) -> dict[str, Any]:
+    """Refresh the stall deadline for this run; the hard maximum is not renewed."""
+    with _RECLAIM_HOLD_LOCK:
+        record = _RECLAIM_HOLD
+        if record is None or str(record.get("runId") or "") != str(run_id or ""):
+            return {}
+        record["heartbeatAt"] = time.monotonic()
+        return _reclaim_hold_payload(record)
+
+
+def storage_reclaim_hold_status() -> dict[str, Any]:
+    """Report the hold, releasing a stalled or expired one on the read.
+
+    Releasing here is what makes the hold safe without a running job to notice:
+    a crashed run's record ages out on the next task start or status read. The
+    last release keeps its reason, so a task start can tell a normal release from
+    a rescue.
+    """
+    now = time.monotonic()
+    with _RECLAIM_HOLD_LOCK:
+        record = _RECLAIM_HOLD
+        if record is None:
+            return _no_reclaim_hold_locked()
+        if now - float(record["heldAt"]) >= RECLAIM_HOLD_MAX_S:
+            return _release_reclaim_hold_locked("ttl")
+        if now - float(record["heartbeatAt"]) >= RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S:
+            return _release_reclaim_hold_locked("watchdog")
+        return _reclaim_hold_payload(record)
+
+
+def clear_storage_reclaim_hold(released_by: str = "terminal") -> dict[str, Any]:
+    """Release the hold, recording why, so task starts resume."""
+    with _RECLAIM_HOLD_LOCK:
+        if _RECLAIM_HOLD is None:
+            # Not `storage_reclaim_hold_status()`: the lock is not reentrant.
+            return _no_reclaim_hold_locked()
+        return _release_reclaim_hold_locked(released_by)
+
+
 def resume_storage_maintenance(
     *,
     reason: str = "post-serve",
@@ -581,3 +688,5 @@ def close_storage_stores() -> None:
         _COMPACTION_HOLD = False
     for store in stores:
         store.close()
+    # A shutdown must not leave task starts blocked by a hold nobody will release.
+    clear_storage_reclaim_hold("shutdown")

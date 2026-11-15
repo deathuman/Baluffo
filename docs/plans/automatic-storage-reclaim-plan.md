@@ -15,7 +15,11 @@
   `tests/bridge/test_storage_reclaim.py`). The journaled `StorageReclaimJob` and
   the start/cancel POSTs are implemented in the same module, composing the
   rebuild's public start/cancel/delete entry points; `active-task` is read from
-  the bridge's task hold. The reclaim hold (§3), triggers (§4), rehearsal (§9),
+  the bridge's task hold. The reclaim hold (§3) is implemented in
+  `src/bridge/storage_health.py` (expiry, heartbeat, stall, hard maximum, read-path
+  watchdog, shutdown release) with the `409 storage-reclaim-running` guard on
+  task-start routes; the run takes it on container scope and releases it in the
+  same `finally` that clears its thread. Triggers (§4), rehearsal (§9),
   content-parity digests and full-disk order (§3) and presentation (§6) are
   unimplemented, and `{dryRun: true}` is refused until the rehearsal lands.
 
