@@ -123,18 +123,21 @@ Why it survives:
 
 Why its reporting changes:
 
-- The **Current feed** card (`storage-diagnostic.js:123`) restates feed counters
-  (jobs, saved source rows, published-at) that the tables body and the collapsed
-  summary already carry. Drop it from the quick report so each fact has one home;
-  keep it for the full audit, where it is the context for exact allocation.
+- The **Current feed** card (`storage-diagnostic.js`, quick report) restates feed
+  counters (jobs, saved source rows, published-at) that the tables body already
+  carries. Drop it from the quick report so each fact has one home; keep it for the
+  full audit, where it is the context for exact allocation. The audit builds it
+  from the exact payload's `jobSources`, which spreads `_feed_state` into its
+  totals (`src/storage/db_storage_diagnostic.py`); exact mode has no top-level
+  `feedState` and does not need one.
 - Keep the sampled space card, including its existing "Partial estimate" warning and
   the current-versus-older bar, because that is the decision input.
 - State the check's cost and freshness once, next to the button's result line,
   instead of in three places (advanced note, section copy, empty state).
 
 **Acceptance.** A quick-check result renders the space estimate and the integrity
-facts, not a second feed card; the full audit still renders its feed card; no
-measured number disappears from the audit path.
+facts, not a second feed card; the full audit still renders its feed card, fed from
+`jobSources`; no measured number disappears from the audit path.
 
 ## 4. Manual actions behind one Advanced disclosure
 

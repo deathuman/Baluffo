@@ -134,6 +134,12 @@ test("renders exact allocation and job source generations", () => {
       payloadBytes: 400,
       contentBytes: 500,
       tableBytes: 6_000,
+      // Exact mode has no top-level `feedState`: `_job_sources` spreads the feed
+      // state into its own totals, and the audit's feed card reads it from here.
+      currentGeneration: "gen-current",
+      currentRowCount: 2,
+      currentSourceCount: 3,
+      currentPublishedAt: "2026-11-11T09:00:00Z",
       byGeneration: [
         {
           generation: "gen-current",
@@ -152,6 +158,24 @@ test("renders exact allocation and job source generations", () => {
   assert.match(html, /gen-current/);
   assert.match(html, /current/);
   assert.match(html, /job_sources by feed generation/);
+  // The audit keeps the feed card as the context for its exact allocation.
+  assert.match(html, /Current feed/);
+  assert.match(html, /Published feed/);
+  assert.match(html, /Saved source rows/);
+});
+
+test("an exact payload without jobSources does not fabricate a feed card", () => {
+  const html = renderStorageDiagnosticHtml({
+    mode: "exact",
+    status: "complete",
+    databaseBytes: 10_000,
+    capturedAt: "2026-11-11T10:00:00Z",
+    durationMs: 42,
+    tableSizes: { status: "unavailable", error: "dbstat is not available." }
+  }, formatBytes);
+
+  assert.doesNotMatch(html, /Current feed/);
+  assert.doesNotMatch(html, /No published feed/);
 });
 
 test("renders unavailable allocation without hiding exact job source totals", () => {
