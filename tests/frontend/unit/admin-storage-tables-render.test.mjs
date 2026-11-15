@@ -499,3 +499,22 @@ test("irreversible storage actions state their cost and carry the warning toolti
     /data-ui="admin-storage-retained-copy"[^>]*class="admin-storage-retained-copy"[^>]*hidden/
   );
 });
+
+test("the storage panel states check cost once and keeps the empty state short", () => {
+  const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
+  const costMentions = adminHtml.match(/can take hours/g) ?? [];
+
+  assert.equal(
+    costMentions.length,
+    1,
+    "how long the audit takes belongs in the one sentence beside its result line"
+  );
+  assert.match(adminHtml, /Quick check takes seconds and reports a snapshot from when it ran/);
+  assert.match(adminHtml, /Run Quick check to fill this panel/);
+  assert.doesNotMatch(adminHtml, /Quick check is the routine health check/);
+  assert.doesNotMatch(adminHtml, /Database storage details load once after startup/);
+  assert.match(
+    renderStorageDiagnosticHtml({ status: "idle" }, formatBytes),
+    /Run Quick check to fill this panel/
+  );
+});

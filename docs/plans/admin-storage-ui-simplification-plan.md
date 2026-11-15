@@ -6,7 +6,9 @@
 >   — while the panel still opens expanded and presents nine manual controls at once
 > - **Verified against:** `63592800` (markup, controller, renderers, routes, and the
 >   store's own maintenance scheduling read from the tree; no UI change has landed)
-> - **Status:** Planned — not started. Four slices, UI and its tests only.
+> - **Status:** Shipped — S1–S4 closed in `faed8677`, `ad65941d`, `4603ab28`,
+>   `6682c3c1`, `a0165a1a` and `2157332e`. Four slices, UI and its tests only.
+>   The audit's feed card reads `jobSources`, where exact mode nests the feed state.
 
 ## Scope
 

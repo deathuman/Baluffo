@@ -110,7 +110,7 @@ export function createStorageBreakdownController({
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
     if (tableSizes.status === "partial" || tableSizes.complete === false) return "Partial snapshot";
-    return tableSizes.estimated ? "Estimated snapshot" : "Measured";
+    return tableSizes.estimated ? "Estimated snapshot" : "Measured snapshot";
   }
 
   // Short enough to stay one line in the collapsed summary. Ordered by what the

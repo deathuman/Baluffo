@@ -494,7 +494,7 @@ function renderProgress(diagnostic, formatBytes) {
 export function renderStorageDiagnosticHtml(diagnostic, formatBytes) {
   const format = typeof formatBytes === "function" ? formatBytes : value => `${Number(value || 0)} B`;
   if (!diagnostic || typeof diagnostic !== "object" || diagnostic.status === "idle") {
-    return `<div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to see the current feed and how much space stored rows use. Use the full audit only when support needs exact allocation.</p></div>`;
+    return `<div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to fill this panel.</p></div>`;
   }
   if (diagnostic.status === "failed") {
     return `<div class="admin-storage-state"><strong>The check could not finish.</strong><p>${escapeHtml(String(diagnostic.error || "Unknown error."))}</p></div>`;

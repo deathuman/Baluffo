@@ -103,7 +103,7 @@ test("the collapsed summary names a running or held pass, then returns to the sn
     }
   });
   await f.controller.load();
-  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Measured");
+  assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Measured snapshot");
 
   f.controller.acceptStorageHealth({ storage: { runtimeRetention: LIVE_STATUS } });
   assert.equal(
@@ -123,7 +123,7 @@ test("the collapsed summary names a running or held pass, then returns to the sn
   });
   assert.equal(
     f.refs.adminStorageTablesStatusEl.textContent,
-    "Measured",
+    "Measured snapshot",
     "the snapshot wording returns once nothing is running"
   );
   f.controller.stopMaintenancePoll();

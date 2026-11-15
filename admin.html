@@ -128,11 +128,11 @@
                 </div>
                 <div class="admin-storage-advanced-group" role="group" aria-label="Full storage audit">
                   <span class="admin-storage-advanced-group-label">Audit</span>
-                  <button id="admin-storage-diagnostic-btn" data-ui="admin-storage-diagnostic-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Run an exact table-allocation and saved-source audit. This can take hours on a large database.">Full storage audit</button>
+                  <button id="admin-storage-diagnostic-btn" data-ui="admin-storage-diagnostic-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Run the exact table-allocation and saved-source audit.">Full storage audit</button>
                   <button id="admin-storage-diagnostic-cancel-btn" data-ui="admin-storage-diagnostic-cancel-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Cancel the running full storage audit.">Cancel</button>
                   <button id="admin-storage-diagnostic-export-btn" data-ui="admin-storage-diagnostic-export-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Download the completed full audit as JSON.">Export JSON</button>
                 </div>
-                <span class="admin-storage-advanced-note">A full audit checks exact table allocation and every saved version. It can take hours on a large database, so Quick check is usually enough.</span>
+                <span class="admin-storage-advanced-note">Measures exact table and index allocation for every saved feed version.</span>
               </div>
             </details>
           </div>
@@ -150,18 +150,18 @@
           </section>
           <div id="admin-storage-write-lock" data-ui="admin-storage-write-lock" class="admin-storage-maintenance-status admin-storage-write-lock" aria-live="polite"></div>
           <div id="admin-storage-tables-body" data-ui="admin-storage-tables-body">
-            <div class="admin-storage-state"><p>Database storage details load once after startup.</p></div>
+            <div class="admin-storage-state"><p>Details load when this panel opens.</p></div>
           </div>
           <section class="admin-storage-diagnostic" data-ui="admin-storage-diagnostic" aria-labelledby="admin-storage-check-title">
             <div class="admin-storage-check-heading">
               <div>
                 <h3 id="admin-storage-check-title" class="admin-storage-check-title">Checks and results</h3>
-                <p class="admin-storage-check-copy">Quick check is the routine health check. The full audit is for support and exact accounting.</p>
+                <p class="admin-storage-check-copy">Quick check takes seconds and reports a snapshot from when it ran. The full audit measures exact allocation and can take hours on a large database.</p>
               </div>
               <span id="admin-storage-diagnostic-status" data-ui="admin-storage-diagnostic-status" class="admin-storage-diagnostic-status" role="status" aria-live="polite">Not run</span>
             </div>
             <div id="admin-storage-diagnostic-body" data-ui="admin-storage-diagnostic-body" class="admin-storage-diagnostic-body">
-              <div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to see the current feed and how much space stored rows use. Use the full audit only when support needs exact allocation.</p></div>
+              <div class="admin-storage-state"><strong>No check has run yet.</strong><p>Run Quick check to fill this panel.</p></div>
             </div>
           </section>
         </div>
