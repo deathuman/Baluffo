@@ -37,10 +37,18 @@ def _replace_generations(store: BaluffoStore, count: int) -> list[str]:
 def test_preview_counts_legacy_generations_within_its_budget() -> None:
     with workspace_tmpdir("preview-bounded-count") as data_dir:
         with BaluffoStore(data_dir) as store:
-            _replace_generations(store, 3)
+            generations = _replace_generations(store, 3)
             store.write(lambda conn: conn.execute("DELETE FROM job_feed_generation_stats"))
 
             preview = JobRuntimeStore(store).cleanup_preview()
+            actual_history_bytes = store.execute_read(
+                """
+                SELECT COALESCE(SUM(length(CAST(payload_json AS BLOB))), 0) AS total
+                FROM jobs
+                WHERE feed_generation != ?
+                """,
+                (generations[-1],),
+            )[0]["total"]
 
     assert preview["countsKnown"] is True
     assert preview["countsSource"] == "bounded-count"
@@ -48,6 +56,9 @@ def test_preview_counts_legacy_generations_within_its_budget() -> None:
     assert preview["candidateRowCount"] == 2
     assert {row["jobRowCount"] for row in preview["candidates"]} == {1}
     assert all(row["countsKnown"] is True for row in preview["candidates"])
+    # A fully sampled generation is measured, not extrapolated, so the estimate
+    # equals the payload it claims and cannot exceed it.
+    assert preview["historicalGenerationEstimatedBytes"] == actual_history_bytes
 
 
 def test_preview_reports_current_and_historical_payload_estimates() -> None:
@@ -109,9 +120,23 @@ def test_preview_history_sample_is_query_bounded_and_reuses_candidate_samples(
     # Two tables per generation: four candidates, the two generations outside the
     # cap, and the current one. The candidate generations are not sampled twice.
     assert len(sample_queries) == 14
-    # Both listings bind their own LIMIT, so no GROUP BY covers a whole backlog.
-    assert len(generation_queries) == 2
-    assert all("LIMIT ?" in sql for sql in generation_queries)
+    # Candidates and history are prefixes of one listing, so a single bounded
+    # GROUP BY serves both and no query covers a whole backlog.
+    assert len(generation_queries) == 1
+    assert "LIMIT ?" in generation_queries[0]
+
+
+def test_preview_history_stays_outside_the_keep_window() -> None:
+    with workspace_tmpdir("preview-reclaim-keep-window") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _replace_generations(store, 6)
+            preview = JobRuntimeStore(store).cleanup_preview(keep_generations=2)
+
+    # Keep-two retention protects the current generation and one more; history
+    # must describe only what retention would actually delete.
+    assert preview["candidateGenerationCount"] == 4
+    assert preview["historicalGenerationCount"] == 4
+    assert preview["historicalGenerationEstimatedBytes"] > 0
 
 
 def test_preview_reports_no_history_when_only_the_current_feed_exists() -> None:

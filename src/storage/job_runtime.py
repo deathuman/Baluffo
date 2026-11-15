@@ -98,6 +98,17 @@ def _now_iso() -> str:
 _clean_text = _shared_clean_text
 
 
+def _payload_bytes_from_sample(sample: Mapping[str, Any], total_rows: int) -> int:
+    """Project a table's sampled payload bytes onto its whole population."""
+    return _estimate_payload_bytes(
+        int(sample["sampleCount"]), int(sample["sampleBytes"]), max(0, int(total_rows))
+    )
+
+
+def _remaining_budget(deadline: float) -> float:
+    return max(0.0, deadline - time.monotonic())
+
+
 def _estimate_payload_bytes(sample_count: int, sample_bytes: int, total_rows: int) -> int:
     if sample_count <= 0 or sample_bytes <= 0 or total_rows <= 0:
         return 0
@@ -860,13 +871,20 @@ class JobRuntimeStore:
                 sample_rows=sample_rows,
                 current_summary=current_summary,
             )
+        # One listing serves both the candidate list and the reclaim history
+        # sample: they are prefixes of the same deletion order, so the SQL keeps
+        # a single LIMIT and the history cap can never be smaller than the cap.
+        budget_s = max(0.0, float(count_budget_s or 0))
+        count_deadline = time.monotonic() + budget_s
+        listing_cap = (
+            None if delete_cap is None else max(int(delete_cap), HISTORY_SAMPLE_GENERATION_LIMIT)
+        )
+        listing = self._deletable_generations(
+            current=current, keep_count=keep_count, delete_cap=listing_cap
+        )
         candidates = [
             generation
-            for generation in self._deletable_generations(
-                current=current,
-                keep_count=keep_count,
-                delete_cap=delete_cap,
-            )
+            for generation in listing[:delete_cap]
             if generation and generation != current
         ]
         try:
@@ -875,9 +893,9 @@ class JobRuntimeStore:
             stats = {}
         missing_stats = [generation for generation in candidates if generation not in stats]
         counted_stats: dict[str, tuple[int, int]] = {}
-        if missing_stats and float(count_budget_s or 0) > 0:
+        if missing_stats and budget_s > 0:
             counted_stats = self._count_generation_stats_bounded(
-                missing_stats, budget_s=float(count_budget_s)
+                missing_stats, budget_s=_remaining_budget(count_deadline)
             )
             stats.update(counted_stats)
         counts_known = all(generation in stats for generation in candidates)
@@ -905,16 +923,10 @@ class JobRuntimeStore:
             effective_source_count = (
                 int(source_count) if counts_row_known else int(source_sample["sampleCount"])
             )
-            job_bytes = _estimate_payload_bytes(
-                int(job_sample["sampleCount"]), int(job_sample["sampleBytes"]), effective_job_count
-            )
-            source_bytes = _estimate_payload_bytes(
-                int(source_sample["sampleCount"]),
-                int(source_sample["sampleBytes"]),
-                effective_source_count,
-            )
             row_count = effective_job_count + effective_source_count
-            bytes_for_generation = job_bytes + source_bytes
+            bytes_for_generation = _payload_bytes_from_sample(
+                job_sample, effective_job_count
+            ) + _payload_bytes_from_sample(source_sample, effective_source_count)
             candidate_job_rows += effective_job_count
             candidate_source_rows += effective_source_count
             candidate_rows += row_count
@@ -933,19 +945,22 @@ class JobRuntimeStore:
                 }
             )
         # Reclaim-facing estimates. The capped candidate list cannot describe a
-        # weeks-old backlog, so history is sampled across every non-current
-        # generation. Both numbers are payload lower bounds: page and index
-        # overhead is excluded, so they can delay a reclaim but never invent one.
+        # weeks-old backlog, so history is sampled outside the keep window. Both
+        # numbers exclude page and index overhead, and a generation with no known
+        # row count contributes only its sampled bytes, so the structural error
+        # always runs low. A generation with a known count is projected from its
+        # sample mean, which is an estimate rather than a strict bound.
         current_generation_bytes = self._sampled_payload_bytes(
             "jobs", current, int(current_summary.get("rowCount") or 0), sample_rows
         ) + self._sampled_payload_bytes(
             "job_sources", current, int(current_summary.get("sourceCount") or 0), sample_rows
         )
         historical_bytes, historical_generations = self._historical_payload_bytes(
-            current,
-            sample_rows=sample_rows,
-            count_budget_s=count_budget_s,
+            listing[:HISTORY_SAMPLE_GENERATION_LIMIT],
+            stats=stats,
             samples=candidate_samples,
+            sample_rows=sample_rows,
+            count_deadline=count_deadline,
         )
         return {
             "currentGeneration": current,
@@ -1007,42 +1022,33 @@ class JobRuntimeStore:
     def _sampled_payload_bytes(
         self, table: str, generation: str, total_rows: int, sample_rows: int
     ) -> int:
-        sample = self._payload_sample(table, generation, sample_rows)
-        return _estimate_payload_bytes(
-            int(sample["sampleCount"]), int(sample["sampleBytes"]), max(0, int(total_rows))
+        return _payload_bytes_from_sample(
+            self._payload_sample(table, generation, sample_rows), total_rows
         )
 
     def _historical_payload_bytes(
         self,
-        current: str,
+        generations: Sequence[str],
         *,
-        sample_rows: int,
-        count_budget_s: float,
+        stats: dict[str, tuple[int, int]],
         samples: Mapping[str, tuple[Mapping[str, Any], Mapping[str, Any]]],
+        sample_rows: int,
+        count_deadline: float,
     ) -> tuple[int, int]:
-        """Estimate payload bytes across every non-current generation.
+        """Estimate payload bytes across the generations retention may delete.
 
-        Returns ``(estimated_bytes, generations_seen)``. Cached generation stats
-        provide the projection; missing ones get the preview's bounded count, and
-        when even that cannot finish the sample itself is the floor. The estimate
-        therefore understates history rather than overstating it.
-
-        ``samples`` carries the payload samples the candidate loop already took, so
-        a generation inside the delete cap is measured once, not twice. The
-        generation list is limited in SQL: this runs against the multi-GB backlogs
-        the estimate exists for.
+        Returns ``(estimated_bytes, generations_seen)``. ``stats`` and ``samples``
+        come from the candidate pass, so a generation inside the delete cap is
+        neither counted nor sampled twice. Generations outside that pass get the
+        preview's shared count budget; when it cannot finish, the sample itself is
+        the floor, so an unknown count can only understate history.
         """
-        generations = self._generations_before_current(
-            current, None, limit=HISTORY_SAMPLE_GENERATION_LIMIT
-        )
         if not generations:
             return 0, 0
-        stats = self._generation_stats(generations)
         missing = [generation for generation in generations if generation not in stats]
-        if missing and float(count_budget_s or 0) > 0:
-            stats.update(
-                self._count_generation_stats_bounded(missing, budget_s=float(count_budget_s))
-            )
+        remaining = _remaining_budget(count_deadline)
+        if missing and remaining > 0:
+            stats.update(self._count_generation_stats_bounded(missing, budget_s=remaining))
         estimated = 0
         seen = 0
         for generation in generations:
@@ -1059,13 +1065,9 @@ class JobRuntimeStore:
             job_count, source_count = stats.get(generation, (0, 0))
             job_rows = job_count if generation in stats else int(job_sample["sampleCount"])
             source_rows = source_count if generation in stats else int(source_sample["sampleCount"])
-            estimated += _estimate_payload_bytes(
-                int(job_sample["sampleCount"]), int(job_sample["sampleBytes"]), job_rows
-            ) + _estimate_payload_bytes(
-                int(source_sample["sampleCount"]),
-                int(source_sample["sampleBytes"]),
-                source_rows,
-            )
+            estimated += _payload_bytes_from_sample(
+                job_sample, job_rows
+            ) + _payload_bytes_from_sample(source_sample, source_rows)
         return estimated, seen
 
     def _freelist_bytes(self) -> int:

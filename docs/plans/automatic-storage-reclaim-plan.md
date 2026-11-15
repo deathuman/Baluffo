@@ -46,8 +46,12 @@ allocated pages, including indexes and the current generation; the preview field
 count payload bytes. Subtracting one from the other would count current-feed index
 and page overhead as reclaimable and could call bloat on a database whose history
 is still inside the retention window. `historicalBytes` is instead measured
-directly and is deliberately a **lower bound**: it ignores index and page overhead,
-so it can delay a true reclaim but cannot manufacture a false one. `freelistBytes`
+directly and is deliberately conservative: it ignores index and page overhead, and a
+generation with no known row count contributes only its sampled bytes, so the
+structural error always runs low. The one place it is an estimate rather than a strict
+bound is a generation whose count is known, projected from its sample mean — a sample
+unrepresentative of that generation can read high, which is why the rehearsal in §9
+prints the numbers before auto mode is switched on. `freelistBytes`
 comes from the exact freelist page count, and `databaseBytes` is the file size.
 
 `cleanup_preview` is capped at `DEFAULT_GENERATION_DELETE_CAP = 4`, so its candidate
@@ -57,8 +61,10 @@ uncapped history, so the first two are new bounded samples rather than free fiel
 
 - `currentGenerationEstimatedBytes` — bounded payload sample of the generation being
   kept (also the ETA target, not a subtraction term);
-- `historicalGenerationEstimatedBytes` — bounded payload sample across all
-  non-current generations;
+- `historicalGenerationEstimatedBytes` — bounded payload sample across the
+  generations outside the keep window (every non-current generation at the
+  default `keep_generations=1`, so a keep-two preview cannot count a generation
+  retention still protects);
 - `historicalGenerationCount` — number of non-current generations seen by that sample;
 - `estimatedReclaimableBytes` — `historicalGenerationEstimatedBytes + freelistBytes`,
   the conservative lower bound used above.
