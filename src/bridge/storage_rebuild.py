@@ -684,6 +684,7 @@ class StorageRebuildJob:
                         "sourceRowCount": int(rebuilt.get("sourceRowCount") or 0),
                         "rowHash": rebuilt.get("rowHash", ""),
                         "sourceHash": rebuilt.get("sourceHash", ""),
+                        "copyDigests": dict(rebuilt.get("copyDigests") or {}),
                     },
                 )
                 if (
@@ -755,6 +756,7 @@ class StorageRebuildJob:
                     "backupBytes": int(installed.get("backupBytes") or 0),
                     "reclaimedBytes": int(installed.get("reclaimedBytes") or 0),
                     "retentionStopped": bool(retention_stopped),
+                    "copyDigests": dict(rebuilt.get("copyDigests") or {}),
                     "validation": {
                         key: rebuilt.get(key)
                         for key in (

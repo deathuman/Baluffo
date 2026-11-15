@@ -13,13 +13,14 @@ the validated staging copy with a rollback hardlink.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
 import shutil
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,6 +32,16 @@ from src.storage_metrics import file_size
 
 FEED_TABLES = ("jobs", "job_sources")
 FEED_STATE_TABLE = "job_feed_state"
+# The immutable data of record the reclaim hashes on both sides of the copy and
+# again before it deletes the retained copy. Only data of record belongs here:
+# the task/run runtime tables, `source_health` and the feed state change
+# legitimately and would turn every delete into a false mismatch.
+CONTENT_PARITY_TABLES = (
+    "sources",
+    "source_registry_rows",
+    "source_registry_state",
+    "source_registry_tombstones",
+)
 REBUILD_JOURNAL_SUFFIX = ".rebuild.json"
 REBUILD_STAGING_SUFFIX = ".rebuild.tmp"
 REBUILD_BACKUP_SUFFIX = ".pre-rebuild"
@@ -255,7 +266,75 @@ def database_feed_state(path: Path | str) -> dict[str, Any]:
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
     rows = conn.execute(f"PRAGMA table_info({_quote(table)})").fetchall()
-    return [str(row["name"]) for row in rows]
+    # Index 1 is `name` in PRAGMA table_info; index access also works for callers
+    # that did not install a row factory.
+    return [str(row[1]) for row in rows]
+
+
+def _content_value(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode("ascii")
+    return value
+
+
+def content_table_digest(conn: sqlite3.Connection, table: str) -> str:
+    """Digest one table's rows, in a deterministic order.
+
+    Rows are ordered by every column rather than by rowid: a rebuilt table can
+    assign different rowids to identical content, and only content parity is
+    being asserted. The digest covers values, not the table's schema.
+    """
+    columns = _table_columns(conn, table)
+    if not columns:
+        raise CurrentFeedRebuildError(f"table {table!r} has no columns")
+    projection = ", ".join(_quote(column) for column in columns)
+    digest = hashlib.sha256()
+    for row in conn.execute(f"SELECT {projection} FROM {_quote(table)} ORDER BY {projection}"):
+        payload = json.dumps(
+            [_content_value(value) for value in row],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        digest.update(payload.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def content_parity_digests(conn: sqlite3.Connection) -> dict[str, str]:
+    """Digest every immutable table this database actually has."""
+    present = {
+        str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    return {
+        table: content_table_digest(conn, table)
+        for table in CONTENT_PARITY_TABLES
+        if table in present
+    }
+
+
+def _copy_parity_digests(
+    source_conn: sqlite3.Connection, target_conn: sqlite3.Connection
+) -> dict[str, str]:
+    """Compare the copied immutable tables and return the source digests.
+
+    This is the check that can catch a copy bug: the same rows are hashed on both
+    sides of the pass, before the copy is installed or linked as a rollback.
+    """
+    present = {
+        str(row[0])
+        for row in target_conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    digests: dict[str, str] = {}
+    for table in CONTENT_PARITY_TABLES:
+        if table not in present:
+            continue
+        source_digest = content_table_digest(source_conn, table)
+        if source_digest != content_table_digest(target_conn, table):
+            raise CurrentFeedRebuildError(
+                f"non-feed-mismatch: {table} differs between the source and the staged copy"
+            )
+        digests[table] = source_digest
+    return digests
 
 
 def _copy_table(
@@ -464,6 +543,12 @@ def rebuild_current_feed_database(
         target_conn.execute("COMMIT")
         target_conn.set_progress_handler(None, 0)
         raise_if_cancelled(cancel_requested)
+        # Content parity before anything can be installed: the copy is compared
+        # row-for-row with the source, and the digests become the delete-time
+        # evidence.
+        copy_digests = _copy_parity_digests(source_conn, target_conn)
+        report("parity", tablesDone=len(copy_digests), tablesTotal=len(copy_digests))
+        raise_if_cancelled(cancel_requested)
         report("indexes", tablesDone=len(table_names), tablesTotal=len(table_names))
         target_conn.execute("BEGIN IMMEDIATE")
         for sql in schema["index"]:
@@ -526,6 +611,7 @@ def rebuild_current_feed_database(
         "sourceBytes": file_size(source),
         "stagingBytes": file_size(staging),
         "durationMs": int(round((time.monotonic() - started) * 1000)),
+        "copyDigests": copy_digests,
         **validation,
     }
     update_rebuild_journal(
@@ -536,9 +622,34 @@ def rebuild_current_feed_database(
         stagingBytes=result["stagingBytes"],
         rowHash=validation["rowHash"],
         sourceHash=validation["sourceHash"],
+        copyDigests=copy_digests,
         error="",
     )
     return result
+
+
+def validate_installed_content(
+    target_path: Path | str, *, expected_digests: Mapping[str, str]
+) -> dict[str, str]:
+    """Recompute the immutable-table digests on a database that is now live.
+
+    Returns ``{table: actual}`` for every table that no longer matches the copied
+    digest. Only the allowlist is read, so append-only runtime tables and the feed
+    state can change between the copy and the delete without a false mismatch.
+    """
+    if not expected_digests:
+        return {}
+    conn = _connect_read_only(Path(target_path))
+    try:
+        actual = content_parity_digests(conn)
+    finally:
+        conn.close()
+    # A table that vanished has no digest and mismatches every expectation.
+    return {
+        table: actual.get(table, "")
+        for table in expected_digests
+        if actual.get(table, "") != expected_digests[table]
+    }
 
 
 def _check_database_integrity(conn: sqlite3.Connection) -> str:

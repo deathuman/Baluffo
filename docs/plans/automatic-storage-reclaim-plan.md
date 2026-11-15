@@ -19,9 +19,13 @@
   `src/bridge/storage_health.py` (expiry, heartbeat, stall, hard maximum, read-path
   watchdog, shutdown release) with the `409 storage-reclaim-running` guard on
   task-start routes; the run takes it on container scope and releases it in the
-  same `finally` that clears its thread. Triggers (§4), rehearsal (§9),
-  content-parity digests and full-disk order (§3) and presentation (§6) are
-  unimplemented, and `{dryRun: true}` is refused until the rehearsal lands.
+  same `finally` that clears its thread. Content parity (§3) is implemented in
+  `src/storage/current_feed_rebuild.py`: the immutable-table allowlist is hashed
+  on both sides of the copy, `copyDigests` is journaled, and the installed
+  database is re-hashed before the delete, failing as `non-feed-mismatch` with the
+  table's name. Triggers (§4), rehearsal (§9), full-disk order (§3) and
+  presentation (§6) are unimplemented, and `{dryRun: true}` is refused until the
+  rehearsal lands.
 
 ## Scope
 

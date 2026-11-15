@@ -55,6 +55,7 @@ from src.storage.current_feed_rebuild import (
     CurrentFeedRebuildError,
     rebuild_backup_path,
     validate_feed_generation,
+    validate_installed_content,
 )
 from src.storage.reclaim_policy import RECLAIM_VERDICT_TTL_S, ReclaimContext, reclaim_verdict
 from src.storage.runtime_retention import preview_runtime_retention
@@ -591,6 +592,10 @@ class StorageReclaimJob:
             snapshot = self._await_rebuild()
             if snapshot is None:
                 return
+            # The copy's parity evidence before anything irreversible happens.
+            with self._lock:
+                self._state["copyDigests"] = dict(snapshot.get("copyDigests") or {})
+                self._write_journal_locked()
             failure = self._verify(snapshot) or self._delete_backup(snapshot)
             self._settle("failed" if failure is not None else "complete", error=failure or "")
         except (
@@ -696,12 +701,25 @@ class StorageReclaimJob:
 
         The rebuild validates its staging copy; this is the installed file, so a
         swap that landed something else must fail here rather than at the unlink.
+        The immutable-table digests are the check that row counts cannot make:
+        they compare data of record, not just how many rows survived.
         """
         self._set_phase("verifying")
         # The validation below is one long call with no progress events; refresh
         # the stall clock on either side of it. A check longer than the 60 s stall
         # window still releases the hold, which is the hold's documented rule.
         self._heartbeat()
+        expected = {
+            str(table): str(digest) for table, digest in (snapshot.get("copyDigests") or {}).items()
+        }
+        if not expected:
+            # Fail closed: a delete without parity evidence is exactly the step
+            # the retained copy exists to cover.
+            return "non-feed-mismatch: the copy recorded no content digests"
+        mismatched = validate_installed_content(self.db_path, expected_digests=expected)
+        if mismatched:
+            table = sorted(mismatched)[0]
+            return f"non-feed-mismatch: {table} differs from the copied content"
         generation = str(snapshot.get("currentGeneration") or "").strip()
         if not generation:
             return "the completed rebuild reported no current generation"

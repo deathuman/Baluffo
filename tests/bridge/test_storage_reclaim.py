@@ -28,7 +28,7 @@ from src.bridge.storage_health import (
 from src.bridge.storage_rebuild import close_storage_rebuild_jobs
 from src.storage import BaluffoStore, BaluffoStoreError, JobRuntimeStore
 from src.storage.baluffo_store import DEFAULT_DB_NAME
-from src.storage.current_feed_rebuild import rebuild_backup_path
+from src.storage.current_feed_rebuild import CONTENT_PARITY_TABLES, rebuild_backup_path
 from src.storage.runtime_retention import preview_runtime_retention
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -293,9 +293,44 @@ def test_a_reclaim_run_rebuilds_verifies_and_deletes_the_retained_copy(
     assert journal["rebuildRunId"].startswith("current_feed_rebuild_")
     assert journal["expectedBackupBytes"] > 0
     assert journal["finishedAt"]
-    assert journal["copyDigests"] == {}
+    # The copy's immutable-table digests are the evidence the delete leaned on.
+    assert set(journal["copyDigests"]) == set(CONTENT_PARITY_TABLES)
+    assert all(len(digest) == 64 for digest in journal["copyDigests"].values())
     # The copy kept only the published generation, so retention has nothing left.
     assert preview["historicalGenerationCount"] == 0
+
+
+def test_a_content_mismatch_keeps_the_retained_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-run-content-parity") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(
+            storage_reclaim, "_compute_verdict", lambda *_args, **_kwargs: _bloat_verdict()
+        )
+        monkeypatch.setattr(
+            storage_reclaim,
+            "validate_installed_content",
+            lambda *_args, **_kwargs: {"sources": "deadbeef"},
+        )
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir)
+            assert started["started"] is True
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 30.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            backup_exists = rebuild_backup_path(data_dir / DEFAULT_DB_NAME).is_file()
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "failed"
+    assert journal is not None
+    assert "non-feed-mismatch: sources" in journal["error"]
+    assert journal["copyDigests"]
+    # The delete never started, so the reviewed byte count was never set.
+    assert journal["expectedBackupBytes"] == 0
+    assert backup_exists is True
 
 
 def test_a_safety_blocker_refuses_the_start_and_writes_no_journal(

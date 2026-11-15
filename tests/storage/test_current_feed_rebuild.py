@@ -6,13 +6,16 @@ from typing import Any
 
 import pytest
 
-from src.storage import BaluffoStore, JobRuntimeStore
+from src.storage import BaluffoStore, JobRuntimeStore, current_feed_rebuild
 from src.storage.current_feed_rebuild import (
+    CONTENT_PARITY_TABLES,
     CurrentFeedRebuildError,
+    content_table_digest,
     database_feed_state,
     read_rebuild_journal,
     rebuild_current_feed_database,
     rebuild_journal_path,
+    validate_installed_content,
     validate_rebuilt_database,
 )
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -61,6 +64,28 @@ def _database_inventory(path: Path) -> dict[str, Any]:
         }
     finally:
         conn.close()
+
+
+def _table_digest(path: Path, table: str) -> str:
+    conn = sqlite3.connect(path)
+    try:
+        return content_table_digest(conn, table)
+    finally:
+        conn.close()
+
+
+def _seed_registry_row(store: BaluffoStore, *, name: str = "Example") -> None:
+    store.write(
+        lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO sources("
+            " id, canonical_key, status, name, adapter, url, payload_json, created_at, updated_at"
+            ") VALUES ("
+            " 'src-1', 'example.test/jobs', 'active', ?, 'static', 'https://example.test/jobs',"
+            " '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'"
+            ")",
+            (name,),
+        )
+    )
 
 
 def _seed_two_generations(store: BaluffoStore) -> tuple[JobRuntimeStore, str]:
@@ -214,6 +239,87 @@ def test_validation_rejects_a_staged_copy_with_a_missing_current_row() -> None:
                     expected_source_count=expected["sourceCount"],
                     expected_source_hash=expected["sourceHash"],
                 )
+
+
+def test_rebuild_records_content_parity_digests_before_the_copy_is_installed() -> None:
+    with workspace_tmpdir("current-feed-rebuild-parity") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _seed_two_generations(store)
+            _seed_registry_row(store)
+            staging = data_dir / "staged-rebuild.db"
+            journal = rebuild_journal_path(store.db_path)
+
+            result = rebuild_current_feed_database(
+                store.db_path,
+                staging,
+                journal_path=journal,
+            )
+
+            digests = result["copyDigests"]
+            assert digests["sources"] == _table_digest(staging, "sources")
+            assert set(digests) <= set(CONTENT_PARITY_TABLES)
+            assert read_rebuild_journal(journal)["copyDigests"] == digests
+            # The digest names the content, so a rename must move it.
+            _seed_registry_row(store, name="Renamed")
+            assert _table_digest(store.db_path, "sources") != digests["sources"]
+
+
+def test_rebuild_refuses_a_staged_copy_that_differs_from_the_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_copy_table = current_feed_rebuild._copy_table
+
+    def skipping_sources(*args: Any, **kwargs: Any) -> int:
+        if args[2] == "sources":
+            return 0
+        return real_copy_table(*args, **kwargs)
+
+    with workspace_tmpdir("current-feed-rebuild-parity-tamper") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _seed_two_generations(store)
+            _seed_registry_row(store)
+            staging = data_dir / "staged-rebuild.db"
+            monkeypatch.setattr(current_feed_rebuild, "_copy_table", skipping_sources)
+
+            with pytest.raises(CurrentFeedRebuildError, match="non-feed-mismatch: sources"):
+                rebuild_current_feed_database(store.db_path, staging)
+
+            # Nothing was installed and the bad copy is gone.
+            assert not staging.exists()
+            assert store.execute_scalar("SELECT COUNT(*) FROM sources") == 1
+
+
+def test_installed_content_check_ignores_runtime_tables_and_names_the_changed_one() -> None:
+    with workspace_tmpdir("current-feed-rebuild-parity-delete") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            _seed_two_generations(store)
+            _seed_registry_row(store)
+            conn = sqlite3.connect(store.db_path)
+            try:
+                expected = current_feed_rebuild.content_parity_digests(conn)
+            finally:
+                conn.close()
+
+            store.write(
+                lambda conn: conn.execute(
+                    "INSERT INTO task_runs(run_id, task_type, status, started_at) "
+                    "VALUES ('later', 'fetch', 'finished', '2026-01-01T00:00:00Z')"
+                )
+            )
+            store.write(
+                lambda conn: conn.execute(
+                    "INSERT OR REPLACE INTO source_health(source_id, status, updated_at) "
+                    "VALUES ('src-1', 'ok', '2026-01-01T00:00:00Z')"
+                )
+            )
+
+            assert validate_installed_content(store.db_path, expected_digests=expected) == {}
+
+            _seed_registry_row(store, name="Renamed")
+
+            assert set(validate_installed_content(store.db_path, expected_digests=expected)) == {
+                "sources"
+            }
 
 
 def test_rebuild_requires_a_published_generation() -> None:
