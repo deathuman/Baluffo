@@ -26,20 +26,9 @@ from src.storage.current_feed_rebuild import rebuild_required_free_bytes
 
 RECLAIM_ABSOLUTE_FLOOR_BYTES = 512 * 1024 * 1024
 RECLAIM_MIN_RATIO_PCT_DEFAULT = 10.0
-RECLAIMABLE_BASIS = "payload-sample+freelist"
 # The verdict runs a bounded cleanup preview, while the reclaim modal polls its
 # route; this is how long the route may answer with the verdict it already has.
 RECLAIM_VERDICT_TTL_S = 60.0
-
-BLOCKER_NO_CURRENT_GENERATION = "no-current-generation"
-BLOCKER_ACTIVE_TASK = "active-task"
-BLOCKER_COMPACTION_RUNNING = "compaction-running"
-BLOCKER_BACKUP_EXISTS = "backup-exists"
-BLOCKER_FREE_SPACE = "free-space"
-BLOCKER_COOLDOWN = "cooldown"
-BLOCKER_AUTO_DISABLED = "auto-disabled"
-BLOCKER_STORE_UNAVAILABLE = "store-unavailable"
-BLOCKER_SAMPLE_UNAVAILABLE = "sample-unavailable"
 
 
 @dataclass(frozen=True)
@@ -55,7 +44,6 @@ class ReclaimContext:
     compaction_running: bool = False
     backup_exists: bool = False
     free_space_bytes: int | None = None
-    required_free_bytes: int | None = None
     cooldown_remaining_hours: float = 0.0
     auto_enabled: bool = True
 
@@ -72,61 +60,59 @@ def reclaim_verdict(
     ``verdict`` is the measurement: ``bloat`` when the reclaimable payload lower
     bound clears both the ratio knob and the 512 MiB floor. ``blockers`` gates a
     start and never changes the measurement, so a bloated database under cooldown
-    still reads ``bloat`` with ``cooldown`` listed.
+    still reads ``bloat`` with ``cooldown`` listed. ``cooldown`` and
+    ``auto-disabled`` guard only the automatic trigger; an explicit start
+    overrides those two and never a safety blocker.
     """
     ctx = context or ReclaimContext()
     blockers: list[str] = []
 
-    sizes = dict(file_sizes or {})
-    store_readable = "databaseBytes" in sizes
-    database_bytes = _byte_count(sizes.get("databaseBytes")) if store_readable else 0
-    freelist_bytes = _byte_count(sizes.get("freelistBytes")) if store_readable else 0
+    sizes = file_sizes or {}
+    database_bytes = _non_negative_int(sizes.get("databaseBytes"))
+    store_readable = database_bytes is not None
+    database_bytes = database_bytes or 0
+    freelist_bytes = (_non_negative_int(sizes.get("freelistBytes")) or 0) if store_readable else 0
     if not store_readable:
-        blockers.append(BLOCKER_STORE_UNAVAILABLE)
+        blockers.append("store-unavailable")
 
-    samples = dict(preview or {})
+    samples = preview or {}
     current_generation = str(samples.get("currentGeneration") or "").strip()
-    current_bytes = _optional_byte_count(samples.get("currentGenerationEstimatedBytes"))
-    historical_bytes = _optional_byte_count(samples.get("historicalGenerationEstimatedBytes"))
-    if current_bytes is None or historical_bytes is None:
-        blockers.append(BLOCKER_SAMPLE_UNAVAILABLE)
-        current_bytes = current_bytes or 0
-        historical_bytes = historical_bytes or 0
+    current_bytes = _non_negative_int(samples.get("currentGenerationEstimatedBytes"))
+    historical_bytes = _non_negative_int(samples.get("historicalGenerationEstimatedBytes"))
+    sample_readable = current_bytes is not None and historical_bytes is not None
+    if not sample_readable:
+        blockers.append("sample-unavailable")
+    current_bytes = current_bytes or 0
+    historical_bytes = historical_bytes or 0
 
     if not current_generation:
         # With no published feed there is no protected generation to define
         # "history": every feed row would count as reclaimable, so the ratio is
         # meaningless rather than conservative.
-        blockers.append(BLOCKER_NO_CURRENT_GENERATION)
+        blockers.append("no-current-generation")
 
     reclaimable = historical_bytes + freelist_bytes
     ratio = (reclaimable / database_bytes) if database_bytes > 0 else 0.0
     ratio_met = database_bytes > 0 and ratio >= float(min_ratio_pct) / 100.0
     floor_met = reclaimable >= RECLAIM_ABSOLUTE_FLOOR_BYTES
-    measured = (
-        BLOCKER_STORE_UNAVAILABLE not in blockers and BLOCKER_SAMPLE_UNAVAILABLE not in blockers
-    )
+    measured = store_readable and sample_readable
     verdict = "bloat" if measured and current_generation and ratio_met and floor_met else "ok"
 
     if ctx.active_task:
-        blockers.append(BLOCKER_ACTIVE_TASK)
+        blockers.append("active-task")
     if ctx.compaction_running:
-        blockers.append(BLOCKER_COMPACTION_RUNNING)
+        blockers.append("compaction-running")
     if ctx.backup_exists:
-        blockers.append(BLOCKER_BACKUP_EXISTS)
-    required_free = (
-        _byte_count(ctx.required_free_bytes)
-        if ctx.required_free_bytes is not None
-        else rebuild_required_free_bytes(database_bytes)
-    )
+        blockers.append("backup-exists")
+    required_free = rebuild_required_free_bytes(database_bytes)
     free_space = ctx.free_space_bytes
     if free_space is None or int(free_space) <= 0 or int(free_space) < required_free:
-        blockers.append(BLOCKER_FREE_SPACE)
+        blockers.append("free-space")
     cooldown_hours = max(0.0, float(ctx.cooldown_remaining_hours or 0.0))
     if cooldown_hours > 0:
-        blockers.append(BLOCKER_COOLDOWN)
+        blockers.append("cooldown")
     if not ctx.auto_enabled:
-        blockers.append(BLOCKER_AUTO_DISABLED)
+        blockers.append("auto-disabled")
 
     return {
         "verdict": verdict,
@@ -136,24 +122,19 @@ def reclaim_verdict(
         "freelistBytes": freelist_bytes,
         "currentGenerationEstimatedBytes": current_bytes,
         "historicalGenerationEstimatedBytes": historical_bytes,
-        "historicalGenerationCount": _byte_count(samples.get("historicalGenerationCount")),
+        "historicalGenerationCount": _non_negative_int(samples.get("historicalGenerationCount"))
+        or 0,
         "estimatedReclaimableBytes": reclaimable,
-        "reclaimableBasis": RECLAIMABLE_BASIS,
-        "candidateGenerationCount": _byte_count(samples.get("candidateGenerationCount")),
+        "reclaimableBasis": "payload-sample+freelist",
+        "candidateGenerationCount": _non_negative_int(samples.get("candidateGenerationCount")) or 0,
         "capReached": bool(samples.get("capReached")),
         "blockers": blockers,
         "cooldownRemainingHours": cooldown_hours,
     }
 
 
-def _byte_count(value: Any) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
-def _optional_byte_count(value: Any) -> int | None:
+def _non_negative_int(value: Any) -> int | None:
+    """A non-negative integer from a payload field, or ``None`` when it is not one."""
     if value is None or isinstance(value, bool):
         return None
     try:

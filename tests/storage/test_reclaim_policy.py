@@ -10,21 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.storage.reclaim_policy import (
-    BLOCKER_ACTIVE_TASK,
-    BLOCKER_AUTO_DISABLED,
-    BLOCKER_BACKUP_EXISTS,
-    BLOCKER_COMPACTION_RUNNING,
-    BLOCKER_COOLDOWN,
-    BLOCKER_FREE_SPACE,
-    BLOCKER_NO_CURRENT_GENERATION,
-    BLOCKER_SAMPLE_UNAVAILABLE,
-    BLOCKER_STORE_UNAVAILABLE,
-    RECLAIM_ABSOLUTE_FLOOR_BYTES,
-    RECLAIMABLE_BASIS,
-    ReclaimContext,
-    reclaim_verdict,
-)
+from src.storage.reclaim_policy import ReclaimContext, reclaim_verdict
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -75,7 +61,7 @@ def test_verdict_calls_disposable_history_bloat() -> None:
     assert result["verdict"] == "bloat"
     assert result["ratio"] == 0.15
     assert result["reclaimable"] == 1536 * MIB
-    assert result["reclaimableBasis"] == RECLAIMABLE_BASIS
+    assert result["reclaimableBasis"] == "payload-sample+freelist"
     assert result["blockers"] == []
 
 
@@ -86,7 +72,7 @@ def test_verdict_keeps_a_database_under_the_ratio_ok() -> None:
         context=_quiet_context(),
     )
 
-    assert result["reclaimable"] >= RECLAIM_ABSOLUTE_FLOOR_BYTES
+    assert result["reclaimable"] >= 512 * MIB
     assert result["ratio"] == 900 * MIB / (10 * GIB)
     assert result["verdict"] == "ok"
     assert result["blockers"] == []
@@ -104,7 +90,7 @@ def test_verdict_requires_the_absolute_floor_as_well_as_the_ratio() -> None:
 
     # Both gates are inclusive: exactly 512 MiB of exactly 10% is bloat.
     boundary = reclaim_verdict(
-        _preview(historical_bytes=RECLAIM_ABSOLUTE_FLOOR_BYTES, historical_count=2),
+        _preview(historical_bytes=512 * MIB, historical_count=2),
         _sizes(database_bytes=5 * GIB),
         context=_quiet_context(),
     )
@@ -146,7 +132,7 @@ def test_no_current_generation_refuses_even_when_the_ratio_says_bloat() -> None:
 
     assert result["ratio"] > 0.5
     assert result["verdict"] == "ok"
-    assert result["blockers"] == [BLOCKER_NO_CURRENT_GENERATION]
+    assert result["blockers"] == ["no-current-generation"]
 
 
 def test_unreadable_store_reports_store_unavailable_and_no_ratio() -> None:
@@ -159,7 +145,7 @@ def test_unreadable_store_reports_store_unavailable_and_no_ratio() -> None:
     assert result["verdict"] == "ok"
     assert result["ratio"] == 0.0
     assert result["reclaimable"] == 2 * GIB
-    assert BLOCKER_STORE_UNAVAILABLE in result["blockers"]
+    assert result["blockers"] == ["store-unavailable"]
 
 
 def test_missing_sample_fields_report_sample_unavailable() -> None:
@@ -170,7 +156,7 @@ def test_missing_sample_fields_report_sample_unavailable() -> None:
 
     assert result["verdict"] == "ok"
     assert result["ratio"] == 0.0
-    assert BLOCKER_SAMPLE_UNAVAILABLE in result["blockers"]
+    assert result["blockers"] == ["sample-unavailable"]
 
 
 def test_reclaimable_ignores_a_preview_total_that_disagrees_with_its_parts() -> None:
@@ -201,9 +187,9 @@ def test_free_space_fails_closed_when_unmeasured_or_non_positive() -> None:
         context=_quiet_context(free_space_bytes=64 * MIB),
     )
 
-    assert unmeasured["blockers"] == [BLOCKER_FREE_SPACE]
-    assert failed_stat["blockers"] == [BLOCKER_FREE_SPACE]
-    assert short["blockers"] == [BLOCKER_FREE_SPACE]
+    assert unmeasured["blockers"] == ["free-space"]
+    assert failed_stat["blockers"] == ["free-space"]
+    assert short["blockers"] == ["free-space"]
     assert unmeasured["verdict"] == "bloat"
 
 
@@ -223,31 +209,30 @@ def test_activity_and_trigger_blockers_leave_the_measurement_alone() -> None:
     assert result["verdict"] == "bloat"
     assert result["cooldownRemainingHours"] == 42.5
     assert result["blockers"] == [
-        BLOCKER_ACTIVE_TASK,
-        BLOCKER_COMPACTION_RUNNING,
-        BLOCKER_BACKUP_EXISTS,
-        BLOCKER_COOLDOWN,
-        BLOCKER_AUTO_DISABLED,
+        "active-task",
+        "compaction-running",
+        "backup-exists",
+        "cooldown",
+        "auto-disabled",
     ]
 
 
-def test_required_free_space_defaults_to_the_existing_rebuild_gate() -> None:
+def test_free_space_is_asked_against_the_existing_rebuild_gate() -> None:
     sizes = _sizes(database_bytes=10 * GIB)
     generous = reclaim_verdict(
         _preview(historical_bytes=2 * GIB, historical_count=4),
         sizes,
         context=_quiet_context(free_space_bytes=330 * MIB),
     )
-    explicit = reclaim_verdict(
+    short = reclaim_verdict(
         _preview(historical_bytes=2 * GIB, historical_count=4),
         sizes,
-        context=_quiet_context(free_space_bytes=330 * MIB, required_free_bytes=512 * MIB),
+        context=_quiet_context(free_space_bytes=300 * MIB),
     )
 
     # The rebuild gate asks 256 MiB + 64 MiB when 1% of the file is smaller.
     assert generous["blockers"] == []
-    # An explicit, larger requirement re-asks the same reading.
-    assert explicit["blockers"] == [BLOCKER_FREE_SPACE]
+    assert short["blockers"] == ["free-space"]
 
 
 def test_zero_database_bytes_is_a_zero_ratio_not_a_division_error() -> None:
