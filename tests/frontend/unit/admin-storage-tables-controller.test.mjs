@@ -137,6 +137,12 @@ function fixture({
   const downloads = [];
   const listeners = {};
   const refs = {
+    adminStorageTablesEl: createElement({
+      open: false,
+      addEventListener(type, handler) {
+        listeners.toggle = handler;
+      }
+    }),
     adminStorageTablesStatusEl: createElement(),
     adminStorageTablesBodyEl: createElement(),
     adminStorageTablesRefreshBtnEl: createElement({
@@ -198,6 +204,63 @@ test("storage breakdown defers without calling storage health", async () => {
   assert.equal(f.calls.length, 0);
   assert.match(f.refs.adminStorageTablesBodyEl.innerHTML, /deferred while an active run/i);
   assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Deferred");
+});
+
+test("storage breakdown reads on first open, not at init", async () => {
+  const f = fixture();
+  f.controller.init();
+
+  assert.equal(f.calls.length, 0, "binding the panel must not read storage health");
+
+  f.refs.adminStorageTablesEl.open = true;
+  f.listeners.toggle();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.deepEqual(
+    f.calls.map(call => call.path),
+    ["/ops/storage-health"]
+  );
+});
+
+test("storage breakdown reuses the first read and keeps refresh as the override", async () => {
+  const f = fixture();
+  f.controller.init();
+
+  f.refs.adminStorageTablesEl.open = true;
+  f.listeners.toggle();
+  await new Promise(resolve => setImmediate(resolve));
+
+  f.refs.adminStorageTablesEl.open = false;
+  f.listeners.toggle();
+  f.refs.adminStorageTablesEl.open = true;
+  f.listeners.toggle();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(f.calls.length, 1, "reopening must not re-read storage health");
+
+  f.listeners.refresh();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(f.calls.length, 2);
+});
+
+test("storage breakdown retries on the next open after a failed read", async () => {
+  const f = fixture({ reject: new Error("bridge down") });
+  f.controller.init();
+
+  f.refs.adminStorageTablesEl.open = true;
+  f.listeners.toggle();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(f.calls.length, 1);
+
+  f.refs.adminStorageTablesEl.open = false;
+  f.listeners.toggle();
+  f.refs.adminStorageTablesEl.open = true;
+  f.listeners.toggle();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(f.calls.length, 2, "a failed read leaves the panel unloaded");
 });
 
 test("storage breakdown loads once with a bounded non-reachability read", async () => {

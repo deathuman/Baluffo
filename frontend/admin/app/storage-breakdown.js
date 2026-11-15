@@ -50,16 +50,18 @@ function stateShouldDefer(state, options = {}) {
 /**
  * Owns the Runtime Database Storage panel beside Stored Profiles Overview.
  *
- * The panel reads once, refreshes manually, and accepts the Action Center's
- * storage payload. While an explicit maintenance pass is running it adds one
+ * The panel is closed on every Admin load, so it reads on first open, refreshes
+ * manually, and accepts the Action Center's storage payload. A failed or
+ * deferred read leaves it unloaded, and reopening retries. While an explicit
+ * maintenance pass is running it adds one
  * bounded poll: fast for the first two minutes, slower after that, stopped when
  * the pass ends or after 30 minutes, and never scheduled while the active-work
  * gate is held. This keeps maintenance visible without adding a general
  * storage-health poll during fetches or discovery.
  *
- * `load(options)` forwards its options to `shouldDefer` so the startup read can
- * join the serial startup bridge lane (`allowStartupBridgeLane: true`) instead of
- * being deferred by it. Active work still defers unconditionally.
+ * `load(options)` forwards its options to `shouldDefer`, so a caller that already
+ * knows the bridge is idle can skip the deferral (`allowStartupBridgeLane`).
+ * Active work still defers unconditionally.
  */
 
 export function createStorageBreakdownController({
@@ -74,6 +76,10 @@ export function createStorageBreakdownController({
   downloadJson = downloadStorageDiagnosticJson
 }) {
   let inFlight = false;
+  // Set once a storage-health payload has rendered, so opening the panel a
+  // second time reuses it instead of re-reading. A failed or deferred read
+  // leaves it false and the next open retries.
+  let healthRendered = false;
   let refreshBound = false;
   let diagnosticInFlight = false;
   let diagnosticPollTimer = null;
@@ -1097,6 +1103,7 @@ export function createStorageBreakdownController({
     acceptMaintenanceStatus(storage);
     const tableSizes = storage.tableSizes || null;
     if (!tableSizes) return null;
+    healthRendered = true;
     render(tableSizes);
     setStatus(
       statusText(tableSizes),
@@ -1142,6 +1149,11 @@ export function createStorageBreakdownController({
   function init() {
     if (refreshBound) return;
     refreshBound = true;
+    // The panel starts collapsed, so the first open is the read. Refresh stays
+    // the explicit override when the panel is already loaded.
+    refs.adminStorageTablesEl?.addEventListener?.("toggle", () => {
+      if (refs.adminStorageTablesEl?.open === true && !healthRendered) void load();
+    });
     refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
     refs.adminStorageQuickCheckBtnEl?.addEventListener?.("click", () => startQuickCheck());
     refs.adminStorageMaintenancePreviewBtnEl?.addEventListener?.("click", () =>

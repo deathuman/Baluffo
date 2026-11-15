@@ -398,3 +398,16 @@ test("admin shell places the runtime storage panel beside the profiles overview"
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-export-btn"/);
   assert.match(adminHtml, /data-ui="admin-storage-diagnostic-body"/);
 });
+
+test("runtime storage panel starts collapsed and says it loads on open", () => {
+  const adminHtml = readFileSync(new URL("../../../admin.html", import.meta.url), "utf8");
+  const detailsTag = adminHtml.match(/<details[^>]*data-ui="admin-storage-tables"[^>]*>/);
+
+  assert.ok(detailsTag, "expected the runtime storage panel to be a details element");
+  assert.doesNotMatch(detailsTag[0], /\sopen(\s|>|=)/);
+  assert.match(
+    adminHtml,
+    /data-ui="admin-storage-tables-status"[^>]*>Open to load</
+  );
+  assert.doesNotMatch(adminHtml, /Waiting for startup/);
+});

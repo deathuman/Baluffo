@@ -113,7 +113,9 @@ test("admin startup heavy hydration is sequential and defers while source load i
     "fetch KPIs should run before tab counts"
   );
   assert.match(body, /shouldDeferIdleOpsHeavyHydration\(options\)/);
-  assert.match(compositionSource, /allowStartupBridgeLane:\s*true/);
+  // The storage panel is closed on load, so startup must not read it; its
+  // controller reads /ops/storage-health on first open instead.
+  assert.doesNotMatch(compositionSource, /storageBreakdownController\.load\(/);
   assert.match(opsScheduleHydrationSource, /deferIdleHydration/);
   assert.match(compositionSource, /deferIdleHydration:\s*true/);
 });

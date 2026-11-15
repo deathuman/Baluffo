@@ -621,17 +621,10 @@ export function composeAdminControllers({
     // The shell is up: only now fetch and parse the Ops surface. Starting it any
     // earlier put a 273 KB chunk's parse back inside the boot it was split out of.
     opsController.start?.();
-    // One bounded read after startup; later maintenance-only polling lives in
-    // the storage controller and is gated off while active work holds the gate.
-    // It joins the serial startup lane rather than deferring on it, so an idle
-    // load fills the panel as soon as the lane drains instead of waiting for the
-    // Action Center's next (30 s) storage poll. When active work holds the gate,
-    // this still renders the deferred state and the Action Center fills it later.
-    enqueueAdminStartupBridgeTask(() => storageBreakdownController.load({
-      allowStartupBridgeLane: true
-    })).catch(err => {
-      logAdminError("Admin storage table breakdown delayed.", err);
-    });
+    // No storage read here: the panel is closed on every Admin load, so its
+    // controller loads /ops/storage-health on the first open instead of paying
+    // for a panel nobody is looking at. The Action Center keeps its own storage
+    // payload, which fills the collapsed status line when it arrives.
     return {
       ...(payload || {}),
       // Consumed by the auth controller to decide the badge, and by the

@@ -372,15 +372,12 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       1,
       evidence(harness.events, harness.metrics)
     );
-    // One read after the startup lane drains, never skipped or racing a heavy route.
-    const storageReads = harness.events.filter(row => row.path.startsWith("/ops/storage-health"));
-    assert.equal(storageReads.length, 1, `Expected one startup storage-health read.\n${evidence(harness.events, harness.metrics)}`);
-    const storageRead = storageReads[0];
-    const storageRace = harness.events.find(row => (
-      row.method === "GET" && STARTUP_HEAVY_ROUTES.some(route => row.path.startsWith(route))
-      && storageRead.startedAt < row.finishedAt && row.startedAt < storageRead.finishedAt
-    ));
-    assert.equal(storageRace, undefined, `Storage-health read raced ${storageRace?.path}\n${evidence(harness.events, harness.metrics)}`);
+    // The runtime storage panel renders collapsed, so startup must not read it.
+    assert.deepEqual(
+      harness.events.filter(row => row.path.startsWith("/ops/storage-health")),
+      [],
+      `A collapsed storage panel must not read storage health at startup.\n${evidence(harness.events, harness.metrics)}`
+    );
     assert.deepEqual(harness.requests.filter(request => /GET \/registry\/summary/.test(request)), []);
     assertNoStartupHeavyOverlap(harness.events);
     assert.deepEqual(harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_fetch_done" && row?.payload?.ok === false), []);
@@ -391,6 +388,16 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       if (next) sawNext = true;
       assert.equal(sawNext && !next, false, `Schedule model regressed after loading nextRunAt.\n${evidence(harness.events, harness.metrics)}`);
     }
+    // Opening the collapsed panel is what asks for storage health, exactly once.
+    // Last on purpose: the read is no longer startup work, so it must not be
+    // judged against the startup-lane ordering checked above.
+    await page.locator('[data-ui="admin-storage-tables"] summary').click();
+    await waitForRouteCount(harness.events, "/ops/storage-health", 1);
+    assert.equal(
+      harness.events.filter(row => row.path.startsWith("/ops/storage-health")).length,
+      1,
+      `Expected exactly one storage-health read after opening the panel.\n${evidence(harness.events, harness.metrics)}`
+    );
   } finally {
     if (browser) {
       await browser.close();
